@@ -3094,5 +3094,14 @@
   "Get an API token": "获取 API 令牌",
   "Get an access token": "获取访问令牌",
   "Open setup guide": "打开设置指南",
-  "Get an API key": "获取 API 密钥"
+  "Get an API key": "获取 API 密钥",
+  "Saved": "已保存",
+  "Replace": "替换",
+  "Keep": "保留",
+  "Removed when you save": "保存后将移除",
+  "Stored records stay in place.": "已存储的记录会保留。",
+  "Engine": "引擎",
+  "Token ID and secret": "令牌 ID 与密钥",
+  "state.connected": "已连接",
+  "Keep the saved key": "保留已保存的密钥"
 }

@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, FormField, Input, ReadOnlyField } from "a13n-ui";
+import { Button } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { ApiError } from "../../service-client";
 import { allPages, data, type Schema } from "../../shared/api";
-import { ListRow, ListRows, ResourceIdentity } from "../../shared/collection";
+import { ListRow, ListRows } from "../../shared/collection";
 import {
   CatalogStep,
   ConflictNotice,
@@ -15,19 +15,24 @@ import {
 import { ErrorNotice } from "../../shared/feedback";
 import {
   FormActions,
-  FormSection,
   ProviderEnabled,
-  formSectionStyles,
+  ProviderKeyLink,
+  SchemaFields,
 } from "../../shared/forms";
 import { ProviderIcon } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
 import {
   AddProviderDialog,
-  CredentialsPill,
+  CredentialRow,
   EditProviderDialog,
   ProviderConnectFields,
+  ProviderEditor,
+  ProviderGroup,
+  ProviderName,
+  ProviderReadOnly,
   credentialDescription,
   credentialHint,
+  credentialLabel,
   providerStyles,
 } from "../providers";
 import { webProviderApi, type WebProviderScope } from "./api";
@@ -128,37 +133,27 @@ export function WebProviderEditor({
       open={state.open}
       name={resource.data?.value.name}
       id={providerId}
+      type={resource.data?.value.type}
+      definition={definition?.display_name}
+      scope={resource.data?.value.workspace_id ? "workspace" : "organization"}
       readOnly={readOnly}
-      description={definition?.display_name}
       loading={definitions.isPending || resource.isPending}
       error={definitions.error ?? resource.error}
     >
       {definitions.data &&
         resource.data &&
         (readOnly ? (
-          <div className={styles.stack}>
-            <ResourceIdentity
-              icon={<ProviderIcon type={resource.data.value.type} />}
-              name={resource.data.value.name}
-              description={definition?.display_name ?? resource.data.value.type}
-            />
-            <div className={styles.twoColumns}>
-              <ReadOnlyField label={t("Status")}>
-                {t(resource.data.value.enabled ? "Enabled" : "Disabled")}
-              </ReadOnlyField>
-              <ReadOnlyField label={t("Credentials")}>
-                <CredentialsPill
-                  state={
-                    definition?.credential_required === false
-                      ? "not_required"
-                      : resource.data.value.credential_configured
-                        ? "configured"
-                        : "not_configured"
-                  }
-                />
-              </ReadOnlyField>
-            </div>
-          </div>
+          <ProviderReadOnly
+            enabled={resource.data.value.enabled}
+            credentials={
+              definition?.credential_required === false
+                ? "not_required"
+                : resource.data.value.credential_configured
+                  ? "configured"
+                  : "not_configured"
+            }
+            onClose={() => state.setOpen(false)}
+          />
         ) : (
           <WebProviderForm
             scope={scope}
@@ -388,49 +383,37 @@ export function WebProviderForm({
       </form>
     );
   return (
-    <form className={formSectionStyles.form} onSubmit={submit}>
-      <FormSection>
-        <FormField label={t("Name")}>
-          <Input
-            required
-            maxLength={128}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </FormField>
+    <ProviderEditor onSubmit={submit}>
+      <ProviderName value={name} onChange={setName} />
+      <ProviderGroup>
         <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-      </FormSection>
-      {definition?.credential_required && (
-        <FormSection title={t("Credentials")}>
-          <FormField
-            label={t("API key")}
-            description={t("Leave empty to keep the current credential.")}
+        {definition?.credential_required && (
+          <CredentialRow
+            label={t(credentialLabel(definition.credential_schema))}
+            configured={!!original.value.credential_configured}
+            onDiscard={() => setCredential({})}
           >
-            <Input
-              type="password"
-              placeholder={
-                original.value.credential_configured
-                  ? t("Saved credential · enter to replace")
-                  : undefined
-              }
-              autoComplete="new-password"
-              name="search-api-key"
-              value={apiKey}
-              onChange={(event) =>
-                setCredential(
-                  event.target.value ? { api_key: event.target.value } : {},
+            <SchemaFields
+              secret
+              autoFocus
+              labelAction={
+                definition.setup_url && (
+                  <ProviderKeyLink href={definition.setup_url} />
                 )
               }
+              schema={{ ...definition.credential_schema, required: [] }}
+              value={credential}
+              onChange={setCredential}
             />
-          </FormField>
-        </FormSection>
-      )}
+          </CredentialRow>
+        )}
+      </ProviderGroup>
       {notices}
       <FormActions
         onCancel={onCancel}
         label={t("Save changes")}
         pending={save.isPending}
       />
-    </form>
+    </ProviderEditor>
   );
 }

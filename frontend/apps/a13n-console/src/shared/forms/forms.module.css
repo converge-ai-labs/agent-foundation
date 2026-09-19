@@ -6,6 +6,28 @@
   flex-wrap: wrap;
   margin-top: 12px;
 }
+/* A form whose footer also carries an action that is not its outcome. The
+   leading cell shrinks and wraps its own text so the outcome stays at the
+   right, on the same line, however long the note beside it runs. */
+.formActions[data-leading] {
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+}
+.formActionsLeading {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+.formActionsPrimary {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+}
 .codeValue {
   margin: 0;
   font-family: var(--a13n-mono);

@@ -3094,5 +3094,14 @@
   "Get an API token": "Get an API token",
   "Get an access token": "Get an access token",
   "Open setup guide": "Open setup guide",
-  "Get an API key": "Get an API key"
+  "Get an API key": "Get an API key",
+  "Saved": "Saved",
+  "Replace": "Replace",
+  "Keep": "Keep",
+  "Removed when you save": "Removed when you save",
+  "Stored records stay in place.": "Stored records stay in place.",
+  "Engine": "Engine",
+  "Token ID and secret": "Token ID and secret",
+  "state.connected": "Connected",
+  "Keep the saved key": "Keep the saved key"
 }

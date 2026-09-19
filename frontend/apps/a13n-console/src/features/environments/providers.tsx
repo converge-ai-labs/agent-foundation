@@ -1,11 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  DisclosureSection,
-  FormField,
-  Input,
-  ReadOnlyField,
-} from "a13n-ui";
+import { SettingsRow } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -17,7 +11,6 @@ import {
   type Schema,
 } from "../../shared/api";
 import { useCursor } from "../../shared/collection";
-import { ConfigurationSummary } from "../../shared/configuration-summary";
 import {
   CatalogStep,
   useResourceEditorState,
@@ -26,29 +19,37 @@ import {
 } from "../../shared/dialogs";
 import { ErrorNotice, StatePill } from "../../shared/feedback";
 import {
-  CredentialEditor,
   FormActions,
-  FormSection,
   ProviderEnabled,
+  ProviderKeyLink,
   SchemaFields,
-  formSectionStyles,
   jsonObject,
   validateSettings,
 } from "../../shared/forms";
-import styles from "../../shared/shared.module.css";
 import {
   AddProviderDialog,
+  CredentialRow,
   EditProviderDialog,
   ProviderConnectFields,
+  ProviderEditor,
+  ProviderFacts,
+  ProviderGroup,
+  ProviderName,
+  ProviderReadOnly,
   ProviderTable,
   credentialDescription,
   credentialHint,
+  credentialLabel,
   providerKeyUrls,
   providerStyles,
 } from "../providers";
 import { environmentApi, type EnvironmentScope } from "./api";
 
 type Definition = Schema["EnvironmentProviderDefinition"];
+
+/** A provider the running Service owns: readable here, changed by the operator. */
+const deploymentNote =
+  "Connection settings come from the running Service and cannot be edited here.";
 
 export function useEnvironmentTypes() {
   const client = useClient(),
@@ -217,6 +218,7 @@ function EditEnvironmentProvider({
   provider: Schema["EnvironmentProvider"];
 }) {
   const client = useClient(),
+    { t } = useTranslation(),
     [generation, setGeneration] = useState(0),
     definitions = useEnvironmentTypes();
   const state = useResourceEditorState({ controlledOpen, onClose, finalFocus });
@@ -246,8 +248,15 @@ function EditEnvironmentProvider({
       open={state.open}
       name={query.data?.value.name ?? provider.name}
       id={provider.id}
+      type={provider.type}
+      definition={definition?.display_name}
+      scope={provider.workspace_id ? "workspace" : "organization"}
       readOnly={provider.configuration_source === "deployment"}
-      description={definition?.display_name}
+      description={
+        provider.configuration_source === "deployment"
+          ? t(deploymentNote)
+          : undefined
+      }
       loading={definitions.isPending || query.isPending}
       error={definitions.error ?? query.error}
     >
@@ -384,93 +393,80 @@ function ProviderForm({
         />
       </form>
     );
+  const engine = basis.value.type === "docker" && (
+    <SettingsRow stackOnNarrow={false} label={t("Engine")}>
+      <span className={providerStyles.fact} role="status">
+        {connectivity.data?.error && (
+          <span className={providerStyles.factValue}>
+            {connectivity.data.error}
+          </span>
+        )}
+        <StatePill state={connectivity.data?.status ?? "unknown"} />
+      </span>
+    </SettingsRow>
+  );
+  const credentials = Object.keys(schema(credentialSchema.properties)).length
+    ? basis.value.credential_configured
+      ? ("configured" as const)
+      : ("not_configured" as const)
+    : ("not_required" as const);
+  if (deployment)
+    return (
+      <ProviderReadOnly
+        hideDefaults
+        enabled={basis.value.enabled}
+        credentials={credentials}
+        configuration={configuration}
+        schema={configSchema}
+        facts={engine}
+        onClose={close}
+      />
+    );
   return (
-    <form
-      className={formSectionStyles.form}
+    <ProviderEditor
       onSubmit={(event) => {
         event.preventDefault();
-        if (!deployment) save.mutate();
+        save.mutate();
       }}
     >
-      <FormSection>
-        {deployment ? (
-          <ReadOnlyField label={t("Name")}>{name}</ReadOnlyField>
-        ) : (
-          <FormField className="min-w-0 w-full" label={t("Name")}>
-            <Input
-              required={true}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={128}
-            />
-          </FormField>
-        )}
-        {!deployment && (
-          <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        )}
-      </FormSection>
-      <FormSection
-        title={t("Connection")}
-        description={
-          deployment
-            ? t(
-                "Connection settings come from the running Service and cannot be edited here.",
-              )
-            : undefined
-        }
-      >
-        {basis.value.type === "docker" && (
-          <div className="flex flex-wrap items-center gap-2" role="status">
-            <StatePill
-              state={connectivity.data?.status ?? "unknown"}
-              label={t("Engine: {{status}}", {
-                status: t(connectivity.data?.status ?? "unknown"),
-              })}
-            />
-            {connectivity.data?.error && (
-              <span className={styles.muted}>{connectivity.data.error}</span>
-            )}
-          </div>
-        )}
-        {Object.keys(configuration).length > 0 && (
-          <DisclosureSection title={t("Configuration details")}>
-            <ConfigurationSummary value={configuration} schema={configSchema} />
-          </DisclosureSection>
-        )}
-      </FormSection>
-      {!!Object.keys(schema(credentialSchema.properties)).length && (
-        <FormSection title={t("Credentials")}>
-          <CredentialEditor
-            configured={basis.value.credential_configured}
+      <ProviderName value={name} onChange={setName} />
+      <ProviderGroup>
+        <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+        {credentials !== "not_required" && (
+          <CredentialRow
+            label={t(credentialLabel(credentialSchema))}
+            configured={!!basis.value.credential_configured}
             removing={removeCredential}
-            onRemovingChange={(value) => {
-              setRemoveCredential(value);
-              setCredential({});
-            }}
+            onRemovingChange={setRemoveCredential}
+            onDiscard={() => setCredential({})}
           >
             <SchemaFields
               secret
+              autoFocus
+              labelAction={
+                providerKeyUrls[type] && (
+                  <ProviderKeyLink {...providerKeyUrls[type]} />
+                )
+              }
               schema={{ ...credentialSchema, required: [] }}
               value={credential}
               onChange={setCredential}
             />
-          </CredentialEditor>
-        </FormSection>
-      )}
-      <ErrorNotice error={save.error} retry={() => void reload()} />
-      {deployment ? (
-        <footer data-a13n-form-actions className={styles.formActions}>
-          <Button type="button" variant="outline" onClick={close}>
-            {t("Close")}
-          </Button>
-        </footer>
-      ) : (
-        <FormActions
-          pending={save.isPending}
-          onCancel={close}
-          label={t("Save changes")}
+          </CredentialRow>
+        )}
+        {engine}
+        <ProviderFacts
+          hideDefaults
+          configuration={configuration}
+          schema={configSchema}
         />
-      )}
-    </form>
+      </ProviderGroup>
+      <ErrorNotice error={save.error} retry={() => void reload()} />
+      <FormActions
+        pending={save.isPending}
+        onCancel={close}
+        label={t("Save changes")}
+      />
+    </ProviderEditor>
   );
 }

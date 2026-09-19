@@ -1,18 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  DisclosureSection,
-  FormField,
-  Input,
-  ReadOnlyField,
-} from "a13n-ui";
+import { DisclosureSection } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { useCursor } from "../../shared/collection";
-import { ConfigurationSummary } from "../../shared/configuration-summary";
 import {
   CatalogStep,
   useResourceEditorState,
@@ -21,13 +14,10 @@ import {
 } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
 import {
-  CredentialEditor,
   FormActions,
-  FormSection,
   ProviderEnabled,
   ProviderKeyLink,
   SchemaFields,
-  formSectionStyles,
   jsonObject,
   stringValues,
   validateSettings,
@@ -36,16 +26,23 @@ import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import {
   AddProviderDialog,
+  ConnectionTest,
+  CredentialRow,
   EditProviderDialog,
   ProviderConnectFields,
+  ProviderEditor,
+  ProviderFacts,
+  ProviderGroup,
+  ProviderName,
+  ProviderReadOnly,
   ProviderTable,
   credentialDescription,
   credentialHint,
+  credentialLabel,
   providerKeyUrls,
   providerStyles,
 } from "../providers";
 import { connectorApi, type ConnectorScope } from "./api";
-import layout from "./connectors.module.css";
 
 type Definition = Schema["ConnectorProviderDefinition"];
 
@@ -207,19 +204,27 @@ function EditConnectorProvider({
       open={state.open}
       name={resource.data?.name}
       id={providerId}
+      type={resource.data?.type}
+      definition={definition?.display_name}
+      scope={resource.data?.workspace_id ? "workspace" : "organization"}
       readOnly={readOnly}
-      description={definition?.display_name}
       loading={definitions.isPending || resource.isPending}
       error={definitions.error ?? resource.error}
     >
       {resource.data &&
         (readOnly ? (
-          <div className={styles.stack}>
-            <ConfigurationSummary
-              value={resource.data.configuration}
-              schema={definition?.configuration_schema}
-            />
-          </div>
+          <ProviderReadOnly
+            enabled={resource.data.status === "active"}
+            credentials={
+              resource.data.credential_configured
+                ? "configured"
+                : "not_configured"
+            }
+            configuration={resource.data.configuration}
+            schema={definition?.configuration_schema}
+            only={["endpoint"]}
+            onClose={() => state.setOpen(false)}
+          />
         ) : (
           <ProviderForm
             key={generation}
@@ -373,97 +378,75 @@ function ProviderForm({
       </form>
     );
   return (
-    <form className={formSectionStyles.form} onSubmit={submit}>
-      <FormSection>
-        <FormField className="min-w-0 w-full" label={t("Name")}>
-          <Input
-            required={true}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={128}
-          />
-        </FormField>
-      </FormSection>
-      <FormSection title={t("Connection")}>
-        {type === "composio" && <OAuthCallbackSetup />}
-        {Object.keys(configuration).length > 0 && (
-          <div className={styles.stack}>
-            {typeof configuration.endpoint === "string" && (
-              <ReadOnlyField label={t("Endpoint")}>
-                {configuration.endpoint}
-              </ReadOnlyField>
-            )}
-            <DisclosureSection title={t("Configuration details")}>
-              <ConfigurationSummary
-                value={Object.fromEntries(
-                  Object.entries(configuration).filter(
-                    ([key]) => key !== "endpoint",
-                  ),
-                )}
-                schema={definition?.configuration_schema}
-              />
-            </DisclosureSection>
-          </div>
-        )}
+    <ProviderEditor onSubmit={submit}>
+      <ProviderName value={name} onChange={setName} />
+      <ProviderGroup>
+        <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
         {definition &&
           Object.keys(definition.credential_schema.properties ?? {}).length >
             0 && (
-            <CredentialEditor configured={basis.credential_configured}>
+            <CredentialRow
+              label={t(credentialLabel(definition.credential_schema))}
+              configured={!!basis.credential_configured}
+              onDiscard={() => setCredentials({})}
+            >
               <SchemaFields
                 secret
+                autoFocus
+                labelAction={
+                  providerKeyUrls[type] && (
+                    <ProviderKeyLink {...providerKeyUrls[type]} />
+                  )
+                }
                 schema={{ ...definition.credential_schema, required: [] }}
                 value={credentials}
                 onChange={setCredentials}
               />
-            </CredentialEditor>
+            </CredentialRow>
           )}
-        <div className={layout.checkRow}>
-          <Button
-            size="sm"
-            variant="outline"
-            loading={test.isPending}
-            disabled={
-              save.isPending ||
-              name !== basis.name ||
-              enabled !== (basis.status === "active") ||
-              Object.keys(credentials).length > 0
-            }
-            onClick={() => test.mutate()}
-            type="button"
-          >
-            {t("Check connection")}
-          </Button>
-          <span className={layout.checkNote}>
-            {t("May consume quota or incur cost.")}
-          </span>
-        </div>
-        <ErrorNotice error={test.error} retry={() => void reload()} />
-        {test.data && (
-          <p role="status" className={styles.muted}>
-            {test.data.verified_access
-              .map((access) =>
-                t(
-                  access === "account_read"
-                    ? "Connected-account access verified."
-                    : "Catalog access verified.",
-                ),
-              )
-              .join(" ")}{" "}
-            {t(
-              "OAuth callback configuration and upstream account credentials were not tested.",
-            )}
-          </p>
-        )}
-      </FormSection>
-      <FormSection>
-        <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-      </FormSection>
+        <ProviderFacts
+          configuration={configuration}
+          schema={definition?.configuration_schema}
+          only={["endpoint"]}
+        />
+      </ProviderGroup>
+      {type === "composio" && <OAuthCallbackSetup />}
       <ErrorNotice error={save.error} retry={() => void reload()} />
       <FormActions
         pending={save.isPending}
         onCancel={close}
         label={t("Save changes")}
+        leading={
+          <ConnectionTest
+            placement="footer"
+            description="May consume quota or incur cost."
+            retry={() => void reload()}
+            dirty={
+              save.isPending ||
+              name !== basis.name ||
+              enabled !== (basis.status === "active") ||
+              Object.keys(credentials).length > 0
+            }
+            action={async () => {
+              const result = await test.mutateAsync();
+              return {
+                success: true,
+                message: `${result.verified_access
+                  .map((access) =>
+                    t(
+                      access === "account_read"
+                        ? "Connected-account access verified."
+                        : "Catalog access verified.",
+                    ),
+                  )
+                  .join(" ")} ${t(
+                  "OAuth callback configuration and upstream account credentials were not tested.",
+                )}`,
+              };
+            }}
+          />
+        }
       />
-    </form>
+    </ProviderEditor>
   );
 }

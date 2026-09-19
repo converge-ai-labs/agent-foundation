@@ -23,10 +23,9 @@ import {
 } from "../../shared/forms";
 import { IconTile } from "../../shared/identity";
 import sharedStyles from "../../shared/shared.module.css";
-import { ManageProvidersLink } from "../providers";
+import { ConnectionTest, ManageProvidersLink } from "../providers";
 import { modelApi, type ModelScope } from "./api";
 import { CatalogPicker, catalogRefKey } from "./catalog-picker";
-import { ConnectionTest } from "./connection-test";
 import { ModelIcon } from "./model-icon";
 import { ModelInformation } from "./model-information";
 import { suggestedKey } from "./model-options";

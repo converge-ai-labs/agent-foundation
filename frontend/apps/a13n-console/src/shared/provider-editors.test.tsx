@@ -206,6 +206,9 @@ it.each(cases)(
     expect(screen.getByRole("dialog").textContent).toContain(
       connector ? "Composio" : provider.type,
     );
+    // The saved secret is stated in one row rather than offered as an input.
+    expect(screen.queryByLabelText("api_key")).toBeNull();
+    expect(screen.getByText("Saved")).toBeTruthy();
     expect(http.GET).toHaveBeenCalledWith(detailPath, expect.anything());
     await user.clear(name);
     await user.type(name, "Renamed provider");
@@ -246,6 +249,7 @@ it("saves connector name, credentials and enabled state in one atomic update", a
   const name = await screen.findByRole("textbox", { name: "Name" });
   await user.clear(name);
   await user.type(name, "Renamed");
+  await user.click(screen.getByRole("button", { name: "Replace" }));
   await user.type(screen.getByLabelText("api_key"), "new-project");
   await user.click(screen.getByRole("switch", { name: "Enabled" }));
   expect(http.POST).not.toHaveBeenCalled();
@@ -274,10 +278,14 @@ it("shows deployment providers read-only without a manual creation action", asyn
   await screen.findByText("Existing provider");
   expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
   await user.click(screen.getByText("Existing provider"));
-  await screen.findByRole("group", {
-    name: "Name",
-  });
-  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  // A deployment-managed provider is stated, never edited: no inputs, one way out.
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain("Existing provider");
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByRole("switch")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  expect(dialog.querySelector("[data-a13n-form-actions]")?.textContent).toBe(
+    "Close",
+  );
   expect(http.PATCH).not.toHaveBeenCalled();
 });

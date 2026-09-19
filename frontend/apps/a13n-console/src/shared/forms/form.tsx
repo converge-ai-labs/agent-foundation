@@ -1,4 +1,5 @@
 import { Button, FormField, ReadOnlyField, Textarea } from "a13n-ui";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./forms.module.css";
 
@@ -78,36 +79,53 @@ export function FormActions({
   onCancel,
   disabled = false,
   variant = "default",
+  leading,
+  cancelLabel,
+  dismiss = false,
 }: {
   pending: boolean;
   disabled?: boolean;
   label?: string;
   onCancel?: () => void;
+  cancelLabel?: string;
+  /** A read-only dialog dismisses instead of submitting. */
+  dismiss?: boolean;
   /** Outline keeps a secondary submit row from competing with the page's
    *  one filled primary action. */
   variant?: "default" | "outline";
+  /** Actions that belong to the form but not to its outcome, at the left. */
+  leading?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
-    <footer data-a13n-form-actions className={styles.formActions}>
-      {onCancel && (
-        <Button
-          variant="outline"
-          disabled={pending}
-          onClick={onCancel}
-          type="button"
-        >
-          {t("Cancel")}
-        </Button>
-      )}
-      <Button
-        type="submit"
-        variant={variant}
-        loading={pending}
-        disabled={disabled}
-      >
-        {label ?? t("Save changes")}
-      </Button>
+    <footer
+      data-a13n-form-actions
+      className={styles.formActions}
+      data-leading={leading ? "" : undefined}
+    >
+      {leading && <div className={styles.formActionsLeading}>{leading}</div>}
+      <div className={styles.formActionsPrimary}>
+        {onCancel && (
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={onCancel}
+            type="button"
+          >
+            {cancelLabel ?? t("Cancel")}
+          </Button>
+        )}
+        {!dismiss && (
+          <Button
+            type="submit"
+            variant={variant}
+            loading={pending}
+            disabled={disabled}
+          >
+            {label ?? t("Save changes")}
+          </Button>
+        )}
+      </div>
     </footer>
   );
 }

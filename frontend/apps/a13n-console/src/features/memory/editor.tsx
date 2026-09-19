@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, FormField, Input, ReadOnlyField } from "a13n-ui";
+import { Button } from "a13n-ui";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -10,8 +10,7 @@ import {
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
-import { ListRow, ListRows, ResourceIdentity } from "../../shared/collection";
-import { ConfigurationSummary } from "../../shared/configuration-summary";
+import { ListRow, ListRows } from "../../shared/collection";
 import {
   CatalogStep,
   ConflictNotice,
@@ -20,12 +19,10 @@ import {
 } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
 import {
-  CredentialEditor,
   FormActions,
-  FormSection,
   ProviderEnabled,
+  ProviderKeyLink,
   SchemaFields,
-  formSectionStyles,
   jsonObject,
   validateSettings,
   withSchemaValues,
@@ -34,17 +31,28 @@ import { ProviderIcon } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
 import {
   AddProviderDialog,
-  CredentialsPill,
+  CredentialRow,
   EditProviderDialog,
   ProviderConnectFields,
+  ProviderEditor,
+  ProviderEditorFields,
+  ProviderFacts,
+  ProviderGroup,
+  ProviderName,
+  ProviderReadOnly,
   credentialDescription,
   credentialHint,
+  credentialLabel,
   providerKeyUrls,
   providerStyles,
 } from "../providers";
 import { memoryProviderApi, type MemoryProviderScope } from "./providers-api";
 
 type Definition = Schema["MemoryProviderDefinition"];
+
+/** The target a saved backend cannot be pointed away from. */
+const storageNote =
+  "Storage configuration cannot be changed. Create a new provider for a different target; existing memories are not migrated.";
 
 export function useMemoryProviderDefinitions(
   scope: MemoryProviderScope,
@@ -200,35 +208,24 @@ function EditMemoryProvider({
       open={state.open}
       name={resource.data?.value.name}
       id={providerId}
+      type={resource.data?.value.type}
+      definition={definition?.display_name}
+      scope={resource.data?.value.workspace_id ? "workspace" : "organization"}
       readOnly={readOnly}
-      description={definition?.display_name}
       loading={definitions.isPending || resource.isPending}
       error={resource.error}
     >
       {resource.data &&
         (readOnly ? (
-          <div className={styles.stack}>
-            <ResourceIdentity
-              icon={<ProviderIcon type={resource.data.value.type} />}
-              name={resource.data.value.name}
-              description={definition?.display_name ?? resource.data.value.type}
-            />
-            <ConfigurationSummary
-              value={resource.data.value.configuration}
-              schema={definition?.configuration_schema ?? {}}
-            />
-            <div className={styles.twoColumns}>
-              <ReadOnlyField label={t("Status")}>
-                {t(resource.data.value.enabled ? "Enabled" : "Disabled")}
-              </ReadOnlyField>
-              <ReadOnlyField label={t("Credentials")}>
-                <CredentialsPill
-                  state={memoryCredentialState(resource.data.value, definition)}
-                />
-              </ReadOnlyField>
-            </div>
-            {extra}
-          </div>
+          <ProviderReadOnly
+            enabled={resource.data.value.enabled}
+            credentials={memoryCredentialState(resource.data.value, definition)}
+            configuration={resource.data.value.configuration}
+            schema={definition?.configuration_schema}
+            note={t(storageNote)}
+            leading={extra}
+            onClose={() => state.setOpen(false)}
+          />
         ) : (
           <MemoryProviderForm
             scope={scope}
@@ -488,40 +485,31 @@ export function MemoryProviderForm({
       </form>
     );
   return (
-    <form className={formSectionStyles.form} onSubmit={submit}>
-      <fieldset disabled={save.isPending} className="fieldset-reset">
-        <FormSection>
-          <FormField label={t("Name")}>
-            <Input
-              required
-              maxLength={128}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </FormField>
-          <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        </FormSection>
-        <FormSection title={t("Connection")}>
-          <ConfigurationSummary
-            value={original.value.configuration}
-            schema={configSchema}
+    <ProviderEditor onSubmit={submit}>
+      <ProviderEditorFields disabled={save.isPending}>
+        <ProviderName value={name} onChange={setName} />
+        <ProviderGroup note={t(storageNote)}>
+          <ProviderEnabled
+            checked={enabled}
+            onCheckedChange={setEnabled}
+            description={t("Stored records stay in place.")}
           />
-          <p className={styles.muted}>
-            {t(
-              "Storage configuration cannot be changed. Create a new provider for a different target; existing memories are not migrated.",
-            )}
-          </p>
-          <CredentialEditor
-            configured={original.value.credential_configured}
+          <CredentialRow
+            label={t(credentialLabel(credentialSchema))}
+            configured={!!original.value.credential_configured}
             removing={removeCredential}
-            onRemovingChange={(value) => {
-              setRemoveCredential(value);
-              setCredential({});
-            }}
+            onRemovingChange={setRemoveCredential}
+            onDiscard={() => setCredential({})}
           >
             {definition ? (
               <SchemaFields
                 secret
+                autoFocus
+                labelAction={
+                  providerKeyUrls[type] && (
+                    <ProviderKeyLink {...providerKeyUrls[type]} />
+                  )
+                }
                 schema={{ ...credentialSchema, required: [] }}
                 value={credential}
                 onChange={setCredential}
@@ -533,23 +521,20 @@ export function MemoryProviderForm({
                 )}
               </p>
             )}
-          </CredentialEditor>
-        </FormSection>
-        <FormSection>
-          <p className={styles.muted}>
-            {t(
-              "Disabling a provider prevents memory access but does not delete stored records.",
-            )}
-          </p>
-        </FormSection>
-      </fieldset>
-      {extra}
+          </CredentialRow>
+          <ProviderFacts
+            configuration={original.value.configuration}
+            schema={configSchema}
+          />
+        </ProviderGroup>
+      </ProviderEditorFields>
       {notices}
       <FormActions
         onCancel={onCancel}
         label={t("Save changes")}
         pending={save.isPending}
+        leading={extra}
       />
-    </form>
+    </ProviderEditor>
   );
 }

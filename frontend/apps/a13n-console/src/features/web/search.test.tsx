@@ -164,7 +164,11 @@ it("keeps the existing credential write-only and sends If-Match for edits", asyn
       onClose={() => {}}
     />,
   );
-  expect(await screen.findByLabelText("API key")).toHaveProperty("value", "");
+  await screen.findByRole("textbox", { name: "Name" });
+  // The saved secret stays stated until you ask to replace it.
+  expect(screen.queryByLabelText("API key")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Replace" }));
+  expect(screen.getByLabelText("API key")).toHaveProperty("value", "");
   await user.type(screen.getByRole("textbox", { name: "Name" }), " renamed");
   await user.click(screen.getByRole("switch", { name: "Enabled" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
@@ -211,6 +215,7 @@ it("retains the provider draft across a stale ETag and requires loading the curr
     await screen.findByRole("textbox", { name: "Name" }),
     " draft",
   );
+  await user.click(screen.getByRole("button", { name: "Replace" }));
   await user.type(screen.getByLabelText("API key"), "replacement-secret");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   const reload = await screen.findByRole("button", {

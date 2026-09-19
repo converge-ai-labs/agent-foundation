@@ -25,3 +25,21 @@ export function credentialDescription(schema?: Record<string, unknown> | null) {
     return "Enter the token ID and secret from your {{provider}} account.";
   return "Enter the credentials from your {{provider}} account.";
 }
+
+/** What the credential row calls the secret it holds. */
+export function credentialLabel(schema?: Record<string, unknown> | null) {
+  const keys = Object.keys(schemaProperties(schema));
+  if (keys.length === 1) {
+    const property = schemaProperties(schema)[keys[0]];
+    const title =
+      property && typeof property === "object"
+        ? (property as { title?: unknown }).title
+        : undefined;
+    if (keys[0] === "api_key") return "API key";
+    if (keys[0] === "token") return "Token";
+    return typeof title === "string" && title ? title : "Credentials";
+  }
+  if (keys.includes("token_id") && keys.includes("token_secret"))
+    return "Token ID and secret";
+  return "Credentials";
+}

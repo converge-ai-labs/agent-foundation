@@ -109,6 +109,12 @@ export function EditProvider({
       open={state.open}
       name={resource.data?.value.name ?? provider.name}
       id={provider.id}
+      type={provider.type}
+      definition={
+        definitions.data?.items.find((item) => item.type === provider.type)
+          ?.display_name
+      }
+      scope={scope.kind}
       loading={definitions.isPending || resource.isPending}
       error={
         (!definitions.data && definitions.error) ||

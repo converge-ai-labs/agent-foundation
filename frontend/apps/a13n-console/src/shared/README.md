@@ -47,15 +47,14 @@ State that the user has to read.
 
 Fields and form chrome that several features share.
 
-- `FormActions` — the Cancel and submit pair at the end of a form. `variant="outline"` keeps a secondary submit row, such as replacing credentials, from competing with the screen's one filled primary.
+- `FormActions` — the Cancel and submit pair at the end of a form. `variant="outline"` keeps a secondary submit row from competing with the screen's one filled primary; `leading` carries an action that belongs to the form but not to its outcome, such as Check connection; `dismiss` turns the footer into the single Close a read-only dialog offers.
 - `TextAreaField` — long-form text on the soft surface textarea; `code` switches to the monospace family, `maxLength` and `disabled` pass through, and read-only mode renders a `ReadOnlyField`.
 - `JsonView`, `CodeBlock` — bounded, scrollable code surfaces.
 - `SchemaFields`, `withSchemaValues` — fields generated from a JSON schema. A field is named by the property that holds it; a referenced schema's type name is never used as a label.
 - `HeaderFields`, `serializeHeaders` — extra HTTP header rows.
-- `CredentialEditor` — the replace-or-remove affordance for stored secrets.
 - `FormSection` — hairline-separated groups inside a single form, with an optional `actions` slot beside the group heading. `divider={false}` separates a group by whitespace alone.
 - `DateTimeField`, `ImagePicker`, `FileUpload` — the non-text controls.
-- `ProviderTypeField`, `ProviderEnabled`, `ProviderKeyLink` — provider editors.
+- `ProviderEnabled`, `ProviderKeyLink` — provider editors. The enable switch is a settings row, so it sits in the editor's group beside the credential row.
 - `useSuggestedName` — a name that follows selections until the user edits it.
 - `validation` — the shared Ajv instance and the console's validators.
 
@@ -66,7 +65,7 @@ Overlays and the state behind them.
 - `Confirm` — destructive confirmation: it names the resource and labels the action with its verb.
 - `ConflictNotice` — concurrency recovery: a saved resource moved underneath the draft (412), or a create could not be confirmed. One explanation and the two ways out — reconcile with the server, or continue with the draft.
 - `useResourceRows` / `useResourceEditorState` — the pair that opens a row's editor as a modal and returns focus to the row that opened it.
-- `ResourceModalTitle` — a name, an optional `ResourceKeyChip`, and the reference popover, for editor titles.
+- `ResourceModalTitle` — a name, an optional `ResourceKeyChip`, and the reference popover, for editor titles. Pass `icon` to frame a brand mark beside the name, the way a creation step does.
 - `BrandTitle` — brand mark plus title, used by the second step of a catalog-first creation flow.
 - `CatalogTiles` / `CatalogTile` — the tile grid for a small, fixed catalog.
 - `DirectoryList` / `DirectoryGroup` / `DirectoryRow` / `DirectoryEmpty` — the searchable, grouped list for a large catalog. A `disabled` row stays visible and legible but cannot be chosen.
