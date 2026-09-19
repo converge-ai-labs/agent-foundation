@@ -325,6 +325,66 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
   query.clear();
 });
 
+it("keeps Goal intent and authored input while toggling options, and disables Goal during active work", () => {
+  const draft = new ThreadDraft();
+  const query = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const renderComposer = (busy = false) => (
+    <QueryClientProvider client={query}>
+      <TransportContext
+        value={{ client: { GET: vi.fn() } } as unknown as Transport}
+      >
+        <ComposerDrafts value={new Map([["thread-layout", draft]])}>
+          <Composer
+            local
+            threadId="thread-layout"
+            activity={
+              busy
+                ? { state: "running", receipt_id: "receipt-layout" }
+                : { state: "inactive" }
+            }
+            canRun
+            leadingControls={<span>Full Control</span>}
+            controls={(expanded) => (
+              <span>
+                {expanded ? "Expanded settings" : "Collapsed settings"}
+              </span>
+            )}
+            profile={{ display_name: "Test", color: "#2563eb" }}
+            unauthorized={() => {}}
+            reconcile={() => {}}
+          />
+        </ComposerDrafts>
+      </TransportContext>
+    </QueryClientProvider>
+  );
+  const view = render(renderComposer());
+  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  const goal = screen.getByRole("button", { name: "Goal" });
+  fireEvent.click(goal);
+  expect(goal.getAttribute("aria-pressed")).toBe("true");
+  expect(
+    screen.getByText("Describe the goal and how to verify completion…"),
+  ).toBeTruthy();
+  act(() => draft.doc.getText("text").insert(0, "Verify the full objective"));
+  const options = screen.getByRole("button", { name: "Composer options" });
+  fireEvent.click(options);
+  expect(options.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("Expanded settings")).toBeTruthy();
+  fireEvent.click(options);
+  expect(screen.getByText("Collapsed settings")).toBeTruthy();
+  expect(draft.mode).toBe("goal");
+  expect(draft.doc.getText("text").toString()).toBe(
+    "Verify the full objective",
+  );
+  view.rerender(renderComposer(true));
+  expect((goal as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  view.unmount();
+  query.clear();
+});
+
 it.each([false, true])(
   "shows delayed shared edits as an inline icon and retains disconnect warnings (local: %s)",
   async (local) => {

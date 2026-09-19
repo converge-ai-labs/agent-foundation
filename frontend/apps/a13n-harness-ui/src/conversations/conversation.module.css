@@ -479,13 +479,14 @@
   color: var(--a13n-secondary);
 }
 .composer {
+  container: composer / inline-size;
   flex-shrink: 0;
   max-width: 860px;
   width: 100%;
   margin: 0 auto;
   border: 1px solid var(--a13n-border);
   border-radius: 20px;
-  padding: 8px 14px 12px;
+  padding: 10px 12px;
   background: var(--a13n-canvas);
 }
 .composer:focus-within {
@@ -500,6 +501,7 @@
   color: var(--a13n-secondary);
 }
 .sendButton {
+  grid-area: send;
   flex-shrink: 0;
   border-radius: 50%;
   box-shadow: none;
@@ -508,14 +510,28 @@
   font-size: 12px;
   color: var(--a13n-secondary);
 }
-.mobileOptionsButton {
+.optionsButton {
   display: none;
+  grid-area: options;
 }
-.composerOptions {
+.composerHeader {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 4px;
+}
+.goalButton {
+  flex-shrink: 0;
+}
+.composerEnvironment {
   min-width: 0;
+  margin-left: auto;
+}
+.composerEditor {
+  min-width: 0;
+}
+.attachButton {
+  grid-area: attach;
 }
 .composerSync {
   display: flex;
@@ -532,24 +548,46 @@
   height: 16px;
 }
 .composerActions {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.4fr) auto auto;
+  grid-template-areas: "attach agent model fast send";
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin-top: 8px;
 }
-.composerActions > div {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+@container composer (max-width: 720px) {
+  .composerActions {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "attach model options send"
+      "secondary secondary secondary secondary";
+    row-gap: 0;
+  }
+  .optionsButton {
+    display: inline-flex;
+  }
 }
-.composerActions > div:first-child {
-  color: var(--a13n-secondary);
+@container composer (max-width: 480px) {
+  .composerBody {
+    --composer-font-size: 16px;
+    --composer-content-height: 56px;
+  }
+  .composerActions {
+    column-gap: 4px;
+  }
+  .composerActions > button {
+    min-width: 40px;
+    min-height: 40px;
+  }
 }
-.composerActions > div:last-child {
-  margin-left: auto;
-  justify-content: flex-end;
+@media (pointer: coarse) {
+  .composerHeader button,
+  .composerActions button {
+    min-height: 44px;
+  }
+  .composerActions > button {
+    min-width: 44px;
+  }
 }
 .attachments {
   list-style: none;
@@ -652,68 +690,6 @@
   }
   .headerActions {
     width: 100%;
-  }
-  .composer {
-    --composer-editor-height: 42px;
-    --composer-content-height: 26px;
-    --composer-font-size: 16px;
-    position: relative;
-    padding: 6px;
-    border-radius: 24px;
-    box-shadow: 0 3px 16px #0000000a;
-  }
-  .composerBody {
-    position: relative;
-  }
-  .composerSync {
-    position: absolute;
-    left: 36px;
-    top: 13px;
-  }
-  .composerEditor {
-    padding-inline: 58px 78px;
-    min-width: 0;
-  }
-  .composer .attachButton {
-    position: absolute;
-    left: 2px;
-    top: 5px;
-  }
-  .composer .sendButton {
-    position: absolute;
-    right: 1px;
-    top: 2px;
-  }
-  .composer .mobileOptionsButton {
-    display: inline-flex;
-    position: absolute;
-    right: 39px;
-    top: 5px;
-  }
-  .composer .composerOptions {
-    display: none;
-  }
-  .composer .composerOptions[data-open="true"] {
-    display: flex;
-    flex-wrap: wrap;
-    padding: 8px;
-  }
-  .composer .composerActions,
-  .composer .composerActions > div {
-    display: contents;
-  }
-  .composerContext {
-    display: none;
-  }
-  .composerActions {
-    flex-wrap: wrap;
-  }
-  .composerActions > div {
-    flex-wrap: wrap;
-  }
-  .composerActions > div:last-child {
-    flex: 1 1 100%;
-    flex-wrap: nowrap;
   }
   .userMessage {
     max-width: 95%;

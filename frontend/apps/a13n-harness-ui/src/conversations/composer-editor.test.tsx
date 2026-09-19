@@ -82,7 +82,7 @@ it("does not submit Enter while an IME is composing", () => {
   fireEvent.compositionEnd(textbox);
 });
 it.each(["", "Shared"])(
-  "renders relative collaborator positions in %j without placeholder text or extra CRDT roots",
+  "renders relative collaborator positions in %j without putting guidance in the CRDT",
   async (text) => {
     const draft = new ThreadDraft();
     draft.doc.getText("text").insert(0, text);
@@ -95,7 +95,8 @@ it.each(["", "Shared"])(
       />,
     );
     const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
-    expect(textbox.textContent).toBe(text);
+    expect(textbox.textContent).toBe(text || "Describe a task…");
+    expect(draft.doc.getText("text").toString()).toBe(text);
     act(() => {
       draft.participants = {
         "participant-two": {
@@ -122,7 +123,10 @@ it.each(["", "Shared"])(
       draft.notify();
     });
     await screen.findByText("Bob");
-    expect(textbox.querySelector(".cm-placeholder")).toBeNull();
+    expect(textbox.querySelector(".cm-placeholder")?.textContent ?? "").toBe(
+      text ? "" : "Describe a task…",
+    );
+    expect(draft.doc.getText("text").toString()).toBe(text);
     expect([...draft.doc.share.keys()].sort()).toEqual(["attachments", "text"]);
   },
 );
@@ -465,6 +469,34 @@ it("changes draft-lifetime guidance without remounting the editor on Thread crea
   expect(editor.getAttribute("aria-description")).toContain(
     "Shared with this conversation",
   );
+});
+
+it("changes prompt guidance without replacing the editor or authoring placeholder text", () => {
+  const draft = new ThreadDraft();
+  const editor = { current: null as EditorView | null };
+  const props = {
+    draft,
+    editor,
+    profile: { display_name: "Test", color: "#000000" },
+    presence() {},
+    submit() {},
+  };
+  const view = render(<ComposerEditor {...props} />);
+  const initial = editor.current;
+  expect(screen.getByText("Describe a task…")).toBeTruthy();
+  view.rerender(
+    <ComposerEditor {...props} placeholderText="Describe a goal…" />,
+  );
+  expect(editor.current).toBe(initial);
+  expect(screen.getByText("Describe a goal…")).toBeTruthy();
+  expect(draft.doc.getText("text").toString()).toBe("");
+  act(() => draft.doc.getText("text").insert(0, "Keep this objective"));
+  view.rerender(
+    <ComposerEditor {...props} placeholderText="Guide the operation…" />,
+  );
+  expect(editor.current).toBe(initial);
+  expect(screen.queryByText("Guide the operation…")).toBeNull();
+  expect(draft.doc.getText("text").toString()).toBe("Keep this objective");
 });
 
 it("completes dollar skills without sending, and retains the editor across catalog context changes", async () => {
