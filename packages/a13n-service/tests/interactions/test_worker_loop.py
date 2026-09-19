@@ -44,7 +44,9 @@ async def test_worker_reserves_before_claim_releases_losers_and_drains_owned_roo
         queue_name="default",
         concurrency=1,
         poll_seconds=0.01,
-        drain_seconds=0.5,
+        # Successful drain includes a real database renewal; allow CI scheduling
+        # headroom. The unfinished-scan test covers the hard deadline separately.
+        drain_seconds=5,
     )
     monkeypatch.setattr(loop, "_organizations", AsyncMock(return_value=(ORGANIZATION_ID,)))
     execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
@@ -68,7 +70,7 @@ async def test_worker_reserves_before_claim_releases_losers_and_drains_owned_roo
 
     scheduler.claim = AsyncMock(side_effect=claim)
     runner.run = AsyncMock(side_effect=execute)
-    with fail_after(2):
+    with fail_after(10):
         async with create_task_group() as tasks:
             tasks.start_soon(loop.run)
             await started.wait()
