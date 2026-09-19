@@ -340,7 +340,12 @@ def _impact_selection(paths: list[Path], result: Plan, *, consumers: bool) -> se
             handled.update(path for path in paths if owners[path] == package and posix[path] not in selection.unmapped)
             for path in sorted(selection.cosmetic):
                 result.notes.append(f"{path}: comment, docstring, or formatting change only")
-            if found.distance > impact.STALE_COMMITS:
+            if found.distance < 0:
+                result.notes.append(
+                    f"{package} impact map was recorded outside this history (rebase?); "
+                    "selection also covers the upstream difference"
+                )
+            elif found.distance > impact.STALE_COMMITS:
                 result.notes.append(
                     f"{package} impact map is {found.distance} commits behind HEAD; run make impact-record"
                 )

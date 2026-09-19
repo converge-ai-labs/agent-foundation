@@ -97,6 +97,24 @@ def test_find_map_walks_ancestors_and_reports_distance(repo: Path) -> None:
     assert found is not None and found.distance == 1
 
 
+def test_find_map_falls_back_to_a_recorded_commit_outside_the_history(repo: Path) -> None:
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / "note.txt").write_text("side\n")
+    _git(repo, "add", "note.txt")
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "side")
+    recorded = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "reset", "-q", "--hard", base)  # the recorded commit exists but is no longer an ancestor
+    with gzip.open(impact.map_path(PACKAGE, base), "rt") as handle:
+        document = json.load(handle)
+    impact.map_path(PACKAGE, base).unlink()
+    with gzip.open(impact.map_path(PACKAGE, recorded), "wt") as handle:
+        json.dump({**document, "ref": recorded}, handle)
+    found = impact.find_map(PACKAGE)
+    assert found is not None and found.distance == -1 and found.commit == recorded
+    (repo / MODELS).write_text(SOURCE.replace("    return LIMIT", "    return LIMIT + 0"))
+    assert _select(repo).tests == {f"{TEST_FILE}::test_value"}
+
+
 def test_function_body_change_selects_only_its_callers(repo: Path) -> None:
     (repo / MODELS).write_text(SOURCE.replace("    return LIMIT", "    return LIMIT + 0"))
     assert _select(repo).tests == {f"{TEST_FILE}::test_value"}

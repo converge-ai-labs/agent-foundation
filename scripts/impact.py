@@ -91,7 +91,12 @@ def load_map(path: Path, package: str, distance: int) -> ImpactMap:
 
 
 def find_map(package: str) -> ImpactMap | None:
-    """The map recorded at the nearest ancestor of HEAD; the diff base is that commit."""
+    """The map recorded at the nearest ancestor of HEAD; the diff base is that commit.
+
+    After a rebase no map is an ancestor, so the newest map whose commit still exists is used
+    instead (distance -1): diffing against it also covers the upstream changes, which over-selects
+    rather than misses.
+    """
     directory = cache_dir() / package
     if not directory.is_dir():
         return None
@@ -99,6 +104,12 @@ def find_map(package: str) -> ImpactMap | None:
         path = directory / f"{commit}.json.gz"
         if path.exists():
             return load_map(path, package, distance)
+    for path in sorted(directory.glob("*.json.gz"), key=lambda p: p.stat().st_mtime, reverse=True):
+        exists = subprocess.run(
+            ["git", "cat-file", "-e", f"{path.name.split('.')[0]}^{{commit}}"], cwd=REPOSITORY_ROOT, check=False
+        )
+        if exists.returncode == 0:
+            return load_map(path, package, -1)
     return None
 
 
@@ -218,7 +229,11 @@ def write_map(data_file: str, target: Path) -> None:
     data = cov.get_data()
     lines: dict[str, dict[str, set[int]]] = {}
     for measured in data.measured_files():
-        relative = Path(measured).relative_to(REPOSITORY_ROOT).as_posix()
+        path = Path(measured)
+        # Generated modules (Alembic's mako templates, for example) report names that are not files.
+        if not path.is_relative_to(REPOSITORY_ROOT) or path.suffix != ".py" or not path.is_file():
+            continue
+        relative = path.relative_to(REPOSITORY_ROOT).as_posix()
         for lineno, contexts in data.contexts_by_lineno(measured).items():
             for context in contexts:
                 if context:
@@ -295,9 +310,8 @@ def status() -> int:
         if impact is None:
             print(f"{package}: no map")
         else:
-            print(
-                f"{package}: {len(impact.tests)} tests recorded at {impact.commit[:12]}, {impact.distance} commit(s) behind"
-            )
+            where = "outside this history" if impact.distance < 0 else f"{impact.distance} commit(s) behind"
+            print(f"{package}: {len(impact.tests)} tests recorded at {impact.commit[:12]}, {where}")
     return 0
 
 
