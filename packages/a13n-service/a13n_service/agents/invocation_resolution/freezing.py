@@ -1,10 +1,13 @@
-"""Short-transaction freezing for prepared Agent invocations."""
+"""Run snapshot composition and commit-time validation for Agent management."""
 
 from __future__ import annotations
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.connectivity.selection_domain import ConnectionRunSelection
 from a13n_service.connectivity.selection_resolution import (
     ConnectivitySelectionResolver,
 )
@@ -15,15 +18,11 @@ from a13n_service.iam import (
     authorize_agent,
     authorize_workspace,
 )
-from a13n_service.memory.domain import memory_provider_ids
-from a13n_service.memory.resources import require_memory_configuration
+from a13n_service.models.domain import ModelExecutionSnapshot
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
 from a13n_service.models.settings import effective_settings
-from a13n_service.web.domain import ScrapeSelection, provider_selections
-from a13n_service.web.registry import WebProviderRegistry
-from a13n_service.web.resources import require_operation
-from a13n_service.web.resources import require_provider as require_web_provider
+from a13n_service.skills.domain import SkillRevisionLock
 
 from ..connectivity_resolution import freeze_invocation_connectivity
 from ..domain import (
@@ -39,31 +38,31 @@ from ..errors import (
     map_model_error,
 )
 from ..model_characteristics import compose_model_characteristics
-from ..toolsets import web_selection
 from .contracts import (
     AgentSelectorKind,
     FrozenAgentInvocation,
     PreparedAgentInvocation,
 )
 from .queries import load_agent_record, load_revision_record, require_invocable_agent
+from .resources import validate_selected_resources
 from .skills import freeze_skills
 
 
 class AgentInvocationFreezer:
-    """Reauthorize and freeze prepared invocation evidence in one short transaction."""
+    """Compose Run snapshots or revalidate managed configuration before a management write."""
 
     def __init__(
         self,
         model_selector: AcceptedModelSelector,
         *,
         connectivity_resolver: ConnectivitySelectionResolver,
-        web_provider_registry: WebProviderRegistry,
-        memory_backend_catalog: MemoryBackendCatalog,
+        web_provider_catalog: ProviderCatalog[WebProviderDefinition],
+        memory_provider_catalog: ProviderCatalog[MemoryProviderDefinition],
     ) -> None:
         self._model_selector = model_selector
         self._connectivity_resolver = connectivity_resolver
-        self._web_provider_registry = web_provider_registry
-        self._memory_backend_catalog = memory_backend_catalog
+        self._web_provider_catalog = web_provider_catalog
+        self._memory_provider_catalog = memory_provider_catalog
 
     async def freeze_in_transaction(
         self,
@@ -137,50 +136,16 @@ class AgentInvocationFreezer:
                 )
             except ModelError as error:
                 raise map_model_error(error) from error
-            memory = prepared.merged.memory
-            if memory is not None:
-                if set(memory_provider_ids(memory)) - (
-                    set(memory_provider_ids(authored.memory)) if authored.memory else set()
-                ):
-                    await authorize_workspace(
-                        session,
-                        actor=prepared.actor,
-                        workspace_id=prepared.workspace_id,
-                        action=WorkspaceAction.memory_provider_read,
-                    )
-                await require_memory_configuration(
-                    session,
-                    selection=memory,
-                    organization_id=prepared.organization_id,
-                    workspace_id=prepared.workspace_id,
-                    catalog=self._memory_backend_catalog,
-                )
-            original_web = web_selection(authored.toolsets)
-            original_by_operation = dict(provider_selections(original_web))
-            for operation, selection in provider_selections(web_selection(prepared.merged.toolsets)):
-                provider = await require_web_provider(
-                    session,
-                    organization_id=prepared.organization_id,
-                    workspace_id=prepared.workspace_id,
-                    provider_id=selection.provider_id,
-                    eligible=True,
-                    registry=self._web_provider_registry,
-                )
-                require_operation(
-                    provider,
-                    operation,
-                    self._web_provider_registry,
-                    selection=selection if isinstance(selection, ScrapeSelection) else None,
-                )
-                original_operation = original_by_operation.get(operation)
-                original_provider = original_operation.provider_id if original_operation is not None else None
-                if original_provider != selection.provider_id:
-                    await authorize_workspace(
-                        session,
-                        actor=prepared.actor,
-                        workspace_id=prepared.workspace_id,
-                        action=WorkspaceAction.web_provider_read,
-                    )
+            await validate_selected_resources(
+                session,
+                actor=prepared.actor,
+                organization_id=prepared.organization_id,
+                workspace_id=prepared.workspace_id,
+                authored=authored,
+                selected=prepared.merged,
+                memory_provider_catalog=self._memory_provider_catalog,
+                web_provider_catalog=self._web_provider_catalog,
+            )
             skills = await freeze_skills(session, prepared)
             connectivity = await freeze_invocation_connectivity(
                 self._connectivity_resolver,
@@ -190,7 +155,6 @@ class AgentInvocationFreezer:
         except AuthorizationError as error:
             raise map_authorization_error(error) from error
 
-        resolved_subagents = tuple(item.edge for item in prepared.subagents)
         child_configs = {}
         for item in prepared.subagents:
             child = item.invocation
@@ -202,69 +166,122 @@ class AgentInvocationFreezer:
                 effective_config=frozen_child.effective_config,
                 connection_selections=frozen_child.connection_selections,
             )
-        config_payload = {
-            "subagent_mode": prepared.merged.subagent_mode,
-            "child_configs": child_configs,
-            "schema_version": "1",
-            "resolved_model": EffectiveAgentModel(
-                execution=execution,
-                settings=effective_settings(
-                    execution.model_api,
-                    prepared.model.resource.settings,
-                    *prepared.model.settings_layers,
-                ),
-                characteristics=compose_model_characteristics(
-                    prepared.model.resource.declarations,
-                    prepared.merged.model.characteristics,
-                ),
-            ),
-            "toolsets": prepared.merged.toolsets,
-            "reviewer": prepared.merged.reviewer,
-            "resolved_reviewer_model": (
-                EffectiveAgentModel(
-                    execution=reviewer_execution,
-                    settings=effective_settings(
-                        reviewer_execution.model_api,
-                        prepared.reviewer_model.resource.settings,
-                        *prepared.reviewer_model.settings_layers,
-                    ),
-                    characteristics=compose_model_characteristics(prepared.reviewer_model.resource.declarations),
-                )
-                if reviewer_execution is not None
-                and prepared.reviewer_model is not None
-                and prepared.merged.reviewer is not None
-                else None
-            ),
-            "plugins": prepared.merged.plugins,
-            "skills": skills,
-            "connection_tools": prepared.merged.connection_tools,
-            "resolved_subagents": resolved_subagents,
-            "instructions": prepared.merged.instructions,
-            "input_adapter": prepared.merged.input_adapter,
-            "client_tools": prepared.merged.client_tools,
-            "output_spec": prepared.merged.output_spec,
-            "retries": prepared.merged.retries,
-            "secret_requirements": prepared.merged.secret_requirements,
-            "memory": prepared.merged.memory,
-            "protocol": prepared.merged.protocol,
-        }
-        effective_without_digest = EffectiveAgentConfig(
-            **config_payload,
-            content_digest="0" * 64,
-        )
-        digest_payload = effective_without_digest.model_dump(
-            mode="json",
-            by_alias=True,
-            exclude={"content_digest"},
-        )
-        effective = EffectiveAgentConfig(
-            **config_payload,
-            content_digest=digest_request(digest_payload),
-        )
-        return FrozenAgentInvocation(
-            agent_id=prepared.agent_id,
-            agent_revision_id=prepared.agent_revision_id,
-            selector_kind=prepared.selector_kind,
-            effective_config=effective,
+        return _compose_invocation(
+            prepared,
+            execution=execution,
+            reviewer_execution=reviewer_execution,
+            skills=skills,
             connection_selections=connectivity.connection_selections,
+            child_configs=child_configs,
         )
+
+    @staticmethod
+    def freeze_selected(*, prepared: PreparedAgentInvocation) -> FrozenAgentInvocation:
+        """Build one Run snapshot from checked selections, without querying current configuration."""
+        child_configs = {}
+        for item in prepared.subagents:
+            child = item.invocation
+            frozen = AgentInvocationFreezer.freeze_selected(prepared=child)
+            assert child.agent_revision_id is not None and child.revision_content_digest is not None
+            child_configs[child.agent_revision_id] = ChildAgentExecution(
+                agent_id=child.agent_id,
+                revision_content_digest=child.revision_content_digest,
+                effective_config=frozen.effective_config,
+                connection_selections=frozen.connection_selections,
+            )
+        return _compose_invocation(
+            prepared,
+            execution=ModelExecutionSnapshot.freeze(prepared.model.resource),
+            reviewer_execution=ModelExecutionSnapshot.freeze(prepared.reviewer_model.resource)
+            if prepared.reviewer_model is not None
+            else None,
+            skills=tuple(
+                SkillRevisionLock(
+                    skill_id=item.binding.skill_id,
+                    skill_revision_id=item.revision_id,
+                    skill_key=item.binding.skill_key,
+                    version=item.revision_version,
+                    content_digest=item.content_digest,
+                )
+                for item in prepared.skills
+            ),
+            connection_selections=prepared.connectivity.selections.connection_selections,
+            child_configs=child_configs,
+        )
+
+
+def _compose_invocation(
+    prepared: PreparedAgentInvocation,
+    *,
+    execution: ModelExecutionSnapshot,
+    reviewer_execution: ModelExecutionSnapshot | None,
+    skills: tuple[SkillRevisionLock, ...],
+    connection_selections: tuple[ConnectionRunSelection, ...],
+    child_configs: dict[str, ChildAgentExecution],
+) -> FrozenAgentInvocation:
+    config_payload = {
+        "subagent_mode": prepared.merged.subagent_mode,
+        "child_configs": child_configs,
+        "schema_version": "1",
+        "resolved_model": EffectiveAgentModel(
+            execution=execution,
+            settings=effective_settings(
+                execution.model_api,
+                prepared.model.resource.settings,
+                *prepared.model.settings_layers,
+            ),
+            characteristics=compose_model_characteristics(
+                prepared.model.resource.declarations,
+                prepared.merged.model.characteristics,
+            ),
+        ),
+        "toolsets": prepared.merged.toolsets,
+        "reviewer": prepared.merged.reviewer,
+        "resolved_reviewer_model": (
+            EffectiveAgentModel(
+                execution=reviewer_execution,
+                settings=effective_settings(
+                    reviewer_execution.model_api,
+                    prepared.reviewer_model.resource.settings,
+                    *prepared.reviewer_model.settings_layers,
+                ),
+                characteristics=compose_model_characteristics(prepared.reviewer_model.resource.declarations),
+            )
+            if reviewer_execution is not None
+            and prepared.reviewer_model is not None
+            and prepared.merged.reviewer is not None
+            else None
+        ),
+        "plugins": prepared.merged.plugins,
+        "skills": skills,
+        "connection_tools": prepared.merged.connection_tools,
+        "resolved_subagents": tuple(item.edge for item in prepared.subagents),
+        "instructions": prepared.merged.instructions,
+        "input_adapter": prepared.merged.input_adapter,
+        "client_tools": prepared.merged.client_tools,
+        "output_spec": prepared.merged.output_spec,
+        "retries": prepared.merged.retries,
+        "secret_requirements": prepared.merged.secret_requirements,
+        "memory": prepared.merged.memory,
+        "protocol": prepared.merged.protocol,
+    }
+    effective_without_digest = EffectiveAgentConfig(
+        **config_payload,
+        content_digest="0" * 64,
+    )
+    digest_payload = effective_without_digest.model_dump(
+        mode="json",
+        by_alias=True,
+        exclude={"content_digest"},
+    )
+    effective = EffectiveAgentConfig(
+        **config_payload,
+        content_digest=digest_request(digest_payload),
+    )
+    return FrozenAgentInvocation(
+        agent_id=prepared.agent_id,
+        agent_revision_id=prepared.agent_revision_id,
+        selector_kind=prepared.selector_kind,
+        effective_config=effective,
+        connection_selections=connection_selections,
+    )

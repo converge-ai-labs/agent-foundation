@@ -3,6 +3,7 @@
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.connectivity.connections.access import ConnectionError
 from a13n_service.connectivity.connections.authorization import AuthorizationService
 from a13n_service.connectivity.connections.domain import (
@@ -16,7 +17,6 @@ from a13n_service.connectivity.connections.handoff import digest
 from a13n_service.connectivity.connections.models import AuthorizationRecord
 from a13n_service.connectivity.connections.service import ConnectionService
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.storage import transaction
@@ -247,7 +247,9 @@ async def test_unauthenticated_mcp_is_checked_without_starting_authorization(com
             ),
         )
         assert connection.status == "pending" and remote.requests == []
-        checks = ConnectionChecks(sessions, state["registry"], credential_protector, mcp, clock=lambda: now[0])
+        checks = ConnectionChecks(
+            sessions, state["catalog"], state["connector_http"], credential_protector, mcp, clock=lambda: now[0]
+        )
         checked = await checks.check(actor=principal, connection_id=connection.id, expected_version=connection.version)
         assert checked.status == "ready"
         assert checked.last_check.scope == "mcp_discovery" and checked.last_check.status == "passed"
@@ -280,7 +282,9 @@ async def test_connection_check_does_not_restore_previous_account_during_authori
         )
         common = ConnectionService(sessions, EndpointPolicy(), clock=lambda: now[0])
         current = await common.get(actor=principal, connection_id=connection.id)
-        checks = ConnectionChecks(sessions, state["registry"], credential_protector, mcp, clock=lambda: now[0])
+        checks = ConnectionChecks(
+            sessions, state["catalog"], state["connector_http"], credential_protector, mcp, clock=lambda: now[0]
+        )
         with pytest.raises(ConnectionError, match="Complete authorization"):
             await checks.check(actor=principal, connection_id=connection.id, expected_version=current.version)
         assert (await common.get(actor=principal, connection_id=connection.id)).status == "pending"

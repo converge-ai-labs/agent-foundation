@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import ClassVar
 
-from a13n_environment import EnvironmentState
-from a13n_environment.remote_envd.environment import decode_state
+from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.environment import decode_state
 from pydantic import JsonValue
 from sqlalchemy import (
     JSON,
@@ -31,7 +31,7 @@ from a13n_service.temporal import assume_utc
 from .domain import (
     Environment,
     EnvironmentCommand,
-    EnvironmentProvider,
+    EnvironmentProviderAccount,
     EnvironmentTemplate,
     EnvironmentTemplateRevision,
 )
@@ -74,8 +74,8 @@ class EnvironmentProviderRecord(ResourceCredential[str | None], ResourceColumns[
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     configuration_source: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
 
-    def to_resource(self) -> EnvironmentProvider:
-        return EnvironmentProvider.model_validate(
+    def to_resource(self) -> EnvironmentProviderAccount:
+        return EnvironmentProviderAccount.model_validate(
             {
                 **self.identity(),
                 "type": self.type,
@@ -234,7 +234,7 @@ class EnvironmentRecord(ResourceColumns[str], Base):
         device_id = None
         if self.ownership == "external" and self.state is not None:
             state = EnvironmentState.model_validate(self.state)
-            if state.provider_key in {"a13n.http-envd", "a13n.websocket-envd"}:
+            if state.provider_key in {"http_envd", "websocket_envd"}:
                 device_id = decode_state(state.provider_key, state).device_id
         return Environment.model_validate(
             {

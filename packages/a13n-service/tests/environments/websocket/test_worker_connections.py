@@ -8,7 +8,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from a13n_environment import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_service.environments.websocket.relay_runtime import RelayResponseRuntime
 from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
 from a13n_service.iam.attempts import AttemptAuthorization

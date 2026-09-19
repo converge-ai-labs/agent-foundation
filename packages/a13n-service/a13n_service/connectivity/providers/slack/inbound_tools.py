@@ -2,13 +2,10 @@
 
 from functools import partial
 
-import httpx2
-
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 
-from ...domain import JsonObject
 from ...native_actions import NativeAction, action, credential
+from ..definition import InboundActionContext
 from ..slack.client import (
     SlackActionBinding,
     SlackAutoReplyArguments,
@@ -19,14 +16,9 @@ from ..slack.client import (
 )
 
 
-def inbound_actions(
-    context: JsonObject,
-    policy: JsonObject,
-    configuration: JsonObject,
-    credentials: JsonObject,
-    http: httpx2.AsyncClient,
-    endpoints: EndpointPolicy,
-) -> dict[str, NativeAction]:
+def inbound_actions(inbound: InboundActionContext) -> dict[str, NativeAction]:
+    context, policy = inbound.provider_context, inbound.action_policy
+    credentials, http = inbound.credentials, inbound.http
     binding = SlackActionBinding.model_validate(
         {
             "channel_id": context.get("channel_id"),

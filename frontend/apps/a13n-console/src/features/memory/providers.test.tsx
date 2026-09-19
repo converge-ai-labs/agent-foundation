@@ -11,7 +11,7 @@ import { ApiError } from "../../service-client";
 import { useState } from "react";
 import { AddMemoryProvider, MemoryProviderEditor } from "./editor";
 import { MemoryProviders } from "./providers";
-import { AgentMemorySelection } from "./selection";
+import { MemoryPresets } from "./presets";
 import type { Schema } from "../../shared/api";
 
 const http = vi.hoisted(() => ({
@@ -40,7 +40,7 @@ const scope = { kind: "workspace", id: "ws_test" } as const;
 const provider = {
   id: "memprov_test",
   name: "Team memory",
-  type: "custom.memory",
+  type: "custom_memory",
   configuration: { base_url: "https://memory.example" },
   enabled: true,
   credential_configured: true,
@@ -48,7 +48,8 @@ const provider = {
   organization_id: "org_test",
 };
 const definition = {
-  type: "custom.memory",
+  authentication: { mode: "required" as const },
+  type: "custom_memory",
   display_name: "Custom memory",
   configuration_schema: {
     type: "object",
@@ -65,6 +66,20 @@ const definition = {
     required: ["token"],
   },
 };
+function mockMemoryProviders(type: string) {
+  const mem0Definition = {
+    ...definition,
+    type,
+    authentication: { mode: "required" as const },
+  };
+  http.GET.mockImplementation(async (path: string) =>
+    response(
+      path.endsWith("memory-provider-types")
+        ? { items: [mem0Definition] }
+        : { items: [{ ...provider, type }], next_cursor: null },
+    ),
+  );
+}
 const response = (data: unknown, etag = '"v1"') => ({
   data,
   response: new Response(null, { headers: { ETag: etag } }),
@@ -117,7 +132,7 @@ it("creates an installed custom backend from its schemas and clears credentials 
     )?.[1].headers,
   ).toEqual({ "X-A13N-Workspace-ID": scope.id });
   expect(http.POST.mock.calls[0][1].body).toMatchObject({
-    type: "custom.memory",
+    type: "custom_memory",
     configuration: { base_url: "https://memory.example" },
     credential: { token: "private-token" },
   });
@@ -249,7 +264,7 @@ it("preserves all memory options when switching providers and refreshes choices 
       toolset: false,
     });
     return (
-      <AgentMemorySelection
+      <MemoryPresets
         value={value}
         onChange={(next) => {
           change(next);
@@ -259,7 +274,13 @@ it("preserves all memory options when switching providers and refreshes choices 
     );
   }
   setup(<Draft />);
-  await waitFor(() => expect(http.GET).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.filter(
+        ([path]) => !path.endsWith("memory-provider-types"),
+      ),
+    ).toHaveLength(1),
+  );
   const link = screen.getByRole("link", { name: "Manage providers" });
   expect(link.getAttribute("target")).toBeNull();
   expect(link.getAttribute("href")).toBe(
@@ -267,7 +288,13 @@ it("preserves all memory options when switching providers and refreshes choices 
   );
   focusManager.setFocused(false);
   focusManager.setFocused(true);
-  await waitFor(() => expect(http.GET).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.filter(
+        ([path]) => !path.endsWith("memory-provider-types"),
+      ),
+    ).toHaveLength(2),
+  );
   expect(change).not.toHaveBeenCalled();
   focusManager.setFocused(undefined);
   await user.click(screen.getByRole("button", { name: "preferences" }));
@@ -303,7 +330,7 @@ it("uses Memory management permission and leaves inherited Organization provider
 
 it("links to the saved Agent provider even when the selection draft changes", async () => {
   setup(
-    <AgentMemorySelection
+    <MemoryPresets
       value={{ provider_id: "memprov_new" }}
       agentId="agt_stable"
       savedProviderId="memprov_old"
@@ -317,6 +344,109 @@ it("links to the saved Agent provider even when the selection draft changes", as
   expect(link.getAttribute("target")).toBeNull();
 });
 
+const structuredDefinition = {
+  ...definition,
+  setup_url: "https://docs.example.com/memory-setup",
+  setup_label: "Configure custom memory",
+  authentication: {
+    mode: "required",
+    cases: [{ field: "access", equals: "public", mode: "forbidden" }],
+  },
+  configuration_schema: {
+    type: "object",
+    // Access gates the credential, so the connect step must ask for it.
+    required: ["access"],
+    properties: {
+      access: {
+        type: "string",
+        title: "Access",
+        enum: ["public", "private"],
+        default: "public",
+      },
+    },
+  },
+  credential_schema: {
+    type: "object",
+    required: ["authorization", "revision"],
+    properties: {
+      authorization: {
+        type: "object",
+        required: ["token"],
+        properties: { token: { type: "string", title: "Token", minLength: 1 } },
+      },
+      revision: { type: "integer", title: "Revision", minimum: 1, default: 1 },
+    },
+  },
+};
+it("renders custom help, choice defaults, nested secrets and numeric credentials", async () => {
+  const user = userEvent.setup();
+  http.GET.mockResolvedValue(response({ items: [structuredDefinition] }));
+  setup(<MemoryProviderEditor scope={scope} />);
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await user.click(
+    await screen.findByRole("button", { name: /Custom memory/ }),
+  );
+  // Public access forbids a credential, so no secret and no key link are asked for.
+  expect(screen.queryByLabelText("Token")).toBeNull();
+  expect(
+    screen.queryByRole("link", { name: "Configure custom memory" }),
+  ).toBeNull();
+  await user.click(screen.getByRole("combobox", { name: "Access" }));
+  await user.click(await screen.findByRole("option", { name: "private" }));
+  expect(
+    (
+      await screen.findByRole("link", { name: "Configure custom memory" })
+    ).getAttribute("href"),
+  ).toBe(structuredDefinition.setup_url);
+  expect(screen.getByLabelText("Token").getAttribute("type")).toBe("password");
+  await user.type(screen.getByLabelText("Token"), "nested-secret");
+  await user.clear(screen.getByLabelText("Revision"));
+  await user.type(screen.getByLabelText("Revision"), "7");
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
+  expect(http.POST.mock.calls[0][1].body).toMatchObject({
+    configuration: { access: "private" },
+    credential: { authorization: { token: "nested-secret" }, revision: 7 },
+  });
+});
+it("allows explicit removal even when the definition requires credentials", async () => {
+  const user = userEvent.setup();
+  setup(
+    <MemoryProviderEditor
+      scope={scope}
+      providerId={provider.id}
+      controlledOpen
+      onClose={() => {}}
+    />,
+  );
+  await user.click(await screen.findByRole("button", { name: "Remove" }));
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(http.PATCH).toHaveBeenCalledOnce());
+  expect(http.PATCH.mock.calls[0][1].body.credential).toBeNull();
+});
+
+it("retains saved credentials when renaming an account whose definition is unavailable", async () => {
+  const user = userEvent.setup();
+  http.GET.mockImplementation(async (path: string) =>
+    response(path.endsWith("memory-provider-types") ? { items: [] } : provider),
+  );
+  setup(
+    <MemoryProviderEditor
+      scope={scope}
+      providerId={provider.id}
+      controlledOpen
+      onClose={() => {}}
+    />,
+  );
+  await user.type(
+    await screen.findByRole("textbox", { name: "Name" }),
+    " renamed",
+  );
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(http.PATCH).toHaveBeenCalledOnce());
+  expect(http.PATCH.mock.calls[0][1].body).not.toHaveProperty("credential");
+});
+
 it("adds independent file memory while preserving a legacy Mem0 selection", async () => {
   const change = vi.fn();
   const user = userEvent.setup();
@@ -327,7 +457,7 @@ it("adds independent file memory while preserving a legacy Mem0 selection", asyn
       recall_limit: 7,
     });
     return (
-      <AgentMemorySelection
+      <MemoryPresets
         value={value}
         onChange={(next) => {
           change(next);
@@ -350,7 +480,7 @@ it("adds independent file memory while preserving a legacy Mem0 selection", asyn
   expect(selection.entries[1]).toMatchObject({
     name: "project",
     mode: "documents",
-    backend: { type: "a13n.filesystem" },
+    backend: { type: "filesystem" },
   });
   expect(screen.queryByLabelText("Memory directory")).toBeNull();
   await user.click(
@@ -371,12 +501,7 @@ it("adds independent file memory while preserving a legacy Mem0 selection", asyn
 });
 
 it("enables personal and project memory independently and restores a disabled draft", async () => {
-  http.GET.mockResolvedValue(
-    response({
-      items: [{ ...provider, type: "a13n.mem0-platform" }],
-      next_cursor: null,
-    }),
-  );
+  mockMemoryProviders("mem0_platform");
   const user = userEvent.setup();
   const change = vi.fn();
   function Draft() {
@@ -384,7 +509,7 @@ it("enables personal and project memory independently and restores a disabled dr
       null,
     );
     return (
-      <AgentMemorySelection
+      <MemoryPresets
         value={value}
         onChange={(next) => {
           change(next);
@@ -418,7 +543,7 @@ it("enables personal and project memory independently and restores a disabled dr
     mode: "documents",
     scope: "thread",
     backend: {
-      type: "a13n.filesystem",
+      type: "filesystem",
       configuration: { storage: { root: "/memory" } },
     },
   });
@@ -432,10 +557,12 @@ it("enables personal and project memory independently and restores a disabled dr
 });
 
 it("keeps file memory usable without Mem0 and directs personal setup to providers", async () => {
-  http.GET.mockResolvedValue(response({ items: [], next_cursor: null }));
+  http.GET.mockImplementation(async () =>
+    response({ items: [], next_cursor: null }),
+  );
   const change = vi.fn();
   const user = userEvent.setup();
-  setup(<AgentMemorySelection value={null} onChange={change} />);
+  setup(<MemoryPresets value={null} onChange={change} />);
   await screen.findByText(
     "Connect Mem0 in memory providers to enable personal preferences.",
   );
@@ -455,12 +582,7 @@ it("keeps file memory usable without Mem0 and directs personal setup to provider
 });
 
 it("preserves custom purposes even when their names match the presets", async () => {
-  http.GET.mockResolvedValue(
-    response({
-      items: [{ ...provider, type: "a13n.mem0-oss" }],
-      next_cursor: null,
-    }),
-  );
+  mockMemoryProviders("mem0_oss");
   const entries: Schema["MemoryEntrySelection"][] = [
     {
       name: "preferences",
@@ -476,7 +598,7 @@ it("preserves custom purposes even when their names match the presets", async ()
       mode: "documents",
       scope: "user",
       backend: {
-        type: "a13n.filesystem",
+        type: "filesystem",
         configuration: {
           storage: { root: "/diary", environment_id: "env_saved" },
         },
@@ -485,7 +607,7 @@ it("preserves custom purposes even when their names match the presets", async ()
   ];
   const change = vi.fn();
   const user = userEvent.setup();
-  setup(<AgentMemorySelection value={{ entries }} onChange={change} />);
+  setup(<MemoryPresets value={{ entries }} onChange={change} />);
   const personal = screen.getByRole("switch", { name: "Personal preferences" });
   await waitFor(() =>
     expect(personal.hasAttribute("data-disabled")).toBe(false),
@@ -521,7 +643,7 @@ it("keeps each preset's detailed settings local and edits only that entry", asyn
     mode: "documents",
     scope: "thread",
     backend: {
-      type: "a13n.filesystem",
+      type: "filesystem",
       configuration: {
         storage: { root: "/memory", environment_id: "env_saved" },
       },
@@ -532,7 +654,7 @@ it("keeps each preset's detailed settings local and edits only that entry", asyn
       entries: [personal, project],
     });
     return (
-      <AgentMemorySelection
+      <MemoryPresets
         value={value}
         onChange={(next) => {
           change(next);
@@ -587,7 +709,7 @@ it("adds custom memory directly from the off state without enabling either prese
       null,
     );
     return (
-      <AgentMemorySelection
+      <MemoryPresets
         value={value}
         onChange={(next) => {
           change(next);

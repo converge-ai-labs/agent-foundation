@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.background import Sweep
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.control_domain import (
     ThreadInboxEntry,
     ThreadInboxStatus,
@@ -76,6 +77,7 @@ class AsyncSubagentResultPublisher:
         self._entry_id_factory = entry_id_factory
         self._clock = clock
 
+    @authorization_operation
     async def publish(
         self,
         *,

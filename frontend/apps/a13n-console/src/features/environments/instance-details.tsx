@@ -167,7 +167,7 @@ export function EnvironmentPanel({
           </strong>
           {value &&
             (value.device_registration ||
-            provider.data?.type === "a13n.websocket-envd" ? (
+            provider.data?.type === "websocket_envd" ? (
               <DeviceConnectionStatus environment={value} />
             ) : (
               <StatePill state={value.status} />
@@ -266,7 +266,7 @@ export function EnvironmentPanel({
                     )}
                   </Fact>
                   {(value.device_registration ||
-                    provider.data?.type === "a13n.websocket-envd") && (
+                    provider.data?.type === "websocket_envd") && (
                     <Fact label={t("Connection")}>
                       <DeviceConnectionStatus environment={value} />
                     </Fact>

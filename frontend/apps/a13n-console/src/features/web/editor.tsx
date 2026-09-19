@@ -13,11 +13,14 @@ import {
   type ResourceEditorControl,
 } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
+import { credentialMode } from "../../shared/provider-authentication";
+import { useCredentialSection } from "../../shared/use-credential-section";
 import {
   FormActions,
   ProviderEnabled,
   ProviderKeyLink,
   SchemaFields,
+  withSchemaValues,
 } from "../../shared/forms";
 import { ProviderIcon } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
@@ -30,6 +33,7 @@ import {
   ProviderGroup,
   ProviderName,
   ProviderReadOnly,
+  providerKeyLink,
   credentialDescription,
   credentialHint,
   credentialLabel,
@@ -37,7 +41,7 @@ import {
 } from "../providers";
 import { webProviderApi, type WebProviderScope } from "./api";
 
-type Definition = Schema["WebProviderDefinition"];
+type Definition = Schema["WebProviderMetadata"];
 
 function useWebProviderDefinitions(enabled = true) {
   const client = useClient();
@@ -146,7 +150,8 @@ export function WebProviderEditor({
           <ProviderReadOnly
             enabled={resource.data.value.enabled}
             credentials={
-              definition?.credential_required === false
+              credentialMode(definition, resource.data.value.configuration) !==
+              "required"
                 ? "not_required"
                 : resource.data.value.credential_configured
                   ? "configured"
@@ -197,13 +202,19 @@ export function WebProviderForm({
         definitions[0]?.display_name ??
         "",
     ),
-    [credential, setCredential] = useState<Record<string, unknown>>({}),
+    [configuration, setConfiguration] = useState<Record<string, unknown>>(
+      resource?.value.configuration ?? {},
+    ),
     [enabled, setEnabled] = useState(resource?.value.enabled ?? true);
   const [existing, setExisting] = useState<Schema["WebProvider"][]>();
   const [reloadError, setReloadError] = useState<unknown>();
   const api = webProviderApi(client, scope),
     definition = definitions.find((item) => item.type === type) ?? chosen;
-  const apiKey = String(credential.api_key ?? "");
+  const section = useCredentialSection(
+    definition,
+    configuration,
+    original?.value,
+  );
   const reconcile = useMutation({
     retry: false,
     mutationFn: () =>
@@ -223,20 +234,19 @@ export function WebProviderForm({
     mutationFn: async () => {
       if (!name.trim() || !definition)
         throw new Error(t("Choose a provider type and name."));
-      if (
-        definition.credential_required &&
-        (!original || apiKey) &&
-        (!apiKey.trim() || new TextEncoder().encode(apiKey).length > 4096)
-      )
-        throw new Error(t("Enter a nonblank API key of at most 4096 bytes."));
+      const config = withSchemaValues(
+        definition.configuration_schema,
+        configuration,
+      );
+      const credential = section.payload();
       if (!original) {
         return api.createProvider({
           type,
           name,
-          ...(definition.credential_required
-            ? { credential: { api_key: apiKey } }
-            : {}),
-          configuration: {},
+          ...(credential === undefined || credential === null
+            ? {}
+            : { credential }),
+          configuration: config,
           enabled,
         });
       }
@@ -247,11 +257,12 @@ export function WebProviderForm({
       return api.updateProvider(original.value.id, original.etag, {
         name,
         enabled,
-        ...(apiKey ? { credential: { api_key: apiKey } } : {}),
+        configuration: config,
+        ...(credential === undefined ? {} : { credential }),
       });
     },
     onSuccess: (provider) => {
-      setCredential({});
+      section.setCredential({});
       void cache.invalidateQueries({ queryKey: ["web-providers"] });
       void cache.invalidateQueries({ queryKey: ["web-provider"] });
       onSaved(provider);
@@ -333,7 +344,7 @@ export function WebProviderForm({
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        setCredential({});
+                        section.setCredential({});
                         onSaved(item);
                       }}
                     >
@@ -362,16 +373,17 @@ export function WebProviderForm({
     return (
       <form className={providerStyles.connectForm} onSubmit={submit}>
         <ProviderConnectFields
-          credentialSchema={definition?.credential_schema}
-          credential={credential}
-          onCredentialChange={setCredential}
+          credentialSchema={
+            section.mode === "forbidden" ? undefined : section.schema
+          }
+          credential={section.credential}
+          onCredentialChange={section.setCredential}
+          configurationSchema={definition?.configuration_schema}
+          configuration={configuration}
+          onConfigurationChange={setConfiguration}
           name={name}
           onNameChange={setName}
-          keyLink={
-            definition?.credential_required && definition.setup_url
-              ? { href: definition.setup_url }
-              : undefined
-          }
+          keyLink={providerKeyLink(definition)}
         />
         {notices}
         <FormActions
@@ -387,24 +399,29 @@ export function WebProviderForm({
       <ProviderName value={name} onChange={setName} />
       <ProviderGroup>
         <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        {definition?.credential_required && (
+        {section.visible && (
           <CredentialRow
-            label={t(credentialLabel(definition.credential_schema))}
-            configured={!!original.value.credential_configured}
-            onDiscard={() => setCredential({})}
+            label={t(credentialLabel(section.schema))}
+            configured={section.removable}
+            removing={section.removing}
+            onRemovingChange={section.setRemoving}
+            onDiscard={() => section.setCredential({})}
           >
-            <SchemaFields
-              secret
-              autoFocus
-              labelAction={
-                definition.setup_url && (
-                  <ProviderKeyLink href={definition.setup_url} />
-                )
-              }
-              schema={{ ...definition.credential_schema, required: [] }}
-              value={credential}
-              onChange={setCredential}
-            />
+            {section.mode !== "forbidden" && (
+              <SchemaFields
+                secret
+                autoFocus
+                labelAction={
+                  providerKeyLink(definition) && (
+                    <ProviderKeyLink {...providerKeyLink(definition)!} />
+                  )
+                }
+                schema={section.schema}
+                requireFields={section.requireFields}
+                value={section.credential}
+                onChange={section.setCredential}
+              />
+            )}
           </CredentialRow>
         )}
       </ProviderGroup>

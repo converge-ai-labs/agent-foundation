@@ -4,9 +4,9 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import pytest
-from a13n_environment import EnvironmentError
 from a13n_harness import AgentIdentityRef, AgentInstanceContext, EnvironmentMount
 from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_service.environments.mount_models import RunEnvironmentMountRecord
 from a13n_service.environments.mount_observations import RunMountObservations
 from a13n_service.environments.mount_runtime import RunMountRuntime
@@ -47,6 +47,7 @@ async def mounted_runtime(
         observations=store,
         current_attempt=lambda: attempt,
         prepare=prepare or candidate,
+        observe=EnvironmentMount,
         clock=clock,
     )
     async with runtime.bind(

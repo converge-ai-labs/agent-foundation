@@ -79,7 +79,7 @@ class ManagementJourney:
         return sorted(runs, key=lambda run: run["id"])
 
     async def environment_template(
-        self, *, preparation="on_run", name=None, provider_type="direct-local", retention=None
+        self, *, preparation="on_run", name=None, provider_type="direct_local", retention=None
     ):
         name = name or uuid4().hex
         root = self.lab.root / ("environment-" + name)
@@ -111,7 +111,7 @@ class ManagementJourney:
     async def environment(self, **options):
         template, _, root = await self.environment_template(**options)
         resource = await self.post(self.base + "/environments", {"template_id": template["id"]})
-        if options.get("provider_type", "direct-local") == "direct-local":
+        if options.get("provider_type", "direct_local") == "direct_local":
             root = root / "environments" / resource["id"]
             root.mkdir(parents=True, exist_ok=True)
         return resource, root

@@ -50,7 +50,7 @@ const definition = {
     required: ["api_key"],
     writeOnly: true,
   },
-  credential_required: true,
+  authentication: { mode: "required" },
 };
 const response = (data: unknown, status = 200, etag = '"v1"') => ({
   data,
@@ -130,7 +130,7 @@ it("creates a credential-free DuckDuckGo provider without an API key", async () 
     ...definition,
     type: "duckduckgo",
     display_name: "DuckDuckGo",
-    credential_required: false,
+    authentication: { mode: "forbidden" },
     credential_schema: { type: "object", properties: {} },
   };
   http.GET.mockImplementation(async (path: string) =>
@@ -249,4 +249,120 @@ it("retains the provider draft across a stale ETag and requires loading the curr
     name: "Research draft",
     credential: { api_key: "replacement-secret" },
   });
+});
+
+it("submits an external provider's declared configuration and token", async () => {
+  http.GET.mockResolvedValue(
+    response({
+      items: [
+        {
+          ...definition,
+          type: "acme_web",
+          display_name: "Acme Web",
+          configuration_schema: {
+            type: "object",
+            properties: {
+              index: { type: "string", title: "Index", default: "docs" },
+              limit: {
+                type: "integer",
+                title: "Limit",
+                minimum: 1,
+                maximum: 10,
+                default: 3,
+              },
+              details: {
+                type: "object",
+                title: "Details",
+                properties: {
+                  enabled: {
+                    type: "boolean",
+                    title: "Include details",
+                    default: true,
+                  },
+                },
+              },
+            },
+          },
+          credential_schema: {
+            type: "object",
+            required: ["token"],
+            properties: {
+              token: { type: "string", title: "Token", format: "password" },
+            },
+          },
+        },
+      ],
+    }),
+  );
+  const user = userEvent.setup();
+  setup(<AddWebProvider scope={scope} />);
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await user.click(await screen.findByRole("button", { name: /Acme Web/ }));
+  const acmeName = await screen.findByRole("textbox", { name: "Name" });
+  await user.clear(acmeName);
+  await user.type(acmeName, "External");
+  // Everything the definition defaults starts folded away.
+  await user.click(screen.getByRole("button", { name: /Advanced settings/ }));
+  await user.clear(screen.getByLabelText("Index"));
+  await user.type(screen.getByLabelText("Index"), "guides");
+  await user.clear(screen.getByLabelText("Limit"));
+  await user.type(screen.getByLabelText("Limit"), "7");
+  await user.type(screen.getByLabelText("Token"), "external-secret");
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
+  expect(http.POST.mock.calls[0][1].body).toMatchObject({
+    type: "acme_web",
+    configuration: { index: "guides", limit: 7, details: { enabled: true } },
+    credential: { token: "external-secret" },
+  });
+});
+
+it("retains a saved nested credential when only ordinary fields change", async () => {
+  const nestedDefinition = {
+    ...definition,
+    credential_schema: {
+      type: "object",
+      required: ["account"],
+      properties: {
+        account: {
+          type: "object",
+          title: "Account",
+          required: ["token"],
+          properties: {
+            token: {
+              type: "string",
+              title: "Nested token",
+              format: "password",
+            },
+          },
+        },
+      },
+    },
+  };
+  http.GET.mockImplementation(async (path: string) =>
+    response(
+      path.endsWith("web-provider-types")
+        ? { items: [nestedDefinition] }
+        : provider,
+    ),
+  );
+  const user = userEvent.setup();
+  setup(
+    <WebProviderEditor
+      scope={scope}
+      providerId={provider.id}
+      controlledOpen
+      onClose={() => {}}
+    />,
+  );
+  await screen.findByRole("textbox", { name: "Name" });
+  await user.click(screen.getByRole("button", { name: "Replace" }));
+  expect(screen.getByLabelText("Nested token")).toHaveProperty(
+    "required",
+    false,
+  );
+  await user.type(screen.getByRole("textbox", { name: "Name" }), " changed");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(http.PATCH).toHaveBeenCalledOnce());
+  expect(http.PATCH.mock.calls[0][1].body).not.toHaveProperty("credential");
 });

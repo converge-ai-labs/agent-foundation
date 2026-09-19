@@ -7,9 +7,9 @@ from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from dataclasses import dataclass
 from typing import Any
 
-from a13n_environment.files import FileCommitOperator, FileCommitRequest
-
-from .files import (
+from a13n_harness.providers.environment.files import (
+    FileCommitOperator,
+    FileCommitRequest,
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
@@ -22,7 +22,7 @@ from .files import (
     FileWriteMode,
     FileWriteResult,
 )
-from .models import EnvironmentAction, EnvironmentError, EnvironmentPath
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPath
 
 
 @dataclass(frozen=True, slots=True)

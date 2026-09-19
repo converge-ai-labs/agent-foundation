@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from a13n_environment import DirectLocalEnvironmentProvider, DirectLocalProviderRuntime, Environment
 from a13n_harness.capabilities import FileSkillSource, SkillManager, SkillsCapability
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.management import Environment
 
 from .definition import ASSETS
 from .persistence import failure
@@ -40,15 +41,13 @@ class KnowledgeFiles:
 
     def environment(self) -> Environment:
         root = self.validate()
-        provider = DirectLocalEnvironmentProvider()
-        configuration = provider.validate_configuration(
-            schema_version="1", value={"root": {"path": str(root)}, "max_value_bytes": 512 * 1024}
-        )
-        return provider.create_environment(
+        provider = DIRECT_LOCAL
+        configuration = provider.validate_environment({"root": {"path": str(root)}, "max_value_bytes": 512 * 1024})
+        return provider.construct(
             environment_id="configuration-knowledge",
             configuration=configuration,
             state=None,
-            runtime=DirectLocalProviderRuntime(),
+            runtime=None,
         )
 
 

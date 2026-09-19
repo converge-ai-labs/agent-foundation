@@ -60,7 +60,9 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
     () => {},
     () => {},
     () => {
-      void refreshHistory();
+      // A hint can arrive after the selected history moved on; that refresh is
+      // discarded, exactly as a production client discards a stale projection.
+      void refreshHistory().catch(() => {});
     },
   );
   try {

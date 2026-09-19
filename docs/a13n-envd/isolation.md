@@ -42,7 +42,7 @@ The checks cover real daemon operation, Device/Session framing, native resource 
 
 ## References
 
-- [Environment Provider guide](../a13n-environment/index.md)
+- [Environment Provider guide](../environments/index.md)
 - [Daemon configuration](configuration.md)
 - [Session and output lifecycle](operations.md)
 - [Python EIP client](python-client.md)

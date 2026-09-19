@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx2
 import pytest
+from a13n_harness.providers.connector.contracts import ConnectorToolOutcome
 from a13n_service.agents.domain import ChildAgentExecution, EffectiveAgentConfig, ResolvedSubagentEdge
 from a13n_service.connectivity import execution as tool_execution
-from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.connectivity.mcp.transport import RemoteTransport
@@ -31,7 +31,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy import select
 
-from ..connectivity.connector_helpers import FakeConnection, FakeConnectorBackend, fake_registry
+from ..connectivity.connector_helpers import FakeConnection, FakeConnectorBackend, fake_catalog
 from ..connectivity.selection_helpers import (
     CONNECTOR_CONNECTION_ID,
     CONNECTOR_ID,
@@ -228,7 +228,7 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
         monkeypatch,
         settings=settings,
         model_factory=factory,
-        connectors=fake_registry(FakeConnectorBackend()),
+        connectors=fake_catalog(FakeConnectorBackend()),
     ) as (runtime, shared):
         loop = runtime.execution_loop
         assert loop is not None

@@ -8,9 +8,8 @@ from urllib.parse import urljoin
 
 import httpx2
 from a13n_harness.capabilities.web import WebDomainPolicy, WebPolicy, WebProviderError, WebRequest, WebResponse
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from anyio import getaddrinfo, move_on_after
-
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 
 _REDIRECTS = frozenset({301, 302, 303, 307, 308})
 

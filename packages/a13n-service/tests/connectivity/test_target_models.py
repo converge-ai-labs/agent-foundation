@@ -3,17 +3,17 @@
 from dataclasses import replace
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agents.domain import ModelOverride
 from a13n_service.connectivity.accounts.reception import InputOverride
 from a13n_service.connectivity.accounts.targets import ReplaceTargetRequest, TargetConfig
 from a13n_service.connectivity.errors import NativeError
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.http_errors import application_error_status
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord
 from a13n_service.models.domain import CreateModelProviderRequest, CreateModelRequest
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 from a13n_service.models.provider_service import ModelProviderService
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.service import ModelService
 from a13n_service.storage import transaction
 
@@ -51,7 +51,7 @@ async def selected_model(request, connectivity_sessions, credential_protector):
                 )
             )
         admin = replace(admin, boundary_organization_id=organization_id)
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
     providers = ModelProviderService(
         connectivity_sessions,
         registry,
@@ -62,7 +62,7 @@ async def selected_model(request, connectivity_sessions, credential_protector):
     provider = await providers.create(
         actor=admin,
         workspace_id=None,
-        request=CreateModelProviderRequest(type="openai", name="Shared", credential="sk-test"),
+        request=CreateModelProviderRequest(type="openai", name="Shared", credential={"api_key": "sk-test"}),
     )
     models = ModelService(connectivity_sessions, registry)
     model = await models.create(

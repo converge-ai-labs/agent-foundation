@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from a13n_harness.model_auth import (
+from a13n_harness.providers.model.oauth import (
     CodexLoginResult,
     DeviceAuthorizationError,
     GrokCredentials,
@@ -57,7 +57,7 @@ class _Session:
 
 
 async def authorize_codex(request: CodexLoginRequest, method: str, present: Callable[..., None]) -> CodexLoginResult:
-    from a13n_harness.model_auth import CodexDeviceAuthorizationFlow, CodexLoginFlow
+    from a13n_harness.providers.model.oauth import CodexDeviceAuthorizationFlow, CodexLoginFlow
 
     del request
     if method == "device":

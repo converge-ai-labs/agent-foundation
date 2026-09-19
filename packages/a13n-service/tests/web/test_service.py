@@ -8,17 +8,17 @@ from a13n_harness.capabilities.web import (
     WebScrapeResult,
     WebSearchResponse,
 )
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.web import WebProviderDefinition
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthorizationError
 from a13n_service.iam.models import RoleBindingRecord, SecurityAuditRecord, WorkspaceRecord
-from a13n_service.provider_plugins import WebProviderRegistration
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 from a13n_service.web.cleanup import WebProviderOwnerCleanup
 from a13n_service.web.domain import CreateWebProviderRequest, UpdateWebProviderRequest
 from a13n_service.web.models import WebProviderRecord
 from a13n_service.web.probe import test_account as probe_account
-from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.resources import WebProviderError
 from a13n_service.web.service import WebProviderService
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
@@ -26,7 +26,7 @@ from sqlalchemy import select
 
 from ..models.conftest import WORKSPACE_ID, actor, protector
 from ..resource_scope_helpers import organization_admin, sibling_workspace
-from .test_adapters import transport
+from .conftest import provider_transport as transport
 
 pytestmark = pytest.mark.anyio
 
@@ -54,12 +54,11 @@ class _AliasedConfiguration(BaseModel):
 class _ProbeRuntime:
     def __init__(self, *, failure: str | None = None) -> None:
         self.calls: list[str] = []
-        self.closed = 0
         self.failure = failure
         self.credentials: list[_NestedCredentials] = []
         self.configurations: list[BaseModel] = []
 
-    async def search(self, *, configuration, credentials, **_kwargs):
+    async def search(self, configuration, credentials, request, options, transport):
         self.calls.append("search")
         self.configurations.append(configuration)
         self.credentials.append(_NestedCredentials.model_validate(credentials))
@@ -67,7 +66,7 @@ class _ProbeRuntime:
             raise HarnessWebProviderError(self.failure)
         return WebSearchResponse(results=())
 
-    async def scrape(self, *, configuration, credentials, request, policy, **_kwargs):
+    async def scrape(self, configuration, credentials, request, options, transport, policy):
         self.calls.append("scrape")
         self.configurations.append(configuration)
         self.credentials.append(_NestedCredentials.model_validate(credentials))
@@ -75,9 +74,6 @@ class _ProbeRuntime:
         if self.failure is not None:
             raise HarnessWebProviderError(self.failure)
         return WebScrapeResult(content="", source_url=request.url, canonical_url=request.url)
-
-    async def aclose(self) -> None:
-        self.closed += 1
 
 
 def _custom_service(
@@ -89,17 +85,16 @@ def _custom_service(
     scrape: bool,
     configuration_model: type[BaseModel] = _EmptyConfiguration,
 ) -> WebProviderService:
-    registration = WebProviderRegistration(
+    registration = WebProviderDefinition(
         type="custom_web",
         display_name="Custom Web",
         configuration_model=configuration_model,
         credential_model=_NestedCredentials,
         setup_url="https://example.com/setup",
-        factory=lambda: runtime,
-        supports_search=search,
-        supports_scrape=scrape,
+        search=runtime.search if search else None,
+        scrape=runtime.scrape if scrape else None,
     )
-    return WebProviderService(web_sessions, secret_protector, WebProviderRegistry((registration,)))
+    return WebProviderService(web_sessions, secret_protector, ProviderCatalog((registration,)))
 
 
 async def create(service, name="Search", **kwargs):
@@ -192,7 +187,7 @@ async def test_nested_secret_credentials_survive_create_rotation_and_runtime(web
         workspace_id=WORKSPACE_ID,
         provider_id=rotated.id,
     )
-    assert result.success and runtime.calls == ["search"] and runtime.closed == 1
+    assert result.success and runtime.calls == ["search"]
     assert runtime.credentials[0].api_key.get_secret_value() == "rotated-secret"
     assert runtime.credentials[0].nested["token"].get_secret_value() == "rotated-nested"
     assert runtime.credentials[0].tenant is None
@@ -380,11 +375,10 @@ async def test_saved_probe_chooses_one_supported_operation_and_reauthorizes(
     )
     assert result.success
     assert runtime.calls == [expected]
-    assert runtime.closed == 1
     assert authorizations == 3  # Initial snapshot, post-dispatch reauthorization, and audit lock.
 
 
-async def test_saved_probe_reports_failure_and_closes_runtime(web_sessions) -> None:
+async def test_saved_probe_reports_failure(web_sessions) -> None:
     runtime = _ProbeRuntime(failure="web_scrape_unavailable")
     service = _custom_service(web_sessions, protector(), runtime, search=False, scrape=True)
     account = await service.create(
@@ -403,7 +397,7 @@ async def test_saved_probe_reports_failure_and_closes_runtime(web_sessions) -> N
         provider_id=account.id,
     )
     assert not result.success and result.code == "web_scrape_unavailable"
-    assert runtime.calls == ["scrape"] and runtime.closed == 1
+    assert runtime.calls == ["scrape"]
 
 
 async def test_workspace_cleanup_erases_material_but_retains_identity(web_service, web_sessions) -> None:

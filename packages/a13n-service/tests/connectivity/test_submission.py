@@ -112,12 +112,8 @@ async def _exercise(
             return await super().prepare(**kwargs)
 
     preparation = Preparation()
-    commands = _commands(
-        sessions,
-        objects,
-        preparation,
-        _Freezing([_frozen(), _frozen(), replace(_frozen(), agent_id=next_agent, agent_revision_id=next_revision)]),
-    )
+    freezing = _Freezing([_frozen(), replace(_frozen(), agent_id=next_agent, agent_revision_id=next_revision)])
+    commands = _commands(sessions, objects, preparation, freezing)
 
     class SetupContribution:
         async def prepare(self, session, account, external_conversation_id):
@@ -229,6 +225,7 @@ async def _exercise(
             probe = await session.get(BotTestRecord, "btest_second")
             assert probe.run_id == run_id and probe.steer_id == entry.id and probe.accepted_at == now[0]
     assert preparation.calls == 1
+    assert freezing.calls == 1
     assert selected_agents == [AGENT_ID]
     if waiting:
         return
@@ -246,6 +243,7 @@ async def _exercise(
         assert len(runs) == 2
         assert {run.thread_id for run in runs} == {thread_id}
         assert preparation.calls == 2
+        assert freezing.calls == 2
         assert selected_agents == [AGENT_ID, next_agent]
         successor = next(run for run in runs if run.id != run_id)
         assert successor.agent_id == next_agent

@@ -1,3 +1,4 @@
+import { credentialMode } from "../../shared/provider-authentication";
 import type { Schema } from "../../shared/api";
 
 type Definition = Schema["ToolsetDefinition"];
@@ -5,11 +6,11 @@ type Tool = Definition["tools"][number];
 type Selection = Schema["ToolSelection"] | undefined;
 export type WebOperation = "search" | "scrape";
 export type WebProvider = Schema["WebProvider"];
-export type WebProviderDefinition = Schema["WebProviderDefinition"];
+export type WebProviderMetadata = Schema["WebProviderMetadata"];
 
 export function eligibleWebProvider(
   provider: WebProvider,
-  definitions: WebProviderDefinition[],
+  definitions: WebProviderMetadata[],
   operation: WebOperation,
 ) {
   return (
@@ -17,7 +18,8 @@ export function eligibleWebProvider(
     definitions.some(
       (definition) =>
         definition.type === provider.type &&
-        (!definition.credential_required || provider.credential_configured) &&
+        (credentialMode(definition, provider.configuration) !== "required" ||
+          provider.credential_configured) &&
         definition.operations.includes(operation),
     )
   );
@@ -28,7 +30,7 @@ export function toolState(
   tool: Tool,
   selection: Selection,
   providers: WebProvider[],
-  definitions: WebProviderDefinition[],
+  definitions: WebProviderMetadata[],
 ) {
   const currentId = selection?.config?.provider_id;
   const selector = tool.resource_selector;

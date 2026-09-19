@@ -7,7 +7,9 @@ from pathlib import Path
 from time import monotonic
 
 import pytest
-from a13n_environment import EnvironmentError, build_environment_provider_catalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_service.environments.domain import CreateProviderRequest, RegisterEnvironmentRequest
 from a13n_service.environments.websocket.authority import ConnectionIdentity, DispatchAuthority, UseIdentity
 from a13n_service.environments.websocket.coordination import ConfirmedObservation, ConnectionObservation, UseGrant
@@ -35,7 +37,7 @@ def envd_binary():
 
 @pytest.fixture
 def provider_catalog():
-    return build_environment_provider_catalog(builtin_keys=("a13n.websocket-envd",))
+    return ProviderCatalog(select_builtin_environment_providers(("websocket_envd",)))
 
 
 @pytest.fixture
@@ -43,7 +45,7 @@ async def target(environment_service):
     provider = await environment_service.create_provider(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateProviderRequest(type="a13n.websocket-envd", name="Client"),
+        request=CreateProviderRequest(type="websocket_envd", name="Client"),
     )
     environment = await environment_service.create_environment(
         actor=actor(),

@@ -2,12 +2,13 @@
 
 import httpx2
 import pytest
-from a13n_environment import build_environment_provider_catalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor
 from fastapi import Request
 
-from ..connectivity.connector_helpers import FakeConnectorBackend, fake_registry
+from ..connectivity.connector_helpers import FakeConnectorBackend, fake_catalog
 from ..resource_scope_helpers import organization_admin
 from .conftest import ORG_ID, WORKSPACE_ID, actor
 from .test_router import settings
@@ -27,8 +28,8 @@ async def test_five_configuration_resources_support_org_collections(
         settings(tmp_path, service_database),
         components=Components(
             request_authenticator=authenticate,
-            connector_provider_registry=fake_registry(FakeConnectorBackend()),
-            environment_provider_catalog=build_environment_provider_catalog(builtin_keys=("direct-local",)),
+            connector_providers=fake_catalog(FakeConnectorBackend()),
+            environment_provider_catalog=ProviderCatalog(select_builtin_environment_providers(("direct_local",))),
             model_catalog=model_catalog,
         ),
     )
@@ -40,7 +41,7 @@ async def test_five_configuration_resources_support_org_collections(
             provider = await client.post(
                 f"{org_path}/model-providers",
                 headers=headers,
-                json={"type": "openai", "name": "Organization OpenAI", "credential": "sk-test"},
+                json={"type": "openai", "name": "Organization OpenAI", "credential": {"api_key": "sk-test"}},
             )
             assert provider.status_code == 201, provider.text
             for path, request_headers in ((org_path, headers), (workspace_path, {})):
@@ -65,7 +66,7 @@ async def test_five_configuration_resources_support_org_collections(
             environment_provider = await client.post(
                 f"{org_path}/environment-providers",
                 headers=headers,
-                json={"type": "direct-local", "name": "Organization local"},
+                json={"type": "direct_local", "name": "Organization local"},
             )
             assert environment_provider.status_code == 201, environment_provider.text
             template = await client.post(

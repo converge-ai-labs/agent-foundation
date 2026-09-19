@@ -4,6 +4,7 @@ import { useAccess } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { useCursor } from "../../shared/collection";
 import { useResourceRows } from "../../shared/dialogs";
+import { credentialMode } from "../../shared/provider-authentication";
 import { ProviderTable } from "../providers";
 import { webProviderApi, type WebProviderScope } from "./api";
 import { AddWebProvider, WebProviderEditor } from "./editor";
@@ -63,7 +64,8 @@ export function WebProviders({ scope }: { scope: WebProviderScope }) {
           definition: definitionFor(item.type)?.display_name,
           workspaceId: item.workspace_id,
           credentials:
-            definitionFor(item.type)?.credential_required === false
+            credentialMode(definitionFor(item.type), item.configuration) !==
+            "required"
               ? "not_required"
               : item.credential_configured
                 ? "configured"

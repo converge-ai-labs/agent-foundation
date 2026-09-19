@@ -1,32 +1,25 @@
-"""A Host-facing Environment Provider plugin backed by Direct Local operations."""
+"""An installed Environment Provider plugin backed by Direct Local operations."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
-from a13n_environment import (
-    DirectLocalEnvironment,
-    DirectLocalEnvironmentProvider,
-    DirectLocalProviderConfiguration,
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
-    Environment,
-    EnvironmentProvider,
-    EnvironmentProviderError,
-    EnvironmentProviderErrorCategory,
-    EnvironmentProviderErrorContext,
-    EnvironmentProviderOutcomeCertainty,
-    EnvironmentProviderRecoveryHint,
-    EnvironmentState,
 )
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL, DirectLocalEnvironment
+from a13n_harness.providers.environment.management import Environment, EnvironmentProviderConfiguration
+from a13n_harness.providers.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.providers.plugins import ProviderManifest
 from pydantic import BaseModel, ConfigDict, field_validator
 
-PROVIDER_KEY = "example.workspace"
-_CONFIGURATION_VERSION = "1"
+PROVIDER_TYPE = "example_workspace"
 
 
 class WorkspaceEnvironmentConfiguration(BaseModel):
-    """Credential-free schema version 1 configuration for the example Provider."""
+    """Credential-free schema version 1 target recipe for the example Provider."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -43,81 +36,51 @@ class WorkspaceEnvironmentConfiguration(BaseModel):
         return expanded
 
 
-@dataclass(frozen=True, slots=True)
-class WorkspaceEnvironmentRuntime:
-    """This deterministic Provider needs no credential or SDK collaborator."""
-
-
-class WorkspaceEnvironmentProvider(EnvironmentProvider):
-    """Construct fresh stateless adapters for one Host-selected workspace."""
-
-    @property
-    def key(self) -> str:
-        return PROVIDER_KEY
-
-    @property
-    def configuration_models(self) -> dict[str, type[BaseModel]]:
-        return {"1": WorkspaceEnvironmentConfiguration}
-
-    def describe_configuration(self, configuration: BaseModel):
-        if not isinstance(configuration, WorkspaceEnvironmentConfiguration):
-            raise TypeError("Unexpected workspace recipe")
-        return DirectLocalEnvironmentProvider().describe_configuration(_direct_configuration(configuration))
-
-    def create_environment(
-        self,
-        *,
-        configuration: BaseModel,
-        environment_id: str,
-        state: EnvironmentState | None,
-        runtime: object | None = None,
-    ) -> Environment:
-        if not isinstance(configuration, WorkspaceEnvironmentConfiguration):
-            raise TypeError("example.workspace requires WorkspaceEnvironmentConfiguration")
-        if state is not None:
-            raise _error(
-                "example.workspace is stateless and does not accept Environment state.",
-                code="provider_state_invalid",
-            )
-        if runtime is not None and not isinstance(runtime, WorkspaceEnvironmentRuntime):
-            raise TypeError("example.workspace runtime must be WorkspaceEnvironmentRuntime or None")
-        return WorkspaceEnvironment(_direct_configuration(configuration), environment_id=environment_id)
-
-
-def _direct_configuration(configuration: WorkspaceEnvironmentConfiguration) -> DirectLocalProviderConfiguration:
-    return DirectLocalProviderConfiguration(root=DirectLocalRootConfiguration(path=configuration.root))
-
-
 class WorkspaceEnvironment(DirectLocalEnvironment):
     @property
     def provider_key(self) -> str:
-        return PROVIDER_KEY
+        return PROVIDER_TYPE
 
 
-def _error(
-    description: str,
+def _direct_configuration(configuration: WorkspaceEnvironmentConfiguration) -> DirectLocalEnvironmentConfiguration:
+    return DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=configuration.root))
+
+
+def _describe(configuration: WorkspaceEnvironmentConfiguration) -> EnvironmentDescriptor:
+    return DIRECT_LOCAL.describe_environment(_direct_configuration(configuration))
+
+
+def _construct(
     *,
-    code: str,
-    category: EnvironmentProviderErrorCategory = EnvironmentProviderErrorCategory.INVALID,
-    schema_version: str | None = None,
-) -> EnvironmentProviderError:
-    return EnvironmentProviderError(
-        description,
-        code=code,
-        category=category,
-        certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-        recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
-        context=EnvironmentProviderErrorContext(
-            provider_key=PROVIDER_KEY,
-            schema_version=schema_version,
-        ),
-    )
+    configuration: WorkspaceEnvironmentConfiguration,
+    environment_id: str,
+    state: EnvironmentState | None,
+    runtime: object | None,
+) -> Environment:
+    """This deterministic Provider needs no credential or SDK collaborator."""
+    del runtime
+    if state is not None:
+        raise TypeError("example_workspace accepts no stored state")
+    return WorkspaceEnvironment(_direct_configuration(configuration), environment_id=environment_id)
 
+
+WORKSPACE_ENVIRONMENT = EnvironmentProviderDefinition(
+    type=PROVIDER_TYPE,
+    display_name="Example workspace",
+    configuration_model=EnvironmentProviderConfiguration,
+    environment_model=WorkspaceEnvironmentConfiguration,
+    construct=_construct,
+    describe_environment=_describe,
+    supports_stop=True,
+    supports_destroy=True,
+)
+
+manifest = ProviderManifest(api_version=1, environment=(WORKSPACE_ENVIRONMENT,))
 
 __all__ = [
-    "PROVIDER_KEY",
+    "PROVIDER_TYPE",
+    "WORKSPACE_ENVIRONMENT",
     "WorkspaceEnvironment",
     "WorkspaceEnvironmentConfiguration",
-    "WorkspaceEnvironmentProvider",
-    "WorkspaceEnvironmentRuntime",
+    "manifest",
 ]

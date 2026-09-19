@@ -22,7 +22,7 @@ async def test_planning_failure_never_partially_claims_an_operation(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch, pending, failure
 ):
     environment = await fixture_environment(environment_service)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: NOW)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.condition_since, row.next_maintenance_at = ("running", NOW - timedelta(seconds=60), NOW)
@@ -58,7 +58,7 @@ async def test_no_action_only_schedules_the_next_deadline(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, status
 ):
     environment = await fixture_environment(environment_service)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: NOW)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.condition_since, row.next_maintenance_at = (status, NOW - timedelta(seconds=30), NOW)
@@ -75,7 +75,7 @@ async def test_stale_scan_cannot_claim_after_the_deadline_changes(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path
 ):
     environment = await fixture_environment(environment_service)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: NOW)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.condition_since = "running", NOW - timedelta(seconds=60)

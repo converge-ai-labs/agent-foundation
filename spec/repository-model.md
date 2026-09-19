@@ -25,7 +25,7 @@ This document defines the normative content and workflow boundaries of the Agent
 
 There is no repository-local `issues/` directory. "Issues" means the repository's GitHub Issues.
 
-Workspace membership does not by itself select a release group. The Harness release group contains `packages/a13n-harness`, `packages/a13n-environment`, and `packages/a13n-stream-protocol`; one `release/a13n-harness-v<version>` tag assigns the same version to all three Python distributions and publishes them through one workflow. Published Harness metadata requires the exact Environment version, and the published Stream Protocol artifact requires the exact Harness version. `packages/a13n-harness-ui` releases independently through `release/a13n-harness-ui-v<version>` and its published artifacts consume a bounded compatible Harness release line. Source manifests keep workspace dependencies unversioned and project versions at `0.0.0` so uv resolves local members during repository development. Release versions follow the stable and RC forms defined by [Release Automation](#release-automation). a13n Service releases exclude these packages and select their own compatible published Harness release.
+Workspace membership does not by itself select a release group. The Harness release group contains `packages/a13n-harness` and `packages/a13n-stream-protocol`; one `release/a13n-harness-v<version>` tag assigns the same version to both Python distributions and publishes them through one workflow. The published Stream Protocol artifact requires the exact Harness version. `packages/a13n-harness-ui` releases independently through `release/a13n-harness-ui-v<version>` and its published artifacts consume a bounded compatible Harness release line. Source manifests keep workspace dependencies unversioned and project versions at `0.0.0` so uv resolves local members during repository development. Release versions follow the stable and RC forms defined by [Release Automation](#release-automation). a13n Service releases exclude these packages and select their own compatible published Harness release.
 
 `packages/a13n-logging` is a shared library with an independent `release/a13n-logging-v<version>` release channel. Its workflow versions and publishes only the `a13n-logging` Python distribution through the existing `foundation-pypi` environment. a13n Service releases neither version nor republish logging. Consumers retain unversioned source workspace dependencies and consume published logging independently of their own release versions.
 
@@ -45,7 +45,7 @@ Projects under `examples/` may carry their own manifests and lock files when rea
 
 The [Harness UI development image](a13n-harness-ui/webui/03-distribution.md#docker-development-image) is a container delivery of the same workbench, including its bundled browser. Its build and deployment definitions belong under `deploy/`. It creates neither an independent frontend release line nor an Agent Environment Provider; existing Harness UI version and cross-group dependency ownership remain unchanged.
 
-Maintained component source directories and public distributions use the same canonical `a13n-` name, such as `packages/a13n-environment` and `a13n-environment`. Python imports normalize hyphens to underscores, such as `a13n_environment`; the same rule applies to Harness, Harness UI, Stream Protocol, Envd client, Service, and logging. Independent Service SDK repositories own their package identities and publication metadata.
+Maintained component source directories and public distributions use the same canonical `a13n-` name, such as `packages/a13n-harness` and `a13n-harness`. Python imports normalize hyphens to underscores, such as `a13n_harness`; the same rule applies to Harness UI, Stream Protocol, Envd client, Service, and logging. Independent Service SDK repositories own their package identities and publication metadata.
 
 ## Frontend Workspace
 
@@ -112,11 +112,11 @@ Each consuming package owns its cross-release-group Python requirements in its `
 
 The current cross-group requirements are:
 
-| Consumer                         | Dependency                            | Published requirement                      |
-| -------------------------------- | ------------------------------------- | ------------------------------------------ |
-| Harness UI                       | Environment, Harness, Stream Protocol | `>=0.0.27,<0.1.0`, identical for all three |
-| Harness UI, Harness              | `a13n-logging`                        | `>=0.1.0,<0.2.0`                           |
-| Environment, Harness UI, Service | `a13n-envd-client`                    | `>=0.0.6,<0.1.0`                           |
+| Consumer                     | Dependency               | Published requirement                 |
+| ---------------------------- | ------------------------ | ------------------------------------- |
+| Harness UI                   | Harness, Stream Protocol | `>=0.0.27,<0.1.0`, identical for both |
+| Harness UI, Harness          | `a13n-logging`           | `>=0.1.0,<0.2.0`                      |
+| Harness, Harness UI, Service | `a13n-envd-client`       | `>=0.0.6,<0.1.0`                      |
 
 Independent release lines do not force consumer releases or lower-bound bumps for every dependency patch. Raise the minimum when the consumer needs newer APIs or behavior; a breaking compatibility change crosses the declared line and requires an explicit consumer update. These bounded requirements are reviewed compatibility policy, not a general semantic-versioning guarantee for all `0.x` releases. Python prerelease resolution follows standard package-manager rules.
 

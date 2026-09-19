@@ -12,7 +12,7 @@ from enum import Enum
 from pathlib import Path
 
 import click
-from a13n_harness.model_auth import CodexLoginResult, GrokCredentials
+from a13n_harness.providers.model.oauth import CodexLoginResult, GrokCredentials
 from a13n_logging import LogFormat, configure_logging
 from anyio import fail_after
 from pydantic import BaseModel

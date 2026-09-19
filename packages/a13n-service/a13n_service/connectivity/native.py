@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING
 import httpx2
 from a13n_harness import AgentContext
 from a13n_harness.observation import record_tool_outcome_unknown
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from pydantic import JsonValue
 from pydantic_ai.capabilities import MCP
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
@@ -23,6 +23,7 @@ from .file_delivery import FileDelivery, SendFileArguments
 from .naming import source_key
 from .native_actions import NativeAction, NativeObservationFactory, action
 from .native_context import AccountRunContext, InboundRunContext, NativeToolContext, authorized_account
+from .providers.definition import InboundActionContext
 from .providers.registry import require_native_provider
 from .toolsets import local_capability
 
@@ -159,12 +160,14 @@ def _actions(
     if isinstance(context, AccountRunContext):
         return provider.account_tools.actions(configuration, credentials, context.target_scope, http, endpoints)
     return provider.inbound_actions(
-        context.provider_context,
-        context.action_policy,
-        configuration,
-        credentials,
-        http,
-        endpoints,
+        InboundActionContext(
+            provider_context=context.provider_context,
+            action_policy=context.action_policy,
+            configuration=configuration,
+            credentials=credentials,
+            http=http,
+            endpoints=endpoints,
+        )
     )
 
 

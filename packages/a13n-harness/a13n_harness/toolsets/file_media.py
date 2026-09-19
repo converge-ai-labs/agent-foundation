@@ -22,10 +22,10 @@ from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
-from a13n_harness.environment.models import EnvironmentPath
 from a13n_harness.errors import HarnessError
 from a13n_harness.models.inference import infer_model
 from a13n_harness.observation import _auxiliary_agent_capabilities
+from a13n_harness.providers.environment.models import EnvironmentPath
 from a13n_harness.usage import ProviderUsage, UsageMeasure
 
 type NativeInputMediaKind = Literal["image", "video", "audio"]

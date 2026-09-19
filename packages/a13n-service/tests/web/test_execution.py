@@ -1,6 +1,7 @@
 import json
 import math
 
+import anyio
 import pytest
 from a13n_harness.capabilities.web import (
     WebProviderError,
@@ -9,15 +10,13 @@ from a13n_harness.capabilities.web import (
     WebSearchRequest,
     WebSearchResponse,
 )
+from a13n_harness.providers.authentication import Authentication, CredentialMode
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.web import WebProviderDefinition, WebProviderResponseError
 from a13n_service.credentials import CredentialSnapshot
-from a13n_service.provider_plugins import (
-    WebProviderRegistration,
-    WebProviderResponseError,
-)
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.web.domain import ScrapeSelection, SearchSelection
-from a13n_service.web.execution import AuthorizedScrape, AuthorizedSearch, WebProviderSnapshot
-from a13n_service.web.registry import WebProviderRegistry
+from a13n_service.web.execution import WebDispatcher, WebProviderSnapshot
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 pytestmark = pytest.mark.anyio
@@ -44,13 +43,12 @@ class _Runtime:
     def __init__(self, failures: list[BaseException | None]) -> None:
         self.failures = failures
         self.calls: list[str] = []
-        self.closed = 0
 
-    async def search(self, **_kwargs) -> WebSearchResponse:
+    async def search(self, configuration, credentials, request, options, transport) -> WebSearchResponse:
         self._dispatch("search")
         return WebSearchResponse(results=())
 
-    async def scrape(self, *, request, policy, **_kwargs) -> WebScrapeResult:
+    async def scrape(self, configuration, credentials, request, options, transport, policy) -> WebScrapeResult:
         await policy.authorize(request.url, purpose="scrape")
         self._dispatch("scrape")
         return WebScrapeResult(content="", source_url=request.url, canonical_url=request.url)
@@ -61,11 +59,8 @@ class _Runtime:
         if failure is not None:
             raise failure
 
-    async def aclose(self) -> None:
-        self.closed += 1
 
-
-def _boundary(operation: str, failures: list[BaseException | None]):
+def _boundary(operation: str, failures: list[BaseException | None], *, scrape_callback=None, deadline=30, budget=1024):
     protector = SecretProtector(key=b"k" * 32, encryption_key_id="test")
     encrypted = protector.encrypt(
         json.dumps({"api_key": "secret"}),
@@ -94,17 +89,16 @@ def _boundary(operation: str, failures: list[BaseException | None]):
         ),
     )
     runtime = _Runtime(failures)
-    registry = WebProviderRegistry(
+    catalog = ProviderCatalog(
         (
-            WebProviderRegistration(
+            WebProviderDefinition(
                 type="external_web",
                 display_name="External Web",
                 configuration_model=_Configuration,
                 credential_model=_Credentials,
                 setup_url="https://example.com/setup",
-                factory=lambda: runtime,
-                supports_search=operation == "search",
-                supports_scrape=operation == "scrape",
+                search=runtime.search if operation == "search" else None,
+                scrape=(scrape_callback or runtime.scrape) if operation == "scrape" else None,
             ),
         )
     )
@@ -121,32 +115,32 @@ def _boundary(operation: str, failures: list[BaseException | None]):
         authorizations += 1
 
     if operation == "search":
-        authorized = AuthorizedSearch(
+        authorized = WebDispatcher(
             selection=SearchSelection(provider_id=PROVIDER_ID),
             acquire=acquire,
             reauthorize=reauthorize,
             protector=protector,
-            registry=registry,
+            catalog=catalog,
         )
 
         async def dispatch():
             return await authorized.search(WebSearchRequest(query="query", limit=1))
 
     else:
-        authorized = AuthorizedScrape(
+        authorized = WebDispatcher(
             selection=ScrapeSelection(provider_id=PROVIDER_ID),
             acquire=acquire,
             reauthorize=reauthorize,
             protector=protector,
-            registry=registry,
+            catalog=catalog,
         )
 
         async def dispatch():
             return await authorized.scrape(
                 WebScrapeRequest(
                     url="https://example.com/",
-                    max_content_bytes=1024,
-                    deadline_seconds=30,
+                    max_content_bytes=budget,
+                    deadline_seconds=deadline,
                     max_redirects=0,
                 ),
                 policy=_Policy(),
@@ -174,17 +168,16 @@ async def test_credential_free_provider_dispatches_without_ciphertext() -> None:
         ),
     )
     runtime = _Runtime([None])
-    registry = WebProviderRegistry(
+    catalog = ProviderCatalog(
         (
-            WebProviderRegistration(
+            WebProviderDefinition(
                 type="keyless_web",
                 display_name="Keyless Web",
                 configuration_model=_Configuration,
                 credential_model=_Configuration,
-                credential_required=False,
+                authentication=Authentication(mode=CredentialMode.forbidden),
                 setup_url="https://example.com/setup",
-                factory=lambda: runtime,
-                supports_search=True,
+                search=runtime.search,
             ),
         )
     )
@@ -195,16 +188,16 @@ async def test_credential_free_provider_dispatches_without_ciphertext() -> None:
     async def reauthorize() -> None:
         pass
 
-    authorized = AuthorizedSearch(
+    authorized = WebDispatcher(
         selection=SearchSelection(provider_id=PROVIDER_ID),
         acquire=acquire,
         reauthorize=reauthorize,
         protector=protector,
-        registry=registry,
+        catalog=catalog,
     )
     result = await authorized.search(WebSearchRequest(query="query", limit=1))
     assert result.results == ()
-    assert runtime.calls == ["search"] and runtime.closed == 1
+    assert runtime.calls == ["search"]
 
 
 @pytest.mark.parametrize("operation", ["search", "scrape"])
@@ -221,7 +214,7 @@ async def test_unknown_or_unexpected_failure_is_safe_and_never_replayed(operatio
         await dispatch()
     assert caught.value.code == f"web_{operation}_unavailable"
     assert "response lost" not in str(caught.value) and "unexpected plugin" not in str(caught.value)
-    assert runtime.calls == [operation] and runtime.closed == 1
+    assert runtime.calls == [operation]
     assert counts() == (1, 1)
 
 
@@ -229,9 +222,9 @@ async def test_unknown_or_unexpected_failure_is_safe_and_never_replayed(operatio
 @pytest.mark.parametrize("kind", ["rate_limited", "unavailable"])
 async def test_explicit_retryable_response_permits_one_fresh_bounded_retry(operation, kind) -> None:
     code = f"web_{operation}_{kind}"
-    dispatch, runtime, counts = _boundary(operation, [WebProviderResponseError(code, retry_after=0), None])
+    dispatch, runtime, counts = _boundary(operation, [WebProviderResponseError(code, retry_after_seconds=0), None])
     await dispatch()
-    assert runtime.calls == [operation, operation] and runtime.closed == 2
+    assert runtime.calls == [operation, operation]
     assert counts() == (2, 2)
 
 
@@ -239,12 +232,12 @@ async def test_explicit_retryable_response_permits_one_fresh_bounded_retry(opera
 @pytest.mark.parametrize("explicit", [False, True])
 async def test_code_alone_or_nonretryable_response_cannot_authorize_replay(operation, explicit) -> None:
     code = f"web_{operation}_{'authentication_failed' if explicit else 'rate_limited'}"
-    failure = WebProviderResponseError(code, retry_after=0) if explicit else WebProviderError(code)
+    failure = WebProviderResponseError(code, retry_after_seconds=0) if explicit else WebProviderError(code)
     dispatch, runtime, counts = _boundary(operation, [failure])
     with pytest.raises(WebProviderError) as caught:
         await dispatch()
     assert caught.value.code == code
-    assert runtime.calls == [operation] and runtime.closed == 1
+    assert runtime.calls == [operation]
     assert counts() == (1, 1)
 
 
@@ -253,9 +246,38 @@ async def test_response_delay_outside_the_operation_budget_is_not_replayed(opera
     code = f"web_{operation}_rate_limited"
     dispatch, runtime, counts = _boundary(
         operation,
-        [WebProviderResponseError(code, retry_after=math.inf)],
+        [WebProviderResponseError(code, retry_after_seconds=math.inf)],
     )
     with pytest.raises(WebProviderResponseError):
         await dispatch()
-    assert runtime.calls == [operation] and runtime.closed == 1
+    assert runtime.calls == [operation]
+    assert counts() == (1, 1)
+
+
+async def test_custom_scrape_timeout_is_not_replayed_and_finishes_cleanup():
+    calls = []
+
+    async def scrape(configuration, credential, request, options, transport, policy):
+        calls.append("dispatch")
+        try:
+            await anyio.sleep_forever()
+        finally:
+            calls.append("cleanup")
+
+    dispatch, _, counts = _boundary("scrape", [], scrape_callback=scrape, deadline=0.01)
+    with pytest.raises(WebProviderError) as caught:
+        await dispatch()
+    assert caught.value.code == "web_scrape_unavailable"
+    assert not isinstance(caught.value, WebProviderResponseError)
+    assert calls == ["dispatch", "cleanup"]
+    assert counts() == (1, 1)
+
+
+async def test_custom_scrape_content_is_bounded_before_disclosure():
+    async def scrape(configuration, credential, request, options, transport, policy):
+        return WebScrapeResult(content="界" * 10, source_url=request.url, canonical_url=request.url)
+
+    dispatch, _, counts = _boundary("scrape", [], scrape_callback=scrape, budget=4)
+    result = await dispatch()
+    assert result.content == "界" and result.truncated
     assert counts() == (1, 1)

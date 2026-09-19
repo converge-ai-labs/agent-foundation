@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 
-from a13n_environment.remote_envd.pairing import credential_matches
+from a13n_harness.providers.environment.remote_envd.pairing import credential_matches
 from a13n_logging import get_logger
 from anyio import move_on_after
 from redis.asyncio import Redis

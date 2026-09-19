@@ -18,7 +18,7 @@ vi.mock("../../shared/page", () => ({
   PageActions: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-it.each(["a13n.http-envd", "a13n.websocket-envd"])(
+it.each(["http_envd", "websocket_envd"])(
   "registers %s with a typed Device identity rather than raw state",
   async (type) => {
     http.GET.mockImplementation(async (path: string) => ({
@@ -44,7 +44,9 @@ it.each(["a13n.http-envd", "a13n.websocket-envd"])(
       screen.getByRole("button", { name: "Create environment" }),
     );
     await user.click(screen.getByRole("combobox", { name: "Ownership" }));
-    await user.click(screen.getByRole("option", { name: /^External target/ }));
+    await user.click(
+      await screen.findByRole("option", { name: /^External target/ }),
+    );
     await user.click(screen.getByRole("combobox", { name: "Provider" }));
     await user.click(
       await screen.findByRole("option", { name: "My connection" }),
@@ -69,7 +71,6 @@ it.each(["a13n.http-envd", "a13n.websocket-envd"])(
         body: {
           provider_id: "envp_device",
           configuration: {},
-          configuration_schema_version: "1",
           device_id: "my-laptop",
         },
       }),

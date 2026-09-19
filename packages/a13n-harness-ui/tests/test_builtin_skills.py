@@ -3,10 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from a13n_environment import CommandRequest, EnvironmentOutputPolicy, ShellCommand
 from a13n_harness import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.capabilities.skills import SkillsCapability
 from a13n_harness.environment import EnvironmentAction, EnvironmentError
+from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import AgentReconstructor, ThreadCompositionSelection
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_SOURCE_ID

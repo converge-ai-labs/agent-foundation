@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock
 import pytest
 import rfc8785
 import zstandard
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
@@ -98,7 +98,7 @@ class _Freezing:
         self._values = values
         self.calls = 0
 
-    async def freeze_in_transaction(self, _database, *, prepared):
+    def freeze_selected(self, *, prepared):
         del prepared
         selected = self._values[min(self.calls, len(self._values) - 1)]
         self.calls += 1
@@ -302,7 +302,7 @@ async def test_start_accepts_root_run_and_replays_before_resolution(
 
     assert repeated == first
     assert preparation.calls == 1
-    assert freezing.calls == 2
+    assert freezing.calls == 1
     assert first.thread_id.startswith("thread_")
     async with short_session(interaction_sessions) as database:
         run = await database.scalar(select(RunRecord).where(RunRecord.id == first.run_id))
@@ -381,31 +381,23 @@ async def test_start_rejects_second_root_thread_in_existing_session(
     assert len(roots) == 1
 
 
-async def test_start_rejects_final_invocation_drift_without_committing_run(
+async def test_start_keeps_selected_configuration_without_refreezing(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
 ) -> None:
-    interaction_sessions = lifecycle_interaction_sessions
-    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
-    commands = _commands(
-        interaction_sessions,
-        interaction_object_store,
-        _Preparation(),
-        _Freezing([_frozen(), _frozen(content_digest="b" * 64)]),
+    objects = await LocalObjectStore.create(tmp_path / "objects")
+    selected = _frozen()
+    freezing = _Freezing([selected, _frozen(content_digest="b" * 64)])
+    commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), freezing)
+    receipt = await commands.runs.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="start-selected",
+        request=_request(),
     )
-
-    with pytest.raises(InteractionCommandError) as captured:
-        await commands.runs.start(
-            actor=_actor(),
-            workspace_id=WORKSPACE_ID,
-            idempotency_key="start-drift",
-            request=_request(),
-        )
-
-    assert captured.value.code == "run_invocation_changed"
-    async with short_session(interaction_sessions) as database:
-        count = len(tuple((await database.scalars(select(RunRecord).where(RunRecord.input_text == "hello"))).all()))
-    assert count == 0
+    stored = await RunStateStore(objects).read(ORGANIZATION_ID, receipt.run_id)
+    assert stored.envelope.effective_agent_config == selected.effective_config
+    assert freezing.calls == 1
 
 
 async def test_interrupt_is_atomic_and_replays_exact_stable_receipt(

@@ -18,6 +18,7 @@ import {
   type ResourceEditorControl,
 } from "../../shared/dialogs";
 import { ErrorNotice, StatePill } from "../../shared/feedback";
+import { useCredentialSection } from "../../shared/use-credential-section";
 import {
   FormActions,
   ProviderEnabled,
@@ -40,12 +41,12 @@ import {
   credentialDescription,
   credentialHint,
   credentialLabel,
-  providerKeyUrls,
+  providerKeyLink,
   providerStyles,
 } from "../providers";
 import { environmentApi, type EnvironmentScope } from "./api";
 
-type Definition = Schema["EnvironmentProviderDefinition"];
+type Definition = Schema["EnvironmentProviderMetadata"];
 
 /** A provider the running Service owns: readable here, changed by the operator. */
 const deploymentNote =
@@ -78,7 +79,7 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
     { t } = useTranslation(),
     page = useCursor(),
     api = environmentApi(client, scope);
-  const rows = useResourceRows<Schema["EnvironmentProvider"]>();
+  const rows = useResourceRows<Schema["EnvironmentProviderAccount"]>();
   const query = useQuery({
     queryKey: [
       "environment-providers",
@@ -215,7 +216,7 @@ function EditEnvironmentProvider({
   finalFocus,
 }: ResourceEditorControl & {
   scope: EnvironmentScope;
-  provider: Schema["EnvironmentProvider"];
+  provider: Schema["EnvironmentProviderAccount"];
 }) {
   const client = useClient(),
     { t } = useTranslation(),
@@ -286,7 +287,9 @@ function ProviderForm({
   reload,
 }: {
   scope: EnvironmentScope;
-  initial?: ReturnType<typeof representation<Schema["EnvironmentProvider"]>>;
+  initial?: ReturnType<
+    typeof representation<Schema["EnvironmentProviderAccount"]>
+  >;
   definition?: Definition;
   definitions: Definition[];
   close: () => void;
@@ -304,13 +307,11 @@ function ProviderForm({
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
       initial?.value.configuration ?? {},
     ),
-    [removeCredential, setRemoveCredential] = useState(false),
-    [advancedOpen, setAdvancedOpen] = useState(false),
-    [credential, setCredential] = useState<Record<string, unknown>>({});
+    [advancedOpen, setAdvancedOpen] = useState(false);
   const deployment = basis?.value.configuration_source === "deployment";
   const definition = definitions.find((item) => item.type === type) ?? chosen,
     configSchema = schema(definition?.configuration_schema),
-    credentialSchema = schema(definition?.credential_schema);
+    section = useCredentialSection(definition, configuration, basis?.value);
   const connectivity = useQuery({
     queryKey: ["environment-provider-connectivity", basis?.value.id],
     enabled: basis?.value.type === "docker",
@@ -328,9 +329,9 @@ function ProviderForm({
   }
   const save = useMutation({
     mutationFn: async () => {
+      const credential = section.payload();
+      if (credential) validateSettings(section.schema, credential);
       if (basis) {
-        if (!removeCredential && Object.keys(credential).length)
-          validateSettings(credentialSchema, credential);
         return client.http
           .PATCH("/api/v1/environment-providers/{provider_id}", {
             params: {
@@ -340,25 +341,26 @@ function ProviderForm({
             body: {
               name,
               enabled,
-              ...(removeCredential
-                ? { credential: null }
-                : Object.keys(credential).length
-                  ? { credential: jsonObject(JSON.stringify(credential)) }
-                  : {}),
+              ...(credential === undefined
+                ? {}
+                : {
+                    credential:
+                      credential === null
+                        ? null
+                        : jsonObject(JSON.stringify(credential)),
+                  }),
             },
           })
           .then(data);
       }
       validateSettings(configSchema, configuration);
-      if (Object.keys(credential).length)
-        validateSettings(credentialSchema, credential);
       return environmentApi(client, scope).createProvider({
         name,
         type,
         configuration: jsonObject(JSON.stringify(configuration)),
-        ...(Object.keys(credential).length && {
-          credential: jsonObject(JSON.stringify(credential)),
-        }),
+        ...(credential
+          ? { credential: jsonObject(JSON.stringify(credential)) }
+          : {}),
       });
     },
     onSuccess: done,
@@ -373,15 +375,17 @@ function ProviderForm({
         }}
       >
         <ProviderConnectFields
-          credentialSchema={credentialSchema}
+          credentialSchema={
+            section.mode === "forbidden" ? undefined : section.schema
+          }
           configurationSchema={configSchema}
-          credential={credential}
-          onCredentialChange={setCredential}
+          credential={section.credential}
+          onCredentialChange={section.setCredential}
           configuration={configuration}
           onConfigurationChange={setConfiguration}
           name={name}
           onNameChange={setName}
-          keyLink={providerKeyUrls[type]}
+          keyLink={providerKeyLink(definition)}
           advancedOpen={advancedOpen}
           onAdvancedOpenChange={setAdvancedOpen}
         />
@@ -405,11 +409,12 @@ function ProviderForm({
       </span>
     </SettingsRow>
   );
-  const credentials = Object.keys(schema(credentialSchema.properties)).length
-    ? basis.value.credential_configured
-      ? ("configured" as const)
-      : ("not_configured" as const)
-    : ("not_required" as const);
+  const credentials =
+    section.mode !== "required"
+      ? ("not_required" as const)
+      : basis.value.credential_configured
+        ? ("configured" as const)
+        : ("not_configured" as const);
   if (deployment)
     return (
       <ProviderReadOnly
@@ -432,26 +437,29 @@ function ProviderForm({
       <ProviderName value={name} onChange={setName} />
       <ProviderGroup>
         <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        {credentials !== "not_required" && (
+        {section.visible && (
           <CredentialRow
-            label={t(credentialLabel(credentialSchema))}
-            configured={!!basis.value.credential_configured}
-            removing={removeCredential}
-            onRemovingChange={setRemoveCredential}
-            onDiscard={() => setCredential({})}
+            label={t(credentialLabel(section.schema))}
+            configured={section.removable}
+            removing={section.removing}
+            onRemovingChange={section.setRemoving}
+            onDiscard={() => section.setCredential({})}
           >
-            <SchemaFields
-              secret
-              autoFocus
-              labelAction={
-                providerKeyUrls[type] && (
-                  <ProviderKeyLink {...providerKeyUrls[type]} />
-                )
-              }
-              schema={{ ...credentialSchema, required: [] }}
-              value={credential}
-              onChange={setCredential}
-            />
+            {section.mode !== "forbidden" && (
+              <SchemaFields
+                secret
+                autoFocus
+                labelAction={
+                  providerKeyLink(definition) && (
+                    <ProviderKeyLink {...providerKeyLink(definition)!} />
+                  )
+                }
+                schema={section.schema}
+                requireFields={section.requireFields}
+                value={section.credential}
+                onChange={section.setCredential}
+              />
+            )}
           </CredentialRow>
         )}
         {engine}

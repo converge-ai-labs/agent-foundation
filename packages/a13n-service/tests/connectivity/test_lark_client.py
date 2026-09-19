@@ -5,6 +5,7 @@ import json
 import anyio
 import httpx2
 import pytest
+from a13n_harness.http import ProviderHttpError
 from a13n_service.connectivity.providers.lark.actions import (
     LarkActionBinding,
     LarkAutoReplyArguments,
@@ -15,7 +16,6 @@ from a13n_service.connectivity.providers.lark.actions import (
     LarkReplySucceeded,
     LarkTextContent,
 )
-from a13n_service.connectivity.providers.lark.api import LarkApiError
 from a13n_service.connectivity.providers.lark.client import LarkNativeClient
 from a13n_service.connectivity.providers.lark.token import LarkTenantTokenProvider
 from pydantic import ValidationError
@@ -127,7 +127,7 @@ async def test_lark_token_refresh_failure_keeps_still_valid_token() -> None:
         now[0] = 3550.0
         assert await provider.token() == "tenant-token"
         now[0] = 3601.0
-        with pytest.raises(LarkApiError, match="provider_unavailable"):
+        with pytest.raises(ProviderHttpError, match="provider_unavailable"):
             await provider.token()
 
 
@@ -184,7 +184,7 @@ async def test_lark_reply_argument_schema_cannot_select_or_override_destination(
         transport=httpx2.MockTransport(lambda _request: pytest.fail("request must not be sent"))
     ) as http_client:
         client, _tokens = _client(http_client, endpoint)
-        with pytest.raises(LarkApiError, match="invalid_arguments"):
+        with pytest.raises(ProviderHttpError, match="invalid_arguments"):
             await client.reply(
                 _binding(),
                 LarkAutoReplyArguments(content=LarkTextContent(text="hello"), placement="main"),
@@ -222,7 +222,7 @@ async def test_lark_reply_does_not_report_unknown_before_write_dispatch() -> Non
         transport=httpx2.MockTransport(lambda _request: httpx2.Response(503, json={"code": 1}))
     ) as http_client:
         client, _tokens = _client(http_client, endpoint)
-        with pytest.raises(LarkApiError, match="provider_unavailable"):
+        with pytest.raises(ProviderHttpError, match="provider_unavailable"):
             await client.reply(
                 _binding(),
                 LarkForcedReplyArguments(content=LarkTextContent(text="hello")),
@@ -306,7 +306,7 @@ async def test_lark_reads_surface_rate_limit_without_sleeping() -> None:
     endpoint = _AllowEndpoint()
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _request: next(responses))) as http_client:
         client, _tokens = _client(http_client, endpoint)
-        with pytest.raises(LarkApiError) as raised:
+        with pytest.raises(ProviderHttpError) as raised:
             await client.list_members(_binding(), LarkListMembersArguments())
 
     assert raised.value.code == "rate_limited"
@@ -319,7 +319,7 @@ async def test_lark_native_response_and_binding_representations_are_bounded() ->
     endpoint = _AllowEndpoint()
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _request: next(responses))) as http_client:
         client, _tokens = _client(http_client, endpoint, response_max_bytes=64)
-        with pytest.raises(LarkApiError, match="response_too_large"):
+        with pytest.raises(ProviderHttpError, match="response_too_large"):
             await client.list_members(_binding(), LarkListMembersArguments())
 
     representation = repr(_binding())

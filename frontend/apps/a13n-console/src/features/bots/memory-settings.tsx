@@ -11,6 +11,7 @@ import {
 } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { eligibleMemoryProvider } from "../memory/availability";
 import { MemoryProviderEditor } from "../memory/editor";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -122,13 +123,13 @@ function SettingsForm({
       item.supports_documents,
     ]),
   );
+  const eligible = (item: Schema["MemoryProvider"]) =>
+    support.get(item.type) === true &&
+    eligibleMemoryProvider(item, types.data?.items ?? []);
   const unavailable =
     enabled &&
     !(providers.data ?? []).some(
-      (item) =>
-        item.id === providerId &&
-        item.enabled &&
-        support.get(item.type) === true,
+      (item) => item.id === providerId && eligible(item),
     );
   const save = useMutation({
     mutationFn: async () => {
@@ -243,8 +244,8 @@ function SettingsForm({
                   },
                   ...(providers.data ?? []).map((item) => ({
                     value: item.id,
-                    label: `${item.name}${!item.enabled ? ` · ${t("Disabled")}` : support.get(item.type) === false ? ` · ${t("Document memory unsupported")}` : support.get(item.type) !== true ? ` · ${t("Unavailable")}` : ""}`,
-                    disabled: !item.enabled || support.get(item.type) !== true,
+                    label: `${item.name}${!item.enabled ? ` · ${t("Disabled")}` : support.get(item.type) === false ? ` · ${t("Document memory unsupported")}` : !eligible(item) ? ` · ${t("Unavailable")}` : ""}`,
+                    disabled: !eligible(item),
                   })),
                 ]}
               />
@@ -287,7 +288,7 @@ function SettingsForm({
       )}
       {enabled &&
         providers.data?.find((item) => item.id === providerId)?.type ===
-          "a13n.filesystem" && (
+          "filesystem" && (
           <SettingsSection>
             <SettingsRow
               label={t("Automatic organization")}
@@ -618,7 +619,7 @@ function GroupForm({
             ),
             disabled:
               !scope ||
-              scope.backend_type === "a13n.filesystem" ||
+              scope.backend_type === "filesystem" ||
               !["public", "private"].includes(scope.audience),
           },
         ]}

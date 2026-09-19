@@ -102,10 +102,10 @@ configuration: {}
 
 Save it under `extensions/`, then select `harness_plugins: [plugin-memory]` in the Agent or root defaults. Unknown/uninstalled keys fail validation; writing the file is not installation.
 
-| Resource kind                                 | Complete fields beyond shared `schema_version`, `kind`, `id`, `name`                                                                    |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `harness_plugin` (`plugin-` ID)               | Required `plugin_key`; `configuration` defaults to `{}`                                                                                 |
-| `environment_run_extension` (`extension-` ID) | Required `extension_key`; `configuration` defaults to `{}`                                                                              |
-| `environment_profile` (`environment-` ID)     | Required `provider_key`, `provider_schema_version`, `adapter_key`; `provider_configuration` and `adapter_configuration` default to `{}` |
+| Resource kind                                 | Complete fields beyond shared `schema_version`, `kind`, `id`, `name`                                            |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `harness_plugin` (`plugin-` ID)               | Required `plugin_key`; `configuration` defaults to `{}`                                                         |
+| `environment_run_extension` (`extension-` ID) | Required `extension_key`; `configuration` defaults to `{}`                                                      |
+| `environment_profile` (`environment-` ID)     | Required `provider_key` and `adapter_key`; `provider_configuration` and `adapter_configuration` default to `{}` |
 
 Run Extensions are selected through root `defaults.environment_run_extensions`. Provider/adapter and extension-specific configuration belongs to the installed implementation, with credential references rather than literal secret fields. See [custom Environment profiles](environments-and-projects.md#custom-environment-profiles) before selecting a provider.

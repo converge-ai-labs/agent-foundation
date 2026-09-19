@@ -7,14 +7,10 @@ from uuid import uuid4
 
 import anyio
 import httpx
-from a13n_environment import (
-    CommandRequest,
-    E2BEnvironment,
-    E2BProviderConfiguration,
-    E2BProviderRuntime,
-    EnvironmentOutputPolicy,
-    ShellCommand,
-)
+from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
+from a13n_harness.providers.environment.e2b.provider import E2BEnvironment, E2BProviderRuntime
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from e2b import AsyncSandbox
 from e2b.exceptions import SandboxNotFoundException
 from e2b.sandbox.sandbox_api import SandboxQuery
@@ -48,7 +44,7 @@ async def past(deadline):
 class E2BSandboxes:
     def __init__(self, settings):
         self.settings = settings
-        self.configuration = E2BProviderConfiguration(template=settings.template, timeout_seconds=300)
+        self.configuration = E2BEnvironmentConfiguration(template=settings.template, timeout_seconds=300)
         self.identities = set()
         self.sandbox_ids = set()
         self.adapters = []
@@ -81,7 +77,7 @@ class E2BSandboxes:
 
     async def prepare(self, adapter=None):
         adapter = adapter or self.adapter()
-        await adapter.enter(thread_id="thread-live", run_id="run-live", agent_instance_id="agent-live", mount_id="m")
+        await adapter.enter(mount_id="m")
         try:
             await adapter.prepare()
         except Exception as error:
@@ -98,7 +94,7 @@ class E2BSandboxes:
     async def targets(self, identity):
         assert identity in self.identities, "Only inspect identities owned by this test"
         pages = AsyncSandbox.list(
-            query=SandboxQuery(metadata={"a13n_environment": identity}), limit=100, **self.options
+            query=SandboxQuery(metadata={"a13n_harness.providers.environment": identity}), limit=100, **self.options
         )
         result = []
         while pages.has_next:
@@ -133,7 +129,7 @@ class E2BSandboxes:
             template=self.configuration.template,
             timeout=300,
             metadata={
-                "a13n_environment": original.environment_id,
+                "a13n_harness.providers.environment": original.environment_id,
                 "a13n_configuration": original._configuration.fingerprint if compatible else "incompatible",
             },
             secure=True,

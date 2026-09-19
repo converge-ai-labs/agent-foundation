@@ -76,7 +76,7 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
     const revision = revisionById.get(template.default_revision_id);
     return revision ? providerById.get(revision.provider_id) : undefined;
   }
-  function providerName(provider?: Schema["EnvironmentProvider"]) {
+  function providerName(provider?: Schema["EnvironmentProviderAccount"]) {
     if (!provider) return undefined;
     return (
       providerTypes.data?.items.find(

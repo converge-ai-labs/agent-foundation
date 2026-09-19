@@ -15,18 +15,14 @@ COMPONENTS = (
     "a13n-service",
     "a13n-envd",
 )
-ENVIRONMENT_PROVIDER_MANIFEST = Path("packages/a13n-environment/pyproject.toml")
-ENVIRONMENT_PROVIDER_PACKAGE = "a13n-environment"
 HARNESS_MANIFEST = Path("packages/a13n-harness/pyproject.toml")
 HARNESS_PACKAGE = "a13n-harness"
 STREAM_PROTOCOL_MANIFEST = Path("packages/a13n-stream-protocol/pyproject.toml")
 HARNESS_MANIFESTS = (
-    ENVIRONMENT_PROVIDER_MANIFEST,
     HARNESS_MANIFEST,
     STREAM_PROTOCOL_MANIFEST,
 )
 HARNESS_PACKAGES = (
-    ENVIRONMENT_PROVIDER_PACKAGE,
     HARNESS_PACKAGE,
     "a13n-stream-protocol",
 )
@@ -179,8 +175,7 @@ def validate_dependency_range(value: str) -> str:
 def release_dependency_ranges(root: Path, manifest: Path) -> dict[str, str]:
     """Read independently versioned dependencies without constraining local workspace members."""
     expected = {
-        ENVIRONMENT_PROVIDER_MANIFEST: (A13N_ENVD_CLIENT_PACKAGE,),
-        HARNESS_MANIFEST: (LOGGING_PACKAGE,),
+        HARNESS_MANIFEST: (LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE),
         HARNESS_UI_MANIFEST: (*HARNESS_PACKAGES, LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE),
     }[manifest]
     label = f"{RELEASE_DEPENDENCIES_TOOL} in {manifest}"
@@ -341,16 +336,13 @@ def validate_component_version(root: Path, component: str, version: str) -> None
     if release_version.canonical == "0.0.0":
         return
     if component == "a13n-harness":
-        for manifest, package_name in (
-            (HARNESS_MANIFEST, ENVIRONMENT_PROVIDER_PACKAGE),
-            (STREAM_PROTOCOL_MANIFEST, HARNESS_PACKAGE),
-        ):
+        for manifest, package_name in ((STREAM_PROTOCOL_MANIFEST, HARNESS_PACKAGE),):
             expected = f"{package_name}=={release_version.python_package}"
             actual = _project_dependency_requirement(root, manifest, package_name)
             if actual != expected:
                 raise ReleaseVersionError(f"Expected {manifest} dependency {expected}, found {actual}")
     manifests = {
-        "a13n-harness": (ENVIRONMENT_PROVIDER_MANIFEST, HARNESS_MANIFEST),
+        "a13n-harness": (HARNESS_MANIFEST,),
         "a13n-harness-ui": (HARNESS_UI_MANIFEST,),
     }.get(component, ())
     for manifest in manifests:
@@ -491,10 +483,7 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
                 python_version,
                 path,
             )
-        for manifest, package_name in (
-            (HARNESS_MANIFEST, ENVIRONMENT_PROVIDER_PACKAGE),
-            (STREAM_PROTOCOL_MANIFEST, HARNESS_PACKAGE),
-        ):
+        for manifest, package_name in ((STREAM_PROTOCOL_MANIFEST, HARNESS_PACKAGE),):
             planned[manifest] = _replace_project_dependency(
                 planned[manifest],
                 package_name,
@@ -581,7 +570,7 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
         )
 
     manifests = {
-        "a13n-harness": (ENVIRONMENT_PROVIDER_MANIFEST, HARNESS_MANIFEST),
+        "a13n-harness": (HARNESS_MANIFEST,),
         "a13n-harness-ui": (HARNESS_UI_MANIFEST,),
     }.get(component, ())
     for manifest in manifests:

@@ -7,10 +7,9 @@ from time import monotonic
 
 import anyio
 import httpx2
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 
-from a13n_service.connectivity.http import EndpointValidator
-
-from .api import LarkApiError, read_lark_response
+from .api import read_lark_response
 
 _TOKEN_RESPONSE_MAX_BYTES = 64 * 1024
 
@@ -52,7 +51,7 @@ class LarkTenantTokenProvider:
                 return self._token
             try:
                 token, expires_in = await self._refresh()
-            except LarkApiError:
+            except ProviderHttpError:
                 if self._token is not None and self._clock() < self._expires_at:
                     return self._token
                 raise
@@ -66,7 +65,7 @@ class LarkTenantTokenProvider:
         try:
             origin = await self._endpoint_validator.validate(self._open_api_origin, resolve_dns=True)
         except ValueError as error:
-            raise LarkApiError("endpoint_denied") from error
+            raise ProviderHttpError("endpoint_denied") from error
         try:
             async with self._http_client.stream(
                 "POST",
@@ -75,10 +74,10 @@ class LarkTenantTokenProvider:
                 follow_redirects=False,
             ) as response:
                 value = await read_lark_response(response, max_bytes=_TOKEN_RESPONSE_MAX_BYTES)
-        except LarkApiError:
+        except ProviderHttpError:
             raise
         except httpx2.HTTPError as error:
-            raise LarkApiError("provider_unavailable") from error
+            raise ProviderHttpError("provider_unavailable") from error
         token = value.get("tenant_access_token")
         expires_in = value.get("expire")
         if (
@@ -88,5 +87,5 @@ class LarkTenantTokenProvider:
             or expires_in <= 60
             or expires_in > 24 * 60 * 60
         ):
-            raise LarkApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         return token, expires_in

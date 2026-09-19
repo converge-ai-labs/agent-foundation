@@ -60,7 +60,7 @@ PROVIDERS="$SERVICE_URL/api/v1/workspaces/$WORKSPACE_ID/memory-providers"
 # Public local fixture key only; substitute your privately supplied key as needed.
 PROVIDER_ID=$(curl --fail-with-body -sS -H "Authorization: Bearer $SERVICE_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d "{\"name\":\"Local memories\",\"type\":\"a13n.mem0-oss\",\"configuration\":{\"base_url\":\"http://127.0.0.1:$MEM0_PORT\"},\"credential\":{\"api_key\":\"local-mem0-api-key\"}}" \
+  -d "{\"name\":\"Local memories\",\"type\":\"mem0_oss\",\"configuration\":{\"base_url\":\"http://127.0.0.1:$MEM0_PORT\"},\"credential\":{\"api_key\":\"local-mem0-api-key\"}}" \
   "$PROVIDERS" | jq -er '.id')
 BASE="$PROVIDERS/$PROVIDER_ID/memories"
 curl --fail-with-body -H "Authorization: Bearer $SERVICE_TOKEN" \

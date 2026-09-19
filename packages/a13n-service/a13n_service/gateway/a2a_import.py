@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 import anyio
 import httpx2
 from a2a.types import a2a_pb2 as a2a
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from google.protobuf.json_format import MessageToDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +17,6 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets import Asset
 from a13n_service.assets.errors import AssetError
 from a13n_service.assets.uploads import AssetUploadService, PreparedAssetPublication
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.interactions.input import AgentInput
 

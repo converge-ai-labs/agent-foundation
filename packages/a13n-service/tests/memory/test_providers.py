@@ -3,8 +3,9 @@ from dataclasses import replace
 
 import httpx2
 import pytest
-from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend
-from a13n_harness.memory_plugins import Mem0OSSBackendPlugin, MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory.builtins import MEM0_OSS
+from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthorizationError
 from a13n_service.iam.models import RoleBindingRecord
@@ -24,7 +25,7 @@ pytestmark = pytest.mark.anyio
 
 def request(name="Memory"):
     return CreateMemoryProviderRequest(
-        type="a13n.mem0-oss",
+        type="mem0_oss",
         name=name,
         configuration={"base_url": "http://unopened.invalid/"},
         credential={"api_key": "private-key"},
@@ -32,13 +33,13 @@ def request(name="Memory"):
 
 
 def providers(sessions):
-    return MemoryProviderService(sessions, protector(), MemoryBackendCatalog((Mem0OSSBackendPlugin(),)))
+    return MemoryProviderService(sessions, protector(), ProviderCatalog((MEM0_OSS,)))
 
 
 async def test_provider_schema_encryption_etags_and_immutable_target(memory_sessions):
     service = providers(memory_sessions)
-    definitions = await service.type_definitions(actor=actor())
-    assert [item.type for item in definitions.items] == ["a13n.mem0-oss"]
+    definitions = await service.provider_types(actor=actor())
+    assert [item.type for item in definitions.items] == ["mem0_oss"]
     assert definitions.items[0].credential_schema["writeOnly"] is True
     assert definitions.items[0].supports_documents is True
     first = await service.create(actor=actor(), workspace_id=WORKSPACE_ID, request=request())

@@ -291,7 +291,7 @@ async def test_projects_environment_observation_with_attempt_correlation(redis_c
             occurred_at=NOW,
             payload={
                 "mount_id": "workspace",
-                "provider_key": "test.provider",
+                "provider_key": "test_provider",
                 "operation_families": ["files"],
             },
         )
@@ -302,7 +302,7 @@ async def test_projects_environment_observation_with_attempt_correlation(redis_c
     assert tuple(entry.event.event_type for entry in page.items) == ("environment.preparation.ready",)
     assert page.items[0].event.run_attempt_id == ATTEMPT_ID
     assert page.items[0].event.harness_run_id == HARNESS_RUN_ID
-    assert page.items[0].event.payload["provider_key"] == "test.provider"
+    assert page.items[0].event.payload["provider_key"] == "test_provider"
 
 
 async def test_rejects_harness_correlation_change(redis_client: Redis) -> None:

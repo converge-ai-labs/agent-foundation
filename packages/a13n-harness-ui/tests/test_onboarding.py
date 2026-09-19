@@ -624,7 +624,7 @@ async def test_add_agent_can_back_out_of_existing_model_and_create_new(tmp_path:
 async def test_inline_login_uses_shared_sessions_and_survives_setup_cancellation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str
 ) -> None:
-    from a13n_harness.model_auth import CodexLoginResult
+    from a13n_harness.providers.model.oauth import CodexLoginResult
     from anyio import Event, fail_after
     from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 

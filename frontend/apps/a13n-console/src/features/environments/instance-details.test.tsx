@@ -70,7 +70,7 @@ it.each([
       if (path.includes("environment-commands")) return { data: receipt() };
       if (path.includes("environment-providers"))
         return {
-          data: { id: "envp_test", name: "Local", type: "direct-local" },
+          data: { id: "envp_test", name: "Local", type: "direct_local" },
         };
       detailReads++;
       return {
@@ -125,7 +125,7 @@ it.each([
     http.GET.mockClear();
     http.GET.mockImplementation(async (path: string) => ({
       data: path.includes("environment-providers")
-        ? { id: "envp_test", name: "Local", type: "direct-local" }
+        ? { id: "envp_test", name: "Local", type: "direct_local" }
         : {
             ...environment,
             ownership,
@@ -210,7 +210,7 @@ it.each([false, true])(
           };
         if (path.includes("environment-providers"))
           return {
-            data: { id: "envp_test", name: "Local", type: "direct-local" },
+            data: { id: "envp_test", name: "Local", type: "direct_local" },
           };
         return {
           data: {
@@ -341,7 +341,7 @@ it("shows revocation for a paired external device without stop or destroy capabi
       ? {
           id: "envp_test",
           name: "Connected devices",
-          type: "a13n.websocket-envd",
+          type: "websocket_envd",
         }
       : path.endsWith("/connection")
         ? { status: revoked ? "offline" : "online" }

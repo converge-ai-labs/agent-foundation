@@ -10,7 +10,11 @@ import {
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { useMemoryProviders } from "./availability";
+import {
+  eligibleMemoryProvider,
+  useMemoryProviders,
+  useWorkspaceMemoryProviderDefinitions,
+} from "./availability";
 import styles from "./memory.module.css";
 
 type Entry = Schema["MemoryEntrySelection"];
@@ -24,7 +28,7 @@ export function fileEntry(existing: readonly Entry[] = []): Entry {
     mode: "documents",
     description: "Project requirements, decisions, and procedures.",
     backend: {
-      type: "a13n.filesystem",
+      type: "filesystem",
       configuration: { storage: { root: "/memory" } },
     },
     scope: "thread",
@@ -44,6 +48,7 @@ export function MemoryEntryFields({
 }) {
   const { t } = useTranslation();
   const { providers } = useMemoryProviders();
+  const definitions = useWorkspaceMemoryProviderDefinitions();
   const backend = entry.backend;
   const providerId = "provider_id" in backend ? backend.provider_id : undefined;
   const configured =
@@ -61,7 +66,7 @@ export function MemoryEntryFields({
     onChange({
       ...entry,
       backend: {
-        type: "a13n.filesystem",
+        type: "filesystem",
         configuration: { storage: changed },
       },
     });
@@ -108,9 +113,7 @@ export function MemoryEntryFields({
                 .filter(
                   (item) =>
                     item.id === providerId ||
-                    (item.enabled &&
-                      (item.credential_configured ||
-                        item.type === "a13n.filesystem")),
+                    eligibleMemoryProvider(item, definitions.data?.items ?? []),
                 )
                 .map((item) => ({ value: item.id, label: item.name })),
               ...(providerId &&
@@ -128,8 +131,7 @@ export function MemoryEntryFields({
                 (item) => item.id === selected,
               );
               const documents =
-                selected === "filesystem" ||
-                provider?.type === "a13n.filesystem";
+                selected === "filesystem" || provider?.type === "filesystem";
               onChange({
                 name: entry.name,
                 description: entry.description,

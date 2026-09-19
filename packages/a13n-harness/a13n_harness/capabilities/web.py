@@ -52,8 +52,6 @@ class WebBinding:
 
     client: WebClient = field()
     policy: WebPolicy = field()
-    search_provider: WebSearchProvider | None = None
-    scrape_provider: WebScrapeProvider | None = None
     search_backends: tuple[WebSearchBackendBinding, ...] = ()
     scrape_backends: tuple[WebScrapeBackendBinding, ...] = ()
 
@@ -62,34 +60,10 @@ class WebBinding:
             raise TypeError("client must implement WebClient")
         if not isinstance(self.policy, WebPolicy):
             raise TypeError("policy must implement WebPolicy")
-        if self.search_provider is not None and not isinstance(self.search_provider, WebSearchProvider):
-            raise TypeError("search_provider must implement WebSearchProvider")
-        if self.scrape_provider is not None and not isinstance(self.scrape_provider, WebScrapeProvider):
-            raise TypeError("scrape_provider must implement WebScrapeProvider")
-        if self.search_provider is not None and self.search_backends:
-            raise ValueError("search_provider and search_backends are mutually exclusive")
-        if self.scrape_provider is not None and self.scrape_backends:
-            raise ValueError("scrape_provider and scrape_backends are mutually exclusive")
         if not all(isinstance(item, WebSearchBackendBinding) for item in self.search_backends):
             raise TypeError("search_backends must contain WebSearchBackendBinding values")
         if not all(isinstance(item, WebScrapeBackendBinding) for item in self.scrape_backends):
             raise TypeError("scrape_backends must contain WebScrapeBackendBinding values")
-        object.__setattr__(
-            self,
-            "search_backends",
-            tuple(self.search_backends)
-            or (
-                (WebSearchBackendBinding("default", self.search_provider),) if self.search_provider is not None else ()
-            ),
-        )
-        object.__setattr__(
-            self,
-            "scrape_backends",
-            tuple(self.scrape_backends)
-            or (
-                (WebScrapeBackendBinding("default", self.scrape_provider),) if self.scrape_provider is not None else ()
-            ),
-        )
         if len({item.backend_id for item in self.search_backends}) != len(self.search_backends):
             raise ValueError("search backend IDs must be unique")
         if len({item.backend_id for item in self.scrape_backends}) != len(self.scrape_backends):

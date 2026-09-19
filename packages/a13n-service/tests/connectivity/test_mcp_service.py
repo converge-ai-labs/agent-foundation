@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx2
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.connections.access import ConnectionError
 from a13n_service.connectivity.connections.domain import CreateConnectionRequest, MCPSource, UpdateConnectionRequest
@@ -29,7 +30,6 @@ from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
 from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
 from a13n_service.connectivity.mcp.service import MCPConnectionService
 from a13n_service.connectivity.mcp.transport import RemoteTransport
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.storage import transaction

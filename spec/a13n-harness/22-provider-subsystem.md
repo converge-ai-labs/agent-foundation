@@ -1,0 +1,156 @@
+# Provider Subsystem
+
+## Design Position
+
+A Provider is an inert immutable value that declares how to reach one external capability and how to open it. `a13n_harness.providers` owns one shared core for five Provider domains: Model, Web, Memory, Connector, and Environment. Every domain reuses the same identity, typed input models, credential declaration, setup help, selection catalog, and installed-plugin contract, and adds only the operations its capability actually needs.
+
+Providers are values, not registries. Importing a definition performs no I/O, opens no client, and grants no authority. A Host selects the definitions its deployment trusts, supplies validated configuration and a current credential, and owns the resulting resource lifetime.
+
+## Boundaries
+
+| Concern                                                       | Owner                                            |
+| ------------------------------------------------------------- | ------------------------------------------------ |
+| Identity, typed input models, credential declaration          | `ProviderDefinition` in the owning domain module |
+| Domain operation contract                                     | The domain's definition type                     |
+| Native definitions shipped with Harness                       | Each domain's built-in tuple                     |
+| Installed third-party contributions                           | `ProviderManifest` under one entry-point group   |
+| Selection and unique type per domain                          | `ProviderCatalog`                                |
+| Credential storage, encryption, rotation, and current value   | Host                                             |
+| Resource records, authorization, and deployment configuration | Host                                             |
+| Schema projection to a user interface                         | Host, from the definition's declared models      |
+| Live client lifetime                                          | The caller that opens the Provider               |
+
+The subsystem owns no durable record, no process-global registry, no ambient credential discovery, and no dynamic import target. `a13n_harness` never imports a Host implementation, and metadata for every domain loads without importing an optional vendor SDK.
+
+## Shared Core
+
+Every definition is a frozen dataclass extending one shared core:
+
+```python
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProviderDefinition[C: BaseModel, K: BaseModel]:
+    DOMAIN: ClassVar[str]
+
+    type: str
+    display_name: str
+    configuration_model: type[C]
+    credential_model: type[K] | None = None
+    authentication: Authentication = Authentication()
+    setup_url: str | None = None
+    setup_label: str | None = None
+```
+
+- `type` is the stable serialized discriminator. It matches `^[a-z][a-z0-9_]{0,63}$`; the same pattern validates every persisted Provider type across domains, including `EnvironmentState.provider_key`. A type changes only for a semantically distinct Provider family.
+- `display_name` is provider-owned presentation metadata, bounded to 128 characters. Hosts read it directly instead of keeping a parallel name table.
+- `configuration_model` describes the non-secret inputs needed to reach the capability. `credential_model` is `None` for a Provider that accepts no credential at all; such a definition can only forbid credentials, so it declares no other `Authentication`.
+- `setup_url` must be an HTTPS URL without embedded credentials; `setup_label` is meaningful only alongside it. Together they let a Host link an operator to the vendor's own console without a per-vendor branch.
+
+Construction validates this metadata eagerly, because an installed definition is untyped input: the type pattern, display name, setup link, and both Pydantic schemas are checked, and each schema must describe a bounded self-contained object with no remote `$ref`. A definition that fails validation is rejected at import, not at first use. Each domain adds its own rules through `validate_domain()`.
+
+`parse_credential()` enforces the declared presence rule and then validates the credential against `credential_model`. Secret values use secret types, stay out of representations, and are revealed only at the native SDK or wire boundary. Credentials may contain nested objects and non-string values; they are not serialized JSON hidden in a string field.
+
+## Authentication
+
+One declaration expresses credential presence for every domain:
+
+```python
+class Authentication(BaseModel):
+    mode: CredentialMode = CredentialMode.required
+    cases: tuple[AuthenticationCase, ...] = ()
+
+
+class AuthenticationCase(BaseModel):
+    field: str
+    equals: str | int | bool | None
+    mode: CredentialMode
+```
+
+`CredentialMode` is `required`, `optional`, or `forbidden`. A case names a declared configuration field and is resolved against the validated configuration, including defaults, with exact JSON scalar equality: boolean `true` is distinct from integer `1`. A matching case overrides the base mode. Duplicate conditions, conditions naming an undeclared field, and simultaneously matching conflicting modes are definition errors. Required mode rejects an absent credential, forbidden mode rejects a present one, and optional mode accepts either; a present credential always passes the declared typed schema.
+
+Hosts project this declaration alongside the configuration and credential schemas, so one form implementation serves every Provider without switching on a vendor name. Persistence semantics stay with the Host: omission on a partial update retains the stored credential, replacement validates the complete object, and explicit removal is accepted only when the resulting configuration allows absence.
+
+## Domain Additions
+
+| Domain      | Definition type                 | Adds                                                                                                                       |
+| ----------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Model       | `ModelProviderDefinition`       | Supported native calling APIs, endpoint derivation, reserved headers, native Provider construction, optional bounded probe |
+| Web         | `WebProviderDefinition`         | Optional `search` and `scrape` operations and declared restricted-scrape support                                           |
+| Memory      | `MemoryProviderDefinition`      | Optional record backend and declared document, revision, and change capabilities                                           |
+| Connector   | `ConnectorProviderDefinition`   | Setup validation and a scoped provider runtime over one bounded HTTP client                                                |
+| Environment | `EnvironmentProviderDefinition` | A separate target recipe model, construction of one fresh adapter, and declared target lifecycle capabilities              |
+
+[Model Provider Definitions](16b-model-provider-definitions.md) owns Model construction and native API bindings; [Environment Providers](08a-environment-providers.md) owns the Environment domain; [Context and Memory](09-context-and-memory.md) owns the memory boundary. Declared capability flags are the single source a Host reads before offering an action; a domain rejects a definition whose flags contradict its supplied operations.
+
+A definition never stores durable state, chooses retention, or associates a Thread. Acquiring a live resource is a separate explicit call that returns a scoped object owned by the caller.
+
+## Catalogs
+
+```python
+class ProviderCatalog[D: ProviderDefinition](Mapping[str, D]):
+    def require(self, provider_type: str) -> D: ...
+```
+
+A catalog is one immutable snapshot of the definitions a deployment selected for a single domain. It rejects a duplicate type at construction and exposes no mutation, late loading, ambient activation, or module replacement; changed Provider code requires a fresh process. Ordinary indexing has standard `Mapping` behavior, while `require()` raises `ProviderNotSelected` so a Host can map a stored-but-unselected type to a safe configuration error instead of an unhandled failure.
+
+Catalog presence never authorizes use. A Host resolves an allowed type from trusted configuration, validates the exact inputs, resolves the current credential, and only then opens the Provider. Model content, imported Harness state, and a package installed in the environment cannot select a Provider or supply collaborators.
+
+## Installed Plugins
+
+A third-party distribution contributes Providers through exactly one entry-point group, `a13n_harness.providers.plugins`, whose target is an immutable manifest value:
+
+```python
+@dataclass(frozen=True, slots=True)
+class ProviderManifest:
+    api_version: int
+    model: tuple[ModelProviderDefinition, ...] = ()
+    web: tuple[WebProviderDefinition, ...] = ()
+    memory: tuple[MemoryProviderDefinition, ...] = ()
+    environment: tuple[EnvironmentProviderDefinition, ...] = ()
+    connector: tuple[ConnectorProviderDefinition, ...] = ()
+```
+
+`api_version` is a fixed literal declared by the author, compared with the supported version rather than derived from the installed Harness. Each field must be an immutable tuple of that domain's definition type. One manifest may contribute to several domains; one distribution may publish several named entry points.
+
+`load_provider_plugins(enabled)` imports only the entry-point names the deployment selected. It rejects a duplicate or malformed selected name, a selected name that is not installed, an ambiguous name matching several installed entry points, and a target that is not a `ProviderManifest`. An empty selection performs no metadata scan and imports nothing. The loader reports the entry-point name, distribution name, distribution version, and import target as diagnostic provenance; provenance is not authorization.
+
+Installation alone activates nothing: the deployment names entry points, never an import target. There is no second loader, no registration callback, no process-global registry, and no per-domain entry-point group. Host applications that also select Harness business plugins use the separate `a13n_harness.plugins` and `a13n_harness.environment_run_extensions` groups, which contribute execution behavior rather than Providers.
+
+## Host Composition
+
+A Host builds one `ProviderCatalog` per domain from its native definitions plus the selected manifests, so a plugin type and a native type collide loudly instead of shadowing each other. a13n Service performs this once at startup and fails before readiness on any selection error; the resulting catalogs are immutable process-local snapshots shared by its management and execution roles. [Distribution Composition and Extensions](../a13n-service/02-distribution-composition-and-extensions.md) owns the Service deployment contract, and Harness UI selects the same loader for its local extensions.
+
+A Host projects safe metadata for each selected definition: `type`, `display_name`, the configuration and credential JSON Schemas, the `Authentication` declaration, `setup_url`, `setup_label`, and the domain's declared capabilities. The projection contains no credential value, no native client, and no import target.
+
+## Failure Semantics
+
+| Condition                                                       | Behavior                                                       |
+| --------------------------------------------------------------- | -------------------------------------------------------------- |
+| Invalid type, display name, setup link, or declared schema      | Fail at definition construction                                |
+| Authentication condition naming an undeclared field             | Fail at definition construction                                |
+| Duplicate type within one domain catalog                        | Fail catalog construction                                      |
+| Selected plugin missing, ambiguous, or not a manifest           | Fail selection; never silently omit a selected Provider        |
+| Unsupported manifest API version                                | Fail selection                                                 |
+| Referenced type absent from the catalog                         | `ProviderNotSelected`, projected as a safe configuration error |
+| Credential absent under `required` or present under `forbidden` | Fail before any external call                                  |
+| Invalid configuration or credential payload                     | Fail with bounded field diagnostics and no external effects    |
+
+Errors expose bounded Provider and distribution context. They never expose credentials, bearer URLs, or native exception text on a model-facing surface.
+
+## Compatibility
+
+Provider `type` values are stable serialized discriminators shared by configuration records, state envelopes, and host APIs. Adding a field to a definition is additive; adding a required declared capability is a breaking change for third-party definitions and advances the manifest API version. Installed code provenance is diagnostic metadata, not a per-resource Python package lock.
+
+Definitions carry no configuration schema version. A Provider owns exactly one configuration model, one optional credential model, and, for Environment, one target recipe model; changing an input's meaning changes the Provider type rather than introducing a parallel versioned schema.
+
+## Invariants
+
+01. One shared core declares identity, typed inputs, credential presence, and setup help for all five domains.
+02. Defining and selecting a Provider performs no external I/O and creates no client.
+03. `a13n_harness.providers.plugins` is the only Provider entry-point group and the only authoring surface for installed contributions.
+04. A deployment selects entry-point names; it never supplies an import target.
+05. One `ProviderCatalog` per domain owns the unique-type rule and is immutable after construction.
+06. Catalog membership never grants authority, and a missing type is a safe configuration error.
+07. Credential presence has one meaning across definitions, hosts, and forms.
+08. Credentials and live collaborators never enter configuration, portable state, or Harness continuation.
+09. Importing definition metadata never imports an optional vendor SDK or a Host implementation.
+10. A Provider definition owns no durable record, retention policy, or resource authority.

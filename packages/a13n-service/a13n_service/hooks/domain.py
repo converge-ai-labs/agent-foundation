@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -16,7 +17,6 @@ from pydantic import (
     model_validator,
 )
 
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId
 from a13n_service.secrets.domain import SecretId

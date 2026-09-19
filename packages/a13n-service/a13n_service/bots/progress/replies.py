@@ -5,11 +5,11 @@ from datetime import timedelta
 
 import anyio
 import httpx2
+from a13n_harness.http import ProviderHttpError
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 
 from a13n_service.connectivity.accounts.models import AccountRecord
-from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.native_context import InboundRunContext, parse_native_contexts
 from a13n_service.connectivity.providers.lark.actions import (
     LarkAutoReplyArguments,
@@ -66,13 +66,13 @@ class CardReplies:
         deadline = anyio.current_time() + 45
         while lease is None:
             if anyio.current_time() >= deadline:
-                raise ConnectivityHttpError("rate_limited", retry_after_seconds=2)
+                raise ProviderHttpError("rate_limited", retry_after_seconds=2)
             lease = await self._claim(attempt, context, arguments, account_version, credential_generation)
             if lease is None:
                 await anyio.sleep(0.25)
         try:
             message_id = await self.delivery.publish(attempt.run_id, lease)
-        except ConnectivityHttpError as error:
+        except ProviderHttpError as error:
             if error.code in {"provider_rejected", "rate_limited", "invalid_arguments", "endpoint_denied"}:
                 # A definite rejection must not become a later successful background reply.
                 await self._discard(attempt.run_id, lease)
@@ -154,7 +154,7 @@ class CardReplies:
                 None,
                 placement,
             }:
-                raise ConnectivityHttpError("invalid_arguments")
+                raise ProviderHttpError("invalid_arguments")
             await authorize_progress(session, account, run, action=WorkspaceAction.run_read)
             if isinstance(arguments, (SlackAutoReplyArguments, SlackForcedReplyArguments)):
                 text = arguments.text

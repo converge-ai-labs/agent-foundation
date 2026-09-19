@@ -200,8 +200,18 @@ it("defaults to the first compatible Web Provider and shows its logo in the sele
       : path.endsWith("/web-provider-types")
         ? {
             items: [
-              { type: "brave", operations: ["search"] },
-              { type: "exa", operations: ["search", "scrape"] },
+              {
+                type: "brave",
+                operations: ["search"],
+                authentication: { mode: "required" },
+                configuration_schema: {},
+              },
+              {
+                type: "exa",
+                operations: ["search", "scrape"],
+                authentication: { mode: "required" },
+                configuration_schema: {},
+              },
             ],
           }
         : path.endsWith("/web-providers")
@@ -335,7 +345,16 @@ it("does not replace an unavailable saved Web Provider when enabling the group",
     data: path.endsWith("/toolsets")
       ? { items: [web] }
       : path.endsWith("/web-provider-types")
-        ? { items: [{ type: "brave", operations: ["search"] }] }
+        ? {
+            items: [
+              {
+                type: "brave",
+                operations: ["search"],
+                authentication: { mode: "required" },
+                configuration_schema: {},
+              },
+            ],
+          }
         : {
             items: [
               {
@@ -384,7 +403,16 @@ it("does not show an enabled provider-backed tool without a saved provider refer
     data: path.endsWith("/toolsets")
       ? { items: [web] }
       : path.endsWith("/web-provider-types")
-        ? { items: [{ type: "brave", operations: ["search"] }] }
+        ? {
+            items: [
+              {
+                type: "brave",
+                operations: ["search"],
+                authentication: { mode: "required" },
+                configuration_schema: {},
+              },
+            ],
+          }
         : {
             items: [
               {
@@ -423,7 +451,16 @@ it("enables local Web tools while Provider discovery is still pending", async ()
     return Promise.resolve({
       data: path.endsWith("/toolsets")
         ? { items: [web] }
-        : { items: [{ type: "brave", operations: ["search"] }] },
+        : {
+            items: [
+              {
+                type: "brave",
+                operations: ["search"],
+                authentication: { mode: "required" },
+                configuration_schema: {},
+              },
+            ],
+          },
     });
   });
   http.POST.mockResolvedValue({

@@ -6,7 +6,6 @@ on:
     paths:
       - ".github/workflows/ci-examples.yml"
       - "examples/**"
-      - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -15,7 +14,6 @@ on:
     paths:
       - ".github/workflows/ci-examples.yml"
       - "examples/**"
-      - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
       - "pyproject.toml"
       - "uv.lock"

@@ -3,9 +3,15 @@
 from datetime import datetime
 from typing import Annotated
 
-from a13n_harness.document_memory import Document, DocumentChange, DocumentHeading, DocumentInput, DocumentMutation
-from a13n_harness.filesystem_memory import DocumentNavigation
-from a13n_harness.memory_organization import OrganizationResult
+from a13n_harness.providers.memory.documents import (
+    Document,
+    DocumentChange,
+    DocumentHeading,
+    DocumentInput,
+    DocumentMutation,
+)
+from a13n_harness.providers.memory.filesystem.organization import OrganizationResult
+from a13n_harness.providers.memory.filesystem.store import DocumentNavigation
 from fastapi import APIRouter, Header, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 

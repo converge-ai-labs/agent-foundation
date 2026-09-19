@@ -2,6 +2,7 @@ from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agent_configuration.definition import load_definition
 from a13n_service.agent_configuration.inputs import ConfigurationInputRequest, ConfigurationInputs
 from a13n_service.agent_configuration.knowledge import KnowledgeFiles
@@ -10,7 +11,6 @@ from a13n_service.agent_configuration.runtime import validate_configuration_defi
 from a13n_service.agent_configuration.system_agent import SystemConfigurationAgent
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.application_errors import ApplicationError
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.acceptance import RunAcceptanceService
@@ -18,7 +18,7 @@ from a13n_service.interactions.command_preparation import CommandInput
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import short_session, transaction
@@ -73,7 +73,7 @@ async def inputs_service(sessions, tmp_path, *, definition=None):
         provider.credential_configured = True
         model = await session.get(ModelRecord, MODEL_ID)
         model.declarations = {**model.declarations, "supports_tools": True}
-    models = AcceptedModelSelector(sessions, built_in_provider_registry())
+    models = AcceptedModelSelector(sessions, built_in_model_provider_catalog())
     definition = definition or load_definition()
     objects = await LocalObjectStore.create(tmp_path / "objects")
     states = RunStateStore(objects)
@@ -91,7 +91,7 @@ async def inputs_service(sessions, tmp_path, *, definition=None):
         ),
         states,
         CommandInput(sessions, AsyncMock(), EndpointPolicy()),
-        ConfigurationReadiness(sessions, built_in_provider_registry(), definition),
+        ConfigurationReadiness(sessions, built_in_model_provider_catalog(), definition),
         SystemConfigurationAgent(sessions, definition, clock=lambda: NOW),
         definition,
         KnowledgeFiles(),

@@ -5,10 +5,10 @@ from urllib.parse import urlencode
 
 import httpx2
 import pytest
+from a13n_harness.http import ProviderHttpError
 from a13n_service.bots.progress.actions import ProgressActions
 from a13n_service.bots.progress.models import ProgressRecord
 from a13n_service.connectivity.accounts.models import AccountRecord
-from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.ingress.provider import (
     ProviderActionDecision,
     ProviderCompleteDecision,
@@ -113,7 +113,7 @@ async def test_long_answer_chunks_preserve_content_and_reject_oversize():
     sections = [block["text"]["text"] for block in card["blocks"] if block["type"] == "section"]
     assert all(len(part) <= 3000 for part in sections)
     assert "".join(sections) == answer
-    with pytest.raises(ConnectivityHttpError):
+    with pytest.raises(ProviderHttpError):
         task_message(status="running", run_id="run_test", token="secret", details_url=None, replies=("x" * 32_001,))
 
 

@@ -1,6 +1,6 @@
 """Exact completed-work references remain bound to their admitted corpus and audience."""
 
-from a13n_harness.document_memory import MemoryDocumentError
+from a13n_harness.providers.memory.documents import MemoryDocumentError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

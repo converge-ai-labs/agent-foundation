@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from a13n_environment import (
-    DirectLocalEnvironment,
-    DirectLocalProviderConfiguration,
+from a13n_harness import RunError
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
 )
-from a13n_harness import RunError
+from a13n_harness.providers.environment.direct_local.provider import DirectLocalEnvironment
 from pydantic_ai.messages import ModelMessage, ModelRequest
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -19,27 +19,13 @@ pytestmark = pytest.mark.anyio
 
 
 class _MockEnvironment(DirectLocalEnvironment):
-    def __init__(self, configuration: DirectLocalProviderConfiguration, lifecycle: list[str]) -> None:
+    def __init__(self, configuration: DirectLocalEnvironmentConfiguration, lifecycle: list[str]) -> None:
         super().__init__(configuration, environment_id="mock-environment")
         self._lifecycle_events = lifecycle
 
-    async def _prepare(
-        self,
-        *,
-        thread_id: str,
-        run_id: str,
-        agent_instance_id: str,
-        mount_id: str,
-        host_refs: Mapping[str, str],
-    ) -> None:
+    async def _prepare(self, *, mount_id: str) -> None:
         self._lifecycle_events.append("prepare")
-        await super()._prepare(
-            thread_id=thread_id,
-            run_id=run_id,
-            agent_instance_id=agent_instance_id,
-            mount_id=mount_id,
-            host_refs=host_refs,
-        )
+        await super()._prepare(mount_id=mount_id)
 
     async def _close(self) -> None:
         try:
@@ -52,7 +38,7 @@ class _MockEnvironmentFactory:
     """Construct fresh Direct Local adapters with observable Run-local lifecycles."""
 
     def __init__(self, root: Path) -> None:
-        self._configuration = DirectLocalProviderConfiguration(
+        self._configuration = DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
         )
         self.lifecycle: list[str] = []

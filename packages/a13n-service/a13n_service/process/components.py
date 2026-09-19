@@ -5,15 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from a13n_environment import EnvironmentProviderCatalog
-from a13n_harness.memory_plugins import MemoryBackendCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
+from a13n_harness.providers.memory import MemoryProviderDefinition
 
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.ingress.admission_domain import InputAcceptor
 from a13n_service.connectivity.providers import built_in_ingress_adapter_registry
 from a13n_service.iam import RequestAuthenticator
@@ -38,14 +39,15 @@ class Components:
     agent_invocation_resolver: AgentInvocationResolver | None = None
     model_connection_tester: ModelConnectionTester | None = None
     model_catalog: ModelCatalog | None = None
-    environment_provider_catalog: EnvironmentProviderCatalog | None = None
-    memory_backend_catalog: MemoryBackendCatalog | None = None
+    environment_provider_catalog: ProviderCatalog[EnvironmentProviderDefinition] | None = None
+    memory_provider_catalog: ProviderCatalog[MemoryProviderDefinition] | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None
     skill_credential_resolver: GitHubCredentialResolver | None = None
     trace_access_authorizer: TraceAccessAuthorizer | None = None
     trace_query_provider_registry: TraceQueryProviderRegistry | None = None
     ingress_adapter_registry: AdapterRegistry[IngressAdapter] | None = None
-    connector_provider_registry: ConnectorProviderRegistry | None = None
+    connector_providers: ProviderCatalog[ConnectorProviderDefinition] | None = None
+    connector_http: ConnectorHttpClient | None = None
     input_acceptor: InputAcceptor | None = None
     plugin_factory_catalog: HarnessPluginFactoryCatalog | None = None
 
@@ -59,15 +61,13 @@ def snapshot_components(settings: Settings, components: Components) -> Component
             components.ingress_adapter_registry
             or built_in_ingress_adapter_registry(allowed_provider_origins=settings.connectivity.provider_origins)
         ).copy()
-    connector_providers = components.connector_provider_registry
+    connector_providers = components.connector_providers
     if not (owns_control(settings.service.role) or owns_worker(settings.service.role)) or connector_providers is None:
         connector_providers = None
-    else:
-        connector_providers = connector_providers.copy(frozen=True)
     return replace(
         components,
         ingress_adapter_registry=ingress_adapters,
-        connector_provider_registry=connector_providers,
+        connector_providers=connector_providers,
     )
 
 

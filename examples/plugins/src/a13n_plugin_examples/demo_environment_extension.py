@@ -59,17 +59,16 @@ async def _run_extension_demo(
     catalog: EnvironmentRunExtensionFactoryCatalog,
     workspace_root: Path,
 ) -> EnvironmentExtensionDemoResult:
-    from a13n_plugin_examples.environment import WorkspaceEnvironmentProvider
+    from a13n_plugin_examples.environment import WORKSPACE_ENVIRONMENT as provider
 
-    provider = WorkspaceEnvironmentProvider()
-    configuration = provider.validate_configuration(
-        schema_version="1",
-        value={"root": str(workspace_root)},
+    configuration = provider.validate_environment(
+        {"root": str(workspace_root)},
     )
-    environment = provider.create_environment(
+    environment = provider.construct(
         environment_id="extension-workspace",
         configuration=configuration,
         state=None,
+        runtime=None,
     )
     extension_id = f"marker-{selection_mode}"
     marker_path = "/workspace/.example-run"

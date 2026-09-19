@@ -200,13 +200,12 @@ schema_version: "1"
 kind: environment_profile
 id: environment-team
 name: Team native environment
-provider_key: direct-local
-provider_schema_version: "1"
+provider_key: direct_local
 provider_configuration: {}
 adapter_key: a13n.native-project-root
 adapter_configuration: {}
 ```
 
-Beyond the common resource envelope, all fields are shown above. The provider owns `provider_schema_version` and `provider_configuration`; the adapter owns `adapter_configuration` and Project-to-Environment mapping. Empty mappings are defaults, not a universal configuration for every provider. A provider package alone does not imply that every Project adapter is installed or compatible.
+Beyond the common resource envelope, all fields are shown above. The provider owns `provider_configuration`; the adapter owns `adapter_configuration` and Project-to-Environment mapping. Empty mappings are defaults, not a universal configuration for every provider. A provider package alone does not imply that every Project adapter is installed or compatible.
 
 Use `defaults.environment_profile: environment-team` or the explicit launch option, then run `config validate` and `doctor`. Never treat a profile label as proof of isolation. Provider readiness and the actual execution contract determine that behavior.

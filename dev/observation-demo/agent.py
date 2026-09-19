@@ -13,12 +13,6 @@ from tempfile import TemporaryDirectory
 from threading import Lock
 from typing import Any, Literal
 
-from a13n_environment import (
-    DirectLocalEnvironmentProvider,
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-    Environment,
-)
 from a13n_harness import (
     AgentContext,
     AgentDefinition,
@@ -53,6 +47,12 @@ from a13n_harness.pricing import (
     ModelCostInput,
     ModelCostQuote,
 )
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.management import Environment
 from a13n_harness.tools import (
     HarnessToolMetadata,
     InvocationPolicyCapability,
@@ -384,9 +384,9 @@ def _main_identity(scenario: Scenario) -> AgentIdentityRef:
 
 
 def _local_environment(root: Path) -> Environment:
-    return DirectLocalEnvironmentProvider().create_environment(
+    return DIRECT_LOCAL.construct(
         environment_id="observation-demo-local",
-        configuration=DirectLocalProviderConfiguration(root=DirectLocalRootConfiguration(path=root)),
+        configuration=DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=root)),
         state=None,
         runtime=None,
     )

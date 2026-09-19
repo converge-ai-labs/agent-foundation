@@ -1,0 +1,1 @@
+"""Native sprites Environment support."""

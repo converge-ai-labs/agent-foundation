@@ -2,7 +2,7 @@ import asyncio
 
 import httpx2
 import pytest
-from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend
+from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend
 from a13n_service.application_errors import ApplicationError
 from a13n_service.memory.domain import MemoryScope, MemoryWrite
 from pydantic import ValidationError

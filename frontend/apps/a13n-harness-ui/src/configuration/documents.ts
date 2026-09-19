@@ -66,7 +66,6 @@ export function template(kind: ResourceKind, id: string): string {
     harness_plugin: { plugin_key: "", configuration: {} },
     environment_profile: {
       provider_key: "",
-      provider_schema_version: "1",
       adapter_key: "",
       provider_configuration: {},
       adapter_configuration: {},

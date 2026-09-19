@@ -38,7 +38,9 @@ async def test_http_contract_safe_credentials_preconditions_and_catalog(
                 "tavily",
             ]
             for definition in catalog.json()["items"]:
-                assert definition["credential_schema"]["writeOnly"]
+                credential_schema = definition["credential_schema"]
+                # DuckDuckGo takes no credential, so it declares no credential schema.
+                assert credential_schema is None or credential_schema["writeOnly"]
                 assert (await client.get(f"/api/v1/web-provider-types/{definition['type']}")).json() == definition
             for scope, headers in (
                 (f"workspaces/{workspace_ref}", {}),

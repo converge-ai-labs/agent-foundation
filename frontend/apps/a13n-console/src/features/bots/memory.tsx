@@ -272,7 +272,7 @@ function ScopeDocuments({
 }: Parameters<typeof NativeScopeDocuments>[0] & {
   target?: Schema["AccountTarget"];
 }) {
-  return props.scope?.backend_type === "a13n.filesystem" ? (
+  return props.scope?.backend_type === "filesystem" ? (
     <div className={styles.fileMemory}>
       <div className={styles.fileMemoryActions}>
         <GroupMemorySettings

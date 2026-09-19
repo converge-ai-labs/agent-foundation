@@ -4,8 +4,8 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
-from a13n_environment import EnvironmentState
-from a13n_environment.files import FileOperator
+from a13n_harness.providers.environment.files import FileOperator
+from a13n_harness.providers.environment.models import EnvironmentState
 from anyio import fail_after
 from sqlalchemy import delete
 
@@ -83,13 +83,7 @@ class ExistingEnvironmentFiles:
         try:
             with fail_after(30):
                 environment = await self.lifecycle.construct(operation)
-                await environment.enter(
-                    thread_id=lease_id,
-                    run_id=lease_id,
-                    agent_instance_id=lease_id,
-                    mount_id=lease_id,
-                    host_refs={},
-                )
+                await environment.enter(mount_id=lease_id)
                 await environment.check_ready(frozenset({"files"}))
                 if environment.dump_state() != operation.state or environment.operations.files is None:
                     raise ValueError("Memory Environment identity changed")

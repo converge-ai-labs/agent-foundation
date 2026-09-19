@@ -10,9 +10,12 @@ from pathlib import Path
 from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
-from a13n_environment import HttpEnvdBackendConfiguration, WebSocketEnvdBackendConfiguration
-from a13n_environment.remote_envd.configuration import RemoteEnvdStateData
 from a13n_harness.capabilities import ToolProxyConfig
+from a13n_harness.providers.environment.remote_envd.configuration import (
+    HttpEnvdConnectionConfiguration,
+    RemoteEnvdStateData,
+    WebSocketEnvdConnectionConfiguration,
+)
 from a13n_harness.spec import HarnessModelCharacteristics
 from a13n_harness.tools.tool_proxy import validate_group
 from pydantic import (
@@ -288,12 +291,12 @@ class ModelResource(ConfigurationModel):
 
 class HttpDeviceTransport(StrictModel):
     kind: Literal["http"]
-    configuration: HttpEnvdBackendConfiguration
+    configuration: HttpEnvdConnectionConfiguration
 
 
 class WebSocketDeviceTransport(StrictModel):
     kind: Literal["websocket"]
-    configuration: WebSocketEnvdBackendConfiguration = Field(default_factory=WebSocketEnvdBackendConfiguration)
+    configuration: WebSocketEnvdConnectionConfiguration = Field(default_factory=WebSocketEnvdConnectionConfiguration)
 
 
 type DeviceTransport = Annotated[HttpDeviceTransport | WebSocketDeviceTransport, Field(discriminator="kind")]
@@ -352,7 +355,6 @@ class EnvironmentProfileResource(ConfigurationModel):
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     provider_key: CatalogKey
-    provider_schema_version: str = Field(min_length=1, max_length=64)
     provider_configuration: dict[str, JsonValue] = Field(default_factory=dict)
     adapter_key: CatalogKey
     adapter_configuration: dict[str, JsonValue] = Field(default_factory=dict)

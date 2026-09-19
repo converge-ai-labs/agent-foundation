@@ -5,15 +5,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from a13n_service.application_errors import ErrorCategory
-from a13n_service.connectivity.connections.domain import Connection
-from a13n_service.connectivity.connectors.contracts import (
+from a13n_harness.providers.connector.contracts import (
     ConnectionBinding,
     ConnectionInspection,
     ConnectorProviderError,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from a13n_service.application_errors import ErrorCategory
+from a13n_service.connectivity.connections.domain import Connection
 from a13n_service.connectivity.management import replay_command
 from a13n_service.durable_operations.idempotency import (
     IdempotencyConflict,

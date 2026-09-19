@@ -7,12 +7,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Literal, cast
 from uuid import uuid4
 
-from a13n_environment import EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, computed_field, field_validator
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.errors import StateError
+from a13n_harness.providers.environment.models import EnvironmentState
 
 _JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
 _ENVIRONMENT_STATES_ADAPTER = TypeAdapter(dict[str, EnvironmentState])

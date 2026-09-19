@@ -7,9 +7,9 @@ from pathlib import Path
 
 import anyio
 import pytest
-from a13n_environment.direct_local.files import LocalFileOperator
 from a13n_harness import DefinitionError, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import FileSkillSource, SkillManager, SkillsCapability, skills
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.models.function import FunctionModel
 

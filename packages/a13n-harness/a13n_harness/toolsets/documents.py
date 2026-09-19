@@ -14,10 +14,10 @@ from pydantic_ai import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness.context import AgentContext
-from a13n_harness.environment.files import FileOperator
-from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.providers import FileScopeProvider
 from a13n_harness.errors import RunError
+from a13n_harness.providers.environment.files import FileOperator
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_harness.usage import ProviderUsage
 

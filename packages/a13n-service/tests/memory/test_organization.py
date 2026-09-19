@@ -5,13 +5,14 @@ from hashlib import sha256
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from a13n_environment.direct_local.files import LocalFileOperator
-from a13n_environment.direct_local.provider import _DirectLocalFilePolicy
-from a13n_harness.document_memory import DocumentInput
-from a13n_harness.filesystem_memory import FilesystemMemoryStore
-from a13n_harness.memory import MemoryScope
-from a13n_harness.memory_file_commit import EnvironmentMemoryFileCoordinator
-from a13n_harness.memory_plugins import FilesystemMemoryBackendPlugin, MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+from a13n_harness.providers.environment.direct_local.provider import _DirectLocalFilePolicy
+from a13n_harness.providers.memory.builtins import FILESYSTEM
+from a13n_harness.providers.memory.contracts import MemoryScope
+from a13n_harness.providers.memory.documents import DocumentInput
+from a13n_harness.providers.memory.filesystem.commit import EnvironmentMemoryFileCoordinator
+from a13n_harness.providers.memory.filesystem.store import FilesystemMemoryStore
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.digests import digest_request
 from a13n_service.interactions.attempts import AttemptExecutionService
@@ -49,7 +50,7 @@ async def test_completed_work_is_admitted_once_and_rechecks_organization_policy(
         name="project",
         mode="documents",
         description="Decisions",
-        backend={"type": "a13n.filesystem"},
+        backend={"type": "filesystem"},
         auto_organize=True,
         scope="thread",
     )
@@ -61,10 +62,10 @@ async def test_completed_work_is_admitted_once_and_rechecks_organization_policy(
         }
     )
     states, run, state = await _accept_root(sessions, interaction_object_store, config=config)
-    catalog = MemoryBackendCatalog((FilesystemMemoryBackendPlugin(),))
+    catalog = ProviderCatalog((FILESYSTEM,))
     memory = MemoryService(catalog, protector(), MemoryAuthorizer(sessions, catalog))
     store_id = "mstore_1234567890abcdef"
-    subject = memory_subject(ORGANIZATION_ID, WORKSPACE_ID, "a13n.filesystem", MemoryScope.THREAD, run.thread_id).value
+    subject = memory_subject(ORGANIZATION_ID, WORKSPACE_ID, "filesystem", MemoryScope.THREAD, run.thread_id).value
     files = LocalFileOperator(
         root=tmp_path,
         policy=_DirectLocalFilePolicy(max_value_bytes=1024 * 1024),
@@ -107,7 +108,7 @@ async def test_completed_work_is_admitted_once_and_rechecks_organization_policy(
                 target_digest="a" * 64,
                 organization_id=ORGANIZATION_ID,
                 workspace_id=WORKSPACE_ID,
-                provider_identity="a13n.filesystem",
+                provider_identity="filesystem",
                 subject=subject,
                 scope_kind="thread",
                 subject_id=run.thread_id,

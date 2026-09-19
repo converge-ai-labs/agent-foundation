@@ -4,6 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { credentialMode } from "../../shared/provider-authentication";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
@@ -25,9 +26,27 @@ export function useConnectionDirectory(search: string) {
         ),
       ),
   });
+  const definitions = useQuery({
+    queryKey: ["connector-provider-types"],
+    enabled: can("connector_provider.read") && can("connection.manage"),
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/connector-provider-types", { signal })
+        .then(data),
+  });
   const mcpServers = useMCPServers(search, can("connection.manage"));
   const active =
-    providers.data?.filter((provider) => provider.status === "active") ?? [];
+    providers.data?.filter((provider) => {
+      const definition = definitions.data?.items.find(
+        (item) => item.type === provider.type,
+      );
+      return (
+        provider.status === "active" &&
+        !!definition &&
+        (credentialMode(definition, provider.configuration) !== "required" ||
+          provider.credential_configured)
+      );
+    }) ?? [];
   const key = (provider: Schema["ConnectorProvider"]) => [
     "connector-directory",
     workspace.id,
@@ -95,10 +114,12 @@ export function useConnectionDirectory(search: string) {
     providers: active,
     pending:
       providers.isLoading ||
+      definitions.isLoading ||
       mcpServers.isLoading ||
       queries.some((query) => query.isLoading),
     error:
       providers.error ??
+      definitions.error ??
       mcpServers.error ??
       queries.find((query) => query.error)?.error ??
       load.error,

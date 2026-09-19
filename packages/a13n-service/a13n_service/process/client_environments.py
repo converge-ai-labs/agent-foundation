@@ -2,8 +2,9 @@
 
 from contextlib import AsyncExitStack
 
-from a13n_environment import EnvironmentProviderCatalog
-from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 
 from a13n_service.environments.websocket.relay_capability import validate_relay_backend
 from a13n_service.environments.websocket.relay_runtime import RelayResponseRuntime
@@ -17,7 +18,7 @@ from a13n_service.storage.redis import open_redis
 async def build_relay_responses(
     settings: Settings,
     storage: StorageResources,
-    catalog: EnvironmentProviderCatalog,
+    catalog: ProviderCatalog[EnvironmentProviderDefinition],
     stack: AsyncExitStack,
 ) -> RelayResponseRuntime | None:
     if WEBSOCKET_PROVIDER_KEY not in catalog:

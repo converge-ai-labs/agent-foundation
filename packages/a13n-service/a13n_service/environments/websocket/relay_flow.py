@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import OrderedDict
 
-from a13n_environment.models import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 
 from .relay_protocol import TransferPosition
 

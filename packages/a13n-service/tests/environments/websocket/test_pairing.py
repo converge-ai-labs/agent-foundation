@@ -11,7 +11,12 @@ from datetime import timedelta
 import httpx2
 import pytest
 import uvicorn
-from a13n_environment.remote_envd.pairing import PairingPending, PairingRequest, credential_digest, pairing_id
+from a13n_harness.providers.environment.remote_envd.pairing import (
+    PairingPending,
+    PairingRequest,
+    credential_digest,
+    pairing_id,
+)
 from a13n_service.app import Components, create_app
 from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.environments.models import DevicePairingRecord, EnvironmentProviderRecord, EnvironmentRecord

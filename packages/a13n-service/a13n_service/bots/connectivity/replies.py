@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Literal
 
 import anyio
+from a13n_harness.http import ProviderHttpError
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -13,7 +14,6 @@ from a13n_service.bots.memory.settings import settings_version
 from a13n_service.bots.progress.replies import CardReplies
 from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
-from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.ingress.admission_models import AgentThreadBindingRecord
 from a13n_service.connectivity.native_context import InboundRunContext, NativeToolContext, parse_native_contexts
 from a13n_service.connectivity.providers.github.actions import GitHubAddCommentOutcomeUnknown, GitHubAddCommentSucceeded
@@ -93,9 +93,7 @@ class BotReplyObserver:
             if result is None:
                 result = await invoke()
         except BaseException as error:
-            code = (
-                error.code if isinstance(error, ConnectivityHttpError) and error.code in _DEFINITE_REJECTION else None
-            )
+            code = error.code if isinstance(error, ProviderHttpError) and error.code in _DEFINITE_REJECTION else None
             await self._finish(identity, "rejected" if code else "outcome_unknown", None, code)
             raise
         success_type = (

@@ -3,6 +3,9 @@
 import json
 from datetime import timedelta
 
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.web.definition import WebProviderDefinition
+from a13n_harness.providers.web.transport import WebProviderTransport
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,11 +18,13 @@ from a13n_service.collection_cursors import (
     decode_collection_cursor,
     encode_collection_cursor,
 )
+from a13n_service.credentials import provider_credential_payload
 from a13n_service.iam import AuthenticatedActor, authorize_agent
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction
 from a13n_service.iam.resource_scope import authorize_scope
 from a13n_service.ids import new_object_id
+from a13n_service.provider_metadata import ProviderMetadataCollection
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import is_unique_conflict, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -29,12 +34,11 @@ from .domain import (
     UpdateWebProviderRequest,
     WebProvider,
     WebProviderCollection,
-    WebProviderDefinitionCollection,
+    WebProviderMetadata,
     WebProviderReference,
     WebProviderReferenceCollection,
 )
 from .models import WebProviderRecord
-from .registry import WebProviderRegistry
 from .resources import WebProviderError, require_etag, require_provider
 
 
@@ -43,16 +47,34 @@ class WebProviderService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         protector: SecretProtector,
-        registry: WebProviderRegistry,
+        catalog: ProviderCatalog[WebProviderDefinition],
         *,
+        provider_transport: WebProviderTransport | None = None,
         clock: Clock = utc_now,
     ) -> None:
         self.sessions = sessions
         self.protector = protector
         self.clock = clock
-        self.registry = registry
+        self.catalog = catalog
+        # The saved-account probe borrows one process transport; ordinary runs own theirs.
+        self.provider_transport = provider_transport
 
-    async def type_definitions(self, *, actor: AuthenticatedActor) -> WebProviderDefinitionCollection:
+    async def provider_types(self, *, actor: AuthenticatedActor) -> ProviderMetadataCollection[WebProviderMetadata]:
+        await self._authorize_read(actor)
+        return ProviderMetadataCollection(
+            items=tuple(WebProviderMetadata.describe(self.catalog[key]) for key in sorted(self.catalog))
+        )
+
+    async def provider_type(self, *, actor: AuthenticatedActor, provider_type: str) -> WebProviderMetadata:
+        await self._authorize_read(actor)
+        try:
+            return WebProviderMetadata.describe(self.catalog.require(provider_type))
+        except ValueError as error:
+            raise WebProviderError(
+                "web_provider_type_not_found", "Web Provider type not found.", category=ErrorCategory.not_found
+            ) from error
+
+    async def _authorize_read(self, actor: AuthenticatedActor) -> None:
         async with transaction(self.sessions) as session:
             await authorize_scope(
                 session,
@@ -60,7 +82,6 @@ class WebProviderService:
                 workspace_id=actor.boundary_workspace_id,
                 action=WorkspaceAction.web_provider_read,
             )
-        return WebProviderDefinitionCollection(items=self.registry.definitions())
 
     async def create(
         self, *, actor: AuthenticatedActor, workspace_id: str | None, request: CreateWebProviderRequest
@@ -72,20 +93,8 @@ class WebProviderService:
                 )
                 now = self.clock()
                 configuration = self._validate_configuration(request.type, request.configuration)
-                registration = self.registry.require(request.type)
-                if registration.credential_required != (request.credential is not None) or (
-                    not registration.credential_required and "credential" in request.model_fields_set
-                ):
-                    raise WebProviderError(
-                        "web_provider_credential_invalid",
-                        "Web Provider credential does not match its type.",
-                        category=ErrorCategory.invalid_request,
-                    )
-                credentials = (
-                    self._validate_credentials(request.type, request.credential)
-                    if request.credential is not None
-                    else None
-                )
+                self._validate_authentication(request.type, configuration, request.credential is not None)
+                credentials = self._validate_credentials(request.type, configuration, request.credential)
                 record = WebProviderRecord(
                     id=new_object_id("wprov"),
                     organization_id=scope.organization_id,
@@ -158,15 +167,18 @@ class WebProviderService:
                     if getattr(record, key) != value:
                         setattr(record, key, value)
                         changes.append(key)
-                if request.credential is not None:
-                    if not self.registry.require(record.type).credential_required:
-                        raise WebProviderError(
-                            "web_provider_credential_invalid",
-                            "Web Provider does not accept a credential.",
-                            category=ErrorCategory.invalid_request,
-                        )
-                    credentials = self._validate_credentials(record.type, request.credential)
-                    record.replace_credential(json.dumps(credentials), self.protector)
+                self._validate_authentication(
+                    record.type,
+                    record.configuration,
+                    request.credential is not None
+                    if "credential" in request.model_fields_set
+                    else record.ciphertext is not None,
+                )
+                if "credential" in request.model_fields_set:
+                    credentials = self._validate_credentials(record.type, record.configuration, request.credential)
+                    record.replace_credential(
+                        json.dumps(credentials) if credentials is not None else None, self.protector
+                    )
                     changes.append("credential")
                 if changes:
                     record.normalized_name = record.name.casefold()
@@ -180,9 +192,23 @@ class WebProviderService:
             _name_conflict(error)
             raise
 
+    def _validate_authentication(self, provider_type: str, configuration: dict[str, object], configured: bool) -> None:
+        definition = self.catalog.require(provider_type)
+        try:
+            definition.authentication.validate_presence(
+                definition.configuration_model.model_validate(configuration), configured
+            )
+        except ValueError as error:
+            raise WebProviderError(
+                "web_provider_credential_invalid",
+                "Web Provider credential does not match its configuration.",
+                category=ErrorCategory.invalid_request,
+            ) from error
+
     def _validate_configuration(self, provider_type: str, value: object) -> dict[str, object]:
         try:
-            return self.registry.validate_configuration(provider_type, value)
+            parsed = self.catalog.require(provider_type).configuration_model.model_validate(value)
+            return parsed.model_dump(mode="json", by_alias=True, exclude_none=False)
         except ValueError as error:
             raise WebProviderError(
                 "web_provider_configuration_invalid",
@@ -190,9 +216,13 @@ class WebProviderService:
                 category=ErrorCategory.invalid_request,
             ) from error
 
-    def _validate_credentials(self, provider_type: str, value: object) -> dict[str, object]:
+    def _validate_credentials(
+        self, provider_type: str, configuration: dict[str, object], value: object
+    ) -> dict[str, object] | None:
         try:
-            return self.registry.credential_payload(provider_type, value)
+            definition = self.catalog.require(provider_type)
+            parsed = definition.configuration_model.model_validate(configuration)
+            return provider_credential_payload(definition, parsed, value)
         except ValueError as error:
             raise WebProviderError(
                 "web_provider_credential_invalid",

@@ -4,10 +4,10 @@ import sys
 from pathlib import Path
 
 import pytest
-from a13n_environment import DirectLocalEnvironmentProvider, DirectLocalProviderRuntime
-from a13n_environment.commands import ArgvCommand, CommandRequest, PortTarget
-from a13n_environment.models import EnvironmentAction, EnvironmentError
-from a13n_environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.commands import ArgvCommand, CommandRequest, PortTarget
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from a13n_service.environments.websocket.relay_commands import CommandRelayDispatch
 from a13n_service.environments.websocket.relay_processes import (
     RelayOutputOperations,
@@ -28,10 +28,9 @@ EXECUTABLE = str(Path(sys.executable).resolve())
 
 @pytest.fixture
 async def operations(tmp_path):
-    provider = DirectLocalEnvironmentProvider()
-    configuration = provider.validate_configuration(
-        schema_version="1",
-        value={
+    provider = DIRECT_LOCAL
+    configuration = provider.validate_environment(
+        {
             "root": {"path": str(tmp_path)},
             "allowed_executables": [EXECUTABLE],
             "inherit_environment": False,
@@ -40,10 +39,10 @@ async def operations(tmp_path):
             "max_wall_time_seconds": 10,
         },
     )
-    environment = provider.create_environment(
-        configuration=configuration, environment_id="process-relay", state=None, runtime=DirectLocalProviderRuntime()
+    environment = provider.construct(
+        configuration=configuration, environment_id="process-relay", state=None, runtime=None
     )
-    await environment.enter(thread_id="thread", run_id="run", agent_instance_id="agent", mount_id="mount")
+    await environment.enter(mount_id="mount")
     await environment.prepare()
     try:
         yield environment.operations

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 import anyio
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.background import PeriodicTask, Sweep
@@ -19,7 +20,6 @@ from a13n_service.durable_operations.http_delivery import (
 )
 from a13n_service.durable_operations.outbox import OutboxClaim, complete_outbox, fail_outbox
 from a13n_service.durable_operations.publication import dispatch_outbox_batch
-from a13n_service.endpoint_policy import EndpointPolicyError
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import require_aware_utc, utc_now

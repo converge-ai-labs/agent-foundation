@@ -94,7 +94,6 @@ class ResolvedEnvironmentProfile(CompositionModel):
     profile_id: str = Field(min_length=1, max_length=128)
     behavior_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     provider_key: str = Field(min_length=1, max_length=200)
-    provider_schema_version: str = Field(min_length=1, max_length=64)
     provider_configuration: dict[str, JsonValue] = Field(default_factory=dict)
     adapter_key: str = Field(min_length=1, max_length=200)
     adapter_configuration: dict[str, JsonValue] = Field(default_factory=dict)

@@ -7,8 +7,12 @@ from datetime import timedelta
 from functools import partial
 
 import httpx2
-from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorProviderDefinition
+from a13n_harness.providers.connector.http import ConnectorHttpClient
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
 
 from a13n_service.agent_configuration.drafts import ConfigurationDrafts
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
@@ -18,13 +22,10 @@ from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.publication import AssetPublisher
 from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.assets.staging import AssetStaging
-from a13n_service.connectivity.connectors.http import ConnectorHttpClient
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.connectivity.file_delivery import FileDelivery
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.native_actions import NativeObservationFactory
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.capacity import CapacityLimits
 from a13n_service.environments.image_jobs import DockerConnectivityProbe, DockerImageTestWorker
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
@@ -45,13 +46,11 @@ from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime, WorkerRuntime
 from a13n_service.process.submission import build_input_commands
 from a13n_service.provider_plugins import ProviderCatalogs, load_provider_catalogs
-from a13n_service.provider_plugins.connectors import build_connector_provider_registry
 from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunDisplayStore
 from a13n_service.run_stream.display_candidates import DisplayCandidates
 from a13n_service.run_stream.display_consumer import DisplayConsumerPolicy, RunDisplayConsumer
 from a13n_service.settings import Settings
 from a13n_service.skills.runtime import SkillRuntimePreparer
-from a13n_service.web.registry import WebProviderRegistry
 
 from .connectivity_clients import build_mcp_clients, connectivity_http_timeout
 
@@ -60,9 +59,10 @@ async def build_worker_runtime(
     settings: Settings,
     shared: SharedRuntime,
     execution: ExecutionResources,
-    environment_catalog: EnvironmentProviderCatalog,
+    environment_catalog: ProviderCatalog[EnvironmentProviderDefinition],
     stack: AsyncExitStack,
-    connector_providers: ConnectorProviderRegistry | None = None,
+    connector_providers: ProviderCatalog[ConnectorProviderDefinition] | None = None,
+    connector_http_client: ConnectorHttpClient | None = None,
     *,
     provider_catalogs: ProviderCatalogs | None = None,
     plugin_catalog: HarnessPluginFactoryCatalog,
@@ -84,7 +84,6 @@ async def build_worker_runtime(
         shared.storage.sessions,
         environment_catalog,
         shared.secret_protector,
-        shared.storage.files_root,
         timeout_seconds=settings.environments.operation_timeout_seconds,
         capacity=CapacityLimits(
             max_targets=settings.environments.max_targets_per_workspace,
@@ -172,7 +171,8 @@ async def build_worker_runtime(
     external_tools = ExternalToolRuntime(
         shared.storage.sessions,
         shared.secret_protector,
-        connector_providers or build_connector_provider_registry(selected_provider_catalogs.connector, connector_http),
+        connector_providers or selected_provider_catalogs.connector,
+        connector_http_client or connector_http,
         clients.transport,
         endpoint_policy,
         http,
@@ -215,7 +215,7 @@ async def build_worker_runtime(
             asset_publication=asset_publication,
             observability=observability,
             queue_drain=queue_drain,
-            web_registry=WebProviderRegistry(selected_provider_catalogs.web),
+            web_catalog=selected_provider_catalogs.web,
             configuration_drafts=None
             if configuration_resolver is None
             else ConfigurationDrafts(shared.storage.sessions, configuration_resolver),

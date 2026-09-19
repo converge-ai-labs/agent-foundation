@@ -7,15 +7,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from a13n_environment import (
-    FILE_ACTIONS,
-    CommandRequest,
-    EnvironmentOutputPolicy,
-    LocalEnvdEnvironment,
-    LocalEnvdProviderRuntime,
-    ShellCommand,
-    TemporaryLocalEnvdRuntimeAllocator,
-)
 from a13n_harness import (
     AgentDefinition,
     AgentIdentityRef,
@@ -26,8 +17,15 @@ from a13n_harness import (
     HarnessRunStream,
 )
 from a13n_harness.capabilities import SkillsCapability, SubagentCancelResult, SubagentSteerResult, WebCapability
-from a13n_harness.environment import EnvironmentError
-from a13n_harness.model_auth import GrokCredentials
+from a13n_harness.environment import FILE_ACTIONS, EnvironmentError
+from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
+from a13n_harness.providers.environment.local_envd.runtime import (
+    LocalEnvdProviderRuntime,
+    TemporaryLocalEnvdRuntimeAllocator,
+)
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.model.oauth import GrokCredentials
 from a13n_harness_ui.app import AppState, HarnessUiIntegrations, open_harness_ui_app
 from a13n_harness_ui.composition import (
     AgentReconstructor,

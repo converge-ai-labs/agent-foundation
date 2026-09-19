@@ -1,4 +1,3 @@
-import { FormField, Input } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
@@ -15,14 +14,13 @@ import {
   ProviderFacts,
   ProviderGroup,
   ProviderName,
-  providerKeyUrls,
+  providerKeyLink,
 } from "../providers";
 import { type ModelScope } from "./api";
 import {
   ProviderConnection,
   ordinaryConfigurationSchema,
 } from "./provider-connection";
-import { requiresProviderCredential } from "./provider-credentials";
 import { useProviderDraft } from "./provider-draft";
 
 /** The name, one settings group, then the advanced disclosure. */
@@ -36,14 +34,14 @@ export function ProviderForm({
   reload: () => Promise<void>;
   scope: ModelScope;
   resource: { value: Schema["ModelProvider"]; etag?: string };
-  definitions: Schema["ModelProviderDefinition"][];
+  definitions: Schema["ModelProviderMetadata"][];
   close: () => void;
 }) {
   const { t } = useTranslation();
   const draft = useProviderDraft({ scope, resource, definitions, close });
   const { original, type, definition, save } = draft;
   const credentialLabel = t(draft.credentialField.label);
-  const keyLink = providerKeyUrls[type];
+  const keyLink = providerKeyLink(definition);
   return (
     <ProviderEditor
       onSubmit={(event) => {
@@ -65,31 +63,25 @@ export function ProviderForm({
           checked={draft.enabled}
           onCheckedChange={draft.setEnabled}
         />
-        {requiresProviderCredential(type, draft.configuration, definition) && (
+        {draft.section.visible && (
           <CredentialRow
             label={credentialLabel}
-            configured={!!original?.value.credential_configured}
-            removing={draft.removeCredential}
-            onRemovingChange={draft.setRemoveCredential}
-            onDiscard={() => draft.setCredential("")}
+            configured={draft.section.removable}
+            removing={draft.section.removing}
+            onRemovingChange={draft.section.setRemoving}
+            onDiscard={() => draft.section.setCredential({})}
           >
-            <FormField
-              className="min-w-0 w-full"
-              label={credentialLabel}
-              labelAction={keyLink && <ProviderKeyLink {...keyLink} />}
-            >
-              <Input
-                type="password"
+            {draft.section.mode !== "forbidden" && (
+              <SchemaFields
+                secret
                 autoFocus
-                autoComplete="new-password"
-                name="provider-api-key"
-                value={draft.credential}
-                onChange={(event) => {
-                  draft.setCredential(event.target.value);
-                  draft.setRemoveCredential(false);
-                }}
+                labelAction={keyLink && <ProviderKeyLink {...keyLink} />}
+                schema={draft.section.schema}
+                requireFields={draft.section.requireFields}
+                value={draft.section.credential}
+                onChange={draft.section.setCredential}
               />
-            </FormField>
+            )}
           </CredentialRow>
         )}
         <ProviderFacts
@@ -110,7 +102,6 @@ export function ProviderForm({
           onOpenChange={draft.setAdvancedOpen}
           onBaseUrlChange={draft.changeBaseUrl}
           onSuggestedApi={draft.setSuggestedApi}
-          onAuthChange={draft.changeAuth}
         />
       )}
       <ErrorNotice error={save.error} retry={() => void reload()} />
@@ -119,7 +110,8 @@ export function ProviderForm({
         label={t("Save changes")}
         onCancel={close}
         leading={
-          original && (
+          original &&
+          definition?.supports_connection_probe && (
             <ConnectionTest
               placement="footer"
               action={() => draft.api.testProvider(original.value.id)}

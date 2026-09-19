@@ -4,12 +4,17 @@ import os
 from pathlib import Path
 
 import pytest
-from a13n_environment import LocalEnvdEnvironmentProvider, LocalEnvdProviderRuntime, TemporaryLocalEnvdRuntimeAllocator
 from a13n_harness import AgentSpec, HarnessBuilder
 from a13n_harness.capabilities.memory import MemoryCapability
-from a13n_harness.document_memory import DocumentInput
 from a13n_harness.errors import RunError
-from a13n_harness.memory_plugins import FilesystemMemoryBackendPlugin, MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+from a13n_harness.providers.environment.local_envd.runtime import (
+    LocalEnvdProviderRuntime,
+    TemporaryLocalEnvdRuntimeAllocator,
+)
+from a13n_harness.providers.memory.builtins import FILESYSTEM
+from a13n_harness.providers.memory.documents import DocumentInput
 from a13n_service.memory.domain import MemoryEntrySelection
 from a13n_service.memory.file_runtime import filesystem_store
 from a13n_service.memory.models import MemoryStorageRecord, RunMemoryStorageRecord
@@ -39,18 +44,18 @@ async def test_file_binding_reconnect_and_marker_loss(
     # receives a Host-prepared adapter and the accepted logical selection.
     run = run.model_copy(update={"environment_id": "env_1234567890abcdef"})
     monkeypatch.setattr("a13n_service.memory.file_runtime.utc_now", lambda: NOW)
-    catalog = MemoryBackendCatalog((FilesystemMemoryBackendPlugin(),))
+    catalog = ProviderCatalog((FILESYSTEM,))
     service = MemoryService(catalog, protector(), MemoryAuthorizer(interaction_sessions, catalog))
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    provider = LocalEnvdEnvironmentProvider()
-    configuration = provider.validate_configuration(schema_version="1", value={"working_directory": str(workspace)})
+    provider = LOCAL_ENVD
+    configuration = provider.validate_environment({"working_directory": str(workspace)})
     entry = MemoryEntrySelection(
         name="project",
         mode="documents",
         description="Project decisions",
         backend={
-            "type": "a13n.filesystem",
+            "type": "filesystem",
             "configuration": {"storage": {"root": str(workspace / "memory")}},
         },
     )
@@ -90,7 +95,7 @@ async def test_file_binding_reconnect_and_marker_loss(
             executable=Path(executable),
             allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
         ) as runtime:
-            environment = provider.create_environment(
+            environment = provider.construct(
                 environment_id=run.environment_id,
                 configuration=configuration,
                 state=None,

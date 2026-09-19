@@ -11,13 +11,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from a13n_environment import (
-    DirectLocalEnvironmentProvider,
-    Environment,
-    EnvironmentProvider,
-    EnvironmentState,
-    LocalEnvdEnvironmentProvider,
-)
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import EnvironmentState
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from a13n_harness_ui.environment_profiles import (
@@ -54,10 +52,9 @@ class EnvironmentProjectAdapter(ABC):
     def validate_profile(
         self,
         *,
-        provider_schema_version: str,
         provider_configuration: Mapping[str, JsonValue],
         adapter_configuration: Mapping[str, JsonValue],
-        provider: EnvironmentProvider,
+        provider: EnvironmentProviderDefinition,
     ) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
         """Validate folder-independent behavior and return normalized JSON."""
 
@@ -68,7 +65,7 @@ class EnvironmentProjectAdapter(ABC):
         profile: ResolvedEnvironmentProfile,
         root: Path,
         state: EnvironmentState | None,
-        provider: EnvironmentProvider,
+        provider: EnvironmentProviderDefinition,
         runtime: object | None,
     ) -> Environment:
         """Create one fresh pre-entry-inert root-specific Environment."""
@@ -82,12 +79,11 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
     def validate_profile(
         self,
         *,
-        provider_schema_version: str,
         provider_configuration: Mapping[str, JsonValue],
         adapter_configuration: Mapping[str, JsonValue],
-        provider: EnvironmentProvider,
+        provider: EnvironmentProviderDefinition,
     ) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
-        _require_provider(provider, DirectLocalEnvironmentProvider, provider_schema_version)
+        _require_provider(provider, DIRECT_LOCAL)
         _require_empty(provider_configuration, adapter_configuration)
         return {}, {}
 
@@ -97,10 +93,10 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         profile: ResolvedEnvironmentProfile,
         root: Path,
         state: EnvironmentState | None,
-        provider: EnvironmentProvider,
+        provider: EnvironmentProviderDefinition,
         runtime: object | None,
     ) -> Environment:
-        _require_provider(provider, DirectLocalEnvironmentProvider, profile.provider_schema_version)
+        _require_provider(provider, DIRECT_LOCAL)
         shell = _host_shell()
         value: dict[str, JsonValue] = {
             "root": {"path": str(root)},
@@ -122,11 +118,8 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
             "inherit_environment": True,
             "allowed_environment_keys": None,
         }
-        configuration = provider.validate_configuration(
-            schema_version=profile.provider_schema_version,
-            value=value,
-        )
-        return provider.create_environment(
+        configuration = provider.validate_environment(value)
+        return provider.construct(
             configuration=configuration, environment_id=_environment_id(self.key, root), state=state, runtime=runtime
         )
 
@@ -139,12 +132,11 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
     def validate_profile(
         self,
         *,
-        provider_schema_version: str,
         provider_configuration: Mapping[str, JsonValue],
         adapter_configuration: Mapping[str, JsonValue],
-        provider: EnvironmentProvider,
+        provider: EnvironmentProviderDefinition,
     ) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
-        _require_provider(provider, LocalEnvdEnvironmentProvider, provider_schema_version)
+        _require_provider(provider, LOCAL_ENVD)
         _require_empty(provider_configuration, adapter_configuration)
         return {}, {}
 
@@ -154,26 +146,19 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         profile: ResolvedEnvironmentProfile,
         root: Path,
         state: EnvironmentState | None,
-        provider: EnvironmentProvider,
+        provider: EnvironmentProviderDefinition,
         runtime: object | None,
     ) -> Environment:
-        _require_provider(provider, LocalEnvdEnvironmentProvider, profile.provider_schema_version)
+        _require_provider(provider, LOCAL_ENVD)
         value: dict[str, JsonValue] = {"working_directory": root.as_posix()}
-        configuration = provider.validate_configuration(
-            schema_version=profile.provider_schema_version,
-            value=value,
-        )
-        return provider.create_environment(
+        configuration = provider.validate_environment(value)
+        return provider.construct(
             configuration=configuration, environment_id=_environment_id(self.key, root), state=state, runtime=runtime
         )
 
 
-def _require_provider(
-    provider: EnvironmentProvider,
-    expected_type: type[EnvironmentProvider],
-    schema_version: str,
-) -> None:
-    if not isinstance(provider, expected_type) or schema_version not in provider.configuration_versions:
+def _require_provider(provider: EnvironmentProviderDefinition, expected_type: EnvironmentProviderDefinition) -> None:
+    if provider.type != expected_type.type:
         raise CompositionError(
             "The Environment profile is incompatible with its Host adapter.",
             code="environment_adapter_incompatible",

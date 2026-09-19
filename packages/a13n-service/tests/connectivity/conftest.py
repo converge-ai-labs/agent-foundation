@@ -463,7 +463,7 @@ async def external_runtime_factory(connectivity_sessions, credential_protector):
 
     async with AsyncExitStack() as stack:
 
-        def build(providers, remote, policy, *, transport=None):
+        def build(connectors, remote, policy, *, transport=None, connector_http=None):
             http = httpx2.AsyncClient(transport=transport)
             stack.push_async_callback(http.aclose)
             refresh = OAuthCredentialRefresh(
@@ -474,7 +474,14 @@ async def external_runtime_factory(connectivity_sessions, credential_protector):
                 clock=lambda: NOW,
             )
             return ExternalToolRuntime(
-                connectivity_sessions, credential_protector, providers, remote, policy, http, refresh
+                connectivity_sessions,
+                credential_protector,
+                connectors,
+                connector_http,
+                remote,
+                policy,
+                http,
+                refresh,
             )
 
         yield build

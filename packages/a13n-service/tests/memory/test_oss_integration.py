@@ -10,8 +10,9 @@ from uuid import uuid4
 
 import httpx2
 import pytest
-from a13n_harness.capabilities.mem0_backends import open_mem0_oss
-from a13n_harness.memory import MemoryPaginationUnsupported, MemoryScope, MemorySubject
+from a13n_harness.providers.memory.configuration import Mem0Credential, Mem0OSSConfiguration
+from a13n_harness.providers.memory.contracts import MemoryPaginationUnsupported, MemoryScope, MemorySubject
+from a13n_harness.providers.memory.mem0_oss import open_mem0_oss
 from a13n_service.app import Components, create_app
 from a13n_service.memory.scopes import memory_subject
 
@@ -30,7 +31,8 @@ async def test_service_real_unmodified_oss_crud_search_and_bounded_list(memory_s
 
     app = create_app(settings(tmp_path, service_database), components=Components(request_authenticator=authenticate))
     async with open_mem0_oss(
-        base_url=os.environ["TEST_MEM0_OSS_URL"], api_key=os.environ["TEST_MEM0_OSS_API_KEY"]
+        Mem0OSSConfiguration(base_url=os.environ["TEST_MEM0_OSS_URL"]),
+        Mem0Credential(api_key=os.environ["TEST_MEM0_OSS_API_KEY"]),
     ) as backend:
         schema = (await backend.client.get("openapi.json")).json()
         assert "/memories" in schema["paths"] and "/memories/page" not in schema["paths"]
@@ -41,7 +43,7 @@ async def test_service_real_unmodified_oss_crud_search_and_bounded_list(memory_s
                 provider = await client.post(
                     f"/api/v1/workspaces/{WORKSPACE_ID}/memory-providers",
                     json={
-                        "type": "a13n.mem0-oss",
+                        "type": "mem0_oss",
                         "name": "Live OSS",
                         "configuration": {"base_url": os.environ["TEST_MEM0_OSS_URL"]},
                         "credential": {"api_key": os.environ["TEST_MEM0_OSS_API_KEY"]},
@@ -90,7 +92,9 @@ async def test_real_oss_bounds_1005_records_without_inventing_pagination():
     expired = MemorySubject(MemoryScope.THREAD, "expired-" + str(uuid4()))
     ids = []
     async with open_mem0_oss(
-        base_url=os.environ["TEST_MEM0_OSS_URL"], api_key=os.environ["TEST_MEM0_OSS_API_KEY"], timeout=60
+        Mem0OSSConfiguration(base_url=os.environ["TEST_MEM0_OSS_URL"]),
+        Mem0Credential(api_key=os.environ["TEST_MEM0_OSS_API_KEY"]),
+        timeout=60,
     ) as backend:
         semaphore = asyncio.Semaphore(8)
 
@@ -140,7 +144,7 @@ async def test_real_oss_bounds_1005_records_without_inventing_pagination():
 
 
 async def test_real_oss_bot_documents_preserve_metadata_and_filter_authorized_keys():
-    from a13n_harness.memory import MemoryDocumentScope, MemoryRecordNotFound
+    from a13n_harness.providers.memory.contracts import MemoryDocumentScope, MemoryRecordNotFound
 
     prefix = uuid4().hex
     first = MemorySubject(MemoryDocumentScope.CONVERSATION, f"bot-document-a-{prefix}")
@@ -149,7 +153,8 @@ async def test_real_oss_bot_documents_preserve_metadata_and_filter_authorized_ke
     metadata = {"record_key": f"doc-{prefix}", "source_date": "2026-09-16", "document_type": "long_term"}
     created = []
     async with open_mem0_oss(
-        base_url=os.environ["TEST_MEM0_OSS_URL"], api_key=os.environ["TEST_MEM0_OSS_API_KEY"]
+        Mem0OSSConfiguration(base_url=os.environ["TEST_MEM0_OSS_URL"]),
+        Mem0Credential(api_key=os.environ["TEST_MEM0_OSS_API_KEY"]),
     ) as backend:
         try:
             document = await backend.add_document(body, subject=first, metadata=metadata)
@@ -205,7 +210,7 @@ async def test_service_bot_document_directory_with_real_oss(memory_sessions, ser
             provider = await client.post(
                 f"/api/v1/workspaces/{WORKSPACE_ID}/memory-providers",
                 json={
-                    "type": "a13n.mem0-oss",
+                    "type": "mem0_oss",
                     "name": "Bot document OSS",
                     "configuration": {"base_url": os.environ["TEST_MEM0_OSS_URL"]},
                     "credential": {"api_key": os.environ["TEST_MEM0_OSS_API_KEY"]},

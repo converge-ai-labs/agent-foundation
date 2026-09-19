@@ -4,13 +4,14 @@ from contextlib import asynccontextmanager
 from unittest.mock import Mock
 
 import pytest
-from a13n_environment.direct_local.files import LocalFileOperator
-from a13n_environment.direct_local.provider import _DirectLocalFilePolicy
-from a13n_harness.document_memory import DocumentInput, Replace
-from a13n_harness.filesystem_memory import FilesystemMemoryStore
-from a13n_harness.memory import MemoryScope
-from a13n_harness.memory_file_commit import EnvironmentMemoryFileCoordinator
-from a13n_harness.memory_plugins import FilesystemMemoryBackendPlugin, MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+from a13n_harness.providers.environment.direct_local.provider import _DirectLocalFilePolicy
+from a13n_harness.providers.memory.builtins import FILESYSTEM
+from a13n_harness.providers.memory.contracts import MemoryScope
+from a13n_harness.providers.memory.documents import DocumentInput, Replace
+from a13n_harness.providers.memory.filesystem.commit import EnvironmentMemoryFileCoordinator
+from a13n_harness.providers.memory.filesystem.store import FilesystemMemoryStore
 from a13n_service.application_errors import ApplicationError
 from a13n_service.iam import AuthorizationError
 from a13n_service.memory import document_router
@@ -26,7 +27,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def test_manage_retained_scope_and_reject_another_user(memory_sessions, tmp_path, monkeypatch):
-    catalog = MemoryBackendCatalog((FilesystemMemoryBackendPlugin(),))
+    catalog = ProviderCatalog((FILESYSTEM,))
     service = MemoryService(catalog, protector(), MemoryAuthorizer(memory_sessions, catalog))
     files = LocalFileOperator(
         root=tmp_path,
@@ -37,7 +38,7 @@ async def test_manage_retained_scope_and_reject_another_user(memory_sessions, tm
     store_id = "mstore_1234567890abcdef"
     principal = actor()
     subject = memory_subject(
-        ORG_ID, WORKSPACE_ID, "a13n.filesystem", MemoryScope.USER, principal.principal.principal_id
+        ORG_ID, WORKSPACE_ID, "filesystem", MemoryScope.USER, principal.principal.principal_id
     ).value
 
     async def allow(_):
@@ -73,7 +74,7 @@ async def test_manage_retained_scope_and_reject_another_user(memory_sessions, tm
                 target_digest="f" * 64,
                 organization_id=ORG_ID,
                 workspace_id=WORKSPACE_ID,
-                provider_identity="a13n.filesystem",
+                provider_identity="filesystem",
                 subject=subject,
                 scope_kind="user",
                 subject_id=principal.principal.principal_id,

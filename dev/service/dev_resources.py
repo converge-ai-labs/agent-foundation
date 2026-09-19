@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import json
 import os
 import stat
 import tomllib
 from pathlib import Path
 
+from a13n_harness.providers.authentication import CredentialMode
 from a13n_service.connectivity.connectors.domain import CreateConnectorProviderRequest
+from a13n_service.credentials import credential_payload
 from a13n_service.environments.domain import CreateProviderRequest, CreateTemplateRequest
 from a13n_service.models.domain import CreateModelProviderRequest, CreateModelRequest
-from a13n_service.models.provider_adapters.types import CredentialFormat
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog, validate_model_api
 from a13n_service.models.service_common import ModelError
 from a13n_service.web.domain import CreateWebProviderRequest
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
@@ -36,7 +36,7 @@ class DevelopmentProvider(BaseModel):
 
     type: str
     name: str
-    credential: SecretStr | dict[str, SecretStr] | None = None
+    credential: dict[str, object] | None = Field(default=None, repr=False)
     configuration: dict[str, object] = Field(default_factory=dict)
     models: tuple[DevelopmentModel, ...]
 
@@ -98,28 +98,21 @@ def _filled(values: dict[str, SecretStr]) -> bool:
     return bool(values) and all(value.get_secret_value().strip() for value in values.values())
 
 
-def _model_credential(provider: DevelopmentProvider) -> str | None:
+def _model_credential(provider: DevelopmentProvider) -> dict[str, object] | None:
     value = provider.credential
-    if isinstance(value, SecretStr):
-        secret = value.get_secret_value()
-        return secret if secret.strip() else None
-    if not value:
+    if not value or any(isinstance(item, str) and not item.strip() for item in value.values()):
         return None
-    values = _revealed(value)
-    credential_format = built_in_provider_registry().credential_format(provider.type)
-    if credential_format is CredentialFormat.api_key:
-        if set(values) != {"api_key"}:
-            raise ValueError("API-key Model Providers require credential.api_key")
-        return values["api_key"] if values["api_key"].strip() else None
-    if not _filled(value):
-        return None
-    if credential_format in {CredentialFormat.aws_credentials_json, CredentialFormat.google_service_account_json}:
-        return json.dumps(values)
-    raise ValueError("This Model Provider does not accept a credential")
+    definition = built_in_model_provider_catalog().require(provider.type)
+    return credential_payload(definition.credential_model.model_validate(value))
+
+
+def _model_requires_credential(provider: DevelopmentProvider) -> bool:
+    definition = built_in_model_provider_catalog().require(provider.type)
+    configuration = definition.configuration_model.model_validate(provider.configuration)
+    return definition.authentication.resolve(configuration) is CredentialMode.required
 
 
 def _active(resources: DevelopmentResources) -> bool:
-    registry = built_in_provider_registry()
     unavailable = {
         provider.name.casefold()
         for provider in resources.environment_providers
@@ -127,7 +120,7 @@ def _active(resources: DevelopmentResources) -> bool:
     }
     return bool(
         any(
-            _model_credential(provider) or registry.credential_format(provider.type) is None
+            _model_credential(provider) or not _model_requires_credential(provider)
             for provider in resources.model_providers
         )
         or any(_filled(provider.credential) for provider in resources.web_providers)
@@ -167,7 +160,7 @@ def load_resources(path: Path = DEFAULT_PATH) -> DevelopmentResources | None:
         raise ValueError(f"Invalid development resources file: {path}") from None
     if resources.version != 1:
         raise ValueError(f"Unsupported development resources version: {path}")
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
     names: set[str] = set()
     keys: set[str] = set()
     for provider in resources.model_providers:
@@ -176,7 +169,7 @@ def load_resources(path: Path = DEFAULT_PATH) -> DevelopmentResources | None:
             raise ValueError(f"Duplicate development Model Provider name: {path}")
         names.add(name)
         try:
-            definition = registry.definition(provider.type)
+            definition = registry.require(provider.type)
             CreateModelProviderRequest.model_validate(
                 {
                     "type": provider.type,
@@ -186,8 +179,8 @@ def load_resources(path: Path = DEFAULT_PATH) -> DevelopmentResources | None:
                 }
             )
             for model in provider.models:
-                api = model.model_api or definition.default_model_api
-                registry.validate_model_api(provider.type, api)
+                api = model.model_api or definition.supported_model_apis[0]
+                validate_model_api(registry.require(provider.type), api)
                 CreateModelRequest.model_validate(
                     {
                         "key": model.key,

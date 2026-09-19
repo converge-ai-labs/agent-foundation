@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from a13n_harness.capabilities.memory import MemoryCapability
 from a13n_harness.errors import RunError
-from a13n_harness.memory import (
+from a13n_harness.providers.memory.contracts import (
     MemoryBackend,
     MemoryPage,
     MemoryPaginationUnsupported,

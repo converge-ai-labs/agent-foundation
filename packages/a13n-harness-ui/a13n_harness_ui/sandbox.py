@@ -11,15 +11,19 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from a13n_environment import CommandRequest, EnvironmentOutputPolicy, LocalEnvdEnvironment, ShellCommand
-from a13n_environment.local_envd import (
+from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.providers.environment.local_envd._daemon import LocalEnvdProcessLaunch
+from a13n_harness.providers.environment.local_envd.configuration import (
+    LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
-    LocalEnvdProcessLaunch,
-    LocalEnvdProviderConfiguration,
-    LocalEnvdProviderRuntime,
     LocalEnvdShellProfile,
+)
+from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
+from a13n_harness.providers.environment.local_envd.runtime import (
+    LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
 )
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from anyio import CancelScope, to_thread
 
 from a13n_harness_ui.errors import EnvironmentLifecycleError
@@ -165,7 +169,7 @@ async def validate_sandbox_runtime(
             )
         )
         environment = LocalEnvdEnvironment(
-            LocalEnvdProviderConfiguration(working_directory=project_path.resolve().as_posix()),
+            LocalEnvdEnvironmentConfiguration(working_directory=project_path.resolve().as_posix()),
             runtime,
             environment_id="sandbox-probe",
         )
@@ -175,7 +179,7 @@ async def validate_sandbox_runtime(
             await environment.prepare()
             files, processes = environment.operations.files, environment.operations.processes
             assert files is not None and processes is not None
-            from a13n_environment import EnvironmentError
+            from a13n_harness.providers.environment.models import EnvironmentError
 
             try:
                 await files.read_text(sentinel.as_posix())

@@ -18,8 +18,8 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import MemoryCapability, MemoryScope
 from a13n_harness.capabilities import memory as memory_module
-from a13n_harness.capabilities.mem0_backends import Mem0PlatformBackend
-from a13n_harness.memory import MemoryRecord, MemorySubject
+from a13n_harness.providers.memory.contracts import MemoryRecord, MemorySubject
+from a13n_harness.providers.memory.mem0_platform import Mem0PlatformBackend
 from mem0 import AsyncMemoryClient
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
@@ -383,7 +383,12 @@ async def test_custom_plugin_uses_public_current_run_memory_with_defaults_disabl
     from dataclasses import dataclass
 
     from a13n_harness import AbstractHarnessPlugin, DefinitionError
-    from a13n_harness.memory import MemoryBackend, MemoryPage, MemoryRecordNotFound, require_memory_subject
+    from a13n_harness.providers.memory.contracts import (
+        MemoryBackend,
+        MemoryPage,
+        MemoryRecordNotFound,
+        require_memory_subject,
+    )
     from pydantic_ai.capabilities import AbstractCapability
 
     class Backend(MemoryBackend):
@@ -560,7 +565,7 @@ async def test_public_memory_write_deadline_reports_uncertainty_without_retry(op
     import asyncio
     from dataclasses import dataclass
 
-    from a13n_harness.memory import MemoryWriteUnconfirmed
+    from a13n_harness.providers.memory.contracts import MemoryWriteUnconfirmed
     from pydantic_ai.capabilities import AbstractCapability
 
     class SlowClient(_FakeMem0Client):

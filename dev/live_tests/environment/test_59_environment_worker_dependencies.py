@@ -48,7 +48,7 @@ async def test_database_partition_never_speculatively_replays_native_effect(depe
             workers.append(await lab.start_worker())
         lab.worker_environment["A13N_SERVICE_DATABASE_URL"] = direct
         pair = WorkerPair(lab, workers)
-        backend = EnvironmentBackend(lab, "direct-local")
+        backend = EnvironmentBackend(lab, "direct_local")
         try:
             async with backend.target() as target:
                 environment = await target.allocate()
@@ -103,7 +103,7 @@ async def test_remote_credential_rotation_is_seen_by_both_workers(dependency_lab
     lab = dependency_lab
     await reset_workers(lab)
     binary = Path(REPOSITORY / "target/debug/a13n-envd")
-    backend = EnvironmentBackend(lab, "http-envd", binary)
+    backend = EnvironmentBackend(lab, "http_envd", binary)
     async with backend.target() as target:
         pair = await add_second_worker(lab)
         environment = await target.allocate()

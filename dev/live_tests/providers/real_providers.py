@@ -21,7 +21,7 @@ async def provision_provider(journey, section, settings):
                 "name": "Configured live Search",
                 "type": settings.provider,
                 "configuration": {},
-                "credential": settings.api_key.get_secret_value(),
+                "credential": {"api_key": settings.api_key.get_secret_value()},
             },
         )
     if section == "environment":
@@ -62,7 +62,7 @@ async def provision_provider(journey, section, settings):
         {
             "name": "Configured live Model",
             "type": settings.provider,
-            "credential": settings.api_key.get_secret_value(),
+            "credential": {"api_key": settings.api_key.get_secret_value()},
             "configuration": {"base_url": settings.base_url, "auth_mode": "bearer"} if settings.base_url else {},
         },
     )
@@ -99,7 +99,7 @@ async def cleanup_provider_lab(journey):
             continue
         try:
             provider = await live.request("GET", f"/api/v1/environment-providers/{environment['provider_id']}")
-            if provider["type"] == "direct-local":
+            if provider["type"] == "direct_local":
                 # Direct Local owns no destroyable target. Keep its lab-owned directory
                 # with the private evidence; the outer lab removes its database record.
                 logger.info("Direct Local evidence retained in lab: %s", environment["id"])

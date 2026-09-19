@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from a13n_environment import (
-    Environment,
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
     EnvironmentOperationFamily,
-    EnvironmentOperations,
 )
-from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
+from a13n_harness.providers.environment.operations import EnvironmentOperations
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from a13n_logging import get_logger
 
 from a13n_service.observability import observe_phase
@@ -80,9 +79,7 @@ class ClientRunEnvironment(Environment):
     def operations(self) -> EnvironmentOperations:
         return self._operations
 
-    async def _prepare(
-        self, *, thread_id: str, run_id: str, agent_instance_id: str, mount_id: str, host_refs: Mapping[str, str]
-    ) -> None:
+    async def _prepare(self, *, mount_id: str) -> None:
         with observe_phase("a13n.service.environment.prepare"):
             await self._close()
             target = await self._resources.admit(self._attempt, self.environment_id, mount_name=self._mount_name)

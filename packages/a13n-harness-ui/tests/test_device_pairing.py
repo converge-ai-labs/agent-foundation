@@ -4,7 +4,11 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
-from a13n_environment.remote_envd.pairing import MAX_PENDING_PAIRINGS, PairingRequest, credential_digest
+from a13n_harness.providers.environment.remote_envd.pairing import (
+    MAX_PENDING_PAIRINGS,
+    PairingRequest,
+    credential_digest,
+)
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.device_pairing import DevicePairings
 from a13n_harness_ui.errors import HarnessUiError
@@ -229,7 +233,7 @@ async def test_device_attachment_preserves_handler_cancellation(monkeypatch):
     import asyncio
     from unittest.mock import AsyncMock
 
-    from a13n_environment import WebSocketEnvdConnections
+    from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
     from a13n_harness_ui.devices import DeviceAttachment
 
     connections = WebSocketEnvdConnections()

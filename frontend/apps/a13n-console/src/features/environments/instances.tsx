@@ -188,7 +188,7 @@ export function EnvironmentInstances() {
                 render: (item) =>
                   item.device_registration ||
                   providerById.get(item.provider_id)?.type ===
-                    "a13n.websocket-envd" ? (
+                    "websocket_envd" ? (
                     <DeviceConnectionStatus environment={item} />
                   ) : (
                     <StatePill state={item.status} />
@@ -290,16 +290,13 @@ function EnvironmentForm({ close }: { close: () => void }) {
     [name, setName] = useState(""),
     [templateId, setTemplateId] = useState(""),
     [providerId, setProviderId] = useState(""),
-    [version, setVersion] = useState(""),
-    [schemaVersion, setSchemaVersion] = useState("1"),
     [configuration, setConfiguration] = useState("{}"),
     [deviceId, setDeviceId] = useState(""),
     [state, setState] = useState(""),
     [stateVersion, setStateVersion] = useState("1");
   const provider = providers.data?.find((item) => item.id === providerId);
   const isDevice =
-    provider?.type === "a13n.http-envd" ||
-    provider?.type === "a13n.websocket-envd";
+    provider?.type === "http_envd" || provider?.type === "websocket_envd";
   const save = useMutation({
     mutationFn: () => {
       if (kind === "managed" && !templateId)
@@ -313,13 +310,11 @@ function EnvironmentForm({ close }: { close: () => void }) {
           ? {
               template_id: templateId,
               ...(name.trim() && { name: name.trim() }),
-              ...(version && { version: Number(version) }),
             }
           : {
               provider_id: providerId,
               ...(name.trim() && { name: name.trim() }),
               configuration: isDevice ? {} : jsonObject(configuration),
-              configuration_schema_version: isDevice ? "1" : schemaVersion,
               ...(isDevice && { device_id: deviceId.trim() }),
               ...(!isDevice &&
                 state.trim() &&
@@ -427,19 +422,6 @@ function EnvironmentForm({ close }: { close: () => void }) {
               groups={[{ label: t("Templates"), options: templateOptions }]}
             />
           </FormField>
-          <FormField
-            className="min-w-0 w-full"
-            label={t("Template version (optional)")}
-            description={t("Leave empty to select the current revision.")}
-          >
-            <Input
-              type="number"
-              min={1}
-              step={1}
-              value={version}
-              onChange={(event) => setVersion(event.target.value)}
-            />
-          </FormField>
         </>
       ) : (
         <>
@@ -472,16 +454,6 @@ function EnvironmentForm({ close }: { close: () => void }) {
               defaultOpen
             >
               <div className={styles.stack}>
-                <FormField
-                  className="min-w-0 w-full"
-                  label={t("Configuration schema version")}
-                >
-                  <Input
-                    required={true}
-                    value={schemaVersion}
-                    onChange={(event) => setSchemaVersion(event.target.value)}
-                  />
-                </FormField>
                 <TextAreaField
                   label={t("Connection configuration (JSON)")}
                   value={configuration}

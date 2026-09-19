@@ -13,6 +13,7 @@ from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, DynamicToolse
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.model_context import AbstractModelContextCapability
+from a13n_harness.providers.environment.models import EnvironmentAction
 from a13n_harness.toolsets.file_media import (
     AgentMediaUnderstandingProvider,
     MediaUnderstandingProvider,
@@ -23,7 +24,6 @@ from a13n_harness.toolsets.shell import ShellToolset
 
 from ._dynamic_context import _DynamicEnvironmentContext
 from .configuration import DynamicEnvironmentConfiguration
-from .models import EnvironmentAction
 from .providers import BoundEnvironment
 
 DYNAMIC_ENVIRONMENT_CAPABILITY_ID = "a13n.dynamic-environment"

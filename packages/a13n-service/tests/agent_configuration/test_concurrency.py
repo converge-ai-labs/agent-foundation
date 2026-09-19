@@ -12,7 +12,7 @@ from a13n_service.database import DatabaseMigrator
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.etags import resource_etag
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.storage import short_session, transaction
 from sqlalchemy import select
 
@@ -36,7 +36,7 @@ async def test_concurrent_provisioning_and_apply_have_one_committed_result(postg
     conversations, drafts, applications = services(sessions)
     draft = await new_draft(conversations)
     definition = load_definition()
-    ready = await ConfigurationReadiness(sessions, built_in_provider_registry(), definition).read(actor=actor())
+    ready = await ConfigurationReadiness(sessions, built_in_model_provider_catalog(), definition).read(actor=actor())
     system = SystemConfigurationAgent(sessions, definition)
     initialized = await asyncio.gather(*[system.ensure(actor=actor(), session_id=draft.session_id) for _ in range(5)])
     assert ready.ready

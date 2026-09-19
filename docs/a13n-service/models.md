@@ -28,7 +28,7 @@ Content-Type: application/json
   "type": "openrouter",
   "name": "OpenRouter Production",
   "configuration": {},
-  "credential": "<openrouter-api-key>"
+  "credential": {"api_key": "<openrouter-api-key>"}
 }
 ```
 
@@ -72,7 +72,7 @@ For example, route DeepSeek through a gateway with a team header and a gateway k
   "configuration": {
     "base_url": "https://gateway.example.com/deepseek/v1"
   },
-  "credential": "<deepseek-api-key>",
+  "credential": {"api_key": "<deepseek-api-key>"},
   "extra_headers": {"x-team": "research", "x-gateway-key": "<gateway-key>"}
 }
 ```
@@ -214,3 +214,7 @@ Model declarations also compose at acceptance. The Model supplies media capabili
 Subagents can use a different Model and different settings from their parent. Parent Run acceptance freezes each child's Model selection and merged settings together with the full child graph. Inline execution and independent asynchronous child Runs both use those accepted values.
 
 Every outbound inference attempt checks the current Model and Provider state. Credential rotation therefore applies to the next attempt, and disabling either resource stops it. Service retries HTTP 429 and 503 responses up to three total attempts, respecting `Retry-After` up to 30 seconds. Other failures and streams already handed to Harness are not automatically replayed. Non-streamed completion and streamed connection setup, including retry waits, have a 600-second deadline by default; set `settings.timeout` to change it. After stream handoff, native transport timeouts and Run cancellation govern consumption. Bedrock Converse uses blocking SDK calls with a 5-second connect timeout and a 600-second read timeout; cancellation and shorter Service deadlines can only take effect when the current SDK call returns. Model tests follow the same rules under their shorter command deadline.
+
+Installed providers publish structured credential schemas and authentication rules. Console renders nested fields and preserves their JSON types. Required, optional, or forbidden credentials can depend on configuration defaults and choices. On update, omission keeps the saved credential; null removes it when the resulting connection permits absence. AWS and Google service-account credentials use objects with their native fields, not JSON strings.
+
+Accounts saved with the former string credential shape need an explicit credential replacement before inference. That PATCH preserves the Provider ID and existing extra headers; it does not interpret or reuse the discarded primary value. No database reset is needed.

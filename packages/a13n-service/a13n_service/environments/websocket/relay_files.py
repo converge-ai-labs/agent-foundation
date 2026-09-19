@@ -5,8 +5,13 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Literal, assert_never
 
-from a13n_environment.files import FileOperator, FileQueryRequest, FileTextSearchRequest, FileWriteMode
-from a13n_environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.providers.environment.files import (
+    FileOperator,
+    FileQueryRequest,
+    FileTextSearchRequest,
+    FileWriteMode,
+)
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from ..domain import DomainModel

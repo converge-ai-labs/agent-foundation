@@ -36,7 +36,7 @@ Preparation can occur for the Run or on first use under the selected Template po
 
 Stop and delete have distinct retention/lifecycle intentions. A command receipt records what the Service knows; it is not proof that an unavailable Provider performed a mutation. Reconnection to an existing generation and replacement of a lost target also differ. Never automatically replay an uncertain command merely because a process handle disappeared.
 
-The underlying [Environment SDK](../a13n-environment/index.md) owns Provider operations and non-destructive adapter close. Service adds durable ownership, scheduling, capacity, and target retention. A mount root or provider label alone does not establish isolation.
+The underlying [Environment Providers](../environments/index.md) own Provider operations and non-destructive adapter close. Service adds durable ownership, scheduling, capacity, and target retention. A mount root or provider label alone does not establish isolation.
 
 ### Author template configurations and name instances
 
@@ -56,7 +56,7 @@ Standard Harness deferred approvals bind resolved paths, not backing generations
 
 ### Connect a client computer
 
-Open **Environments → Instances → Connect device** in Console and copy the command to the computer running envd. Open its terminal approval link, sign in, compare the verification code and choose the destination Workspace. Approval creates the Provider and external Environment for you; no controller or manually copied ticket is needed. The [shared connection guide](../a13n-environment/remote-envd.md#connect-to-harness-ui-or-service) covers installation flow, shell authority, PowerShell, restart, multiple instances and troubleshooting.
+Open **Environments → Instances → Connect device** in Console and copy the command to the computer running envd. Open its terminal approval link, sign in, compare the verification code and choose the destination Workspace. Approval creates the Provider and external Environment for you; no controller or manually copied ticket is needed. The [shared connection guide](../environments/remote-envd.md#connect-to-harness-ui-or-service) covers installation flow, shell authority, PowerShell, restart, multiple instances and troubleshooting.
 
 Wait for **Online**, then select that Environment and a directory in the conversation composer. Registration, connection, and Run access remain separate steps. An omitted working directory captures the Device default before acceptance. Each execution opens a fresh Session; its directory is not an access boundary.
 
@@ -66,7 +66,7 @@ The default deployment supports this with real Redis. Control owns ingress and W
 
 Use this advanced path only when an existing controller needs to manage short-lived connection tickets instead of native self-registration. Paired registrations cannot issue these tickets.
 
-1. Create a Workspace Environment Provider with `type: "a13n.websocket-envd"`, using the Provider catalog schema.
+1. Create a Workspace Environment Provider with `type: "websocket_envd"`, using the Provider catalog schema.
 
 2. Register an external Environment under that Provider. Supply its returned `provider_id`, empty `configuration`, and the native identity that the client will use:
 

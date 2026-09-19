@@ -8,11 +8,15 @@ from typing import Literal
 
 from a13n_envd_client import EIPClientError
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
-from a13n_environment import EnvironmentError, EnvironmentProviderError, EnvironmentState
-from a13n_environment.remote_envd.configuration import HttpEnvdBackendConfiguration, HttpEnvdCredential
-from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
-from a13n_environment.remote_envd.environment import decode_state
-from a13n_environment.remote_envd.http import HTTP_PROVIDER_KEY, HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentState
+from a13n_harness.providers.environment.remote_envd.configuration import (
+    HttpEnvdConnectionConfiguration,
+    HttpEnvdCredential,
+)
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
+from a13n_harness.providers.environment.remote_envd.environment import decode_state
+from a13n_harness.providers.environment.remote_envd.http import HTTP_PROVIDER_KEY, HttpEnvdProviderRuntime
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -142,7 +146,7 @@ class DeviceDiscovery:
 
     def _http(self, target: DeviceTarget) -> HttpEnvdProviderRuntime:
         return HttpEnvdProviderRuntime(
-            HttpEnvdBackendConfiguration.model_validate(target.configuration),
+            HttpEnvdConnectionConfiguration.model_validate(target.configuration),
             HttpEnvdCredential.model_validate_json(target.credential.decrypt(self._protector)),
         )
 

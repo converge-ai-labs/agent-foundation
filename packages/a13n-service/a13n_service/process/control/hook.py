@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.management import HookSubscriptionService
 from a13n_service.hooks.publisher import WebhookPublisher

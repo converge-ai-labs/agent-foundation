@@ -18,7 +18,7 @@ from urllib.parse import quote, urlsplit
 import click
 import uvicorn
 from a13n_envd_client.eip.v1 import DirectoryListResult
-from a13n_environment.remote_envd.pairing import (
+from a13n_harness.providers.environment.remote_envd.pairing import (
     PairingChallenge,
     PairingRequest,
     PairingResponse,

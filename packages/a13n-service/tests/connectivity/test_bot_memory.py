@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import httpx2
 import pytest
-from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend
+from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend
 from a13n_service.application_errors import ApplicationError
 from a13n_service.bots.memory.domain import ConfigureScope, CreateDocument, SearchDocuments
 from a13n_service.bots.memory.mutations import create, delete
@@ -501,8 +501,12 @@ async def test_unsupported_provider_is_rejected_before_any_document_operation(bo
 
     lab = bot_memory
     plugin = next(iter(lab.service.memory.catalog.values()))
-    plugin.supports_documents = False
-    opened = plugin.opened
+    from dataclasses import replace
+
+    from a13n_harness.providers.catalog import ProviderCatalog
+
+    lab.service.memory.catalog = ProviderCatalog((replace(plugin, supports_documents=False),))
+    opened = len(lab.calls)
     with pytest.raises(ApplicationError) as denied:
         if operation == "create":
             await create(
@@ -531,5 +535,5 @@ async def test_unsupported_provider_is_rejected_before_any_document_operation(bo
                 ReplaceMemorySettings(expected_version=settings.version, memory=settings.memory),
             )
     assert denied.value.code == "memory_documents_unsupported"
-    assert plugin.opened == opened and not lab.records
+    assert len(lab.calls) == opened and not lab.records
     assert not (await list_operations(lab.service, actor(), ACCOUNT_ID, lab.scope_id)).items

@@ -6,13 +6,15 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
 import httpx2
+from a13n_harness.models.transport import DEFAULT_MODEL_HTTP_CONNECT_TIMEOUT_SECONDS, DEFAULT_MODEL_HTTP_TIMEOUT_SECONDS
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.model.apis import MODEL_APIS
+from a13n_harness.providers.model.definition import ModelProviderDefinition
 from anyio import to_thread
 
-from a13n_service.endpoint_policy import EndpointPolicy
-from a13n_service.models.model_apis import BUILT_IN_MODEL_APIS
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
-from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.settings import settings_schema
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.skills.objects import SkillPackageStore
@@ -22,7 +24,7 @@ from a13n_service.skills.objects import SkillPackageStore
 class ExecutionResources:
     """Model, Skill, and Plugin resources shared by Control and Worker roles."""
 
-    model_provider_registry: ProviderRegistry
+    model_provider_catalog: ProviderCatalog[ModelProviderDefinition]
     model_endpoint_policy: EndpointPolicy
     model_http_client: httpx2.AsyncClient
     live_model_providers: LiveProviderResolver
@@ -32,32 +34,36 @@ class ExecutionResources:
 
 async def build_execution_resources(
     shared: SharedRuntime,
-    model_provider_registry: ProviderRegistry,
+    model_provider_catalog: ProviderCatalog[ModelProviderDefinition],
     model_endpoint_policy: EndpointPolicy,
     stack: AsyncExitStack,
 ) -> ExecutionResources:
     """Open the resources used by Control and Worker capabilities."""
     # Native schema generation reads installed source docs; warm its cache off the event loop.
-    for model_api in BUILT_IN_MODEL_APIS:
+    for model_api in MODEL_APIS:
         await to_thread.run_sync(settings_schema, model_api)
 
     async def validate_model_request(request: httpx2.Request) -> None:
         await model_endpoint_policy.validate(str(request.url), resolve_dns=True)
 
+    # Google's SDK derives its request deadline from this client, so the timeout must be the model one.
     model_http_client = await stack.enter_async_context(
         httpx2.AsyncClient(
             follow_redirects=False,
+            timeout=httpx2.Timeout(
+                DEFAULT_MODEL_HTTP_TIMEOUT_SECONDS, connect=DEFAULT_MODEL_HTTP_CONNECT_TIMEOUT_SECONDS
+            ),
             event_hooks={"request": [validate_model_request]},
         )
     )
-    native_model_factory = NativeModelFactory(model_http_client, model_provider_registry, model_endpoint_policy)
+    native_model_factory = NativeModelFactory(model_http_client, model_provider_catalog, model_endpoint_policy)
     return ExecutionResources(
-        model_provider_registry=model_provider_registry,
+        model_provider_catalog=model_provider_catalog,
         model_endpoint_policy=model_endpoint_policy,
         model_http_client=model_http_client,
         native_model_factory=native_model_factory,
         live_model_providers=LiveProviderResolver(
-            shared.storage.sessions, model_provider_registry, model_endpoint_policy, shared.secret_protector
+            shared.storage.sessions, model_provider_catalog, model_endpoint_policy, shared.secret_protector
         ),
         skill_package_store=SkillPackageStore(shared.storage.objects),
     )

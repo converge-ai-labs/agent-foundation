@@ -9,7 +9,6 @@ from a13n_service.provider_plugins import load_provider_catalogs
 from a13n_service.storage import transaction
 from a13n_service.web.domain import CreateWebProviderRequest
 from a13n_service.web.models import WebProviderRecord
-from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.service import WebProviderService
 from pydantic import ValidationError
 
@@ -110,7 +109,7 @@ async def test_catalog_and_candidate_validation_are_authorized_and_side_effect_f
     providers = WebProviderService(
         agent_sessions,
         protector(),
-        WebProviderRegistry(load_provider_catalogs(()).web),
+        load_provider_catalogs(()).web,
     )
     account = await providers.create(
         actor=actor(),

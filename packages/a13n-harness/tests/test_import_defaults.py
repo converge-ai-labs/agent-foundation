@@ -32,6 +32,8 @@ def check_import(event, args):
 
 sys.addaudithook(check_import)
 import a13n_harness
+assert not pydantic_imports, "Provider-only imports must remain inert"
+from a13n_harness import HarnessBuilder
 
 assert pydantic_imports, "The check must observe the first Pydantic AI import"
 assert os.environ["PYDANTIC_AI_NO_BANNER"] == expected

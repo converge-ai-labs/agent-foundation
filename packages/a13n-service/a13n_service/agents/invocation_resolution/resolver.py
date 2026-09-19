@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
+from a13n_harness.providers.web.builtins import built_in_web_providers
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.models.runtime import AcceptedModelSelector
-from a13n_service.web.registry import WebProviderRegistry, built_in_web_provider_registry
 
 from ..validation import AgentProtocolPolicy
 from .freezing import AgentInvocationFreezer
@@ -26,22 +28,24 @@ class AgentInvocationResolver:
         *,
         connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
-        web_provider_registry: WebProviderRegistry | None = None,
-        memory_backend_catalog: MemoryBackendCatalog | None = None,
+        web_provider_catalog: ProviderCatalog[WebProviderDefinition] | None = None,
+        memory_provider_catalog: ProviderCatalog[MemoryProviderDefinition] | None = None,
     ) -> None:
         policy = protocol_policy or AgentProtocolPolicy()
         connectivity = connectivity_resolver or ConnectivitySelectionResolver(sessions)
+        web = web_provider_catalog or ProviderCatalog(built_in_web_providers())
+        memory = memory_provider_catalog if memory_provider_catalog is not None else ProviderCatalog()
         self.preparation = AgentInvocationPreparer(
             sessions,
             model_selector,
             connectivity_resolver=connectivity,
             protocol_policy=policy,
+            web_provider_catalog=web,
+            memory_provider_catalog=memory,
         )
         self.freezing = AgentInvocationFreezer(
             model_selector,
             connectivity_resolver=connectivity,
-            web_provider_registry=web_provider_registry or built_in_web_provider_registry(),
-            memory_backend_catalog=memory_backend_catalog
-            if memory_backend_catalog is not None
-            else MemoryBackendCatalog(),
+            web_provider_catalog=web,
+            memory_provider_catalog=memory,
         )

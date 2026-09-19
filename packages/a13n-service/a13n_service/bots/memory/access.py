@@ -5,7 +5,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from a13n_harness.memory import MemoryDocumentScope, MemorySubject
+from a13n_harness.providers.memory.contracts import MemoryDocumentScope, MemorySubject
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.agents.models import AgentRecord

@@ -9,23 +9,21 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from a13n_environment import (
-    FILE_READ_ACTIONS,
-    EnvironmentPermissionSet,
-    EnvironmentProvider,
-    EnvironmentProviderCatalog,
-    build_environment_provider_catalog,
-)
 from a13n_harness import (
     AgentSpec,
     EnvironmentMount,
     HarnessBuilder,
     RunPreparationContext,
 )
+from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
+from a13n_harness.providers.plugins import load_provider_plugins
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-PROVIDER_KEY = "example.workspace"
+PLUGIN_NAME = "workspace"
+PROVIDER_TYPE = "example_workspace"
 type EnvironmentSelectionMode = Literal["entrypoint", "code"]
 
 
@@ -40,28 +38,27 @@ class EnvironmentDemoResult:
     roots_preserved: bool
 
 
-def _configuration(provider: EnvironmentProvider, root: Path):
-    return provider.validate_configuration(
-        schema_version="1",
-        value={"root": str(root)},
+def _configuration(provider: EnvironmentProviderDefinition, root: Path):
+    return provider.validate_environment(
+        {"root": str(root)},
     )
 
 
 async def _run_environment_demo(
     *,
     selection_mode: EnvironmentSelectionMode,
-    catalog: EnvironmentProviderCatalog,
+    catalog: ProviderCatalog[EnvironmentProviderDefinition],
     source_root: Path,
     docs_root: Path,
 ) -> EnvironmentDemoResult:
-    provider = catalog.require(PROVIDER_KEY)
-    source = provider.create_environment(
+    provider = catalog.require(PROVIDER_TYPE)
+    source = provider.construct(
         environment_id="workspace-source",
         configuration=_configuration(provider, source_root),
         state=None,
         runtime=None,
     )
-    docs = provider.create_environment(
+    docs = provider.construct(
         environment_id="workspace-docs",
         configuration=_configuration(provider, docs_root),
         state=None,
@@ -106,13 +103,20 @@ async def _run_environment_demo(
 
     return EnvironmentDemoResult(
         selection_mode=selection_mode,
-        provider_key=provider.key,
+        provider_key=provider.type,
         aliases=aliases,
         default_text=default_text,
         docs_text=docs_text,
         exported_state_aliases=tuple(sorted(result.state.environment_states)),
         roots_preserved=source_root.is_dir() and docs_root.is_dir(),
     )
+
+
+def installed_environment_catalog() -> ProviderCatalog[EnvironmentProviderDefinition]:
+    """Load only the Environment definitions of the explicitly enabled installed plugin."""
+
+    plugins = load_provider_plugins((PLUGIN_NAME,))
+    return ProviderCatalog(definition for plugin in plugins for definition in plugin.manifest.environment)
 
 
 async def run_environment_entrypoint_demo(
@@ -122,7 +126,7 @@ async def run_environment_entrypoint_demo(
 ) -> EnvironmentDemoResult:
     """Load only the explicitly enabled installed Provider entry point."""
 
-    catalog = build_environment_provider_catalog(extension_keys=(PROVIDER_KEY,))
+    catalog = installed_environment_catalog()
     return await _run_environment_demo(
         selection_mode="entrypoint",
         catalog=catalog,
@@ -138,11 +142,9 @@ async def run_environment_code_demo(
 ) -> EnvironmentDemoResult:
     """Register the Provider object directly without scanning package metadata."""
 
-    from a13n_plugin_examples.environment import WorkspaceEnvironmentProvider
+    from a13n_plugin_examples.environment import WORKSPACE_ENVIRONMENT
 
-    catalog = build_environment_provider_catalog(
-        explicit_providers=(WorkspaceEnvironmentProvider(),),
-    )
+    catalog = ProviderCatalog((WORKSPACE_ENVIRONMENT,))
     return await _run_environment_demo(
         selection_mode="code",
         catalog=catalog,

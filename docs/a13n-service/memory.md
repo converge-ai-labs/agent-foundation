@@ -10,12 +10,12 @@ Console provides schema-driven Memory Provider setup, an Agent Memory section, a
 
 For OSS, connect an existing native Mem0 server providing `GET /memories` with `top_k`, `POST /search`, and memory CRUD. No upstream patch, custom route, replacement image, or database access is required. The server separately owns its embedding/LLM configuration and storage. Service does not proxy model configuration or migrate embeddings.
 
-1. Read available definitions from `GET /api/v1/memory-provider-types`. Built-ins are `a13n.mem0-oss`, `a13n.mem0-platform`, and credentialless `a13n.filesystem`; installed external packages appear only after deployment selection.
+1. Read available definitions from `GET /api/v1/memory-provider-types`. Built-ins are `mem0_oss`, `mem0_platform`, and credentialless `filesystem`; installed external packages appear only after deployment selection.
 2. Create a Workspace Provider with `POST /api/v1/workspaces/{workspace}/memory-providers`:
 
 ```json
 {
-  "type": "a13n.mem0-oss",
+  "type": "mem0_oss",
   "name": "Team memory",
   "configuration": {"base_url": "http://mem0:8000"},
   "credential": {"api_key": "<server API key>"},
@@ -25,7 +25,7 @@ For OSS, connect an existing native Mem0 server providing `GET /memories` with `
 
 Supply the real credential through your authenticated management client; do not commit it. The response includes a stable `memprov_*` ID, configuration, and `credential_configured`, but never the credential. To share one Provider across Workspaces, create it through the corresponding Organization collection. Records remain Workspace-isolated.
 
-For Platform, use `type: "a13n.mem0-platform"`, `configuration: {}`, and a Platform API key. An optional `base_url` overrides its native API endpoint. There is no automatic backend fallback.
+For Platform, use `type: "mem0_platform"`, `configuration: {}`, and a Platform API key. An optional `base_url` overrides its native API endpoint. There is no automatic backend fallback.
 
 Process configuration controls only the operation deadline:
 
@@ -47,7 +47,7 @@ memory:
       mode: documents
       description: Project requirements, decisions, and procedures.
       backend:
-        type: a13n.filesystem
+        type: filesystem
         configuration:
           storage:
             root: /memory
@@ -61,7 +61,7 @@ memory:
       scope: user
 ```
 
-An inline File-based entry needs no Memory Provider credential or Provider administration. A managed `a13n.filesystem` Provider can share immutable target configuration instead. The default root is `/memory` inside the current Run Environment, not a path on the Worker. An explicit `storage.environment_id` must be the primary Environment or an already accepted additional Run mount. Current memory grants and Environment file permissions both apply.
+An inline File-based entry needs no Memory Provider credential or Provider administration. A managed `filesystem` Provider can share immutable target configuration instead. The default root is `/memory` inside the current Run Environment, not a path on the Worker. An explicit `storage.environment_id` must be the primary Environment or an already accepted additional Run mount. Current memory grants and Environment file permissions both apply.
 
 The first use durably retains the exact target and store identity. Reconnection checks that identity and the store marker. Replacing an Environment, losing a marker, or detaching an explicitly selected mount makes the entry unavailable; none creates a replacement empty corpus. A pending initialization with no marker also requires explicit recovery. A directory name alone does not make sandbox storage persistent: configure the backing mount and retention policy through the Environment provider.
 
@@ -69,7 +69,7 @@ The current write implementation supports POSIX Direct Local and EIP Environment
 
 Document tools expose index, search, bounded reads, headings, immutable revisions, conditional edits, and deletion. Each entry contributes navigation to model context; document bodies load on demand. References and tools retain their entry prefix. Renaming an entry does not move its corpus. Deleting a document erases its stored revisions; removing an entry from Agent configuration does not delete its files.
 
-Bot accounts can select a managed `a13n.filesystem` Provider. Each conversation keeps a separate corpus on its accepted Run Environment. File memory currently supports group-only visibility; installation-wide sharing remains available for Mem0. Account and group read/save controls and live membership verification still apply. Keep the same retained Environment to reuse its documents across Runs.
+Bot accounts can select a managed `filesystem` Provider. Each conversation keeps a separate corpus on its accepted Run Environment. File memory currently supports group-only visibility; installation-wide sharing remains available for Mem0. Account and group read/save controls and live membership verification still apply. Keep the same retained Environment to reuse its documents across Runs.
 
 In Console, open **Memory → File-based memory**, choose a saved store, then create, read, edit, inspect revisions, or delete documents. The Bot memory page opens the same browser for its selected conversation. Editing requires the displayed version and ETag; a stale edit fails without overwriting the newer document. Episodic documents are immutable. Deletion removes the document and its retained revisions. Management access requires a currently running, retained Environment with the same backing generation and current Environment-use permission. It never starts or recreates a target. A bounded file-use lease protects each operation against retention and replacement.
 
@@ -143,10 +143,10 @@ Key rotation takes effect on the next dispatch, including an already accepted Ru
 
 A Run retains the root and child Provider IDs accepted with its Agent graph. Editing an Agent later does not redirect an existing Run. The content API always names the Provider explicitly, so previously selected resources remain addressable after changing an Agent selection. Provider read/manage permissions govern discovery and configuration; memory read/write permissions independently govern record access.
 
-This is a pre-public breaking replacement of process-wide memory configuration. Remove `memory.provider`, `memory.base_url`, and `memory.api_key` from Service configuration and stop supplying their former environment variables. Create a Provider resource and update each opted-in Agent to select its ID. The new namespace includes the Provider resource ID; old process-scoped namespaces are not automatically migrated or treated as a fallback. If preserving old memory is required, arrange explicit data migration with the storage operator before switching. A bounded OSS list is not a complete migration/export source.
+This is a pre-public breaking replacement of process-wide memory configuration. The canonical built-in type names are `mem0_oss` and `mem0_platform`; former dotted/hyphenated development names have no aliases or compatibility migration. Remove `memory.provider`, `memory.base_url`, and `memory.api_key` from Service configuration and stop supplying their former environment variables. Create a Provider resource and update each opted-in Agent to select its ID. The new namespace includes the Provider resource ID; old process-scoped namespaces are not automatically migrated or treated as a fallback. If preserving old memory is required, arrange explicit data migration with the storage operator before switching. A bounded OSS list is not a complete migration/export source.
 
 ## Implement an external backend
 
-Use the Harness `MemoryBackendPlugin` contract for configuration, credentials, and an async backend lifetime. The backend implements typed search, list, add, get, update, and delete, including subject checks and write confirmation. `MemoryBackendPlugin` is the neutral extension point, not a Mem0 API replica. The concrete `Mem0OSSBackendPlugin` and `Mem0PlatformBackendPlugin` factories are built-in adapters; vendor names belong to those implementations, not to the public Memory feature. Register the same plugin object with the Service Provider package's `registry.memory.register(...)`; no second Service factory is needed. Select that package through `provider_plugins.enabled` on each admitting/executing role. Registration and schema validation perform no I/O.
+Use `MemoryProviderDefinition` from `a13n_harness.providers.memory`. Supply typed configuration and credential models and an async backend context manager implementing subject-scoped search, list, add, get, update, and delete. Declare document support only when the backend implements its additional operations. Contributions belong in `ProviderManifest.memory` in the same `a13n_harness.providers.plugins` manifest as the other four domains. Select the installed package through `provider_plugins.enabled` on admitting and executing roles. No Service registration or second factory is needed. The selected definition's Authentication, schema, help and document capability drive the API and Console.
 
-See [Harness long-term memory](../a13n-harness/context-and-memory.md#long-term-memory) for the shared contracts and embedded usage. The [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin) demonstrates the installed package entry point. Harness behavior plugins remain separate and Worker-owned; registering a Memory backend does not authorize arbitrary Agent behavior or contribute Service routes or database tables.
+Credential PATCH omission retains the current value; an object replaces the complete structured credential; explicit `null` removes it and advances the credential generation. Removal is permitted even for a required-credential provider, which then becomes ineligible for execution until restored. Optional and forbidden definitions may operate without credentials. Service rereads current eligibility and credentials for each operation, after authorization, and closes its SQL session before provider I/O. Storage configuration remains immutable; changing a backend target requires a new account.

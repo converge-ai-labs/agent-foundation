@@ -410,9 +410,11 @@
     },
     "InlineMemoryBackend": {
       "additionalProperties": false,
+      "description": "A document Provider configured on the Agent instead of a saved Memory Provider.",
       "properties": {
         "type": {
-          "const": "a13n.filesystem",
+          "maxLength": 128,
+          "minLength": 1,
           "title": "Type",
           "type": "string"
         },

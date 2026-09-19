@@ -5,12 +5,12 @@ from datetime import timedelta
 
 import anyio
 import httpx2
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 from sqlalchemy import or_, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.background import Sweep
-from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.iam import AuthorizationError
 from a13n_service.interactions.commands import InteractionCommands
 from a13n_service.interactions.control_domain import InterruptRequest
@@ -53,7 +53,7 @@ class ProgressService:
                     with anyio.fail_after(40):
                         await self._process(run_id, lease)
                     completed += 1
-                except (ConnectivityHttpError, httpx2.HTTPError, ObjectStoreError, TimeoutError):
+                except (ProviderHttpError, httpx2.HTTPError, ObjectStoreError, TimeoutError):
                     await self.delivery.finish(run_id, lease, error="delivery_failed")
                     failed += 1
                 except (AuthorizationError, InteractionCommandError, SecretProtectionError, ProgressUnavailable):

@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
-from contextlib import aclosing
-
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
+from a13n_harness.providers.connector.contracts import ConnectorProviderError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.connectivity.connections.domain import Connection
 from a13n_service.connectivity.connectors.connection_access import connection_binding
-from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
 from a13n_service.connectivity.connectors.management import (
     ProviderSnapshot,
-    configure_provider,
     decode_credentials,
+    open_provider,
     require_connector_provider,
 )
 from a13n_service.connectivity.connectors.models import ConnectorConnectionRecord
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.mcp.service import MCPConnectionService
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.resource_scope import ResourceScope
@@ -35,19 +34,19 @@ class ConnectionChecks:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: ConnectorProviderRegistry,
+        connectors: ProviderCatalog[ConnectorProviderDefinition],
+        connector_http: ConnectorHttpClient | None,
         protector: SecretProtector,
         mcp: MCPConnectionService,
         *,
         clock: Clock = utc_now,
     ) -> None:
-        self._sessions, self._adapters, self._protector, self._mcp, self._clock = (
-            sessions,
-            adapters,
-            protector,
-            mcp,
-            clock,
-        )
+        self._sessions = sessions
+        self._connectors = connectors
+        self._connector_http = connector_http
+        self._protector = protector
+        self._mcp = mcp
+        self._clock = clock
 
     async def check(self, *, actor: AuthenticatedActor, connection_id: str, expected_version: int) -> Connection:
         async with transaction(self._sessions) as session:
@@ -90,7 +89,9 @@ class ConnectionChecks:
                     )
                 provider_snapshot = ProviderSnapshot.from_record(provider)
                 provider_generation = provider.credential_generation
-                credentials = decode_credentials(provider.credential_snapshot().decrypt(self._protector))
+                credentials = decode_credentials(
+                    provider.credential_snapshot().decrypt(self._protector) if provider.ciphertext is not None else None
+                )
         inspection = None
         error_code = None
         try:
@@ -99,9 +100,11 @@ class ConnectionChecks:
                     actor=actor, connection_id=connection_id, expected_version=expected_version
                 )
             else:
-                assert provider_snapshot is not None and credentials is not None and binding is not None
-                runtime = configure_provider(self._adapters, provider_snapshot, credentials)
-                async with aclosing(runtime), aclosing(runtime.connect(binding)) as account:
+                assert provider_snapshot is not None and binding is not None
+                async with open_provider(
+                    self._connectors, self._connector_http, provider_snapshot, credentials
+                ) as provider_runtime:
+                    account = provider_runtime.connect(binding)
                     inspection = await account.inspect()
                     if (
                         inspection.external_ref != binding.external_ref

@@ -3,12 +3,12 @@ import { useState } from "react";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
+import { credentialMode } from "../../shared/provider-authentication";
 import { useCursor } from "../../shared/collection";
 import { useResourceEditorState, useResourceRows } from "../../shared/dialogs";
 import { EditProviderDialog, ProviderTable } from "../providers";
 import { AddProvider } from "./add-provider";
 import { modelApi, type ModelScope } from "./api";
-import { requiresProviderCredential } from "./provider-credentials";
 import { useModelProviderDefinitions } from "./provider-definitions";
 import { ProviderForm } from "./provider-form";
 
@@ -61,17 +61,17 @@ export function Providers({ scope }: { scope: ModelScope }) {
             (definition) => definition.type === item.type,
           )?.display_name,
           workspaceId: item.workspace_id,
-          credentials: !requiresProviderCredential(
-            item.type,
-            item.configuration,
-            definitions.data?.items.find(
-              (definition) => definition.type === item.type,
-            ),
-          )
-            ? "not_required"
-            : item.credential_configured
-              ? "configured"
-              : "not_configured",
+          credentials:
+            credentialMode(
+              definitions.data?.items.find(
+                (definition) => definition.type === item.type,
+              ),
+              item.configuration,
+            ) !== "required"
+              ? "not_required"
+              : item.credential_configured
+                ? "configured"
+                : "not_configured",
           state: item.enabled ? "enabled" : "disabled",
         })}
       />

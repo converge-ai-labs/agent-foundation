@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter
+from a13n_harness.providers.definition import ProviderDefinition
+from pydantic import BaseModel, JsonValue, SecretBytes, SecretStr, TypeAdapter
 from sqlalchemy import BigInteger, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +23,17 @@ def credential_payload(credentials: BaseModel) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise TypeError("Resource credentials must serialize as an object")
     return payload
+
+
+def provider_credential_payload(
+    definition: ProviderDefinition,
+    configuration: BaseModel | dict[str, JsonValue],
+    credential: object,
+) -> dict[str, object] | None:
+    """Enforce the declared presence rule once, then reveal the secret for persistence."""
+
+    parsed = definition.parse_credential(configuration, credential)
+    return None if parsed is None else credential_payload(parsed)
 
 
 def _reveal_secrets(value: object) -> object:

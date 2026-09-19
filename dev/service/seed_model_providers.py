@@ -1,8 +1,6 @@
 """Fictional connections for exercising every supported Provider editor."""
 
-import json
-
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
@@ -28,7 +26,7 @@ MODEL_EXAMPLES = {
 async def seed_model_providers(client: Client, base: str) -> dict[str, str]:
     existing = {item["name"]: item["id"] for item in await client.collection(base + "/model-providers")}
     result = {}
-    for definition in built_in_provider_registry().definitions():
+    for definition in built_in_model_provider_catalog().values():
         name = f"{definition.display_name} · demo credentials"
         if name in existing:
             result[definition.type] = existing[name]
@@ -40,27 +38,23 @@ async def seed_model_providers(client: Client, base: str) -> dict[str, str]:
             "ollama": {"base_url": "http://127.0.0.1:11434"},
             "alibaba_model_studio": {"region": "cn-beijing", "domain_type": "mainland_china"},
         }.get(definition.type, {})
-        credential = "fictional-local-demo-not-a-real-api-key"
+        credential = {"api_key": "fictional-local-demo-not-a-real-api-key"}
         if definition.type == "ollama":
             credential = None
         elif definition.type == "aws_bedrock":
-            credential = json.dumps(
-                {"aws_access_key_id": "FICTIONALLOCALDEMO", "aws_secret_access_key": "not-a-real-aws-secret"}
-            )
+            credential = {"aws_access_key_id": "FICTIONALLOCALDEMO", "aws_secret_access_key": "not-a-real-aws-secret"}
         elif definition.type == "google_vertex":
             # A syntactically valid, unregistered key; never a real cloud account.
             key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-            credential = json.dumps(
-                {
-                    "type": "service_account",
-                    "project_id": "fictional-local-demo",
-                    "client_email": "demo@fictional-local-demo.iam.gserviceaccount.com",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "private_key": key.private_bytes(
-                        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
-                    ).decode(),
-                }
-            )
+            credential = {
+                "type": "service_account",
+                "project_id": "fictional-local-demo",
+                "client_email": "demo@fictional-local-demo.iam.gserviceaccount.com",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "private_key": key.private_bytes(
+                    serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+                ).decode(),
+            }
         item = await client.request(
             "POST",
             base + "/model-providers",
@@ -78,7 +72,7 @@ async def seed_model_providers(client: Client, base: str) -> dict[str, str]:
 
 async def seed_provider_models(client: Client, base: str, providers: dict[str, str]) -> dict[str, str]:
     """One disabled, fictional-credential Model for each built-in Provider."""
-    definitions = built_in_provider_registry().definitions()
+    definitions = built_in_model_provider_catalog().values()
     existing = {item["key"]: item["id"] for item in await client.collection(base + "/models")}
     keys = {definition.type: f"demo-{definition.type.replace('_', '-')}" for definition in definitions}
     if all(key in existing for key in keys.values()):
@@ -104,7 +98,7 @@ async def seed_provider_models(client: Client, base: str, providers: dict[str, s
                 "provider_id": providers[definition.type],
                 "upstream_model": upstream_model,
                 "catalog_ref": reference,
-                "model_api": definition.default_model_api,
+                "model_api": definition.supported_model_apis[0],
                 "declarations": catalog_entry["declarations"] if catalog_entry else {},
                 "enabled": False,
             },

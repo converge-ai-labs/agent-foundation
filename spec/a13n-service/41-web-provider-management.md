@@ -21,7 +21,7 @@ Connectors and remote MCP connections retain their own schemas, credentials, and
 
 ## Trusted Provider Types
 
-The Service process owns one finite code-reviewed catalog assembled before readiness from built-ins and Web registrations in deployment-selected `a13n.providers` entry points. Selection names installed metadata rather than an import target; package installation alone grants no trust. Registration exposes inert definitions and factories, not live clients. Every implementation still enters this Web-specific management and operation path:
+The Service process owns one finite code-reviewed catalog assembled before readiness from built-ins and Harness Web definitions in deployment-selected `a13n_harness.providers.plugins` manifests. Selection names installed metadata rather than an import target; package installation alone grants no trust. Manifests expose inert definitions and typed operation callbacks, not live clients. Service projects their metadata into the management API; embedded Harness and Service use the same vendor operation. Every implementation still enters this Web-specific management and operation path:
 
 ```python
 class WebProviderDefinition:
@@ -29,11 +29,14 @@ class WebProviderDefinition:
     display_name: str
     configuration_schema: JsonObject
     credential_schema: JsonObject
-    credential_required: bool
-    setup_url: str
+    authentication: Authentication
+    setup_url: str | None
+    setup_label: str | None
     operations: tuple[Literal["search", "scrape"], ...]
     supports_restricted_scrape: bool
 ```
+
+The shared [authentication declaration](../a13n-harness/16b-model-provider-definitions.md#authentication) determines required, optional, or forbidden credentials from validated configuration, including defaults. PATCH validation applies to the resulting configuration and credential presence.
 
 The operation list describes only capabilities implemented by this integration. `supports_restricted_scrape` is true only when an adapter can enforce requested-content restrictions throughout a remote scrape. It is not inferred from an input or returned URL check.
 
@@ -138,6 +141,8 @@ Before each Provider dispatch and disclosure, Service rechecks the Attempt fence
 
 Fetch and download recheck Attempt and Agent authority for their exact tool ID on every hop and body boundary. They never read or authorize a Web Provider. Downloads additionally use current Environment file permissions at the call.
 
+The reusable Harness scrape boundary includes target-policy authorization and the callback in the request deadline, and caps returned UTF-8 content at the smaller of request and configured byte limits. Trimming preserves valid UTF-8 and existing truncation metadata. The transport validates the actual outgoing destination before dispatch, excluding generated query values to support vendor query credentials; configurable endpoint validation retains its sensitive-query restrictions.
+
 One Provider operation has a 30-second total deadline. Service permits at most two dispatches to the same account only after an explicit rate-limit or temporary-unavailable response and sufficient retry budget. The public Provider extension boundary represents that evidence with `WebProviderResponseError`; an ordinary safe `WebProviderError` code does not authorize replay. Transport failures, timeouts, invalid responses, cancellation, and authorization failures are not replayed. A saved-account test performs one supported Provider dispatch and is separate from Run execution and usage accounting.
 
 Provider receipts are recorded only when valid and reported; unknown cost remains unknown. Safe failure codes contain no credential, raw upstream response, private transport diagnostic, query, or extracted content. Clients and sensitive snapshots close on success, failure, cancellation, and Attempt exit.
@@ -154,6 +159,8 @@ Provider receipts are recorded only when valid and reported; unknown cost remain
 | Inspect references    | `GET .../{provider_id}/references`                          |
 
 The API uses standard pagination, strong ETags, idempotency behavior, safe errors, and ID-or-key scope resolution. `web_provider.read` authorizes visible reads; `web_provider.manage` authorizes owning-scope create/update/test. Agent authoring additionally requires read access when selecting or changing a Provider. Execution authority comes from the accepted Agent graph and exact tool call, never management permission.
+
+Console renders ordinary configuration and credential inputs from the selected definition’s schemas, including schema defaults, numeric bounds, choices, and nested objects. Credentials remain write-only; an untouched edit retains the saved credential. Web credential removal is not supported. No vendor-name branch chooses `api_key` or discards declared configuration.
 
 ## Invariants
 

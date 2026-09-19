@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from a13n_harness.errors import ModelResolutionError
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 
 
 @pytest.fixture
@@ -20,7 +20,9 @@ def smoke(monkeypatch):
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, spec.name, module)
     spec.loader.exec_module(module)
-    monkeypatch.setattr("a13n_service.endpoint_policy._resolve_addresses", lambda *_: [ipaddress.ip_address("8.8.8.8")])
+    monkeypatch.setattr(
+        "a13n_harness.providers.endpoint_policy._resolve_addresses", lambda *_: [ipaddress.ip_address("8.8.8.8")]
+    )
     args = argparse.Namespace(
         command="call", model="vendor/model", settings='{"max_tokens": 256}', prompt="Reply with OK."
     )
@@ -101,8 +103,8 @@ def test_inference_uses_async_native_factory(smoke, monkeypatch, capsys, command
 def test_inference_rejects_private_endpoint_before_dispatch(smoke, monkeypatch):
     _, calls, run = smoke
     monkeypatch.setattr(
-        "a13n_service.endpoint_policy._resolve_addresses", lambda *_: [ipaddress.ip_address("127.0.0.1")]
+        "a13n_harness.providers.endpoint_policy._resolve_addresses", lambda *_: [ipaddress.ip_address("127.0.0.1")]
     )
-    with pytest.raises(ModelResolutionError):
+    with pytest.raises(EndpointPolicyError):
         run()
     assert calls == []

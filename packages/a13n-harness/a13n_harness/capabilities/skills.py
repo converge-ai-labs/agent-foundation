@@ -22,7 +22,17 @@ from pydantic_ai.tools import ToolDefinition
 
 from a13n_harness.context import AgentContext, SkillPath
 from a13n_harness.environment._mount_path import parse_mount_path
-from a13n_harness.environment.files import (
+from a13n_harness.environment.providers import BoundEnvironment, FileScopeSelection
+from a13n_harness.errors import DefinitionError
+from a13n_harness.events import HarnessExtensionEvent
+from a13n_harness.observation import (
+    observe_output,
+    observe_phase,
+    observe_skill_access,
+    observe_skill_catalog,
+    record_span_metadata,
+)
+from a13n_harness.providers.environment.files import (
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
@@ -36,17 +46,7 @@ from a13n_harness.environment.files import (
     FileWriteMode,
     FileWriteResult,
 )
-from a13n_harness.environment.models import EnvironmentError, EnvironmentPath
-from a13n_harness.environment.providers import BoundEnvironment, FileScopeSelection
-from a13n_harness.errors import DefinitionError
-from a13n_harness.events import HarnessExtensionEvent
-from a13n_harness.observation import (
-    observe_output,
-    observe_phase,
-    observe_skill_access,
-    observe_skill_catalog,
-    record_span_metadata,
-)
+from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentPath
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, normalize_harness_tool_metadata
 
 SKILLS_CAPABILITY_ID = "a13n.skills"

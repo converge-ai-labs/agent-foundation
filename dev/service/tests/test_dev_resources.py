@@ -19,10 +19,10 @@ from dev.service.dev_resources import _active, _model_credential, load_resources
 def test_private_file_requires_private_regular_file(tmp_path: Path):
     path = tmp_path / "resources.toml"
     path.write_text(
-        'version = 1\n[[model_providers]]\ntype = "openrouter"\nname = "OpenRouter"\ncredential = "secret"\nmodels = []\n'
+        'version = 1\n[[model_providers]]\ntype = "openrouter"\nname = "OpenRouter"\ncredential = {api_key = "secret"}\nmodels = []\n'
     )
     path.chmod(0o600)
-    assert load_resources(path).model_providers[0].credential.get_secret_value() == "secret"
+    assert load_resources(path).model_providers[0].credential == {"api_key": "secret"}
 
     path.chmod(0o644)
     with pytest.raises(ValueError, match="mode 0600"):
@@ -54,7 +54,7 @@ def test_example_and_typed_model_credential(tmp_path: Path):
     assert not _active(resources)
     provider = resources.model_providers[0]
     provider.credential["api_key"] = SecretStr("test-key")
-    assert _model_credential(provider) == "test-key"
+    assert _model_credential(provider) == {"api_key": "test-key"}
 
 
 @pytest.mark.anyio
@@ -62,7 +62,7 @@ async def test_import_creates_once_and_updates_existing_model(tmp_path: Path):
     path = tmp_path / "resources.toml"
     path.write_text(
         'version = 1\n[[model_providers]]\ntype = "openrouter"\nname = "OpenRouter"\n'
-        'credential = "secret"\n[[model_providers.models]]\nkey = "glm"\nname = "GLM"\n'
+        'credential = {api_key = "secret"}\n[[model_providers.models]]\nkey = "glm"\nname = "GLM"\n'
         'upstream_model = "z-ai/glm-5.3-flash"\n'
     )
     path.chmod(0o600)

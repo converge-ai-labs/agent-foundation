@@ -5,8 +5,8 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 from unittest.mock import AsyncMock, Mock
 
-from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_service.environments.devices import DeviceDiscovery
 from a13n_service.environments.websocket.device_reads import DeviceReadClient
 from a13n_service.models.provider_runtime import LiveProviderResolver
@@ -94,7 +94,7 @@ async def worker_runtime(
     resources.live_model_providers = Mock(spec=LiveProviderResolver)
     resources.live_model_providers.resolve = AsyncMock(return_value=Mock())
     resources.skill_package_store = Mock()
-    resources.model_provider_registry = Mock()
+    resources.model_provider_catalog = Mock()
     resources.model_endpoint_policy = Mock()
     resources.model_http_client = Mock()
     async with AsyncExitStack() as stack:
@@ -106,7 +106,7 @@ async def worker_runtime(
             SecretProtector(key=b"k" * 32, encryption_key_id="test"),
             memory_behaviors=ordinary_memory(sessions),
         )
-        catalog = environment_catalog if environment_catalog is not None else EnvironmentProviderCatalog()
+        catalog = environment_catalog if environment_catalog is not None else ProviderCatalog()
         responses = await build_relay_responses(settings, shared.storage, catalog, stack)
         shared = replace(
             shared,
@@ -124,7 +124,7 @@ async def worker_runtime(
             connectors,
             invocations=invocations
             if invocations is not None
-            else build_agent_resources(Components(), shared, resources.model_provider_registry).invocations,
+            else build_agent_resources(Components(), shared, resources.model_provider_catalog).invocations,
             plugin_catalog=plugin_catalog if plugin_catalog is not None else HarnessPluginFactoryCatalog(()),
             observability=observability,
             configuration_resolver=configuration_resolver,

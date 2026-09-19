@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from a13n_environment.remote_envd.pairing import (
+from a13n_harness.providers.environment.remote_envd.pairing import (
     PAIRING_PATH,
     PairingChallenge,
     PairingRequest,

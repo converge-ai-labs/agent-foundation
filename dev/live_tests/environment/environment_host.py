@@ -1,13 +1,13 @@
 """Explicit single-Worker reverse EIP wiring for the owned live-test Host."""
 
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from urllib.parse import urlsplit
 
-from a13n_environment import (
-    WebSocketEnvdConnections,
-    WebSocketEnvdEnvironmentProvider,
-    build_environment_provider_catalog,
-)
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
+from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
 from websockets.asyncio.server import serve
 
 
@@ -15,9 +15,18 @@ class ReverseEnvdHost:
     def __init__(self, configuration, builtin_keys):
         self.configuration = configuration
         self.connections = WebSocketEnvdConnections()
-        self.catalog = build_environment_provider_catalog(
-            builtin_keys=tuple(key for key in builtin_keys if key != "a13n.websocket-envd"),
-            explicit_providers=(WebSocketEnvdEnvironmentProvider(connections=self.connections),),
+        runtime = WebSocketEnvdProviderRuntime(self.connections)
+
+        async def provide_runtime(**arguments: object) -> WebSocketEnvdProviderRuntime:
+            """This Host already owns the connection SDK; no runtime is acquired per target."""
+            del arguments
+            return runtime
+
+        self.catalog = ProviderCatalog(
+            (
+                *select_builtin_environment_providers(tuple(key for key in builtin_keys if key != "websocket_envd")),
+                replace(WEBSOCKET_ENVD, runtime_factory=provide_runtime),
+            )
         )
 
     def install(self, app):

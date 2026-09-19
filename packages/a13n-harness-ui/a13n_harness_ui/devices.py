@@ -14,19 +14,17 @@ from typing import Literal
 from a13n_envd_client import EIPClientError
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
-from a13n_environment import (
-    Environment,
-    EnvironmentProviderError,
-    EnvironmentState,
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdCredential,
-    HttpEnvdEnvironmentProvider,
-    HttpEnvdProviderRuntime,
-    RemoteEnvdProviderConfiguration,
-    WebSocketEnvdConnections,
-    WebSocketEnvdEnvironmentProvider,
-    WebSocketEnvdProviderRuntime,
+    RemoteEnvdEnvironmentConfiguration,
 )
-from a13n_environment.remote_envd.pairing import credential_matches
+from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
+from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.pairing import credential_matches
+from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
 from pydantic import SecretStr, ValidationError
 
 from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding
@@ -245,24 +243,24 @@ class DeviceConnections:
         self, binding: ResolvedEnvironmentBinding, *, environment_id: str, state: EnvironmentState | None = None
     ) -> Environment:
         resource = binding.device
-        configuration = RemoteEnvdProviderConfiguration(working_directory=binding.selection.working_directory)
+        configuration = RemoteEnvdEnvironmentConfiguration(working_directory=binding.selection.working_directory)
         if isinstance(resource.transport, HttpDeviceTransport):
-            provider = HttpEnvdEnvironmentProvider()
-            return provider.create_environment(
+            return HTTP_ENVD.construct(
                 configuration=configuration,
                 environment_id=environment_id,
                 state=state
                 or EnvironmentState(
-                    provider_key=provider.key, state_version="1", state={"device_id": resource.device_id}
+                    provider_key=HTTP_ENVD.type, state_version="1", state={"device_id": resource.device_id}
                 ),
                 runtime=await self._http_runtime(resource),
             )
-        provider = WebSocketEnvdEnvironmentProvider()
-        return provider.create_environment(
+        return WEBSOCKET_ENVD.construct(
             configuration=configuration,
             environment_id=environment_id,
             state=state
-            or EnvironmentState(provider_key=provider.key, state_version="1", state={"device_id": resource.device_id}),
+            or EnvironmentState(
+                provider_key=WEBSOCKET_ENVD.type, state_version="1", state={"device_id": resource.device_id}
+            ),
             runtime=WebSocketEnvdProviderRuntime(
                 await self._websocket_connections(resource), resource.transport.configuration
             ),

@@ -6,6 +6,7 @@ import json
 from typing import Any, Literal, Protocol
 
 import anyio
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -21,7 +22,6 @@ from a13n_service.durable_operations.idempotency import (
     digest_visible_ascii_key,
 )
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction

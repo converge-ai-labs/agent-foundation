@@ -1,11 +1,14 @@
 """Run the real Composio adapter against the lab-owned HTTPS peer."""
 
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx2
-from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
-from a13n_service.connectivity.connectors.providers.composio.configuration import COMPOSIO_ENDPOINT
-from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
+from a13n_harness.providers.connector.composio.configuration import COMPOSIO_ENDPOINT
+from a13n_harness.providers.connector.http import ConnectorHttpClient
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
 from ..infrastructure.fixture_peer import certificate_context
 
@@ -16,15 +19,20 @@ class PeerEndpoint:
         self.policy = EndpointPolicy.from_operator_allowlist(private_cidrs=("127.0.0.1/32",), require_https=True)
 
     async def validate(self, endpoint, *, resolve_dns=True):
-        if endpoint != COMPOSIO_ENDPOINT:
+        """Accept only Composio destinations and route them to the lab peer, keeping the request path."""
+        target = urlsplit(endpoint)
+        if f"{target.scheme}://{target.netloc}" != COMPOSIO_ENDPOINT:
             raise ValueError("Live Connector adapter attempted an unexpected upstream")
-        return await self.policy.validate(self.origin, resolve_dns=resolve_dns)
+        peer = urlsplit(self.origin)
+        rewritten = urlunsplit((peer.scheme, peer.netloc, target.path, target.query, target.fragment))
+        return await self.policy.validate(rewritten, resolve_dns=resolve_dns)
 
 
 class ConnectorHost:
     def __init__(self, config, settings):
         self.http = httpx2.AsyncClient(verify=certificate_context(config), trust_env=False)
-        self.registry = built_in_connector_provider_registry(
+        self.catalog = ProviderCatalog(BUILT_IN_CONNECTOR_PROVIDERS)
+        self.connector_http = ConnectorHttpClient(
             self.http,
             PeerEndpoint(config["peer_url"]),
             response_max_bytes=settings.connectivity.response_max_bytes,

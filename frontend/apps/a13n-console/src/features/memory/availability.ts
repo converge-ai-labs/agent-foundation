@@ -1,8 +1,33 @@
 import { useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages } from "../../shared/api";
-import { memoryProviderApi } from "./providers-api";
+import {
+  allPages,
+  data,
+  workspaceHeaders,
+  type Schema,
+} from "../../shared/api";
+import { credentialMode } from "../../shared/provider-authentication";
+import { memoryProviderApi, type MemoryProviderScope } from "./providers-api";
+
+/**
+ * A provider can serve content only while it is enabled and its declared
+ * authentication is satisfied; a Provider that forbids credentials needs none.
+ */
+export function eligibleMemoryProvider(
+  provider: Schema["MemoryProvider"],
+  definitions: Schema["MemoryProviderMetadata"][],
+) {
+  const definition = definitions.find((item) => item.type === provider.type);
+  if (!provider.enabled || !definition) return false;
+  const mode = credentialMode(definition, provider.configuration);
+  return (
+    mode === "optional" ||
+    (mode === "required"
+      ? provider.credential_configured
+      : !provider.credential_configured)
+  );
+}
 
 /** Shared by discovery and selectors; visibility is not content authorization. */
 export function useMemoryProviders() {
@@ -29,10 +54,31 @@ export function useMemoryProviders() {
   return { providers, visible };
 }
 
-/** A provider can serve content only while it is enabled and configured. */
-export function memoryProviderUsable(provider: {
-  enabled?: boolean | null;
-  credential_configured?: boolean | null;
-}) {
-  return !!provider.enabled && !!provider.credential_configured;
+/** The installed Memory definitions one scope can select from. */
+export function useMemoryProviderDefinitions(
+  scope: MemoryProviderScope,
+  enabled = true,
+) {
+  const client = useClient();
+  return useQuery({
+    queryKey: ["memory-provider-types", scope.kind, scope.id],
+    enabled,
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/memory-provider-types", {
+          signal,
+          headers:
+            scope.kind === "workspace" ? workspaceHeaders(scope.id) : undefined,
+        })
+        .then(data),
+  });
+}
+
+/** The workspace catalog every agent-facing Memory selector reads. */
+export function useWorkspaceMemoryProviderDefinitions() {
+  const { workspace, can } = useWorkspace();
+  return useMemoryProviderDefinitions(
+    { kind: "workspace", id: workspace.id },
+    can("memory_provider.read"),
+  );
 }

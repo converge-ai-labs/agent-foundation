@@ -11,31 +11,32 @@ from pathlib import Path
 from uuid import uuid4
 
 import anyio
-from a13n_environment import (
-    DirectLocalEnvironmentProvider,
-    DirectLocalProviderRuntime,
-    EnvironmentProviderError,
-    EnvironmentState,
-    HttpEnvdBackendConfiguration,
-    HttpEnvdCredential,
-    HttpEnvdEnvironmentProvider,
-    HttpEnvdProviderRuntime,
-    LocalEnvdEnvironmentProvider,
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdLaunchConfiguration,
-    LocalEnvdProviderRuntime,
     LocalEnvdShellProfile,
-    TemporaryLocalEnvdRuntimeAllocator,
-    WebSocketEnvdConnections,
-    WebSocketEnvdEnvironmentProvider,
-    WebSocketEnvdProviderRuntime,
 )
+from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+from a13n_harness.providers.environment.local_envd.runtime import (
+    LocalEnvdProviderRuntime,
+    TemporaryLocalEnvdRuntimeAllocator,
+)
+from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.configuration import (
+    HttpEnvdConnectionConfiguration,
+    HttpEnvdCredential,
+)
+from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
+from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
 from pydantic import SecretStr
 from websockets.asyncio.server import serve
 
 from ..infrastructure.round_two_lab import REPOSITORY, free_origin, private_json
 from ..infrastructure.tcp_proxy import TCPProxy
 
-KINDS = ("direct-local", "local-envd", "http-envd", "websocket-envd")
+KINDS = ("direct_local", "local_envd", "http_envd", "websocket_envd")
 logger = logging.getLogger(__name__)
 
 
@@ -80,12 +81,12 @@ class FileBackend:
         (base / "source").chmod(0o666)
         async with AsyncExitStack() as stack:
             self.stack = stack
-            if self.kind == "direct-local":
-                self.provider = DirectLocalEnvironmentProvider()
+            if self.kind == "direct_local":
+                self.provider = DIRECT_LOCAL
                 configuration = {"root": {"path": str(self.root)}}
-                self.runtime = DirectLocalProviderRuntime()
-            elif self.kind == "local-envd":
-                self.provider = LocalEnvdEnvironmentProvider()
+                self.runtime = None
+            elif self.kind == "local_envd":
+                self.provider = LOCAL_ENVD
                 configuration = {"working_directory": str(self.root)}
                 self.runtime = LocalEnvdProviderRuntime(
                     executable=self.binary(),
@@ -105,8 +106,8 @@ class FileBackend:
             else:
                 configuration = {"working_directory": str(self.root)}
                 token = secrets.token_urlsafe(24)
-                if self.kind == "http-envd":
-                    self.provider = HttpEnvdEnvironmentProvider()
+                if self.kind == "http_envd":
+                    self.provider = HTTP_ENVD
                     origin = free_origin()
                     endpoint = origin
                     if self.network_faults:
@@ -115,11 +116,11 @@ class FileBackend:
                         )
                         endpoint = f"http://127.0.0.1:{self.proxy.local_port}"
                     self.runtime = HttpEnvdProviderRuntime(
-                        HttpEnvdBackendConfiguration(endpoint=endpoint, request_timeout=5),
+                        HttpEnvdConnectionConfiguration(endpoint=endpoint, request_timeout=5),
                         HttpEnvdCredential(token=SecretStr(token)),
                     )
                 else:
-                    self.provider = WebSocketEnvdEnvironmentProvider()
+                    self.provider = WEBSOCKET_ENVD
                     hub = await stack.enter_async_context(WebSocketEnvdConnections())
 
                     async def attach(connection):
@@ -152,18 +153,18 @@ class FileBackend:
                         origin = f"ws://127.0.0.1:{self.proxy.local_port}/envd"
                     self.runtime = WebSocketEnvdProviderRuntime(hub)
                 self.state = EnvironmentState(
-                    provider_key=self.provider.key,
+                    provider_key=self.provider.type,
                     state_version="1",
                     state={"device_id": self.identity},
                 )
                 await self.start_daemon(origin, token, stack)
             if isinstance(self.runtime, (LocalEnvdProviderRuntime, HttpEnvdProviderRuntime)):
                 stack.push_async_callback(self.runtime.close)
-            if self.commands and self.kind == "direct-local":
+            if self.commands and self.kind == "direct_local":
                 configuration["shell_profiles"] = [
                     {"profile_id": "default", "executable": "/bin/bash", "fixed_arguments": ["-c"]}
                 ]
-            self.configuration = self.provider.validate_configuration(schema_version="1", value=configuration)
+            self.configuration = self.provider.validate_environment(configuration)
             try:
                 self.environment = self.adapter()
                 if prepare:
@@ -183,7 +184,7 @@ class FileBackend:
                         raise ExceptionGroup("File fixture cleanup failed", errors)
 
     def path(self, relative):
-        return relative if self.kind == "direct-local" else str(self.root / relative.lstrip("/"))
+        return relative if self.kind == "direct_local" else str(self.root / relative.lstrip("/"))
 
     @staticmethod
     def binary():
@@ -192,7 +193,7 @@ class FileBackend:
         return path
 
     def adapter(self, *, state=None, runtime=None):
-        environment = self.provider.create_environment(
+        environment = self.provider.construct(
             environment_id=self.identity,
             configuration=self.configuration,
             state=state if state is not None else self.state,
@@ -202,7 +203,7 @@ class FileBackend:
         return environment
 
     async def prepare(self, environment):
-        await environment.enter(thread_id="files", run_id="run", agent_instance_id="agent", mount_id="workspace")
+        await environment.enter(mount_id="workspace")
         await environment.prepare()
         return environment
 
@@ -239,7 +240,7 @@ class FileBackend:
         environment = {
             "A13N_ENVD_RUNTIME_DIR": str(runtime),
         }
-        if self.kind == "http-envd":
+        if self.kind == "http_envd":
             environment.update(
                 A13N_ENVD_TRANSPORT="http",
                 A13N_ENVD_HTTP_BIND=origin.removeprefix("http://"),
@@ -262,7 +263,7 @@ class FileBackend:
         self.process = await asyncio.create_subprocess_exec(
             *self.daemon_arguments, env=self.daemon_environment, stdout=self.daemon_log, stderr=self.daemon_log
         )
-        if self.kind == "http-envd":
+        if self.kind == "http_envd":
             async with asyncio.timeout(10):
                 while True:
                     assert self.process.returncode is None, "File fixture daemon exited"

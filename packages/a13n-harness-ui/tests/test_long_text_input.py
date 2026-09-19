@@ -11,8 +11,8 @@ from unittest.mock import Mock
 
 import pytest
 import yaml
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.configuration import HarnessUiDocument, InputConfiguration
 from a13n_harness_ui.root_input import RootInputFiles
@@ -88,7 +88,7 @@ async def _configuration(tmp_path, monkeypatch, *, threshold=8000, files_enabled
 @asynccontextmanager
 async def _app(tmp_path, monkeypatch, model, **options):
     path = await _configuration(tmp_path, monkeypatch, **options)
-    monkeypatch.setattr("a13n_harness.model_auth.CodexRequestModel", lambda *args, **kwargs: model)
+    monkeypatch.setattr("a13n_harness.models.codex.CodexRequestModel", lambda *args, **kwargs: model)
     settings = HarnessUiSettings(
         pricing_auto_update=False,
         storage=StorageSettings(data_root=tmp_path / "data", scratch_retention_seconds=1.0),

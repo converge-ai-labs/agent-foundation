@@ -1,8 +1,9 @@
 """Invalidate locally, then make one bounded remote revocation attempt."""
 
-from contextlib import aclosing
-
 import anyio
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
+from a13n_harness.providers.connector.contracts import ConnectionBinding, ConnectorProviderError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -24,31 +25,31 @@ from .connection_access import (
     replay_connection_command,
     require_version,
 )
-from .contracts import ConnectionBinding, ConnectorProviderError
 from .errors import ConnectorError
 from .management import (
     ProviderSnapshot,
     audit,
-    configure_provider,
     decode_credentials,
+    open_provider,
     require_connection,
     require_connector_provider,
 )
 from .models import ConnectorAuthorizationRecord
-from .registry import ConnectorProviderRegistry
 
 
 class ConnectorRevocationService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: ConnectorProviderRegistry,
+        connectors: ProviderCatalog[ConnectorProviderDefinition],
+        connector_http: ConnectorHttpClient | None,
         protector: SecretProtector,
         *,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
-        self._adapters = adapters
+        self._connectors = connectors
+        self._connector_http = connector_http
         self._protector = protector
         self._clock = clock
 
@@ -190,10 +191,13 @@ class ConnectorRevocationService:
         # that might revoke a replacement authorization on a later retry.
         outcome = "unknown"
         try:
-            credentials = decode_credentials(credential.decrypt(self._protector))
-            runtime = configure_provider(self._adapters, provider, credentials)
+            credentials = decode_credentials(
+                credential.decrypt(self._protector) if credential.ciphertext is not None else None
+            )
+            runtime = open_provider(self._connectors, self._connector_http, provider, credentials)
             with anyio.fail_after(30):
-                async with aclosing(runtime), aclosing(runtime.connect(binding)) as connection_runtime:
+                async with runtime as provider_runtime:
+                    connection_runtime = provider_runtime.connect(binding)
                     await connection_runtime.revoke(operation_id=command_id)
             outcome = "succeeded"
         except ConnectorProviderError as error:

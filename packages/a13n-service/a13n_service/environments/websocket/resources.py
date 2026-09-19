@@ -7,10 +7,10 @@ from datetime import datetime
 from time import monotonic
 from typing import Literal
 
-from a13n_environment import EnvironmentState
-from a13n_environment.remote_envd.configuration import RemoteEnvdProviderConfiguration
-from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
-from a13n_environment.remote_envd.environment import REQUIRED_METHODS, decode_state
+from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.configuration import RemoteEnvdEnvironmentConfiguration
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
+from a13n_harness.providers.environment.remote_envd.environment import REQUIRED_METHODS, decode_state
 from sqlalchemy import and_, or_, select
 
 from a13n_service.iam import AuthenticatedActor
@@ -110,10 +110,8 @@ class ConnectionResources:
             raise invalid_environment("Environment is not an eligible client WebSocket target")
         implementation = self._environments.catalog.require(provider.type)
         configuration = EnvironmentConfiguration.model_validate(row.external_configuration)
-        validated = implementation.validate_configuration(
-            schema_version=configuration.configuration_schema_version, value=configuration.configuration
-        )
-        if not isinstance(validated, RemoteEnvdProviderConfiguration):
+        validated = implementation.validate_environment(configuration.configuration)
+        if not isinstance(validated, RemoteEnvdEnvironmentConfiguration):
             raise TypeError("Client WebSocket Provider returned an invalid configuration")
         state = EnvironmentState.model_validate(row.state)
         native = decode_state(WEBSOCKET_PROVIDER_KEY, state)

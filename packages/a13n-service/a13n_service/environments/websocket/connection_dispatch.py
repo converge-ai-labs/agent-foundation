@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 from a13n_envd_client import EIPClientError, EIPDeviceConnection, EIPSession
 from a13n_envd_client.eip.v1 import DirectoryListParams
-from a13n_environment import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 from pydantic import JsonValue
 
 from ..domain import DomainModel

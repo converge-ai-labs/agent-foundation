@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from a13n_harness.model_auth import CodexLoginResult
+from a13n_harness.providers.model.oauth import CodexLoginResult
 from anyio import CancelScope, Lock, to_thread
 from anyio.lowlevel import checkpoint
 

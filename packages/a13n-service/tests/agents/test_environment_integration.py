@@ -5,17 +5,19 @@ import shutil
 from pathlib import Path
 
 import pytest
-from a13n_environment import (
+from a13n_harness import EnvironmentMount, HarnessBuilder, RunBindings
+from a13n_harness.environment import (
     FILE_ACTIONS,
     FILE_READ_ACTIONS,
-    DirectLocalEnvironmentProvider,
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-    DirectLocalShellProfile,
     EnvironmentAction,
     EnvironmentPermissionSet,
 )
-from a13n_harness import EnvironmentMount, HarnessBuilder, RunBindings
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+    DirectLocalShellProfile,
+)
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -52,8 +54,8 @@ async def test_root_and_inline_child_receive_and_use_environment_tools(
         executable = shutil.which("sh") if shell else None
         if shell and executable is None:
             pytest.skip("A POSIX shell is required for this Provider configuration")
-        environment = DirectLocalEnvironmentProvider().create_environment(
-            configuration=DirectLocalProviderConfiguration(
+        environment = DIRECT_LOCAL.construct(
+            configuration=DirectLocalEnvironmentConfiguration(
                 root=DirectLocalRootConfiguration(path=tmp_path),
                 shell_profiles=(DirectLocalShellProfile(profile_id="default", executable=Path(executable)),)
                 if executable
@@ -61,6 +63,7 @@ async def test_root_and_inline_child_receive_and_use_environment_tools(
             ),
             environment_id="hosted-workspace",
             state=None,
+            runtime=None,
         )
         if prepared:
             await environment.prepare()

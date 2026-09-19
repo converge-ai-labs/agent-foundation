@@ -4,6 +4,7 @@ from functools import partial
 from typing import Annotated, Literal
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from mcp.types import Tool
 from pydantic import Field, StringConstraints, model_validator
 
@@ -15,9 +16,9 @@ from a13n_service.connectivity.providers.github.actions import (
     GitHubReadCommentsArguments,
     GitHubReadTargetArguments,
 )
-from a13n_service.endpoint_policy import EndpointPolicy
 
 from ...accounts.domain import StrictModel
+from ..definition import InboundActionContext
 from ..tool_contracts import AccountTools
 from .inbound_tools import inbound_actions
 
@@ -96,7 +97,16 @@ def actions(
             "number": target.number,
             "target_kind": target.target_kind,
         }
-        actions = inbound_actions(context, {}, configuration, credentials, http, endpoints)
+        actions = inbound_actions(
+            InboundActionContext(
+                provider_context=context,
+                action_policy={},
+                configuration=configuration,
+                credentials=credentials,
+                http=http,
+                endpoints=endpoints,
+            )
+        )
         selected = actions.get(name)
         if selected is None:
             raise ValueError("account_action_unavailable")

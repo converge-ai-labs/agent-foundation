@@ -1,7 +1,8 @@
 """Cloud provider authoring, encrypted persistence, and normal Worker construction."""
 
 import pytest
-from a13n_environment import build_environment_provider_catalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 from a13n_service.environments.configuration import load_configuration
 from a13n_service.environments.domain import (
     CreateManagedEnvironmentRequest,
@@ -27,7 +28,7 @@ BACKENDS = {
 
 @pytest.fixture
 def provider_catalog():
-    return build_environment_provider_catalog(builtin_keys=Settings().environments.provider_builtins)
+    return ProviderCatalog(select_builtin_environment_providers(Settings().environments.provider_builtins))
 
 
 @pytest.mark.parametrize("key", BACKENDS)
@@ -40,7 +41,7 @@ async def test_cloud_provider_service_roundtrip(
     metadata = types[key]
     assert metadata.supports_managed and metadata.supports_destroy
     assert metadata.supports_stop == (key != "sprites")
-    assert metadata.template_configuration_schemas["1"]["type"] == "object"
+    assert metadata.template_configuration_schema["type"] == "object"
     assert metadata.credential_schema["properties"]
     credentials = (
         {"token_id": "fixture-id", "token_secret": "private-fixture"}
@@ -88,7 +89,7 @@ async def test_cloud_provider_service_roundtrip(
             action="prepare",
             previous_status="unprepared",
         )
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector)
     adapter = await lifecycle.construct(operation)
     try:
         assert adapter.provider_key == key
@@ -110,8 +111,8 @@ async def test_native_recreation_advances_persisted_generation(
     from urllib.parse import parse_qs, urlsplit
 
     import httpx2
-    from a13n_environment.native.http import NativeHTTP
-    from a13n_environment.sprites import provider as sprites
+    from a13n_harness.providers.environment.native.http import NativeHTTP
+    from a13n_harness.providers.environment.sprites import provider as sprites
     from a13n_service.storage import transaction
     from websockets.asyncio.client import connect
     from websockets.asyncio.server import serve
@@ -199,7 +200,7 @@ async def test_native_recreation_advances_persisted_generation(
             idempotency_key="instance-native",
             request=CreateManagedEnvironmentRequest(template_id=template.id),
         )
-        lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path)
+        lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector)
         identities = []
         states = []
         for generation in [1, 1, 2]:

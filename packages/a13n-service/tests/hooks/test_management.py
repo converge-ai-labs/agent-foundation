@@ -4,8 +4,8 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.durable_operations.models import OutboxRecord
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.etags import resource_etag
 from a13n_service.hooks import (
     CreateHookSubscriptionRequest,

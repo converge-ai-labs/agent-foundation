@@ -23,7 +23,7 @@ export function ProviderConnectFields({
   name,
   onNameChange,
   keyLink,
-  advancedOpen = false,
+  advancedOpen,
   onAdvancedOpenChange,
   children,
 }: {
@@ -38,6 +38,7 @@ export function ProviderConnectFields({
   onNameChange: (value: string) => void;
   /** Where the service hands out the secret, if that page is known. */
   keyLink?: { href: string; label?: string };
+  /** Omitted by a category that lets the disclosure keep its own state. */
   advancedOpen?: boolean;
   onAdvancedOpenChange?: (open: boolean) => void;
   /** Category guidance that belongs between the name and the actions. */

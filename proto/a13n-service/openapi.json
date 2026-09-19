@@ -2368,7 +2368,7 @@
           "setup_actions": {
             "items": {
               "enum": [
-                "configure_provider",
+                "open_provider",
                 "configure_model",
                 "contact_administrator"
               ],
@@ -2490,6 +2490,63 @@
           "revoked_at"
         ],
         "title": "AuthSession",
+        "type": "object"
+      },
+      "Authentication": {
+        "additionalProperties": false,
+        "properties": {
+          "cases": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AuthenticationCase"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CredentialMode",
+            "default": "required"
+          }
+        },
+        "title": "Authentication",
+        "type": "object"
+      },
+      "AuthenticationCase": {
+        "additionalProperties": false,
+        "description": "Override credential presence for one declared configuration field value.",
+        "properties": {
+          "equals": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equals"
+          },
+          "field": {
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+            "title": "Field",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CredentialMode"
+          }
+        },
+        "required": [
+          "field",
+          "equals",
+          "mode"
+        ],
+        "title": "AuthenticationCase",
         "type": "object"
       },
       "Authorization": {
@@ -3881,12 +3938,12 @@
         "title": "ClientToolPolicy",
         "type": "object"
       },
-      "Collection_EnvironmentProviderDefinition_": {
+      "Collection_EnvironmentProviderAccount_": {
         "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/EnvironmentProviderDefinition"
+              "$ref": "#/components/schemas/EnvironmentProviderAccount"
             },
             "title": "Items",
             "type": "array"
@@ -3906,35 +3963,7 @@
         "required": [
           "items"
         ],
-        "title": "Collection_EnvironmentProviderDefinition_",
-        "type": "object"
-      },
-      "Collection_EnvironmentProvider_": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/EnvironmentProvider"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "Collection_EnvironmentProvider_",
+        "title": "Collection_EnvironmentProviderAccount_",
         "type": "object"
       },
       "Collection_EnvironmentTemplateRevision_": {
@@ -5828,26 +5857,54 @@
         "title": "ConnectorProviderCommandRequest",
         "type": "object"
       },
-      "ConnectorProviderDefinition": {
+      "ConnectorProviderMetadata": {
         "additionalProperties": false,
         "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/Authentication"
+          },
           "configuration_schema": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
+            "additionalProperties": true,
             "title": "Configuration Schema",
             "type": "object"
           },
           "credential_schema": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Credential Schema",
-            "type": "object"
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Schema"
           },
           "display_name": {
             "title": "Display Name",
             "type": "string"
+          },
+          "setup_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Label"
+          },
+          "setup_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Url"
           },
           "type": {
             "title": "Type",
@@ -5858,30 +5915,10 @@
           "type",
           "display_name",
           "configuration_schema",
-          "credential_schema"
+          "credential_schema",
+          "authentication"
         ],
-        "title": "ConnectorProviderDefinition",
-        "type": "object"
-      },
-      "ConnectorProviderDefinitionCollection": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ConnectorProviderDefinition"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "title": "Next Cursor",
-            "type": "null"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "ConnectorProviderDefinitionCollection",
+        "title": "ConnectorProviderMetadata",
         "type": "object"
       },
       "ConnectorProviderStatus": {
@@ -5969,11 +6006,7 @@
         "additionalProperties": false,
         "properties": {
           "annotations": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Annotations",
-            "type": "object"
+            "$ref": "#/components/schemas/JsonObject"
           },
           "description": {
             "maxLength": 16384,
@@ -5981,11 +6014,7 @@
             "type": "string"
           },
           "input_schema": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Input Schema",
-            "type": "object"
+            "$ref": "#/components/schemas/JsonObject"
           },
           "key": {
             "maxLength": 128,
@@ -5996,16 +6025,12 @@
           "output_schema": {
             "anyOf": [
               {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/JsonValue"
-                },
-                "type": "object"
+                "$ref": "#/components/schemas/JsonObject"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Output Schema"
+            ]
           },
           "provider_version": {
             "maxLength": 128,
@@ -6739,15 +6764,18 @@
             "type": "object"
           },
           "credentials": {
-            "additionalProperties": {
-              "format": "password",
-              "type": "string",
-              "writeOnly": true
-            },
-            "maxProperties": 8,
-            "minProperties": 1,
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Credentials",
-            "type": "object",
             "writeOnly": true
           },
           "name": {
@@ -6765,8 +6793,7 @@
         "required": [
           "name",
           "type",
-          "configuration",
-          "credentials"
+          "configuration"
         ],
         "title": "CreateConnectorProviderRequest",
         "type": "object"
@@ -7020,11 +7047,18 @@
             "type": "object"
           },
           "credential": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Credential",
-            "type": "object",
             "writeOnly": true
           },
           "enabled": {
@@ -7063,9 +7097,8 @@
           "credential": {
             "anyOf": [
               {
-                "format": "password",
-                "type": "string",
-                "writeOnly": true
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
@@ -7405,11 +7438,6 @@
             "title": "Configuration",
             "type": "object"
           },
-          "configuration_schema_version": {
-            "default": "1",
-            "title": "Configuration Schema Version",
-            "type": "string"
-          },
           "description": {
             "anyOf": [
               {
@@ -7480,11 +7508,6 @@
             },
             "title": "Configuration",
             "type": "object"
-          },
-          "configuration_schema_version": {
-            "default": "1",
-            "title": "Configuration Schema Version",
-            "type": "string"
           },
           "expected_version": {
             "minimum": 1.0,
@@ -7743,6 +7766,15 @@
         ],
         "title": "CredentialContext",
         "type": "object"
+      },
+      "CredentialMode": {
+        "enum": [
+          "required",
+          "optional",
+          "forbidden"
+        ],
+        "title": "CredentialMode",
+        "type": "string"
       },
       "DelegationContextPolicy": {
         "additionalProperties": false,
@@ -8984,7 +9016,7 @@
         "title": "EnvironmentDetail",
         "type": "object"
       },
-      "EnvironmentProvider": {
+      "EnvironmentProviderAccount": {
         "additionalProperties": false,
         "properties": {
           "configuration": {
@@ -9069,32 +9101,24 @@
           "created_at",
           "updated_at"
         ],
-        "title": "EnvironmentProvider",
+        "title": "EnvironmentProviderAccount",
         "type": "object"
       },
-      "EnvironmentProviderDefinition": {
+      "EnvironmentProviderMetadata": {
         "additionalProperties": false,
         "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/Authentication"
+          },
           "configuration_schema": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
+            "additionalProperties": true,
             "title": "Configuration Schema",
             "type": "object"
-          },
-          "configuration_versions": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Configuration Versions",
-            "type": "array"
           },
           "credential_schema": {
             "anyOf": [
               {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/JsonValue"
-                },
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -9116,6 +9140,28 @@
             "title": "Requires Keepalive",
             "type": "boolean"
           },
+          "setup_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Label"
+          },
+          "setup_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Url"
+          },
           "supports_destroy": {
             "title": "Supports Destroy",
             "type": "boolean"
@@ -9128,14 +9174,11 @@
             "title": "Supports Stop",
             "type": "boolean"
           },
-          "template_configuration_schemas": {
+          "template_configuration_schema": {
             "additionalProperties": {
-              "additionalProperties": {
-                "$ref": "#/components/schemas/JsonValue"
-              },
-              "type": "object"
+              "$ref": "#/components/schemas/JsonValue"
             },
-            "title": "Template Configuration Schemas",
+            "title": "Template Configuration Schema",
             "type": "object"
           },
           "type": {
@@ -9146,16 +9189,16 @@
         "required": [
           "type",
           "display_name",
-          "configuration_versions",
           "configuration_schema",
-          "template_configuration_schemas",
           "credential_schema",
+          "authentication",
+          "template_configuration_schema",
           "supports_managed",
           "supports_stop",
           "supports_destroy",
           "requires_keepalive"
         ],
-        "title": "EnvironmentProviderDefinition",
+        "title": "EnvironmentProviderMetadata",
         "type": "object"
       },
       "EnvironmentSelection": {
@@ -9174,9 +9217,7 @@
         "description": "Provider-owned portable semantic soft reference for one target.",
         "properties": {
           "provider_key": {
-            "maxLength": 128,
-            "minLength": 3,
-            "pattern": "^(?:docker|e2b|sprites|daytona|modal|vercel|runloop|direct-local|[a-z0-9]+(?:[._-][a-z0-9]+)+)$",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
             "title": "Provider Key",
             "type": "string"
           },
@@ -9327,11 +9368,6 @@
             },
             "title": "Configuration",
             "type": "object"
-          },
-          "configuration_schema_version": {
-            "default": "1",
-            "title": "Configuration Schema Version",
-            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -10352,6 +10388,7 @@
       },
       "InlineMemoryBackend": {
         "additionalProperties": false,
+        "description": "A document Provider configured on the Agent instead of a saved Memory Provider.",
         "properties": {
           "configuration": {
             "additionalProperties": {
@@ -10361,7 +10398,8 @@
             "type": "object"
           },
           "type": {
-            "const": "a13n.filesystem",
+            "maxLength": 128,
+            "minLength": 1,
             "title": "Type",
             "type": "string"
           }
@@ -10979,6 +11017,13 @@
           "content"
         ],
         "title": "ItemResource",
+        "type": "object"
+      },
+      "JsonObject": {
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "title": "JsonObject",
         "type": "object"
       },
       "JsonValue": {
@@ -12475,27 +12520,54 @@
         "title": "MemoryProviderCollection",
         "type": "object"
       },
-      "MemoryProviderDefinition": {
+      "MemoryProviderMetadata": {
         "additionalProperties": false,
         "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/Authentication"
+          },
           "configuration_schema": {
             "additionalProperties": true,
             "title": "Configuration Schema",
             "type": "object"
           },
           "credential_schema": {
-            "additionalProperties": true,
-            "title": "Credential Schema",
-            "type": "object"
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Schema"
           },
           "display_name": {
             "title": "Display Name",
             "type": "string"
           },
-          "requires_credential": {
-            "default": true,
-            "title": "Requires Credential",
-            "type": "boolean"
+          "setup_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Label"
+          },
+          "setup_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Url"
           },
           "supports_changes": {
             "default": false,
@@ -12526,25 +12598,10 @@
           "type",
           "display_name",
           "configuration_schema",
-          "credential_schema"
+          "credential_schema",
+          "authentication"
         ],
-        "title": "MemoryProviderDefinition",
-        "type": "object"
-      },
-      "MemoryProviderDefinitionCollection": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/MemoryProviderDefinition"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "MemoryProviderDefinitionCollection",
+        "title": "MemoryProviderMetadata",
         "type": "object"
       },
       "MemoryProviderReference": {
@@ -13349,9 +13406,12 @@
         "title": "ModelProviderCollection",
         "type": "object"
       },
-      "ModelProviderDefinition": {
+      "ModelProviderMetadata": {
         "additionalProperties": false,
         "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/Authentication"
+          },
           "catalog_providers": {
             "default": [],
             "items": {
@@ -13366,9 +13426,16 @@
             "type": "object"
           },
           "credential_schema": {
-            "additionalProperties": true,
-            "title": "Credential Schema",
-            "type": "object"
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Schema"
           },
           "default_model_api": {
             "title": "Default Model Api",
@@ -13393,12 +13460,38 @@
             "title": "Settings Schemas",
             "type": "object"
           },
+          "setup_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Label"
+          },
+          "setup_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Url"
+          },
           "supported_model_apis": {
             "items": {
               "type": "string"
             },
             "title": "Supported Model Apis",
             "type": "array"
+          },
+          "supports_connection_probe": {
+            "title": "Supports Connection Probe",
+            "type": "boolean"
           },
           "type": {
             "title": "Type",
@@ -13410,33 +13503,14 @@
           "display_name",
           "configuration_schema",
           "credential_schema",
+          "authentication",
+          "supports_connection_probe",
           "supported_model_apis",
           "default_model_api",
           "model_api_labels",
           "settings_schemas"
         ],
-        "title": "ModelProviderDefinition",
-        "type": "object"
-      },
-      "ModelProviderDefinitionCollection": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ModelProviderDefinition"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "title": "Next Cursor",
-            "type": "null"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "ModelProviderDefinitionCollection",
+        "title": "ModelProviderMetadata",
         "type": "object"
       },
       "ModelTestRequest": {
@@ -14858,6 +14932,91 @@
         "title": "ProviderConnectivity",
         "type": "object"
       },
+      "ProviderMetadataCollection_ConnectorProviderMetadata_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectorProviderMetadata"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ProviderMetadataCollection_ConnectorProviderMetadata_",
+        "type": "object"
+      },
+      "ProviderMetadataCollection_EnvironmentProviderMetadata_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentProviderMetadata"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ProviderMetadataCollection_EnvironmentProviderMetadata_",
+        "type": "object"
+      },
+      "ProviderMetadataCollection_MemoryProviderMetadata_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryProviderMetadata"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ProviderMetadataCollection_MemoryProviderMetadata_",
+        "type": "object"
+      },
+      "ProviderMetadataCollection_ModelProviderMetadata_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ModelProviderMetadata"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ProviderMetadataCollection_ModelProviderMetadata_",
+        "type": "object"
+      },
+      "ProviderMetadataCollection_WebProviderMetadata_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WebProviderMetadata"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ProviderMetadataCollection_WebProviderMetadata_",
+        "type": "object"
+      },
       "QueuedSubmission": {
         "additionalProperties": false,
         "properties": {
@@ -15190,11 +15349,6 @@
             "title": "Configuration",
             "type": "object"
           },
-          "configuration_schema_version": {
-            "default": "1",
-            "title": "Configuration Schema Version",
-            "type": "string"
-          },
           "device_id": {
             "anyOf": [
               {
@@ -15401,15 +15555,18 @@
         "additionalProperties": false,
         "properties": {
           "credentials": {
-            "additionalProperties": {
-              "format": "password",
-              "type": "string",
-              "writeOnly": true
-            },
-            "maxProperties": 8,
-            "minProperties": 1,
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Credentials",
-            "type": "object",
             "writeOnly": true
           },
           "expected_version": {
@@ -21378,12 +21535,8 @@
             "anyOf": [
               {
                 "additionalProperties": {
-                  "format": "password",
-                  "type": "string",
-                  "writeOnly": true
+                  "$ref": "#/components/schemas/JsonValue"
                 },
-                "maxProperties": 8,
-                "minProperties": 1,
                 "type": "object"
               },
               {
@@ -21586,9 +21739,8 @@
           "credential": {
             "anyOf": [
               {
-                "format": "password",
-                "type": "string",
-                "writeOnly": true
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
@@ -22726,23 +22878,28 @@
         "title": "WebProviderCollection",
         "type": "object"
       },
-      "WebProviderDefinition": {
+      "WebProviderMetadata": {
         "additionalProperties": false,
         "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/Authentication"
+          },
           "configuration_schema": {
             "additionalProperties": true,
             "title": "Configuration Schema",
             "type": "object"
           },
-          "credential_required": {
-            "default": true,
-            "title": "Credential Required",
-            "type": "boolean"
-          },
           "credential_schema": {
-            "additionalProperties": true,
-            "title": "Credential Schema",
-            "type": "object"
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Schema"
           },
           "display_name": {
             "title": "Display Name",
@@ -22759,9 +22916,27 @@
             "title": "Operations",
             "type": "array"
           },
+          "setup_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Label"
+          },
           "setup_url": {
-            "title": "Setup Url",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Url"
           },
           "supports_restricted_scrape": {
             "default": false,
@@ -22778,26 +22953,10 @@
           "display_name",
           "configuration_schema",
           "credential_schema",
-          "setup_url",
+          "authentication",
           "operations"
         ],
-        "title": "WebProviderDefinition",
-        "type": "object"
-      },
-      "WebProviderDefinitionCollection": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/WebProviderDefinition"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "WebProviderDefinitionCollection",
+        "title": "WebProviderMetadata",
         "type": "object"
       },
       "WebProviderReference": {
@@ -30631,7 +30790,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConnectorProviderDefinitionCollection"
+                  "$ref": "#/components/schemas/ProviderMetadataCollection_ConnectorProviderMetadata_"
                 }
               }
             },
@@ -30676,6 +30835,92 @@
           }
         ],
         "summary": "List Connector Provider Types",
+        "tags": [
+          "connectivity-management"
+        ]
+      }
+    },
+    "/api/v1/connector-provider-types/{provider_type}": {
+      "get": {
+        "operationId": "get_connector_provider_types_provider_type",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_type",
+            "required": true,
+            "schema": {
+              "title": "Provider Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorProviderMetadata"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Connector Provider Type",
         "tags": [
           "connectivity-management"
         ]
@@ -31615,7 +31860,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Collection_EnvironmentProviderDefinition_"
+                  "$ref": "#/components/schemas/ProviderMetadataCollection_EnvironmentProviderMetadata_"
                 }
               }
             },
@@ -31684,7 +31929,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProviderDefinition"
+                  "$ref": "#/components/schemas/EnvironmentProviderMetadata"
                 }
               }
             },
@@ -31790,7 +32035,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProvider"
+                  "$ref": "#/components/schemas/EnvironmentProviderAccount"
                 }
               }
             },
@@ -31982,7 +32227,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProvider"
+                  "$ref": "#/components/schemas/EnvironmentProviderAccount"
                 }
               }
             },
@@ -32263,7 +32508,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProvider"
+                  "$ref": "#/components/schemas/EnvironmentProviderAccount"
                 }
               }
             },
@@ -35118,7 +35363,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemoryProviderDefinitionCollection"
+                  "$ref": "#/components/schemas/ProviderMetadataCollection_MemoryProviderMetadata_"
                 }
               }
             },
@@ -35187,7 +35432,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemoryProviderDefinition"
+                  "$ref": "#/components/schemas/MemoryProviderMetadata"
                 }
               }
             },
@@ -35262,7 +35507,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ModelProviderDefinitionCollection"
+                  "$ref": "#/components/schemas/ProviderMetadataCollection_ModelProviderMetadata_"
                 }
               }
             },
@@ -35307,6 +35552,92 @@
           }
         ],
         "summary": "List Model Provider Types",
+        "tags": [
+          "model-management"
+        ]
+      }
+    },
+    "/api/v1/model-provider-types/{provider_type}": {
+      "get": {
+        "operationId": "get_model_provider_types_provider_type",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_type",
+            "required": true,
+            "schema": {
+              "title": "Provider Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderMetadata"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Model Provider Type",
         "tags": [
           "model-management"
         ]
@@ -35827,7 +36158,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Collection_EnvironmentProvider_"
+                  "$ref": "#/components/schemas/Collection_EnvironmentProviderAccount_"
                 }
               }
             },
@@ -35921,7 +36252,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProvider"
+                  "$ref": "#/components/schemas/EnvironmentProviderAccount"
                 }
               }
             },
@@ -46432,7 +46763,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WebProviderDefinitionCollection"
+                  "$ref": "#/components/schemas/ProviderMetadataCollection_WebProviderMetadata_"
                 }
               }
             },
@@ -46501,7 +46832,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WebProviderDefinition"
+                  "$ref": "#/components/schemas/WebProviderMetadata"
                 }
               }
             },
@@ -50661,7 +50992,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Collection_EnvironmentProvider_"
+                  "$ref": "#/components/schemas/Collection_EnvironmentProviderAccount_"
                 }
               }
             },
@@ -50755,7 +51086,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProvider"
+                  "$ref": "#/components/schemas/EnvironmentProviderAccount"
                 }
               }
             },

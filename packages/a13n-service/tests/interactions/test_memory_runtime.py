@@ -5,9 +5,9 @@ import json
 import httpx2
 import pytest
 from a13n_harness import AgentDefinition, AgentSpec, HarnessBuilder
-from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend
 from a13n_harness.errors import RunError
-from a13n_harness.memory import MemoryScope as ScopeKind
+from a13n_harness.providers.memory.contracts import MemoryScope as ScopeKind
+from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend
 from a13n_service.agents.models import AgentRecord
 from a13n_service.interactions.models import RunAttemptRecord
 from a13n_service.memory.domain import MemoryScope, MemorySelection

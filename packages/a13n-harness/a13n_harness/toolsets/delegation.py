@@ -20,7 +20,6 @@ from pydantic_ai.usage import UsageLimits
 
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.context import AgentContext, BuiltSubagent, RunBindings
-from a13n_harness.environment.models import EnvironmentChange, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime, EnvironmentRuntimeMount
 from a13n_harness.environment.sources import EnvironmentEntry
 from a13n_harness.errors import DefinitionError, HarnessError, RunError, StateError
@@ -33,6 +32,7 @@ from a13n_harness.events import (
 from a13n_harness.identity import AgentInstanceContext
 from a13n_harness.input import RunInputValue
 from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
+from a13n_harness.providers.environment.models import EnvironmentChange, EnvironmentError
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy

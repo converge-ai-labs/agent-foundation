@@ -5,8 +5,8 @@ from datetime import timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.durable_operations.models import OutboxRecord
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookSubscriptionInput, InlineHookValidator, WebhookDestinationConfig
 from a13n_service.hooks.models import HookSubscriptionRecord
 from a13n_service.hooks.validation import EndpointValidator

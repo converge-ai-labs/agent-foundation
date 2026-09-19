@@ -4,25 +4,33 @@ from __future__ import annotations
 
 from asyncio import timeout
 from collections.abc import AsyncIterator
-from contextlib import aclosing, asynccontextmanager
+from contextlib import asynccontextmanager
 from datetime import datetime
 
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
+from a13n_harness.providers.connector.contracts import (
+    ConnectorProviderError,
+    ConnectorProviderRuntime,
+    ConnectorToolPage,
+    DiscoveredConnector,
+    JsonObject,
+)
+from a13n_harness.providers.connector.validation import model_json
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.management import (
     CommandReceipt,
     canonical_json,
-    clear_credentials,
     fingerprint,
     record_command,
     replay_command,
 )
+from a13n_service.credentials import provider_credential_payload
 from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     IdempotencyConflict,
@@ -33,12 +41,12 @@ from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.ids import new_object_id
+from a13n_service.provider_metadata import ProviderMetadataCollection
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .connection_access import external_error
-from .contracts import ConnectorProviderRuntime, ConnectorToolPage, DiscoveredConnector
 from .directory import directory_page
 from .discovery import validate_connectors
 from .domain import (
@@ -46,6 +54,7 @@ from .domain import (
     ConnectorCollection,
     ConnectorProvider,
     ConnectorProviderCollection,
+    ConnectorProviderMetadata,
     ConnectorProviderStatus,
     ConnectorProviderTestResult,
     CreateConnectorProviderRequest,
@@ -58,15 +67,14 @@ from .management import (
     audit,
     authorize,
     authorize_provider,
-    configure_provider,
     connector_actor_scope,
     decode_credentials,
     map_management_value_error,
+    open_provider,
     require_connector_provider,
     require_implementation,
 )
 from .models import ConnectorProviderRecord
-from .registry import ConnectorProviderDefinitionCollection
 from .tool_discovery import discover_tools
 
 
@@ -74,20 +82,40 @@ class ConnectorProviderService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: ConnectorProviderRegistry,
+        connectors: ProviderCatalog[ConnectorProviderDefinition],
+        connector_http: ConnectorHttpClient | None,
         protector: SecretProtector,
         *,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
-        self._adapters = adapters
+        self._connectors = connectors
+        self._connector_http = connector_http
         self._protector = protector
         self._clock = clock
 
-    async def type_definitions(self, *, actor: AuthenticatedActor) -> ConnectorProviderDefinitionCollection:
+    async def provider_types(
+        self, *, actor: AuthenticatedActor
+    ) -> ProviderMetadataCollection[ConnectorProviderMetadata]:
+        await self._authorize_read(actor)
+        return ProviderMetadataCollection(
+            items=tuple(ConnectorProviderMetadata.describe(self._connectors[key]) for key in sorted(self._connectors))
+        )
+
+    async def provider_type(self, *, actor: AuthenticatedActor, provider_type: str) -> ConnectorProviderMetadata:
+        await self._authorize_read(actor)
+        try:
+            return ConnectorProviderMetadata.describe(self._connectors.require(provider_type))
+        except ValueError as error:
+            raise ConnectorError(
+                "connector_provider_type_not_found",
+                "Connector Provider type is not registered.",
+                category=ErrorCategory.not_found,
+            ) from error
+
+    async def _authorize_read(self, actor: AuthenticatedActor) -> None:
         async with transaction(self._sessions) as session:
             await authorize(session, actor, actor.boundary_workspace_id, WorkspaceAction.connector_provider_read)
-        return ConnectorProviderDefinitionCollection(items=self._adapters.definitions())
 
     async def discover_connectors(
         self,
@@ -108,6 +136,15 @@ class ConnectorProviderService:
                 raise ConnectorError(
                     "connector_provider_disabled", "Connector Provider is disabled.", category=ErrorCategory.conflict
                 )
+            definition = require_implementation(self._connectors, record.type)
+            try:
+                definition.authentication.validate_presence(record.configuration_json, record.ciphertext is not None)
+            except ValueError as error:
+                raise ConnectorError(
+                    "credential_unavailable",
+                    "Connector Provider credentials are unavailable.",
+                    category=ErrorCategory.conflict,
+                ) from error
             generation = record.credential_generation
             cached = record.directory_json
             refreshed_at = record.directory_updated_at
@@ -178,10 +215,10 @@ class ConnectorProviderService:
             credential = record.credential_snapshot()
             provider = ProviderSnapshot.from_record(record)
         try:
-            raw = credential.decrypt(self._protector)
+            raw = credential.decrypt(self._protector) if credential.ciphertext is not None else None
             async with (
                 timeout(30),
-                aclosing(configure_provider(self._adapters, provider, decode_credentials(raw))) as runtime,
+                open_provider(self._connectors, self._connector_http, provider, decode_credentials(raw)) as runtime,
             ):
                 yield runtime
         except TimeoutError as error:
@@ -233,12 +270,10 @@ class ConnectorProviderService:
         try:
             async with transaction(self._sessions) as session:
                 workspace = await authorize(session, actor, workspace_id, WorkspaceAction.connector_provider_manage)
-                adapter = require_implementation(self._adapters, request.type)
+                adapter = require_implementation(self._connectors, request.type)
                 try:
-                    configuration = adapter.validate_configuration(request.configuration)
-                    credentials = adapter.validate_credentials(
-                        clear_credentials(request.credentials),
-                    )
+                    configuration = model_json(adapter.configuration_model.model_validate(request.configuration))
+                    credentials = provider_credential_payload(adapter, configuration, request.credentials)
                 except ValueError as error:
                     raise ConnectorError(
                         "invalid_connector_provider_configuration",
@@ -277,7 +312,9 @@ class ConnectorProviderService:
                     created_at=now,
                     updated_at=now,
                 )
-                record.replace_credential(canonical_json(credentials), self._protector)
+                record.replace_credential(
+                    canonical_json(credentials) if credentials is not None else None, self._protector
+                )
 
                 session.add(record)
                 record_command(
@@ -403,8 +440,8 @@ class ConnectorProviderService:
                 if request.name is not None:
                     record.name = request.name
                     record.normalized_name = request.name.casefold()
-                if request.credentials is not None:
-                    self._replace_credentials(record, clear_credentials(request.credentials))
+                if "credentials" in request.model_fields_set:
+                    self._replace_credentials(record, request.credentials)
                 if request.status is not None:
                     record.status = request.status.value
                 record.version += 1
@@ -426,11 +463,15 @@ class ConnectorProviderService:
                 "connector_conflict", "ConnectorProvider name already exists.", category=ErrorCategory.conflict
             ) from error
 
-    def _replace_credentials(self, record: ConnectorProviderRecord, credentials: dict[str, str]) -> None:
-        adapter = require_implementation(self._adapters, record.type)
+    def _replace_credentials(self, record: ConnectorProviderRecord, credentials: JsonObject | None) -> None:
+        adapter = require_implementation(self._connectors, record.type)
         try:
-            validated = adapter.validate_credentials(credentials)
-            record.replace_credential(canonical_json(validated), self._protector)
+            validated = (
+                provider_credential_payload(adapter, record.configuration_json, credentials)
+                if credentials is not None
+                else None
+            )
+            record.replace_credential(canonical_json(validated) if validated is not None else None, self._protector)
             record.directory_json = None
             record.directory_updated_at = None
         except SecretProtectionError as error:
@@ -458,7 +499,7 @@ class ConnectorProviderService:
             key_digest = digest_visible_ascii_key(idempotency_key)
         except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
-        credentials = clear_credentials(request.credentials)
+        credentials = request.credentials
         request_fingerprint = fingerprint(request, credentials=credentials)
         async with transaction(self._sessions) as session:
             record = await require_connector_provider(
@@ -552,8 +593,10 @@ class ConnectorProviderService:
             credential = record.credential_snapshot()
             provider = ProviderSnapshot.from_record(record)
         try:
-            raw = credential.decrypt(self._protector)
-            async with aclosing(configure_provider(self._adapters, provider, decode_credentials(raw))) as runtime:
+            raw = credential.decrypt(self._protector) if credential.ciphertext is not None else None
+            async with open_provider(
+                self._connectors, self._connector_http, provider, decode_credentials(raw)
+            ) as runtime:
                 verified_access = await runtime.test()
         except ConnectorProviderError as error:
             raise external_error(error) from error

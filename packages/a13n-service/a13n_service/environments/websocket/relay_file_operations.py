@@ -6,7 +6,7 @@ import base64
 from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator
 from contextlib import aclosing
 
-from a13n_environment.files import (
+from a13n_harness.providers.environment.files import (
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,

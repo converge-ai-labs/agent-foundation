@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from typing import Literal, Protocol
 
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.model.definition import ModelProviderDefinition
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -32,7 +34,7 @@ from .domain import (
 from .keys import require_available_key
 from .models import ModelRecord
 from .provider_service import require_provider
-from .providers import ProviderRegistry
+from .providers import validate_model_api
 from .service_common import ModelError, audit_record, authorize_models, escape_like, require_etag
 from .settings import JsonObject, validate_settings
 
@@ -52,7 +54,7 @@ class ModelService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        registry: ProviderRegistry,
+        registry: ProviderCatalog[ModelProviderDefinition],
         *,
         clock: Clock | None = None,
         connection_tester: ModelConnectionTester | None = None,
@@ -94,7 +96,7 @@ class ModelService:
                     raise ModelError(
                         "model_provider_disabled", "The Model Provider is disabled.", category=ErrorCategory.conflict
                     )
-                self._registry.validate_model_api(provider.type, model_api)
+                validate_model_api(self._registry.require(provider.type), model_api)
                 validate_settings(model_api, request.settings)
                 record = ModelRecord(
                     id=new_model_id(),
@@ -281,7 +283,7 @@ class ModelService:
             )
             model_api = request.model_api if request.model_api is not None else record.model_api
             settings = request.settings if request.settings is not None else record.settings
-            self._registry.validate_model_api(provider.type, model_api)
+            validate_model_api(self._registry.require(provider.type), model_api)
             validate_settings(model_api, settings)
             if "name" in request.model_fields_set:
                 assert request.name is not None

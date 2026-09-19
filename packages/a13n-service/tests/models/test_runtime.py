@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import httpx2
 import pytest
+from a13n_harness.providers.model.definition import ProviderOperationError
 from a13n_service.etags import resource_etag
 from a13n_service.models.connection_test import NativeModelConnectionTester
 from a13n_service.models.connection_test import test_connection as connection_test_result
@@ -17,24 +18,16 @@ from a13n_service.models.domain import (
 )
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.models import ModelProviderRecord
-from a13n_service.models.provider_adapters.base import ProviderOperationError
-from a13n_service.models.provider_runtime import LiveProviderResolver, RuntimeProvider
+from a13n_service.models.provider_runtime import LiveProviderResolver, ModelConnection
 from a13n_service.models.provider_service import ModelProviderService
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.requests import LiveProviderModel
 from a13n_service.models.service import ModelService
 from a13n_service.models.service_common import ModelError
 from a13n_service.storage import short_session
-from google.auth.credentials import AnonymousCredentials
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models import ModelRequestParameters
-from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.models.bedrock import BedrockConverseModel
-from pydantic_ai.models.bedrock_mantle import BedrockMantleChatModel, BedrockMantleResponsesModel
-from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.ollama import OllamaModel
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
-from pydantic_ai.models.openrouter import OpenRouterModel
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -78,7 +71,7 @@ async def test_connection_test_sends_saved_settings_and_single_model_identity(
     provider = await provider_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateModelProviderRequest(type="openrouter", name="Router", credential="secret"),
+        request=CreateModelProviderRequest(type="openrouter", name="Router", credential={"api_key": "secret"}),
     )
     model = await model_service.create(
         actor=actor(),
@@ -110,7 +103,7 @@ async def test_connection_test_sends_saved_settings_and_single_model_identity(
             },
         )
 
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
         tester = NativeModelConnectionTester(
             provider_resolver=LiveProviderResolver(model_sessions, registry, _AllowEndpoints(), protector()),
@@ -145,7 +138,7 @@ async def test_provider_credential_rotation_is_visible_to_same_model_snapshot(
     provider = await provider_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateModelProviderRequest(type="openai", name="OpenAI", credential="first"),
+        request=CreateModelProviderRequest(type="openai", name="OpenAI", credential={"api_key": "first"}),
     )
     model = await model_service.create(
         actor=actor(),
@@ -161,25 +154,25 @@ async def test_provider_credential_rotation_is_visible_to_same_model_snapshot(
     snapshot = ModelExecutionSnapshot.freeze(model)
     resolver = LiveProviderResolver(
         model_sessions,
-        built_in_provider_registry(),
+        built_in_model_provider_catalog(),
         _AllowEndpoints(),
         protector(),
     )
 
     assert (
         await resolver.resolve(organization_id=ORG_ID, workspace_id=WORKSPACE_ID, snapshot=snapshot)
-    ).credential == "first"
+    ).credential.api_key.get_secret_value() == "first"
     provider = await provider_service.update(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         provider_id=provider.id,
         if_match=resource_etag(provider.id, provider.updated_at),
-        request=UpdateModelProviderRequest(credential="second"),
+        request=UpdateModelProviderRequest(credential={"api_key": "second"}),
     )
     assert provider.credential_configured
     assert (
         await resolver.resolve(organization_id=ORG_ID, workspace_id=WORKSPACE_ID, snapshot=snapshot)
-    ).credential == "second"
+    ).credential.api_key.get_secret_value() == "second"
 
 
 @pytest.mark.anyio
@@ -191,7 +184,7 @@ async def test_model_snapshot_keeps_accepted_api_after_model_edit(
     provider = await provider_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateModelProviderRequest(type="openai", name="OpenAI", credential="secret"),
+        request=CreateModelProviderRequest(type="openai", name="OpenAI", credential={"api_key": "secret"}),
     )
     model = await model_service.create(
         actor=actor(),
@@ -214,7 +207,7 @@ async def test_model_snapshot_keeps_accepted_api_after_model_edit(
     )
     resolver = LiveProviderResolver(
         model_sessions,
-        built_in_provider_registry(),
+        built_in_model_provider_catalog(),
         _AllowEndpoints(),
         protector(),
     )
@@ -222,37 +215,6 @@ async def test_model_snapshot_keeps_accepted_api_after_model_edit(
     resolved = await resolver.resolve(organization_id=ORG_ID, workspace_id=WORKSPACE_ID, snapshot=snapshot)
 
     assert resolved.type == "openai"
-
-
-@pytest.mark.anyio
-async def test_factory_uses_explicit_calling_api_binding() -> None:
-    expected_types = {
-        "openai.responses": OpenAIResponsesModel,
-        "openai.chat_completions": OpenAIChatModel,
-        "anthropic.messages": AnthropicModel,
-        "google.generate_content": GoogleModel,
-        "bedrock.converse": BedrockConverseModel,
-        "bedrock_mantle.responses": BedrockMantleResponsesModel,
-        "bedrock_mantle.chat_completions": BedrockMantleChatModel,
-        "openrouter.chat_completions": OpenRouterModel,
-        "ollama.chat_completions": OllamaModel,
-    }
-    providers = _runtime_providers()
-    async with httpx2.AsyncClient() as client:
-        factory = NativeModelFactory(client, built_in_provider_registry(), _AllowEndpoints())
-        with patch(
-            "a13n_service.models.provider_adapters.google_vertex.parse_google_service_account",
-            return_value=AnonymousCredentials(),
-        ):
-            for definition in built_in_provider_registry().definitions():
-                for model_api in definition.supported_model_apis:
-                    native = await factory.build(_snapshot(model_api), providers[definition.type])
-                    async with native:
-                        assert isinstance(native, expected_types[model_api])
-                        if isinstance(native, (OpenAIResponsesModel, OpenAIChatModel, AnthropicModel)):
-                            assert native.client.max_retries == 0
-                        if isinstance(native, BedrockConverseModel):
-                            assert native.client.meta.config.retries["total_max_attempts"] == 1
 
 
 @pytest.mark.anyio
@@ -264,11 +226,15 @@ async def test_factory_routes_openai_base_profile_through_explicit_openai_protoc
         catalog_ref={"provider": "openai", "model": "gpt-5"},
         model_api="openai.chat_completions",
     )
-    provider = RuntimeProvider("openai", {}, "https://api.openai.com/v1", "secret")
+    provider = (
+        built_in_model_provider_catalog()
+        .require("openai")
+        .bind({**{}, "base_url": "https://api.openai.com/v1"}, {"api_key": "secret"})
+    )
     async with httpx2.AsyncClient() as client:
         native = await NativeModelFactory(
             client,
-            built_in_provider_registry(),
+            built_in_model_provider_catalog(),
             _AllowEndpoints(),
         ).build(snapshot, provider)
         async with native:
@@ -286,11 +252,15 @@ async def test_factory_does_not_copy_anthropic_profile_to_openai_protocol() -> N
         catalog_ref={"provider": "anthropic", "model": "claude-sonnet-4-5"},
         model_api="openai.chat_completions",
     )
-    provider = RuntimeProvider("openai", {}, "https://api.openai.com/v1", "secret")
+    provider = (
+        built_in_model_provider_catalog()
+        .require("openai")
+        .bind({**{}, "base_url": "https://api.openai.com/v1"}, {"api_key": "secret"})
+    )
     async with httpx2.AsyncClient() as client:
         native = await NativeModelFactory(
             client,
-            built_in_provider_registry(),
+            built_in_model_provider_catalog(),
             _AllowEndpoints(),
         ).build(snapshot, provider)
         async with native:
@@ -313,34 +283,71 @@ def _snapshot(api: str) -> ModelExecutionSnapshot:
     )
 
 
-def _runtime_providers() -> dict[str, RuntimeProvider]:
-    aws_credential = json.dumps({"aws_access_key_id": "access", "aws_secret_access_key": "secret"})
+def _runtime_providers() -> dict[str, ModelConnection]:
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    private_key = (
+        rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        .private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+        .decode()
+    )
+    aws_credential = {"aws_access_key_id": "access", "aws_secret_access_key": "secret"}
     return {
-        "openai": RuntimeProvider("openai", {}, "https://api.openai.com/v1", "secret"),
-        "anthropic": RuntimeProvider("anthropic", {}, "https://api.anthropic.com", "secret"),
-        "google_gemini": RuntimeProvider("google_gemini", {}, "https://generativelanguage.googleapis.com", "secret"),
-        "google_vertex": RuntimeProvider(
-            "google_vertex", {"project_id": "project", "location": "us-central1"}, None, "{}"
+        "openai": built_in_model_provider_catalog()
+        .require("openai")
+        .bind({**{}, "base_url": "https://api.openai.com/v1"}, {"api_key": "secret"}),
+        "anthropic": built_in_model_provider_catalog()
+        .require("anthropic")
+        .bind({**{}, "base_url": "https://api.anthropic.com"}, {"api_key": "secret"}),
+        "google_gemini": built_in_model_provider_catalog()
+        .require("google_gemini")
+        .bind({**{}, "base_url": "https://generativelanguage.googleapis.com"}, {"api_key": "secret"}),
+        "google_vertex": built_in_model_provider_catalog()
+        .require("google_vertex")
+        .bind(
+            {"project_id": "project", "location": "us-central1"},
+            {"project_id": "project", "client_email": "fixture@example.com", "private_key": private_key},
         ),
-        "azure_openai": RuntimeProvider(
-            "azure_openai",
-            {"resource_endpoint": "https://test.openai.azure.com/openai/v1"},
-            "https://test.openai.azure.com/openai/v1",
-            "secret",
+        "azure_openai": built_in_model_provider_catalog()
+        .require("azure_openai")
+        .bind(
+            {
+                **{"resource_endpoint": "https://test.openai.azure.com/openai/v1"},
+                "base_url": "https://test.openai.azure.com/openai/v1",
+            },
+            {"api_key": "secret"},
         ),
-        "aws_bedrock": RuntimeProvider("aws_bedrock", {"region": "us-east-1"}, None, aws_credential),
-        "openrouter": RuntimeProvider("openrouter", {}, "https://openrouter.ai/api/v1", "secret"),
-        "ollama": RuntimeProvider("ollama", {"base_url": "http://ollama.example/v1"}, "http://ollama.example/v1", None),
-        "alibaba_model_studio": RuntimeProvider(
-            "alibaba_model_studio",
-            {"region": "ap-southeast-1", "domain_type": "international"},
-            "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-            "secret",
+        "aws_bedrock": built_in_model_provider_catalog()
+        .require("aws_bedrock")
+        .bind({"region": "us-east-1"}, aws_credential),
+        "openrouter": built_in_model_provider_catalog()
+        .require("openrouter")
+        .bind({**{}, "base_url": "https://openrouter.ai/api/v1"}, {"api_key": "secret"}),
+        "ollama": built_in_model_provider_catalog()
+        .require("ollama")
+        .bind({**{"base_url": "http://ollama.example/v1"}, "base_url": "http://ollama.example/v1"}, None),
+        "alibaba_model_studio": built_in_model_provider_catalog()
+        .require("alibaba_model_studio")
+        .bind(
+            {
+                **{"region": "ap-southeast-1", "domain_type": "international"},
+                "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+            },
+            {"api_key": "secret"},
         ),
-        "deepseek": RuntimeProvider("deepseek", {}, "https://api.deepseek.com", "secret"),
-        "moonshot": RuntimeProvider("moonshot", {}, "https://api.moonshot.cn/v1", "secret"),
-        "minimax": RuntimeProvider("minimax", {}, "https://api.minimax.io/v1", "secret"),
-        "zhipu": RuntimeProvider("zhipu", {}, "https://open.bigmodel.cn/api/paas/v4", "secret"),
+        "deepseek": built_in_model_provider_catalog()
+        .require("deepseek")
+        .bind({**{}, "base_url": "https://api.deepseek.com"}, {"api_key": "secret"}),
+        "moonshot": built_in_model_provider_catalog()
+        .require("moonshot")
+        .bind({**{}, "base_url": "https://api.moonshot.cn/v1"}, {"api_key": "secret"}),
+        "minimax": built_in_model_provider_catalog()
+        .require("minimax")
+        .bind({**{}, "base_url": "https://api.minimax.io/v1"}, {"api_key": "secret"}),
+        "zhipu": built_in_model_provider_catalog()
+        .require("zhipu")
+        .bind({**{}, "base_url": "https://open.bigmodel.cn/api/paas/v4"}, {"api_key": "secret"}),
     }
 
 
@@ -356,16 +363,16 @@ async def test_switch_to_unauthenticated_provider_clears_material_and_advances_g
             type="openai",
             name="Optional credential",
             configuration={"base_url": "https://models.example/v1"},
-            credential="private-token",
+            credential={"api_key": "private-token"},
         ),
     )
-    resolver = LiveProviderResolver(model_sessions, built_in_provider_registry(), _AllowEndpoints(), protector())
+    resolver = LiveProviderResolver(model_sessions, built_in_model_provider_catalog(), _AllowEndpoints(), protector())
     resolved = await resolver.resolve_provider(
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
         provider_id=provider.id,
     )
-    assert resolved.credential == "private-token"
+    assert resolved.credential.api_key.get_secret_value() == "private-token"
     renamed = await provider_service.update(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -421,3 +428,46 @@ async def test_caller_cannot_supply_even_current_thread_affinity_at_model_dispat
         await model.request([], settings, ModelRequestParameters())
     resolver.resolve.assert_not_awaited()
     assert settings == {"extra_headers": {"x-session-id": session_header}}
+
+
+@pytest.mark.anyio
+async def test_credential_replacement_preserves_headers_without_parsing_discarded_primary(
+    provider_service, model_sessions
+):
+    import json
+
+    from a13n_service.storage import transaction
+
+    provider = await provider_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateModelProviderRequest(
+            type="openai",
+            name="Replace primary",
+            credential={"api_key": "first"},
+            extra_headers={"x-gateway": "retained"},
+        ),
+    )
+    async with transaction(model_sessions) as session:
+        record = await session.get(ModelProviderRecord, provider.id)
+        assert record is not None
+        record.replace_credential(
+            json.dumps({"credential": "discarded-string-value", "extra_headers": {"x-gateway": "retained"}}),
+            protector(),
+        )
+    updated = await provider_service.update(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        provider_id=provider.id,
+        if_match=resource_etag(provider.id, provider.updated_at),
+        request=UpdateModelProviderRequest(credential={"api_key": "replacement"}),
+    )
+    assert updated.id == provider.id and updated.header_names == ("x-gateway",)
+    async with short_session(model_sessions) as session:
+        record = await session.get(ModelProviderRecord, provider.id)
+        assert record is not None
+        secret = record.credential_snapshot()
+    assert json.loads(secret.decrypt(protector())) == {
+        "credential": {"api_key": "replacement"},
+        "extra_headers": {"x-gateway": "retained"},
+    }

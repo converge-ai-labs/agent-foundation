@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 from a13n_service.models.domain import CatalogRef
 from a13n_service.models.profiles import catalog_profile
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from pydantic_ai.providers.openai import OpenAIProvider
 
 
@@ -62,4 +62,4 @@ def test_openai_reference_can_use_both_native_apis():
 
 def test_xai_is_not_an_executable_provider():
     with pytest.raises(ValueError):
-        built_in_provider_registry().integration("xai")
+        built_in_model_provider_catalog().require("xai")

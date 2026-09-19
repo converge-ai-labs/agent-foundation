@@ -6,9 +6,10 @@ from contextlib import AsyncExitStack
 from functools import partial
 
 import httpx2
-from a13n_environment import EnvironmentProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
 
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.mounts import RunEnvironmentMountService
 from a13n_service.environments.websocket.admission import OnlineAdmission
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
@@ -37,7 +38,6 @@ from a13n_service.provider_plugins import ProviderCatalogs
 from a13n_service.run_stream import RedisRunStream, RunDisplayStore
 from a13n_service.settings import Settings
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
-from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.service import WebProviderService
 
 from .agent import build_agent_management
@@ -58,7 +58,7 @@ async def build_control_runtime(
     components: Components,
     shared: SharedRuntime,
     execution: ExecutionResources,
-    environment_catalog: EnvironmentProviderCatalog,
+    environment_catalog: ProviderCatalog[EnvironmentProviderDefinition],
     agent_resources: AgentResources,
     trace_query_provider_registry: TraceQueryProviderRegistry,
     stack: AsyncExitStack,
@@ -231,7 +231,7 @@ async def build_control_runtime(
         web_providers=WebProviderService(
             shared.storage.sessions,
             shared.secret_protector,
-            WebProviderRegistry(provider_catalogs.web),
+            provider_catalogs.web,
         ),
         memory_providers=MemoryProviderService(
             shared.storage.sessions, shared.secret_protector, shared.memories.catalog

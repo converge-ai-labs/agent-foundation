@@ -15,7 +15,7 @@ vi.mock("react-router", async (original) => ({
 }));
 vi.mock("./providers", () => ({
   useEnvironmentTypes: () => ({
-    data: { items: catalog.supported ? [{ type: "a13n.websocket-envd" }] : [] },
+    data: { items: catalog.supported ? [{ type: "websocket_envd" }] : [] },
     isPending: false,
     error: null,
   }),

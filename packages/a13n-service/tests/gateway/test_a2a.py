@@ -10,6 +10,7 @@ import anyio
 import httpx2
 import pytest
 from a2a.types import a2a_pb2 as a2a
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.api import install_api_conventions
 from a13n_service.application_errors import ErrorCategory
@@ -19,7 +20,6 @@ from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.staging import AssetStaging
 from a13n_service.assets.uploads import AssetUploadService
 from a13n_service.durable_operations.models import OutboxRecord
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a import A2AError, A2AService
 from a13n_service.gateway.a2a_import import A2APartImporter
 from a13n_service.gateway.a2a_push import (

@@ -46,7 +46,7 @@ async def test_snapshot_survives_api_edit_with_current_provider_connection(model
         journey.base + "/model-providers/" + case["provider"]["id"],
         {
             "configuration": destination["provider"]["configuration"],
-            "credential": "fixture-rotated",
+            "credential": {"api_key": "fixture-rotated"},
         },
     )
     if boundary == "worker_replacement":

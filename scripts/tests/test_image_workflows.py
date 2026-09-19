@@ -131,7 +131,6 @@ def test_release_images_prepare_real_metadata_before_building() -> None:
     "package",
     [
         "a13n-envd-client",
-        "a13n-environment",
         "a13n-harness",
         "a13n-stream-protocol",
         "a13n-harness-ui",

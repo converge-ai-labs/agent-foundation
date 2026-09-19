@@ -10,13 +10,14 @@ from copy import deepcopy
 from functools import lru_cache
 from typing import Any, get_type_hints
 
+from a13n_harness.providers.model.apis import MODEL_APIS
 from jsonschema import Draft202012Validator
 from pydantic import ConfigDict, JsonValue, create_model
 from pydantic_ai.models.bedrock import BedrockModelSettings
 
 from a13n_service.application_errors import ErrorCategory
 
-from .model_apis import BUILT_IN_MODEL_APIS
+from .model_apis import MODEL_API_POLICIES
 from .service_common import ModelError
 
 JsonObject = dict[str, JsonValue]
@@ -75,7 +76,7 @@ def _field_descriptions(native: Any) -> dict[str, str]:
 
 @lru_cache(maxsize=16)
 def settings_schema(model_api: str) -> dict[str, Any]:
-    binding = BUILT_IN_MODEL_APIS.get(model_api)
+    binding = MODEL_APIS.get(model_api)
     if binding is None:
         raise ModelError("invalid_model_api", "The Model API is invalid.", category=ErrorCategory.invalid_request)
     native = binding.settings_type
@@ -85,7 +86,7 @@ def settings_schema(model_api: str) -> dict[str, Any]:
         annotations = get_type_hints(native, localns=vars(type_defs))
     else:
         annotations = get_type_hints(native)
-    if not binding.supports_extra_body:
+    if not MODEL_API_POLICIES[model_api].supports_extra_body:
         annotations.pop("extra_body", None)
     annotations["timeout"] = float
     for field in _ESCAPE_FIELDS & annotations.keys():
@@ -155,7 +156,7 @@ def _validate_body_paths(model_api: str, field: str, body: JsonValue) -> None:
     # Unprotected extensions retain native SDK merge precedence. Reserved
     # reasoning containers are blocked even when empty: they can suppress the
     # fields Pydantic AI generates from unified thinking.
-    for path in BUILT_IN_MODEL_APIS[model_api].protected_body_paths:
+    for path in MODEL_API_POLICIES[model_api].protected_body_paths:
         value = body
         visited: list[str | int] = [field]
         for part in path:

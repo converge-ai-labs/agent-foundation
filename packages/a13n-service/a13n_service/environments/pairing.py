@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
-from a13n_environment.remote_envd.pairing import (
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
+from a13n_harness.providers.environment.remote_envd.pairing import (
     MAX_PENDING_PAIRINGS,
     PairingApproved,
     PairingChallenge,
@@ -151,7 +151,7 @@ class DevicePairingService:
                         workspace_id=workspace_id,
                         type=WEBSOCKET_PROVIDER_KEY,
                         name="Connected devices",
-                        configuration=implementation.provider_configuration_model().model_dump(mode="json"),
+                        configuration=implementation.configuration_model.model_validate({}).model_dump(mode="json"),
                         configuration_source="user",
                         enabled=True,
                         credential_generation=0,

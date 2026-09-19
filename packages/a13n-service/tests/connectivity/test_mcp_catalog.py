@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.configuration.sections import MCPServerSettings
 from a13n_service.connectivity.mcp.catalog import MCPServerCatalog
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
-from a13n_service.endpoint_policy import EndpointPolicy
 
 
 def _server(**changes: object) -> MCPServerSettings:

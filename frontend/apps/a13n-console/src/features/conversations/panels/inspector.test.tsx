@@ -62,7 +62,7 @@ it.each([true, false])(
             retention: { idle: { stop_after: null, delete_after: null } },
           }
         : path.includes("environment-providers")
-          ? { id: "envp_test", name: "Local", type: "direct-local" }
+          ? { id: "envp_test", name: "Local", type: "direct_local" }
           : { items: [] },
       response: new Response(null, { headers: { ETag: '"v1"' } }),
     }));

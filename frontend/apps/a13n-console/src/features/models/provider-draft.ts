@@ -3,39 +3,24 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { type Schema } from "../../shared/api";
-import { useSuggestedName } from "../../shared/forms";
-import { validateSettings } from "../../shared/forms";
+import {
+  useSuggestedName,
+  validateSettings,
+  withSchemaValues,
+} from "../../shared/forms";
+import { useCredentialSection } from "../../shared/use-credential-section";
+import { credentialDescription, credentialLabel } from "../providers";
 import { modelApi, type ModelScope } from "./api";
 import { initialHeaders, serializeHeaders } from "./provider-headers";
 
-const credentialFields: Record<string, { label: string; description: string }> =
-  {
-    api_key: {
-      label: "API key",
-      description: "Paste the API key from your provider account.",
-    },
-    google_service_account_json: {
-      label: "Service account JSON",
-      description:
-        "Paste the complete JSON key file for your Google Cloud service account.",
-    },
-    aws_credentials_json: {
-      label: "AWS access keys (JSON)",
-      description:
-        "Paste a JSON object with aws_access_key_id and aws_secret_access_key. Include aws_session_token for temporary credentials.",
-    },
-  };
-
+/** Named by the credential schema each definition declares, never by vendor. */
 export function credentialFieldFor(
-  definition?: Schema["ModelProviderDefinition"],
+  definition?: Schema["ModelProviderMetadata"],
 ) {
-  return (
-    credentialFields[
-      String(
-        definition?.credential_schema["x-a13n-credential-format"] ?? "api_key",
-      )
-    ] ?? { label: "Authentication secret", description: "" }
-  );
+  return {
+    label: credentialLabel(definition?.credential_schema),
+    description: credentialDescription(definition?.credential_schema),
+  };
 }
 
 /** Draft state and save mutation shared by the provider editors. */
@@ -49,7 +34,7 @@ export function useProviderDraft({
 }: {
   scope: ModelScope;
   resource?: { value: Schema["ModelProvider"]; etag?: string };
-  definitions: Schema["ModelProviderDefinition"][];
+  definitions: Schema["ModelProviderMetadata"][];
   initialType?: string;
   close: () => void;
   onCreated?: (provider: Schema["ModelProvider"], modelApi?: string) => void;
@@ -74,10 +59,13 @@ export function useProviderDraft({
     ),
     [headers, setHeaders] = useState(() => initialHeaders(original?.value)),
     [advancedOpen, setAdvancedOpen] = useState(false),
-    [credential, setCredential] = useState(""),
-    [removeCredential, setRemoveCredential] = useState(false),
     [enabled, setEnabled] = useState(original?.value.enabled ?? true);
   const definition = definitions.find((item) => item.type === type);
+  const section = useCredentialSection(
+    definition,
+    configuration,
+    original?.value,
+  );
   const credentialField = credentialFieldFor(definition);
   const save = useMutation({
     gcTime: 0,
@@ -87,17 +75,19 @@ export function useProviderDraft({
         headers,
         original?.value.header_names ?? [],
       );
-      validateSettings(definition.configuration_schema, configuration);
+      const config = withSchemaValues(
+        definition.configuration_schema,
+        configuration,
+      );
+      validateSettings(definition.configuration_schema, config);
+      const credential = section.payload();
+      if (credential) validateSettings(section.schema, credential);
       const body = {
         name,
-        configuration,
+        configuration: config,
         extra_headers: extraHeaders,
         enabled,
-        ...(removeCredential
-          ? { credential: null }
-          : credential
-            ? { credential }
-            : {}),
+        ...(credential === undefined ? {} : { credential }),
       };
       if (!original) return api.createProvider({ ...body, type });
       if (!original.etag)
@@ -109,7 +99,7 @@ export function useProviderDraft({
     onError: () => setAdvancedOpen(true),
     onSuccess: (provider) => {
       setHeaders([]);
-      setCredential("");
+      section.setCredential({});
       void cache.invalidateQueries();
       if (onCreated) onCreated(provider, suggestedApi);
       else close();
@@ -123,8 +113,8 @@ export function useProviderDraft({
     setConfiguration({});
     setHeaders([]);
     setAdvancedOpen(false);
-    setCredential("");
-    setRemoveCredential(false);
+    section.setCredential({});
+    section.setRemoving(false);
     setSuggestedApi(undefined);
   }
   function changeBaseUrl(url: string) {
@@ -135,19 +125,15 @@ export function useProviderDraft({
       /* URL may be incomplete. */
     }
   }
-  function changeAuth(mode: string) {
-    if (mode === "none") setCredential("");
-    setRemoveCredential(mode === "none");
-  }
   const changed =
     !original ||
     save.isPending ||
     name !== original.value.name ||
     enabled !== original.value.enabled ||
-    !!credential ||
+    Object.keys(section.credential).length > 0 ||
     JSON.stringify(headers) !==
       JSON.stringify(initialHeaders(original.value)) ||
-    removeCredential ||
+    section.removing ||
     JSON.stringify(configuration) !==
       JSON.stringify(original.value.configuration);
   return {
@@ -166,15 +152,11 @@ export function useProviderDraft({
     setHeaders,
     advancedOpen,
     setAdvancedOpen,
-    credential,
-    setCredential,
-    removeCredential,
-    setRemoveCredential,
+    section,
     enabled,
     setEnabled,
     setSuggestedApi,
     changeBaseUrl,
-    changeAuth,
     changed,
     save,
   };

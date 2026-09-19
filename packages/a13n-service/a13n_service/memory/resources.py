@@ -1,6 +1,7 @@
 """Short-session Memory Provider eligibility and representation checks."""
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +23,7 @@ async def require_provider(
     organization_id: str,
     workspace_id: str | None,
     provider_id: str,
-    catalog: MemoryBackendCatalog | None = None,
+    catalog: ProviderCatalog[MemoryProviderDefinition] | None = None,
     eligible: bool = False,
     owning_scope: bool = False,
     lock: bool = False,
@@ -46,34 +47,53 @@ async def require_provider(
     return record
 
 
-def require_eligible(record: MemoryProviderRecord, catalog: MemoryBackendCatalog) -> None:
+def require_eligible(record: MemoryProviderRecord, catalog: ProviderCatalog[MemoryProviderDefinition]) -> None:
     if not record.enabled:
         raise MemoryProviderError(
             "memory_provider_disabled", "Memory Provider is disabled.", category=ErrorCategory.conflict
         )
-    if record.ciphertext is None and (record.type not in catalog or catalog[record.type].requires_credential):
+    definition = catalog.get(record.type)
+    if definition is None:
         raise MemoryProviderError(
-            "memory_provider_credential_missing",
-            "Memory Provider requires a credential.",
+            "memory_provider_unavailable",
+            "Memory Provider implementation is unavailable.",
+            category=ErrorCategory.unavailable,
+        )
+    try:
+        configuration = definition.configuration_model.model_validate(record.configuration)
+        definition.authentication.validate_presence(configuration, record.ciphertext is not None)
+    except ValueError as error:
+        raise MemoryProviderError(
+            "memory_provider_credential_missing"
+            if record.ciphertext is None
+            else "memory_provider_configuration_invalid",
+            "Memory Provider authentication or configuration is unavailable.",
             category=ErrorCategory.conflict,
-        )
-    if record.type not in catalog:
+        ) from error
+
+
+def supports_document_entries(definition: MemoryProviderDefinition) -> bool:
+    """Document entries bind Host-owned files, so their Provider opens no record backend."""
+
+    return definition.supports_documents and not definition.supports_records
+
+
+def binds_host_files(provider_type: str, catalog: ProviderCatalog[MemoryProviderDefinition]) -> bool:
+    """Whether documents on this Provider type are Host-owned files rather than vendor records."""
+
+    definition = catalog.get(provider_type)
+    return definition is not None and supports_document_entries(definition)
+
+
+def require_document_support(provider_type: str, catalog: ProviderCatalog[MemoryProviderDefinition] | None) -> None:
+    definition = catalog.get(provider_type) if catalog is not None else None
+    if definition is None:
         raise MemoryProviderError(
             "memory_provider_unavailable",
             "Memory Provider implementation is unavailable.",
             category=ErrorCategory.unavailable,
         )
-
-
-def require_document_support(provider_type: str, catalog: MemoryBackendCatalog | None) -> None:
-    plugin = catalog.get(provider_type) if catalog is not None else None
-    if plugin is None:
-        raise MemoryProviderError(
-            "memory_provider_unavailable",
-            "Memory Provider implementation is unavailable.",
-            category=ErrorCategory.unavailable,
-        )
-    if not plugin.supports_documents:
+    if not definition.supports_documents:
         raise MemoryProviderError(
             "memory_documents_unsupported",
             "This Memory Provider does not support Bot documents.",
@@ -98,7 +118,7 @@ async def require_memory_configuration(
     selection: MemoryConfiguration,
     organization_id: str,
     workspace_id: str,
-    catalog: MemoryBackendCatalog,
+    catalog: ProviderCatalog[MemoryProviderDefinition],
 ) -> None:
     providers = {}
     for provider_id in memory_provider_ids(selection):
@@ -112,16 +132,11 @@ async def require_memory_configuration(
         )
     if isinstance(selection, MemoryEntries):
         for entry in selection.entries:
-            key = (
-                entry.backend.type
-                if isinstance(entry.backend, InlineMemoryBackend)
-                else providers[entry.backend.provider_id].type
-            )
-            plugin = catalog.get(key)
-            supported = plugin is not None and (
-                plugin.supports_records
-                if entry.mode == "records"
-                else key == "a13n.filesystem" and plugin.supports_documents
+            backend = entry.backend
+            key = backend.type if isinstance(backend, InlineMemoryBackend) else providers[backend.provider_id].type
+            definition = catalog.get(key)
+            supported = definition is not None and (
+                definition.supports_records if entry.mode == "records" else supports_document_entries(definition)
             )
             if not supported:
                 raise MemoryProviderError(
@@ -129,6 +144,16 @@ async def require_memory_configuration(
                     "The selected backend is unavailable for this memory mode.",
                     category=ErrorCategory.invalid_request,
                 )
+            if isinstance(backend, InlineMemoryBackend):
+                assert definition is not None
+                try:
+                    definition.configuration_model.model_validate(backend.configuration)
+                except ValueError as error:
+                    raise MemoryProviderError(
+                        "memory_backend_configuration_invalid",
+                        "The inline memory backend configuration is invalid.",
+                        category=ErrorCategory.invalid_request,
+                    ) from error
     elif not catalog[providers[selection.provider_id].type].supports_records:
         raise MemoryProviderError(
             "memory_mode_unsupported",

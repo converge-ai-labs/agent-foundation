@@ -10,9 +10,9 @@ Service exposes authorized memory through explicitly selected memory entries. An
 
 ## Backend and Lifetime
 
-Deployment Provider packages register shared Harness `MemoryBackendPlugin` instances through the `memory` accessor of the existing [Service Provider registration](02-distribution-composition-and-extensions.md#deployment-provider-packages). Built-in types are `a13n.filesystem`, `a13n.mem0-oss`, and `a13n.mem0-platform`. The filesystem type requires no memory credential; its access uses the selected Environment credentials and file authority. Control and Worker use the same selected definitions, configuration schemas, and credential schemas. They do not share Python clients across processes. Registration creates no client and performs no account, database, or network I/O. This is not a Harness behavior plugin and does not make Control import Agent-selected business plugins.
+Deployment packages contribute shared Harness `MemoryProviderDefinition` values through `ProviderManifest.memory` in selected `a13n_harness.providers.plugins` manifests. The built-in types are `filesystem`, `mem0_oss`, and `mem0_platform`. The filesystem type requires no memory credential; its access uses selected Environment credentials and file authority. Control and Worker use the same selected definitions, configuration/credential schemas, Authentication and optional help metadata. They do not share clients across processes. Loading definitions performs no backend or network I/O.
 
-Service assembles a host-owned `MemoryBackendCatalog` from these definitions; embedded hosts may inject their catalog directly. The same backend plugin owns construction in both cases: Service introduces no parallel factory contract or discovery mechanism. Installation alone never selects an external package. Missing implementations fail explicitly without backend fallback.
+Service assembles a host-owned `ProviderCatalog` from these definitions; embedded hosts may inject their catalog directly. The same definition owns construction in both cases: Service introduces no parallel factory contract or discovery mechanism. Installation alone never selects an external package. Missing implementations fail explicitly without backend fallback.
 
 `memory.timeout_seconds` bounds backend opening, the operation, and write verification, and defaults to 30 seconds. Each dispatch acquires current eligibility and any required encrypted credential snapshot in a short SQL session, closes that session, and obtains the authorized backend outside SQL. Native clients decrypt credentials locally; filesystem operations borrow the retained Environment file binding and its execution guards. The host closes it on completion, failure, or cancellation. The Capability borrows an authorized facade, not an ambient singleton. No live client, endpoint, or credential enters an accepted Run graph or Harness state.
 
@@ -20,7 +20,7 @@ Native backend integration composes public native operations. It requires no ups
 
 ## Filesystem Configuration and Storage Binding
 
-Each filesystem entry explicitly selects `a13n.filesystem`, inline or through a managed Provider. Its backend `configuration.storage` contains `environment_id` (null/omitted selects the accepted Run binding), optional `working_directory` for an explicit envd target, and `root` (default `/memory`, an absolute provider-local path). Envd working-directory omission resolves from Device info before acceptance; native targets reject this override. The memory root is independent of Session cwd and never implicitly relocated. These are configuration fields, not model tool arguments. A managed filesystem Provider owns the same fields in its immutable configuration and has an empty credential schema. A fixed Environment reference belongs to the consuming Workspace; an Organization-owned Provider cannot embed one Workspace's Environment for use in other Workspaces.
+Each filesystem entry explicitly selects `filesystem`, inline or through a managed Provider. Its backend `configuration.storage` contains `environment_id` (null/omitted selects the accepted Run binding), optional `working_directory` for an explicit envd target, and `root` (default `/memory`, an absolute provider-local path). Envd working-directory omission resolves from Device info before acceptance; native targets reject this override. The memory root is independent of Session cwd and never implicitly relocated. These are configuration fields, not model tool arguments. A managed filesystem Provider owns the same fields in its immutable configuration and has an empty credential schema. A fixed Environment reference belongs to the consuming Workspace; an Organization-owned Provider cannot embed one Workspace's Environment for use in other Workspaces.
 
 ```yaml
 memory:
@@ -29,7 +29,7 @@ memory:
       mode: documents
       description: Project requirements and reusable procedures.
       backend:
-        type: a13n.filesystem
+        type: filesystem
         configuration:
           storage:
             environment_id: env_example
@@ -64,7 +64,7 @@ Control exposes type definitions at `/api/v1/memory-provider-types` and `/{provi
 
 ## Subjects and Authority
 
-Every memory belongs to exactly one trusted scope. The provider-visible value is `a13n-` followed by SHA-256 of UTF-8 compact JSON `["a13n.memory.v2", organization_id, workspace_id, provider_id, scope, subject_id]`. IDs and scope kinds are immutable inputs. Models cannot select IDs, filters, credentials, or endpoints. For an inline filesystem selection, the provider identity input is the fixed built-in key `a13n.filesystem`; the directory and corpus locator additionally bind the exact storage identity. Different Provider resources remain isolated even when they point to the same remote endpoint. Deliberate sharing selects the same Provider resource and still respects Organization, Workspace, and subject isolation. Provider identity is part of every namespace, management record locator, cursor binding, and any cache key.
+Every memory belongs to exactly one trusted scope. The provider-visible value is `a13n-` followed by SHA-256 of UTF-8 compact JSON `["a13n.memory.v2", organization_id, workspace_id, provider_id, scope, subject_id]`. IDs and scope kinds are immutable inputs. Models cannot select IDs, filters, credentials, or endpoints. For an inline filesystem selection, the provider identity input is the fixed built-in key `filesystem`; the directory and corpus locator additionally bind the exact storage identity. Different Provider resources remain isolated even when they point to the same remote endpoint. Deliberate sharing selects the same Provider resource and still respects Organization, Workspace, and subject isolation. Provider identity is part of every namespace, management record locator, cursor binding, and any cache key.
 
 | Scope    | Subject                                         | Mem0 field | Management authorization                                                                            |
 | -------- | ----------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------- |
@@ -111,7 +111,7 @@ memory:
       mode: documents
       description: Project requirements and procedures; use for project evidence.
       backend:
-        type: a13n.filesystem
+        type: filesystem
         configuration:
           storage:
             root: /memory
@@ -285,3 +285,9 @@ Service owns durable organization admission after the source work's checkpoint/r
 Only confirmed or explicitly rejected/deferred candidates advance the extraction cursor. Uncertain writes remain reconcilable under their original operation keys. Deletion/revocation fences pending work and forbids stale retries from recreating deleted memory or widening an audience. Turning automatic organization off stops admission and prevents uncommitted work from publishing under an older enabled observation. Completion records identify source references and outcomes without duplicating transcripts. The Harness [organization contract](../a13n-harness/21-document-memory.md#extraction-and-organization) owns candidate semantics and bounded model work.
 
 The three-kind document model replaces daily/long-term classification and all-saved-document immutability. Existing raw native record APIs remain unchanged. Upgrades retain old records and immutable revisions without guessing a new kind, changing creation times, or broadening audiences. Legacy sharing grants remain inactive under the visibility contract above; classification never reactivates them. Unclassified records remain inspectable under current group visibility and management authority without acquiring revision support until explicitly classified through an authorized import. An unsupported old client mutation fails validation/preconditions rather than overwriting a current document through the old record contract.
+
+## Structured Credential Management
+
+Memory Provider metadata projects the shared Authentication and optional `setup_url`/`setup_label` fields plus actual document support. Console renders schemas without vendor-specific field or URL mappings. Managed configuration is immutable to preserve backend identity. Create validates configuration and credential presence together; present credentials retain nested JSON values and numeric types through canonical secret encoding and encryption.
+
+PATCH omission retains the credential. Replacement validates the complete typed object and the configuration's authentication mode. Explicit null removes all encrypted credential fields and advances generation, ETag and the credential-change audit. Removal is permitted regardless of a required runtime credential declaration; an already empty removal is a no-op. A required-credential account becomes execution-ineligible until restored. Optional or forbidden accounts remain eligible without credentials as declared. Each content operation rechecks current enablement, configuration/authentication and authority before acquiring an operation-owned backend outside the SQL session.

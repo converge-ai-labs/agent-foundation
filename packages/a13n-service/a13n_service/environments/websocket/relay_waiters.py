@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from time import monotonic
 from typing import Literal
 
-from a13n_environment.models import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 
 from .authority import DispatchAuthority, DispatchDenied, LeaseDeadline, UseIdentity
 from .relay_flow import TransferWindow

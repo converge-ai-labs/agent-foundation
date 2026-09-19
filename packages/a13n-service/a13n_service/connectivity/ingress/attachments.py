@@ -7,6 +7,7 @@ from time import monotonic
 
 import anyio
 import httpx2
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.assets.errors import AssetError
@@ -14,7 +15,6 @@ from a13n_service.assets.uploads import AssetUploadService
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.file_content import MAX_ATTACHMENTS, FileContent
-from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.connectivity.providers.lark.files import LarkFiles
 from a13n_service.connectivity.providers.slack.files import SlackFiles
 from a13n_service.iam import AuthenticatedActor
@@ -81,7 +81,7 @@ class AttachmentInputs:
                         if file.media_type.startswith("text/") or file.media_type == "application/json":
                             text = file.body.decode("utf-8-sig")
                             if len(text) > 100_000:
-                                raise ConnectivityHttpError("text_attachment_too_large")
+                                raise ProviderHttpError("text_attachment_too_large")
                         identity = hashlib.sha256(f"{batch.batch_id}:{count}".encode()).hexdigest()
                         asset = await self.uploads.upload(
                             actor=actor,
@@ -98,7 +98,7 @@ class AttachmentInputs:
                     else:
                         content.append(BinaryContent(source=AssetBinarySource(asset_id=asset.id)))
                 except (
-                    ConnectivityHttpError,
+                    ProviderHttpError,
                     AssetError,
                     AuthorizationError,
                     httpx2.HTTPError,
@@ -107,7 +107,7 @@ class AttachmentInputs:
                 ) as error:
                     reason = (
                         error.code
-                        if isinstance(error, (ConnectivityHttpError, AssetError, AuthorizationError))
+                        if isinstance(error, (ProviderHttpError, AssetError, AuthorizationError))
                         else "attachment_unavailable"
                     )
                     content.append(
@@ -135,19 +135,19 @@ class AttachmentInputs:
                 or account.workspace_id != batch.workspace_id
                 or account.execution_service_account_id != actor.principal.principal_id
             ):
-                raise ConnectivityHttpError("attachment_source_changed")
+                raise ProviderHttpError("attachment_source_changed")
             configuration = dict(account.provider_config_json)
             credentials = json.loads(account.credential_snapshot().decrypt(self.protector))
         if config.provider_key == "slack":
             identifier = attachment.get("id")
             if not isinstance(identifier, str) or not identifier:
-                raise ConnectivityHttpError("invalid_attachment")
+                raise ProviderHttpError("invalid_attachment")
             return await SlackFiles(self.http, self.endpoints, credentials["bot_token"]).download(identifier)
         kind = attachment.get("type")
         key = attachment.get("image_key" if kind == "image" else "file_key")
         message = context.get("message_id")
         if not isinstance(key, str) or not isinstance(message, str) or not isinstance(kind, str):
-            raise ConnectivityHttpError("unsupported_attachment_type")
+            raise ProviderHttpError("unsupported_attachment_type")
         return await LarkFiles(
             self.http,
             self.endpoints,

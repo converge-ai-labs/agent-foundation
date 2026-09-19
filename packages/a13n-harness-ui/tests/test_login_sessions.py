@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from a13n_harness.model_auth import CodexLoginResult, DeviceAuthorizationError
+from a13n_harness.providers.model.oauth import CodexLoginResult, DeviceAuthorizationError
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.model_accounts.login import LoginRequest

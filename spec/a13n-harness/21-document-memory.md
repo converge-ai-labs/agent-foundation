@@ -14,7 +14,7 @@ Document memory stores reusable knowledge, procedures, and events as addressable
 | Filesystem reads and mutations                                                      | Bound Environment `FileOperator`        |
 | Storage selection, tenant/subject authority, retention, durable workflow scheduling | Host                                    |
 
-The filesystem implementation is registered as `a13n.filesystem`. Mem0 and other native backends remain explicitly selectable entries, independently or alongside document entries; installation never changes a selected backend. Native record CRUD does not imply support for revisioned documents. Providers advertise document, revision, and change-record support separately and reject unsupported operations before mutation.
+The filesystem implementation is registered as `filesystem`. Mem0 and other native backends remain explicitly selectable entries, independently or alongside document entries; installation never changes a selected backend. Native record CRUD does not imply support for revisioned documents. Providers advertise document, revision, and change-record support separately and reject unsupported operations before mutation.
 
 ## Memory Types and Time
 

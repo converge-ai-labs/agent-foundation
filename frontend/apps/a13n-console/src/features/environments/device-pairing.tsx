@@ -31,7 +31,7 @@ export function ConnectDevice({
   const linkedPairing = pairingFromSearch(params.toString());
   const types = useEnvironmentTypes();
   const supported = types.data?.items.some(
-    (item) => item.type === "a13n.websocket-envd",
+    (item) => item.type === "websocket_envd",
   );
   const [opened, setOpened] = useState(false);
   const open = opened || !!linkedPairing;

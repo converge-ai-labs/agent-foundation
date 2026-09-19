@@ -11,6 +11,7 @@ from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.iam.resource_routes import require_organization_boundary
+from a13n_service.provider_metadata import ProviderMetadataCollection
 from a13n_service.request_runtime import get_control_runtime
 
 from .domain import (
@@ -27,7 +28,7 @@ from .domain import (
     UpdateModelRequest,
 )
 from .provider_service import ModelProviderService
-from .providers import ModelProviderDefinitionCollection
+from .providers import ModelProviderMetadata
 from .service import ModelService
 from .service_common import ModelError
 
@@ -58,9 +59,16 @@ def _set_etag(response: Response, resource: Model | ModelProvider) -> None:
     response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
 
 
-@router.get("/model-provider-types", response_model=ModelProviderDefinitionCollection)
-async def list_model_provider_types(request: Request, actor: Actor) -> ModelProviderDefinitionCollection:
-    return await _provider_service(request).type_definitions(actor=actor)
+@router.get("/model-provider-types")
+async def list_model_provider_types(
+    request: Request, actor: Actor
+) -> ProviderMetadataCollection[ModelProviderMetadata]:
+    return await _provider_service(request).provider_types(actor=actor)
+
+
+@router.get("/model-provider-types/{provider_type}")
+async def get_model_provider_type(request: Request, actor: Actor, provider_type: str) -> ModelProviderMetadata:
+    return await _provider_service(request).provider_type(actor=actor, provider_type=provider_type)
 
 
 @router.get("/workspaces/{workspace}/model-providers", response_model=ModelProviderCollection)

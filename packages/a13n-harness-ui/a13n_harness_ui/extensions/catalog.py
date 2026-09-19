@@ -7,12 +7,6 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, cast
 
-from a13n_environment import (
-    EnvironmentProvider,
-    EnvironmentProviderCatalog,
-    build_environment_provider_catalog,
-    discover_environment_provider_references,
-)
 from a13n_harness.capabilities import DocumentsCapability, ToolReviewConfig, WebCapability
 from a13n_harness.capabilities.codeact import CodeActCapability, CodeActConfig
 from a13n_harness.capabilities.context import (
@@ -47,6 +41,10 @@ from a13n_harness.plugin_factories import (
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
+from a13n_harness.providers.plugins import load_provider_plugins
 from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, model_validator
 from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability, NativeTool
@@ -62,9 +60,7 @@ from .environment_adapters import (
 )
 
 _CAPABILITY_ENTRY_POINT_GROUP = "a13n_harness_ui.capabilities"
-_BUILTIN_PROVIDER_KEYS = frozenset(
-    {"direct-local", "a13n.local-envd", "docker", "e2b", "a13n.http-envd", "a13n.websocket-envd"}
-)
+_BUILTIN_PROVIDER_KEYS = frozenset({"direct_local", "local_envd", "docker", "e2b", "http_envd", "websocket_envd"})
 _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
     "dynamic_environment": DynamicEnvironmentCapability,
     "codeact": CodeActCapability,
@@ -147,13 +143,24 @@ class HarnessUiExtensionCatalog:
         self,
         *,
         host_capabilities: dict[str, type[AbstractCapability[Any]]] | None = None,
-        host_providers: tuple[EnvironmentProvider, ...] = (),
+        host_providers: tuple[EnvironmentProviderDefinition, ...] = (),
+        provider_plugins: tuple[str, ...] = (),
         host_adapters: tuple[EnvironmentProjectAdapter, ...] = (),
         host_plugin_factories: tuple[HarnessPluginFactory, ...] = (),
         host_run_extension_factories: tuple[EnvironmentRunExtensionFactory, ...] = (),
     ) -> None:
         self._host_capabilities = MappingProxyType(dict(host_capabilities or {}))
         self._host_providers = host_providers
+        self._provider_plugins = load_provider_plugins(provider_plugins)
+        self._providers = dict(
+            ProviderCatalog(
+                (
+                    *BUILT_IN_ENVIRONMENT_PROVIDERS,
+                    *(definition for plugin in self._provider_plugins for definition in plugin.manifest.environment),
+                )
+            )
+        )
+        self._providers.update((definition.type, definition) for definition in host_providers)
         self._host_plugins = host_plugin_factories
         self._host_run_extensions = host_run_extension_factories
         adapters = (NativeProjectAdapter(), LocalEnvdProjectAdapter(), *host_adapters)
@@ -305,19 +312,13 @@ class HarnessUiExtensionCatalog:
         explicit = tuple(host[key] for key in dict.fromkeys(keys) if key in host)
         return build_harness_plugin_factory_catalog(plugin_keys=selected, explicit_factories=explicit)
 
-    def provider_catalog(self, keys: tuple[str, ...]) -> EnvironmentProviderCatalog:
+    def provider_catalog(self, keys: tuple[str, ...]) -> ProviderCatalog[EnvironmentProviderDefinition]:
         for key in keys:
             self._require_unambiguous("environment_provider", key)
-        host = {item.key: item for item in self._host_providers}
-        ordered = tuple(dict.fromkeys(keys))
-        builtin = tuple(key for key in ordered if key in _BUILTIN_PROVIDER_KEYS and key not in host)
-        installed = tuple(key for key in ordered if key not in _BUILTIN_PROVIDER_KEYS and key not in host)
-        explicit = tuple(host[key] for key in ordered if key in host)
-        return build_environment_provider_catalog(
-            builtin_keys=builtin,
-            extension_keys=installed,
-            explicit_providers=explicit,
-        )
+        return ProviderCatalog(self._providers[key] for key in dict.fromkeys(keys))
+
+    def provider_reference(self, key: str) -> CatalogReference:
+        return next(item for item in self.references if item.kind == "environment_provider" and item.key == key)
 
     def run_extension_catalog(self, keys: tuple[str, ...]) -> EnvironmentRunExtensionFactoryCatalog:
         for key in keys:
@@ -361,7 +362,7 @@ class HarnessUiExtensionCatalog:
         )
 
     def provider_source(self, key: str) -> Literal["installed", "host"]:
-        return "host" if any(item.key == key for item in self._host_providers) else "installed"
+        return "host" if any(item.type == key for item in self._host_providers) else "installed"
 
     def plugin_source(self, key: str) -> Literal["installed", "host"]:
         return "host" if any(item.plugin_key() == key for item in self._host_plugins) else "installed"
@@ -405,23 +406,24 @@ class HarnessUiExtensionCatalog:
             values.append(
                 CatalogReference(
                     kind="environment_provider",
-                    key=provider.key,
+                    key=provider.type,
                     source="host",
-                    configurable=provider.key in adapter_providers,
+                    configurable=provider.type in adapter_providers,
                 )
             )
-        for item in discover_environment_provider_references():
-            values.append(
-                CatalogReference(
-                    kind="environment_provider",
-                    key=item.provider_key,
-                    source="installed",
-                    distribution_name=item.distribution_name,
-                    distribution_version=item.distribution_version,
-                    import_target=item.import_target,
-                    configurable=item.provider_key in adapter_providers,
+        for plugin in self._provider_plugins:
+            for definition in plugin.manifest.environment:
+                values.append(
+                    CatalogReference(
+                        kind="environment_provider",
+                        key=definition.type,
+                        source="installed",
+                        distribution_name=plugin.distribution_name,
+                        distribution_version=plugin.distribution_version,
+                        import_target=plugin.import_target,
+                        configurable=definition.type in adapter_providers,
+                    )
                 )
-            )
         for item in discover_harness_plugin_factory_references():
             values.append(
                 CatalogReference(

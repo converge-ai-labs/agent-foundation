@@ -4,8 +4,12 @@ version = "0.1.0"
 description = "Installed deployment Provider plugin example for Agent Foundation"
 requires-python = ">=3.13"
 dependencies = [
-    "a13n-service>=0,<1",
+    "a13n-harness>=0,<1",
+    "a13n-logging>=0,<1",
+    "anyio>=4,<5",
+    "httpx2>=2,<3",
     "pydantic>=2.12,<3",
+    "openai>=3.8,<4",
     "pydantic-ai>=2.41,<3",
 ]
 
@@ -16,8 +20,8 @@ dev = [
     "ruff>=0.16,<0.17",
 ]
 
-[project.entry-points."a13n.providers"]
-acme = "acme_provider.plugin:register"
+[project.entry-points."a13n_harness.providers.plugins"]
+acme = "acme_provider.plugin:manifest"
 
 [build-system]
 requires = ["hatchling"]
@@ -30,8 +34,7 @@ packages = ["src/acme_provider"]
 members = []
 
 [tool.uv.sources]
-a13n-service = { path = "../../packages/a13n-service", editable = true }
-a13n-environment = { path = "../../packages/a13n-environment", editable = true }
+a13n-envd-client = { path = "../../packages/a13n-envd-client", editable = true }
 a13n-harness = { path = "../../packages/a13n-harness", editable = true }
 a13n-logging = { path = "../../packages/a13n-logging", editable = true }
 a13n-stream-protocol = { path = "../../packages/a13n-stream-protocol", editable = true }

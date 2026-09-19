@@ -1,7 +1,7 @@
 import ipaddress
 
 import pytest
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 
 
 @pytest.mark.parametrize(

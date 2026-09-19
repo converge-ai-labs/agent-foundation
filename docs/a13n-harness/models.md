@@ -203,12 +203,18 @@ Earlier versions implicitly sent `x-session-id` to every model. This default is 
 
 API-key Models use their native provider's credential mechanism. Keep secrets and client lifetimes in application code, not `HarnessState`, metadata, or an Agent preset. A model string alone is not proof of access.
 
-The `a13n_harness.model_auth` module supplies SDK-level subscription building blocks: Codex browser/device login flows and `CodexRequestModel`; Grok credential-source and OAuth/device-flow types plus `build_grok_model`. The Host owns user interaction, account storage, persistence, and permission to replace accounts. Reconstruct authenticated Models for new Runs instead of treating an exported continuation as a saved client.
+The `a13n_harness.providers.model.oauth` module supplies SDK-level subscription building blocks: Codex browser/device login flows and `CodexRequestModel`; Grok credential-source and OAuth/device-flow types plus `build_grok_model`. The Host owns user interaction, account storage, persistence, and permission to replace accounts. Reconstruct authenticated Models for new Runs instead of treating an exported continuation as a saved client.
 
-Use [Harness UI authentication](../a13n-harness-ui/models-and-authentication.md) for the ready-to-use local login experience. SDK integrations can start with [authentication and HTTP-client recipes](model-authentication.md), then follow the [Model authentication contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/16a-model-authentication.md) and the public types in `a13n_harness.model_auth`; Harness does not supply a product account database.
+Use [Harness UI authentication](../a13n-harness-ui/models-and-authentication.md) for the ready-to-use local login experience. SDK integrations can start with [authentication and HTTP-client recipes](model-authentication.md), then follow the [Model authentication contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/16a-model-authentication.md) and the public types in `a13n_harness.providers.model.oauth`; Harness does not supply a product account database.
 
 ## Request settings versus context policy
 
 `AgentSpec.model_settings` contains native provider request settings. `model_characteristics` describes explicit local context and input policy. A larger local budget does not increase a provider limit, and an image declaration does not make an endpoint accept images.
 
 Continue with [context and memory](context-and-memory.md), [inputs and outputs](inputs-and-outputs.md), or [usage and limits](usage-and-limits.md).
+
+## Reusable provider definitions
+
+Use `a13n_harness.providers.model.ModelProviderDefinition` to contribute a typed connection and native SDK constructor. The result of `build()` is a native Pydantic AI Model; it can be passed directly to the Harness. Built-ins are available from `a13n_harness.providers.model.builtins`. Optional Model OAuth flows live in `a13n_harness.providers.model.oauth`, while the Thread-aware Codex adapter is `a13n_harness.models.codex.CodexRequestModel`.
+
+Installed Model and Web contributions share `ProviderManifest` and explicit host selection. See the [installed example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin) for typed nested credentials, native requests, and Service account use. The host owns persistence, authorization, and current account selection. API-key credential objects use `{"api_key": "..."}`; AWS and Google credentials retain their structured fields.

@@ -2,13 +2,10 @@
 
 from functools import partial
 
-import httpx2
-
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 
-from ...domain import JsonObject
 from ...native_actions import NativeAction, action, credential
+from ..definition import InboundActionContext
 from ..lark.actions import (
     LarkActionBinding,
     LarkAutoReplyArguments,
@@ -21,14 +18,10 @@ from ..lark.client import LarkNativeClient
 from ..lark.token import LarkTenantTokenProvider
 
 
-def inbound_actions(
-    context: JsonObject,
-    policy: JsonObject,
-    configuration: JsonObject,
-    credentials: JsonObject,
-    http: httpx2.AsyncClient,
-    endpoints: EndpointPolicy,
-) -> dict[str, NativeAction]:
+def inbound_actions(inbound: InboundActionContext) -> dict[str, NativeAction]:
+    context, policy = inbound.provider_context, inbound.action_policy
+    configuration, credentials = inbound.configuration, inbound.credentials
+    http, endpoints = inbound.http, inbound.endpoints
     config = LarkAccountConfig.model_validate(configuration)
     binding = LarkActionBinding.model_validate(
         {

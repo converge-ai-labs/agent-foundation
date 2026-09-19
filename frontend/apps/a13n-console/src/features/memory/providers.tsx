@@ -11,11 +11,11 @@ import { ErrorNotice, Loading } from "../../shared/feedback";
 import { Identifier } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
 import { ProviderTable } from "../providers";
+import { useMemoryProviderDefinitions } from "./availability";
 import {
   AddMemoryProvider,
   MemoryProviderEditor,
   memoryCredentialState,
-  useMemoryProviderDefinitions,
 } from "./editor";
 import { memoryProviderApi, type MemoryProviderScope } from "./providers-api";
 

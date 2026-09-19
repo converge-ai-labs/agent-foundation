@@ -27,6 +27,7 @@ from anyio import current_time, sleep
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.iam import WorkspaceAction
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.inbox import ThreadInboxStore
@@ -90,6 +91,7 @@ class DurableSubagentOperator(SubagentOperator):
         self._max_wait_timeout_seconds = max_wait_timeout_seconds
         self._wait_poll_interval_seconds = wait_poll_interval_seconds
 
+    @authorization_operation
     async def delegate(
         self,
         plan: SubagentDelegationPlan,
@@ -110,6 +112,7 @@ class DurableSubagentOperator(SubagentOperator):
             segment_index=0,
         )
 
+    @authorization_operation
     async def info(
         self,
         context: SubagentOperatorContext,
@@ -166,6 +169,7 @@ class DurableSubagentOperator(SubagentOperator):
             next_offset=page.next_offset(request.execution_limit),
         )
 
+    @authorization_operation
     async def steer(
         self,
         context: SubagentOperatorContext,
@@ -200,6 +204,7 @@ class DurableSubagentOperator(SubagentOperator):
             enqueue_id=receipt.steer_id,
         )
 
+    @authorization_operation
     async def cancel(
         self,
         context: SubagentOperatorContext,
@@ -244,6 +249,7 @@ class DurableSubagentOperator(SubagentOperator):
             status="cancelled",
         )
 
+    @authorization_operation
     async def resume(
         self,
         plan: SubagentDelegationPlan,

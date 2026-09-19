@@ -12,7 +12,7 @@ import { ProviderIcon } from "../../shared/identity";
 import { ModelProviderCatalog, ProviderConnectForm } from "./add-provider";
 import { type useProviderDraft } from "./provider-draft";
 
-type Definition = Schema["ModelProviderDefinition"];
+type Definition = Schema["ModelProviderMetadata"];
 
 /**
  * First step of the add flow: the providers this scope already connects, with

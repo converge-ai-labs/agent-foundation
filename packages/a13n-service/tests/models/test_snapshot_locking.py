@@ -3,12 +3,12 @@
 from datetime import timedelta
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.database.metadata import service_metadata
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.models.domain import CreateModelProviderRequest, CreateModelRequest
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 from a13n_service.models.provider_service import ModelProviderService
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelService
 from a13n_service.models.service_common import ModelError
@@ -40,14 +40,14 @@ async def postgres_models(pg_url):
 @pytest.mark.anyio
 @pytest.mark.parametrize("change", ["model_disabled", "model_provider_disabled", "model_configuration_changed"])
 async def test_shared_snapshot_readers_block_edits_and_revalidate_after_commit(postgres_models, change):
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
     providers = ModelProviderService(
         postgres_models, registry, EndpointPolicy(), protector(), clock=lambda: NOW, resolve_dns_on_save=False
     )
     provider = await providers.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateModelProviderRequest(type="openrouter", name="Router", credential="test"),
+        request=CreateModelProviderRequest(type="openrouter", name="Router", credential={"api_key": "test"}),
     )
     model = await ModelService(postgres_models, registry, clock=lambda: NOW).create(
         actor=actor(),

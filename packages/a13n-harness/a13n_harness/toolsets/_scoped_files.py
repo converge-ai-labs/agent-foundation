@@ -9,10 +9,10 @@ from contextvars import ContextVar
 
 from a13n_harness.context import AgentContext
 from a13n_harness.environment._resources import selection_resource
-from a13n_harness.environment.files import FileCopyResult, FileMutationResult, FileOperator
-from a13n_harness.environment.models import EnvironmentError, EnvironmentPath
 from a13n_harness.environment.providers import FileScopeProvider, FileScopeSelection
 from a13n_harness.environment.virtual_files import VirtualFileOperator
+from a13n_harness.providers.environment.files import FileCopyResult, FileMutationResult, FileOperator
+from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentPath
 from a13n_harness.tools.metadata import CanonicalResource, ToolResourceResolver
 
 

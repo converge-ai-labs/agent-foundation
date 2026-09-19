@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable
 from getpass import getpass
 
 import httpx2
-from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
+from a13n_harness.providers.connector.contracts import ConnectorProviderError
 
 
 def show(value: object) -> None:

@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock
 
 import e2b
 import pytest
-from a13n_environment import EnvironmentError, build_environment_provider_catalog
-from a13n_environment._guest_files import GuestFiles
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment._guest_files import GuestFiles
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.environments.domain import CreateProviderRequest, CreateTemplateRequest
 from a13n_service.environments.models import EnvironmentRecord
@@ -65,7 +67,7 @@ async def test_host_publishes_recovery_before_exposing_the_new_backing(
     interaction_sessions, interaction_object_store, tmp_path, monkeypatch, missing
 ):
     service, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
-    service.catalog = lifecycle.catalog = build_environment_provider_catalog(builtin_keys=("e2b",))
+    service.catalog = lifecycle.catalog = ProviderCatalog(select_builtin_environment_providers(("e2b",)))
     provider = await service.create_provider(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
@@ -98,7 +100,7 @@ async def test_host_publishes_recovery_before_exposing_the_new_backing(
     env = await prepare_run_environment(
         lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
     )
-    await env.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent", mount_id="workspace")
+    await env.enter(mount_id="workspace")
     await env.ensure_ready(frozenset({"files"}))
     old_processes = env.operations.processes
     old_files = env.operations.files

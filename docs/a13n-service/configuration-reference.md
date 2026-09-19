@@ -71,18 +71,18 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `environments`
 
-| Setting                                     | Environment variable                                    | Type / choices  | Constraints and default                                                                                      |
-| ------------------------------------------- | ------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
-| `environments.provider_builtins`            | `A13N_SERVICE_ENVIRONMENT_PROVIDER_BUILTINS`            | array of string | default=["e2b", "daytona", "modal", "vercel", "sprites", "runloop", "a13n.http-envd", "a13n.websocket-envd"] |
-| `environments.client_public_origin`         | `A13N_SERVICE_ENVIRONMENT_CLIENT_PUBLIC_ORIGIN`         | string or null  | default=null                                                                                                 |
-| `environments.client_max_connections`       | `A13N_SERVICE_ENVIRONMENT_CLIENT_MAX_CONNECTIONS`       | integer         | minimum=1; maximum=1000; default=128                                                                         |
-| `environments.local_providers`              | `A13N_SERVICE_ENVIRONMENT_LOCAL_PROVIDERS`              | object          | —                                                                                                            |
-| `environments.maintenance_interval_seconds` | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_INTERVAL_SECONDS` | number          | maximum=300; exclusiveMinimum=0; default=5                                                                   |
-| `environments.operation_timeout_seconds`    | `A13N_SERVICE_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS`    | number          | maximum=3600; exclusiveMinimum=0; default=60                                                                 |
-| `environments.max_targets_per_workspace`    | `A13N_SERVICE_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE`    | integer         | minimum=1; default=1000                                                                                      |
-| `environments.max_active_per_workspace`     | `A13N_SERVICE_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE`     | integer         | minimum=1; default=100                                                                                       |
-| `environments.maintenance_batch_size`       | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_BATCH_SIZE`       | integer         | minimum=1; maximum=10000; default=64                                                                         |
-| `environments.maintenance_concurrency`      | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_CONCURRENCY`      | integer         | minimum=1; maximum=128; default=4                                                                            |
+| Setting                                     | Environment variable                                    | Type / choices  | Constraints and default                                                                            |
+| ------------------------------------------- | ------------------------------------------------------- | --------------- | -------------------------------------------------------------------------------------------------- |
+| `environments.provider_builtins`            | `A13N_SERVICE_ENVIRONMENT_PROVIDER_BUILTINS`            | array of string | default=["e2b", "daytona", "modal", "vercel", "sprites", "runloop", "http_envd", "websocket_envd"] |
+| `environments.client_public_origin`         | `A13N_SERVICE_ENVIRONMENT_CLIENT_PUBLIC_ORIGIN`         | string or null  | default=null                                                                                       |
+| `environments.client_max_connections`       | `A13N_SERVICE_ENVIRONMENT_CLIENT_MAX_CONNECTIONS`       | integer         | minimum=1; maximum=1000; default=128                                                               |
+| `environments.local_providers`              | `A13N_SERVICE_ENVIRONMENT_LOCAL_PROVIDERS`              | object          | —                                                                                                  |
+| `environments.maintenance_interval_seconds` | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_INTERVAL_SECONDS` | number          | maximum=300; exclusiveMinimum=0; default=5                                                         |
+| `environments.operation_timeout_seconds`    | `A13N_SERVICE_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS`    | number          | maximum=3600; exclusiveMinimum=0; default=60                                                       |
+| `environments.max_targets_per_workspace`    | `A13N_SERVICE_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE`    | integer         | minimum=1; default=1000                                                                            |
+| `environments.max_active_per_workspace`     | `A13N_SERVICE_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE`     | integer         | minimum=1; default=100                                                                             |
+| `environments.maintenance_batch_size`       | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_BATCH_SIZE`       | integer         | minimum=1; maximum=10000; default=64                                                               |
+| `environments.maintenance_concurrency`      | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_CONCURRENCY`      | integer         | minimum=1; maximum=128; default=4                                                                  |
 
 ## `pricing`
 
