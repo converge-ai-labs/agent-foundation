@@ -283,6 +283,7 @@ class QueuedRunCommands:
             if "environment" in queued.submission.model_fields_set
             else Omitted.UNSET,
             inherited_environment_id=thread.default_environment_id,
+            inherited_environment_working_directory=thread.default_environment_working_directory,
         )
         seed = RunStateSeed.from_invocation(
             run_id=run_id,

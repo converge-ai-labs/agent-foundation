@@ -19,7 +19,9 @@ from a13n_service.ids import ObjectId
 
 from ..domain import DomainModel
 from ..mount_domain import MountName
-from .authority import UseIdentity
+from .authority import DeviceReadIdentity, UseIdentity
+
+type RelayScope = Annotated[UseIdentity | DeviceReadIdentity, Field(discriminator="kind")]
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +96,7 @@ def operation_permissions(operation: str) -> frozenset[EnvironmentAction]:
 class RelayRequest(DomainModel):
     version: Literal[1] = 1
     request_id: ObjectId
-    use: UseIdentity
+    scope: RelayScope
     operation: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_.]{1,63}$")]
     mount_name: MountName = "workspace"
     mount_id: Annotated[str, StringConstraints(pattern=r"^[a-zA-Z0-9_-]{1,128}$")] = "mount-prepare"
@@ -103,12 +105,9 @@ class RelayRequest(DomainModel):
 
     @model_validator(mode="after")
     def _scope(self) -> RelayRequest:
-        identity = self.use
+        identity = self.scope
         values = (
-            identity.use_id,
-            identity.run_id,
-            identity.attempt_id,
-            identity.worker_instance_id,
+            identity.origin_instance_id,
             identity.connection.organization_id,
             identity.connection.environment_id,
             identity.connection.connection_id,
@@ -117,8 +116,17 @@ class RelayRequest(DomainModel):
         )
         if any(not value or len(value) > 128 or any(character.isspace() for character in value) for value in values):
             raise ValueError("Relay scope identifiers must be bounded and nonblank")
-        if type(identity.attempt_fence) is not int or not 1 <= identity.attempt_fence <= 2**63 - 1:
-            raise ValueError("Relay requests require a positive Attempt fence")
+        if isinstance(identity, DeviceReadIdentity):
+            if self.operation != identity.method or self.deadline_ms > identity.authorization_deadline_ms:
+                raise ValueError("Device reads require their exact authorized method and deadline")
+        else:
+            for value in (identity.use_id, identity.run_id, identity.attempt_id):
+                if not value or len(value) > 128 or any(character.isspace() for character in value):
+                    raise ValueError("Use identifiers must be bounded and nonblank")
+            if self.mount_name != identity.mount_name:
+                raise ValueError("A Session request cannot select a different binding")
+            if type(identity.attempt_fence) is not int or not 1 <= identity.attempt_fence <= 2**63 - 1:
+                raise ValueError("Relay requests require a positive Attempt fence")
         return self
 
 
@@ -149,7 +157,7 @@ class RelayTerminal(DomainModel):
     version: Literal[1] = 1
     kind: Literal["terminal"] = "terminal"
     request_id: ObjectId
-    use: UseIdentity
+    scope: RelayScope
     result: JsonValue = Field(default=None, repr=False)
     error: RelayFailure | None = None
     transfer: TransferPosition | None = None
@@ -165,7 +173,7 @@ class RelayChunk(DomainModel):
     version: Literal[1] = 1
     kind: Literal["chunk"] = "chunk"
     request_id: ObjectId
-    use: UseIdentity
+    scope: RelayScope
     transfer: TransferPosition
     data: str = Field(repr=False)
 
@@ -174,7 +182,7 @@ class RelayCredit(DomainModel):
     version: Literal[1] = 1
     kind: Literal["credit"] = "credit"
     request_id: ObjectId
-    use: UseIdentity
+    scope: RelayScope
     transfer: TransferPosition
 
 
@@ -182,7 +190,7 @@ class RelayFinish(DomainModel):
     version: Literal[1] = 1
     kind: Literal["finish"] = "finish"
     request_id: ObjectId
-    use: UseIdentity
+    scope: RelayScope
     transfer: TransferPosition
 
 

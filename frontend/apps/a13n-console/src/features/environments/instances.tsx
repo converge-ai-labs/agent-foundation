@@ -30,7 +30,6 @@ import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, jsonValue } from "../../shared/validation";
 import { environmentApi } from "./api";
-import { useEnvironmentTypes } from "./providers";
 
 export function EnvironmentInstances() {
   const client = useClient(),
@@ -146,8 +145,7 @@ function EnvironmentForm({ close }: { close: () => void }) {
     { workspace } = useWorkspace(),
     cache = useQueryClient(),
     { t } = useTranslation(),
-    key = useIdempotency(),
-    types = useEnvironmentTypes();
+    key = useIdempotency();
   const scope = { kind: "workspace", id: workspace.id } as const;
   const templates = useQuery({
     queryKey: ["environment-template-options", workspace.id],
@@ -170,11 +168,15 @@ function EnvironmentForm({ close }: { close: () => void }) {
     [version, setVersion] = useState(""),
     [schemaVersion, setSchemaVersion] = useState("1"),
     [configuration, setConfiguration] = useState("{}"),
+    [deviceId, setDeviceId] = useState(""),
     [state, setState] = useState(""),
     [stateVersion, setStateVersion] = useState("1");
+  const provider = providers.data?.find((item) => item.id === providerId);
+  const isDevice =
+    provider?.type === "a13n.http-envd" ||
+    provider?.type === "a13n.websocket-envd";
   const save = useMutation({
     mutationFn: () => {
-      const provider = providers.data?.find((item) => item.id === providerId);
       if (kind === "external" && !provider)
         throw new Error(t("Select an environment provider."));
       const body:
@@ -189,10 +191,11 @@ function EnvironmentForm({ close }: { close: () => void }) {
           : {
               provider_id: providerId,
               ...(name.trim() && { name: name.trim() }),
-              configuration: jsonObject(configuration),
-              configuration_schema_version: schemaVersion,
-
-              ...(state.trim() &&
+              configuration: isDevice ? {} : jsonObject(configuration),
+              configuration_schema_version: isDevice ? "1" : schemaVersion,
+              ...(isDevice && { device_id: deviceId.trim() }),
+              ...(!isDevice &&
+                state.trim() &&
                 provider && {
                   state: {
                     provider_key: provider.type,
@@ -245,7 +248,7 @@ function EnvironmentForm({ close }: { close: () => void }) {
           { value: "external", label: t("External target") },
         ]}
       />
-      <ErrorNotice error={templates.error ?? providers.error ?? types.error} />
+      <ErrorNotice error={templates.error ?? providers.error} />
       {kind === "managed" ? (
         <>
           <ChoiceField
@@ -290,38 +293,58 @@ function EnvironmentForm({ close }: { close: () => void }) {
                 .map((item) => ({ value: item.id, label: item.name })) ?? []
             }
           />
-          <FormField
-            className="min-w-0 w-full"
-            label={t("Configuration schema version")}
-          >
-            <Input
-              required={true}
-              value={schemaVersion}
-              onChange={(event) => setSchemaVersion(event.target.value)}
-            />
-          </FormField>
-          <TextAreaField
-            label={t("Connection configuration (JSON)")}
-            value={configuration}
-            onChange={setConfiguration}
-            code
-          />
-          <DisclosureSection
-            title={<>{t("Existing target state (optional)")}</>}
-          >
-            <FormField className="min-w-0 w-full" label={t("State version")}>
+          {isDevice ? (
+            <FormField
+              label={t("Device ID")}
+              description={t(
+                "Use the device_id configured in envd. The provider owns the connection; each Run chooses its directory.",
+              )}
+            >
               <Input
-                value={stateVersion}
-                onChange={(event) => setStateVersion(event.target.value)}
+                required
+                value={deviceId}
+                onChange={(event) => setDeviceId(event.target.value)}
               />
             </FormField>
-            <TextAreaField
-              label={t("Provider state (JSON)")}
-              value={state}
-              onChange={setState}
-              code
-            />
-          </DisclosureSection>
+          ) : (
+            <>
+              <FormField
+                className="min-w-0 w-full"
+                label={t("Configuration schema version")}
+              >
+                <Input
+                  required={true}
+                  value={schemaVersion}
+                  onChange={(event) => setSchemaVersion(event.target.value)}
+                />
+              </FormField>
+              <TextAreaField
+                label={t("Connection configuration (JSON)")}
+                value={configuration}
+                onChange={setConfiguration}
+                code
+              />
+              <DisclosureSection
+                title={<>{t("Existing target state (optional)")}</>}
+              >
+                <FormField
+                  className="min-w-0 w-full"
+                  label={t("State version")}
+                >
+                  <Input
+                    value={stateVersion}
+                    onChange={(event) => setStateVersion(event.target.value)}
+                  />
+                </FormField>
+                <TextAreaField
+                  label={t("Provider state (JSON)")}
+                  value={state}
+                  onChange={setState}
+                  code
+                />
+              </DisclosureSection>
+            </>
+          )}
         </>
       )}
       <ErrorNotice error={save.error} />

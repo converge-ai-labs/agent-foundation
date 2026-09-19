@@ -66,8 +66,8 @@ def _key(kind: str, identity: str) -> str:
     return f"{KEY_PREFIX}:{kind}:{hashlib.sha256(identity.encode()).hexdigest()}"
 
 
-def response_key(worker_instance_id: str) -> str:
-    return _key("responses", worker_instance_id)
+def response_key(origin_instance_id: str) -> str:
+    return _key("responses", origin_instance_id)
 
 
 class _RelayScript:
@@ -205,7 +205,7 @@ class ConnectionRelayStore:
         return tuple(result)
 
     def _encode(self, request: RelayRequest) -> str:
-        if request.use.connection != self.connection:
+        if request.scope.connection != self.connection:
             raise RelayStoreError("scope_lost")
         limit = (
             self._storage.limits.control_bytes
@@ -219,7 +219,7 @@ class ConnectionRelayStore:
         if (
             request.operation != expected
             or frame.request_id != request.request_id
-            or frame.use != request.use
+            or frame.scope != request.scope
             or frame.transfer.transfer_id != request.payload.get("transfer_id")
         ):
             raise RelayStoreError("transfer_conflict")
@@ -248,7 +248,7 @@ class ConnectionRelayStore:
             "owner": self.connection.owner_instance_id,
         }
         if request is not None:
-            reply_key = response_key(request.use.worker_instance_id)
+            reply_key = response_key(request.scope.origin_instance_id)
             payload.update(
                 request_id=request.request_id, request_json=self._encode(request), deadline_ms=request.deadline_ms
             )
@@ -267,7 +267,7 @@ class ConnectionRelayStore:
                 len(base64.b64decode(input_frame.data, validate=True)) if isinstance(input_frame, RelayChunk) else 0
             )
         if frame is not None:
-            if request is None or frame.request_id != request.request_id or frame.use != request.use:
+            if request is None or frame.request_id != request.request_id or frame.scope != request.scope:
                 raise RelayStoreError("response_invalid")
             limit = (
                 self._storage.limits.control_bytes
@@ -286,19 +286,19 @@ class ConnectionRelayStore:
         return await self._storage.call((self.requests_key, self.ledger_key, self.expiries_key, reply_key), **payload)
 
 
-class WorkerResponseMailbox:
-    """A Worker incarnation's shared reader, independent of individual operations."""
+class ResponseMailbox:
+    """An originating incarnation's shared reader, independent of individual operations."""
 
     def __init__(
         self,
         redis: Redis,
-        worker_instance_id: str,
+        origin_instance_id: str,
         *,
         limits: RelayLimits = DEFAULT_RELAY_LIMITS,
         reader: Redis | None = None,
     ) -> None:
-        self.worker_instance_id = worker_instance_id
-        self.key = response_key(worker_instance_id)
+        self.origin_instance_id = origin_instance_id
+        self.key = response_key(origin_instance_id)
         self._storage = _RelayScript(redis, limits, reader)
 
     async def prepare(self) -> None:
@@ -308,7 +308,7 @@ class WorkerResponseMailbox:
         await self._storage.call((_UNUSED_KEY, _UNUSED_KEY, _UNUSED_KEY, self.key), operation="touch_worker")
 
     async def read(self, *, pending: bool = False, count: int = 32) -> tuple[tuple[str, RelayFrame], ...]:
-        rows = await self._storage.read(self.key, "worker", self.worker_instance_id, pending=pending, count=count)
+        rows = await self._storage.read(self.key, "worker", self.origin_instance_id, pending=pending, count=count)
         result: list[tuple[str, RelayFrame]] = []
         try:
             for entry, fields in rows:
@@ -317,10 +317,10 @@ class WorkerResponseMailbox:
                     raise ValueError("Relay response exceeds its byte budget")
                 frame = RELAY_FRAME.validate_json(raw)
                 if (
-                    frame.use.worker_instance_id != self.worker_instance_id
+                    frame.scope.origin_instance_id != self.origin_instance_id
                     or canonical_message(frame, max_bytes=self._storage.limits.response_bytes) != raw
                 ):
-                    raise ValueError("Relay response is not canonical or scoped to this Worker")
+                    raise ValueError("Relay response is not canonical or scoped to this origin")
                 result.append((entry, frame))
         except (KeyError, ValueError, TypeError, ValidationError) as error:
             raise RelayStoreError("response_invalid") from error
@@ -333,5 +333,5 @@ class WorkerResponseMailbox:
             (_UNUSED_KEY, _UNUSED_KEY, _UNUSED_KEY, self.key),
             operation="ack_responses",
             entry_ids=entry_ids,
-            worker=self.worker_instance_id,
+            worker=self.origin_instance_id,
         )

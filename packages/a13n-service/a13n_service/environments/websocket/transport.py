@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
+from a13n_envd_client import EIPSessionStateError
+from a13n_envd_client.eip.v1 import JsonRpcRequest
+from pydantic import ValidationError
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from .authority import ConnectionIdentity, DispatchAuthority, DispatchDenied, UseIdentity
+from .authority import ConnectionIdentity, DispatchAuthority, DispatchDenied
 
 
 class ClientWebSocket:
@@ -32,8 +38,8 @@ class ClientWebSocket:
         self._reader_started = False
         self._invalidated = False
         self._connection: DispatchAuthority | None = None
-        self._use: DispatchAuthority | None = None
-        self._use_required = False
+        self._scope: ContextVar[DispatchAuthority | None] = ContextVar("eip_dispatch_scope", default=None)
+        self._scope_required = False
 
     def bind_connection(self, authority: DispatchAuthority) -> None:
         if self._invalidated or self._closed.is_set():
@@ -43,29 +49,31 @@ class ClientWebSocket:
         authority.check(authority.identity)
         self._connection = authority
 
-    def require_use(self) -> None:
-        """End connection-only initialization; no later write can bypass use authority."""
-        self._use_required = True
+    def require_scope(self) -> None:
+        """End initialization; new operations need Device-read or binding authority."""
+        self._scope_required = True
 
-    def bind_use(self, authority: DispatchAuthority) -> None:
+    @contextmanager
+    def dispatch_scope(self, authority: DispatchAuthority) -> Iterator[None]:
+        identity = authority.identity
         if (
             self._connection is None
-            or self._use is not None
-            or not isinstance(authority.identity, UseIdentity)
-            or authority.identity.connection != self._connection.identity
+            or isinstance(identity, ConnectionIdentity)
+            or identity.connection != self._connection.identity
         ):
-            raise ValueError("A carrier can bind exactly one use of its connection")
-        self._connection.check(self._connection.identity)
-        authority.check(authority.identity)
-        self._use = authority
-        self._use_required = True
+            raise ValueError("Dispatch scope must belong to this exact connection")
+        authority.check(identity)
+        token = self._scope.set(authority)
+        try:
+            # SDK sends, keepalive and transfer tasks inherit this exact authority.
+            yield
+        finally:
+            self._scope.reset(token)
 
     def invalidate(self) -> None:
         self._invalidated = True
         if self._connection is not None:
             self._connection.invalidate()
-        if self._use is not None:
-            self._use.invalidate()
 
     async def send(self, message: str | bytes) -> None:
         if self._closed.is_set():
@@ -77,13 +85,22 @@ class ClientWebSocket:
             raise OSError("Client WebSocket has no dispatch authority")
         try:
             async with connection.write(connection.identity):
-                if self._use is not None:
-                    async with self._use.write(self._use.identity):
-                        await self._send(message)
-                elif self._use_required:
-                    raise DispatchDenied("Client WebSocket requires use authority")
-                else:
+                scope = self._scope.get()
+                if _is_session_close(message):
+                    # Closing an SDK-owned Session is connection cleanup, not new
+                    # execution authority. It must work after use expiry/cancellation,
+                    # including cleanup of a late session.open response.
                     await self._send(message)
+                elif scope is None:
+                    if self._scope_required:
+                        raise EIPSessionStateError("Client WebSocket requires dispatch scope authority")
+                    await self._send(message)
+                else:
+                    try:
+                        async with scope.write(scope.identity):
+                            await self._send(message)
+                    except DispatchDenied as error:
+                        raise EIPSessionStateError("Client WebSocket scope authority is unavailable") from error
         except (DispatchDenied, TimeoutError) as error:
             raise OSError("Client WebSocket dispatch authority is unavailable") from error
 
@@ -151,3 +168,13 @@ class ClientWebSocket:
         self.invalidate()
         self._closed.set()
         self._available.set()
+
+
+def _is_session_close(message: str | bytes) -> bool:
+    if not isinstance(message, str):
+        return False
+    try:
+        request = JsonRpcRequest.model_validate_json(message)
+    except ValidationError:
+        return False
+    return request.method == "session.close" and request.eip_session is not None

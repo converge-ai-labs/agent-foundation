@@ -56,7 +56,11 @@ async def test_unavailable_primary_rolls_back_acceptance(
         await coordination.admit(ORGANIZATION_ID, environment.id, ticket=ticket.secret, owner_instance_id="new-control")
     with pytest.raises(EnvironmentManagementError) as caught:
         await _accept_root(
-            interaction_sessions, interaction_object_store, environment_id=environment.id, coordination=coordination
+            interaction_sessions,
+            interaction_object_store,
+            environment_id=environment.id,
+            environment_working_directory="/projects/primary",
+            coordination=coordination,
         )
     assert caught.value.code == "environment_unavailable"
     assert caught.value.category == ErrorCategory.conflict
@@ -83,6 +87,7 @@ async def test_online_acceptance_observes_outside_database_and_replays_after_dis
         interaction_sessions,
         interaction_object_store,
         environment_id=environment.id,
+        environment_working_directory="/projects/primary",
         coordination=coordination,
         idempotency_key="online-acceptance",
     )
@@ -92,6 +97,7 @@ async def test_online_acceptance_observes_outside_database_and_replays_after_dis
         interaction_sessions,
         interaction_object_store,
         environment_id=environment.id,
+        environment_working_directory="/projects/primary",
         coordination=coordination,
         idempotency_key="online-acceptance",
     )
@@ -128,6 +134,7 @@ async def test_dependency_uncertainty_never_accepts(
             interaction_sessions,
             interaction_object_store,
             environment_id=environment.id,
+            environment_working_directory="/projects/primary",
             coordination=None if failure == "missing" else coordination,
         )
     assert caught.value.category == ErrorCategory.unavailable
@@ -153,7 +160,11 @@ async def test_changed_provider_is_revalidated_after_presence_read(
     monkeypatch.setattr(coordination, "observe", observe)
     with pytest.raises(EnvironmentManagementError) as caught:
         await _accept_root(
-            interaction_sessions, interaction_object_store, environment_id=environment.id, coordination=coordination
+            interaction_sessions,
+            interaction_object_store,
+            environment_id=environment.id,
+            environment_working_directory="/projects/primary",
+            coordination=coordination,
         )
     assert caught.value.code == "environment_invalid"
     await _assert_unaccepted(interaction_sessions)
@@ -173,6 +184,7 @@ async def test_concurrent_acceptance_replays_even_when_presence_then_goes_offlin
             interaction_sessions,
             interaction_object_store,
             environment_id=environment.id,
+            environment_working_directory="/projects/primary",
             coordination=peer,
             idempotency_key="concurrent-online-acceptance",
         )
@@ -184,6 +196,7 @@ async def test_concurrent_acceptance_replays_even_when_presence_then_goes_offlin
         interaction_sessions,
         interaction_object_store,
         environment_id=environment.id,
+        environment_working_directory="/projects/primary",
         coordination=coordination,
         idempotency_key="concurrent-online-acceptance",
     )

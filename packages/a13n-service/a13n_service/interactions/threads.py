@@ -5,6 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
+from a13n_service.environments.websocket.admission import OnlineAdmission
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import WorkspaceId
@@ -36,4 +38,9 @@ async def create_thread(
         workspace_id=workspace_id,
         body=body,
         idempotency_key=idempotency_key,
+        admission=OnlineAdmission(
+            runtime.shared.storage.sessions,
+            ConnectionCoordination(runtime.shared.storage.redis),
+            devices=runtime.control.environments.devices,
+        ),
     )

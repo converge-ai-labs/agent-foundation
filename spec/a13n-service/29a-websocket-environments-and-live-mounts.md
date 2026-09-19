@@ -92,7 +92,7 @@ A fresh authenticated connection actively replaces the existing owner through [a
 | `applied_attempt_id`, `applied_attempt_fence`   | Authority of the application observation               |
 | `application_status`, `observed_at`, safe error | Bounded loading observation                            |
 
-Mount associations are append-only; their identity, target, working directory are immutable after acceptance. The primary is not duplicated in this table. It occupies `workspace`; additions use `/environment/{name}` and cannot shadow another mount. Mount inputs include an authorized Device working directory under [Environment selection](29-environment-management.md#thread-defaults-and-run-selection), but no credentials or socket destinations. Additions neither broaden existing access nor change `EffectiveAgentConfig`; unmount, replacement and default switching are outside this API.
+Mount associations are append-only; their identity, target and working directory are immutable after acceptance. The primary is not duplicated in this table. It occupies `workspace`; additions use `/environment/{name}` and cannot shadow another mount. Mount inputs include an authorized Device working directory under [Environment selection](29-environment-management.md#thread-defaults-and-run-selection), but no credentials or socket destinations. Additions neither change existing bindings nor change `EffectiveAgentConfig`; unmount, replacement and default switching are outside this API.
 
 Without a primary, the first accepted addition becomes the local default when applied; later additions remain named-only even if ready earlier. Primary fields stay null. `created_at` is assigned under the Run acceptance lock and strictly increases for successive additions, including timestamp ties or clock rollback. It preserves acceptance order for default selection and reads, not a client concurrency precondition. Recovery and successor copies preserve the relative order.
 
@@ -263,6 +263,8 @@ Control owns all routes below, relative to `/api/v1`.
 | `POST /runs/{run_id}/environment-mounts`                 | Accepted additional association                                                               |
 | `GET /runs/{run_id}/environment-mounts`                  | Bounded additional-mount list in acceptance order with per-mount current-Attempt observations |
 
+Mount reads expose observations from the current Attempt while a Run is active. A sealed Run retains its final Attempt's observations as history, not as current availability. Retry and handoff never carry a previous Attempt's ready observation into the next execution; an unapplied association remains pending.
+
 Registration, Run and mount mutations follow their separate [idempotency contracts](../api-conventions.md#mutations-and-retries). Mount replay returns the original receipt before new acceptance checks; changed content under the same key conflicts. It never inserts another association. Ticket issuance is an independent expiring credential operation. Run/mount reads retain resource-read authority and redaction; primary readiness uses ordinary Run/Environment reads.
 
 ## Worker Reconciliation and Model Boundary
@@ -329,7 +331,7 @@ sequenceDiagram
 
 ### Use, recovery and inheritance
 
-Acceptance alone acquires no environment-use slot. Each active Attempt/binding use owns an independent EIP Session with bounded concurrent operations. Multiple uses share the Device connection. Use leases and Session keepalive never exceed confirmed Attempt authority; loss, cancellation or termination fences that use and closes its Session. Control connection renewal and sibling activity cannot renew another use's Session. Closing the last Session leaves the Device online; only connection ownership loss or explicit connection shutdown closes the carrier.
+Acceptance alone acquires no environment-use slot. Each active Attempt/binding use owns an independent EIP Session with bounded concurrent operations. Multiple uses share the Device connection. Use leases and Session keepalive never exceed confirmed Attempt authority; loss, cancellation or termination fences that use and closes its Session. Control connection renewal and sibling activity cannot renew another use's Session. Closing the last Session leaves the Device online; only connection ownership loss or explicit connection shutdown closes the carrier. Normal release requests bounded Session closure before relinquishing the use. The current connection owner may close its SDK-held Sessions after use revocation or a cancelled open; this terminal cleanup grants no new operation, attach or keepalive authority.
 
 Recovery reloads complete accepted PG bindings, reauthorizes them and opens fresh Sessions/proxies. Checkpoint state cannot invent mounts; reconstruction uses the retained association's working directory and current validated target state, never mutable Thread or Device defaults. Old handles and readiness do not transfer to another Attempt. Same-runtime short reattachment is limited to the same Session and generation under still-valid use authority; it neither imports resources nor replays requests.
 
@@ -339,18 +341,18 @@ Waiting seals the association set. Retry and state-preserving waiting successors
 
 ### Device Discovery Relay
 
-Device info and directory discovery use bounded request/response relay envelopes addressed to the current connection owner. Their discriminated Device scope contains the authenticated Principal, authorized Environment, exact connection/epoch, requested method and finite authorization deadline, without a Run/Attempt or Session. Control reauthorizes each product request before publication. Only `device.describe` and `directory.list` are allowed in this scope; it cannot open a Session or dispatch Agent effects. The socket owner checks current connection authority and the request deadline before EIP dispatch. Responses return only to the originating Control incarnation. Cancellation, owner loss or timeout ends the request without acquiring Environment use. Device requests do not renew Session liveness.
+Device info and directory discovery use bounded request/response relay envelopes addressed to the current connection owner. Their discriminated Device scope contains the authenticated Principal, authorized Environment, exact connection/epoch, requested method and finite authorization deadline, without a Run/Attempt or Session. Control reauthorizes each product request before publication. Only `device.describe` and `directory.list` are allowed in this scope; it cannot open a Session or dispatch Agent effects. The socket owner checks current connection authority and the request deadline before EIP dispatch. Responses return only to the originating process incarnation. Control serves interactive discovery; Worker and Connectivity use the same authorized path when accepting queued input with an omitted working directory. Cancellation, owner loss or timeout ends the request without acquiring Environment use. Device requests do not renew Session liveness.
 
-These read requests share bounded relay transport and completion handling with Session requests. HTTP envd uses direct EIP calls and no Redis relay.
+These read requests share bounded relay transport and completion handling with Session requests. Each process owns one response reader shared by its roles; `all` does not duplicate readers. HTTP envd uses direct EIP calls and no Redis relay.
 
 ### Routing and authority
 
 Operation Streams are separate from Thread control and presentation Streams. Their scopes are fixed; key spellings below are illustrative internal names.
 
-| Stream                          | Producers                                                          | Sole consumer                               |
-| ------------------------------- | ------------------------------------------------------------------ | ------------------------------------------- |
-| `env:req:<connection_id>`       | Workers with authorized use; Controls with authorized Device reads | Control incarnation holding that connection |
-| `env:resp:<origin_instance_id>` | Controls returning results                                         | Originating Worker or Control incarnation   |
+| Stream                          | Producers                                                                       | Sole consumer                               |
+| ------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------- |
+| `env:req:<connection_id>`       | Workers with authorized use; originating processes with authorized Device reads | Control incarnation holding that connection |
+| `env:resp:<origin_instance_id>` | Controls returning results                                                      | Originating process incarnation             |
 
 Request, response and completion-deduplication keys touched by one Lua completion script share one Redis scripting domain; Redis Cluster requires the same hash slot. The names above identify scopes, not Cluster hash tags. Key placement and backend scripting support are validated under [Storage](03-storage.md#redis-compatible-data-structures); unsupported wiring fails before serving this relay rather than falling back to separate publication and ACK.
 
@@ -360,7 +362,7 @@ Worker resolves the admitted connection through trusted presence. The Session-sc
 
 ### Local dispatch authority
 
-Control confirms connection ownership and Attempt use authority with Redis when establishing the use scope, then refreshes them through background lease renewal. Session open, attach and keepalive require that use's current authority and exact binding; connection-only health grants none. Before each Session-scoped EIP write it checks only local socket state, exact connection/use and Attempt identities, published access policy, invalidation state and deadlines. Device reads instead check their authorized Device envelope, allowed method, connection authority and deadline. These checks perform no PG or Redis queries. Worker likewise checks local Attempt/access authority before request publication; request and response transport still uses Redis Streams. Stream membership or a connection ID grants no execution permission.
+Control confirms connection ownership and Attempt use authority with Redis when establishing the use scope, then refreshes them through background lease renewal. Session open, attach and keepalive require that use's current authority and exact binding; connection-only health grants none. Before each Session-scoped EIP write it checks only local socket state, exact connection/use and Attempt identities, provider-supported operations, invalidation state and deadlines. Device reads instead check their authorized Device envelope, allowed method, connection authority and deadline. These checks perform no PG or Redis queries. Worker likewise checks local Attempt authority before request publication; request and response transport still uses Redis Streams. Stream membership or a connection ID grants no execution permission.
 
 The effective Session dispatch deadline is bounded by the last confirmed connection lease, use lease and Attempt authority. Device-read dispatch is bounded by the connection lease and request authorization deadline. Local monotonic deadlines conservatively account for communication delay and clock uncertainty. Failed or uncertain renewal cannot extend them; a delayed renewal cannot revive an expired or invalidated scope. Transient renewal failure permits dispatch only within the remaining confirmed interval. Observed revocation, disconnect or cancellation fences local writes immediately, serialized with dispatch admission. Remote revocation takes effect when observed or at lease expiry, not necessarily at the instant Redis changes.
 
@@ -368,11 +370,11 @@ Replacement connection/use authority becomes usable only after the old dispatch 
 
 ### Asynchronous request completion
 
-The originating Worker or Control registers bounded local completion state before publishing a request, then awaits its result, deadline, cancellation or authority loss. A response reader validates scope and correlates results by request ID. Fast responses find an existing waiter; duplicates, late or foreign responses cannot complete another request or revive cancellation.
+The originating process registers bounded local completion state before publishing a request, then awaits its result, deadline, cancellation or authority loss. A response reader validates scope and correlates results by request ID. Fast responses find an existing waiter; duplicates, late or foreign responses cannot complete another request or revive cancellation.
 
 Only the calling coroutine and dependent tool/model work wait. The event loop, other Runs, heartbeats and control reconciliation remain responsive; ordinary Run execution-slot accounting continues. Async Redis readers have bounded blocking reads and reserved connection capacity so publication, renewal and cancellation are not starved. Control dispatches with bounded concurrency and returns the result defined by the EIP method, such as a process handle for start rather than an implicit wait for exit.
 
-Session operations follow this sequence; Device reads use the originating Control's waiter and Device authority instead of Worker use/Attempt authority.
+Session operations follow this sequence; Device reads use their originating process's waiter and Device authority instead of Worker use/Attempt authority.
 
 ```mermaid
 sequenceDiagram
@@ -389,7 +391,7 @@ sequenceDiagram
     Call->>Call: Await completion with deadline
     Note over Call,Reader: Calling coroutine suspends<br/>Worker event loop and response reader remain active
     Requests-->>Control: Consume only this connection's request
-    Control->>Control: Check local lease, access and deduplication<br/>No PG or Redis lookup
+    Control->>Control: Check local lease, binding and deduplication<br/>No PG or Redis lookup
     Control->>Envd: Await EIP operation over existing WebSocket
     Envd-->>Control: Method result or known error
     rect rgb(235, 240, 250)

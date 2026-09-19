@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass, field
 from time import monotonic
 from typing import Protocol
 
@@ -14,34 +15,36 @@ from pydantic import JsonValue
 from a13n_service.ids import ObjectId
 
 from ..domain import DomainModel
-from .authority import DispatchAuthority, DispatchDenied, UseIdentity
+from .authority import ConnectionIdentity, DispatchAuthority, DispatchDenied, RequestIdentity
 from .coordination import ConfirmedObservation
 from .relay_protocol import CONTROL_OPERATIONS, RelayFailure, RelayRequest, RelayTerminal
 from .relay_storage import ConnectionRelayStore, RelayInputDelivery, RelayStoreError
 from .relay_transfers import FileTransferExecution, FileTransferPlan
 
+type RelayExecution = Callable[[], Awaitable[JsonValue]] | FileTransferPlan
+
 
 class RelayOperationDispatch(Protocol):
-    def prepare(self, request: RelayRequest) -> Callable[[], Awaitable[JsonValue]] | FileTransferPlan: ...
+    def __call__(self, request: RelayRequest) -> AbstractAsyncContextManager[RelayExecution]: ...
 
 
 class CancelRequest(DomainModel):
     request_id: ObjectId
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class _Executing:
     request: RelayRequest
     task: asyncio.Task[None]
     transfer: FileTransferExecution | None
+    inputs: list[tuple[str, RelayInputDelivery]] = field(default_factory=list)
 
 
 class RelayControlConsumer:
-    """One online connection's exclusively admitted use, never a global reader.
+    """One Device connection reader for independently authorized request scopes.
 
-    The owning Session must bind the same authority to its raw write gate. This
-    consumer checks admission locally; it never holds that gate while waiting for
-    operation results. Its caller owns connection renewal and carrier teardown.
+    Dispatch admission follows durable start evidence. Its request-local context
+    owns the exact Session or Device read authority, never a connection-wide use.
     """
 
     def __init__(
@@ -54,21 +57,19 @@ class RelayControlConsumer:
         concurrency: int = 32,
         control_concurrency: int = 4,
     ) -> None:
-        use = authority.identity
+        connection = authority.identity
         if (
-            not isinstance(use, UseIdentity)
-            or use.connection != store.connection
+            not isinstance(connection, ConnectionIdentity)
+            or connection != store.connection
             or observation.value.status != "online"
-            or observation.value.connection != use.connection
-            or observation.value.use is None
-            or observation.value.use.identity != use
+            or observation.value.connection != connection
         ):
-            raise ValueError("Control consumer requires an online, exact admitted use")
+            raise ValueError("Control consumer requires its exact online connection")
         if not 1 <= concurrency <= 128 or not 1 <= control_concurrency <= 16:
             raise ValueError("Control relay concurrency is outside its bounded range")
         self._store = store
         self._authority = authority
-        self._use = use
+        self._connection = connection
         self._dispatch = dispatch
         self._observation = observation
         self._concurrency = concurrency
@@ -87,7 +88,7 @@ class RelayControlConsumer:
             async with asyncio.TaskGroup() as tasks:
                 try:
                     while not self._closed:
-                        self._authority.check(self._use)
+                        self._authority.check(self._connection)
                         try:
                             rows = await self._store.read(pending=pending, after_id=after_id)
                         except RelayStoreError:
@@ -103,7 +104,7 @@ class RelayControlConsumer:
                         else:
                             pending, after_id = False, "0-0"
                         for entry, request in rows:
-                            self._authority.check(self._use)
+                            self._authority.check(self._connection)
                             if self._closed:
                                 break
                             if isinstance(request, RelayInputDelivery):
@@ -124,7 +125,7 @@ class RelayControlConsumer:
             running.task.cancel()
 
     async def _admit(self, tasks: asyncio.TaskGroup, entry: str, request: RelayRequest) -> None:
-        if request.use != self._use:
+        if request.scope.connection != self._connection:
             await self._reject(entry, request, "environment_forbidden")
             return
         existing = self._executing.get(request.request_id)
@@ -139,66 +140,55 @@ class RelayControlConsumer:
         if occupied >= (self._control_concurrency if is_control else self._concurrency):
             await self._reject(entry, request, "environment_overloaded")
             return
-        try:
-            execute = self._prepare(request)
-        except (ValueError, TypeError):
-            await self._reject(entry, request, "environment_request_invalid")
-            return
-        except EnvironmentError as error:
-            failure = RelayFailure.from_environment(error).model_copy(update={"certainty": "not_dispatched"})
-            await self._complete(
-                entry, request, RelayTerminal(request_id=request.request_id, use=request.use, error=failure)
-            )
-            return
-        if isinstance(execute, FileTransferPlan):
-            transfer = execute.bind(self._store, request, entry)
-            execute = transfer
-        else:
-            transfer = None
-        task = tasks.create_task(self._execute(entry, request, execute), name="environment-relay-operation")
-        self._executing[request.request_id] = _Executing(request, task, transfer)
+        task = tasks.create_task(self._execute(entry, request), name="environment-relay-operation")
+        self._executing[request.request_id] = _Executing(request, task, None)
         task.add_done_callback(lambda _: self._executing.pop(request.request_id, None))
 
     async def _input(self, entry: str, delivery: RelayInputDelivery) -> None:
         running = self._executing.get(delivery.request.request_id)
         if running is not None:
-            if delivery.request != running.request or running.transfer is None:
+            if delivery.request != running.request:
                 raise RelayStoreError("request_conflict")
+            if running.transfer is None:
+                # Initial upload credit can arrive while start evidence/admission
+                # is in flight. Retain only the existing bounded input window.
+                if len(running.inputs) >= self._store.limits.input_window + 1:
+                    raise RelayStoreError("request_invalid")
+                running.inputs.append((entry, delivery))
+                return
             try:
                 running.transfer.accept(delivery.frame)
             except EnvironmentError as error:
-                running.transfer.failure = error
-                running.task.cancel()
+                if running.transfer.failure is None:
+                    running.transfer.failure = error
+                    running.task.cancel()
         await self._store.acknowledge_input(entry, delivery)
 
-    def _prepare(self, request: RelayRequest) -> Callable[[], Awaitable[JsonValue]] | FileTransferPlan:
-        if request.operation == "operation.cancel":
-            cancel = CancelRequest.model_validate(request.payload)
+    def cancel_scope(self, scope: RequestIdentity) -> None:
+        for running in tuple(self._executing.values()):
+            if running.request.scope == scope and running.request.operation != "scope.close":
+                running.task.cancel()
 
-            async def cancel_operation() -> JsonValue:
-                target = self._executing.get(cancel.request_id)
-                accepted = target is not None and target.request.operation not in CONTROL_OPERATIONS
-                if accepted and target is not None:
-                    target.task.cancel()
-                # This acknowledges a cancellation attempt, never remote termination.
-                return {"accepted": accepted}
-
-            return cancel_operation
-        if request.operation == "scope.close":
-            DomainModel.model_validate(request.payload)
-
-            async def close_scope() -> JsonValue:
-                return None
-
-            return close_scope
-        return self._dispatch.prepare(request)
+    def _cancel_operation(self, request: RelayRequest) -> JsonValue:
+        cancel = CancelRequest.model_validate(request.payload)
+        target = self._executing.get(cancel.request_id)
+        accepted = (
+            target is not None
+            and target.request.scope == request.scope
+            and target.request.operation not in CONTROL_OPERATIONS
+        )
+        if accepted and target is not None:
+            target.task.cancel()
+        # This acknowledges a cancellation attempt, never remote termination.
+        return {"accepted": accepted}
 
     def _deadline(self, request: RelayRequest) -> float:
         observed = self._observation
         return observed.request_started_at + (request.deadline_ms - observed.value.now_ms) / 1000
 
-    async def _execute(self, entry: str, request: RelayRequest, execute: Callable[[], Awaitable[JsonValue]]) -> None:
+    async def _execute(self, entry: str, request: RelayRequest) -> None:
         possible_effect = False
+        transfer: FileTransferExecution | None = None
         try:
             if self._deadline(request) <= monotonic():
                 await self._reject(entry, request, "environment_timeout")
@@ -212,15 +202,33 @@ class RelayControlConsumer:
                 return
             if evidence.phase != "started":
                 raise RelayStoreError("outcome_unknown")
-            self._authority.check(self._use)
+            self._authority.check(self._connection)
             async with asyncio.timeout_at(self._deadline(request)):
-                possible_effect = True
-                result = await execute()
+                async with self._dispatch(request) as execute:
+                    if isinstance(execute, FileTransferPlan):
+                        transfer = execute.bind(self._store, request, entry)
+                        running = self._executing[request.request_id]
+                        # Deliver the buffered prefix without yielding, so the
+                        # reader cannot overtake it with later input frames.
+                        for _, delivery in running.inputs:
+                            transfer.accept(delivery.frame)
+                        running.transfer = transfer
+                        for input_entry, delivery in running.inputs:
+                            await self._store.acknowledge_input(input_entry, delivery)
+                        running.inputs.clear()
+                        execute = transfer
+                    possible_effect = True
+                    if request.operation == "operation.cancel":
+                        result = self._cancel_operation(request)
+                    else:
+                        if request.operation == "scope.close":
+                            self.cancel_scope(request.scope)
+                        result = await execute()
             terminal = RelayTerminal(
                 request_id=request.request_id,
-                use=request.use,
+                scope=request.scope,
                 result=result,
-                transfer=execute.position if isinstance(execute, FileTransferExecution) else None,
+                transfer=transfer.position if transfer is not None else None,
             )
         except (asyncio.CancelledError, TimeoutError, DispatchDenied) as error:
             code = (
@@ -232,27 +240,33 @@ class RelayControlConsumer:
             )
             terminal = RelayTerminal(
                 request_id=request.request_id,
-                use=request.use,
+                scope=request.scope,
                 error=RelayFailure(code=code, certainty="unknown" if possible_effect else "not_dispatched"),
+            )
+        except (ValueError, TypeError):
+            terminal = RelayTerminal(
+                request_id=request.request_id,
+                scope=request.scope,
+                error=RelayFailure(code="environment_request_invalid", certainty="not_dispatched"),
             )
         except EnvironmentError as error:
             terminal = RelayTerminal(
                 request_id=request.request_id,
-                use=request.use,
+                scope=request.scope,
                 error=RelayFailure.from_environment(error),
             )
-        if isinstance(execute, FileTransferExecution) and execute.failure is not None:
+        if transfer is not None and transfer.failure is not None:
             terminal = RelayTerminal(
-                request_id=request.request_id, use=request.use, error=RelayFailure.from_environment(execute.failure)
+                request_id=request.request_id,
+                scope=request.scope,
+                error=RelayFailure.from_environment(transfer.failure),
             )
         await self._complete(entry, request, terminal)
-        if request.operation == "scope.close" and terminal.error is None:
-            self._closed = True
 
     async def _reject(self, entry: str, request: RelayRequest, code: str) -> None:
         terminal = RelayTerminal(
             request_id=request.request_id,
-            use=request.use,
+            scope=request.scope,
             error=RelayFailure.model_validate({"code": code, "certainty": "not_dispatched"}),
         )
         await self._complete(entry, request, terminal)

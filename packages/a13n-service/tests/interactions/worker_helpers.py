@@ -1,12 +1,17 @@
 """Real Worker composition with deterministic model and plugin dependency boundaries."""
 
+import asyncio
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import replace
 from unittest.mock import AsyncMock, Mock
 
 from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from a13n_service.environments.devices import DeviceDiscovery
+from a13n_service.environments.websocket.device_reads import DeviceReadClient
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.process.agents import build_agent_resources
+from a13n_service.process.client_environments import build_relay_responses
 from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
@@ -101,11 +106,20 @@ async def worker_runtime(
             SecretProtector(key=b"k" * 32, encryption_key_id="test"),
             memory_behaviors=ordinary_memory(sessions),
         )
+        catalog = environment_catalog if environment_catalog is not None else EnvironmentProviderCatalog()
+        responses = await build_relay_responses(settings, shared.storage, catalog, stack)
+        shared = replace(
+            shared,
+            relay_responses=responses,
+            devices=DeviceDiscovery(
+                shared.secret_protector, relay=DeviceReadClient(redis, responses) if responses is not None else None
+            ),
+        )
         runtime, background = await build_worker_runtime(
             settings,
             shared,
             resources,
-            environment_catalog if environment_catalog is not None else EnvironmentProviderCatalog(),
+            catalog,
             stack,
             connectors,
             invocations=invocations
@@ -117,4 +131,10 @@ async def worker_runtime(
         )
         assert runtime.execution_loop is not None
         assert any(component.run == runtime.execution_loop.run for component in background)
-        yield runtime, shared
+        reading = asyncio.create_task(responses.run()) if responses is not None else None
+        try:
+            yield runtime, shared
+        finally:
+            if responses is not None and reading is not None:
+                await responses.close()
+                await reading

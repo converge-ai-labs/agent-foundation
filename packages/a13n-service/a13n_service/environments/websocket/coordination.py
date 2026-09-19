@@ -1,4 +1,4 @@
-"""Atomic, bounded Redis connection admission and exclusive Attempt use."""
+"""Atomic, bounded Redis connection admission and independent binding uses."""
 
 from __future__ import annotations
 
@@ -48,8 +48,11 @@ class CoordinationLimits:
     candidate_ms: int = 8_000
     retention_ms: int = 60_000
     safety_margin_seconds: float = 0.05
+    max_uses: int = 128
 
     def __post_init__(self) -> None:
+        if not 1 <= self.max_uses <= 4096:
+            raise ValueError("Connection use capacity must be bounded")
         if min(self.lease_ms, self.ticket_ms, self.candidate_ms) <= 0:
             raise ValueError("Connection coordination limits must be positive")
         if self.retention_ms <= max(self.lease_ms, self.ticket_ms, self.candidate_ms):
@@ -82,6 +85,7 @@ class Retirement(_ReplyModel):
 class UseGrant(_ReplyModel):
     identity: UseIdentity
     expires_at_ms: int
+    released: bool = False
 
 
 class ConnectionObservation(_ReplyModel):
@@ -92,8 +96,12 @@ class ConnectionObservation(_ReplyModel):
     expires_at_ms: int
     barrier_ms: int
     retiring: Retirement | None
-    use: UseGrant | None
+    uses: dict[str, UseGrant]
     error: str | None
+
+    def use_grant(self, identity: UseIdentity) -> UseGrant | None:
+        grant = self.uses.get(identity.use_id)
+        return grant if grant is not None and grant.identity == identity and not grant.released else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,12 +110,13 @@ class ConfirmedObservation:
     request_started_at: float
     safety_margin_seconds: float
 
-    def deadline(self, *, use: bool = False) -> LeaseDeadline:
+    def deadline(self, *, use: UseIdentity | None = None) -> LeaseDeadline:
         expires = self.value.expires_at_ms
-        if use:
-            if self.value.use is None:
+        if use is not None:
+            grant = self.value.use_grant(use)
+            if grant is None:
                 raise CoordinationError("authority_lost")
-            expires = min(expires, self.value.use.expires_at_ms)
+            expires = min(expires, grant.expires_at_ms)
         return LeaseDeadline.confirmed(
             request_started_at=self.request_started_at,
             server_now_ms=self.value.now_ms,
@@ -174,7 +183,7 @@ class ConnectionCoordination:
         )
 
     async def release_use(self, identity: UseIdentity) -> None:
-        """Retire only this exact use; only Control can acknowledge socket detachment."""
+        """Fence this binding without retiring its Device connection or siblings."""
         await self._connection_call("release_use", identity.connection, use=_use_payload(identity))
 
     async def retire(

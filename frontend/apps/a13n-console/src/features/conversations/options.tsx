@@ -19,6 +19,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { TextAreaField } from "../../shared/form";
+import { DeviceDirectory } from "../environments/device-directory";
 import { jsonObject, runOverride } from "../../shared/validation";
 import styles from "./conversations.module.css";
 
@@ -50,6 +51,13 @@ export function useRunOptions(initial: Options = {}) {
           ? `instance:${initial.environment.environment_id}`
           : "inherit",
   );
+  const initialBinding =
+    initial.environment && "environment_id" in initial.environment
+      ? initial.environment
+      : undefined;
+  const [workingDirectory, setWorkingDirectory] = useState(
+    initialBinding?.working_directory ?? "",
+  );
   const [advanced, setAdvanced] = useState(
     JSON.stringify(
       Object.fromEntries(
@@ -75,7 +83,12 @@ export function useRunOptions(initial: Options = {}) {
     instructions,
     setInstructions,
     environment,
-    setEnvironment,
+    setEnvironment: (value: string) => {
+      setEnvironment(value);
+      setWorkingDirectory("");
+    },
+    workingDirectory,
+    setWorkingDirectory,
     advanced,
     setAdvanced,
     build: (): Options => {
@@ -121,7 +134,12 @@ export function useRunOptions(initial: Options = {}) {
                   ? null
                   : environment.startsWith("template:")
                     ? { template_id: environment.slice(9) }
-                    : { environment_id: environment.slice(9) },
+                    : {
+                        environment_id: environment.slice(9),
+                        ...(workingDirectory
+                          ? { working_directory: workingDirectory }
+                          : {}),
+                      },
             }),
       };
     },
@@ -180,6 +198,9 @@ export function RunOptions({
       return { agents, models, templates, environments };
     },
   });
+  const selectedEnvironment = choices.data?.environments.find(
+    (item) => options.environment === `instance:${item.id}`,
+  );
   return (
     <ModalFrame
       onOpenChange={setOpen}
@@ -259,9 +280,17 @@ export function RunOptions({
         />
         <p className="text-sm text-muted-foreground">
           {t(
-            "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped managed target resumes; a deleted managed target is recreated without old files.",
+            "Create a new environment from a template, or reuse an existing target and its retained files.",
           )}
         </p>
+        {selectedEnvironment?.device_id && open && (
+          <DeviceDirectory
+            key={selectedEnvironment.id}
+            environmentId={selectedEnvironment.id}
+            value={options.workingDirectory}
+            onChange={options.setWorkingDirectory}
+          />
+        )}
         <Label className="flex items-center gap-2">
           <Checkbox
             checked={options.overrideInstructions}

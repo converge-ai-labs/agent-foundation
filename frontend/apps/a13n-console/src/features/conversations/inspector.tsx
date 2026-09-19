@@ -22,6 +22,7 @@ import { conversationQueries, isActiveRun, runPath } from "./api";
 import styles from "./inspector.module.css";
 import { AgentLink } from "../agents/link";
 import { RunEvents } from "./events";
+import { RunEnvironmentMounts } from "./environment-mounts";
 import { useAgent } from "../agents/queries";
 import { useRun } from "./queries";
 
@@ -69,6 +70,7 @@ export function RunInspector({
         ) : (
           <div className={styles.inspectorBody}>
             <RunFacts run={run} />
+            <RunEnvironmentMounts key={run.id} run={run} />
             <section>
               <h3>{t("Attempts")}</h3>
               <ErrorNotice error={attempts.error ?? lineage.error} />
@@ -187,6 +189,12 @@ function RunFacts({ run }: { run: Schema["RunResource"] }) {
           t("None")
         )}
       </dd>
+      {run.environment_working_directory && (
+        <>
+          <dt>{t("Working directory")}</dt>
+          <dd className="break-all">{run.environment_working_directory}</dd>
+        </>
+      )}
       <dt>{t("Started")}</dt>
       <dd>{run.started_at ? <Timestamp value={run.started_at} /> : "—"}</dd>
       <dt>{t("Completed")}</dt>

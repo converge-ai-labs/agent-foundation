@@ -50,6 +50,7 @@ const run: Schema["RunResource"] = {
   agent_revision_id: "revision",
   effective_agent_config_digest: "digest",
   environment_id: null,
+  environment_working_directory: null,
 
   status: "completed",
   wait_reason: null,
@@ -81,6 +82,7 @@ const thread: Schema["ThreadResource"] = {
   head_run_id: "run",
   current_run_id: "run",
   default_environment_id: null,
+  default_environment_working_directory: null,
   labels: {},
   created_at: now,
   updated_at: now,

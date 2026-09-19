@@ -44,9 +44,15 @@ async def test_file_binding_reconnect_and_marker_loss(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     provider = LocalEnvdEnvironmentProvider()
-    configuration = provider.validate_configuration(schema_version="1", value={"workspace": {"path": str(workspace)}})
+    configuration = provider.validate_configuration(schema_version="1", value={"working_directory": str(workspace)})
     entry = MemoryEntrySelection(
-        name="project", mode="documents", description="Project decisions", backend={"type": "a13n.filesystem"}
+        name="project",
+        mode="documents",
+        description="Project decisions",
+        backend={
+            "type": "a13n.filesystem",
+            "configuration": {"storage": {"root": str(workspace / "memory")}},
+        },
     )
     captured = []
 
@@ -80,22 +86,23 @@ async def test_file_binding_reconnect_and_marker_loss(
         yield "done"
 
     async def execute():
-        environment = provider.create_environment(
-            environment_id=run.environment_id,
-            configuration=configuration,
-            state=None,
-            runtime=LocalEnvdProviderRuntime(
-                executable=Path(executable),
-                allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
-            ),
-        )
-        harness = HarnessBuilder().build(
-            AgentSpec(),
-            model=FunctionModel(stream_function=model),
-            output_type=str,
-            capabilities=(MemoryCapability(document_factory=factory, recall_required=True),),
-        )
-        return await harness.run("Recall project", environment=environment)
+        async with LocalEnvdProviderRuntime(
+            executable=Path(executable),
+            allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        ) as runtime:
+            environment = provider.create_environment(
+                environment_id=run.environment_id,
+                configuration=configuration,
+                state=None,
+                runtime=runtime,
+            )
+            harness = HarnessBuilder().build(
+                AgentSpec(),
+                model=FunctionModel(stream_function=model),
+                output_type=str,
+                capabilities=(MemoryCapability(document_factory=factory, recall_required=True),),
+            )
+            return await harness.run("Recall project", environment=environment)
 
     assert (await execute()).output_or_raise() == "done"
     assert (await execute()).output_or_raise() == "done"

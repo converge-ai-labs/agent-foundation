@@ -29,8 +29,10 @@ from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.ingress.attachments import AttachmentInputs
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.environments.devices import DeviceDiscovery
 from a13n_service.environments.file_access import ExistingEnvironmentFiles
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
+from a13n_service.environments.websocket.device_reads import DeviceReadClient
 from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.persistence import write_hook_lifecycle
@@ -44,6 +46,7 @@ from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
 from a13n_service.process.agents import build_agent_resolver, build_agent_resources
 from a13n_service.process.background import BackgroundTask, run_critical_component, shutdown_background_components
+from a13n_service.process.client_environments import build_relay_responses
 from a13n_service.process.components import Components
 from a13n_service.process.connectivity import build_connectivity_runtime
 from a13n_service.process.connectivity_clients import connectivity_http_timeout
@@ -184,6 +187,19 @@ async def open_process_runtime(
                 )
                 if owns_control(settings.service.role) or owns_worker(settings.service.role)
                 else None
+            )
+            relay_responses = (
+                await build_relay_responses(settings, storage, environment_catalog, stack)
+                if environment_catalog is not None
+                else None
+            )
+            shared = replace(
+                shared,
+                relay_responses=relay_responses,
+                devices=DeviceDiscovery(
+                    protector,
+                    relay=DeviceReadClient(storage.redis, relay_responses) if relay_responses is not None else None,
+                ),
             )
             worker = None
             worker_background: tuple[BackgroundTask, ...] = ()
@@ -333,11 +349,24 @@ async def open_process_runtime(
                 connectivity=connectivity,
                 bots=bot_service,
             )
+            relay_background = (
+                (
+                    BackgroundTask(
+                        "Environment relay responses",
+                        relay_responses.run,
+                        relay_responses.is_closed,
+                        relay_responses.close,
+                    ),
+                )
+                if relay_responses is not None
+                else ()
+            )
             background_components = (
                 *worker_background,
                 *control_background,
                 *connectivity_background,
                 *progress_background,
+                *relay_background,
             )
             async with create_task_group() as background_tasks:
                 for component in background_components:
