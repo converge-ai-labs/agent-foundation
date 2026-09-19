@@ -30,7 +30,7 @@ Before launching a command, the daemon reserves capacity for **both streams**. W
 
 A busy response can therefore indicate output-reservation pressure, not a CPU or network failure. A finite output cap is not a request to evict other retained records. Increase quota deliberately, release no-longer-needed observations, or reduce the configured per-stream reservation while maintaining `spool >= 2 * per_stream` and `preview <= per_stream`.
 
-Python Local Envd and Docker Providers supply different defaults. Configure their [Provider fields](../a13n-environment/configuration.md) when they own bootstrap rather than editing the standalone daemon table.
+Python Local Envd and Docker Providers supply different defaults. Configure their [Provider fields](../environments/configuration.md) when they own bootstrap rather than editing the standalone daemon table.
 
 ## Preview, retained bytes, and completion
 

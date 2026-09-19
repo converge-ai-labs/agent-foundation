@@ -18,9 +18,9 @@ The client and `a13n-envd` daemon belong to one a13n-envd release group. Their p
 | Rust server models, codecs, method registry, and dispatch surface                          | Generated a13n-envd crate modules                            | Used behind daemon transport and resource owners               |
 | Python models, codecs, method registry, and typed client stubs                             | `a13n-envd-client`                                           | Transport-neutral client contract                              |
 | JSON-RPC framing, raw-data attachment/multiplexing, authentication, sessions, and liveness | Handwritten client and daemon runtimes over generated codecs | Implements [transport profiles](03-transports-and-sessions.md) |
-| Provider-neutral Environment adaptation                                                    | `a13n-environment`                                           | Implements fresh `Environment` adapters over EIP               |
+| Provider-neutral Environment adaptation                                                    | `a13n-harness` Environment Providers                         | Implements fresh `Environment` adapters over EIP               |
 | Multi-mount routing and model-facing result mapping                                        | `a13n-harness`                                               | Consumes already constructed Environment adapters              |
-| Provider lifecycle, bootstrap, and EIP session sources                                     | `a13n-environment` and Host                                  | Supplies fresh process-local runtime collaborators             |
+| Provider lifecycle, bootstrap, and EIP session sources                                     | `a13n-harness` Environment Providers and Host                | Supplies fresh process-local runtime collaborators             |
 | Product routing, durable execution, and current Environment-state persistence              | Host                                                         | Never generated from EIP IDL                                   |
 | Executable release selection, discovery, download, installation, and process ownership     | Installer, Host, or selected provider                        | Absent from the low-level client                               |
 
@@ -155,7 +155,7 @@ The client exports `normalize_http_endpoint()` for pure origin validation under 
 
 ## Provider and Harness Boundaries
 
-The shared Environment package owns Provider specifications, fresh Environment adapters, portable state codecs, and EIP session sources for trusted stdio, Host-dialed HTTP, or an accepted reverse-WebSocket carrier. Its Envd-backed Providers import no Harness or Pydantic AI type and use vendor SDKs only for backing-target lifecycle and bootstrap. Native Providers can use vendor APIs for operations. The [Remote Envd contract](../a13n-environment/04-remote-envd.md) owns the bounded Host-integrated connection SDK; the low-level client owns no listener, registry or Provider selection.
+The Harness Environment Provider domain owns Provider definitions, fresh Environment adapters, portable state codecs, and EIP session sources for trusted stdio, Host-dialed HTTP, or an accepted reverse-WebSocket carrier. Its Envd-backed Providers import no Agent loop or Pydantic AI type and use vendor SDKs only for backing-target lifecycle and bootstrap. Native Providers can use vendor APIs for operations. The [Remote Envd contract](../a13n-harness/08a-environment-providers.md#remote-envd) owns the bounded Host-integrated connection SDK; the low-level client owns no listener, registry or Provider selection.
 
 The Provider package's EIP-backed `Environment` implementation owns provider-neutral path, descriptor, command, process, output-reference, receipt, cancellation, and error translation. It wraps opaque EIP selectors with the entered adapter and daemon generation before any model-facing projection. Harness consumes that Environment directly; incompatible Provider or state variants fail before Harness entry.
 

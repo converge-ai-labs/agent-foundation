@@ -170,20 +170,20 @@ Telemetry export is non-authoritative and exporter availability never determines
 
 ## Compatibility Model
 
-| Axis                                          | Owner                                    |
-| --------------------------------------------- | ---------------------------------------- |
-| Harness public Python API                     | Harness                                  |
-| Native Agent/Model/Capability behavior        | Pydantic AI                              |
-| Harness Observation API and `a13n.*` registry | Harness                                  |
-| Upstream Pydantic instrumentation fields      | Pydantic AI                              |
-| Host definition/revision schema               | Host                                     |
-| Reconstruction adapter and artifact lock      | Host integration/operator                |
-| Harness state envelope                        | Harness                                  |
-| Capability state entry                        | Owning Capability                        |
-| Portable Environment mount-state codec        | Owning Environment provider              |
-| Provider-owned `EnvironmentState` codec       | `a13n-environment` built-in or extension |
-| Authoritative `EnvironmentState` storage      | Host                                     |
-| Durable lifecycle/events                      | Host                                     |
+| Axis                                          | Owner                          |
+| --------------------------------------------- | ------------------------------ |
+| Harness public Python API                     | Harness                        |
+| Native Agent/Model/Capability behavior        | Pydantic AI                    |
+| Harness Observation API and `a13n.*` registry | Harness                        |
+| Upstream Pydantic instrumentation fields      | Pydantic AI                    |
+| Host definition/revision schema               | Host                           |
+| Reconstruction adapter and artifact lock      | Host integration/operator      |
+| Harness state envelope                        | Harness                        |
+| Capability state entry                        | Owning Capability              |
+| Portable Environment mount-state codec        | Owning Environment provider    |
+| Provider-owned `EnvironmentState` codec       | Built-in or installed Provider |
+| Authoritative `EnvironmentState` storage      | Host                           |
+| Durable lifecycle/events                      | Host                           |
 
 Matching logical IDs or definition digests do not prove artifact or state compatibility. A Host selects a mutually compatible revision and adapter set before construction and performs any explicit state migration before run creation.
 

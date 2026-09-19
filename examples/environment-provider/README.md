@@ -24,7 +24,7 @@ It covers the common Provider lifecycle:
 | Envd   | `http_envd`              | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
 | Envd   | `websocket_envd`         | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
-The cloud demos here exercise E2B only. The complete [cloud-provider catalog](../../docs/a13n-environment/providers.md#cloud-providers) also includes the peer Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop implementations; their opt-in checks are documented there.
+The cloud demos here exercise E2B only. The complete [cloud-provider catalog](../../docs/environments/providers.md#cloud-providers) also includes the peer Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop implementations; their opt-in checks are documented there.
 
 ## Try remote providers in one command
 
@@ -64,7 +64,7 @@ uv run environment-provider-example websocket_envd \
 
 The external daemon must permit `file.read_text` and `file.write_text`; these examples write `/provider-example.txt`. Token contents never appear in URLs or command-line arguments. The standalone listener binds loopback and waits up to 60 seconds; your production Host supplies its own TLS, authentication, routing and lifespan. Other frameworks adapt the public `WebSocketConnection` message protocol.
 
-See the [remote guide](../../docs/a13n-environment/remote-envd.md) for identities, deployment boundaries and recovery. In particular, one daemon has one active Session, and an abandoned HTTP Session is not automatically taken over.
+See the [remote guide](../../docs/environments/remote-envd.md) for identities, deployment boundaries and recovery. In particular, one daemon has one active Session, and an abandoned HTTP Session is not automatically taken over.
 
 ## Run Direct Local
 

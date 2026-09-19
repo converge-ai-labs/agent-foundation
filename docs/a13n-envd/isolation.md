@@ -143,7 +143,7 @@ make eip-test
 ## References
 
 - [Environment overview](../environments/index.md)
-- [Environment Provider guide](../a13n-environment/index.md)
+- [Environment Provider guide](../environments/index.md)
 - [`a13n-envd` crate README](https://github.com/converge-ai-labs/agent-foundation/tree/main/crates/a13n-envd)
 - [`a13n-envd-client` README](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-envd-client)
 - [Normative a13n-envd and EIP specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-envd)

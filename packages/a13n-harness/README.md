@@ -68,6 +68,6 @@ The [Agent Harness user guide](../../docs/a13n-harness/index.md) covers installa
 
 ## Versioning
 
-Agent Harness, `a13n-environment`, and `a13n-stream-protocol` form the Harness release group. A `release/a13n-harness-v<version>` tag publishes all three distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Published Harness metadata pins the exact Provider version, and published Stream Protocol metadata pins the exact Harness version.
+Agent Harness and `a13n-stream-protocol` form the Harness release group. A `release/a13n-harness-v<version>` tag publishes both distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Published Stream Protocol metadata pins the exact Harness version.
 
 The accepted architecture and public contract are defined in the [Agent Harness specification](../../spec/a13n-harness/README.md).

@@ -711,7 +711,7 @@ Fault cases deliberately inject local response loss or a readiness failure after
 
 Cleanup tracks test-owned Environment identities and exact sandbox IDs, discovers targets whose create result was lost (including paused targets and multiple discovery pages), attempts all owned deletions, and verifies cloud absence. Cleanup errors fail the test. `infrastructure_tests/test_e2b_support.py` checks opt-in, ownership, retry bounds and cleanup failure behavior offline.
 
-This covers the lifecycle SDK surface used by our adapter: `list`, `get_info`, `create`, `connect`, `is_running`, `pause`, `set_timeout` and `kill`. It does not claim coverage of every E2B SDK feature, template, region or account quota. Deterministic credential denial, malformed state and policy/error mapping remain covered in `packages/a13n-environment/tests/test_e2b_lifecycle.py`; cloud outages, rate limits and permission failures are not induced against the real account.
+This covers the lifecycle SDK surface used by our adapter: `list`, `get_info`, `create`, `connect`, `is_running`, `pause`, `set_timeout` and `kill`. It does not claim coverage of every E2B SDK feature, template, region or account quota. Deterministic credential denial, malformed state and policy/error mapping remain covered in `packages/a13n-harness/tests/providers_environment/test_e2b_lifecycle.py`; cloud outages, rate limits and permission failures are not induced against the real account.
 
 ## Worker races and long-session correctness
 

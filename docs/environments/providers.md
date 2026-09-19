@@ -1,52 +1,56 @@
 # Providers and runtime configuration
 
-Choose a Provider for the target you actually operate. Desired configuration is credential-free data; runtime collaborators contain clients, credentials, and Host-owned bootstrap resources. Writing a Provider key does not install or authorize it.
+Choose a Provider for the target you actually operate. The target recipe is credential-free data; the runtime collaborator holds clients, credentials, and Host-owned bootstrap resources. Naming a Provider type does not install or authorize it.
 
-[Choose a backend](../environments/index.md#choose-a-backend) for the short comparison. This page covers catalogs, extension registration, and built-in runtime requirements.
+[Choose a backend](index.md#choose-a-backend) for the short comparison. This page covers catalogs, extension registration, and built-in runtime requirements.
 
 ## Provider catalog and plugins
 
-`EnvironmentProviderCatalog` is an immutable explicit allowlist. Built-ins and installed extension entry points are selected by exact key, while trusted embedded code can supply Provider objects directly:
+`ProviderCatalog` is an immutable explicit allowlist, shared by all five Provider domains. Built-in Environment definitions are selected by exact type, and installed plugins contribute their own definitions:
 
 ```python
-from a13n_harness.providers.environment import (
-    build_environment_provider_catalog,
-    discover_environment_provider_references,
-)
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.plugins import load_provider_plugins
 
-available = discover_environment_provider_references()
-catalog = build_environment_provider_catalog(
-    builtin_keys=("direct-local", "docker"),
-    extension_keys=("acme.sandbox",),
-    explicit_providers=(development_provider,),
+plugins = load_provider_plugins(("acme",))
+catalog = ProviderCatalog(
+    (
+        *select_builtin_environment_providers(("direct_local", "docker")),
+        *(item for plugin in plugins for item in plugin.manifest.environment),
+    )
 )
-provider = catalog.require("acme.sandbox")
+definition = catalog.require("acme_sandbox")
 ```
 
-Discovery returns sorted entry-point metadata without importing target modules. Catalog construction imports only `extension_keys`; an empty or explicit-only build does not scan installed metadata. It rejects malformed, missing, duplicate, and colliding keys before loading selected extension targets. `catalog.registrations` records the concrete class and built-in or distribution provenance in built-in, extension, then explicit order.
+`load_provider_plugins()` imports only the entry-point names you list; an empty selection scans no installed metadata. It rejects a duplicate, malformed, missing, or ambiguous name, and reports the distribution name, version, and import target of each loaded plugin as provenance. The catalog then rejects a duplicate Provider type, so a plugin cannot shadow a built-in.
 
-Package presence is availability, not authorization. No catalog accepts arbitrary serialized import targets, performs ambient activation, mutates a process-global registry, or reloads changed modules. Use a fresh Host process to load changed Provider code.
+Package presence is availability, not authorization. A catalog accepts no serialized import target, performs no ambient activation, mutates no process-global registry, and reloads no changed module. Use a fresh Host process to load changed Provider code.
 
-Register one concrete no-argument Provider class through the entry-point group:
+An installed distribution publishes one manifest under the shared entry-point group:
 
 ```toml
-[project.entry-points."a13n_harness.providers.environment.providers"]
-"acme.sandbox" = "acme_agent_environment:AcmeSandboxProvider"
+[project.entry-points."a13n_harness.providers.plugins"]
+acme = "acme_agent_environment:manifest"
 ```
 
-A Provider implementation should:
+```python
+from a13n_harness.providers.plugins import ProviderManifest
 
-1. expose one stable namespaced `key` and `configuration_models`, mapping each supported version to its Pydantic recipe model; the base class derives `configuration_versions` and validation;
-2. validate configuration into a frozen package-owned Pydantic model;
-3. accept credentials, SDK clients, transport factories, and bootstrap stores only through a fresh process-local runtime collaborator;
-4. return one fresh inert `Environment` from `create_environment()` and describe its configured capabilities without target I/O;
+manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
+```
+
+An `EnvironmentProviderDefinition` should:
+
+1. declare one stable `type` matching `^[a-z][a-z0-9_]{0,63}$`, a `display_name`, and optional HTTPS `setup_url` and `setup_label`;
+2. declare a `configuration_model` for account inputs, an optional `credential_model`, and an `environment_model` for the desired target recipe;
+3. acquire clients, transports, and Host allocations only inside `runtime_factory`, never at import or validation time;
+4. return one fresh inert `Environment` from `construct()` and project its configured capabilities from `describe_environment()` without target I/O;
 5. validate supplied state before mutation and update cached state at every target-identity transition;
 6. expose provider-neutral `EnvironmentOperations` after entry;
-7. keep `close()` non-destructive and implement target removal only in explicit `destroy()`.
+7. declare `supports_managed`, `supports_stop`, `supports_destroy`, and `requires_keepalive` truthfully, keep `close()` non-destructive, and remove a target only in explicit `destroy()`.
 
-The entry-point name and constructed `provider.key` must match. Preconstructed Provider objects are supported only through `explicit_providers`, which is intended for embedded applications, tests, and source development.
-
-The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) demonstrates both installed entry-point and explicit-object composition with the same immutable catalog, validation, construction, and Harness path.
+The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) shows one manifest contributing to several domains, with the same catalog, validation, construction, and Harness path. [Plugins and extensions](../a13n-harness/plugins.md#provider-plugins) covers the shared authoring contract.
 
 For complete Host-side built-in lifecycles, including Docker state re-entry and explicit destruction, follow the [Built-in Provider Examples](examples.md).
 
@@ -54,19 +58,19 @@ For complete Host-side built-in lifecycles, including Docker state re-entry and 
 
 There are two operation routes: **Native** uses the host OS or vendor APIs directly; **Envd** uses one shared EIP operation implementation over different deployment and connection arrangements.
 
-| Route  | Provider              | Use it for                               | Operation and ownership boundary                            |
-| ------ | --------------------- | ---------------------------------------- | ----------------------------------------------------------- |
-| Native | `direct-local`        | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
-| Native | `e2b`                 | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
-| Native | `daytona`             | Cloud sandbox                            | Native stop/start and preserved files                       |
-| Native | `modal`               | Cloud sandbox                            | Snapshot-backed stop/resume; fixed running lifetime         |
-| Native | `vercel`              | Cloud sandbox                            | Named persistent sandbox with native sessions               |
-| Native | `sprites`             | Cloud sandbox                            | Persistent disk and automatic sleep/wake                    |
-| Native | `runloop`             | Cloud sandbox                            | Devbox suspend/resume and idle keepalive                    |
-| Envd   | `a13n.local-envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
-| Native | `docker`              | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
-| Envd   | `a13n.http-envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
-| Envd   | `a13n.websocket-envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
+| Route  | Provider         | Use it for                               | Operation and ownership boundary                            |
+| ------ | ---------------- | ---------------------------------------- | ----------------------------------------------------------- |
+| Native | `direct_local`   | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
+| Native | `e2b`            | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Native | `daytona`        | Cloud sandbox                            | Native stop/start and preserved files                       |
+| Native | `modal`          | Cloud sandbox                            | Snapshot-backed stop/resume; fixed running lifetime         |
+| Native | `vercel`         | Cloud sandbox                            | Named persistent sandbox with native sessions               |
+| Native | `sprites`        | Cloud sandbox                            | Persistent disk and automatic sleep/wake                    |
+| Native | `runloop`        | Cloud sandbox                            | Devbox suspend/resume and idle keepalive                    |
+| Envd   | `local_envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
+| Native | `docker`         | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
+| Envd   | `http_envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
+| Envd   | `websocket_envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
 Direct Local shares the Host account. Docker uses native Engine operations; all six cloud providers use native vendor transports. None requires Envd. Local and remote Envd Providers use EIP for Agent operations.
 
@@ -79,7 +83,7 @@ Start with the [built-in examples](examples.md) or [run both remote transports l
 The Host selects one compatible `a13n-envd` executable and private-runtime allocator:
 
 ```python
-from a13n_harness.providers.environment import (
+from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
     resolve_a13n_envd_executable,
@@ -101,7 +105,7 @@ Docker uses an Engine connection from the Worker. No bootstrap store, guest daem
 
 ```python
 import docker
-from a13n_harness.providers.environment import DockerProviderRuntime, DockerSDKEngine
+from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 
 engine = DockerSDKEngine(docker.from_env())
 runtime = DockerProviderRuntime(engine=engine)
@@ -155,13 +159,16 @@ E2B executes commands directly through its native asynchronous SDK. Bounded Pyth
 
 ```python
 import os
-from pydantic import SecretStr
-from a13n_harness.providers.environment import E2BEnvironment, E2BProviderConfiguration, E2BProviderRuntime
 
-configuration = E2BProviderConfiguration(template="base", timeout_seconds=300)
-runtime = E2BProviderRuntime(api_key=SecretStr(os.environ["E2B_API_KEY"]))
-environment = E2BEnvironment(
-    configuration, environment_id="environment-example", state=None, runtime=runtime,
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+
+(E2B,) = select_builtin_environment_providers(("e2b",))
+environment = await E2B.create(
+    {"template": "base", "timeout_seconds": 300},
+    configuration={"domain": "e2b.dev"},
+    credential={"api_key": os.environ["E2B_API_KEY"]},
+    environment_id="environment-example",
+    state=None,
 )
 ```
 
@@ -223,22 +230,16 @@ Default workspace: `/home/user`; Python: guest-PATH `python3`. Runloop documents
 Use the same catalog and typed runtime construction as Service:
 
 ```python
-from pathlib import Path
-from a13n_harness.providers.environment import build_environment_provider_catalog
-from a13n_harness.providers.environment.management import ProviderRuntimeContext
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 
-provider = build_environment_provider_catalog(builtin_keys=["daytona"]).require("daytona")
-recipe = provider.validate_configuration(schema_version="1", value={})
-backend = provider.provider_configuration_model(organization_id="your-organization")
-# Read this value from your Host's private credential storage.
-credential = provider.credential_model(api_key=api_key)
-runtime = await provider.create_runtime(
-    configuration=backend,
-    credential=credential,
-    context=ProviderRuntimeContext("env-workspace", "operation-prepare", Path("/tmp/a13n")),
-)
-environment = provider.create_environment(
-    configuration=recipe, environment_id="env-workspace", state=saved_state, runtime=runtime,
+(DAYTONA,) = select_builtin_environment_providers(("daytona",))
+environment = await DAYTONA.create(
+    {},
+    configuration={"organization_id": "your-organization"},
+    # Read this value from your Host's private credential storage.
+    credential={"api_key": api_key},
+    environment_id="env-workspace",
+    state=saved_state,
 )
 try:
     await environment.prepare()
@@ -247,13 +248,15 @@ finally:
     await environment.close()
 ```
 
+`create()` validates the account configuration, enforces the declared credential rule, validates the recipe, and only then calls the Provider's runtime factory. Everything before that factory is pure.
+
 ### Cloud validation
 
 Deterministic tests run the adapters through catalog construction, native HTTP responses, Sprites WebSocket frames, and Modal's real async SDK against local gRPC fixtures. They execute the actual file and shell helpers. Cloud tests are separate and opt-in:
 
 ```sh
 A13N_TEST_CLOUD_PROVIDERS=daytona make test \
-  PYTHON_TEST_DIRS=packages/a13n-environment/tests/test_cloud_live.py
+  PYTHON_TEST_DIRS=packages/a13n-harness/tests/providers_environment/test_cloud_live.py
 ```
 
 Provide `A13N_TEST_DAYTONA_BACKEND_JSON` and `A13N_TEST_DAYTONA_CREDENTIAL_JSON` through your private test environment; the corresponding uppercase provider prefixes work for the other four. Optional `A13N_TEST_<PROVIDER>_RECIPE_JSON` overrides the recipe. The fixture allocates billable targets and attempts deletion in cleanup, including after failures. Never commit credential JSON. Missing opt-in or credentials produces a skip, not live validation.

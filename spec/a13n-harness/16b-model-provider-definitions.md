@@ -6,30 +6,15 @@
 
 ## Definitions and Installed Contributions
 
-A `ModelProviderDefinition` declares a stable type, display name, optional HTTPS `setup_url` and `setup_label`, typed configuration and credential models, authentication, supported native calling APIs, endpoint derivation, reserved headers, and a meaningful native Provider constructor. The constructor receives `ModelConnection` with typed configuration, optional typed credential, endpoint, and extra headers. Inputs contain no hosted resource identity, ORM value, or execution snapshot. The definition can also declare a bounded connection probe. The `supports_connection_probe` projection is derived from the operation itself. Console offers the Provider connection action only when that capability is present; testing a saved Model remains a separate real Model request. Probes refuse redirects even when the caller supplies a redirect-enabled client, cap response size at 4 MiB, and enforce a 10-second total deadline covering endpoint validation and streaming. Unsupported probes fail explicitly; they do not invent a Model selection or require enumeration to create a Model.
+A `ModelProviderDefinition` extends the [shared Provider core](22-provider-subsystem.md#shared-core) with supported native calling APIs, endpoint derivation, reserved headers, and a meaningful native Provider constructor. The constructor receives `ModelConnection` with typed configuration, optional typed credential, endpoint, and extra headers. Inputs contain no hosted resource identity, ORM value, or execution snapshot. The definition can also declare a bounded connection probe. The `supports_connection_probe` projection is derived from the operation itself. Console offers the Provider connection action only when that capability is present; testing a saved Model remains a separate real Model request. Probes refuse redirects even when the caller supplies a redirect-enabled client, cap response size at 4 MiB, and enforce a 10-second total deadline covering endpoint validation and streaming. Unsupported probes fail explicitly; they do not invent a Model selection or require enumeration to create a Model.
 
 `ProviderConfiguration` supplies optional base URL and host-bound session-affinity header configuration. Vendor subclasses add only their actual connection fields. Secret values use secret types, remain absent from representations, and are revealed only at the native SDK or wire boundary. Credentials may contain nested objects and non-string values. They are not serialized JSON hidden in string fields.
 
-`ProviderManifest.model`, `.web`, and `.memory` contain immutable definition tuples. The common installed loader selects explicit `a13n_harness.providers.plugins` entry-point names, rejects conflicting contributions within each domain, and imports no Service implementation. Installation alone does not activate code. Definition/schema loading is inert; vendor SDKs load when their operation needs them. Connector and Environment retain their existing registration contracts until their owning transitions are implemented.
+`ProviderManifest.model` contains immutable definition tuples alongside the other four domains. The common installed loader selects explicit `a13n_harness.providers.plugins` entry-point names, rejects conflicting contributions within each domain, and imports no Service implementation. Installation alone does not activate code. Definition and schema loading is inert; vendor SDKs load when their operation needs them.
 
 ## Authentication
 
-Model and Web share one `Authentication` declaration:
-
-```python
-class Authentication:
-    mode: Literal["required", "optional", "forbidden"] = "required"
-    cases: tuple[AuthenticationCase, ...] = ()
-
-class AuthenticationCase:
-    field: str
-    equals: str | int | bool | None
-    mode: Literal["required", "optional", "forbidden"]
-```
-
-A condition names a declared configuration field. Resolution uses the validated configuration, including defaults, with exact JSON scalar equality; boolean `true` is distinct from integer `1`. A matching case overrides the base mode. Duplicate conditions and simultaneously matching conflicting modes are errors. Required mode rejects absent credentials; forbidden mode rejects present credentials; optional mode accepts either. A present credential always passes its declared typed schema.
-
-Model and Web use the same optional setup link/label metadata; a local provider may omit help. Safe host metadata projects this declaration alongside configuration and credential schemas. Console applies the same defaults and conditions without switching on a vendor name. Ordinary choices, numbers, and nested fields retain their declared JSON types; secrets remain write-only. Host PATCH omission retains credentials, replacement validates the complete object, and explicit null removes credentials only when the resulting configuration allows absence. Persistence and PATCH semantics belong to the host, not to the reusable definition.
+Model Providers use the shared [`Authentication` declaration](22-provider-subsystem.md#authentication) without a Model-specific variant. A local provider may omit setup help. Console applies the declared defaults and conditions without switching on a vendor name: ordinary choices, numbers, and nested fields retain their declared JSON types, while secrets remain write-only.
 
 ## Native Construction and Lifetime
 
@@ -45,6 +30,6 @@ The fixed native API bindings retain Responses, Chat Completions, Anthropic Mess
 
 1. Direct and Service construction use the same installed definition and native implementation.
 2. Metadata loading creates no client and imports no Service or unrelated vendor SDK.
-3. Authentication presence has one meaning across Model, Web, server validation, and Console.
+3. Authentication presence has one meaning across every Provider domain, server validation, and Console.
 4. Host resource authority, encryption, and current credential acquisition remain outside definitions.
 5. Model construction preserves supported native API behavior and releases owned resources on failure.

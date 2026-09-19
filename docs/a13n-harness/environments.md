@@ -1,13 +1,13 @@
 # Environments
 
-An Environment is one fresh process-local adapter for a single provider target. The Environment package owns target creation, re-entry, provider operations, cached state, and explicit destruction. Harness owns only one Run's mount names, access ceilings, routing, state aggregation, and non-destructive cleanup.
+An Environment is one fresh process-local adapter for a single provider target. The [Environment Provider domain](../environments/index.md) owns target creation, re-entry, provider operations, cached state, and explicit destruction. Harness owns only one Run's mount names, access ceilings, routing, state aggregation, and non-destructive cleanup.
 
-Applications pass already constructed `Environment` instances to `run()` or `stream()`. Harness never accepts a Provider, provider key, specification, state envelope, or transport session as a Run input.
+Applications pass already constructed `Environment` instances to `run()` or `stream()`. Harness never accepts a Provider definition, Provider type, configuration, state envelope, or transport session as a Run input.
 
 Environment lifecycle is separate from model-facing tools:
 
-- a Host selects a trusted Provider, configuration, current `EnvironmentState`, and fresh runtime collaborators;
-- the Provider constructs a fresh Environment without external I/O;
+- a Host selects a trusted Provider definition, account configuration, credential, target recipe, and current `EnvironmentState`;
+- the definition constructs a fresh Environment, acquiring a live collaborator only in its runtime factory;
 - Harness enters the Environment before input production and closes it after the terminal Run fence;
 - `DynamicEnvironmentCapability` optionally exposes permitted operations to the model;
 - `close()` releases process-local resources and never destroys the backing target;
@@ -28,23 +28,11 @@ Use a trusted Provider before calling Harness. Direct Local is stateless, so eac
 ```python
 from pathlib import Path
 
-from a13n_harness.providers.environment import (
-    DirectLocalEnvironmentProvider,
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-)
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 
-provider = DirectLocalEnvironmentProvider()
-configuration = provider.validate_configuration(
-    schema_version="1",
-    value=DirectLocalProviderConfiguration(
-        root=DirectLocalRootConfiguration(
-            path=Path("./workspace").resolve(),
-        ),
-    ).model_dump(mode="json"),
-)
-environment = provider.create_environment(
-    configuration=configuration,
+(direct_local,) = select_builtin_environment_providers(("direct_local",))
+environment = await direct_local.create(
+    {"root": {"path": str(Path("./workspace").resolve())}},
     environment_id="workspace",
     state=None,
 )
@@ -55,7 +43,7 @@ result = await executable.run(
 )
 ```
 
-Provider validation and `create_environment()` are inert. The Host calls `await environment.prepare()` for eager preparation, or leaves preparation to the first readiness check for lazy use. `environment.enter(...)` only binds the local Run scope. Harness closes the adapter on success, failure, cancellation, abandoned stream consumption, or initial multi-mount unwind. That close is non-destructive; Direct Local never deletes the Host directory, and Docker close never removes the container.
+Recipe validation and adapter construction are inert. The Host calls `await environment.prepare()` for eager preparation, or leaves preparation to the first readiness check for lazy use. `environment.enter(...)` only binds the local Run scope. Harness closes the adapter on success, failure, cancellation, abandoned stream consumption, or initial multi-mount unwind. That close is non-destructive; Direct Local never deletes the Host directory, and Docker close never removes the container.
 
 Do not retain and reuse the adapter for a later independent Run. Construct a fresh adapter each time, even when several Runs re-enter the same provider target.
 
@@ -65,11 +53,12 @@ For a stateful Provider, the Host supplies its latest authoritative state before
 
 ```python
 current_state = await environment_state_store.load(thread_id, "workspace")
-environment = provider.create_environment(
-    configuration=configuration,
+environment = await definition.create(
+    recipe,
+    configuration=backend_configuration,
+    credential=current_credential,
     environment_id="workspace",
     state=current_state,
-    runtime=fresh_runtime,
 )
 
 try:
@@ -95,11 +84,13 @@ finally:
 Harness never calls `destroy()`. When retention policy selects cleanup, the Host constructs a fresh adapter from the exact current state and calls `destroy()` explicitly:
 
 ```python
-cleanup = provider.create_environment(
-    configuration=configuration,
+cleanup = await definition.create(
+    recipe,
+    configuration=backend_configuration,
+    credential=current_credential,
     environment_id="workspace",
     state=current_state,
-    runtime=fresh_runtime,
+    allow_create=False,
 )
 try:
     await cleanup.destroy()
@@ -279,7 +270,7 @@ High-level Environment arguments and an explicitly supplied advanced runtime are
 
 ## Direct Local boundary
 
-`direct-local` exposes an explicitly selected existing Host directory. It is an operation backend, not a sandbox claim:
+`direct_local` exposes an explicitly selected existing Host directory. It is an operation backend, not a sandbox claim:
 
 - the Host creates, selects, retains, backs up, shares, and removes the directory;
 - a fresh Direct Local Environment validates and uses it for one Run;

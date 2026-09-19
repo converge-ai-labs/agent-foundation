@@ -10,12 +10,11 @@ import sys
 from dataclasses import asdict
 from getpass import getpass
 from time import monotonic
-from typing import cast
+from typing import cast, get_type_hints
 
 import httpx2
 from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_harness.providers.model.openrouter import DEFINITION
-from pydantic import TypeAdapter
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.settings import ModelSettings
@@ -27,6 +26,21 @@ def show(value: object) -> None:
 
 def pause(message: str) -> None:
     input(f"\n{message} Press Enter to continue or Ctrl-C to exit.")
+
+
+def _settings_fields(model_api: str) -> frozenset[str]:
+    """Report the native settings names; the TypedDict itself is not a JSON schema."""
+    return frozenset(get_type_hints(MODEL_APIS[model_api].settings_type))
+
+
+def _validated_settings(model_api: str, value: str) -> dict[str, object]:
+    settings = json.loads(value)
+    if not isinstance(settings, dict):
+        raise ValueError("Model settings must be a JSON object")
+    unknown = sorted(set(settings) - _settings_fields(model_api))
+    if unknown:
+        raise ValueError(f"Unknown {model_api} settings: {', '.join(unknown)}")
+    return settings
 
 
 async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) -> None:
@@ -53,14 +67,11 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
     if args.command != "call":
         print("\n[3] Local Model API settings (not upstream capability discovery)", flush=True)
         show({"upstream_model": model_id, "model_api": model_api})
-        properties = cast(
-            dict[str, object], TypeAdapter(MODEL_APIS[model_api].settings_type).json_schema().get("properties", {})
-        )
-        print("Available settings:", ", ".join(sorted(properties)))
+        print("Available settings:", ", ".join(sorted(_settings_fields(model_api))))
         if args.command == "describe":
             return
 
-    settings = TypeAdapter(MODEL_APIS[model_api].settings_type).validate_python(json.loads(args.settings))
+    settings = _validated_settings(model_api, args.settings)
     model = await definition.build(model_id, configuration={}, credential=provider.credential, http_client=client)
     print("\n[4] Settings validated and native Model constructed", flush=True)
     show({"upstream_model": model_id, "model_api": model_api, "settings": settings, "prompt": args.prompt})

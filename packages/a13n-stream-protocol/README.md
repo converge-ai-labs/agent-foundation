@@ -83,6 +83,6 @@ Release automation replaces the workspace-oriented Harness dependency in publish
 
 ## Versioning
 
-Agent Stream Protocol, `a13n-harness`, and `a13n-environment` form the Harness release group. A `release/a13n-harness-v<version>` tag publishes all three distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Published Harness metadata pins the exact Provider version, and this package pins the exact Harness version. Harness UI is versioned and released independently.
+Agent Stream Protocol and `a13n-harness` form the Harness release group. A `release/a13n-harness-v<version>` tag publishes both distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. This package pins the exact Harness version. Harness UI is versioned and released independently.
 
 The accepted architecture and observation contract are defined in the [Agent Stream Protocol specification](../../spec/a13n-stream-protocol/README.md).

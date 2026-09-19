@@ -1,6 +1,6 @@
 # Connect to Remote Envd
 
-Use `a13n.http-envd` when your Host can reach an existing daemon over HTTP(S). Use `a13n.websocket-envd` when the daemon must connect back to your Host, for example from a machine behind NAT.
+Use `http_envd` when your Host can reach an existing daemon over HTTP(S). Use `websocket_envd` when the daemon must connect back to your Host, for example from a machine behind NAT.
 
 Both are **connect-only**: they do not create remote machines, start daemons, renew infrastructure timeouts, stop daemons or delete their workspaces. The operator owns deployment; your Host owns authentication, environment selection and scheduling. Files, shell, processes, output and ports use the same EIP-backed Provider operations as Local Envd.
 
@@ -39,43 +39,36 @@ Read the small, copyable [Host integration](https://github.com/converge-ai-labs/
 The operator supplies an HTTP(S) origin, the configured `A13N_ENVD_ENVIRONMENT_ID`, and a credential through a protected channel. The origin has no `/eip/control` suffix: the client constructs EIP resource paths.
 
 ```python
-from a13n_harness.providers.environment import (
-    EnvironmentState,
-    HttpEnvdConnectionConfiguration,
-    HttpEnvdCredential,
-    HttpEnvdEnvironmentProvider,
-    HttpEnvdProviderRuntime,
-    RemoteEnvdProviderConfiguration,
-)
-from pydantic import SecretStr
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.models import EnvironmentState
 
-provider = HttpEnvdEnvironmentProvider()
-runtime = HttpEnvdProviderRuntime(
-    configuration=HttpEnvdConnectionConfiguration(endpoint="https://envd.example.com"),
-    credential=HttpEnvdCredential(token=SecretStr(token_from_your_secret_store)),
-)
+(http_envd,) = select_builtin_environment_providers(("http_envd",))
 state = EnvironmentState(
-    provider_key=provider.key,
+    provider_key=http_envd.type,
     state_version="1",
     state={"daemon_environment_id": "env-remote-machine"},
 )
-environment = provider.create_environment(
-    configuration=RemoteEnvdProviderConfiguration(),
+environment = await http_envd.create(
+    {},
+    configuration={"endpoint": "https://envd.example.com"},
+    credential={"token": token_from_your_secret_store},
     environment_id="env-my-project",  # Your Host's logical identity.
     state=state,
-    runtime=runtime,
+    allow_create=False,
 )
 
 # Harness binds, uses and closes this fresh adapter for the Run.
 result = await executable.run("Inspect the workspace", environment=environment)
 ```
 
+`allow_create=False` is required: both remote Providers declare `supports_managed=False` and refuse a managed creation before any external call.
+
 Without Harness, use `enter()`, `ensure_ready()` and `EnvironmentOperations` as shown in `remote.py`. Construction and `enter()` are inert; preparation connects. Always close the adapter in `finally`.
 
 The example CLI can connect to an existing daemon too:
 
 ```bash
-uv run environment-provider-example http-envd \
+uv run environment-provider-example http_envd \
   --endpoint https://envd.example.com \
   --daemon-environment-id env-remote-machine \
   --credential-file /private/envd-token
@@ -103,27 +96,31 @@ Await `attach()` for the handler's entire lifetime. The SDK immediately initiali
 To use one of those connections:
 
 ```python
-from a13n_harness.providers.environment import (
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.configuration import (
     WebSocketEnvdConnectionConfiguration,
-    WebSocketEnvdEnvironmentProvider,
-    WebSocketEnvdProviderRuntime,
 )
+from a13n_harness.providers.environment.remote_envd.websocket import WebSocketEnvdProviderRuntime
 
-provider = WebSocketEnvdEnvironmentProvider()
-environment = provider.create_environment(
-    configuration=RemoteEnvdProviderConfiguration(),
+(websocket_envd,) = select_builtin_environment_providers(("websocket_envd",))
+environment = await websocket_envd.create(
+    {},
     environment_id="env-my-project",
     state=EnvironmentState(
-        provider_key=provider.key,
+        provider_key=websocket_envd.type,
         state_version="1",
         state={"daemon_environment_id": "env-remote-machine"},
     ),
+    allow_create=False,
     runtime=WebSocketEnvdProviderRuntime(
         connections,
         WebSocketEnvdConnectionConfiguration(connection_timeout=30),
     ),
 )
 ```
+
+The Host supplies the connection SDK directly as the runtime collaborator, because it owns the accepted connections. An unwired WebSocket Provider stays inert and fails explicitly.
 
 Close `connections` during Host shutdown, or use `async with WebSocketEnvdConnections() as connections`. Each instance has a finite connection capacity, rejects duplicate active daemon connections, and lends one Session exclusively to one Environment. A waiting acquisition has a finite timeout. A concurrent lease fails busy rather than mixing independent Runs.
 

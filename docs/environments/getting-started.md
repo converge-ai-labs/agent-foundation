@@ -9,10 +9,10 @@ The examples track `main`. Use Python 3.13 and the locked workspace:
 ```console
 git clone https://github.com/converge-ai-labs/agent-foundation.git
 cd agent-foundation
-uv sync --locked --package a13n-environment
+uv sync --locked --package a13n-harness
 ```
 
-For a published-version application, install `a13n-environment` with your package manager and use the matching release API.
+For a published-version application, install `a13n-harness` with your package manager and use the matching release API. Environment Providers ship in the base distribution; only vendor SDKs live behind [extras](../a13n-harness/plugins.md#harness-extras).
 
 ## Run a complete file example
 
@@ -23,24 +23,17 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from a13n_harness.providers.environment import build_environment_provider_catalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 
 
 async def main() -> None:
+    (direct_local,) = select_builtin_environment_providers(("direct_local",))
     # The application owns this disposable directory, not the Provider.
-    with TemporaryDirectory(prefix="a13n-environment-") as temporary:
+    with TemporaryDirectory(prefix="a13n-workspace-") as temporary:
         workspace = Path(temporary).resolve()
-        provider = build_environment_provider_catalog(
-            builtin_keys=("direct-local",),
-        ).require("direct-local")
-        configuration = provider.validate_configuration(
-            schema_version="1",
-            value={"root": {"path": str(workspace)}},
-        )
-        environment = provider.create_environment(
-            configuration=configuration,
+        environment = await direct_local.create(
+            {"root": {"path": str(workspace)}},
             environment_id="example-workspace",
-            state=None,
         )
 
         async with environment:
@@ -64,7 +57,7 @@ if __name__ == "__main__":
 
 The output is `Hello from Environment`.
 
-1. The catalog explicitly includes Direct Local; installing another Provider would not activate it.
+1. The selection explicitly names Direct Local; installing another Provider would not activate it.
 2. Validation and adapter construction do not access the target.
 3. `async with` enters a single-use operation scope. `ensure_ready({"files"})` prepares the target and checks the required family.
 4. `/hello.txt` is a logical path within this Environment, not the Host filesystem root.
@@ -77,10 +70,9 @@ Direct Local shares the Host account. Its file mapping is not OS isolation for a
 Create **another fresh adapter** and pass it to Harness; do not pass the already entered adapter from the example:
 
 ```python
-environment = provider.create_environment(
-    configuration=configuration,
+environment = await direct_local.create(
+    {"root": {"path": str(workspace)}},
     environment_id="example-workspace",
-    state=None,
 )
 result = await executable.run("Inspect the workspace", environment=environment)
 ```
@@ -89,7 +81,7 @@ This fragment assumes the workspace still exists and `executable` was built with
 
 ## Where to go next
 
-- [Choose a backend](../environments/index.md) before adding isolation or remote execution.
+- [Choose a backend](index.md) before adding isolation or remote execution.
 - [Lifecycle and state](lifecycle.md) explains retained Docker and cloud-provider targets and explicit destruction.
 - [Operations](operations.md) explains search syntax, output limits, and process handles.
 - [Harness integration](../a13n-harness/environments.md) adds model-facing tools and multiple mounts.

@@ -14,29 +14,21 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from a13n_harness.providers.environment import (
-    ArgvCommand,
-    CommandRequest,
-    EnvironmentOutputPolicy,
-    build_environment_provider_catalog,
-)
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.commands import ArgvCommand, CommandRequest
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 
 
 async def main() -> None:
+    (direct_local,) = select_builtin_environment_providers(("direct_local",))
     with TemporaryDirectory(prefix="a13n-command-") as temporary:
         executable = str(Path(sys.executable).resolve())
-        provider = build_environment_provider_catalog(
-            builtin_keys=("direct-local",)
-        ).require("direct-local")
-        configuration = provider.validate_configuration(
-            schema_version="1",
-            value={
+        environment = await direct_local.create(
+            {
                 "root": {"path": str(Path(temporary).resolve())},
                 "allowed_executables": [executable],
             },
-        )
-        environment = provider.create_environment(
-            configuration=configuration, environment_id="command-example", state=None
+            environment_id="command-example",
         )
         async with environment:
             await environment.ensure_ready(frozenset({"shell"}))

@@ -1,6 +1,6 @@
 # Python EIP client
 
-`a13n-envd-client` is the low-level Python client for Envd's Environment Interaction Protocol. Use it to implement an Environment Provider or another trusted EIP client. Most agent applications should use [Environment Providers](../a13n-environment/index.md), which already handle target lifecycle and adaptation.
+`a13n-envd-client` is the low-level Python client for Envd's Environment Interaction Protocol. Use it to implement an Environment Provider or another trusted EIP client. Most agent applications should use [Environment Providers](../environments/index.md), which already handle target lifecycle and adaptation.
 
 The package does not discover, install, download, or launch Envd. It does not create a reverse-WebSocket listener, issue credentials, retain target state, or run an Agent.
 
@@ -65,7 +65,7 @@ All three default to 1 MiB each for `max_request_bytes`, `max_response_bytes`, a
 | `allow_plaintext_private_link`      | `False`              | Explicit permission for the supported private-link HTTP case; not unrestricted plaintext |
 | Request, response, and frame limits | `1048576` bytes each | Carrier-side bounds                                                                      |
 
-The transport does not follow redirects or inherit proxy/environment HTTP settings (`trust_env=False`). `normalize_http_endpoint()` applies the same endpoint policy without opening a connection. See [Remote Envd](../a13n-environment/remote-envd.md) for allowed URL forms, TLS, and credential ownership.
+The transport does not follow redirects or inherit proxy/environment HTTP settings (`trust_env=False`). `normalize_http_endpoint()` applies the same endpoint policy without opening a connection. See [Remote Envd](../environments/remote-envd.md) for allowed URL forms, TLS, and credential ownership.
 
 A custom `WebSocketConnection` supplies `subprotocol`, async `send`, `recv`, `close`, and `wait_closed`. The Host validates the credential before handing over the connection. Framework adapters translate disconnects to `EOFError` or `OSError`; `wait_closed` must not compete with the transport's `recv` loop.
 
@@ -186,6 +186,7 @@ Availability remains the initialized descriptor's decision. A generated method e
 | `environment.readiness` | `environment_readiness` | `EnvironmentReadinessParams` | `EnvironmentReadinessResult` | `active_only`       |
 | `file.abort_writer`     | `file_abort_writer`     | `FileWriterAbortParams`      | `FileWriterAbortResult`      | `active_only`       |
 | `file.close_reader`     | `file_close_reader`     | `FileReaderCloseParams`      | `FileReaderCloseResult`      | `active_only`       |
+| `file.commit`           | `file_commit`           | `FileCommitParams`           | `FileCommitResult`           | `terminal_evidence` |
 | `file.commit_writer`    | `file_commit_writer`    | `FileWriterCommitParams`     | `FileWriterCommitResult`     | `terminal_evidence` |
 | `file.copy`             | `file_copy`             | `FileCopyParams`             | `FileCopyResult`             | `terminal_evidence` |
 | `file.find`             | `file_find`             | `FileFindParams`             | `FileFindResult`             | `active_only`       |
@@ -236,4 +237,4 @@ The [EIP contract](https://github.com/converge-ai-labs/agent-foundation/tree/mai
 uv run --locked pytest packages/a13n-envd-client/tests
 ```
 
-The client suite covers framing, sessions, errors, transfers, and output with protocol fixtures. Actual OS isolation and daemon availability need the separate Envd integration checks. For Host-owned process launch/runtime bootstrap, use [Local Envd](index.md#recommended-harness-path); for application tools, use [Environment operations](../a13n-environment/operations.md).
+The client suite covers framing, sessions, errors, transfers, and output with protocol fixtures. Actual OS isolation and daemon availability need the separate Envd integration checks. For Host-owned process launch/runtime bootstrap, use [Local Envd](index.md#recommended-harness-path); for application tools, use [Environment operations](../environments/operations.md).

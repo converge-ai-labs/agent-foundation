@@ -9,30 +9,51 @@ from time import monotonic
 from uuid import uuid4
 
 import httpx2
-from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_service.connectivity.connectors.contracts import (
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector.bounds import DISCOVERY_MAX_PAGES, DISCOVERY_MAX_TOOLS
+from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
+from a13n_harness.providers.connector.composio.configuration import COMPOSIO_ENDPOINT
+from a13n_harness.providers.connector.contracts import (
     AdapterConnectionStatus,
     ConnectionBinding,
     ConnectorConnectionRuntime,
+    ConnectorProviderError,
     ConnectorProviderRuntime,
     ConnectorTool,
+    JsonObject,
     SetupCompletionMethod,
     SetupContext,
+    ToolCatalog,
 )
-from a13n_service.connectivity.connectors.http import ConnectorHttpClient
-from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
-from a13n_service.connectivity.connectors.providers.composio.configuration import COMPOSIO_ENDPOINT
-from a13n_service.connectivity.connectors.providers.composio.runtime import ComposioToolCatalog
-from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
-from a13n_service.connectivity.connectors.providers.discovery import DirectoryBudget, directory_items
-from a13n_service.connectivity.connectors.tool_discovery import ToolCatalog, discover_tools
-from a13n_service.connectivity.connectors.validation import required_object, required_string
-from a13n_service.connectivity.domain import JsonObject
+from a13n_harness.providers.connector.directory import DirectoryBudget, directory_items
+from a13n_harness.providers.connector.http import ConnectorHttpClient
+from a13n_harness.providers.connector.validation import required_object, required_string
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from common import required_input, run_cli, show
 from jsonschema import Draft202012Validator
 from pydantic import TypeAdapter
 
 RESPONSE_MAX_BYTES = 4 * 1024 * 1024
+
+
+async def discover_tools(catalog: ToolCatalog) -> tuple[tuple[ConnectorTool, ...], str]:
+    """Page one catalog under the shared ceilings; a Host adds its own validation and budgets."""
+    tools: list[ConnectorTool] = []
+    version: str | None = None
+    cursor: str | None = None
+    for _ in range(DISCOVERY_MAX_PAGES):
+        page = await catalog.discover_tools(cursor=cursor)
+        if version is None:
+            version = page.provider_version
+        elif page.provider_version != version:
+            raise ConnectorProviderError("discovery_incompatible")
+        tools.extend(page.items)
+        if len(tools) > DISCOVERY_MAX_TOOLS:
+            raise ConnectorProviderError("directory_too_large")
+        cursor = page.next_cursor
+        if cursor is None:
+            return tuple(tools), version
+    raise ConnectorProviderError("directory_too_large")
 
 
 async def inspect_connection(connection: ConnectorConnectionRuntime, *, require_ready: bool) -> None:
@@ -60,13 +81,11 @@ async def authorize_account(args: argparse.Namespace, provider: ConnectorProvide
     Draft202012Validator(connector.setup_schema).validate(setup)
     args.user_id = args.user_id or f"smoke-user-{uuid4().hex}"
     context = SetupContext(
-        attempt_id=f"smoke-setup-{uuid4().hex}",
-        generation=1,
         connector_key=args.connector,
         external_user_correlation=args.user_id,
         callback_url=callback,
     )
-    show({"setup": setup, "user_id": args.user_id, "callback_url": callback, "attempt_id": context.attempt_id})
+    show({"setup": setup, "user_id": args.user_id, "callback_url": callback})
     if input("Type AUTHORIZE to create a provider authorization session, or Enter to stop: ").strip() != "AUTHORIZE":
         print("Stopped before authorization.")
         return False
@@ -111,74 +130,65 @@ async def use_connection(
         external_user_correlation=required_input(args.user_id, "Provider user ID (must match the account owner)"),
     )
     connection = provider.connect(binding)
-    try:
-        await inspect_connection(connection, require_ready=args.command != "inspect")
-        if args.command in {"inspect", "authorize"}:
-            return 0
-        if selected is None:
-            raise ValueError("A tool must be selected before authorization")
-        tools, _ = await discover_tools(connection)
-        current = next((tool for tool in tools if tool.key == selected.key), None)
-        if current != selected:
-            raise ValueError(
-                "Tool changed or disappeared after authorization. Preview the current definition before calling again."
-            )
-        raw_arguments = args.arguments
-        if raw_arguments is None:
-            raw_arguments = input("Tool arguments as a JSON object [{}]: ") or "{}"
-        arguments = TypeAdapter(JsonObject).validate_json(raw_arguments)
-        Draft202012Validator(selected.input_schema).validate(arguments)
-        request_id = f"smoke-{uuid4().hex}"
-        print("\n[6] Request to execute (may change data in the connected app)", flush=True)
-        show(
-            {
-                "tool": selected.key,
-                "version": selected.provider_version,
-                "arguments": arguments,
-                "request_id": request_id,
-            }
-        )
-        if not args.execute:
-            if input("Type CALL to execute this exact request, or press Enter to stop: ").strip() != "CALL":
-                print("Stopped before tool execution.")
-                return 0
-
-        async def before_dispatch() -> None:
-            # Recheck ownership and readiness after the user has reviewed the request.
-            await inspect_connection(connection, require_ready=True)
-
-        started = monotonic()
-        outcome = await connection.execute_tool(
-            tool_key=selected.key,
-            provider_version=selected.provider_version,
-            arguments=arguments,
-            request_id=request_id,
-            before_dispatch=before_dispatch,
-        )
-        show({"elapsed_seconds": round(monotonic() - started, 2), **outcome.model_dump(mode="json")})
-        if outcome.kind == "outcome_unknown":
-            print("Execution outcome is unknown. Check the provider using request_id before retrying.", file=sys.stderr)
-            return 1
-        if selected.output_schema is not None:
-            Draft202012Validator(selected.output_schema).validate(outcome.result)
+    await inspect_connection(connection, require_ready=args.command != "inspect")
+    if args.command in {"inspect", "authorize"}:
         return 0
-    finally:
-        await connection.aclose()
+    if selected is None:
+        raise ValueError("A tool must be selected before authorization")
+    tools, _ = await discover_tools(connection)
+    current = next((tool for tool in tools if tool.key == selected.key), None)
+    if current != selected:
+        raise ValueError(
+            "Tool changed or disappeared after authorization. Preview the current definition before calling again."
+        )
+    raw_arguments = args.arguments
+    if raw_arguments is None:
+        raw_arguments = input("Tool arguments as a JSON object [{}]: ") or "{}"
+    arguments = TypeAdapter(JsonObject).validate_json(raw_arguments)
+    Draft202012Validator(selected.input_schema).validate(arguments)
+    request_id = f"smoke-{uuid4().hex}"
+    print("\n[6] Request to execute (may change data in the connected app)", flush=True)
+    show(
+        {
+            "tool": selected.key,
+            "version": selected.provider_version,
+            "arguments": arguments,
+            "request_id": request_id,
+        }
+    )
+    if not args.execute:
+        if input("Type CALL to execute this exact request, or press Enter to stop: ").strip() != "CALL":
+            print("Stopped before tool execution.")
+            return 0
+
+    async def before_dispatch() -> None:
+        # Recheck ownership and readiness after the user has reviewed the request.
+        await inspect_connection(connection, require_ready=True)
+
+    started = monotonic()
+    outcome = await connection.execute_tool(
+        tool_key=selected.key,
+        provider_version=selected.provider_version,
+        arguments=arguments,
+        request_id=request_id,
+        before_dispatch=before_dispatch,
+    )
+    show({"elapsed_seconds": round(monotonic() - started, 2), **outcome.model_dump(mode="json")})
+    if outcome.kind == "outcome_unknown":
+        print("Execution outcome is unknown. Check the provider using request_id before retrying.", file=sys.stderr)
+        return 1
+    if selected.output_schema is not None:
+        Draft202012Validator(selected.output_schema).validate(outcome.result)
+    return 0
 
 
-async def browse_directory(
-    key: str,
-    client: httpx2.AsyncClient,
-    policy: EndpointPolicy,
-) -> set[str]:
-    credentials = ApiKeyCredentials(api_key=key)
-    http = ConnectorHttpClient(client, policy, response_max_bytes=RESPONSE_MAX_BYTES)
+async def browse_directory(key: str, http: ConnectorHttpClient) -> set[str]:
     print("\n[0] Browse the upstream connector directory before selecting a connector", flush=True)
     print(f"Endpoint: {COMPOSIO_ENDPOINT}", flush=True)
     items = await directory_items(
         http,
         endpoint=COMPOSIO_ENDPOINT,
-        api_key=credentials.api_key,
+        api_key=key,
         path="/api/v3.1/toolkits",
         budget=DirectoryBudget(),
     )
@@ -199,11 +209,10 @@ async def browse_directory(
 
 async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) -> int:
     policy = EndpointPolicy()
-    implementation = built_in_connector_provider_registry(
-        client, policy, response_max_bytes=RESPONSE_MAX_BYTES
-    ).require(args.provider)
+    definition = ProviderCatalog(BUILT_IN_CONNECTOR_PROVIDERS).require(args.provider)
+    http = ConnectorHttpClient(client, policy, response_max_bytes=RESPONSE_MAX_BYTES)
     if args.connector is None and args.command in {"walkthrough", "discover"}:
-        available = await browse_directory(key, client, policy)
+        available = await browse_directory(key, http)
         if args.command == "discover":
             return 0
         if not available:
@@ -213,9 +222,7 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
             raise ValueError("Selected connector is absent from the directory")
     args.connector = required_input(args.connector, "Connector/toolkit slug (for example github)")
     configuration: JsonObject = {}
-    configuration = implementation.validate_configuration(configuration)
-    provider = implementation.configure(configuration, {"api_key": key})
-    try:
+    async with definition.open(configuration, {"api_key": key}, http=http) as provider:
         print("\n[1] Validate provider configuration", flush=True)
         show({"provider": args.provider, "configuration": configuration, "profile": provider.compatibility_profile})
         if args.command == "test":
@@ -229,11 +236,8 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
             return 0
         if args.command == "inspect":
             return await use_connection(args, provider, None)
-        http = ConnectorHttpClient(client, policy, response_max_bytes=RESPONSE_MAX_BYTES)
-        credentials = ApiKeyCredentials(api_key=key)
-        catalog: ToolCatalog = ComposioToolCatalog(http, credentials, args.connector)
         print("\n[2] Preview tool definitions before account authorization", flush=True)
-        tools, version = await discover_tools(catalog)
+        tools, version = await discover_tools(provider.tool_catalog(args.connector))
         print(f"Discovered {len(tools)} tools; catalog version: {version}", flush=True)
         print("This is a provider catalog preview. It grants no permission to execute a tool.")
         for tool in tools:
@@ -251,8 +255,6 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
         if args.command == "describe":
             return 0
         return await use_connection(args, provider, selected)
-    finally:
-        await provider.aclose()
 
 
 def parse_args() -> argparse.Namespace:

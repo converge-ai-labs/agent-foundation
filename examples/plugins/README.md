@@ -103,10 +103,10 @@ Code mode prints the same result with `selection mode: code`.
 
 ### Real Provider checklist
 
-- Use one stable namespaced entry-point name and return the same value from `key`.
-- Keep Provider construction, configuration validation, and Environment construction strict, bounded, and side-effect free.
-- Support exact configuration and state versions without fallback or shape inference.
-- Accept current credentials, SDK clients, bootstrap stores, and transport factories only through fresh process-local runtime collaborators.
+- Use one stable entry-point name and one stable Provider `type`.
+- Keep definition construction, recipe validation, and Environment construction strict, bounded, and side-effect free.
+- Declare one account model, one optional credential model, and one target recipe model; support exact state versions without fallback or shape inference.
+- Acquire current credentials, SDK clients, bootstrap stores, and transport factories only inside `runtime_factory`.
 - Construct one fresh Environment per independent Run or explicit Host lifecycle operation.
 - Validate supplied state before target mutation; create a replacement only after authoritative absence.
 - Update cached state as soon as changed target identity is known, before later readiness can fail.

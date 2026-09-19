@@ -31,9 +31,8 @@ COMPONENT_PATHS = {
     "a13n-harness": (
         "packages/a13n-harness",
         "packages/a13n-stream-protocol",
-        "docs/a13n-environment",
+        "docs/environments",
         "docs/a13n-stream-protocol",
-        "spec/a13n-environment",
         "spec/a13n-stream-protocol",
     ),
     "a13n-harness-ui": (

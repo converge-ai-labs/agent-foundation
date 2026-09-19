@@ -2,7 +2,7 @@
 
 Envd (`a13n-envd`) is the native daemon for the **Environment Interaction Protocol (EIP)**. It exposes configured files, commands, process observations, output, and ports over stdio, HTTP(S), or an outbound reverse WebSocket connection.
 
-It does not run an Agent, store conversations, or provide a browser API. Use [Harness](../a13n-harness/index.md) for Agent execution and [Environment](../a13n-environment/index.md) for the Python Provider interface.
+It does not run an Agent, store conversations, or provide a browser API. Use [Harness](../a13n-harness/index.md) for Agent execution and [Environments](../environments/index.md) for the Python Provider interface.
 
 ## Choose your path
 
@@ -13,7 +13,7 @@ It does not run an Agent, store conversations, or provide a browser API. Use [Ha
 | Installing a matching native executable                   | [Installation](installation.md)                                                     |
 | Operating your own daemon or EIP transport                | [Configuration and transports](configuration.md)                                    |
 | Diagnosing isolation or missing methods                   | [Isolation and troubleshooting](isolation.md)                                       |
-| Connecting through an Environment Provider                | [Remote Envd](../a13n-environment/remote-envd.md)                                   |
+| Connecting through an Environment Provider                | [Remote Envd](../environments/remote-envd.md)                                       |
 | Implementing an EIP client or Provider                    | [Python EIP client](python-client.md)                                               |
 | Managing sessions, retained output, and uncertain results | [Sessions and output](operations.md)                                                |
 
@@ -42,28 +42,20 @@ Resolve the built-in Local Envd Provider, construct one fresh Environment, and p
 ```python
 from pathlib import Path
 
-from a13n_harness.providers.environment import (
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
-    build_environment_provider_catalog,
     resolve_a13n_envd_executable,
 )
 
-catalog = build_environment_provider_catalog(
-    builtin_keys=("a13n.local-envd",),
-)
-provider = catalog.require("a13n.local-envd")
-configuration = provider.validate_configuration(
-    schema_version="1",
-    value={
+(local_envd,) = select_builtin_environment_providers(("local_envd",))
+environment = await local_envd.create(
+    {
         "workspace": {"path": str(Path("./workspace").resolve())},
         "execution_network": "deny",
     },
-)
-environment = provider.create_environment(
-    configuration=configuration,
     environment_id="sandbox",
-    state=None,
     runtime=LocalEnvdProviderRuntime(
         executable=resolve_a13n_envd_executable(),
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),

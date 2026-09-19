@@ -69,26 +69,22 @@ nav:
           - Multimedia understanding: a13n-harness/multimedia-understanding.md
           - Delegation and CodeAct: a13n-harness/delegation-and-codeact.md
           - Skills: a13n-harness/skills.md
+      - Work with Environments:
+          - Overview: environments/index.md
+          - Getting started: environments/getting-started.md
+          - Built-in examples: environments/examples.md
+          - Files, paths, and limits: environments/operations.md
+          - Commands and processes: environments/commands.md
+          - Lifecycle and state: environments/lifecycle.md
+          - Configure Providers: environments/configuration.md
+          - Provider configuration reference: environments/configuration-reference.md
+          - Providers and runtime: environments/providers.md
+          - Remote Envd: environments/remote-envd.md
       - Integrate and operate:
           - Usage, limits, and pricing: a13n-harness/usage-and-limits.md
           - Observation: a13n-harness/observation.md
           - Embedding in a Host: a13n-harness/hosting.md
           - Plugins and Extensions: a13n-harness/plugins.md
-  - Environment:
-      - Overview: a13n-environment/index.md
-      - Get started:
-          - Getting started: a13n-environment/getting-started.md
-          - Choose a backend: environments/index.md
-          - Built-in examples: a13n-environment/examples.md
-      - Use operations:
-          - Files, paths, and limits: a13n-environment/operations.md
-          - Commands and processes: a13n-environment/commands.md
-          - Lifecycle and state: a13n-environment/lifecycle.md
-      - Configure and extend:
-          - Configure Providers: a13n-environment/configuration.md
-          - Provider configuration reference: a13n-environment/configuration-reference.md
-          - Providers and runtime: a13n-environment/providers.md
-          - Remote Envd: a13n-environment/remote-envd.md
   - Envd:
       - Overview: a13n-envd/index.md
       - Installation: a13n-envd/installation.md

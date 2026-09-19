@@ -2,21 +2,23 @@
 
 An Environment has separate desired configuration, backend access, runtime collaborators, and current state. They answer different questions and should not be combined into a portable credential-bearing blob.
 
-| Value                 | Owns                                                        | Example                                                      |
-| --------------------- | ----------------------------------------------------------- | ------------------------------------------------------------ |
-| Desired configuration | What this Environment should expose                         | Workspace root, Docker mounts, E2B template                  |
-| Backend configuration | Where the Host accesses the Provider                        | Docker daemon, E2B domain, HTTP endpoint                     |
-| Credential            | Current access to that backend                              | E2B API key or HTTP EIP token                                |
-| Runtime               | Live clients, connector, process factory, bootstrap storage | `ProviderRuntimeContext` and Provider-specific collaborators |
-| `EnvironmentState`    | Validated reference to an exact retained target             | Container/sandbox identity and configuration fingerprint     |
+| Value                                         | Owns                                            | Example                                                  |
+| --------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------- |
+| Target recipe (`environment_model`)           | What this Environment should expose             | Workspace root, Docker mounts, E2B template              |
+| Account configuration (`configuration_model`) | Where the Host reaches the backend              | Docker daemon, E2B domain, HTTP endpoint                 |
+| Credential (`credential_model`)               | Current access to that backend                  | E2B API key or HTTP EIP token                            |
+| Runtime collaborator                          | Live clients, sessions, and Host allocations    | Acquired only inside the definition's `runtime_factory`  |
+| `EnvironmentState`                            | Validated reference to an exact retained target | Container/sandbox identity and configuration fingerprint |
 
-Use `provider.validate_configuration(schema_version="1", value=...)` for desired data, then construct a fresh adapter with authoritative state and runtime. `describe_configuration()` can explain intended capability without preparing the target; actual readiness still comes from the entered adapter. [Providers and runtime](providers.md) covers catalog selection and runtime creation.
+Pass all four to `definition.create(recipe, configuration=..., credential=..., state=...)`. It validates the account configuration, enforces the declared credential rule, validates the recipe, and only then acquires the runtime collaborator, so everything before that acquisition is pure. `definition.describe_environment(recipe)` explains the intended capability without preparing the target; actual readiness still comes from the entered adapter. [Providers and runtime](providers.md) covers catalog selection and runtime construction.
+
+A definition owns exactly one model of each kind. There is no configuration schema version: changing the meaning of an input changes the Provider type.
 
 The [complete generated field reference](configuration-reference.md) covers built-in desired/backend/credential models and nested roots, mounts, and shell profiles. It does not read secrets or evaluate a Host-specific default factory. Cross-field and target validation still apply beyond JSON-schema field bounds.
 
 ## Direct Local
 
-`DirectLocalProviderConfiguration` requires an absolute `root.path`; `root.read_only` defaults to false. The basic configuration is file-only: shell profiles, allowed executables, and allowed ports are empty by default.
+`DirectLocalEnvironmentConfiguration` requires an absolute `root.path`; `root.read_only` defaults to false. The basic configuration is file-only: shell profiles, allowed executables, and allowed ports are empty by default.
 
 To enable one executable, follow the [complete command example](commands.md). For shell syntax, configure an absolute shell executable and profile ID, optional fixed arguments, dialect `posix` or `powershell`, and explicit login permission. Profile IDs are unique. A read-only root cannot enable process execution; PowerShell profiles cannot enable login mode.
 
@@ -26,7 +28,7 @@ Defaults are a 64 MiB file value bound, 128 concurrent processes, 24-hour maximu
 
 ## Local Envd
 
-`LocalEnvdProviderConfiguration` requires an absolute `workspace.path`. It defaults to Host network mode and empty trusted executable roots/shell profiles. Enabling file access alone does not implicitly enable commands.
+`LocalEnvdEnvironmentConfiguration` requires an absolute `workspace.path`. It defaults to Host network mode and empty trusted executable roots/shell profiles. Enabling file access alone does not implicitly enable commands.
 
 A shell profile selects `profile_id`, absolute `executable`, fixed arguments, login permission, and a script-byte bound (1 MiB by default). `trusted_executable_roots` controls eligible executable locations. Choose `execution_network="deny"` when the platform supports and your workload needs that boundary; [Envd isolation](../a13n-envd/isolation.md) owns native prerequisites and fail-closed behavior.
 
@@ -36,7 +38,7 @@ Runtime selection owns daemon binary/bootstrap and process construction. Desired
 
 ## Docker
 
-`DockerProviderConfiguration` uses an Envd-free image and native Docker exec. The default image is `ghcr.io/converge-ai-labs/a13n-docker-environment:dev`; select an immutable digest when exact image identity matters. Docker uses a local image when present and pulls only when absent. Rebuilding or pulling a tag does not recreate an existing Environment container.
+`DockerEnvironmentConfiguration` uses an Envd-free image and native Docker exec. The default image is `ghcr.io/converge-ai-labs/a13n-docker-environment:dev`; select an immutable digest when exact image identity matters. Docker uses a local image when present and pulls only when absent. Rebuilding or pulling a tag does not recreate an existing Environment container.
 
 The private container filesystem supplies `/workspace`. Optional host mounts have an existing absolute `source`, container `target`, and `read_only` flag (default true). They cannot replace `/workspace` or private command metadata. Named volumes are not a template option; external host data is preserved on destruction.
 
@@ -54,7 +56,7 @@ E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop use the same ba
 
 ### E2B
 
-`E2BProviderConfiguration` defaults to template `base`, root `/home/user`, user `user`, and Python `/usr/bin/python3`; paths must be absolute without traversal. Internet access defaults to true and read-only defaults to false.
+`E2BEnvironmentConfiguration` defaults to template `base`, root `/home/user`, user `user`, and Python `/usr/bin/python3`; paths must be absolute without traversal. Internet access defaults to true and read-only defaults to false.
 
 Sandbox timeout defaults to 3,600 seconds (30–86,400); request timeout defaults to 30 seconds (up to 300). Neither is a per-command execution deadline. File values default to 16 MiB, observation bytes to 1 MiB, active observations to 128, total retained output to 128 MiB, and query entries to 10,000. [Runtime limitations](providers.md#e2b-runtime) explains text-based observation and supported command control.
 
@@ -84,7 +86,7 @@ Daytona, Sprites, and Runloop select `python3` on the guest PATH. Modal uses `/u
 
 ## Remote HTTP / WebSocket Envd
 
-Both remote Providers use `RemoteEnvdProviderConfiguration(required_methods=())`; this requests a bounded method subset, not daemon mounts or target provisioning. Required method names are normalized and deduplicated. `RemoteEnvdStateData` selects the externally owned daemon Environment identity.
+Both remote Providers use `RemoteEnvdEnvironmentConfiguration(required_methods=())` as their recipe; this requests a bounded method subset, not daemon mounts or target provisioning. Required method names are normalized and deduplicated. `RemoteEnvdStateData` selects the externally owned daemon Environment identity.
 
 HTTP backend configuration supplies `endpoint`, initialization timeout (10 seconds), request timeout (30 seconds), maximum in-flight requests (32), and explicit plaintext-private-link opt-in (false by default). The token is a separate `HttpEnvdCredential`. The remote Provider's request timeout differs from the low-level Python EIP client's default request timeout; select the boundary you are configuring.
 

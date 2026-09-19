@@ -205,7 +205,7 @@ def test_service_generated_references_match_current_definitions(built_site: Path
         actual = (ROOT / "docs/a13n-service" / filename).read_text(encoding="utf-8")
         assert normalized(actual) == normalized(namespace[renderer]()), filename
 
-    environment_reference = (ROOT / "docs/a13n-environment/configuration-reference.md").read_text(encoding="utf-8")
+    environment_reference = (ROOT / "docs/environments/configuration-reference.md").read_text(encoding="utf-8")
     assert normalized(environment_reference) == normalized(namespace["render_environment_configuration"]())
     for model in (
         "E2BEnvironmentConfiguration",

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
+from a13n_harness.providers.connector.contracts import ConnectorProviderError
 
 
 @pytest.fixture

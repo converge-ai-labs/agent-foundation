@@ -1643,7 +1643,21 @@ List Connector Provider Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: ConnectorProviderMetadataCollection`).
+- **200** — Successful Response (`application/json: ProviderMetadataCollection_ConnectorProviderMetadata_`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/connector-provider-types/{provider_type}`
+
+Get Connector Provider Type.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_type` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConnectorProviderMetadata`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/connector-providers/{connector_provider_id}`
@@ -1955,7 +1969,7 @@ Provider Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: Collection_EnvironmentProviderMetadata_`).
+- **200** — Successful Response (`application/json: ProviderMetadataCollection_EnvironmentProviderMetadata_`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environment-provider-types/{provider_type}`
@@ -3826,6 +3840,169 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+## memory-documents
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes`
+
+Scopes.
+
+| Parameter               | Location | Required | Type / schema  | Constraints and default            |
+| ----------------------- | -------- | -------- | -------------- | ---------------------------------- |
+| `workspace`             | path     | true     | string         | —                                  |
+| `limit`                 | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`                | query    | false    | string or null | —                                  |
+| `environment_id`        | query    | false    | string or null | —                                  |
+| `subject_id`            | query    | false    | string or null | —                                  |
+| `conversation_scope_id` | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: StoredScopeCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents`
+
+Listing.
+
+| Parameter   | Location | Required | Type / schema  | Constraints and default            |
+| ----------- | -------- | -------- | -------------- | ---------------------------------- |
+| `scope_id`  | path     | true     | string         | —                                  |
+| `workspace` | path     | true     | string         | —                                  |
+| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`    | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: FileDocumentCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents`
+
+Create.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `scope_id`        | path     | true     | string        | —                          |
+| `workspace`       | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=128 |
+
+Request body: required.
+
+- `application/json`: `DocumentInput`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: ManagedDocumentMutation`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `DELETE /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}`
+
+Remove.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default |
+| ------------- | -------- | -------- | ------------- | ----------------------- |
+| `scope_id`    | path     | true     | string        | —                       |
+| `document_id` | path     | true     | string        | —                       |
+| `workspace`   | path     | true     | string        | —                       |
+
+Responses:
+
+- **204** — Successful Response.
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}`
+
+Read.
+
+| Parameter     | Location | Required | Type / schema   | Constraints and default |
+| ------------- | -------- | -------- | --------------- | ----------------------- |
+| `scope_id`    | path     | true     | string          | —                       |
+| `document_id` | path     | true     | string          | —                       |
+| `workspace`   | path     | true     | string          | —                       |
+| `version`     | query    | false    | integer or null | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ManagedMemoryDocument`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}`
+
+Revise.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `scope_id`        | path     | true     | string        | —                          |
+| `document_id`     | path     | true     | string        | —                          |
+| `workspace`       | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=128 |
+| `If-Match`        | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `ReviseDocument`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: ManagedDocumentMutation`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}/revisions`
+
+History.
+
+| Parameter        | Location | Required | Type / schema   | Constraints and default            |
+| ---------------- | -------- | -------- | --------------- | ---------------------------------- |
+| `scope_id`       | path     | true     | string          | —                                  |
+| `document_id`    | path     | true     | string          | —                                  |
+| `workspace`      | path     | true     | string          | —                                  |
+| `before_version` | query    | false    | integer or null | —                                  |
+| `limit`          | query    | false    | integer         | minimum=1; maximum=100; default=20 |
+
+Responses:
+
+- **200** — Successful Response (`application/json: array of ManagedMemoryDocument`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}/toc`
+
+Toc.
+
+| Parameter     | Location | Required | Type / schema   | Constraints and default |
+| ------------- | -------- | -------- | --------------- | ----------------------- |
+| `scope_id`    | path     | true     | string          | —                       |
+| `document_id` | path     | true     | string          | —                       |
+| `workspace`   | path     | true     | string          | —                       |
+| `version`     | query    | false    | integer or null | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: array of DocumentHeading`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/organization`
+
+Organization Status.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `scope_id`  | path     | true     | string        | —                       |
+| `workspace` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: array of OrganizationStatus`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ## memory-providers
 
 ### `GET /api/v1/memory-provider-types`
@@ -3834,7 +4011,7 @@ List Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: MemoryProviderDefinitionCollection`).
+- **200** — Successful Response (`application/json: ProviderMetadataCollection_MemoryProviderMetadata_`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/memory-provider-types/{provider_type}`
@@ -3847,7 +4024,7 @@ Get Type.
 
 Responses:
 
-- **200** — Successful Response (`application/json: MemoryProviderDefinition`).
+- **200** — Successful Response (`application/json: MemoryProviderMetadata`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -4035,7 +4212,21 @@ List Model Provider Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: ModelProviderDefinitionCollection`).
+- **200** — Successful Response (`application/json: ProviderMetadataCollection_ModelProviderMetadata_`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/model-provider-types/{provider_type}`
+
+Get Model Provider Type.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_type` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ModelProviderMetadata`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/model-catalog`
@@ -5457,7 +5648,7 @@ List Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: WebProviderDefinitionCollection`).
+- **200** — Successful Response (`application/json: ProviderMetadataCollection_WebProviderMetadata_`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/web-provider-types/{provider_type}`
@@ -5470,7 +5661,7 @@ Get Type.
 
 Responses:
 
-- **200** — Successful Response (`application/json: WebProviderDefinition`).
+- **200** — Successful Response (`application/json: WebProviderMetadata`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

@@ -8,8 +8,8 @@ For a first file operation without an Agent, start with [Getting started](gettin
 
 ```mermaid
 flowchart LR
-    Host[Host policy and persistence] --> Provider[EnvironmentProvider]
-    Provider --> Adapter[Fresh Environment]
+    Host[Host policy and persistence] --> Definition[EnvironmentProviderDefinition]
+    Definition --> Adapter[Fresh Environment]
     State[EnvironmentState or none] --> Adapter
     Runtime[Fresh runtime collaborators] --> Adapter
     Adapter --> Harness[Agent Harness Run]
@@ -20,10 +20,10 @@ flowchart LR
 
 A normal Run follows this sequence:
 
-1. The Host resolves an allowlisted Provider.
-2. The Provider validates credential-free desired configuration.
-3. The Host loads the latest authoritative `EnvironmentState` and creates fresh runtime collaborators.
-4. The Provider constructs one fresh adapter without external I/O.
+1. The Host resolves an allowlisted Provider type from its catalog.
+2. The definition validates the account configuration, the credential, and the credential-free target recipe.
+3. The Host supplies the latest authoritative `EnvironmentState`.
+4. The definition acquires its runtime collaborator, then constructs one fresh adapter; everything before the runtime factory is pure.
 5. The Host prepares eagerly, or lets the first operation prepare lazily. Harness binds the local scope, uses operations, exports cached state, and closes it.
 6. The Host persists the latest state and applies retention policy separately.
 
@@ -33,38 +33,30 @@ When retention policy selects removal, the Host constructs a different fresh ada
 
 ## Resolve and construct an Environment
 
-A persisted `EnvironmentProviderSpec` contains only a provider key, exact configuration schema version, and credential-free JSON configuration:
+A persisted `EnvironmentProviderSpec` contains only a Provider type and credential-free JSON recipe:
 
 ```python
-from a13n_harness.providers.environment import (
-    EnvironmentProviderSpec,
-    build_environment_provider_catalog,
-)
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.models import EnvironmentProviderSpec
 
 spec = EnvironmentProviderSpec(
-    provider_key="direct-local",
-    schema_version="1",
+    provider_key="direct_local",
     configuration={
         "root": {"path": "/srv/agent-workspaces/current"},
     },
 )
 
-catalog = build_environment_provider_catalog(
-    builtin_keys=("direct-local",),
-)
-provider = catalog.require(spec.provider_key)
-configuration = provider.validate_configuration(
-    schema_version=spec.schema_version,
-    value=spec.configuration,
-)
-environment = provider.create_environment(
-    configuration=configuration,
+catalog = ProviderCatalog(select_builtin_environment_providers(("direct_local",)))
+definition = catalog.require(spec.provider_key)
+environment = await definition.create(
+    spec.configuration,
     environment_id="workspace",
     state=None,
 )
 ```
 
-Provider construction, `validate_configuration()`, and `create_environment()` are inert. `enter()` also performs no target I/O. `prepare()` creates, resumes or connects the target; `ensure_ready()` triggers it on first use when preparation is lazy.
+There is no configuration schema version: a Provider owns exactly one recipe model, and changing an input's meaning changes the Provider type. Selection, recipe validation, and adapter construction are inert. `enter()` also performs no target I/O. `prepare()` creates, resumes or connects the target; `ensure_ready()` triggers it on first use when preparation is lazy.
 
 Pass the fresh adapter to Harness:
 
@@ -83,11 +75,12 @@ The Host supplies state before entry:
 
 ```python
 current_state = await state_store.load(environment_key)
-environment = provider.create_environment(
-    configuration=configuration,
+environment = await definition.create(
+    spec.configuration,
+    configuration=backend_configuration,
+    credential=current_credential,
     environment_id="workspace",
     state=current_state,
-    runtime=fresh_runtime,
 )
 
 try:
@@ -111,11 +104,13 @@ State is a soft reference, not proof that a target still exists. Construction va
 Destroy requires a fresh, not-yet-entered adapter:
 
 ```python
-cleanup = provider.create_environment(
-    configuration=configuration,
+cleanup = await definition.create(
+    spec.configuration,
+    configuration=backend_configuration,
+    credential=current_credential,
     environment_id="workspace",
     state=current_state,
-    runtime=fresh_runtime,
+    allow_create=False,
 )
 try:
     await cleanup.destroy()
@@ -148,18 +143,18 @@ A supported readiness recovery can report `environment_connection_refreshed` or 
 
 Provider capability declarations tell a Host which maintenance paths it may select:
 
-| Built-in Provider            | Managed selection    | Resumable stop                    | Destroy | Keepalive required       |
-| ---------------------------- | -------------------- | --------------------------------- | ------- | ------------------------ |
-| Direct Local                 | Yes, stateless       | No                                | No      | No                       |
-| Local Envd                   | Yes, stateless       | No                                | No      | No                       |
-| Docker                       | Yes                  | Yes                               | Yes     | No                       |
-| E2B                          | Yes                  | Yes                               | Yes     | Yes                      |
-| Daytona                      | Yes                  | Yes                               | Yes     | No                       |
-| Modal                        | Yes                  | Managed only, filesystem snapshot | Yes     | Yes, fixed deadline only |
-| Vercel Sandbox               | Yes                  | Yes                               | Yes     | Yes                      |
-| Fly.io Sprites               | Yes                  | No; automatic native sleep        | Yes     | No                       |
-| Runloop                      | Yes                  | Yes                               | Yes     | Yes                      |
-| Remote HTTP / WebSocket Envd | No, externally owned | No                                | No      | No                       |
+| Built-in Provider            | Managed selection    | Resumable stop                          | Destroy                                 | Keepalive required       |
+| ---------------------------- | -------------------- | --------------------------------------- | --------------------------------------- | ------------------------ |
+| Direct Local                 | Yes, stateless       | Declared, no-op over the Host directory | Declared, no-op over the Host directory | No                       |
+| Local Envd                   | Yes, stateless       | No                                      | No                                      | No                       |
+| Docker                       | Yes                  | Yes                                     | Yes                                     | No                       |
+| E2B                          | Yes                  | Yes                                     | Yes                                     | Yes                      |
+| Daytona                      | Yes                  | Yes                                     | Yes                                     | No                       |
+| Modal                        | Yes                  | Managed only, filesystem snapshot       | Yes                                     | Yes, fixed deadline only |
+| Vercel Sandbox               | Yes                  | Yes                                     | Yes                                     | Yes                      |
+| Fly.io Sprites               | Yes                  | No; automatic native sleep              | Yes                                     | No                       |
+| Runloop                      | Yes                  | Yes                                     | Yes                                     | Yes                      |
+| Remote HTTP / WebSocket Envd | No, externally owned | No                                      | No                                      | No                       |
 
 See the [six-cloud comparison](providers.md#reconnection-and-lifecycle) for filesystem, memory, and expiry differences. Managed selection does not mean every Provider creates storage or owns the Host directory. Unsupported base methods are not usable merely because they appear on the abstract interface. Schedule keepalive from the Provider's `keepalive_horizon` and actual target policy; do not treat the base default as a universal cloud TTL.
 

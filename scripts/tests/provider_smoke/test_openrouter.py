@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from a13n_harness.errors import ModelResolutionError
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 
 
 @pytest.fixture
@@ -105,6 +105,6 @@ def test_inference_rejects_private_endpoint_before_dispatch(smoke, monkeypatch):
     monkeypatch.setattr(
         "a13n_harness.providers.endpoint_policy._resolve_addresses", lambda *_: [ipaddress.ip_address("127.0.0.1")]
     )
-    with pytest.raises(ModelResolutionError):
+    with pytest.raises(EndpointPolicyError):
         run()
     assert calls == []

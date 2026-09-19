@@ -19,6 +19,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [06-execution-context-and-lifecycle.md](06-execution-context-and-lifecycle.md)           | Logical run lifecycle, inner model attempts, cancellation, terminal results, and cleanup                                         |
 | [07-tool-execution.md](07-tool-execution.md)                                             | Native and managed function tools, client-side external tools, policy, credentials, and deferred results                         |
 | [08-environment-integration.md](08-environment-integration.md)                           | Fresh Environment inputs, aggregate path roots and routing, Run Extensions, mutation, model projection, state, and cleanup       |
+| [08a-environment-providers.md](08a-environment-providers.md)                             | Environment Provider definitions, adapter lifecycle, portable state, built-in Providers, and remote Envd                         |
 | [09-context-and-memory.md](09-context-and-memory.md)                                     | History, runtime context, handoff, skills, working state, resource acquisition, compaction, and memory boundary                  |
 | [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `HarnessState`, interrupted-history normalization, import/export, and Host persistence boundary                                  |
 | [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Child topology, Harness-private inline execution, standard async Toolsets, and the Host operator boundary                        |
@@ -28,12 +29,13 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [15-security-compatibility-and-tradeoffs.md](15-security-compatibility-and-tradeoffs.md) | Trust boundaries, authority, data safety, compatibility, and trade-offs                                                          |
 | [16-input-model-and-output.md](16-input-model-and-output.md)                             | Native input, thin model resolution, self-healing, semantic recovery, streaming, and output                                      |
 | [16a-model-authentication.md](16a-model-authentication.md)                               | SDK-first Model OAuth credentials, Host sources, refresh lifecycle, request isolation, and provider compatibility                |
-| [16b-model-provider-definitions.md](16b-model-provider-definitions.md)                   | Typed native construction, installed contributions, and shared Model/Web authentication                                          |
+| [16b-model-provider-definitions.md](16b-model-provider-definitions.md)                   | Typed native Model construction, calling-API bindings, and installed Model contributions                                         |
 | [17-core-capability-catalog.md](17-core-capability-catalog.md)                           | Documentation catalog for mandatory and optional Capability composition roles                                                    |
 | [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch          |
 | [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry signals, trace levels, metrics, correlation, information boundary, Host profiles, and export-failure semantics     |
 | [20-async-components-and-lifecycle.md](20-async-components-and-lifecycle.md)             | Async subagent admission, observation, parent closure, wake, restart, loss, retention, and Host shutdown                         |
 | [21-document-memory.md](21-document-memory.md)                                           | Document types, revisions and change diffs, extraction/organization, navigation/tools, and file-only Environment-backed memory   |
+| [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core, credential declaration, catalogs, and the installed-plugin manifest across all five domains                |
 
 ## Reading Paths
 
@@ -45,13 +47,17 @@ Read `00`, `01`, and `02`, then follow the owner for the concern being changed.
 
 Read `03`, `04`, `05`, and `14`. Hosted durable definitions are owned by [a13n Service](../a13n-service/README.md).
 
+### Author or Select a Provider
+
+Read `22` for the shared Provider core, credential declaration, catalogs, and the installed-plugin manifest, then the owning domain: `16b` for Model, `08a` for Environment, `09` for Memory, and [Service Connectivity](../a13n-service/40-connectivity/README.md) for the Connector and Web deployment boundaries.
+
 ### Understand Models and Recovery
 
 Read `06`, `10`, and `16`. Read `16a` for OAuth-backed native Models and Host credential sources. Provider transport retry, exact history repair, `ModelAttempt` recovery, and durable Host recovery have separate owners.
 
 ### Integrate Tools or Environments
 
-Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](../a13n-environment/README.md). For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `08` solely owns background-process semantics. A Run receives fresh Environment adapters and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [a13n Service](../a13n-service/README.md).
+Read `07`, `08`, `13`, and `15`, then `08a` for Provider definitions, adapter lifecycle, and built-ins, and `22` for the shared Provider core. For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `08` solely owns background-process semantics. A Run receives fresh Environment adapters and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [a13n Service](../a13n-service/README.md).
 
 ### Implement Hosting or Persistence
 
@@ -72,6 +78,7 @@ Read `06`, `19`, `13`, and `15`. Read `12` separately for process-local events a
 - Concrete plugins and other native Python inputs are trusted in-process objects; the narrow Harness plugin document is an optional builder-local source, not an Agent definition format.
 - The Harness owns process-local code-first construction and logical-Run behavior.
 - A Host owns durable definition schemas, Presets, revisions, artifact locks, reconstruction adapters, Session/Run lifecycle, execution lifecycle, and delivery.
+- Provider definitions are inert immutable values; a definition's runtime factory is the only place it acquires a live collaborator.
 - Environment Providers construct fresh adapters without I/O; Provider implementations own preparation, connections and effect evidence, while Hosts own current state and lifecycle policy.
 - A telemetry backend observes execution but never becomes lifecycle authority.
 

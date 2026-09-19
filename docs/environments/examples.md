@@ -11,10 +11,9 @@ sequenceDiagram
     participant Environment
     participant Target
 
-    Host->>Provider: validate_configuration(version, JSON)
-    Host->>Provider: create_environment(configuration, state, runtime)
+    Host->>Provider: create(recipe, configuration, credential, state)
     Provider-->>Host: fresh inert Environment
-    Host->>Environment: enter(correlation)
+    Host->>Environment: enter(mount correlation)
     Host->>Environment: prepare or ensure_ready
     Environment->>Target: create, re-enter or connect and become ready
     Host->>Environment: provider-neutral file operations
@@ -35,7 +34,7 @@ uv sync --locked
 For an external application, depend on the released distribution instead:
 
 ```bash
-uv add a13n-environment
+uv add a13n-harness
 ```
 
 ## Direct Local
@@ -43,14 +42,14 @@ uv add a13n-environment
 Run the fully offline example:
 
 ```bash
-uv run environment-provider-example direct-local
+uv run environment-provider-example direct_local
 ```
 
 The command:
 
 - creates a Host-owned workspace;
-- selects only `direct-local` in an immutable catalog;
-- validates a credential-free version `1` configuration;
+- selects only `direct_local` in an immutable catalog;
+- validates a credential-free recipe against the Provider's declared model;
 - constructs and enters one fresh adapter;
 - writes and reads `/provider-example.txt` through `EnvironmentOperations.files`;
 - observes that `dump_state()` is `None`;
@@ -59,7 +58,7 @@ The command:
 Use another workspace with:
 
 ```bash
-uv run environment-provider-example direct-local \
+uv run environment-provider-example direct_local \
   --workspace /absolute/path/to/workspace
 ```
 

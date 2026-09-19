@@ -296,7 +296,7 @@ All six cloud providers use the same configuration, backend, and private-credent
 
 def main() -> None:
     outputs = {
-        "docs/a13n-environment/configuration-reference.md": render_environment_configuration(),
+        "docs/environments/configuration-reference.md": render_environment_configuration(),
         "docs/a13n-service/configuration-reference.md": render_configuration(),
         "docs/a13n-service/api-reference.md": render_native_api(),
         "scripts/docs/service-settings.schema.json": json.dumps(Settings.model_json_schema(), indent=2) + "\n",
