@@ -154,6 +154,7 @@ def _resource_value(source: LoadedHarnessUiConfiguration, kind: str, resource_id
         "agent": source.agents,
         "subagent": source.subagents,
         "project": source.projects,
+        "device": source.devices,
     }.get(kind)
     if resources is None:
         raise ValueError(f"unsupported resource kind: {kind}")

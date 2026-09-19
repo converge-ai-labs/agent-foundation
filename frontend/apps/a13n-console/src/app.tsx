@@ -16,7 +16,9 @@ import { ConnectionAuthorizationCallback } from "./features/connections/callback
 import { AppearanceProvider } from "./layout/appearance";
 import { Shell } from "./layout/shell";
 import { WorkspaceProvider } from "./layout/workspace";
-import { Empty, ErrorPage, Loading, Page } from "./shared/feedback";
+import { Empty } from "./shared/collection";
+import { ErrorPage, Loading } from "./shared/feedback";
+import { Page } from "./shared/page";
 
 const ConfigurationPage = lazy(() =>
   import("./features/configuration-assistant/page").then((module) => ({
@@ -90,7 +92,7 @@ const ConnectionsPage = lazy(() =>
   })),
 );
 const BotsPage = lazy(() =>
-  import("./features/bots/page").then((module) => ({
+  import("./features/bots/list").then((module) => ({
     default: module.BotsPage,
   })),
 );
@@ -100,7 +102,7 @@ const BotConnect = lazy(() =>
   })),
 );
 const BotDetail = lazy(() =>
-  import("./features/bots/page").then((module) => ({
+  import("./features/bots/detail").then((module) => ({
     default: module.BotDetail,
   })),
 );
@@ -150,7 +152,7 @@ const ThreadLayout = lazy(() =>
   })),
 );
 const RunPage = lazy(() =>
-  import("./features/conversations/run").then((module) => ({
+  import("./features/conversations/transcript").then((module) => ({
     default: module.RunPage,
   })),
 );
@@ -314,7 +316,14 @@ function AppContent() {
                       />
                       <Route path="models" element={<ModelsPage />} />
                       <Route path="memories" element={<MemoriesPage />} />
-                      <Route path="settings" element={<WorkspaceSettings />} />
+                      <Route
+                        path="settings/service-accounts/:accountId"
+                        element={<WorkspaceSettings />}
+                      />
+                      <Route
+                        path="settings/:section?"
+                        element={<WorkspaceSettings />}
+                      />
                       <Route path="usage" element={<ComingSoon />} />
                       <Route path="schedules" element={<ComingSoon />} />
                       <Route path="*" element={<NotFound />} />
@@ -322,11 +331,11 @@ function AppContent() {
                     <Route element={<WorkspaceShell />}>
                       <Route path="/" element={null} />
                       <Route
-                        path="/settings/profile"
+                        path="/settings/:section?"
                         element={<PersonalSettings />}
                       />
                       <Route
-                        path="/organization/settings"
+                        path="/organization/settings/:section?"
                         element={<OrganizationSettings />}
                       />
                     </Route>

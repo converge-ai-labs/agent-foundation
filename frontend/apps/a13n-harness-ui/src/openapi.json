@@ -219,6 +219,147 @@
         }
       }
     },
+    "/api/devices": {
+      "get": {
+        "summary": "Devices",
+        "operationId": "devices_api_devices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceSummary"
+                  },
+                  "type": "array",
+                  "title": "Response Devices Api Devices Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{device_id}": {
+      "get": {
+        "summary": "Device Info",
+        "operationId": "device_info_api_devices__device_id__get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{device_id}/directories": {
+      "get": {
+        "summary": "Device Directories",
+        "operationId": "device_directories_api_devices__device_id__directories_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Path"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000000,
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectoryListResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/host/terminals": {
       "get": {
         "summary": "Terminals",
@@ -5090,6 +5231,25 @@
             "type": "string",
             "title": "Environment Adapter"
           },
+          "environment_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentBindingSelection"
+            },
+            "type": "array",
+            "title": "Environment Bindings",
+            "default": []
+          },
+          "default_environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment"
+          },
           "environment_run_extension_ids": {
             "items": {
               "type": "string"
@@ -6070,6 +6230,32 @@
             ],
             "title": "Environment Profile Id"
           },
+          "environment_bindings": {
+            "type": "string",
+            "enum": [
+              "explicit",
+              "project",
+              "agent",
+              "global",
+              "builtin",
+              "thread"
+            ],
+            "title": "Environment Bindings",
+            "default": "builtin"
+          },
+          "default_environment": {
+            "type": "string",
+            "enum": [
+              "explicit",
+              "project",
+              "agent",
+              "global",
+              "builtin",
+              "thread"
+            ],
+            "title": "Default Environment",
+            "default": "builtin"
+          },
           "harness_plugin_ids": {
             "type": "string",
             "enum": [
@@ -6669,6 +6855,173 @@
         "title": "DeferredRequestView",
         "type": "object"
       },
+      "DeviceInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "transport": {
+            "type": "string",
+            "enum": [
+              "http",
+              "websocket"
+            ],
+            "title": "Transport"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "path_style": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Style"
+          },
+          "default_working_directory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Working Directory"
+          },
+          "directory_discovery": {
+            "type": "boolean",
+            "title": "Directory Discovery",
+            "default": false
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "transport",
+          "available"
+        ],
+        "title": "DeviceInfo"
+      },
+      "DeviceSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "transport": {
+            "type": "string",
+            "enum": [
+              "http",
+              "websocket"
+            ],
+            "title": "Transport"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "transport"
+        ],
+        "title": "DeviceSummary"
+      },
+      "DirectoryEntry": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "format": "eip-absolute-path",
+            "title": "Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "path"
+        ],
+        "title": "DirectoryEntry"
+      },
+      "DirectoryListResult": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "format": "eip-absolute-path",
+            "title": "Path"
+          },
+          "parent_path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "eip-absolute-path"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Path"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/DirectoryEntry"
+            },
+            "type": "array",
+            "title": "Entries",
+            "default": []
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "DirectoryListResult"
+      },
       "DirectoryPage": {
         "properties": {
           "directory": {
@@ -6709,6 +7062,78 @@
         ],
         "title": "DirectoryPage"
       },
+      "EnvironmentAction": {
+        "description": "Exact authorization values in the locked first-party catalog.",
+        "enum": [
+          "environment.file.stat",
+          "environment.file.read_text",
+          "environment.file.read_bytes",
+          "environment.file.write_text",
+          "environment.file.patch_text",
+          "environment.file.list",
+          "environment.file.query",
+          "environment.file.search_text",
+          "environment.file.mkdir",
+          "environment.file.move",
+          "environment.file.remove",
+          "environment.file.write_bytes",
+          "environment.file.copy_source",
+          "environment.file.copy_destination",
+          "environment.shell.exec",
+          "environment.process.list",
+          "environment.process.start",
+          "environment.process.inspect",
+          "environment.process.read_output",
+          "environment.process.write_stdin",
+          "environment.process.close_stdin",
+          "environment.process.signal",
+          "environment.process.wait",
+          "environment.process.kill",
+          "environment.process.release",
+          "environment.output.read",
+          "environment.output.release",
+          "environment.port.inspect",
+          "environment.port.wait",
+          "environment.state.export",
+          "environment.state.restore"
+        ],
+        "title": "EnvironmentAction",
+        "type": "string"
+      },
+      "EnvironmentBindingSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "device_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "pattern": "^device-[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "working_directory": {
+            "format": "eip-absolute-path",
+            "title": "Working Directory",
+            "type": "string"
+          },
+          "alias": {
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+            "title": "Alias",
+            "type": "string"
+          },
+          "permission_ceiling": {
+            "$ref": "#/components/schemas/EnvironmentPermissionSet"
+          }
+        },
+        "required": [
+          "device_id",
+          "working_directory",
+          "alias"
+        ],
+        "title": "EnvironmentBindingSelection",
+        "type": "object"
+      },
       "EnvironmentOutcomeView": {
         "additionalProperties": false,
         "properties": {
@@ -6742,6 +7167,21 @@
           "failed"
         ],
         "title": "EnvironmentOutcomeView",
+        "type": "object"
+      },
+      "EnvironmentPermissionSet": {
+        "properties": {
+          "operations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentAction"
+            },
+            "title": "Operations",
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "title": "EnvironmentPermissionSet",
         "type": "object"
       },
       "EnvironmentProfileSummary": {
@@ -8852,6 +9292,34 @@
               }
             ]
           },
+          "environment_bindings": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EnvironmentBindingSelection"
+                },
+                "type": "array",
+                "maxItems": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Bindings"
+          },
+          "default_environment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 63,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment"
+          },
           "harness_plugins": {
             "anyOf": [
               {
@@ -8948,6 +9416,34 @@
               }
             ],
             "title": "Environment Profile Id"
+          },
+          "environment_bindings": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EnvironmentBindingSelection"
+                },
+                "type": "array",
+                "maxItems": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Bindings"
+          },
+          "default_environment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 63,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment"
           },
           "harness_plugin_ids": {
             "anyOf": [
@@ -9086,7 +9582,6 @@
             },
             "type": "array",
             "maxItems": 64,
-            "minItems": 1,
             "title": "Roots"
           },
           "last_active_at": {
@@ -11254,6 +11749,28 @@
             "minLength": 1,
             "title": "Environment Profile Id"
           },
+          "environment_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentBindingSelection"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Environment Bindings",
+            "default": []
+          },
+          "default_environment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 63,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment"
+          },
           "harness_plugin_ids": {
             "items": {
               "type": "string"
@@ -11464,6 +11981,26 @@
             "minLength": 1,
             "title": "Environment Profile Id",
             "type": "string"
+          },
+          "environment_bindings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentBindingSelection"
+            },
+            "title": "Environment Bindings",
+            "type": "array"
+          },
+          "default_environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Default Environment"
           },
           "harness_plugin_ids": {
             "default": [],
@@ -14335,6 +14872,34 @@
             ],
             "title": "Environment Profile Id"
           },
+          "environment_bindings": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EnvironmentBindingSelection"
+                },
+                "maxItems": 64,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Bindings"
+          },
+          "default_environment": {
+            "anyOf": [
+              {
+                "maxLength": 63,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment"
+          },
           "harness_plugin_ids": {
             "anyOf": [
               {
@@ -14435,6 +15000,34 @@
               }
             ],
             "title": "Environment Profile Id"
+          },
+          "environment_bindings": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EnvironmentBindingSelection"
+                },
+                "maxItems": 64,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Bindings"
+          },
+          "default_environment": {
+            "anyOf": [
+              {
+                "maxLength": 63,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment"
           },
           "harness_plugin_ids": {
             "anyOf": [

@@ -769,6 +769,8 @@ def _configuration(value: ThreadConfiguration) -> ThreadConfigurationView:
         agent_source=AgentSourceView.from_stored(value.agent_source),
         default_model_id=value.default_model_id,
         environment_profile_id=value.environment_profile_id,
+        environment_bindings=value.environment_bindings,
+        default_environment=value.default_environment,
         harness_plugin_ids=value.harness_plugin_ids,
         environment_run_extension_ids=value.environment_run_extension_ids,
         mcp_server_ids=value.mcp_server_ids,

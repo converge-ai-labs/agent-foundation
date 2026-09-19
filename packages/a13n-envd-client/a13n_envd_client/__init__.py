@@ -16,8 +16,8 @@ from .errors import (
 from .file_transfer import EIPFileReader, EIPFileWriter
 from .http import HttpTransport, normalize_http_endpoint
 from .output import EIPOutputPage, EIPOutputReader
-from .requester import RequestCoordinator
-from .session import EIPSession
+from .requester import RequestCoordinator, SessionRequester
+from .session import EIPDeviceConnection, EIPSession
 from .stdio import StdioTransport
 from .transport import ControlFrame, EIPTransport, EIPTransportFrame
 from .websocket import AcceptedWebSocketTransport, WebSocketConnection
@@ -32,6 +32,7 @@ __all__ = [
     "ControlFrame",
     "EIPClientError",
     "EIPConnectionError",
+    "EIPDeviceConnection",
     "EIPFileReader",
     "EIPFileWriter",
     "EIPMethodError",
@@ -48,6 +49,7 @@ __all__ = [
     "EIPTransportFrame",
     "HttpTransport",
     "RequestCoordinator",
+    "SessionRequester",
     "StdioTransport",
     "WebSocketConnection",
     "__version__",

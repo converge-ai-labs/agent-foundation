@@ -263,6 +263,7 @@ class EnvironmentMountInfo(BaseModel):
     permission_ceiling: EnvironmentPermissionSet
     default_working_directory: str | None
     mount_path: str | None = None
+    provider_root: str = "/"
 
     @field_validator("name")
     @classmethod

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
 from a13n_envd_client.http import normalize_http_endpoint
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
@@ -9,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 class RemoteEnvdProviderConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    working_directory: AbsoluteEIPPath | None = None
     required_methods: tuple[str, ...] = Field(default=(), max_length=128)
 
     @field_validator("required_methods")
@@ -22,13 +24,13 @@ class RemoteEnvdProviderConfiguration(BaseModel):
 class RemoteEnvdStateData(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    daemon_environment_id: str = Field(min_length=1, max_length=128)
+    device_id: str = Field(min_length=1, max_length=128)
 
-    @field_validator("daemon_environment_id")
+    @field_validator("device_id")
     @classmethod
     def _identity(cls, value: str) -> str:
         if any(character.isspace() or ord(character) < 32 for character in value):
-            raise ValueError("Daemon identity must contain no whitespace or control characters")
+            raise ValueError("Device identity must contain no whitespace or control characters")
         return value
 
 

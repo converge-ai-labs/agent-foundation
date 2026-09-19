@@ -1,10 +1,20 @@
-import { ChoiceField, FormField, Input, Switch } from "a13n-ui";
+import {
+  ChoiceField,
+  Input,
+  SettingsRow,
+  SettingsSection,
+  Switch,
+} from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
-import styles from "../../shared/shared.module.css";
-import modelStyles from "./models.module.css";
-import { ModelPricing } from "./model-pricing";
 
+const inputCapabilities = [
+  ["image_understanding", "Images"],
+  ["audio_understanding", "Audio"],
+  ["video_understanding", "Video"],
+] as const;
+
+/** What agents may rely on: one surface of switches and declared facts. */
 export function ModelInformation({
   value,
   onChange,
@@ -19,57 +29,30 @@ export function ModelInformation({
     { value: "false", label: t("Unsupported") },
   ];
   return (
-    <section className={styles.stack}>
-      <div className={styles.twoColumns}>
-        <fieldset className={modelStyles.capabilities}>
-          <legend>{t("Input capabilities")}</legend>
-          {(
-            [
-              "image_understanding",
-              "audio_understanding",
-              "video_understanding",
-            ] as const
-          ).map((capability, index) => {
-            const label = ["Images", "Audio", "Video"][index];
-            return (
-              <label key={capability} className={modelStyles.modelStatus}>
-                <Switch
-                  aria-label={t(label)}
-                  checked={value.capabilities?.includes(capability) ?? false}
-                  onCheckedChange={(enabled) =>
-                    onChange({
-                      ...value,
-                      capabilities: enabled
-                        ? [...(value.capabilities ?? []), capability]
-                        : value.capabilities?.filter(
-                            (item) => item !== capability,
-                          ),
-                    })
-                  }
-                />
-                {t(label)}
-              </label>
-            );
-          })}
-        </fieldset>
-        <FormField label={t("Context window")}>
-          <Input
-            type="number"
-            min={1}
-            step={1}
-            placeholder={t("Unknown")}
-            value={value.context_window_tokens ?? ""}
-            onChange={(event) =>
+    <SettingsSection
+      title={t("Capabilities")}
+      description={t("What agents can rely on when they run this model.")}
+    >
+      {inputCapabilities.map(([capability, label]) => (
+        <SettingsRow key={capability} label={t(label)}>
+          <Switch
+            aria-label={t(label)}
+            checked={value.capabilities?.includes(capability) ?? false}
+            onCheckedChange={(enabled) =>
               onChange({
                 ...value,
-                context_window_tokens:
-                  event.target.value === "" ? null : Number(event.target.value),
+                capabilities: enabled
+                  ? [...(value.capabilities ?? []), capability]
+                  : value.capabilities?.filter((item) => item !== capability),
               })
             }
           />
-        </FormField>
+        </SettingsRow>
+      ))}
+      <SettingsRow label={t("Tool calling support")}>
         <ChoiceField
           label={t("Tool calling support")}
+          hideLabel
           options={options}
           value={String(value.supports_tools ?? "unknown")}
           onValueChange={(next) =>
@@ -79,8 +62,11 @@ export function ModelInformation({
             })
           }
         />
+      </SettingsRow>
+      <SettingsRow label={t("Structured output")}>
         <ChoiceField
           label={t("Structured output")}
+          hideLabel
           options={options}
           value={String(value.structured_output ?? "unknown")}
           onValueChange={(next) =>
@@ -90,11 +76,24 @@ export function ModelInformation({
             })
           }
         />
-      </div>
-      <ModelPricing
-        value={value.pricing ?? null}
-        onChange={(pricing) => onChange({ ...value, pricing })}
-      />
-    </section>
+      </SettingsRow>
+      <SettingsRow label={t("Context window")} description={t("Tokens")}>
+        <Input
+          type="number"
+          min={1}
+          step={1}
+          aria-label={t("Context window")}
+          placeholder={t("Unknown")}
+          value={value.context_window_tokens ?? ""}
+          onChange={(event) =>
+            onChange({
+              ...value,
+              context_window_tokens:
+                event.target.value === "" ? null : Number(event.target.value),
+            })
+          }
+        />
+      </SettingsRow>
+    </SettingsSection>
   );
 }

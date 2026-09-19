@@ -25,7 +25,7 @@ from a13n_service.interactions.models import RunRecord
 from a13n_service.observability import observe_phase, observe_phase_result
 from a13n_service.storage import short_session
 
-from .configuration import load_configuration
+from .configuration import execution_configuration, load_configuration
 from .domain import TemplateConfiguration
 from .lifecycle import EnvironmentLifecycle, EnvironmentOperationBusy
 from .local_directory import instance_configuration
@@ -151,7 +151,7 @@ class RunEnvironment(Environment):
             if not reusable:
                 try:
                     with fail_after(10, shield=True):
-                        await delegate.close()
+                        await self._coordinator.close_environment(delegate)
                 except Exception:
                     logger.exception("Discarded Environment connection cleanup failed")
                 delegate = None
@@ -170,7 +170,7 @@ class RunEnvironment(Environment):
         except BaseException as error:
             try:
                 with fail_after(10, shield=True):
-                    await delegate.close()
+                    await self._coordinator.close_environment(delegate)
             except BaseException as cleanup_error:
                 error.add_note(f"Environment cleanup also failed: {cleanup_error!r}")
             raise
@@ -197,7 +197,7 @@ class RunEnvironment(Environment):
 
     async def _close(self) -> None:
         if self._delegate is not None:
-            await self._delegate.close()
+            await self._coordinator.close_environment(self._delegate)
 
     async def _destroy(self) -> None:
         raise RuntimeError("Run objects do not own target deletion authority")
@@ -254,7 +254,9 @@ async def validate_run_environment(
             or provider.workspace_id not in {None, row.workspace_id}
         ):
             raise ValueError("Environment Provider is unavailable")
-        configuration = await load_configuration(session, row)
+        configuration = execution_configuration(
+            provider.type, await load_configuration(session, row), binding.working_directory
+        )
         implementation = lifecycle.catalog.require(provider.type)
         validated = implementation.validate_configuration(
             schema_version=configuration.configuration_schema_version,

@@ -8,8 +8,6 @@ use tokio::{
     sync::mpsc,
 };
 
-use crate::isolation::LaunchIsolation;
-
 const PROTOCOL_VERSION: u32 = 1;
 const MAX_PROTOCOL_LINE_BYTES: usize = 32 * 1024 * 1024;
 const CLEANUP_GRACE: Duration = Duration::from_secs(2);
@@ -25,7 +23,6 @@ pub(crate) struct LaunchPlan {
     pub(crate) initial_stdin: Option<String>,
     pub(crate) keep_stdin_open: bool,
     pub(crate) wall_time_ms: u64,
-    pub(crate) isolation: LaunchIsolation,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -201,10 +198,6 @@ pub(crate) async fn run_internal() -> io::Result<()> {
         return protocol_failure(&mut stdout, "unsupported supervisor protocol version").await;
     }
     validate_plan(&plan)?;
-    #[cfg(target_os = "linux")]
-    if plan.isolation == LaunchIsolation::LinuxBubblewrap {
-        crate::isolation::isolate_linux_session_keyring()?;
-    }
     write_event(&mut stdout, &SupervisorEvent::Prepared).await?;
 
     let request = read_request(&mut requests).await?;
@@ -245,8 +238,6 @@ async fn run_payload(
         }
     };
     let tree_id = child.id();
-    let mut linux_orphan_reaper = tokio::time::interval(Duration::from_millis(50));
-    linux_orphan_reaper.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut payload_stdin = child.stdin.take();
     let payload_stdout = child
         .stdout
@@ -300,9 +291,6 @@ async fn run_payload(
                     stream_closures.observe(&stream);
                     forward_stream_event(&mut stdout, stream).await?;
                 }
-            }
-            _ = linux_orphan_reaper.tick(), if plan.isolation == LaunchIsolation::LinuxBubblewrap => {
-                reap_linux_namespace_orphans(tree_id);
             }
             request = read_optional_request(&mut requests) => {
                 match request? {
@@ -421,9 +409,6 @@ async fn run_payload(
                     forward_stream_event(&mut stdout, stream).await?;
                 }
             }
-            _ = linux_orphan_reaper.tick(), if plan.isolation == LaunchIsolation::LinuxBubblewrap => {
-                reap_linux_namespace_orphans(tree_id);
-            }
             request = read_optional_request(&mut requests) => {
                 match request? {
                     Some(SupervisorRequest::WriteStdin { data, close_after_write }) => {
@@ -488,11 +473,7 @@ async fn run_payload(
     )
     .await?;
 
-    let cleanup_complete = if plan.isolation == LaunchIsolation::LinuxBubblewrap {
-        cleanup_linux_pid_namespace(&mut child).await
-    } else {
-        forced_cleanup_proven || cleanup_tree(&tree, &mut child).await
-    };
+    let cleanup_complete = forced_cleanup_proven || cleanup_tree(&tree, &mut child).await;
     let drain_deadline = tokio::time::sleep(CLEANUP_GRACE);
     tokio::pin!(drain_deadline);
     while !stream_closures.complete() {
@@ -509,7 +490,7 @@ async fn run_payload(
             _ = &mut drain_deadline => break,
         }
     }
-    let cleanup = classify_cleanup(plan.isolation, cleanup_complete);
+    let cleanup = classify_cleanup(cleanup_complete);
     write_event(
         &mut stdout,
         &SupervisorEvent::Cleaned {
@@ -520,87 +501,9 @@ async fn run_payload(
     .await
 }
 
-#[cfg(target_os = "linux")]
-fn reap_linux_namespace_orphans(initial_pid: Option<u32>) {
-    let initial_pid = initial_pid.and_then(|pid| i32::try_from(pid).ok());
-    let Ok(entries) = std::fs::read_dir("/proc") else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        let Ok(pid) = name.parse::<i32>() else {
-            continue;
-        };
-        if pid <= 1 || Some(pid) == initial_pid {
-            continue;
-        }
-        unsafe {
-            libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG);
-        }
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn reap_linux_namespace_orphans(_initial_pid: Option<u32>) {}
-
-#[cfg(target_os = "linux")]
-async fn cleanup_linux_pid_namespace(child: &mut Child) -> bool {
-    let _ = child.start_kill();
-    let deadline = tokio::time::Instant::now() + CLEANUP_GRACE;
-    loop {
-        reap_linux_namespace_children();
-        let mut remaining = Vec::new();
-        let Ok(entries) = std::fs::read_dir("/proc") else {
-            return false;
-        };
-        for entry in entries.flatten() {
-            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-                continue;
-            };
-            let Ok(pid) = name.parse::<i32>() else {
-                continue;
-            };
-            if pid > 1 {
-                remaining.push(pid);
-            }
-        }
-        if remaining.is_empty() {
-            return true;
-        }
-        for pid in remaining {
-            unsafe {
-                libc::kill(pid, libc::SIGKILL);
-            }
-        }
-        if tokio::time::Instant::now() >= deadline {
-            return false;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn reap_linux_namespace_children() {
-    loop {
-        let result = unsafe { libc::waitpid(-1, std::ptr::null_mut(), libc::WNOHANG) };
-        if result <= 0 {
-            return;
-        }
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-async fn cleanup_linux_pid_namespace(_child: &mut Child) -> bool {
-    false
-}
-
-fn classify_cleanup(isolation: LaunchIsolation, cleanup_complete: bool) -> SupervisorCleanup {
+fn classify_cleanup(cleanup_complete: bool) -> SupervisorCleanup {
     if cleanup_complete {
         SupervisorCleanup::Complete
-    } else if isolation == LaunchIsolation::MacosSeatbelt {
-        SupervisorCleanup::ResidualConfined
     } else {
         SupervisorCleanup::Failed
     }
@@ -1032,23 +935,9 @@ mod tests {
     }
 
     #[test]
-    fn macos_cleanup_preserves_residual_confinement_when_group_exit_is_unproven() {
-        assert_eq!(
-            classify_cleanup(LaunchIsolation::MacosSeatbelt, true),
-            SupervisorCleanup::Complete
-        );
-        assert_eq!(
-            classify_cleanup(LaunchIsolation::MacosSeatbelt, false),
-            SupervisorCleanup::ResidualConfined
-        );
-        assert_eq!(
-            classify_cleanup(LaunchIsolation::Disabled, true),
-            SupervisorCleanup::Complete
-        );
-        assert_eq!(
-            classify_cleanup(LaunchIsolation::Disabled, false),
-            SupervisorCleanup::Failed
-        );
+    fn cleanup_requires_proven_native_group_exit() {
+        assert_eq!(classify_cleanup(true), SupervisorCleanup::Complete);
+        assert_eq!(classify_cleanup(false), SupervisorCleanup::Failed);
     }
 
     #[test]

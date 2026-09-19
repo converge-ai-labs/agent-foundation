@@ -34,20 +34,22 @@ Carrier liveness, Session inactivity and operation/transfer deadlines are distin
 
 ## Binary Data-Frame Profile
 
-EIP 1.0 selects binary profile 2. Stdio and WebSocket share this network-byte-order frame; HTTP transfers use raw bodies instead.
+EIP 0.1 selects binary profile 1. Stdio and WebSocket share this network-byte-order frame; HTTP transfers use raw bodies instead.
 
-| Field               | Width | Contract                                                             |
-| ------------------- | ----: | -------------------------------------------------------------------- |
-| magic               |     4 | ASCII `EIPD`                                                         |
-| profile version     |     1 | `2`                                                                  |
-| frame kind          |     1 | `1=ATTACH`, `2=ATTACHED`, `3=CHUNK`, `4=END`, `5=END_ACK`, `6=RESET` |
-| terminal status     |     2 | Zero except typed RESET status                                       |
-| session byte length |     2 | Positive bounded UTF-8 Session selector length                       |
-| handle byte length  |     2 | Positive bounded UTF-8 transfer selector length                      |
-| stream offset       |     8 | Preceding/accepted byte count                                        |
-| payload byte length |     4 | Raw chunk length, zero for non-CHUNK frames                          |
+| Field               | Width | Contract                                                                         |
+| ------------------- | ----: | -------------------------------------------------------------------------------- |
+| magic               |     4 | ASCII `EIPD`                                                                     |
+| profile version     |     1 | `1`                                                                              |
+| frame kind          |     1 | `1=ATTACH`, `2=ATTACHED`, `3=CHUNK`, `4=END`, `5=END_ACK`, `6=RESET`, `7=CREDIT` |
+| terminal status     |     2 | Zero except typed RESET status                                                   |
+| session byte length |     2 | Positive bounded UTF-8 Session selector length                                   |
+| handle byte length  |     2 | Positive bounded UTF-8 transfer selector length                                  |
+| stream offset       |     8 | Preceding/accepted byte count                                                    |
+| payload byte length |     4 | Raw chunk length, zero for non-CHUNK frames                                      |
 
 The 24-byte header is followed by Session bytes, handle bytes and payload. The entire frame respects `max_transfer_frame_bytes`; lengths are checked before allocation. The selected Session and handle must match the same carrier trust scope and generation. Attach offsets are zero. Gaps, duplicates, reordering, wrong direction, repeated attach or post-terminal data reset the affected transfer; an unrouteable malformed header fails the carrier.
+
+CHUNK payloads are non-empty. Each transfer has a fixed eight-CHUNK send window. The receiver returns a payload-free `CREDIT` with the cumulative consumed byte offset after accepting each chunk. Credit must advance to a sent chunk boundary; duplicates, regressions and unsent offsets reset that transfer. The sender reserves its window slot before publishing a CHUNK, stops when all slots are occupied, and drains all outstanding credit before END. Attachment, CREDIT, END and RESET do not consume chunk slots. Credit releases bounded transport capacity only: it is not integrity verification, successful close, sealed-upload evidence or mutation completion. A stalled consumer backpressures only its transfer until its existing idle/absolute deadline; other transfers and control requests continue. HTTP adapters translate this internal flow control to raw-body backpressure, not extra HTTP requests.
 
 A reader follows `ATTACH -> ATTACHED -> CHUNK* -> END`, then explicit `file.close_reader`. The consumer must drain all chunks and verify byte count/SHA-256 before close is considered successful. Reader END is producer completion, not acceptance, and has no END_ACK. Abandonment sends RESET when possible and never reports successful close.
 
@@ -64,7 +66,7 @@ Content-Type: application/json; charset=utf-8\r\n
 <one JSON-RPC envelope including eip_session when scoped>
 ```
 
-Binary content uses `application/vnd.a13n.eip-data` and contains one complete profile-2 frame. A writer never interleaves bytes within an outer frame. Stdout contains protocol only, stderr structured logs only; payload stdout/stderr enter the private output spool.
+Binary content uses `application/vnd.a13n.eip-data` and contains one complete profile-1 frame. A writer never interleaves bytes within an outer frame. Stdout contains protocol only, stderr structured logs only; payload stdout/stderr enter the private output spool.
 
 The first initialize is device-scoped. Thereafter the Host opens/closes independent Sessions without reinitializing the pipes or waiting for another Session to finish. A shared Local Envd Host runtime owns the daemon; a workspace adapter owns only its Session. Explicit standalone ownership still permits a caller to own the entire daemon. Stdin EOF normally triggers owned-daemon shutdown; it is neither successful transfer EOF nor proof of non-dispatch. Stdio has no Bearer token and is not exposed as an unauthenticated network service.
 
@@ -76,7 +78,7 @@ The dedicated EIP listener requires an Authorization Bearer token on every contr
 
 An admitted request returns HTTP 200 with a typed EIP result/error. Missing/invalid credentials return 401; malformed media/framing 400/415; unknown raw-transfer session/handle 409; oversized bodies 413; capacity rejection 429; unsupported paths/methods 404/405. Pre-admission HTTP rejection proves that request did not dispatch. TCP pooling and affinity have no Session semantics.
 
-Raw readers/writers use fixed transfer resources with protected `EIP-Session`, transfer-handle and direction headers. Reader body completion is producer completion only; typed close verifies acceptance. Writer success confirms sealed upload only; typed commit publishes. Use bounded streaming and backpressure; no content encoding/compression, Range/multipart protocol, base64 file bodies or automatic retry/resume. Body failure aborts the attachment and pre-handoff candidate where owned.
+Raw readers/writers use fixed transfer resources with protected `EIP-Session`, transfer-handle and direction headers. Reader body completion is producer completion only; typed close verifies acceptance. Writer success confirms sealed upload only; typed commit publishes. Use bounded streaming and backpressure; no content encoding/compression, Range/multipart protocol, base64 file bodies or automatic retry/resume. Body failure aborts the attachment and pre-handoff candidate where owned. `DELETE` on the fixed transfer resource, with the same protected headers and an empty body, applies RESET and returns 204 on accepted cleanup. Clients use it on abandonment even after closing the body: a producer may already have sent all bytes into network buffers. It neither accepts a reader's content nor cancels a handed-off writer commit.
 
 A request disconnect releases only its delivery waiter/body. It does not expire the Session or prove a mutation absent. Session keepalive and idle expiry follow the same owner-liveness policy as stdio/WS. Two authenticated HTTP clients can open and use Sessions concurrently, and closing or expiring A leaves B's active transfer intact.
 
@@ -84,7 +86,7 @@ A request disconnect releases only its delivery waiter/body. It does not expire 
 
 The operator supplies a fixed normalized `ws`/`wss` endpoint, protected credential file and optional additional CA roots. Envd dials; the trusted Host authenticates the attachment and binds its expected device identity. The upgrade uses Authorization and exactly `eip.v1`. TLS chain/hostname validation is mandatory for wss; no redirects, embedded credentials or implicit insecure fallback. Plain ws is an explicitly selected trusted-network deployment. Per-message compression is disabled.
 
-The first text message is device initialize. A finite handshake deadline applies even when no Run is waiting. Until handshake success, no session operations or binary frames are admitted. Afterward each text message is one device/session control envelope and each binary message one profile-2 frame. Fragmentation is allowed within the aggregate message bound. Session-specific policy/limits cannot mutate sibling coordinators.
+The first text message is device initialize. A finite handshake deadline applies even when no Run is waiting. Until handshake success, no session operations or binary frames are admitted. Afterward each text message is one device/session control envelope and each binary message one profile-1 frame. Fragmentation is allowed within the aggregate message bound. Session-specific policy/limits cannot mutate sibling coordinators.
 
 One accepted device attachment remains online across Run boundaries. Session close does not close the socket even when no Sessions remain. WebSocket ping/pong and idle device presence do not maintain Session ownership.
 
@@ -108,4 +110,4 @@ The listener and HTTP requester belong to trusted Host code. The Host owns produ
 | Session close races commit                                         | Exactly one candidate owner retains cleanup/publication responsibility                 |
 | Completed history exceeds retention or eligible pressure threshold | Reclaim unused terminal records/output, never active command resources                 |
 
-All framed carriers require binary profile 2. Sessions have independent ownership and identical retention semantics across carriers.
+All framed carriers require binary profile 1. Sessions have independent ownership and identical retention semantics across carriers.

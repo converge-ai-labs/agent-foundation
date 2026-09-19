@@ -47,11 +47,7 @@ async def register(client):
         json={
             "provider_id": response.json()["id"],
             "configuration": {},
-            "state": {
-                "provider_key": "a13n.websocket-envd",
-                "state_version": "1",
-                "state": {"daemon_environment_id": "local-computer"},
-            },
+            "device_id": "local-computer",
         },
     )
     assert response.status_code == 201, response.text
@@ -142,9 +138,13 @@ async def test_native_envd_connects_through_official_route(client_api, envd_bina
         ("wss://foundation.example", "shared Redis server"),
     ],
 )
-async def test_unsupported_client_deployment_fails_before_readiness(tmp_path, service_database, origin, error):
+async def test_unsupported_client_deployment_fails_before_readiness(
+    tmp_path, service_database, redis_url, origin, error
+):
     values = settings(tmp_path, service_database).model_dump()
     values["service"]["role"] = "control"
+    if error != "shared Redis server":
+        values["redis"] = {"backend": "redis", "url": redis_url}
     values["environments"] = {
         "provider_builtins": ("a13n.websocket-envd",),
         "client_public_origin": origin,

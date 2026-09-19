@@ -3,7 +3,7 @@ import {
   jsonObject,
   schemaErrors,
   validateAgentConfig,
-} from "../../shared/validation";
+} from "../../shared/forms";
 
 export type AgentConfig = Schema["AgentConfig-Input"];
 const commonFields = new Set([

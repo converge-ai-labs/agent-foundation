@@ -86,7 +86,8 @@ def method_error(error_type, code, *, field=None, safe_detail=None, stage="pre_d
                 field=field,
                 safe_detail=safe_detail,
                 operation_id="private-operation",
-                environment_id="private-environment",
+                device_id="private-device",
+                session_id="private-session",
                 generation=7,
             ),
         )

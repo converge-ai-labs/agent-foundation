@@ -239,7 +239,6 @@ SUITES = {
                 "environment/test_42_environment_files.py",
                 "test_file_traversal_rejects_source_and_destination_before_mutation",
                 "test_file_symlink_escape_and_provider_link_replacement_semantics",
-                "test_file_read_only_rejects_all_mutations_before_consuming_upload",
                 "test_missing_file_errors_preserve_directory_entries[direct-local-read]",
                 "test_missing_file_errors_preserve_directory_entries[direct-local-remove]",
                 "test_missing_file_errors_preserve_directory_entries[local-envd-stream]",

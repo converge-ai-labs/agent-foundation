@@ -1,26 +1,39 @@
 import { FileMemoryBrowser } from "../memory/documents";
 import type { BotAccount } from "./account";
 import {
+  ArrowLeftIcon,
+  DotsThreeIcon,
   FileTextIcon,
-  FolderSimpleIcon,
   ListBulletsIcon,
+  TrashIcon,
 } from "@phosphor-icons/react";
-import { Button, ChoiceField, FormField, Input } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuTrigger,
+} from "a13n-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import { Pagination, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
+import { Empty, Pagination, useCursor } from "../../shared/collection";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
 import { MarkdownContent } from "../../shared/markdown";
-import { Confirm } from "../../shared/form";
+import { Confirm } from "../../shared/dialogs";
+import { Section } from "../../shared/page";
 import styles from "./bots.module.css";
 import { GroupMemorySettings, MemorySettings } from "./memory-settings";
 import { GroupMemoryActions } from "./memory-toolbar";
 import { refreshMemory } from "./memory-actions";
-import { MemorySearch } from "./memory-search";
+import { MemorySearchField, MemorySearchResults } from "./memory-search";
 import { MemoryProvenance } from "./memory-provenance";
 
 export function BotMemory({ account }: { account: BotAccount }) {
@@ -164,8 +177,7 @@ function MemoryBrowser({
   const client = useClient(),
     { t } = useTranslation(),
     [search, setSearch] = useSearchParams(),
-    page = useCursor(),
-    { can } = useWorkspace();
+    page = useCursor();
   const scopeId = fixedScope?.id ?? search.get("memory_scope") ?? "";
   const scopes = useQuery({
     enabled: !fixedScope,
@@ -194,80 +206,81 @@ function MemoryBrowser({
       />
     );
   return (
-    <div className={styles.memorySection}>
-      <div className={styles.memoryHeading}>
-        <div>
-          <h2>{t("Conversation memory")}</h2>
-          <p>{t("Browse the index, then open only the documents you need.")}</p>
-        </div>
-      </div>
-      <div className={styles.memoryBrowser}>
-        <aside className={styles.scopePane} aria-label={t("Memory scopes")}>
-          <h3>{account.provider_key === "slack" ? "Slack" : t("Feishu")}</h3>
-          <small>{t("Each group controls who can read its memory")}</small>
-          <ErrorNotice
-            error={scopes.error}
-            retry={() => void scopes.refetch()}
-          />
-          {!fixedScope && scopes.isPending ? (
-            <Loading />
-          ) : (
-            items?.map((scope) => (
-              <button
-                type="button"
-                key={scope.id}
-                className={styles.scopeItem}
-                aria-pressed={scope.id === scopeId}
-                onClick={() => {
-                  if (fixedScope) return;
-                  const next = new URLSearchParams(search);
-                  next.set("memory_scope", scope.id);
-                  next.delete("memory_doc");
-                  setSearch(next);
-                }}
-              >
-                <FolderSimpleIcon aria-hidden="true" />
-                <span>{scope.name}</span>
-              </button>
-            ))
-          )}
-          {!scopes.isPending && !scopes.error && !items?.length && (
-            <p>{t("No memory scopes configured.")}</p>
-          )}
-          {!fixedScope && (
-            <Pagination page={page} next={scopes.data?.next_cursor} />
-          )}
-        </aside>
-        {scopeId ? (
-          <ScopeDocuments
-            key={`${scopeId}:${providerId}`}
+    <Section
+      title={t("Conversation memory")}
+      description={t(
+        "Browse the index, then open only the documents you need.",
+      )}
+      actions={
+        scopeId && (
+          <GroupMemoryActions
             account={account}
             scopeId={scopeId}
-            scopeName={selected?.name ?? t("Selected conversation")}
             scope={selected}
             target={target}
           />
-        ) : (
-          <div className={styles.unselected}>
-            <Empty
-              title={t("Choose a conversation")}
-              description={t("Each channel or group has its own memory index.")}
-            />
-          </div>
+        )
+      }
+    >
+      <ErrorNotice error={scopes.error} retry={() => void scopes.refetch()} />
+      <div className={styles.memoryToolbar}>
+        {!fixedScope && (
+          <ChoiceField
+            label={t("Conversation")}
+            variant="filter"
+            placeholder={t("Choose a conversation")}
+            value={scopeId}
+            options={
+              items?.map((scope) => ({ value: scope.id, label: scope.name })) ??
+              []
+            }
+            onValueChange={(value) => {
+              const next = new URLSearchParams(search);
+              next.set("memory_scope", value);
+              next.delete("memory_doc");
+              setSearch(next);
+            }}
+          />
         )}
+        {scopeId && <MemorySearchField />}
       </div>
-    </div>
+      {!fixedScope && !scopes.isPending && (
+        <Pagination page={page} next={scopes.data?.next_cursor} />
+      )}
+      {scopeId ? (
+        <ScopeDocuments
+          key={`${scopeId}:${providerId}`}
+          account={account}
+          scopeId={scopeId}
+          scopeName={selected?.name ?? t("Selected conversation")}
+          scope={selected}
+          target={target}
+        />
+      ) : (
+        <Empty
+          title={t("Choose a conversation")}
+          description={t("Each channel or group has its own memory index.")}
+        />
+      )}
+    </Section>
   );
 }
 
-function ScopeDocuments(props: Parameters<typeof NativeScopeDocuments>[0]) {
+function ScopeDocuments({
+  target,
+  ...props
+}: Parameters<typeof NativeScopeDocuments>[0] & {
+  target?: Schema["AccountTarget"];
+}) {
   return props.scope?.backend_type === "a13n.filesystem" ? (
-    <div className="min-w-0 p-5">
-      <GroupMemorySettings
-        account={props.account}
-        initialScope={props.scope}
-        target={props.target}
-      />
+    <div className={styles.fileMemory}>
+      <div className={styles.fileMemoryActions}>
+        <GroupMemorySettings
+          account={props.account}
+          initialScope={props.scope}
+          target={target}
+        />
+      </div>
       <FileMemoryBrowser conversationScopeId={props.scopeId} />
     </div>
   ) : (
@@ -280,13 +293,11 @@ function NativeScopeDocuments({
   scopeId,
   scopeName,
   scope,
-  target,
 }: {
   account: BotAccount;
   scopeId: string;
   scopeName: string;
   scope?: Schema["Scope"];
-  target?: Schema["AccountTarget"];
 }) {
   const client = useClient(),
     cache = useQueryClient(),
@@ -339,10 +350,7 @@ function NativeScopeDocuments({
       client.http
         .GET(
           "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/index",
-          {
-            params: { path },
-            signal,
-          },
+          { params: { path }, signal },
         )
         .then(data),
   });
@@ -376,61 +384,37 @@ function NativeScopeDocuments({
   const current =
     document.isFetching || document.error ? undefined : document.data;
   return (
-    <>
-      <section
-        className={styles.documentPane}
-        aria-label={t("Memory documents")}
-      >
-        <header className={styles.groupMemoryHeading}>
-          <div>
-            <h3>{scopeName}</h3>
-            <small>
-              {t(
-                scope?.visibility === "installation"
-                  ? account.provider_key === "slack"
-                    ? "Visible to all connected channels in this Slack workspace"
-                    : "Visible to all connected groups in this Feishu enterprise"
-                  : "Only this group",
-              )}
-            </small>
-          </div>
-          <div className={styles.groupMemoryActions}>
-            <GroupMemoryActions
-              account={account}
-              scopeId={scopeId}
-              scope={scope}
-              target={target}
-            />
-          </div>
-        </header>
+    <div className={styles.memoryBrowser}>
+      <aside className={styles.documentPane} aria-label={t("Memory documents")}>
         <button
           className={styles.documentItem}
           type="button"
           aria-pressed={!documentId}
           onClick={() => select("")}
         >
-          <ListBulletsIcon aria-hidden="true" />
+          <ListBulletsIcon aria-hidden="true" size={14} />
           <span>
             <strong>MEMORY.md</strong>
             <small>{t("Memory index")}</small>
           </span>
         </button>
-        <MemorySearch
-          accountId={account.id}
-          scopeId={scopeId}
-          onSelect={select}
-        />
-        {!searching && (
+        {searching ? (
+          <MemorySearchResults
+            accountId={account.id}
+            scopeId={scopeId}
+            onSelect={select}
+          />
+        ) : (
           <>
-            <details
-              className={styles.filterDisclosure}
-              open={date || kind ? true : undefined}
+            <DisclosureSection
+              title={<>{t("Filter documents")}</>}
+              defaultOpen={!!(date || kind)}
             >
-              <summary>{t("Filter documents")}</summary>
               <div className={styles.documentFilters}>
                 <FormField label={t("Activity date")}>
                   <Input
                     type="date"
+                    size="sm"
                     value={date}
                     onChange={(event) =>
                       filter("memory_date", event.target.value)
@@ -450,13 +434,13 @@ function NativeScopeDocuments({
                   ]}
                 />
               </div>
-            </details>
+            </DisclosureSection>
             <ErrorNotice
               error={listing.error}
               retry={() => void listing.refetch()}
             />
             {listing.isPending || listing.isFetching ? (
-              <Loading />
+              <Loading variant="list" rows={4} />
             ) : (
               !listing.error &&
               listing.data?.items.map((item) => (
@@ -467,7 +451,7 @@ function NativeScopeDocuments({
                   aria-pressed={documentId === item.id}
                   onClick={() => select(item.id)}
                 >
-                  <FileTextIcon aria-hidden="true" />
+                  <FileTextIcon aria-hidden="true" size={14} />
                   <span>
                     <strong>{item.title}</strong>
                     <small>
@@ -483,20 +467,28 @@ function NativeScopeDocuments({
             {!listing.isPending &&
               !listing.error &&
               !listing.data?.items.length && (
-                <p>{t("No documents match this view.")}</p>
+                <p className={styles.listNote}>
+                  {t("No documents match this view.")}
+                </p>
               )}
             <Pagination page={page} next={listing.data?.next_cursor} />
           </>
         )}
-      </section>
+      </aside>
       <section className={styles.contentPane} aria-label={t("Memory details")}>
         {!documentId ? (
           <>
-            <header>
+            <header className={styles.contentHead}>
               <div>
                 <h3>MEMORY.md</h3>
                 <small>
-                  {t("Derived navigation · document bodies load on demand")}
+                  {t(
+                    scope?.visibility === "installation"
+                      ? account.provider_key === "slack"
+                        ? "Visible to all connected channels in this Slack workspace"
+                        : "Visible to all connected groups in this Feishu enterprise"
+                      : "Only this group",
+                  )}
                 </small>
               </div>
             </header>
@@ -505,7 +497,7 @@ function NativeScopeDocuments({
               retry={() => void index.refetch()}
             />
             {index.isPending || index.isFetching ? (
-              <Loading />
+              <Loading variant="list" rows={4} />
             ) : (
               !index.error &&
               index.data && (
@@ -536,35 +528,60 @@ function NativeScopeDocuments({
           </>
         ) : (
           <>
-            <header>
+            <header className={styles.contentHead}>
               <div>
                 <Button variant="ghost" size="sm" onClick={() => select("")}>
+                  <ArrowLeftIcon size={12} aria-hidden="true" />
                   {t("Back to index")}
                 </Button>
                 <h3>{current?.title ?? t("Memory document")}</h3>
               </div>
               {current && !current.shared && can("bot_memory.delete") && (
-                <Confirm
-                  title={t("Delete memory")}
-                  subject={current.title}
-                  trigger={t("Delete")}
-                  danger
-                  description={t(
-                    "Delete this memory for this group and every group that can read it. Previously delivered messages are not erased.",
-                  )}
-                  action={async () => {
-                    await client.http.DELETE(
-                      "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}",
-                      {
-                        params: { path: { ...path, document_id: current.id } },
-                      },
-                    );
-                  }}
-                  onSuccess={() => {
-                    select("");
-                    void refreshMemory(cache, account.id);
-                  }}
-                />
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        type="button"
+                        aria-label={t("Document actions")}
+                        title={t("Document actions")}
+                      />
+                    }
+                  >
+                    <DotsThreeIcon size={16} />
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    <Confirm
+                      title={t("Delete memory")}
+                      subject={current.title}
+                      triggerElement={
+                        <MenuItem closeOnClick={false} variant="destructive">
+                          <TrashIcon size={14} />
+                          {t("Delete")}
+                        </MenuItem>
+                      }
+                      danger
+                      description={t(
+                        "Delete this memory for this group and every group that can read it. Previously delivered messages are not erased.",
+                      )}
+                      action={async () => {
+                        await client.http.DELETE(
+                          "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}",
+                          {
+                            params: {
+                              path: { ...path, document_id: current.id },
+                            },
+                          },
+                        );
+                      }}
+                      onSuccess={() => {
+                        select("");
+                        void refreshMemory(cache, account.id);
+                      }}
+                    />
+                  </MenuPopup>
+                </Menu>
               )}
             </header>
             <ErrorNotice
@@ -572,12 +589,12 @@ function NativeScopeDocuments({
               retry={() => void document.refetch()}
             />
             {document.isPending || document.isFetching ? (
-              <Loading />
+              <Loading variant="list" rows={4} />
             ) : (
               current && (
                 <>
                   <div className={styles.metadata}>
-                    <StateBadge state={current.shared ? "shared" : "active"} />
+                    <StatePill state={current.shared ? "shared" : "active"} />
                     <span>
                       {current.activity_date} · {current.timezone}
                     </span>
@@ -593,6 +610,6 @@ function NativeScopeDocuments({
           </>
         )}
       </section>
-    </>
+    </div>
   );
 }

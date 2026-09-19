@@ -108,7 +108,16 @@ async def test_takeover_freezes_grants_then_promotes_only_after_exact_fenced_ack
 ) -> None:
     first = await online(coordination)
     active = await coordination.observe("org_test", "env_test")
-    use = UseIdentity(first, "eu_first", "run_first", "attempt_first", 1, "worker_first")
+    use = UseIdentity(
+        first,
+        "eu_first",
+        "run_first",
+        "attempt_first",
+        1,
+        "worker_first",
+        "workspace",
+        admission_deadline_ms=active.value.expires_at_ms,
+    )
     grant = await coordination.acquire_use(use, attempt_expires_at_ms=active.value.now_ms + 5_000)
     second = await candidate(coordination, "control_second")
     waiting = await coordination.observe("org_test", "env_test")
@@ -132,7 +141,7 @@ async def test_takeover_freezes_grants_then_promotes_only_after_exact_fenced_ack
     await coordination.acknowledge(first)
     initialized = await coordination.promote(second)
     assert initialized.value.status == "connecting"
-    assert initialized.value.use is None
+    assert not initialized.value.uses
     ready = await coordination.online(second)
     assert ready.value.status == "online"
     assert ready.value.connection == second
@@ -174,18 +183,27 @@ async def test_dead_owner_can_be_replaced_after_the_complete_grant_horizon(
         await coordination.renew(old)
 
 
-async def test_exclusive_use_is_bounded_by_attempt_authority_and_cannot_migrate(
+async def test_use_is_bounded_by_attempt_authority_and_cannot_revive(
     coordination: ConnectionCoordination,
 ) -> None:
     connection = await online(coordination)
     observed = await coordination.observe("org_test", "env_test")
-    use = UseIdentity(connection, "eu_first", "run_first", "attempt_first", 1, "worker_first")
+    use = UseIdentity(
+        connection,
+        "eu_first",
+        "run_first",
+        "attempt_first",
+        1,
+        "worker_first",
+        "workspace",
+        admission_deadline_ms=observed.value.expires_at_ms,
+    )
     attempt_expiry = observed.value.now_ms + 75
     grant = await coordination.acquire_use(use, attempt_expires_at_ms=attempt_expiry)
-    assert grant.value.use is not None and grant.value.use.expires_at_ms <= attempt_expiry
+    assert grant.value.use_grant(use).expires_at_ms <= attempt_expiry
     with pytest.raises(CoordinationError) as busy:
         await coordination.acquire_use(replace(use, run_id="run_other"), attempt_expires_at_ms=attempt_expiry)
-    assert busy.value.code == "environment_busy"
+    assert busy.value.code == "authority_lost"
     with pytest.raises(CoordinationError):
         await coordination.renew_use(replace(use, attempt_fence=2), attempt_expires_at_ms=attempt_expiry)
     await asyncio.sleep(0.09)
@@ -194,7 +212,9 @@ async def test_exclusive_use_is_bounded_by_attempt_authority_and_cannot_migrate(
         await coordination.renew_use(use, attempt_expires_at_ms=attempt_expiry + 1_000)
     assert expired.value.code == "authority_lost"
     with pytest.raises(CoordinationError):
-        await coordination.acquire_use(replace(use, use_id="eu_second"), attempt_expires_at_ms=attempt_expiry + 1_000)
+        await coordination.acquire_use(use, attempt_expires_at_ms=attempt_expiry + 1_000)
+    fresh = replace(use, use_id="eu_second")
+    await coordination.acquire_use(fresh, attempt_expires_at_ms=attempt_expiry + 1_000)
 
 
 async def test_lost_redis_history_never_recreates_an_old_lease_or_bypasses_quarantine(
@@ -283,11 +303,20 @@ async def test_server_incarnation_change_invalidates_restored_authority(
 async def test_use_replay_keeps_deadline_and_bigint_fences_do_not_round(coordination: ConnectionCoordination) -> None:
     connection = await online(coordination)
     observed = await coordination.observe("org_test", "env_test")
-    use = UseIdentity(connection, "eu_first", "run_first", "attempt_first", 2**53, "worker_first")
+    use = UseIdentity(
+        connection,
+        "eu_first",
+        "run_first",
+        "attempt_first",
+        2**53,
+        "worker_first",
+        "workspace",
+        admission_deadline_ms=observed.value.expires_at_ms,
+    )
     expiry = observed.value.now_ms + 2_000
     first = await coordination.acquire_use(use, attempt_expires_at_ms=expiry)
     replay = await coordination.acquire_use(use, attempt_expires_at_ms=expiry)
-    assert first.value.use == replay.value.use
+    assert first.value.use_grant(use) == replay.value.use_grant(use)
     with pytest.raises(CoordinationError):
         await coordination.renew_use(replace(use, attempt_fence=2**53 + 1), attempt_expires_at_ms=expiry)
 
@@ -295,7 +324,16 @@ async def test_use_replay_keeps_deadline_and_bigint_fences_do_not_round(coordina
 async def test_worker_release_requires_exact_use_and_never_acknowledges_socket(coordination):
     connection = await online(coordination)
     observed = await coordination.observe("org_test", "env_test")
-    use = UseIdentity(connection, "use", "run", "attempt", 3, "worker")
+    use = UseIdentity(
+        connection,
+        "use",
+        "run",
+        "attempt",
+        3,
+        "worker",
+        "workspace",
+        admission_deadline_ms=observed.value.expires_at_ms,
+    )
     grant = await coordination.acquire_use(use, attempt_expires_at_ms=observed.value.now_ms + 5000)
     with pytest.raises(CoordinationError):
         await coordination.release_use(replace(use, worker_instance_id="foreign"))
@@ -303,10 +341,17 @@ async def test_worker_release_requires_exact_use_and_never_acknowledges_socket(c
     await coordination.release_use(use)
     await coordination.release_use(use)
     retired = (await coordination.observe("org_test", "env_test")).value
-    assert retired.status == "offline"
-    assert retired.retiring is not None
-    assert not retired.retiring.acknowledged
-    assert retired.retiring.until_ms >= grant.value.use.expires_at_ms
+    assert retired.status == "online"
+    assert retired.retiring is None
+    assert retired.use_grant(use) is None
+    assert retired.uses[use.use_id].expires_at_ms == grant.value.use_grant(use).expires_at_ms
+    with pytest.raises(CoordinationError):
+        await coordination.renew_use(use, attempt_expires_at_ms=observed.value.now_ms + 5000)
+    with pytest.raises(CoordinationError) as pending:
+        await coordination.acquire_use(
+            replace(use, use_id="replacement"), attempt_expires_at_ms=observed.value.now_ms + 5000
+        )
+    assert pending.value.code == "environment_busy"
     replacement = await candidate(coordination, "replacement")
     await coordination.acknowledge(connection)
     await coordination.promote(replacement)
@@ -314,3 +359,96 @@ async def test_worker_release_requires_exact_use_and_never_acknowledges_socket(c
     with pytest.raises(CoordinationError):
         await coordination.release_use(use)
     assert (await coordination.observe("org_test", "env_test")).value.connection == replacement
+
+
+async def test_binding_uses_have_independent_grants_and_release(coordination):
+    connection = await online(coordination)
+    observed = await coordination.observe("org_test", "env_test")
+    first = UseIdentity(
+        connection,
+        "first",
+        "run",
+        "attempt",
+        1,
+        "worker",
+        "workspace",
+        admission_deadline_ms=observed.value.expires_at_ms,
+    )
+    second = replace(first, use_id="second", mount_name="data")
+    expiry = observed.value.now_ms + 5000
+    await coordination.acquire_use(first, attempt_expires_at_ms=expiry)
+    both = await coordination.acquire_use(second, attempt_expires_at_ms=expiry)
+    first_expiry = both.value.use_grant(first).expires_at_ms
+    await asyncio.sleep(0.015)
+    await coordination.renew(connection)
+    renewed = await coordination.renew_use(second, attempt_expires_at_ms=expiry)
+    assert renewed.value.use_grant(first).expires_at_ms == first_expiry
+    assert renewed.value.use_grant(second).expires_at_ms > first_expiry
+    await coordination.release_use(first)
+    surviving = await coordination.observe("org_test", "env_test")
+    assert surviving.value.status == "online"
+    assert surviving.value.use_grant(first) is None
+    assert surviving.value.use_grant(second) is not None
+    with pytest.raises(CoordinationError):
+        await coordination.acquire_use(first, attempt_expires_at_ms=expiry)
+    await coordination.release_use(second)
+    assert (await coordination.observe("org_test", "env_test")).value.status == "online"
+
+
+async def test_use_capacity_is_reclaimed_without_reviving_pruned_acquisition(redis_client):
+    coordination = ConnectionCoordination(redis_client, limits=replace(LIMITS, max_uses=2))
+    connection = await online(coordination)
+    observed = await coordination.observe("org_test", "env_test")
+    first = UseIdentity(
+        connection,
+        "first",
+        "run",
+        "attempt",
+        1,
+        "worker",
+        "workspace",
+        admission_deadline_ms=observed.value.now_ms + 50,
+    )
+    second = replace(first, use_id="second", mount_name="data")
+    third = replace(first, use_id="third", mount_name="third")
+    for use in (first, second):
+        await coordination.acquire_use(use, attempt_expires_at_ms=observed.value.now_ms + 50)
+    with pytest.raises(CoordinationError) as full:
+        await coordination.acquire_use(third, attempt_expires_at_ms=observed.value.now_ms + 5000)
+    assert full.value.code == "environment_overloaded"
+    await asyncio.sleep(0.075)
+    renewed = await coordination.renew(connection)
+    assert not renewed.value.uses
+    with pytest.raises(CoordinationError) as expired:
+        await coordination.acquire_use(first, attempt_expires_at_ms=renewed.value.now_ms + 5000)
+    assert expired.value.code == "authority_lost"
+    fresh = replace(third, admission_deadline_ms=renewed.value.expires_at_ms)
+    admitted = await coordination.acquire_use(fresh, attempt_expires_at_ms=renewed.value.now_ms + 5000)
+    assert admitted.value.use_grant(fresh) is not None
+
+
+async def test_takeover_barrier_covers_every_binding_grant(coordination):
+    connection = await online(coordination)
+    observed = await coordination.observe("org_test", "env_test")
+    first = UseIdentity(
+        connection,
+        "first",
+        "run",
+        "attempt",
+        1,
+        "worker",
+        "workspace",
+        admission_deadline_ms=observed.value.expires_at_ms,
+    )
+    second = replace(first, use_id="second", mount_name="data")
+    await coordination.acquire_use(first, attempt_expires_at_ms=observed.value.now_ms + 50)
+    both = await coordination.acquire_use(second, attempt_expires_at_ms=observed.value.now_ms + 5000)
+    replacement = await candidate(coordination, "replacement")
+    waiting = await coordination.observe("org_test", "env_test")
+    assert waiting.value.retiring.until_ms >= max(grant.expires_at_ms for grant in both.value.uses.values())
+    for use in (first, second):
+        with pytest.raises(CoordinationError):
+            await coordination.renew_use(use, attempt_expires_at_ms=observed.value.now_ms + 5000)
+    await coordination.acknowledge(connection)
+    promoted = await coordination.promote(replacement)
+    assert not promoted.value.uses

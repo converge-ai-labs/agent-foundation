@@ -1,98 +1,118 @@
 import { Button, FormField, Input } from "a13n-ui";
 
-import {
-  ArrowLeftIcon,
-  CaretDownIcon,
-  CaretRightIcon,
-} from "@phosphor-icons/react";
+import { ArrowLeftIcon, CaretDownIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router";
-import { PageActionsTarget } from "../../shared/page-actions";
+import { Link, Navigate, useLocation, useParams } from "react-router";
+import { PageActionsTarget, PageEmptyAction } from "../../shared/page";
 
 import { useTranslation } from "react-i18next";
-import { useSettingsNavigation, type SettingsScope } from "./navigation";
+import {
+  resolveSection,
+  useSettingsNavigation,
+  type SettingsScope,
+} from "./navigation";
 import { providerCategory } from "../providers/categories";
 import styles from "./settings.module.css";
 
-const descriptions: Record<string, string> = {
-  preferences: "Choose how Console looks and feels.",
-  profile: "Manage your name and image.",
-  security: "Manage how you sign in and keep your account secure.",
-  members: "Manage the people who can access this space.",
-  invitations: "Invite people and manage pending invitations.",
-  "personal-keys": "Your credentials for this workspace. Keep them private.",
-  "member-keys": "Review and revoke workspace members’ API keys.",
-  accounts: "Dedicated identities for applications and automation.",
-  audit: "Review changes to access and account security.",
-  activity: "Review recent security activity on your account.",
-  sessions: "Manage browsers signed in to your account.",
-  models: "Models available across your organization.",
-  environments: "Shared templates for agent execution.",
-  workspaces: "Separate resources, members, and work into workspaces.",
-};
+/**
+ * The contextual settings shell. Sections are addressable pages under the
+ * scope's settings path; the navigation lists every scope the reader can
+ * reach, the current one first, so moving between them takes one click.
+ */
 export function SettingsLayout({
   scope,
+  section,
+  heading = true,
   content,
 }: {
   scope: SettingsScope;
+  /** Overrides the URL segment for routes that nest below a section. */
+  section?: string;
+  /** Hidden when the content owns its own header, such as a detail pane. */
+  heading?: boolean;
   content: Record<string, ReactNode>;
 }) {
   const { t } = useTranslation();
-  const [search] = useSearchParams();
+  const location = useLocation();
+  const params = useParams();
   const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(
     null,
   );
   const [navigationOpen, setNavigationOpen] = useState(false);
+  // One offer of the primary action: an empty state that carries it quiets
+  // the heading, the same way a list page does.
+  const [offeredBelow, setOfferedBelow] = useState(false);
   const [filter, setFilter] = useState("");
-  const [openScopes, setOpenScopes] = useState<ReadonlySet<string>>(new Set());
   const groups = useSettingsNavigation();
   const current = groups.find((group) => group.scope === scope)!;
+  const search = new URLSearchParams(location.search);
+  const requested = section ?? params.section;
   const selected =
     current.sections.find(
-      (item) => item.value === search.get("section") && item.value in content,
-    ) ?? current.sections.find((item) => item.value in content)!;
-  const isForm = ["profile", "preferences", "security"].includes(
-    selected.value,
-  );
+      (item) =>
+        item.value === resolveSection(scope, requested) &&
+        item.value in content,
+    ) ??
+    current.sections.find((item) => item.value in content) ??
+    current.sections[0];
+  // Sections used to be `?section=` values; those addresses still resolve.
+  const legacy = requested
+    ? undefined
+    : resolveSection(scope, search.get("section"));
+  if (legacy) {
+    search.delete("section");
+    const query = search.toString();
+    return (
+      <Navigate
+        replace
+        to={`${current.path}/${legacy}${query ? `?${query}` : ""}`}
+      />
+    );
+  }
+  const term = filter.trim().toLocaleLowerCase();
   const visible = groups
     .map((group) => ({
       ...group,
       sections: group.sections.filter((item) =>
         `${t(group.label)} ${group.name ?? ""} ${t(item.label)}`
           .toLocaleLowerCase()
-          .includes(filter.toLocaleLowerCase()),
+          .includes(term),
       ),
     }))
     .filter((group) => group.sections.length);
+  const ordered = [
+    ...visible.filter((group) => group.scope === scope),
+    ...visible.filter((group) => group.scope !== scope),
+  ];
   return (
-    <PageActionsTarget value={actionsTarget}>
-      <div className={styles.layout}>
-        <div className={styles.mobileNavigation}>
-          <Button
-            variant="ghost"
-            aria-expanded={navigationOpen}
-            aria-controls="settings-outline"
-            onClick={() => setNavigationOpen(!navigationOpen)}
-            type="button"
+    <PageEmptyAction value={setOfferedBelow}>
+      <PageActionsTarget value={actionsTarget}>
+        <div className={styles.layout}>
+          <div className={styles.mobileNavigation}>
+            <Button
+              variant="ghost"
+              aria-expanded={navigationOpen}
+              aria-controls="settings-outline"
+              onClick={() => setNavigationOpen(!navigationOpen)}
+              type="button"
+            >
+              {t("Settings")}
+              <CaretDownIcon size={14} />
+            </Button>
+            <span>{t(selected.label)}</span>
+          </div>
+          <aside
+            id="settings-outline"
+            className={`${styles.outline} a13n-scrollbar`}
+            data-open={navigationOpen}
           >
-            {t("Settings")}
-            <CaretDownIcon size={14} />
-          </Button>
-          <span>{t(selected.label)}</span>
-        </div>
-        <aside
-          id="settings-outline"
-          className={`${styles.outline} a13n-scrollbar`}
-          data-open={navigationOpen}
-        >
-          <Link className={styles.back} to="/">
-            <ArrowLeftIcon size={14} />
-            {t("Back to workspace")}
-          </Link>
-          <div className={styles.settingsSearch}>
+            <Link className={styles.back} to="/">
+              <ArrowLeftIcon size={14} />
+              {t("Back to workspace")}
+            </Link>
             <FormField
-              className="min-w-0 w-full"
+              className={`min-w-0 w-full ${styles.search}`}
               label={t("Search settings")}
               hideLabel={true}
             >
@@ -103,125 +123,78 @@ export function SettingsLayout({
                 type="search"
               />
             </FormField>
-          </div>
-          <nav aria-label={t("Settings navigation")}>
-            {visible.map((group) => {
-              const currentScope = group.scope === scope;
-              const open =
-                filter !== "" || currentScope || openScopes.has(group.scope);
-              const itemsId = `settings-scope-${group.scope}`;
-              return (
+            <nav aria-label={t("Settings navigation")}>
+              {ordered.map((group) => (
                 <section
-                  className={styles.scopeGroup}
+                  className={styles.scope}
                   key={group.scope}
                   data-scope={group.scope}
                 >
-                  {currentScope ? (
-                    <>
-                      <h2 className={styles.scopeLabel}>{t(group.label)}</h2>
-                      {group.name && (
-                        <p className={styles.scopeName} title={group.name}>
-                          {group.name}
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className={styles.scopeToggle}
-                      aria-expanded={open}
-                      aria-controls={itemsId}
-                      onClick={() => {
-                        if (filter !== "") return;
-                        setOpenScopes((previous) => {
-                          const next = new Set(previous);
-                          if (next.has(group.scope)) next.delete(group.scope);
-                          else next.add(group.scope);
-                          return next;
-                        });
-                      }}
-                    >
-                      <span className={styles.scopeToggleText}>
-                        <span className={styles.scopeToggleLabel}>
-                          {t(group.label)}
-                        </span>
-                        {group.name && (
-                          <span
-                            className={styles.scopeToggleName}
-                            title={group.name}
-                          >
-                            {group.name}
-                          </span>
-                        )}
+                  <h2 className={styles.scopeLabel}>
+                    {t(group.label)}
+                    {group.name && (
+                      <span className={styles.scopeName} title={group.name}>
+                        {group.name}
                       </span>
-                      <CaretRightIcon
-                        size={12}
-                        weight="bold"
-                        aria-hidden="true"
-                        className={styles.scopeChevron}
-                      />
-                    </button>
-                  )}
-                  <div
-                    className={styles.scopeItems}
-                    id={itemsId}
-                    data-open={open}
-                  >
-                    <div className={styles.sectionLinks}>
-                      {group.sections.map((item) => (
-                        <Link
-                          key={item.value}
-                          onClick={() => setNavigationOpen(false)}
-                          to={
-                            item.href ?? `${group.path}?section=${item.value}`
-                          }
-                          aria-current={
-                            currentScope && item.value === selected.value
-                              ? "page"
-                              : undefined
-                          }
-                        >
-                          <item.icon size={14} />
-                          {t(item.label)}
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-              );
-            })}
-            {!visible.length && (
-              <p className={styles.noResults}>{t("No matching settings")}</p>
-            )}
-          </nav>
-        </aside>
-        <div className={styles.surface} data-settings-part="surface">
-          <div
-            className={styles.content}
-            data-settings-part="content"
-            data-content={isForm ? "form" : "collection"}
-            key={`${scope}:${selected.value}`}
-          >
-            <header className={styles.heading} data-settings-part="heading">
-              <div>
-                <h1>{t(selected.label)}</h1>
-                {selected.value !== "profile" && (
-                  <p>
-                    {t(
-                      selected.value === "providers"
-                        ? providerCategory(search.get("category")).description
-                        : (descriptions[selected.value] ??
-                            "Manage settings for this space."),
                     )}
-                  </p>
-                )}
-              </div>
-              <div className={styles.headingActions} ref={setActionsTarget} />
-            </header>
-            {content[selected.value]}
+                  </h2>
+                  {group.sections.map((item) => (
+                    <Link
+                      key={item.value}
+                      onClick={() => setNavigationOpen(false)}
+                      to={`${group.path}/${item.value}`}
+                      aria-current={
+                        group.scope === scope && item.value === selected.value
+                          ? "page"
+                          : undefined
+                      }
+                    >
+                      <item.icon size={14} />
+                      {t(item.label)}
+                    </Link>
+                  ))}
+                </section>
+              ))}
+              {!ordered.length && (
+                <p className={styles.noResults}>{t("No matching settings")}</p>
+              )}
+            </nav>
+          </aside>
+          <div className={styles.surface} data-settings-part="surface">
+            <div
+              className={styles.content}
+              data-settings-part="content"
+              data-content={selected.layout ?? "collection"}
+              key={`${scope}:${selected.value}`}
+            >
+              {heading && (
+                <header className={styles.heading} data-settings-part="heading">
+                  <div className="min-w-0">
+                    <h1>{t(selected.title ?? selected.label)}</h1>
+                    {(selected.value === "providers" ||
+                      selected.description) && (
+                      <p>
+                        {t(
+                          selected.value === "providers"
+                            ? providerCategory(search.get("category"))
+                                .description
+                            : selected.description!,
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  <div
+                    className={styles.headingActions}
+                    ref={setActionsTarget}
+                    data-quiet={offeredBelow || undefined}
+                  />
+                </header>
+              )}
+              {content[selected.value] ?? null}
+            </div>
           </div>
         </div>
-      </div>
-    </PageActionsTarget>
+      </PageActionsTarget>
+    </PageEmptyAction>
   );
 }

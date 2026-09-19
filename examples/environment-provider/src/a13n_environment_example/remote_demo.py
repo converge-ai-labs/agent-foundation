@@ -37,26 +37,16 @@ async def run_demo(executable: Path, transport: Literal["http", "websocket"]) ->
         config.write_text(
             json.dumps(
                 {
-                    "root_mount_id": "workspace",
-                    "mounts": [
-                        {
-                            "mount_id": "workspace",
-                            "native_root": str(workspace),
-                            "writable": True,
-                            "allow_command_execution": False,
-                            "max_file_bytes": 1024 * 1024,
-                            "allowed_operations": ["read_text", "write_text"],
-                        }
-                    ],
+                    "device_id": native_id,
+                    "default_working_directory": str(workspace),
+                    "trusted_executable_roots": [],
+                    "shell_profiles": [],
+                    "limits": {"max_file_bytes": 1024 * 1024},
                 }
             )
         )
         env = {
-            "A13N_ENVD_ENVIRONMENT_ID": native_id,
             "A13N_ENVD_RUNTIME_DIR": str(root / "runtime"),
-            # The demo disables commands entirely. A real deployment selects the
-            # required isolation or supplies its own outer sandbox/container.
-            "A13N_ENVD_EXECUTION_ISOLATION": "disabled",
         }
         if transport == "http":
             env.update(
@@ -95,7 +85,7 @@ async def run_demo(executable: Path, transport: Literal["http", "websocket"]) ->
                         break
                 result = await run_http(f"http://127.0.0.1:{port}", token, native_id)
             else:
-                result = await run_websocket(token=token, daemon_environment_id=native_id, port=port)
+                result = await run_websocket(token=token, device_id=native_id, port=port)
             assert process.returncode is None, "Provider close must preserve the daemon"
             assert (workspace / "provider-example.txt").read_text() == result.text
             return result

@@ -27,8 +27,16 @@ from pydantic import (
 def _validate_absolute_eip_path(value: str) -> str:
     if not value.startswith("/") or "\x00" in value:
         raise ValueError("EIP paths must be absolute UTF-8 paths without NUL")
-    if value != "/" and (value.endswith("/") or any(part in {"", ".", ".."} for part in value.split("/")[1:])):
-        raise ValueError("EIP paths must be canonical lexical mount paths")
+    root = (
+        value == "/"
+        or re.fullmatch(r"/[A-Za-z]:/", value) is not None
+        or re.fullmatch(r"/UNC/[^/]+/[^/]+/", value) is not None
+    )
+    if value != "/" and (
+        (value.endswith("/") and not root)
+        or any(part in {"", ".", ".."} for part in value.removesuffix("/").split("/")[1:])
+    ):
+        raise ValueError("EIP paths must be canonical Device paths")
     return value
 
 
@@ -116,11 +124,6 @@ class CleanupOutcome(StrEnum):
     FAILED = "failed"
 
 
-class CommandNetwork(StrEnum):
-    CONFIGURED = "configured"
-    DENY = "deny"
-
-
 class DesiredPortStatus(StrEnum):
     LISTENING = "listening"
     NOT_LISTENING = "not_listening"
@@ -184,35 +187,16 @@ class FileWriterAbortStatus(StrEnum):
     ALREADY_COMMITTED = "already_committed"
 
 
-class IsolationBackend(StrEnum):
-    LINUX_BUBBLEWRAP = "linux_bubblewrap"
-    MACOS_SEATBELT = "macos_seatbelt"
-    OUTER_HOST = "outer_host"
-    WINDOWS_APPCONTAINER = "windows_appcontainer"
-
-
-class IsolationCleanupGuarantee(StrEnum):
-    NAMESPACE_COMPLETE = "namespace_complete"
-    RESIDUAL_CONFINED_POSSIBLE = "residual_confined_possible"
-    OUTER_HOST = "outer_host"
-    JOB_COMPLETE = "job_complete"
-
-
-class IsolationMode(StrEnum):
-    REQUIRED = "required"
-    DISABLED = "disabled"
-
-
-class IsolationNetworkPolicy(StrEnum):
-    HOST = "host"
-    DENY = "deny"
-
-
 class OperationCancelStatus(StrEnum):
     NOT_FOUND = "not_found"
     ALREADY_TERMINAL = "already_terminal"
     CANCELLATION_REQUESTED = "cancellation_requested"
     NOT_CANCELLABLE = "not_cancellable"
+
+
+class PathStyle(StrEnum):
+    POSIX = "posix"
+    WINDOWS = "windows"
 
 
 class PortAddress(StrEnum):
@@ -340,6 +324,30 @@ class ContentDigest(EIPModel):
     value: Sha256Digest
 
 
+class DeviceDescribeParams(EIPModel):
+    pass
+
+
+class DirectoryEntry(EIPModel):
+    name: StrictStr
+    path: AbsoluteEIPPath
+
+
+class DirectoryListParams(EIPModel):
+    expected_device_id: Identifier
+    expected_generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    path: AbsoluteEIPPath
+    offset: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] = 0
+    limit: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+
+
+class DirectoryListResult(EIPModel):
+    path: AbsoluteEIPPath
+    parent_path: AbsoluteEIPPath | None = None
+    entries: tuple[DirectoryEntry, ...] = ()
+    next_offset: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
 class EIPCallContext(EIPModel):
     operation_id: Annotated[Identifier, Field(max_length=128)]
     timeout_ms: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)] | None = None
@@ -358,9 +366,10 @@ class EIPLimits(EIPModel):
     max_operation_duration_ms: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
     max_output_preview_bytes: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
     max_output_bytes_per_stream: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
-    max_transfer_frame_bytes: Annotated[StrictInt, Field(ge=25, le=18446744073709551615)]
+    max_transfer_frame_bytes: Annotated[StrictInt, Field(ge=26, le=18446744073709551615)]
     max_concurrent_file_transfers: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
     max_file_transfer_bytes: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    max_file_bytes: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
 
     @model_validator(mode="after")
     def _validate_limit_relationships(self) -> EIPLimits:
@@ -370,7 +379,6 @@ class EIPLimits(EIPModel):
 
 
 class EIPPath(EIPModel):
-    mount_id: Identifier
     path: AbsoluteEIPPath
 
 
@@ -394,8 +402,9 @@ class EnvironmentReadinessParams(EIPModel):
 
 class EnvironmentReadinessResult(EIPModel):
     ready: StrictBool
-    environment_id: Identifier
+    device_id: Identifier
     generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    session_id: Identifier
 
 
 class ExecutableName(EIPModel):
@@ -418,7 +427,6 @@ class ExecutionFeatures(EIPModel):
     process_count_limit: StrictBool
     memory_bytes_limit: StrictBool
     cpu_time_limit: StrictBool
-    per_command_network_deny: StrictBool
     signal_interrupt: StrictBool
     signal_terminate: StrictBool
 
@@ -636,27 +644,7 @@ class FileWriterOpenResult(EIPModel):
 class InitializeParams(EIPModel):
     supported_protocol_versions: Annotated[tuple[StrictStr, ...], Field(min_length=1)]
     client: EIPClientInfo
-    expected_environment_id: Identifier
-    required_methods: tuple[StrictStr, ...] = ()
-
-
-class IsolationPosture(EIPModel):
-    mode: IsolationMode
-    backend: IsolationBackend
-    filesystem_containment: StrictBool
-    process_containment: StrictBool
-    network_containment: StrictBool
-    network_policy: IsolationNetworkPolicy
-    cleanup_guarantee: IsolationCleanupGuarantee
-
-
-class MountDescriptor(EIPModel):
-    mount_id: Identifier
-    logical_root: AbsoluteEIPPath
-    writable: StrictBool
-    case_sensitive: StrictBool | None = None
-    supports_atomic_replace: StrictBool
-    max_file_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    expected_device_id: Identifier | None = None
 
 
 class OperationCancelParams(EIPModel):
@@ -671,7 +659,8 @@ class OperationCancelResult(EIPModel):
 class OperationReceipt(EIPModel):
     operation_id: Annotated[Identifier, Field(max_length=128)]
     method: StrictStr
-    environment_id: Identifier
+    device_id: Identifier
+    session_id: Identifier
     generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
     request_digest: Sha256Digest
     stage: ReceiptStage
@@ -780,12 +769,37 @@ class ReceiptGetResult(EIPModel):
     receipt: OperationReceipt
 
 
+class SessionAttachParams(EIPModel):
+    pass
+
+
 class SessionCloseParams(EIPModel):
-    context: EIPCallContext
+    pass
 
 
 class SessionCloseResult(EIPModel):
     closed: Literal[True]
+
+
+class SessionKeepaliveParams(EIPModel):
+    pass
+
+
+class SessionKeepaliveResult(EIPModel):
+    alive: Literal[True]
+
+
+class SessionLifecyclePolicy(EIPModel):
+    idle_timeout_ms: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    disconnect_grace_ms: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+
+
+class SessionOpenParams(EIPModel):
+    expected_device_id: Identifier
+    expected_generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    protocol_version: ProtocolVersion
+    working_directory: AbsoluteEIPPath | None = None
+    required_methods: tuple[StrictStr, ...] = ()
 
 
 class ShellCommand(EIPModel):
@@ -814,16 +828,17 @@ type CommandSpec = Annotated[
 ]
 
 
-class EnvironmentDescriptor(EIPModel):
-    environment_id: Identifier
+class DeviceDescriptor(EIPModel):
+    device_id: Identifier
     generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
-    mounts: tuple[MountDescriptor, ...] = ()
-    shell_profiles: tuple[ShellProfileDescriptor, ...] = ()
-    limits: EIPLimits
-    isolation: IsolationPosture
-    root_mount_id: Identifier | None = None
+    display_name: Annotated[StrictStr, Field(max_length=256)] | None = None
+    description: Annotated[StrictStr, Field(max_length=4096)] | None = None
+    path_style: PathStyle
+    default_working_directory: AbsoluteEIPPath
+    directory_discovery: StrictBool
     available_methods: tuple[StrictStr, ...] = ()
-    execution_features: ExecutionFeatures
+    limits: EIPLimits
+    lifecycle: SessionLifecyclePolicy
 
 
 class FileCommitParams(EIPModel):
@@ -908,7 +923,7 @@ class FileWriterCommitResult(EIPModel):
 class InitializeResult(EIPModel):
     protocol_version: ProtocolVersion
     server: EIPServerInfo
-    descriptor: EnvironmentDescriptor
+    descriptor: DeviceDescriptor
 
 
 class OutputInfo(EIPModel):
@@ -968,6 +983,22 @@ class ProcessOutput(EIPModel):
     stderr: OutputInfo
 
 
+class SessionDescriptor(EIPModel):
+    device_id: Identifier
+    generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    session_id: Identifier
+    working_directory: AbsoluteEIPPath
+    available_methods: tuple[StrictStr, ...] = ()
+    limits: EIPLimits
+    shell_profiles: tuple[ShellProfileDescriptor, ...] = ()
+    execution_features: ExecutionFeatures
+    lifecycle: SessionLifecyclePolicy
+
+
+class SessionOpenResult(EIPModel):
+    descriptor: SessionDescriptor
+
+
 class ShellExecResult(EIPModel):
     status: ProcessStatus
     output: ProcessOutput
@@ -976,16 +1007,19 @@ class ShellExecResult(EIPModel):
 
 class CommandRequest(EIPModel):
     command: CommandSpec
-    cwd: EIPPath
+    cwd: EIPPath | None = None
     environment: CommandEnvironment = Field(default_factory=CommandEnvironment)
-    network: CommandNetwork = CommandNetwork("configured")
     limits: CommandLimits = Field(default_factory=CommandLimits)
     initial_stdin: EncodedBytes | None = None
     keep_stdin_open: StrictBool = False
 
 
+class DeviceDescribeResult(EIPModel):
+    descriptor: DeviceDescriptor
+
+
 class EnvironmentDescribeResult(EIPModel):
-    descriptor: EnvironmentDescriptor
+    descriptor: SessionDescriptor
 
 
 class PortInspectResult(EIPModel):
@@ -994,7 +1028,8 @@ class PortInspectResult(EIPModel):
 
 class ProcessInfo(EIPModel):
     handle: ProcessHandle
-    environment_id: Identifier
+    device_id: Identifier
+    session_id: Identifier
     generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
     status: ProcessStatus
     stdin_open: StrictBool
@@ -1040,7 +1075,8 @@ class EIPErrorData(EIPModel):
     retry_hint: RetryHint
     dispatch_stage: DispatchStage
     operation_id: Annotated[Identifier, Field(max_length=128)] | None = None
-    environment_id: Identifier | None = None
+    device_id: Identifier | None = None
+    session_id: Identifier | None = None
     generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)] | None = None
     field: StrictStr | None = None
     handle_kind: StrictStr | None = None
@@ -1069,6 +1105,10 @@ class EIPError(EIPModel):
 CommandEnvironment.model_rebuild()
 CommandLimits.model_rebuild()
 ContentDigest.model_rebuild()
+DeviceDescribeParams.model_rebuild()
+DirectoryEntry.model_rebuild()
+DirectoryListParams.model_rebuild()
+DirectoryListResult.model_rebuild()
 EIPCallContext.model_rebuild()
 EIPClientInfo.model_rebuild()
 EIPLimits.model_rebuild()
@@ -1110,8 +1150,6 @@ FileWriterAbortResult.model_rebuild()
 FileWriterOpenParams.model_rebuild()
 FileWriterOpenResult.model_rebuild()
 InitializeParams.model_rebuild()
-IsolationPosture.model_rebuild()
-MountDescriptor.model_rebuild()
 OperationCancelParams.model_rebuild()
 OperationCancelResult.model_rebuild()
 OperationReceipt.model_rebuild()
@@ -1131,12 +1169,17 @@ ProcessWriteStdinParams.model_rebuild()
 ProcessWriteStdinResult.model_rebuild()
 ReceiptGetParams.model_rebuild()
 ReceiptGetResult.model_rebuild()
+SessionAttachParams.model_rebuild()
 SessionCloseParams.model_rebuild()
 SessionCloseResult.model_rebuild()
+SessionKeepaliveParams.model_rebuild()
+SessionKeepaliveResult.model_rebuild()
+SessionLifecyclePolicy.model_rebuild()
+SessionOpenParams.model_rebuild()
 ShellCommand.model_rebuild()
 ShellProfileDescriptor.model_rebuild()
 ArgvCommand.model_rebuild()
-EnvironmentDescriptor.model_rebuild()
+DeviceDescriptor.model_rebuild()
 FileCommitParams.model_rebuild()
 FileCommitResult.model_rebuild()
 FileCopyResult.model_rebuild()
@@ -1159,8 +1202,11 @@ PortObservation.model_rebuild()
 PortWaitResult.model_rebuild()
 ProcessCloseStdinParams.model_rebuild()
 ProcessOutput.model_rebuild()
+SessionDescriptor.model_rebuild()
+SessionOpenResult.model_rebuild()
 ShellExecResult.model_rebuild()
 CommandRequest.model_rebuild()
+DeviceDescribeResult.model_rebuild()
 EnvironmentDescribeResult.model_rebuild()
 PortInspectResult.model_rebuild()
 ProcessInfo.model_rebuild()
@@ -1180,11 +1226,16 @@ __all__ = [
     "CleanupOutcome",
     "CommandEnvironment",
     "CommandLimits",
-    "CommandNetwork",
     "CommandRequest",
     "CommandSpec",
     "ContentDigest",
     "DesiredPortStatus",
+    "DeviceDescribeParams",
+    "DeviceDescribeResult",
+    "DeviceDescriptor",
+    "DirectoryEntry",
+    "DirectoryListParams",
+    "DirectoryListResult",
     "DispatchStage",
     "EIPCallContext",
     "EIPClientInfo",
@@ -1196,7 +1247,6 @@ __all__ = [
     "EncodedBytes",
     "EnvironmentDescribeParams",
     "EnvironmentDescribeResult",
-    "EnvironmentDescriptor",
     "EnvironmentReadinessParams",
     "EnvironmentReadinessResult",
     "ErrorType",
@@ -1252,12 +1302,6 @@ __all__ = [
     "FileWriterOpenResult",
     "InitializeParams",
     "InitializeResult",
-    "IsolationBackend",
-    "IsolationCleanupGuarantee",
-    "IsolationMode",
-    "IsolationNetworkPolicy",
-    "IsolationPosture",
-    "MountDescriptor",
     "OperationCancelParams",
     "OperationCancelResult",
     "OperationCancelStatus",
@@ -1268,6 +1312,7 @@ __all__ = [
     "OutputReference",
     "OutputReleaseParams",
     "OutputReleaseResult",
+    "PathStyle",
     "PortAddress",
     "PortInspectParams",
     "PortInspectResult",
@@ -1306,8 +1351,15 @@ __all__ = [
     "RequestedProcessSignal",
     "RetryHint",
     "SearchMode",
+    "SessionAttachParams",
     "SessionCloseParams",
     "SessionCloseResult",
+    "SessionDescriptor",
+    "SessionKeepaliveParams",
+    "SessionKeepaliveResult",
+    "SessionLifecyclePolicy",
+    "SessionOpenParams",
+    "SessionOpenResult",
     "ShellCommand",
     "ShellExecParams",
     "ShellExecResult",

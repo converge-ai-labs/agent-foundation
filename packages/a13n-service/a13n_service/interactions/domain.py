@@ -233,6 +233,7 @@ class Thread(StrictModel):
     head_run_id: ObjectId | None = None
     current_run_id: ObjectId | None = None
     default_environment_id: ObjectId | None = None
+    default_environment_working_directory: str | None = None
     labels: Labels = Field(default_factory=dict)
     created_at: UtcDateTime
     updated_at: UtcDateTime
@@ -270,6 +271,7 @@ class Run(StrictModel):
     agent_id: ObjectId
     agent_revision_id: ObjectId | None
     environment_id: ObjectId | None = None
+    environment_working_directory: str | None = None
     environment_use_started_at: UtcDateTime | None = None
     effective_agent_config_digest: Sha256Digest
     model_execution_observation: ModelExecutionObservation

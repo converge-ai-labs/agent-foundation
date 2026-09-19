@@ -4,13 +4,14 @@ import asyncio
 import ipaddress
 import json
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx2
 
 from a13n_envd_client._timeouts import response_timeout
+from a13n_envd_client._transfer_window import TransferWindow
 from a13n_envd_client.eip.v1 import DataFrame, DataFrameKind
 from a13n_envd_client.errors import (
     EIPConnectionError,
@@ -32,6 +33,7 @@ _CLOSE_GRACE_SECONDS = 1.0
 @dataclass(slots=True)
 class _TransferState:
     direction: TransferDirection
+    window: TransferWindow = field(default_factory=TransferWindow)
     upload: asyncio.Queue[bytes | None] | None = None
     task: asyncio.Task[None] | None = None
     offset: int = 0
@@ -77,9 +79,8 @@ class HttpTransport:
         self._max_request_bytes = max_request_bytes
         self._max_response_bytes = max_response_bytes
         self._max_transfer_frame_bytes = max_transfer_frame_bytes
-        self._session: str | None = None
         self._received: asyncio.Queue[EIPTransportFrame | BaseException] = asyncio.Queue(128)
-        self._transfers: dict[str, _TransferState] = {}
+        self._transfers: dict[tuple[str, str], _TransferState] = {}
         self._close_task: asyncio.Task[None] | None = None
         self._closed = False
 
@@ -97,13 +98,14 @@ class HttpTransport:
         self._max_response_bytes = min(self._max_response_bytes, max_response_bytes)
         self._max_transfer_frame_bytes = min(self._max_transfer_frame_bytes, max_transfer_frame_bytes)
 
-    def register_transfer(self, handle: str, direction: TransferDirection) -> None:
-        if handle in self._transfers:
+    def register_transfer(self, session_id: str, handle: str, direction: TransferDirection) -> None:
+        key = (session_id, handle)
+        if key in self._transfers:
             raise EIPProtocolError("HTTP transfer handle is already registered")
-        self._transfers[handle] = _TransferState(direction=direction)
+        self._transfers[key] = _TransferState(direction=direction)
 
-    def unregister_transfer(self, handle: str) -> None:
-        state = self._transfers.pop(handle, None)
+    def unregister_transfer(self, session_id: str, handle: str) -> None:
+        state = self._transfers.pop((session_id, handle), None)
         if state is not None and state.task is not None and not state.task.done():
             state.task.cancel()
 
@@ -135,8 +137,6 @@ class HttpTransport:
         if len(frame.payload) > self._max_request_bytes:
             raise EIPTransportError("EIP control request exceeds its negotiated byte limit")
         headers = self._headers("application/json")
-        if self._session is not None:
-            headers[_SESSION_HEADER] = self._session
         try:
             params = json.loads(frame.payload).get("params", {})
             async with self._client.stream(
@@ -153,12 +153,6 @@ class HttpTransport:
                     raise EIPTransportError(f"EIP HTTP control request failed with status {response.status_code}")
                 _validate_response_headers(response, "application/json")
                 payload = await _read_response_bounded(response, self._max_response_bytes)
-                if self._session is None:
-                    selector = response.headers.get(_SESSION_HEADER)
-                    if selector is not None:
-                        self._session = _validate_header_value(selector, "HTTP session selector")
-                    elif _is_success_response(payload):
-                        raise EIPProtocolError("successful HTTP initialize response omitted EIP-Session")
         except EIPTransportError:
             raise
         except (httpx2.NetworkError, httpx2.ConnectTimeout, httpx2.RemoteProtocolError) as error:
@@ -168,26 +162,55 @@ class HttpTransport:
         await self._received.put(ControlFrame(payload))
 
     async def _send_transfer_frame(self, frame: DataFrame) -> None:
-        state = self._transfers.get(frame.handle)
+        state = self._transfers.get((frame.session_id, frame.handle))
         if state is None:
             raise EIPProtocolError("HTTP transfer frame has no registered handle")
         if frame.kind is DataFrameKind.ATTACH:
             if state.task is not None:
                 raise EIPProtocolError("HTTP transfer attached more than once")
             if state.direction == "read":
-                state.task = asyncio.create_task(self._download(frame.handle, state), name="eip-http-download")
+                state.task = asyncio.create_task(
+                    self._download(frame.session_id, frame.handle, state), name="eip-http-download"
+                )
             else:
                 state.upload = asyncio.Queue(8)
-                state.task = asyncio.create_task(self._upload(frame.handle, state), name="eip-http-upload")
-                await self._received.put(DataFrame(kind=DataFrameKind.ATTACHED, handle=frame.handle))
+                state.task = asyncio.create_task(
+                    self._upload(frame.session_id, frame.handle, state), name="eip-http-upload"
+                )
+                await self._received.put(
+                    DataFrame(kind=DataFrameKind.ATTACHED, session_id=frame.session_id, handle=frame.handle)
+                )
             return
         if frame.kind is DataFrameKind.RESET:
             if state.task is not None:
                 state.task.cancel()
-            self._transfers.pop(frame.handle, None)
+                await asyncio.gather(state.task, return_exceptions=True)
+            # Closing a body is insufficient when the peer already produced END
+            # into network buffers. Explicit RESET also retires that reader.
+            try:
+                async with self._client.stream(
+                    "DELETE",
+                    f"{self._endpoint}{_TRANSFER_PATH}",
+                    headers=self._transfer_headers(frame.session_id, frame.handle, state.direction),
+                    content=b"",
+                ) as response:
+                    if response.status_code != 204:
+                        raise EIPTransferTransportError(
+                            f"EIP HTTP transfer reset failed with status {response.status_code}",
+                            session_id=frame.session_id,
+                            handle=frame.handle,
+                        )
+            except httpx2.HTTPError as error:
+                raise EIPTransferTransportError(
+                    "EIP HTTP transfer reset failed", session_id=frame.session_id, handle=frame.handle
+                ) from error
+            self._transfers.pop((frame.session_id, frame.handle), None)
+            return
+        if state.direction == "read" and frame.kind is DataFrameKind.CREDIT:
+            state.window.credit(frame.offset)
             return
         if state.direction != "write" or state.upload is None:
-            raise EIPProtocolError("HTTP reader accepts only ATTACH or RESET")
+            raise EIPProtocolError("HTTP reader accepts only ATTACH, CREDIT or RESET")
         if frame.kind is DataFrameKind.CHUNK:
             if frame.offset != state.offset:
                 raise EIPProtocolError("HTTP writer offset is not contiguous")
@@ -201,73 +224,99 @@ class HttpTransport:
             return
         raise EIPProtocolError("unsupported HTTP writer frame")
 
-    async def _download(self, handle: str, state: _TransferState) -> None:
+    async def _download(self, session_id: str, handle: str, state: _TransferState) -> None:
         try:
             async with self._client.stream(
                 "POST",
                 f"{self._endpoint}{_TRANSFER_PATH}",
-                headers=self._transfer_headers(handle, "read"),
+                headers=self._transfer_headers(session_id, handle, "read"),
                 content=b"",
             ) as response:
                 if response.status_code != 200:
                     raise EIPTransferTransportError(
-                        f"EIP HTTP reader failed with status {response.status_code}", handle=handle
+                        f"EIP HTTP reader failed with status {response.status_code}",
+                        session_id=session_id,
+                        handle=handle,
                     )
                 _validate_response_headers(response, "application/octet-stream")
-                await self._received.put(DataFrame(kind=DataFrameKind.ATTACHED, handle=handle))
+                await self._received.put(DataFrame(kind=DataFrameKind.ATTACHED, session_id=session_id, handle=handle))
                 async for chunk in response.aiter_bytes(self._max_transfer_frame_bytes):
                     if not chunk:
                         continue
+                    async with asyncio.timeout(self._request_timeout):
+                        await state.window.wait()
+                    offset = state.window.sent(len(chunk))
                     await self._received.put(
-                        DataFrame(kind=DataFrameKind.CHUNK, handle=handle, offset=state.offset, payload=chunk)
+                        DataFrame(
+                            kind=DataFrameKind.CHUNK,
+                            session_id=session_id,
+                            handle=handle,
+                            offset=offset,
+                            payload=chunk,
+                        )
                     )
                     state.offset += len(chunk)
-                await self._received.put(DataFrame(kind=DataFrameKind.END, handle=handle, offset=state.offset))
+                async with asyncio.timeout(self._request_timeout):
+                    await state.window.wait(drained=True)
+                await self._received.put(
+                    DataFrame(kind=DataFrameKind.END, session_id=session_id, handle=handle, offset=state.offset)
+                )
         except asyncio.CancelledError:
             raise
         except EIPTransferTransportError as error:
             state.failure = error
             await self._received.put(error)
-        except httpx2.HTTPError:
+        except (httpx2.HTTPError, TimeoutError):
             # One HTTP exchange is not the logical EIP session. Control requests
             # can still abort/close the resource after transfer connection loss.
-            state.failure = EIPTransferTransportError("EIP HTTP transfer exchange failed", handle=handle)
+            state.failure = EIPTransferTransportError(
+                "EIP HTTP transfer exchange failed", session_id=session_id, handle=handle
+            )
             await self._received.put(state.failure)
         except BaseException as error:
             await self._fail_background(error)
 
-    async def _upload(self, handle: str, state: _TransferState) -> None:
+    async def _upload(self, session_id: str, handle: str, state: _TransferState) -> None:
         upload = state.upload
         assert upload is not None
 
         async def content():
+            consumed = 0
             while True:
                 chunk = await upload.get()
                 if chunk is None:
                     break
                 yield chunk
+                consumed += len(chunk)
+                await self._received.put(
+                    DataFrame(kind=DataFrameKind.CREDIT, session_id=session_id, handle=handle, offset=consumed)
+                )
 
         try:
             response = await self._client.post(
                 f"{self._endpoint}{_TRANSFER_PATH}",
-                headers=self._transfer_headers(handle, "write"),
+                headers=self._transfer_headers(session_id, handle, "write"),
                 content=content(),
             )
             if response.status_code != 204:
                 raise EIPTransferTransportError(
-                    f"EIP HTTP writer failed with status {response.status_code}", handle=handle
+                    f"EIP HTTP writer failed with status {response.status_code}", session_id=session_id, handle=handle
                 )
             _validate_response_headers(response, "application/octet-stream")
-            await self._received.put(DataFrame(kind=DataFrameKind.END_ACK, handle=handle, offset=state.offset))
+            await self._received.put(
+                DataFrame(kind=DataFrameKind.END_ACK, session_id=session_id, handle=handle, offset=state.offset)
+            )
         except asyncio.CancelledError:
             raise
         except EIPTransferTransportError as error:
             state.failure = error
             await self._received.put(error)
-        except httpx2.HTTPError:
+        except (httpx2.HTTPError, TimeoutError):
             # One HTTP exchange is not the logical EIP session. Control requests
             # can still abort/close the resource after transfer connection loss.
-            state.failure = EIPTransferTransportError("EIP HTTP transfer exchange failed", handle=handle)
+            state.failure = EIPTransferTransportError(
+                "EIP HTTP transfer exchange failed", session_id=session_id, handle=handle
+            )
             await self._received.put(state.failure)
         except BaseException as error:
             await self._fail_background(error)
@@ -290,7 +339,6 @@ class HttpTransport:
         except TimeoutError:
             pass
         self._credential = ""
-        self._session = None
 
     def _headers(self, content_type: str) -> dict[str, str]:
         return {
@@ -299,11 +347,9 @@ class HttpTransport:
             "Accept-Encoding": "identity",
         }
 
-    def _transfer_headers(self, handle: str, direction: Literal["read", "write"]) -> dict[str, str]:
-        if self._session is None:
-            raise EIPTransportClosedError("HTTP EIP session is not initialized")
+    def _transfer_headers(self, session_id: str, handle: str, direction: Literal["read", "write"]) -> dict[str, str]:
         headers = self._headers("application/octet-stream")
-        headers[_SESSION_HEADER] = self._session
+        headers[_SESSION_HEADER] = _validate_header_value(session_id, "Session selector")
         headers[_HANDLE_HEADER] = _validate_header_value(handle, "transfer handle")
         headers[_DIRECTION_HEADER] = direction
         return headers
@@ -365,14 +411,6 @@ def _validate_response_headers(response: httpx2.Response, expected_content_type:
         raise EIPProtocolError("EIP HTTP response has an unexpected media type")
     if "Content-Encoding" in response.headers:
         raise EIPProtocolError("EIP HTTP response content encoding is forbidden")
-
-
-def _is_success_response(payload: bytes) -> bool:
-    try:
-        value = json.loads(payload)
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return False
-    return isinstance(value, dict) and "result" in value and "error" not in value
 
 
 def _is_loopback_host(host: str) -> bool:

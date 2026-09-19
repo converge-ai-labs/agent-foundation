@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import type { ReactNode } from "react";
 import { BotConversations } from "./conversations";
-import { BotDetail } from "./page";
+import { BotDetail } from "./detail";
 
 const state = vi.hoisted(() => ({ GET: vi.fn() }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http: state }) }));
@@ -25,8 +25,9 @@ vi.mock("react-i18next", () => ({
 vi.mock("../application-accounts/form", () => ({
   AccountForm: () => <div>Account settings</div>,
 }));
-vi.mock("../application-accounts/targets", () => ({
-  AccountTargets: () => <div>Configured groups</div>,
+vi.mock("./channels", () => ({
+  BotChannels: () => <div>Configured groups</div>,
+  useChannelNames: () => (value: string) => value,
 }));
 vi.mock("../application-accounts/credentials", () => ({
   AccountCredentials: () => null,
@@ -34,6 +35,13 @@ vi.mock("../application-accounts/credentials", () => ({
 vi.mock("./memory", () => ({ BotMemory: () => <div>Scoped memory</div> }));
 vi.mock("./checks", () => ({
   BotChecks: () => <div>Installation observations</div>,
+  useBotCheck: () => ({
+    query: {},
+    check: { mutate: () => {}, isPending: false },
+    result: undefined,
+    running: false,
+  }),
+  useCheckLabel: () => () => "Check connection",
 }));
 
 const item = {
@@ -112,7 +120,7 @@ afterEach(cleanup);
 
 it("links to canonical history and keeps Run status separate from delivery", async () => {
   setup(<BotConversations accountId="acct_one" targetId="tgt_one" />);
-  const link = await screen.findByRole("link", { name: "thread_one" });
+  const link = await screen.findByRole("link", { name: /thread_one/ });
   expect(link.getAttribute("href")).toBe(
     "/workspace/test/sessions/sess_one/threads/thread_one/runs/run_one",
   );
@@ -159,9 +167,9 @@ it("uses the server cursor without loading every conversation", async () => {
     ),
   );
   setup(<BotConversations accountId="acct_one" />);
-  await screen.findByRole("link", { name: "thread_one" });
+  await screen.findByRole("link", { name: /thread_one/ });
   await userEvent.click(screen.getByRole("button", { name: "Next" }));
-  await screen.findByRole("link", { name: "thread_two" });
+  await screen.findByRole("link", { name: /thread_two/ });
   expect(
     state.GET.mock.calls.filter(([path]) => path.endsWith("/threads")),
   ).toHaveLength(2);
@@ -177,7 +185,7 @@ it("does not misreport denied history as an empty conversation list", async () =
   setup(<BotConversations accountId="acct_one" />);
   await screen.findByRole("alert");
   expect(screen.queryByText("No visible bot conversations")).toBeNull();
-  expect(screen.queryByRole("link", { name: "thread_one" })).toBeNull();
+  expect(screen.queryByRole("link", { name: /thread_one/ })).toBeNull();
 });
 
 it("opens and navigates canonical Bot subroutes", async () => {
@@ -190,13 +198,13 @@ it("opens and navigates canonical Bot subroutes", async () => {
     </Routes>,
     "/workspace/test/bots/acct_one/conversations",
   );
-  await screen.findByRole("link", { name: "thread_one" });
+  await screen.findByRole("link", { name: /thread_one/ });
   expect(
     screen
       .getByRole("tab", { name: "Conversations" })
       .getAttribute("aria-selected"),
   ).toBe("true");
-  await userEvent.click(screen.getByRole("tab", { name: "Channels" }));
+  await userEvent.click(screen.getByRole("tab", { name: /Channels/ }));
   await waitFor(() =>
     expect(screen.getByLabelText("Current route").textContent).toBe(
       "/workspace/test/bots/acct_one/channels",
@@ -211,7 +219,7 @@ it("opens and navigates canonical Bot subroutes", async () => {
   );
 });
 
-it("retains selected memory scope when canonicalizing an older local reference", async () => {
+it("keeps the selected memory scope in the URL of the memory tab", async () => {
   setup(
     <Routes>
       <Route
@@ -219,7 +227,7 @@ it("retains selected memory scope when canonicalizing an older local reference",
         element={<BotDetail />}
       />
     </Routes>,
-    "/workspace/test/bots/acct_one?tab=memory&memory_scope=mscope_one",
+    "/workspace/test/bots/acct_one/memory?memory_scope=mscope_one",
   );
   await screen.findByText("Scoped memory");
   expect(screen.getByLabelText("Current route").textContent).toBe(

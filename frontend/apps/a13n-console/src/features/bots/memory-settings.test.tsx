@@ -29,7 +29,10 @@ vi.mock("../../layout/workspace", () => ({
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 const account = {
   id: "acct_test",
@@ -195,6 +198,10 @@ it("requires storage before enabling and returns from provider creation without 
     screen.getByRole("button", { name: "Add memory storage" }),
   );
   const editor = await screen.findByRole("dialog", { name: "Add provider" });
+  // Provider creation is catalog-first: choose the backend, then configure it.
+  await userEvent.click(
+    await within(editor).findByRole("button", { name: /Documents/ }),
+  );
   await within(editor).findByRole("textbox", { name: "Name" });
   await userEvent.click(
     within(editor).getByRole("button", { name: "Add provider" }),

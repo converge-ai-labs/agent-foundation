@@ -7,7 +7,13 @@ from typing import Literal, Self, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
-from a13n_harness_ui.configuration.models import AgentToolProxy, ModelCharacteristics, SidekickConfiguration
+from a13n_harness_ui.configuration.models import (
+    AgentToolProxy,
+    DeviceResource,
+    ModelCharacteristics,
+    SidekickConfiguration,
+)
+from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.model_thinking import ThinkingSelection
 
 
@@ -94,6 +100,17 @@ class ResolvedEnvironmentProfile(CompositionModel):
     adapter_configuration: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class ResolvedEnvironmentBinding(CompositionModel):
+    selection: EnvironmentBindingSelection
+    device: DeviceResource
+
+    @model_validator(mode="after")
+    def _matching_device(self) -> Self:
+        if self.selection.device_id != self.device.id:
+            raise ValueError("Captured binding must name its Device resource")
+        return self
+
+
 class ResolvedAgentNode(CompositionModel):
     source_kind: Literal["agent", "markdown"]
     source_id: str = Field(min_length=1, max_length=128)
@@ -147,13 +164,20 @@ class ResolvedRunComposition(CompositionModel):
     content_plugins: tuple[ResolvedContentPlugin, ...] = Field(default=(), max_length=256)
     root: ResolvedAgentNode
     environment_profile: ResolvedEnvironmentProfile
+    environment_bindings: tuple[ResolvedEnvironmentBinding, ...] = Field(default=(), max_length=64)
+    default_environment: str | None = Field(default=None, min_length=1, max_length=63)
     environment_run_extensions: tuple[ResolvedRunExtensionRecipe, ...] = Field(default=(), max_length=128)
     dependencies: tuple[DependencyProvenance, ...] = ()
 
     @model_validator(mode="after")
     def _project_roots_match_selection(self) -> Self:
-        if (self.project_id is None) != (not self.project_roots):
-            raise ValueError("Project roots must be empty exactly when no Project is selected")
+        if self.project_id is None and self.project_roots:
+            raise ValueError("Projectless captures cannot contain local Project roots")
+        validate_environment_selection(
+            tuple(item.selection for item in self.environment_bindings),
+            self.default_environment,
+            local_root_count=len(self.project_roots),
+        )
         return self
 
 

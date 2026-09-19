@@ -1,20 +1,28 @@
-import { ApiError } from "../../service-client";
+import { DotsThreeOutlineVerticalIcon, TrashIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  Button,
-  FormField,
-  ModalFrame,
-  Textarea,
-} from "a13n-ui";
-import { useState } from "react";
+import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ApiError } from "../../service-client";
 import { useClient } from "../../auth/context";
+import { Confirm, ConflictNotice } from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { CopyableId } from "../../shared/copy";
+import { FormActions, TextAreaField } from "../../shared/forms";
+import { CopyableId } from "../../shared/identity";
+import { Panel } from "../../shared/page";
 import { memoryApi, memoryKey, type MemoryTarget } from "./api";
+import styles from "./memory.module.css";
+
+const maxLength = 8000;
+
+/** A write whose outcome the backend never confirmed must not be repeated. */
+function unconfirmed(error: unknown) {
+  return (
+    !(error instanceof ApiError) ||
+    error.status >= 500 ||
+    error.code === "memory_write_unconfirmed"
+  );
+}
 
 export function MemoryRecordEditor({
   target,
@@ -34,7 +42,6 @@ export function MemoryRecordEditor({
   const { t } = useTranslation(),
     client = useClient();
   const api = memoryApi(client, target);
-  const [pending, setPending] = useState(false);
   const record = useQuery({
     queryKey: [...memoryKey(target), "record", recordId],
     enabled: !!recordId,
@@ -44,49 +51,52 @@ export function MemoryRecordEditor({
     retry: false,
     queryFn: ({ signal }) => api.get(recordId!, signal),
   });
-  return (
-    <ModalFrame
-      open
-      onOpenChange={(open, details) => {
-        if (pending) details.cancel();
-        else if (!open) onClose();
-      }}
-      size="lg"
-      title={t(recordId ? "Memory" : "Add memory")}
-      closeLabel={t("Close")}
-    >
-      <ErrorNotice error={accessError} retry={retryAccess} />
-      {recordId && record.isPending ? (
+  const title = recordId ? t("Memory") : t("Add memory");
+  if (recordId && record.isPending)
+    return (
+      <Panel open title={title} label={title} onClose={onClose}>
+        <ErrorNotice error={accessError} retry={retryAccess} />
         <Loading variant="form" rows={3} />
-      ) : record.error ? (
+      </Panel>
+    );
+  if (record.error)
+    return (
+      <Panel open title={title} label={title} onClose={onClose}>
+        <ErrorNotice error={accessError} retry={retryAccess} />
         <ErrorNotice error={record.error} retry={() => void record.refetch()} />
-      ) : (
-        <MemoryRecordForm
-          target={target}
-          recordId={recordId}
-          initial={record.data?.memory ?? ""}
-          canWrite={canWrite}
-          onPending={setPending}
-          onClose={onClose}
-        />
-      )}
-    </ModalFrame>
+      </Panel>
+    );
+  return (
+    <MemoryRecordForm
+      target={target}
+      recordId={recordId}
+      title={title}
+      initial={record.data?.memory ?? ""}
+      canWrite={canWrite}
+      accessError={accessError}
+      retryAccess={retryAccess}
+      onClose={onClose}
+    />
   );
 }
 
 function MemoryRecordForm({
   target,
   recordId,
+  title,
   initial,
   canWrite,
-  onPending,
+  accessError,
+  retryAccess,
   onClose,
 }: {
   target: MemoryTarget;
   recordId?: string;
+  title: string;
   initial: string;
   canWrite: boolean;
-  onPending: (value: boolean) => void;
+  accessError?: unknown;
+  retryAccess?: () => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation(),
@@ -94,39 +104,53 @@ function MemoryRecordForm({
     cache = useQueryClient();
   const api = memoryApi(client, target);
   const [text, setText] = useState(initial);
-  const [deleting, setDeleting] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const [observed, setObserved] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<unknown>();
+  const [removeError, setRemoveError] = useState<unknown>();
+  const [removing, setRemoving] = useState(false);
+  const removed = useRef(false);
   const mutation = useMutation({
     gcTime: 0,
     retry: false,
-    mutationFn: async () => {
-      onPending(true);
-      if (deleting) return api.remove(recordId!);
-      if (recordId) return api.update(recordId, text);
-      return api.add(text);
-    },
+    mutationFn: () => (recordId ? api.update(recordId, text) : api.add(text)),
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: memoryKey(target) });
       onClose();
     },
     onError: (error) => {
-      if (
-        !(error instanceof ApiError) ||
-        error.status >= 500 ||
-        error.code === "memory_write_unconfirmed"
-      ) {
+      if (unconfirmed(error)) {
         setUncertain(true);
         setObserved(null);
       }
     },
-    onSettled: () => onPending(false),
   });
+  /** One DELETE, whatever happens: an unconfirmed removal recovers here. */
+  async function remove() {
+    removed.current = false;
+    setRemoveError(undefined);
+    setRemoving(true);
+    try {
+      await api.remove(recordId!);
+      removed.current = true;
+    } catch (error) {
+      setRemoveError(error);
+      if (unconfirmed(error)) {
+        setUncertain(true);
+        setObserved(null);
+      }
+    } finally {
+      setRemoving(false);
+    }
+  }
+  function afterRemove() {
+    if (!removed.current) return;
+    void cache.invalidateQueries({ queryKey: memoryKey(target) });
+    onClose();
+  }
   async function inspect() {
     setChecking(true);
-    onPending(true);
     setCheckError(undefined);
     try {
       if (recordId) {
@@ -155,140 +179,125 @@ function MemoryRecordForm({
       setCheckError(error);
     } finally {
       setChecking(false);
-      onPending(false);
     }
   }
-  const locked = mutation.isPending || checking;
+  const locked = mutation.isPending || removing || checking;
   return (
-    <form
-      className="flex min-w-0 flex-col gap-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!locked && !uncertain && canWrite) mutation.mutate();
+    <Panel
+      open
+      title={title}
+      label={title}
+      onClose={() => {
+        if (!locked) onClose();
       }}
-    >
-      {recordId && <CopyableId value={recordId} />}
-      {canWrite ? (
-        <FormField
-          label={t("Memory text")}
-          description={t(
-            "Saved exactly as written, without automatic extraction. Maximum 8,000 characters.",
-          )}
-        >
-          <Textarea
-            rows={9}
-            required
-            maxLength={8000}
-            value={text}
-            disabled={locked || deleting || uncertain}
-            onChange={(event) => setText(event.target.value)}
-          />
-        </FormField>
-      ) : (
-        <div className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words text-sm">
-          {text}
-        </div>
-      )}
-      {deleting && (
-        <Alert variant="warning">
-          <AlertTitle>{t("Delete this memory?")}</AlertTitle>
-          <AlertDescription>
-            {t(
-              "This removes the record from its backend. This action cannot be undone.",
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
-      <ErrorNotice error={mutation.error} />
-      {uncertain && (
-        <Alert variant="warning">
-          <AlertTitle>{t("Change not confirmed")}</AlertTitle>
-          <AlertDescription>
-            <p>
-              {t(
-                "The backend may have applied this change. Your draft is preserved. Inspect the current state before making another explicit attempt.",
-              )}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={locked}
-                onClick={() => void inspect()}
-              >
-                {t(checking ? "Checking…" : "Inspect current state")}
-              </Button>
-              {observed !== null && (
+      actions={
+        canWrite && recordId ? (
+          <Menu>
+            <MenuTrigger
+              render={
                 <Button
                   type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={locked}
-                  onClick={() => {
-                    setUncertain(false);
-                    mutation.reset();
-                  }}
-                >
-                  {t("I checked; allow another attempt")}
-                </Button>
-              )}
-            </div>
-            {observed !== null && (
-              <div className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap break-words text-sm">
-                {observed}
-              </div>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
-      <ErrorNotice error={checkError} />
-      <footer
-        data-a13n-form-actions
-        className="flex flex-wrap items-center justify-end gap-2 border-t pt-4"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t("Memory actions")}
+                  title={t("Memory actions")}
+                />
+              }
+            >
+              <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <Confirm
+                subject={initial.slice(0, 120) || recordId}
+                title={t("Delete memory")}
+                description={t(
+                  "This removes the record from its backend. This action cannot be undone.",
+                )}
+                danger
+                triggerElement={
+                  <MenuItem
+                    closeOnClick={false}
+                    disabled={locked || uncertain}
+                    variant="destructive"
+                  >
+                    <TrashIcon size={14} />
+                    {t("Delete memory")}
+                  </MenuItem>
+                }
+                action={remove}
+                onSuccess={afterRemove}
+              />
+            </MenuPopup>
+          </Menu>
+        ) : undefined
+      }
+    >
+      <form
+        className={styles.recordForm}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!locked && !uncertain && canWrite) mutation.mutate();
+        }}
       >
-        {canWrite && recordId && (
-          <Button
-            type="button"
-            variant="ghost"
-            className="mr-auto"
-            disabled={locked || uncertain}
-            onClick={() => setDeleting(!deleting)}
-          >
-            {t(deleting ? "Keep memory" : "Delete memory")}
-          </Button>
+        {recordId && <CopyableId value={recordId} />}
+        {canWrite ? (
+          <TextAreaField
+            label={t("Memory text")}
+            hint={t(
+              "Saved exactly as written, without automatic extraction. Maximum 8,000 characters.",
+            )}
+            rows={12}
+            required
+            value={text}
+            onChange={(value) => setText(value.slice(0, maxLength))}
+          />
+        ) : (
+          <p className={styles.recordText}>{text}</p>
         )}
-        <Button
-          type="button"
-          variant="outline"
-          disabled={locked}
-          onClick={onClose}
-        >
-          {t(canWrite ? "Cancel" : "Close")}
-        </Button>
+        <ErrorNotice error={accessError} retry={retryAccess} />
+        <ErrorNotice error={mutation.error ?? removeError} />
+        {uncertain && (
+          <ConflictNotice
+            title={t("Change not confirmed")}
+            description={t(
+              "The backend may have applied this change. Your draft is preserved. Inspect the current state before making another explicit attempt.",
+            )}
+            recover={{
+              label: t("Inspect current state"),
+              pending: checking,
+              onClick: () => void inspect(),
+            }}
+            proceed={
+              observed !== null
+                ? {
+                    label: t("I checked; allow another attempt"),
+                    onClick: () => {
+                      setUncertain(false);
+                      setRemoveError(undefined);
+                      mutation.reset();
+                    },
+                  }
+                : undefined
+            }
+          >
+            {observed !== null && <p className={styles.observed}>{observed}</p>}
+          </ConflictNotice>
+        )}
+        <ErrorNotice error={checkError} />
         {canWrite && (
-          <Button
-            type="submit"
-            variant={deleting ? "destructive" : "default"}
+          <FormActions
+            pending={mutation.isPending}
+            label={t("Save")}
+            onCancel={onClose}
             disabled={
               locked ||
               uncertain ||
-              (!deleting &&
-                (!text.trim() ||
-                  text.length > 8000 ||
-                  (!!recordId && text === initial)))
+              !text.trim() ||
+              (!!recordId && text === initial)
             }
-          >
-            {t(
-              mutation.isPending
-                ? "Saving…"
-                : deleting
-                  ? "Confirm deletion"
-                  : "Save",
-            )}
-          </Button>
+          />
         )}
-      </footer>
-    </form>
+      </form>
+    </Panel>
   );
 }

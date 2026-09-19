@@ -351,8 +351,8 @@ eip-verify: sync ## Verify checked EIP artifacts without modifying the repositor
 .PHONY: eip-integration-test
 eip-integration-test: sync ## Run EIP generation, runtime, cross-language, and wire-model integration tests
 	@cargo build --locked --package a13n-envd
-	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" A13N_ENVD_EXECUTABLE="$(CURDIR)/target/debug/a13n-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/a13n-envd-client/tests/eip packages/a13n-environment/tests/test_local_envd.py packages/a13n-environment/tests/test_remote_envd.py packages/a13n-environment/tests/test_remote_envd_e2e.py
-	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" uv run --project examples/environment-provider --locked python -m pytest examples/environment-provider/tests/test_remote.py
+	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" A13N_ENVD_EXECUTABLE="$(CURDIR)/target/debug/a13n-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/a13n-envd-client/tests/eip packages/a13n-environment/tests/test_local_envd.py packages/a13n-environment/tests/test_local_envd_e2e.py packages/a13n-environment/tests/test_remote_envd.py packages/a13n-environment/tests/test_remote_envd_e2e.py
+	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" uv run --project examples/environment-provider --locked python -m pytest examples/environment-provider/tests
 	@uv run --locked pyright packages/a13n-envd-client/a13n_envd_client packages/a13n-environment/a13n_environment
 
 .PHONY: eip-test
@@ -367,7 +367,7 @@ local-envd-test: sync ## Build a13n-envd and run Local Envd provider tests
 	set +a; \
 	A13N_ENVD_EXECUTABLE="$${A13N_ENVD_EXECUTABLE:-$(CURDIR)/target/debug/a13n-envd}"; \
 	export A13N_ENVD_EXECUTABLE; \
-	uv run --locked python -m pytest packages/a13n-environment/tests/test_local_envd.py
+	A13N_ENVD_TEST_BINARY="$$A13N_ENVD_EXECUTABLE" uv run --locked python -m pytest packages/a13n-environment/tests/test_local_envd.py packages/a13n-environment/tests/test_local_envd_e2e.py
 
 .PHONY: e2b-provider-test
 e2b-provider-test: sync ## Run native E2B unit and opt-in live integration tests
@@ -559,9 +559,8 @@ image-check-a13n-service: ## Smoke-check the existing a13n-service container ima
 .PHONY: image-check-sandbox
 image-check-sandbox: ## Smoke-check the existing sandbox container image
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(SANDBOX_IMAGE)")" = "sandbox"
-	@docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$(SANDBOX_IMAGE)" | grep -qx 'A13N_ENVD_EXECUTION_ISOLATION=disabled'
 	@docker run --rm \
-		--env A13N_ENVD_ENVIRONMENT_ID=image-check \
+		--env A13N_ENVD_DEVICE_ID=image-check \
 		--entrypoint a13n-envd "$(SANDBOX_IMAGE)"
 
 .PHONY: image-check

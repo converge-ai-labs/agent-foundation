@@ -96,15 +96,14 @@ async def run_local_envd(
     *,
     executable: Path | None = None,
 ) -> StatelessExampleResult:
-    """Run one private Local Envd generation over a Host-owned workspace."""
+    """Use a Session on a Host-owned Local Device, then close the Host runtime."""
 
     root = _prepare_workspace(workspace)
     spec = EnvironmentProviderSpec(
         provider_key="a13n.local-envd",
         schema_version="1",
         configuration={
-            "workspace": {"path": str(root)},
-            "execution_network": "deny",
+            "working_directory": _device_path(root),
         },
     )
     provider = build_environment_provider_catalog(builtin_keys=(spec.provider_key,)).require(spec.provider_key)
@@ -125,11 +124,14 @@ async def run_local_envd(
     if not isinstance(environment, LocalEnvdEnvironment):
         raise TypeError("Local Envd Provider returned an unexpected Environment")
 
-    text = await _run_and_close(
-        environment,
-        lambda: _write_and_read(environment, run_id="run-local-envd"),
-    )
-    state = environment.dump_state()
+    async with runtime:
+        text = await _run_and_close(
+            environment,
+            lambda: _write_and_read(
+                environment, run_id="run-local-envd", path=_device_path(root / "provider-example.txt")
+            ),
+        )
+        state = environment.dump_state()
 
     return StatelessExampleResult(
         provider_key=environment.provider_key,
@@ -285,17 +287,22 @@ async def _run_with_cleanup[T](
                 ) from None
 
 
-async def _write_and_read(environment: Environment, *, run_id: str) -> str:
+def _device_path(path: Path) -> str:
+    value = path.as_posix()
+    return f"/{value}" if os.name == "nt" else value
+
+
+async def _write_and_read(environment: Environment, *, run_id: str, path: str = _MESSAGE_PATH) -> str:
     await _enter(environment, run_id=run_id)
     files = environment.operations.files
     if files is None:
         raise RuntimeError("The entered Environment does not expose file operations")
     await files.write_text(
-        _MESSAGE_PATH,
+        path,
         f"hello from {environment.provider_key}\n",
         mode="upsert",
     )
-    return (await files.read_text(_MESSAGE_PATH)).text
+    return (await files.read_text(path)).text
 
 
 async def _read_existing(environment: Environment, *, run_id: str) -> str:

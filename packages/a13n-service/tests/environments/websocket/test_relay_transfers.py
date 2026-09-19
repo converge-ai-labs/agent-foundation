@@ -90,7 +90,7 @@ async def test_missing_upload_finish_is_not_success(control_relay, files, tmp_pa
                     pending,
                     RelayChunk(
                         request_id=pending.request.request_id,
-                        use=pending.request.use,
+                        scope=pending.request.scope,
                         transfer=window.sent(1),
                         data=base64.b64encode(b"a").decode(),
                     ),
@@ -112,3 +112,45 @@ async def test_slow_download_does_not_block_other_operations(control_relay, file
         async with asyncio.timeout(1):
             while consumer._executing:
                 await asyncio.sleep(0.01)
+
+
+async def test_upload_buffers_initial_window_while_start_is_pending(control_relay, files, tmp_path, monkeypatch):
+    async with control_relay(FileRelayDispatch(files, frozenset(EnvironmentAction))) as (client, owner, consumer, _):
+        start = owner.start
+        release = asyncio.Event()
+        completions = []
+        complete = owner.complete
+
+        async def delayed_start(request, entry):
+            if request.operation == "file.write_bytes":
+                await release.wait()
+            return await start(request, entry)
+
+        async def record_completion(request, entry, terminal):
+            completions.append(terminal)
+            return await complete(request, entry, terminal)
+
+        monkeypatch.setattr(owner, "start", delayed_start)
+        monkeypatch.setattr(owner, "complete", record_completion)
+        data = bytes(range(256)) * (owner.limits.chunk_bytes // 256) * (owner.limits.input_window + 2)
+
+        async def source():
+            yield data
+
+        async with asyncio.TaskGroup() as tasks:
+            written = tasks.create_task(
+                RelayFileOperations(client).write_bytes_stream("/delayed", source(), mode="create")
+            )
+            async with asyncio.timeout(2):
+                while (
+                    not consumer._executing
+                    or len(next(iter(consumer._executing.values())).inputs) < owner.limits.input_window
+                ):
+                    await asyncio.sleep(0)
+            assert not (tmp_path / "delayed").exists()
+            release.set()
+        assert written.result().bytes_written == len(data)
+        assert (tmp_path / "delayed").read_bytes() == data
+        assert len(completions) == 1
+        assert completions[0].error is None
+        assert await owner.read(pending=True) == ()

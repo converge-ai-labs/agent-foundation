@@ -169,14 +169,17 @@ it.each(["ws_first", "ws_second"])(
       await screen.findByRole("heading", { name: "Example skill" }),
     ).toBeTruthy();
     await user.click(
-      await screen.findByRole("button", { name: "Download ZIP" }),
+      screen.getByRole("button", { name: "More skill actions" }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Download ZIP" }),
     );
     await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
     expect(
       new Uint8Array(await download.mock.calls[0]![0].arrayBuffer()),
     ).toEqual(zip);
     expect(download.mock.calls[0]![1]).toBe("example-v2.zip");
-    await user.click(screen.getByRole("tab", { name: "Used by agents" }));
+    await user.click(screen.getByRole("tab", { name: "Used by" }));
     expect(
       await screen.findByRole("link", { name: "Example agent" }),
     ).toBeTruthy();
@@ -195,8 +198,11 @@ it.each(["ws_first", "ws_second"])(
 it("renames and deletes a skill with its workspace, CSRF proof and existing ETag", async () => {
   const { user, requests } = setup("ws_settings");
   await screen.findByRole("heading", { name: "Example skill" });
-  await user.click(screen.getByRole("button", { name: "Rename skill" }));
-  const name = screen.getByRole("textbox", { name: "Display name" });
+  await user.click(screen.getByRole("button", { name: "More skill actions" }));
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Rename skill" }),
+  );
+  const name = await screen.findByRole("textbox", { name: "Display name" });
   await user.clear(name);
   await user.type(name, "Renamed skill");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
@@ -231,7 +237,7 @@ it("opens SKILL.md by default, switches files without downloading again, and ope
       new URL(request.url).pathname.endsWith("/content"),
     ),
   ).toHaveLength(1);
-  await user.click(screen.getByRole("tab", { name: "Versions" }));
+  await user.click(screen.getByRole("tab", { name: /Versions/ }));
   await user.click(await screen.findByRole("link", { name: "v1" }));
   await screen.findByRole("heading", { name: "Earlier instructions" });
   expect(screen.queryByRole("button", { name: "checklist.md" })).toBeNull();
@@ -244,7 +250,7 @@ it("opens SKILL.md by default, switches files without downloading again, and ope
 it("opens a retained version directly and preserves its full source", async () => {
   const { user } = setup("ws_direct", "?revision=skr_older");
   await screen.findByRole("heading", { name: "Earlier instructions" });
-  await user.click(screen.getByRole("tab", { name: "Source" }));
+  await user.click(screen.getByRole("button", { name: "Source" }));
   expect(await screen.findByText("# Earlier instructions")).toBeTruthy();
 });
 

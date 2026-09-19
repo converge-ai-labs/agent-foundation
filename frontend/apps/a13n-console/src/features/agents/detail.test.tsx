@@ -33,22 +33,27 @@ vi.mock("./settings", () => ({
   AgentDetails: () => null,
 }));
 vi.mock("./export", () => ({ ExportAgent: () => null }));
-vi.mock("./form", () => ({
-  AgentForm: ({
+vi.mock("./editor", () => ({
+  AgentEditor: ({
     initial,
     version,
-    context,
+    rail,
   }: {
     initial: { instructions: string };
     version: number;
-    context: ReactNode;
+    rail?: (summary: Record<string, unknown>) => ReactNode;
   }) => {
     const [opening] = useState({ instructions: initial.instructions, version });
     return (
       <div>
         <output aria-label="Editor version">v{opening.version}</output>
         <output aria-label="Editor instructions">{opening.instructions}</output>
-        {context}
+        {rail?.({
+          environmentId: null,
+          skillCount: 0,
+          connectionCount: 0,
+          dirty: false,
+        })}
       </div>
     );
   },
@@ -147,17 +152,15 @@ it("reloads the selected configuration and version after Set as default", async 
     "Second",
   );
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Version history" }));
-  const history = await screen.findByRole("dialog", {
-    name: "Version history",
-  });
+  await user.click(screen.getByRole("tab", { name: /Versions/ }));
   await user.click(
-    within(history).getByRole("button", { name: "Set as default" }),
+    await screen.findByRole("button", { name: "Set as default" }),
   );
   const confirm = await screen.findByRole("dialog", { name: "Set as default" });
   await user.click(
     within(confirm).getByRole("button", { name: "Set as default" }),
   );
+  await user.click(screen.getByRole("tab", { name: "Configuration" }));
   await waitFor(() =>
     expect(screen.getByLabelText("Editor version").textContent).toBe("v1"),
   );

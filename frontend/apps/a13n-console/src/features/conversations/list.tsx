@@ -1,18 +1,27 @@
-import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useSearchParams } from "react-router";
+import { Button } from "a13n-ui";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { PlusIcon } from "@phosphor-icons/react";
+import { useEffect, useRef } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
+  CollectionFooter,
   Empty,
+  Pagination,
+  ResourceIdentity,
+  ResourceTable,
+  useCursor,
+} from "../../shared/collection";
+import {
   ErrorNotice,
   Loading,
-  Page,
+  StatePill,
   Timestamp,
-  StateBadge,
 } from "../../shared/feedback";
-import { CopyableId } from "../../shared/copy";
+import { Page } from "../../shared/page";
+import { AgentAvatar } from "../agents/avatar";
 import { conversationQueries, type SessionFilters } from "./api";
 import { SessionFilterBar, readSessionFilters } from "./filters";
 import styles from "./conversations.module.css";
@@ -25,16 +34,25 @@ export function SessionList({
   reconnect: () => void;
 }) {
   const { t } = useTranslation();
+  const { can, basePath } = useWorkspace();
   const [search, setSearch] = useSearchParams();
   const filters = readSessionFilters(search);
   return (
     <Page
       title={t("Sessions")}
-      description={t("Review conversations and runs across your workspace.")}
+      description={t("Every conversation your workspace has run, and why.")}
+      actions={
+        can("agent.invoke") && (
+          <Button render={<Link to={`${basePath}/sessions/new`} />}>
+            <PlusIcon size={14} aria-hidden="true" />
+            {t("New session")}
+          </Button>
+        )
+      }
+      toolbar={<SessionFilterBar search={search} setSearch={setSearch} />}
     >
-      <SessionFilterBar search={search} setSearch={setSearch} />
       <ErrorNotice error={notificationError} retry={reconnect} />
-      <SessionResults key={search.toString()} filters={filters} />
+      <SessionResults filters={filters} />
     </Page>
   );
 }
@@ -45,20 +63,33 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
     navigate = useNavigate(),
     client = useClient(),
     page = useCursor();
-  const sessions = useQuery(
-    conversationQueries(client, workspace.id).sessions(page.cursor, filters),
-  );
-  return (
-    <>
+  const sessions = useQuery({
+    ...conversationQueries(client, workspace.id).sessions(page.cursor, filters),
+    placeholderData: keepPreviousData,
+  });
+  // A changed query starts a new result set, so its pagination starts over.
+  const signature = JSON.stringify(filters);
+  const applied = useRef(signature);
+  useEffect(() => {
+    if (applied.current === signature) return;
+    applied.current = signature;
+    page.reset();
+  }, [signature, page]);
+  if (sessions.isPending) return <Loading variant="table" columns={4} />;
+  if (!sessions.data)
+    return (
       <ErrorNotice
         error={sessions.error}
         retry={() => void sessions.refetch()}
       />
-      {sessions.isPending ? (
-        <Loading variant="table" columns={7} />
-      ) : sessions.data?.items.length ? (
+    );
+  const items = sessions.data.items;
+  return (
+    <>
+      <ErrorNotice error={sessions.error} />
+      {items.length ? (
         <ResourceTable
-          items={sessions.data.items}
+          items={items}
           caption={t("Sessions")}
           onRowActivate={(session) =>
             navigate(
@@ -67,54 +98,42 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
           }
           columns={[
             {
-              label: t("Session ID"),
-              tone: "muted",
-              render: (session) => (
-                <div className={styles.sessionId} title={session.id}>
-                  <CopyableId value={session.id} />
-                </div>
-              ),
-            },
-            {
-              label: t("Request summary"),
+              label: t("Session"),
               tone: "primary",
               render: (session) => (
-                <span
-                  className={styles.sessionSummary}
-                  data-empty={!session.preview?.input_text || undefined}
-                  title={session.preview?.input_text || t("No request text")}
-                >
-                  {session.preview?.input_text || t("No request text")}
-                </span>
+                <ResourceIdentity
+                  name={session.preview?.input_text || t("No request text")}
+                  resourceId={session.id}
+                  icon={
+                    <AgentAvatar
+                      name={session.preview?.agent_name ?? t("Session")}
+                      id={session.id}
+                      className={styles.sessionAvatar}
+                    />
+                  }
+                  description={[
+                    session.preview?.agent_name,
+                    session.run_count === null ||
+                    session.run_count === undefined
+                      ? undefined
+                      : t("{{count}} runs", { count: session.run_count }),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                />
               ),
             },
             {
-              label: t("Recent agent"),
-              render: (session) => (
-                <span
-                  className={styles.sessionAgent}
-                  title={session.preview?.agent_name ?? undefined}
-                >
-                  {session.preview?.agent_name ?? "—"}
-                </span>
-              ),
-            },
-            {
-              label: t("Recent run status"),
+              label: t("Status"),
               render: (session) =>
                 session.preview ? (
-                  <StateBadge state={session.preview.run_status} />
+                  <StatePill state={session.preview.run_status} />
                 ) : (
                   "—"
                 ),
             },
             {
-              label: t("Runs"),
-              align: "right",
-              render: (session) => session.run_count ?? "—",
-            },
-            {
-              label: t("Trigger source"),
+              label: t("Trigger"),
               tone: "muted",
               render: (session) =>
                 session.preview
@@ -124,8 +143,9 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
                   : "—",
             },
             {
-              label: t("Last updated"),
+              label: t("Updated"),
               tone: "muted",
+              align: "right",
               render: (session) => (
                 <Timestamp value={session.updated_at} relative />
               ),
@@ -133,16 +153,16 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
           ]}
         />
       ) : (
-        !sessions.error && (
-          <Empty
-            title={t("No matching sessions")}
-            description={t("Change or clear the search and filters.")}
-          />
-        )
+        <Empty
+          title={t("No matching sessions")}
+          description={t("Change or clear the search and filters.")}
+        />
       )}
-      {sessions.data && (
+      <CollectionFooter
+        count={t("{{count}} sessions on this page", { count: items.length })}
+      >
         <Pagination page={page} next={sessions.data.next_cursor} />
-      )}
+      </CollectionFooter>
     </>
   );
 }

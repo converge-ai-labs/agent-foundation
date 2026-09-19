@@ -3,6 +3,7 @@
 import asyncio
 from typing import Annotated
 
+from a13n_envd_client.eip.v1 import DirectoryListResult
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 
 from a13n_service.application_errors import ErrorCategory
@@ -14,6 +15,7 @@ from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.labels import LabelFilterValues, LabelsBody, parse_label_filters
 from a13n_service.request_runtime import get_control_runtime
 
+from .devices import DeviceInfo
 from .domain import (
     CancelDockerImageRequest,
     Collection,
@@ -55,6 +57,25 @@ def _service(request: Request) -> EnvironmentService:
             "environment_unavailable", "Environment control is unavailable", category=ErrorCategory.unavailable
         )
     return control.environments
+
+
+@router.get("/environments/{environment_id}/device")
+async def device_info(request: Request, actor: Actor, environment_id: str) -> DeviceInfo:
+    return await _service(request).device_info(actor=actor, environment_id=environment_id)
+
+
+@router.get("/environments/{environment_id}/directories")
+async def device_directories(
+    request: Request,
+    actor: Actor,
+    environment_id: str,
+    path: Annotated[str | None, Query(max_length=4096)] = None,
+    offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> DirectoryListResult:
+    return await _service(request).device_directories(
+        actor=actor, environment_id=environment_id, path=path, offset=offset, limit=limit
+    )
 
 
 @router.get("/environment-provider-types")

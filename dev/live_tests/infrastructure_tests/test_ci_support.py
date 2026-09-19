@@ -50,7 +50,7 @@ def test_reviewed_ci_journeys_collect_once_without_external_or_stress_cases(coll
         )
     assert len(collected_suites["core"]) == 21
     assert len(collected_suites["functional"]) == 119
-    assert len(seen) == 448
+    assert len(seen) == 444
     assert len(collected_suites["smoke"]) == 34
     assert collected_suites["smoke"] <= seen
     assert not any("test_06_steer" in case for case in collected_suites["smoke"])

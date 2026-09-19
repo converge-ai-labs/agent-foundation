@@ -118,6 +118,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Devices */
+        get: operations["devices_api_devices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/devices/{device_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Device Info */
+        get: operations["device_info_api_devices__device_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/devices/{device_id}/directories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Device Directories */
+        get: operations["device_directories_api_devices__device_id__directories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/host/terminals": {
         parameters: {
             query?: never;
@@ -1635,6 +1686,13 @@ export interface components {
             environment_provider: string;
             /** Environment Adapter */
             environment_adapter: string;
+            /**
+             * Environment Bindings
+             * @default []
+             */
+            environment_bindings?: components["schemas"]["EnvironmentBindingSelection"][];
+            /** Default Environment */
+            default_environment?: string | null;
             /** Environment Run Extension Ids */
             environment_run_extension_ids: string[];
             /** Tools */
@@ -1995,6 +2053,18 @@ export interface components {
              */
             environment_profile_id: "explicit" | "project" | "agent" | "global" | "builtin" | "thread";
             /**
+             * Environment Bindings
+             * @default builtin
+             * @enum {string}
+             */
+            environment_bindings?: "explicit" | "project" | "agent" | "global" | "builtin" | "thread";
+            /**
+             * Default Environment
+             * @default builtin
+             * @enum {string}
+             */
+            default_environment?: "explicit" | "project" | "agent" | "global" | "builtin" | "thread";
+            /**
              * Harness Plugin Ids
              * @enum {string}
              */
@@ -2212,6 +2282,70 @@ export interface components {
              */
             metadata_omitted?: boolean;
         };
+        /** DeviceInfo */
+        DeviceInfo: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Transport
+             * @enum {string}
+             */
+            transport: "http" | "websocket";
+            /** Available */
+            available: boolean;
+            /** Path Style */
+            path_style?: string | null;
+            /** Default Working Directory */
+            default_working_directory?: string | null;
+            /**
+             * Directory Discovery
+             * @default false
+             */
+            directory_discovery?: boolean;
+            /** Error Code */
+            error_code?: string | null;
+        };
+        /** DeviceSummary */
+        DeviceSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Transport
+             * @enum {string}
+             */
+            transport: "http" | "websocket";
+        };
+        /** DirectoryEntry */
+        DirectoryEntry: {
+            /** Name */
+            name: string;
+            /**
+             * Path
+             * Format: eip-absolute-path
+             */
+            path: string;
+        };
+        /** DirectoryListResult */
+        DirectoryListResult: {
+            /**
+             * Path
+             * Format: eip-absolute-path
+             */
+            path: string;
+            /** Parent Path */
+            parent_path?: string | null;
+            /**
+             * Entries
+             * @default []
+             */
+            entries?: components["schemas"]["DirectoryEntry"][];
+            /** Next Offset */
+            next_offset?: number | null;
+        };
         /** DirectoryPage */
         DirectoryPage: {
             directory: components["schemas"]["FileEntry"];
@@ -2221,6 +2355,25 @@ export interface components {
             entries: components["schemas"]["FileEntry"][];
             /** Next Offset */
             next_offset: number | null;
+        };
+        /**
+         * EnvironmentAction
+         * @description Exact authorization values in the locked first-party catalog.
+         * @enum {string}
+         */
+        EnvironmentAction: "environment.file.stat" | "environment.file.read_text" | "environment.file.read_bytes" | "environment.file.write_text" | "environment.file.patch_text" | "environment.file.list" | "environment.file.query" | "environment.file.search_text" | "environment.file.mkdir" | "environment.file.move" | "environment.file.remove" | "environment.file.write_bytes" | "environment.file.copy_source" | "environment.file.copy_destination" | "environment.shell.exec" | "environment.process.list" | "environment.process.start" | "environment.process.inspect" | "environment.process.read_output" | "environment.process.write_stdin" | "environment.process.close_stdin" | "environment.process.signal" | "environment.process.wait" | "environment.process.kill" | "environment.process.release" | "environment.output.read" | "environment.output.release" | "environment.port.inspect" | "environment.port.wait" | "environment.state.export" | "environment.state.restore";
+        /** EnvironmentBindingSelection */
+        EnvironmentBindingSelection: {
+            /** Device Id */
+            device_id: string;
+            /**
+             * Working Directory
+             * Format: eip-absolute-path
+             */
+            working_directory: string;
+            /** Alias */
+            alias: string;
+            permission_ceiling?: components["schemas"]["EnvironmentPermissionSet"];
         };
         /** EnvironmentOutcomeView */
         EnvironmentOutcomeView: {
@@ -2235,6 +2388,14 @@ export interface components {
              * @default []
              */
             cleanup_failures?: components["schemas"]["FailureView"][];
+        };
+        /** EnvironmentPermissionSet */
+        EnvironmentPermissionSet: {
+            /**
+             * Operations
+             * @default []
+             */
+            operations?: components["schemas"]["EnvironmentAction"][];
         };
         /** EnvironmentProfileSummary */
         EnvironmentProfileSummary: {
@@ -3055,6 +3216,10 @@ export interface components {
         ProjectDefaults: {
             agent?: components["schemas"]["ResourceId"] | null;
             environment_profile?: components["schemas"]["ResourceId"] | null;
+            /** Environment Bindings */
+            environment_bindings?: components["schemas"]["EnvironmentBindingSelection"][] | null;
+            /** Default Environment */
+            default_environment?: string | null;
             /** Harness Plugins */
             harness_plugins?: components["schemas"]["ResourceId"][] | null;
             /** Environment Run Extensions */
@@ -3076,6 +3241,10 @@ export interface components {
             default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
+            /** Environment Bindings */
+            environment_bindings?: components["schemas"]["EnvironmentBindingSelection"][] | null;
+            /** Default Environment */
+            default_environment?: string | null;
             /** Harness Plugin Ids */
             harness_plugin_ids?: string[] | null;
             /** Environment Run Extension Ids */
@@ -3946,6 +4115,13 @@ export interface components {
             /** Environment Profile Id */
             environment_profile_id: string;
             /**
+             * Environment Bindings
+             * @default []
+             */
+            environment_bindings?: components["schemas"]["EnvironmentBindingSelection"][];
+            /** Default Environment */
+            default_environment?: string | null;
+            /**
              * Harness Plugin Ids
              * @default []
              */
@@ -4008,6 +4184,16 @@ export interface components {
             default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id: string;
+            /**
+             * Environment Bindings
+             * @default []
+             */
+            environment_bindings?: components["schemas"]["EnvironmentBindingSelection"][];
+            /**
+             * Default Environment
+             * @default null
+             */
+            default_environment?: string | null;
             /**
              * Harness Plugin Ids
              * @default []
@@ -5065,6 +5251,10 @@ export interface components {
             default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
+            /** Environment Bindings */
+            environment_bindings?: components["schemas"]["EnvironmentBindingSelection"][] | null;
+            /** Default Environment */
+            default_environment?: string | null;
             /** Harness Plugin Ids */
             harness_plugin_ids?: string[] | null;
             /** Environment Run Extension Ids */
@@ -5082,6 +5272,10 @@ export interface components {
             default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
+            /** Environment Bindings */
+            environment_bindings?: components["schemas"]["EnvironmentBindingSelection"][] | null;
+            /** Default Environment */
+            default_environment?: string | null;
             /** Harness Plugin Ids */
             harness_plugin_ids?: string[] | null;
             /** Environment Run Extension Ids */
@@ -5466,6 +5660,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PresenceFrame"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    devices_api_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceSummary"][];
+                };
+            };
+        };
+    };
+    device_info_api_devices__device_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    device_directories_api_devices__device_id__directories_get: {
+        parameters: {
+            query?: {
+                path?: string | null;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryListResult"];
                 };
             };
             /** @description Validation Error */

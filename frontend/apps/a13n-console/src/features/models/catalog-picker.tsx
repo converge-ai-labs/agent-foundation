@@ -1,8 +1,16 @@
-import { Button, ChoiceField, SearchPicker } from "a13n-ui";
+import { SlidersHorizontalIcon } from "@phosphor-icons/react";
+import { Button, ChoiceField, Input } from "a13n-ui";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
+import {
+  DirectoryEmpty,
+  DirectoryGroup,
+  DirectoryList,
+  DirectoryRow,
+} from "../../shared/dialogs";
 import { ModelIcon } from "./model-icon";
+import styles from "./models.module.css";
 
 type Entry = Schema["CatalogModel"];
 type Ref = Schema["CatalogRef"];
@@ -10,6 +18,7 @@ const MAX_VISIBLE_MODELS = 100;
 export const catalogRefKey = (ref: Ref) =>
   JSON.stringify([ref.provider, ref.model]);
 
+/** One row per model identity; regional and gateway copies stay behind it. */
 export function groupCatalog(entries: readonly Entry[]) {
   const groups = new Map<string, Entry[]>();
   for (const entry of entries) {
@@ -22,20 +31,25 @@ export function groupCatalog(entries: readonly Entry[]) {
   );
 }
 
+/**
+ * The model step of the add flow: search the catalog, pick a model, and resolve
+ * the concrete provider variant when one identity is served several ways.
+ */
 export function CatalogPicker({
   entries,
   channels,
   allowCompatible,
+  providerName,
   value,
   onSelect,
-  onPendingChange,
 }: {
   entries: readonly Entry[];
   channels: readonly string[];
   allowCompatible: boolean;
+  providerName?: string;
   value: Ref | null;
+  /** `null` chooses a custom model with no catalog identity. */
   onSelect: (entry: Entry | null) => void;
-  onPendingChange: (pending: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState<boolean>();
@@ -52,12 +66,6 @@ export function CatalogPicker({
     () => groupCatalog(compatible ? entries : native),
     [compatible, entries, native],
   );
-  const nameCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const group of groups)
-      counts.set(group[0].name, (counts.get(group[0].name) ?? 0) + 1);
-    return counts;
-  }, [groups]);
   const search = query.trim().toLocaleLowerCase();
   const matches = useMemo(
     () =>
@@ -73,135 +81,136 @@ export function CatalogPicker({
         : groups,
     [groups, search],
   );
-  const visibleGroups = matches.slice(0, MAX_VISIBLE_MODELS);
-  const selected = entries.find(
-    (entry) => value && catalogRefKey(entry.ref) === catalogRefKey(value),
-  );
-  const selectedValue =
-    pending?.[0].identity ??
-    selected?.identity ??
-    (value ? catalogRefKey(value) : "custom");
-  const variants =
-    pending ?? native.filter((item) => item.identity === selected?.identity);
-  function choose(identity: string) {
-    setPending(undefined);
-    onPendingChange(false);
-    if (identity === "custom") {
-      onSelect(null);
-      return;
-    }
-    const group = groups.find((items) => items[0].identity === identity);
-    if (!group) return;
-    const nativeVersions = group.filter((item) =>
+  const visible = matches.slice(0, MAX_VISIBLE_MODELS);
+  const servedHere = (group: Entry[]) =>
+    group.some((entry) => channels.includes(entry.ref.provider));
+  const provided = visible.filter(servedHere);
+  const other = visible.filter((group) => !servedHere(group));
+  const selectedKey = value ? catalogRefKey(value) : null;
+
+  function choose(group: Entry[]) {
+    const versions = group.filter((item) =>
       channels.includes(item.ref.provider),
     );
     const official = group.find(
       (item) => `${item.ref.provider}/${item.ref.model}` === item.identity,
     );
-    const versions = nativeVersions.length
-      ? nativeVersions
-      : [official ?? group[0]];
-    if (versions.length === 1) onSelect(versions[0]);
-    else {
-      setPending(versions);
-      onPendingChange(true);
+    const variants = versions.length ? versions : [official ?? group[0]];
+    if (variants.length === 1) {
+      setPending(undefined);
+      onSelect(variants[0]);
+      return;
     }
+    setPending(variants);
+  }
+  function rows(group: Entry[]) {
+    return (
+      <DirectoryRow
+        key={group[0].identity}
+        icon={<ModelIcon upstream={group[0].identity} size={20} />}
+        name={group[0].name}
+        detail={group[0].identity}
+        meta={
+          group.some((item) => catalogRefKey(item.ref) === selectedKey)
+            ? t("Selected")
+            : undefined
+        }
+        onClick={() => choose(group)}
+      />
+    );
   }
   return (
-    <>
-      <SearchPicker
-        label={t("Model")}
-        placeholder={t("Choose a model…")}
-        emptyMessage={t("No models found. You can still add a model manually.")}
-        value={selectedValue}
-        onValueChange={choose}
-        onSearchChange={setQuery}
-        groups={[
-          {
-            label: t("Models"),
-            options: [
-              {
-                value: "custom",
-                label: t("Custom model"),
-                description: t("Enter an upstream model ID"),
-                icon: <ModelIcon upstream="" size={20} />,
-              },
-              ...(value &&
-              !visibleGroups.some(
-                (group) => group[0].identity === selectedValue,
-              ) &&
-              !pending
-                ? [
-                    {
-                      value: selectedValue,
-                      label: selected?.name ?? value.model,
-                      icon: <ModelIcon upstream={value.model} size={20} />,
-                    },
-                  ]
-                : []),
-              ...visibleGroups.map((group) => ({
-                value: group[0].identity,
-                label: group[0].name,
-                keywords: group.flatMap((entry) => [
-                  entry.identity,
-                  entry.ref.model,
-                  entry.provider_name,
-                ]),
-                description:
-                  (nameCounts.get(group[0].name) ?? 0) > 1
-                    ? group[0].identity
-                    : undefined,
-                icon: <ModelIcon upstream={group[0].identity} size={20} />,
-              })),
-            ],
-          },
-        ]}
-        footer={
-          (allowCompatible || matches.length > MAX_VISIBLE_MODELS) && (
-            <div>
-              {matches.length > MAX_VISIBLE_MODELS && (
-                <p className="px-2 py-1 text-xs text-muted-foreground">
-                  {t("Showing first 100 models. Search to narrow the list.")}
-                </p>
-              )}
-              {allowCompatible && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setExpanded(!compatible)}
-                >
-                  {t(
-                    compatible
-                      ? "Show provider models"
-                      : "Other models (compatible)…",
-                  )}
-                </Button>
-              )}
-            </div>
-          )
-        }
-      />
-      {variants.length > 1 && (
-        <ChoiceField
-          label={t("Provider model variant")}
-          placeholder={t("Choose a model…")}
-          value={pending || !value ? "" : catalogRefKey(value)}
-          options={variants.map((item) => ({
-            value: catalogRefKey(item.ref),
-            label: `${item.provider_name} · ${item.ref.model}`,
-          }))}
-          onValueChange={(key) => {
-            const item = variants.find(
-              (item) => catalogRefKey(item.ref) === key,
-            );
-            if (item) {
-              onSelect(item);
+    <div className={styles.step}>
+      {pending && (
+        <div className={styles.variantChoice}>
+          <ChoiceField
+            label={t("Provider model variant")}
+            placeholder={t("Choose a model…")}
+            description={t("This model is served under more than one ID.")}
+            value=""
+            options={pending.map((item) => ({
+              value: catalogRefKey(item.ref),
+              label: `${item.provider_name} · ${item.ref.model}`,
+            }))}
+            onValueChange={(key) => {
+              const item = pending.find(
+                (entry) => catalogRefKey(entry.ref) === key,
+              );
+              if (!item) return;
               setPending(undefined);
-              onPendingChange(false);
-            }
-          }}
-        />
+              onSelect(item);
+            }}
+          />
+        </div>
       )}
-    </>
+      <DirectoryList
+        search={
+          <Input
+            type="search"
+            autoFocus
+            aria-label={t("Search models…")}
+            placeholder={t("Search models…")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        }
+        footer={
+          <div className={styles.catalogFooter}>
+            <span>
+              {matches.length > MAX_VISIBLE_MODELS
+                ? t("Showing first 100 models. Search to narrow the list.")
+                : ""}
+            </span>
+            {allowCompatible && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setExpanded(!compatible)}
+              >
+                {t(
+                  compatible
+                    ? "Show provider models"
+                    : "Other models (compatible)…",
+                )}
+              </Button>
+            )}
+          </div>
+        }
+      >
+        {provided.length > 0 && (
+          <DirectoryGroup
+            label={
+              providerName
+                ? t("Models from {{provider}}", { provider: providerName })
+                : t("Models")
+            }
+          >
+            {provided.map(rows)}
+          </DirectoryGroup>
+        )}
+        {other.length > 0 && (
+          <DirectoryGroup label={t("Other models (compatible)")}>
+            {other.map(rows)}
+          </DirectoryGroup>
+        )}
+        {!visible.length && (
+          <DirectoryEmpty>
+            {t("No models found. You can still add a model manually.")}
+          </DirectoryEmpty>
+        )}
+        <DirectoryGroup label={t("Not listed")}>
+          <DirectoryRow
+            icon={<SlidersHorizontalIcon size={18} aria-hidden="true" />}
+            name={t("Custom model")}
+            detail={t("Enter an upstream model ID")}
+            onClick={() => {
+              setPending(undefined);
+              onSelect(null);
+            }}
+          />
+        </DirectoryGroup>
+      </DirectoryList>
+    </div>
   );
 }

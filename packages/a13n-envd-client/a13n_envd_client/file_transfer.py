@@ -7,8 +7,10 @@ from collections.abc import Coroutine
 from types import TracebackType
 from typing import Any, Self
 
+from a13n_envd_client._transfer_window import TransferWindow
 from a13n_envd_client.eip.v1 import (
     EIP_DATA_FRAME_HEADER_BYTES,
+    EIP_TRANSFER_WINDOW_CHUNKS,
     ContentDigest,
     DataFrame,
     DataFrameKind,
@@ -36,7 +38,7 @@ from a13n_envd_client.errors import (
     EIPSessionStateError,
     EIPTransferError,
 )
-from a13n_envd_client.requester import RequestCoordinator, TransferChannel
+from a13n_envd_client.requester import SessionRequester, TransferChannel
 
 
 class EIPFileReader:
@@ -44,7 +46,7 @@ class EIPFileReader:
 
     def __init__(
         self,
-        requester: RequestCoordinator,
+        requester: SessionRequester,
         client: EIPClient,
         path: EIPPath,
         *,
@@ -63,6 +65,7 @@ class EIPFileReader:
         self._channel: TransferChannel | None = None
         self._hasher = hashlib.sha256()
         self._received_bytes = 0
+        self._credited_bytes = 0
         self._max_bytes: int | None = None
         self._completion: FileReadCompletion | None = None
         self._entered = False
@@ -103,11 +106,11 @@ class EIPFileReader:
             self._channel = self._requester.register_transfer(
                 handle,
                 direction="read",
-                inbound_frames=8,
+                inbound_frames=EIP_TRANSFER_WINDOW_CHUNKS + 1,
             )
             await self._requester.send_data_frame(
                 self._channel,
-                DataFrame(kind=DataFrameKind.ATTACH, handle=handle),
+                DataFrame(kind=DataFrameKind.ATTACH, session_id=self._requester.session_id, handle=handle),
             )
             attached = await self._channel.receive()
             _expect_frame(attached, DataFrameKind.ATTACHED, offset=0)
@@ -127,6 +130,18 @@ class EIPFileReader:
         if self._finalized:
             raise StopAsyncIteration
         channel = self._require_channel()
+        # Returning for the next chunk means the caller consumed the previous one.
+        if self._received_bytes != self._credited_bytes:
+            await self._requester.send_data_frame(
+                channel,
+                DataFrame(
+                    kind=DataFrameKind.CREDIT,
+                    session_id=channel.session_id,
+                    handle=channel.handle,
+                    offset=self._received_bytes,
+                ),
+            )
+            self._credited_bytes = self._received_bytes
         frame = await channel.receive()
         if frame.kind is DataFrameKind.CHUNK:
             if frame.offset != self._received_bytes:
@@ -189,6 +204,7 @@ class EIPFileReader:
                     channel,
                     DataFrame(
                         kind=DataFrameKind.RESET,
+                        session_id=channel.session_id,
                         handle=channel.handle,
                         offset=self._received_bytes,
                         reset_status=DataResetStatus.CANCELLED,
@@ -211,10 +227,11 @@ class EIPFileReader:
     async def _reset_for_protocol(self, offset: int) -> None:
         channel = self._require_channel()
         try:
-            await self._requester.send_data_frame(
+            await self._requester.reset_transfer(
                 channel,
                 DataFrame(
                     kind=DataFrameKind.RESET,
+                    session_id=channel.session_id,
                     handle=channel.handle,
                     offset=offset,
                     reset_status=DataResetStatus.PROTOCOL,
@@ -253,7 +270,7 @@ class EIPFileWriter:
 
     def __init__(
         self,
-        requester: RequestCoordinator,
+        requester: SessionRequester,
         client: EIPClient,
         path: EIPPath,
         mode: FileWriteMode,
@@ -276,6 +293,7 @@ class EIPFileWriter:
         self._channel: TransferChannel | None = None
         self._hasher = hashlib.sha256()
         self._transferred_bytes = 0
+        self._window = TransferWindow()
         self._result: FileWriterCommitResult | None = None
         self._commit_context = _new_context()
         self._entered = False
@@ -317,11 +335,11 @@ class EIPFileWriter:
             self._channel = self._requester.register_transfer(
                 handle,
                 direction="write",
-                inbound_frames=4,
+                inbound_frames=EIP_TRANSFER_WINDOW_CHUNKS + 1,
             )
             await self._requester.send_data_frame(
                 self._channel,
-                DataFrame(kind=DataFrameKind.ATTACH, handle=handle),
+                DataFrame(kind=DataFrameKind.ATTACH, session_id=self._requester.session_id, handle=handle),
             )
             attached = await self._channel.receive()
             _expect_frame(attached, DataFrameKind.ATTACHED, offset=0)
@@ -347,32 +365,50 @@ class EIPFileWriter:
                 raise EIPTransferError("writer payload exceeds its negotiated transfer byte limit")
             channel = self._require_channel()
             payload_limit = (
-                self._max_transfer_frame_bytes - EIP_DATA_FRAME_HEADER_BYTES - len(channel.handle.encode("utf-8"))
+                self._max_transfer_frame_bytes
+                - EIP_DATA_FRAME_HEADER_BYTES
+                - len(channel.session_id.encode("utf-8"))
+                - len(channel.handle.encode("utf-8"))
             )
             if payload_limit < 1:
                 raise EIPProtocolError("negotiated data frame limit cannot carry writer payload")
             for start in range(0, len(payload), payload_limit):
                 part = payload[start : start + payload_limit]
+                if self._window.full:
+                    await self._receive_credit(channel)
+                offset = self._window.sent(len(part))
                 await self._requester.send_data_frame(
                     channel,
                     DataFrame(
                         kind=DataFrameKind.CHUNK,
+                        session_id=channel.session_id,
                         handle=channel.handle,
-                        offset=self._transferred_bytes,
+                        offset=offset,
                         payload=part,
                     ),
                 )
                 self._hasher.update(part)
                 self._transferred_bytes += len(part)
 
+    async def _receive_credit(self, channel: TransferChannel) -> None:
+        frame = await channel.receive()
+        if frame.kind is DataFrameKind.RESET:
+            raise _peer_reset("writer", frame)
+        if frame.kind is not DataFrameKind.CREDIT:
+            raise EIPProtocolError("writer expected chunk credit")
+        self._window.credit(frame.offset)
+
     async def commit(self) -> FileWriterCommitResult:
         async with self._lock:
             self._ensure_writable()
             channel = self._require_channel()
+            while self._window.pending:
+                await self._receive_credit(channel)
             await self._requester.send_data_frame(
                 channel,
                 DataFrame(
                     kind=DataFrameKind.END,
+                    session_id=channel.session_id,
                     handle=channel.handle,
                     offset=self._transferred_bytes,
                 ),
@@ -423,6 +459,7 @@ class EIPFileWriter:
                     channel,
                     DataFrame(
                         kind=DataFrameKind.RESET,
+                        session_id=channel.session_id,
                         handle=channel.handle,
                         offset=self._transferred_bytes,
                         reset_status=DataResetStatus.CANCELLED,

@@ -17,6 +17,7 @@ async def has_input_environment(
     agent_revision_id: str | None = None,
     choice: EnvironmentSelection | Omitted | None,
     inherited_id: str | Omitted | None = Omitted.UNSET,
+    inherited_working_directory: str | None = None,
 ) -> bool:
     choice = await resolve_requested_environment(
         database,
@@ -24,6 +25,7 @@ async def has_input_environment(
         agent_revision_id=agent_revision_id,
         choice=choice,
         inherited_id=inherited_id,
+        inherited_working_directory=inherited_working_directory,
     )
     if choice is None:
         return False

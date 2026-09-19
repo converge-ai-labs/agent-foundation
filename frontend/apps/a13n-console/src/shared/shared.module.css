@@ -1,31 +1,29 @@
-.page {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 28px 32px 56px;
+/*
+ * Layout utilities shared by feature screens. Component anatomies live with
+ * their owning composition in page/, collection/, forms/, dialogs/, identity/,
+ * and feedback/.
+ */
+.stack {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
 }
-.pageHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 24px;
+.form {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+  min-width: 0;
 }
-.pageHeader h1 {
-  font-size: 22px;
+.form > h3 {
+  margin: 8px 0 0;
+  padding-top: 16px;
+  font-size: 13.5px;
   font-weight: 500;
-  letter-spacing: -0.6px;
-  line-height: 1.35;
-  margin: 0;
 }
-.titleRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.pageHeader p {
-  color: var(--a13n-secondary);
-  margin: 6px 0 0;
-  font-size: 13px;
+.twoColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 .actions,
 .formActions {
@@ -38,486 +36,6 @@
   justify-content: flex-end;
   margin-top: 12px;
 }
-.loading {
-  min-height: 180px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--a13n-secondary);
-}
-.pageLoading {
-  min-height: 100svh;
-}
-.page > .loading {
-  min-height: calc(100svh - 160px);
-}
-.skeletonLoading {
-  width: 100%;
-  overflow: hidden;
-}
-.pageSkeleton {
-  min-height: 100svh;
-  padding: 28px 32px 56px;
-}
-.inlineSkeleton {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  vertical-align: middle;
-}
-.inlineSkeleton > [data-slot="skeleton"] {
-  height: 12px;
-}
-.skeletonTable {
-  min-width: 680px;
-  overflow: hidden;
-}
-.skeletonTableRow {
-  display: grid;
-  align-items: center;
-  gap: 24px;
-  min-height: 63px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--a13n-border-soft);
-}
-.skeletonTableRow[data-header] {
-  min-height: 38px;
-  background: color-mix(in srgb, var(--a13n-surface) 72%, transparent);
-}
-.skeletonTableHeading {
-  width: 46px;
-  height: 9px;
-}
-.skeletonTableCell,
-.skeletonListRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.skeletonCellCopy,
-.skeletonListRow > div {
-  display: grid;
-  gap: 7px;
-  width: 100%;
-  min-width: 0;
-}
-.skeletonIcon {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  border-radius: 8px;
-}
-.skeletonLine {
-  width: 72%;
-  height: 11px;
-}
-.skeletonLine[data-width="1"] {
-  width: 54%;
-}
-.skeletonLine[data-width="2"] {
-  width: 84%;
-}
-.skeletonLine[data-secondary] {
-  width: 46%;
-  height: 8px;
-}
-.skeletonCards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-.skeletonCard {
-  min-height: 128px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 20px;
-  border-radius: 12px;
-  background: var(--a13n-surface);
-}
-.skeletonCardHeading,
-.skeletonCardFooter,
-.skeletonActions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.skeletonCardFooter {
-  margin-top: auto;
-}
-.skeletonTitle {
-  width: 36%;
-  height: 14px;
-}
-.skeletonBadge {
-  width: 28px;
-  height: 18px;
-  border-radius: 999px;
-}
-.skeletonKey {
-  width: 30%;
-  height: 10px;
-}
-.skeletonMeta {
-  width: 64px;
-  height: 9px;
-}
-.skeletonDate {
-  width: 136px;
-  height: 9px;
-}
-.skeletonForm {
-  display: grid;
-  gap: 16px;
-  width: 100%;
-  max-width: 760px;
-}
-.skeletonFormIntro {
-  width: min(420px, 72%);
-  height: 10px;
-  margin-bottom: 4px;
-}
-.skeletonField {
-  display: grid;
-  gap: 7px;
-}
-.skeletonLabel {
-  width: 92px;
-  height: 9px;
-}
-.skeletonControl {
-  width: 100%;
-  height: 38px;
-  border-radius: 8px;
-}
-.skeletonActions {
-  justify-content: flex-end;
-  margin-top: 8px;
-}
-.skeletonActions > [data-slot="skeleton"] {
-  width: 84px;
-  height: 36px;
-  border-radius: 8px;
-}
-.skeletonDetail {
-  display: grid;
-  gap: 24px;
-  width: 100%;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-.skeletonDetail > header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-}
-.skeletonDetail > header > div {
-  display: grid;
-  gap: 9px;
-  width: min(420px, 60%);
-}
-.skeletonDetailTitle {
-  width: 156px;
-  height: 22px;
-}
-.skeletonDetailDescription {
-  width: 72%;
-  height: 11px;
-}
-.skeletonDetailAction {
-  width: 108px;
-  height: 36px;
-  border-radius: 8px;
-}
-.skeletonTabs {
-  width: 260px;
-  height: 34px;
-  border-radius: 9px;
-}
-.skeletonDetailBody {
-  display: grid;
-  gap: 14px;
-  max-width: 860px;
-}
-.skeletonSectionTitle {
-  width: 128px;
-  height: 14px;
-}
-.skeletonParagraph {
-  width: min(560px, 78%);
-  height: 10px;
-}
-.skeletonPanel {
-  width: 100%;
-  height: 156px;
-  border-radius: 12px;
-  margin-bottom: 10px;
-}
-.skeletonList {
-  display: grid;
-  gap: 10px;
-}
-.skeletonListRow {
-  min-height: 66px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: var(--a13n-surface);
-}
-.skeletonCode {
-  display: grid;
-  gap: 11px;
-  min-height: 180px;
-  padding: 18px;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 8px;
-  background: var(--a13n-surface);
-}
-.skeletonCode .skeletonLine {
-  height: 9px;
-}
-.errorPage {
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  padding: 32px;
-  text-align: center;
-}
-.errorPage h1 {
-  margin: 0 0 7px;
-  font-size: 21px;
-  font-weight: 500;
-  letter-spacing: -0.4px;
-}
-.errorPage p {
-  max-width: 440px;
-  margin: 0;
-  color: var(--a13n-secondary);
-  font-size: 14px;
-}
-.errorPage small {
-  margin-top: 3px;
-  color: var(--a13n-secondary);
-  font-size: 11px;
-}
-.errorPageActions {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 22px;
-}
-.errorMark {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  margin-bottom: 18px;
-  border-radius: 13px;
-  background: color-mix(in srgb, var(--destructive) 8%, transparent);
-  color: var(--destructive);
-}
-.errorMark svg {
-  width: 19px;
-  height: 19px;
-}
-.back {
-  color: var(--a13n-secondary);
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  text-decoration: none;
-  margin-bottom: 18px;
-  font-size: 12px;
-}
-.field {
-  display: grid;
-  gap: 7px;
-  font-size: 13px;
-}
-.field small {
-  color: var(--a13n-secondary);
-}
-.code [data-slot="textarea"],
-.codeValue,
-.json {
-  font-family: var(--a13n-mono);
-  font-size: 12px;
-}
-.json {
-  padding: 16px;
-  border: 1px solid var(--a13n-border-soft);
-  background: var(--a13n-surface);
-  overflow: auto;
-  max-height: 440px;
-  border-radius: 8px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.form {
-  display: grid;
-  gap: 16px;
-  max-width: 760px;
-}
-.twoColumns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-.card {
-  background: var(--a13n-surface);
-  border-radius: 12px;
-  padding: 24px;
-}
-.toolbar {
-  display: flex;
-  justify-content: flex-start;
-  gap: 8px;
-  margin-bottom: 0;
-  align-items: end;
-  flex-wrap: wrap;
-}
-.tableWrap {
-  overflow-x: auto;
-}
-.pagination {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-  gap: 8px;
-}
-.muted {
-  color: var(--a13n-secondary);
-}
-.stack {
-  display: grid;
-  gap: 16px;
-}
-@media (max-width: 760px) {
-  .page {
-    padding: 24px 18px 40px;
-  }
-  .pageHeader {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 14px;
-  }
-  .twoColumns {
-    grid-template-columns: 1fr;
-  }
-  .toolbar {
-    flex-wrap: wrap;
-  }
-  .pageSkeleton {
-    padding: 24px 18px 40px;
-  }
-  .skeletonCards {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .skeletonDetail > header {
-    flex-direction: column;
-    gap: 14px;
-  }
-  .skeletonDetail > header > div {
-    width: 82%;
-  }
-}
-.resourceIdentity {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 180px;
-}
-.resourceIdentityLink {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.resourceIcon {
-  display: inline-grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  border-radius: 7px;
-  border: 1px solid var(--a13n-border-soft);
-  background: var(--a13n-accent-soft);
-  color: var(--a13n-accent);
-}
-.resourceCopy {
-  min-width: 0;
-}
-.resourceCopy strong {
-  display: block;
-  max-width: min(420px, 40vw);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-weight: 500;
-  font-size: 14px;
-}
-.resourceCopy small {
-  max-width: 420px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.table td[data-align="right"] > .actions {
-  justify-content: flex-end;
-}
-.table td:first-child > .actions {
-  justify-content: flex-start;
-}
-.toolbar > p {
-  font-size: 12px;
-  line-height: 1.7;
-  margin: 0;
-}
-
-.collectionFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 12px;
-  color: var(--a13n-secondary);
-  font-size: 11px;
-}
-.collectionFooter p {
-  margin: 0;
-}
-.collectionFooter > div {
-  margin: 0;
-}
-
-.toolbar:empty {
-  display: none;
-}
-
-.form > h3 {
-  font-size: 13px;
-  font-weight: 500;
-  margin: 8px 0 0;
-  padding-top: 16px;
-}
-
-.schemaFields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: 16px;
-  align-items: start;
-}
-.schemaFields > :has(textarea) {
-  grid-column: 1 / -1;
-}
-
 .filters {
   display: flex;
   flex-wrap: wrap;
@@ -530,34 +48,55 @@
   min-width: 0;
 }
 .filters > [data-slot="field"]:has(input[type="search"]) {
-  flex: 0 1 320px;
+  flex: 0 1 300px;
 }
-
-.codeValue {
+.tableWrap {
+  overflow-x: auto;
+}
+.pagination {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.collectionFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 4px 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.collectionFooter p,
+.collectionFooter > div {
   margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  line-height: 1.7;
+}
+.muted {
+  color: var(--a13n-secondary);
+}
+@media (max-width: 760px) {
+  .twoColumns {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
-.schemaFields:empty {
-  display: none;
+/* Card grid used by collections that read better as tiles than as rows. */
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
-
-.confirmSubject {
-  margin: 0;
-  padding: 16px;
-  border-radius: 12px;
+.card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 20px;
+  border-radius: var(--a13n-radius-group);
   background: var(--a13n-surface);
-  font-size: 14px;
-  font-weight: 500;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
-:global([data-a13n-modal]) .json {
-  max-height: none;
-  margin: 0;
-  border: 0;
-  border-radius: 12px;
-  line-height: 1.7;
+@media (max-width: 760px) {
+  .cardGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

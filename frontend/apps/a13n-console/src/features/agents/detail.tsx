@@ -1,38 +1,53 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ModalFrame } from "a13n-ui";
 import {
-  ClockCounterClockwiseIcon,
+  Button,
+  MenuItem,
+  MenuSeparator,
+  ModalFrame,
+  StatusPill,
+} from "a13n-ui";
+import {
+  DownloadSimpleIcon,
   PencilSimpleIcon,
   PlayIcon,
   SparkleIcon,
 } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import {
+  allPages,
   commandHeaders,
   data,
   representation,
   workspaceHeaders,
-  type Schema,
 } from "../../shared/api";
 import {
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { isResourceKey } from "../../shared/paths";
+import { CopyButton } from "../../shared/identity";
 import { useIdempotency } from "../../shared/idempotency";
-import styles from "../../shared/shared.module.css";
-import agentStyles from "./agents.module.css";
-import { type AgentConfig } from "./configuration";
-import { AgentForm } from "./form";
+import {
+  DetailHeader,
+  DetailPage,
+  RailNote,
+  RailRow,
+  RailSection,
+  useTabParam,
+} from "../../shared/page";
+import { isResourceKey } from "../../shared/paths";
+import { AgentAvatar } from "./avatar";
+import type { AgentConfig } from "./configuration";
+import { AgentEditor, type AgentDraftSummary } from "./editor";
+import { ExportAgent } from "./export";
 import { AgentActions, AgentDetails } from "./settings";
 import { AgentVersions } from "./versions";
-import { ExportAgent } from "./export";
+import styles from "./agents.module.css";
 
 export { CreateAgent } from "./create";
 
@@ -44,6 +59,7 @@ export function AgentDetail() {
     navigate = useNavigate(),
     cache = useQueryClient(),
     idempotency = useIdempotency();
+  const [tab, setTab] = useTabParam(["configuration", "versions"]);
   const [generation, setGeneration] = useState(0);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const query = useQuery({
@@ -70,6 +86,21 @@ export function AgentDetail() {
       );
       return { ...resource, revision };
     },
+  });
+  const templates = useQuery({
+    queryKey: ["environment-template-choices", workspace.id],
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        client.http
+          .GET("/api/v1/workspaces/{workspace}/environment-templates", {
+            params: {
+              path: { workspace: workspace.id },
+              query: { cursor, limit: 100 },
+            },
+            signal,
+          })
+          .then(data),
+      ),
   });
   const save = useMutation({
     mutationFn: async (body: {
@@ -101,7 +132,7 @@ export function AgentDetail() {
         queryKey: ["agent", workspace.id, agentKey],
       });
       void cache.invalidateQueries({
-        queryKey: ["agent-revisions", workspace.id, agentKey],
+        queryKey: ["agent-revisions", workspace.id],
       });
       setGeneration((value) => value + 1);
     },
@@ -114,143 +145,219 @@ export function AgentDetail() {
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     );
   const agent = query.data.value;
+  const revision = query.data.revision;
+  const editorKey = `${agent.id}:${agent.key}:${generation}`;
   const reload = async () => {
     await query.refetch();
     save.reset();
     setGeneration((value) => value + 1);
   };
-  return (
-    <AgentForm
-      key={`${agent.id}:${agent.key}:${generation}`}
-      back={`${basePath}/agents`}
-      name={agent.name}
-      agentId={agent.id}
-      agentKey={agent.key}
-      imageUrl={agent.image_url}
-      description={agent.description ?? ""}
-      identityAction={
-        can("agent.update") && (
-          <ModalFrame
-            open={detailsOpen}
-            onOpenChange={setDetailsOpen}
-            trigger={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t("Edit agent details")}
-                title={t("Edit agent details")}
-              >
-                <PencilSimpleIcon size={14} />
-              </Button>
-            }
-            title={t("Edit agent details")}
-            description={t("Update how this agent appears in your workspace.")}
-            closeLabel={t("Close")}
-          >
-            <AgentDetails
-              key={`${agent.id}:${agent.key}:${generation}`}
-              resource={query.data}
-              close={() => setDetailsOpen(false)}
-              onImageSaved={async () => {
-                await query.refetch();
-              }}
-              reload={() => void reload()}
-            />
-          </ModalFrame>
-        )
-      }
-      primaryAction={
-        can("agent.invoke") && (
-          <Button
-            variant="default"
-            disabled={!agent.enabled || !!agent.archived_at}
-            onClick={() =>
-              navigate(`${basePath}/sessions/new?agent=${agent.id}`)
-            }
-            type="button"
-          >
-            {<PlayIcon size={14} />}
-            {t("Try agent")}
-          </Button>
-        )
-      }
-      metadata={
-        <dl className={agentStyles.metadata}>
-          <dt>{t("Status")}</dt>
-          <dd>
-            <StateBadge
-              state={
-                agent.archived_at
-                  ? "archived"
-                  : agent.enabled
-                    ? "enabled"
-                    : "disabled"
-              }
-            />
-          </dd>
-          <dt>{t("Updated")}</dt>
-          <dd>
-            <Timestamp value={agent.updated_at} relative />
-          </dd>
-        </dl>
-      }
-      context={
-        <div className={styles.stack}>
-          {can("agent.update") && (
-            <Button
-              variant="outline"
-              onClick={() =>
-                navigate(`${basePath}/configuration/new?agent=${agent.id}`)
-              }
+  const state = agent.archived_at
+    ? "archived"
+    : agent.enabled
+      ? "enabled"
+      : "disabled";
+  const rail = (summary: AgentDraftSummary): ReactNode => {
+    const environment = summary.environmentId
+      ? (templates.data?.find((item) => item.id === summary.environmentId)
+          ?.name ?? summary.environmentId)
+      : t("None");
+    return (
+      <>
+        <RailSection title={t("Overview")}>
+          <RailRow label={t("Status")}>
+            <StatePill state={state} />
+          </RailRow>
+          <RailRow label={t("Default version")}>
+            <button
+              type="button"
+              className={styles.railLink}
+              onClick={() => setTab("versions")}
             >
-              <SparkleIcon size={16} aria-hidden="true" />
-              {t("Configure with assistant")}
-            </Button>
-          )}
-          <ExportAgent
-            agent={agent}
-            config={query.data.revision.config}
-            version={query.data.revision.version}
-          />
-          <ModalFrame
-            trigger={
-              <Button variant="ghost" type="button">
-                {<ClockCounterClockwiseIcon size={14} />}
-                {t("Version history")}
-              </Button>
-            }
-            size="lg"
-            title={t("Version history")}
-            description={t(
-              "Review saved configurations and choose the default version.",
+              v{revision.version}
+            </button>
+            {summary.dirty && (
+              <span className="text-muted-foreground">
+                → v{revision.version + 1}
+              </span>
             )}
-            closeLabel={t("Close")}
+          </RailRow>
+          <RailRow label={t("Model")}>
+            {summary.modelIcon}
+            <span>{summary.modelName}</span>
+          </RailRow>
+          <RailRow label={t("Environment")}>
+            <span>{environment}</span>
+          </RailRow>
+          <RailRow label={t("Capabilities")}>
+            {t("{{count}} skills", { count: summary.skillCount })}
+            <span className={styles.railDot}>·</span>
+            {t("{{count}} connections", { count: summary.connectionCount })}
+          </RailRow>
+          <RailRow label={t("Updated")}>
+            <Timestamp value={agent.updated_at} relative />
+          </RailRow>
+          <RailRow label={t("ID")}>
+            <span title={agent.id}>{agent.id}</span>
+            <CopyButton
+              value={agent.id}
+              iconOnly
+              copyLabel={t("Copy resource ID")}
+            />
+          </RailRow>
+        </RailSection>
+        <RailNote>
+          {t(
+            "Versions are immutable. Every save creates a new version; older versions stay available in",
+          )}{" "}
+          <button
+            type="button"
+            className={styles.railLink}
+            onClick={() => setTab("versions")}
           >
-            <AgentVersions
-              agent={agent}
-              etag={query.data.etag}
-              onDefaultChanged={reload}
+            {t("Version history")}
+          </button>
+          .
+        </RailNote>
+      </>
+    );
+  };
+  return (
+    <DetailPage
+      back={`${basePath}/agents`}
+      backLabel={t("Agents")}
+      tabs={[
+        { value: "configuration", label: t("Configuration") },
+        {
+          value: "versions",
+          label: t("Versions"),
+          count: `v${revision.version}`,
+        },
+      ]}
+      tab={tab}
+      onTabChange={setTab}
+      header={
+        <DetailHeader
+          avatar={
+            <AgentAvatar
+              name={agent.name}
+              id={agent.id}
+              url={agent.image_url}
+              className={styles.detailAvatar}
             />
-          </ModalFrame>
-          {(can("agent.lifecycle") || can("agent.duplicate")) && (
-            <AgentActions
-              key={`${agent.id}:${agent.key}:${generation}`}
-              resource={query.data}
-              reload={() => void reload()}
-            />
-          )}
-        </div>
+          }
+          name={agent.name}
+          status={<StatePill state={state} />}
+          resourceKey={agent.key}
+          description={agent.description}
+          edit={
+            can("agent.update") && (
+              <ModalFrame
+                open={detailsOpen}
+                onOpenChange={setDetailsOpen}
+                trigger={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={t("Edit agent details")}
+                    title={t("Edit agent details")}
+                  >
+                    <PencilSimpleIcon size={13} />
+                  </Button>
+                }
+                title={t("Edit agent details")}
+                description={t(
+                  "Update how this agent appears in your workspace.",
+                )}
+                closeLabel={t("Close")}
+              >
+                <AgentDetails
+                  key={editorKey}
+                  resource={query.data}
+                  close={() => setDetailsOpen(false)}
+                  onImageSaved={async () => {
+                    await query.refetch();
+                  }}
+                  reload={() => void reload()}
+                />
+              </ModalFrame>
+            )
+          }
+          actions={
+            <>
+              {can("agent.update") && (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    navigate(`${basePath}/configuration/new?agent=${agent.id}`)
+                  }
+                >
+                  <SparkleIcon size={15} aria-hidden="true" />
+                  {t("Configure with assistant")}
+                </Button>
+              )}
+              {can("agent.invoke") && (
+                <Button
+                  variant="default"
+                  disabled={!agent.enabled || !!agent.archived_at}
+                  onClick={() =>
+                    navigate(`${basePath}/sessions/new?agent=${agent.id}`)
+                  }
+                >
+                  <PlayIcon size={14} />
+                  {t("Try agent")}
+                </Button>
+              )}
+              <AgentActions
+                key={editorKey}
+                resource={query.data}
+                reload={() => void reload()}
+                triggerVariant="outline"
+                leading={
+                  <>
+                    <ExportAgent
+                      agent={agent}
+                      config={revision.config}
+                      version={revision.version}
+                      trigger={
+                        <MenuItem closeOnClick={false}>
+                          <DownloadSimpleIcon size={14} />
+                          {t("Export agent")}
+                        </MenuItem>
+                      }
+                    />
+                    <MenuSeparator />
+                  </>
+                }
+              />
+            </>
+          }
+        />
       }
-      initial={query.data.revision.config}
-      version={query.data.revision.version}
-      etag={query.data.etag}
-      pending={save.isPending}
-      error={save.error}
-      readonly={!can("agent.revision.create")}
-      submit={(config, _name, _description, etag, changeSummary) => {
-        save.mutate({ config, etag, change_summary: changeSummary });
-      }}
-      reload={() => void reload()}
-    />
+    >
+      {tab === "configuration" ? (
+        <AgentEditor
+          key={editorKey}
+          agentId={agent.id}
+          initial={revision.config}
+          version={revision.version}
+          etag={query.data.etag}
+          pending={save.isPending}
+          error={save.error}
+          readonly={!can("agent.revision.create")}
+          submit={(config, etag, note) =>
+            save.mutate({ config, etag, change_summary: note })
+          }
+          discard={() => void reload()}
+          rail={rail}
+        />
+      ) : (
+        <AgentVersions
+          agent={agent}
+          etag={query.data.etag}
+          onDefaultChanged={reload}
+        />
+      )}
+    </DetailPage>
   );
 }

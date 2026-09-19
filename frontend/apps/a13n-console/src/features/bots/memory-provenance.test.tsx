@@ -2,7 +2,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryProvenance } from "./memory-provenance";
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 afterEach(cleanup);
 it("explains source visibility and keeps received memory read-only", () => {

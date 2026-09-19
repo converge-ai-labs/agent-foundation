@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.environments.devices import DeviceDiscovery
 from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.environments.websocket.admission import OnlineAdmission, OnlineEvidence
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
@@ -79,12 +80,13 @@ class RunAcceptanceService:
         lifecycle: LifecycleWriter,
         bindings: ExecutionBindings,
         coordination: ConnectionCoordination | None = None,
+        devices: DeviceDiscovery | None = None,
         clock: Clock | None = None,
     ) -> None:
         self._lifecycle = lifecycle
         self._bindings = bindings
         self._sessions = sessions
-        self._online = OnlineAdmission(sessions, coordination)
+        self._online = OnlineAdmission(sessions, coordination, devices=devices)
         self._states = states
         self._payloads = payloads
         self._inline_hooks = InlineHookAcceptance(sessions, inline_hooks)

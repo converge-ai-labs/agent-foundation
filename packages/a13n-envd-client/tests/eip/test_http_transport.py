@@ -14,7 +14,24 @@ from a13n_envd_client import (
     HttpTransport,
     RequestCoordinator,
 )
-from a13n_envd_client.eip.v1 import EIPCallContext, EIPClient, ErrorType, ProcessWaitParams
+from a13n_envd_client.eip.v1 import EIPCallContext, EIPClient, EIPLimits, ErrorType, ProcessWaitParams
+
+
+def session_requester(device):
+    limits = EIPLimits(
+        max_request_bytes=65536,
+        max_response_bytes=65536,
+        max_concurrent_operations=4,
+        max_processes=1,
+        max_operation_duration_ms=1000,
+        max_output_preview_bytes=1,
+        max_output_bytes_per_stream=1,
+        max_transfer_frame_bytes=65536,
+        max_concurrent_file_transfers=2,
+        max_file_transfer_bytes=65536,
+        max_file_bytes=65536,
+    )
+    return device.session("ses-test", limits=limits)
 
 
 @asynccontextmanager
@@ -40,6 +57,7 @@ async def control_server(*, delay=0, status=200, disconnect=False):
                 {
                     "jsonrpc": "2.0",
                     "id": request["id"],
+                    "eip_session": request.get("eip_session"),
                     "error": {
                         "code": -32040,
                         "message": "process wait expired",
@@ -78,9 +96,10 @@ async def control_server(*, delay=0, status=200, disconnect=False):
 def test_http_process_wait_receives_remote_timeout_with_response_allowance(operation_ms, allowance, delay):
     async def scenario():
         async with control_server(delay=delay) as (endpoint, received):
-            requester = RequestCoordinator(
+            device = RequestCoordinator(
                 HttpTransport(endpoint, "test-token", request_timeout=allowance), request_timeout=allowance
             )
+            requester = session_requester(device)
             try:
                 with pytest.raises(EIPMethodError) as captured:
                     await EIPClient(requester).process_wait(
@@ -94,7 +113,7 @@ def test_http_process_wait_receives_remote_timeout_with_response_allowance(opera
                 assert received[0]["params"]["context"]["timeout_ms"] == operation_ms
                 assert len(received) == 1
             finally:
-                await requester.close()
+                await device.close()
 
     asyncio.run(scenario())
 
@@ -102,9 +121,10 @@ def test_http_process_wait_receives_remote_timeout_with_response_allowance(opera
 def test_http_unresponsive_wait_still_has_a_finite_client_deadline():
     async def scenario():
         async with control_server(delay=0.3) as (endpoint, received):
-            requester = RequestCoordinator(
+            device = RequestCoordinator(
                 HttpTransport(endpoint, "test-token", request_timeout=0.05), request_timeout=0.05
             )
+            requester = session_requester(device)
             try:
                 with pytest.raises(EIPRequestTimeoutError) as captured:
                     await EIPClient(requester).process_wait(
@@ -117,7 +137,7 @@ def test_http_unresponsive_wait_still_has_a_finite_client_deadline():
                 assert captured.value.dispatched
                 assert len(received) == 1
             finally:
-                await requester.close()
+                await device.close()
 
     asyncio.run(scenario())
 
@@ -158,6 +178,7 @@ def test_failed_http_transfer_preserves_control_and_other_transfers(direction, f
                 json={
                     "jsonrpc": "2.0",
                     "id": message["id"],
+                    "eip_session": message.get("eip_session"),
                     "error": {
                         "code": -32040,
                         "message": "process wait expired",
@@ -169,23 +190,20 @@ def test_failed_http_transfer_preserves_control_and_other_transfers(direction, f
         transport = HttpTransport("http://127.0.0.1", "test-token")
         await transport._client.aclose()
         transport._client = httpx2.AsyncClient(transport=httpx2.MockTransport(respond))
-        transport._session = "sess-test"
-        requester = RequestCoordinator(transport)
-        requester.configure_limits(
-            max_in_flight=4,
-            max_request_bytes=65536,
-            max_response_bytes=65536,
-            max_transfer_frame_bytes=65536,
-            max_concurrent_file_transfers=2,
-        )
+        device = RequestCoordinator(transport)
+        requester = session_requester(device)
         failed = requester.register_transfer("writer-failed", direction=direction)
         unrelated = requester.register_transfer("reader-unrelated")
         try:
-            await requester.send_data_frame(failed, DataFrame(kind=DataFrameKind.ATTACH, handle=failed.handle))
+            await requester.send_data_frame(
+                failed, DataFrame(session_id="ses-test", kind=DataFrameKind.ATTACH, handle=failed.handle)
+            )
             if direction == "write":
                 assert (await failed.receive()).kind is DataFrameKind.ATTACHED
                 try:
-                    await requester.send_data_frame(failed, DataFrame(kind=DataFrameKind.END, handle=failed.handle))
+                    await requester.send_data_frame(
+                        failed, DataFrame(session_id="ses-test", kind=DataFrameKind.END, handle=failed.handle)
+                    )
                 except EIPTransferError:
                     # The HTTP response may win the race with accepting END.
                     pass
@@ -194,7 +212,9 @@ def test_failed_http_transfer_preserves_control_and_other_transfers(direction, f
             assert captured.value.offset is None, "HTTP failure must not fabricate an acknowledged offset"
             if direction == "write":
                 with pytest.raises(EIPTransferError):
-                    await requester.send_data_frame(failed, DataFrame(kind=DataFrameKind.END, handle=failed.handle))
+                    await requester.send_data_frame(
+                        failed, DataFrame(session_id="ses-test", kind=DataFrameKind.END, handle=failed.handle)
+                    )
             with pytest.raises(EIPMethodError) as captured:
                 await EIPClient(requester).process_wait(
                     ProcessWaitParams(
@@ -204,9 +224,11 @@ def test_failed_http_transfer_preserves_control_and_other_transfers(direction, f
                     )
                 )
             assert captured.value.error.data.error_type == ErrorType.TIMEOUT
-            await transport._received.put(DataFrame(kind=DataFrameKind.ATTACHED, handle=unrelated.handle))
+            await transport._received.put(
+                DataFrame(session_id="ses-test", kind=DataFrameKind.ATTACHED, handle=unrelated.handle)
+            )
             assert (await asyncio.wait_for(unrelated.receive(), 1)).kind is DataFrameKind.ATTACHED
         finally:
-            await requester.close()
+            await device.close()
 
     asyncio.run(scenario())

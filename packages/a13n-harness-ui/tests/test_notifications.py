@@ -78,7 +78,7 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
             metadata={"approval-1": {"reason": "This command deploys the application."}},
         )
 
-    async def execute(**kwargs: Any) -> RootRunOutcome:
+    async def execute(admission, **kwargs: Any) -> RootRunOutcome:
         if scenario == "preparation_failed":
             from a13n_harness_ui.errors import RunCoordinationError
 
@@ -113,7 +113,11 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
         if notify_raises:
             raise RuntimeError("Notification failure must not change settlement")
 
-    coordinator = RootRunCoordinator(cast(Any, SimpleNamespace(execute=execute)), summary_hub=hub, notify=notify)
+    from .test_root_run import capture
+
+    coordinator = RootRunCoordinator(
+        cast(Any, SimpleNamespace(capture=capture, execute=execute)), summary_hub=hub, notify=notify
+    )
     await coordinator.start()
     try:
         async with hub.subscribe() as subscription:

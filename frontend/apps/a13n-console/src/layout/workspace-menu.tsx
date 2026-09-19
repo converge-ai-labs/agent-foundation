@@ -3,20 +3,24 @@ import {
   Button,
   Menu,
   MenuGroup,
+  MenuGroupLabel,
   MenuItem,
   MenuPopup,
   MenuSeparator,
-  MenuSub,
-  MenuSubPopup,
-  MenuSubTrigger,
   MenuTrigger,
 } from "a13n-ui";
-import { CheckIcon, CaretDownIcon, GearSixIcon } from "@phosphor-icons/react";
+import {
+  CaretUpDownIcon,
+  CheckIcon,
+  GearSixIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { UserAvatar } from "./avatar";
 import { workspacePath } from "../shared/paths";
 import { useWorkspace } from "./workspace";
+import styles from "./layout.module.css";
 
 export function WorkspaceMenu({
   onNavigate,
@@ -29,6 +33,10 @@ export function WorkspaceMenu({
     context = useWorkspace(),
     navigate = useNavigate(),
     cache = useQueryClient();
+  const open = (path: string) => {
+    onNavigate();
+    navigate(path);
+  };
   return (
     <Menu>
       <MenuTrigger
@@ -56,57 +64,62 @@ export function WorkspaceMenu({
             <span className="min-w-0 flex-1 truncate text-left">
               {context.workspace.name}
             </span>
-            <CaretDownIcon aria-hidden="true" />
+            <CaretUpDownIcon aria-hidden="true" />
           </>
         )}
       </MenuTrigger>
       <MenuPopup
         align="start"
         side={compact ? "right" : "bottom"}
-        className={compact ? "min-w-48" : "w-(--anchor-width)"}
+        className={compact ? "min-w-56" : "w-(--anchor-width) min-w-56"}
       >
         <MenuGroup>
-          <MenuItem
-            onClick={() => {
-              onNavigate();
-              navigate(`${context.basePath}/settings?section=profile`);
-            }}
-          >
+          <MenuGroupLabel>{context.organization.name}</MenuGroupLabel>
+          {context.workspaces.map((item) => {
+            const current = item.id === context.workspace.id;
+            return (
+              <MenuItem
+                key={item.id}
+                aria-current={current ? "true" : undefined}
+                onClick={() => {
+                  if (!current) {
+                    void cache.cancelQueries();
+                    cache.removeQueries({
+                      predicate: (query) =>
+                        query.queryKey.includes(context.workspace.id),
+                    });
+                    navigate(`${workspacePath(item)}/agents`);
+                  }
+                  onNavigate();
+                }}
+              >
+                <span aria-hidden="true">
+                  <UserAvatar
+                    name={item.name}
+                    url={item.image_url}
+                    className="size-5 rounded-md text-[10px]"
+                  />
+                </span>
+                <span className={styles.menuName}>{item.name}</span>
+                {current && (
+                  <CheckIcon aria-hidden="true" className="ms-auto" />
+                )}
+              </MenuItem>
+            );
+          })}
+        </MenuGroup>
+        <MenuSeparator />
+        <MenuGroup>
+          <MenuItem onClick={() => open(`${context.basePath}/settings`)}>
             <GearSixIcon aria-hidden="true" />
-            {t("Settings")}
+            {t("Workspace settings")}
           </MenuItem>
-          <MenuSeparator />
-          <MenuSub>
-            <MenuSubTrigger>{t("Switch workspace")}</MenuSubTrigger>
-            <MenuSubPopup>
-              <MenuGroup>
-                {context.workspaces.map((item) => (
-                  <MenuItem
-                    key={item.id}
-                    aria-current={
-                      item.id === context.workspace.id ? "true" : undefined
-                    }
-                    onClick={() => {
-                      if (item.id !== context.workspace.id) {
-                        void cache.cancelQueries();
-                        cache.removeQueries({
-                          predicate: (query) =>
-                            query.queryKey.includes(context.workspace.id),
-                        });
-                        navigate(`${workspacePath(item)}/agents`);
-                      }
-                      onNavigate();
-                    }}
-                  >
-                    {item.name}
-                    {item.id === context.workspace.id && (
-                      <CheckIcon aria-hidden="true" className="ms-auto" />
-                    )}
-                  </MenuItem>
-                ))}
-              </MenuGroup>
-            </MenuSubPopup>
-          </MenuSub>
+          {context.organizationAdmin && (
+            <MenuItem onClick={() => open("/organization/settings/workspaces")}>
+              <PlusIcon aria-hidden="true" />
+              {t("Create workspace")}
+            </MenuItem>
+          )}
         </MenuGroup>
       </MenuPopup>
     </Menu>

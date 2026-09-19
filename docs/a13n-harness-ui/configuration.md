@@ -6,17 +6,18 @@ For task-oriented examples, start with [common configuration recipes](configurat
 
 ## Find the right setting
 
-| I want to configure…                                      | Open…                               | Reference                                                                        |
-| --------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------- |
-| Startup checks and logging                                | `a13n-harness-ui.yaml` → `process`  | [Process settings](#process-settings)                                            |
-| Default Agent, Environment, plugins, or MCP               | `a13n-harness-ui.yaml` → `defaults` | [Default selections](#default-resource-selections)                               |
-| Theme and output detail                                   | `a13n-harness-ui.yaml` → `display`  | [Display settings](#display-settings)                                            |
-| Questions, CodeAct, built-in children                     | Root `tools` and `subagents`        | [Built-in tools](#built-in-tools-and-subagents)                                  |
-| Provider, API key reference, endpoint, reasoning, context | `models/*.yaml`                     | [Model fields](models-and-authentication.md#model-file-reference)                |
-| Instructions, Capabilities, visible tools, children       | `agents/*.yaml`                     | [Agent fields](agents-and-subagents.md#agent-file-reference)                     |
-| Extra workspace roots                                     | `projects/*.yaml`                   | [Project fields](environments-and-projects.md#project-file-reference)            |
-| External tools                                            | `mcp/*.yaml` or `mcp/*.json`        | [MCP fields](mcp.md#mcp-field-reference)                                         |
-| Installed integrations                                    | `extensions/*.yaml`                 | [Extension fields](extensions-and-mcp.md#harness-plugin-and-run-extension-files) |
+| I want to configure…                                      | Open…                               | Reference                                                                            |
+| --------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------ |
+| Startup checks and logging                                | `a13n-harness-ui.yaml` → `process`  | [Process settings](#process-settings)                                                |
+| Default Agent, Environment, plugins, or MCP               | `a13n-harness-ui.yaml` → `defaults` | [Default selections](#default-resource-selections)                                   |
+| Theme and output detail                                   | `a13n-harness-ui.yaml` → `display`  | [Display settings](#display-settings)                                                |
+| Questions, CodeAct, built-in children                     | Root `tools` and `subagents`        | [Built-in tools](#built-in-tools-and-subagents)                                      |
+| Provider, API key reference, endpoint, reasoning, context | `models/*.yaml`                     | [Model fields](models-and-authentication.md#model-file-reference)                    |
+| Instructions, Capabilities, visible tools, children       | `agents/*.yaml`                     | [Agent fields](agents-and-subagents.md#agent-file-reference)                         |
+| Local roots and remote working environments               | `projects/*.yaml`                   | [Project fields](environments-and-projects.md#project-file-reference)                |
+| Remote Device connections                                 | `devices/*.yaml`                    | [Device configuration](environments-and-projects.md#add-device-working-environments) |
+| External tools                                            | `mcp/*.yaml` or `mcp/*.json`        | [MCP fields](mcp.md#mcp-field-reference)                                             |
+| Installed integrations                                    | `extensions/*.yaml`                 | [Extension fields](extensions-and-mcp.md#harness-plugin-and-run-extension-files)     |
 
 Resource references use their **`id`**, not a filename or display name. For example, `defaults.agent: agent-coder` selects the Agent whose YAML says `id: agent-coder`.
 
@@ -34,15 +35,16 @@ The default root is `~/.a13n-harness-ui/a13n-harness-ui.yaml`. `--config PATH` s
 
 The root file's directory also contains:
 
-| Path                       | Purpose                                               | Detailed reference                                                    |
-| -------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------- |
-| `AGENTS.md`                | Optional global contextual guidance                   | [Guidance](agents-and-subagents.md#instructions-and-guidance)         |
-| `models/*.yaml`            | Reusable Models and credential references             | [Models](models-and-authentication.md#model-file-reference)           |
-| `agents/*.yaml`            | Agent definitions and child rosters                   | [Create an Agent](agents-and-subagents.md#create-an-agent-from-files) |
-| `subagents/*.md`           | Your lightweight child instructions                   | [Markdown children](agents-and-subagents.md#write-a-markdown-child)   |
-| `projects/*.yaml`          | Named ordered workspace roots                         | [Projects](environments-and-projects.md#project-file-reference)       |
-| `extensions/*.yaml`        | Harness Plugins, Environment profiles, Run Extensions | [Extensions](extensions-and-mcp.md)                                   |
-| `mcp/*.yaml`, `mcp/*.json` | MCP server definitions                                | [MCP](mcp.md)                                                         |
+| Path                       | Purpose                                               | Detailed reference                                                      |
+| -------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------- |
+| `AGENTS.md`                | Optional global contextual guidance                   | [Guidance](agents-and-subagents.md#instructions-and-guidance)           |
+| `models/*.yaml`            | Reusable Models and credential references             | [Models](models-and-authentication.md#model-file-reference)             |
+| `agents/*.yaml`            | Agent definitions and child rosters                   | [Create an Agent](agents-and-subagents.md#create-an-agent-from-files)   |
+| `subagents/*.md`           | Your lightweight child instructions                   | [Markdown children](agents-and-subagents.md#write-a-markdown-child)     |
+| `projects/*.yaml`          | Local roots, Device selections, and creation defaults | [Projects](environments-and-projects.md#project-file-reference)         |
+| `devices/*.yaml`           | Reusable Device connection and credential references  | [Devices](environments-and-projects.md#add-device-working-environments) |
+| `extensions/*.yaml`        | Harness Plugins, Environment profiles, Run Extensions | [Extensions](extensions-and-mcp.md)                                     |
+| `mcp/*.yaml`, `mcp/*.json` | MCP server definitions                                | [MCP](mcp.md)                                                           |
 
 Only immediate lowercase `.yaml` or `.md` files are scanned, plus `.json` in `mcp/`; `subagents/README.md` is ignored. Filenames are for people; the resource `id` owns references. There is no recursive scan, YAML include, ancestor configuration merge, or symlink-based resource discovery. One file defines one resource, except MCP files may contain a multi-server `mcpServers` object. MCP environment/header values accept literals and environment references; see [MCP configuration](mcp.md). Unknown fields, unsupported schema versions, duplicate IDs/keys, aliases, anchors, and invalid references reject the candidate configuration.
 

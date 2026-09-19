@@ -30,6 +30,7 @@ class EnvironmentMount:
     permission_ceiling: EnvironmentPermissionSet = _EVERY_ACTION
     working_directory: str | None = None
     mount_path: str | None = None
+    provider_root: str = "/"
 
     def __post_init__(self) -> None:
         if not isinstance(self.environment, Environment):
@@ -39,6 +40,7 @@ class EnvironmentMount:
         if self.working_directory is None:
             object.__setattr__(self, "working_directory", self.environment.descriptor.working_directory)
         validate_working_directory(self.working_directory)
+        validate_working_directory(self.provider_root)
         if self.mount_path is not None:
             parse_mount_path(self.mount_path)
 
@@ -152,6 +154,7 @@ def _normalize_runtime_mount(entry: EnvironmentEntry | EnvironmentRuntimeMount) 
         permission_ceiling=mount.permission_ceiling,
         working_directory=mount.working_directory,
         mount_path=mount.mount_path,
+        provider_root=mount.provider_root,
     )
 
 

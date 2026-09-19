@@ -1,0 +1,33 @@
+/* Shell menus ----------------------------------------------------------- */
+.menuName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 8px 10px;
+}
+.accountCopy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.accountCopy strong {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.accountCopy small {
+  overflow: hidden;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

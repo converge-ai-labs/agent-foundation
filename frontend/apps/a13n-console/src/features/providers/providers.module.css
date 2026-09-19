@@ -1,0 +1,159 @@
+/* Provider category panels sit under the settings heading, not a page header. */
+.panel {
+  margin-top: 24px;
+}
+.notice {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+/* The connect step: one column of fields, then the notices and the actions. */
+.connectForm {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+/* A connect step that disables its fields while the create request is in flight. */
+.connectFields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+/* The editor: name, one soft group, an optional disclosure, then the footer.
+   The dialog panel sets a 16px gap on any form; an editor breathes more. */
+.editor {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+:global([data-a13n-modal]) .editor {
+  gap: 20px;
+}
+.editorFields {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.groupNote {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* Connection facts: what the saved provider answers for, never editable. */
+.fact {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+.factValue,
+.factMono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.factMono {
+  font-family: var(--a13n-mono);
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+
+/* The credential row: stated at rest, expanded only when you ask for it. */
+.credentialState {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+.credentialNote,
+.credentialWarning {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.credentialNote {
+  color: var(--a13n-secondary);
+}
+/* The readable amber, not the pill fill: this is small body text. */
+.credentialWarning {
+  color: var(--warning-foreground);
+}
+.credentialEdit {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-block: 16px;
+}
+/* Backing out of a replacement reads like helper text, not a second Cancel. */
+.credentialKeep {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a13n-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: transparent;
+  transition:
+    color 120ms ease,
+    text-decoration-color 120ms ease;
+}
+.credentialKeep:hover,
+.credentialKeep:focus-visible {
+  color: var(--a13n-text);
+  text-decoration-color: currentColor;
+  outline: none;
+}
+
+/* Check connection in the footer: the note, then whatever it found. */
+.checkRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-width: 0;
+}
+.checkNote {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.checkResult {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.checkMessage {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}

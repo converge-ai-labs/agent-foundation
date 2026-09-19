@@ -2,6 +2,32 @@ import { useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data } from "../../shared/api";
+/**
+ * How an account provider reads: the platform name plus the connection method
+ * it uses. The raw `provider_key@config_version` stays available as evidence.
+ */
+export const accountProviderLabels: Record<string, string> = {
+  "github@github_app_http_v1": "GitHub App · Webhook",
+  "github@github_notifications_v1": "GitHub account · Polling",
+  "lark@lark_http_v1": "Lark",
+  "slack@slack_http_v1": "Slack",
+};
+
+export function accountProviderKey(
+  providerKey: string,
+  configVersion: string,
+): string {
+  return `${providerKey}@${configVersion}`;
+}
+
+export function accountProviderLabel(
+  providerKey: string,
+  configVersion: string,
+): string {
+  const key = accountProviderKey(providerKey, configVersion);
+  return accountProviderLabels[key] ?? key;
+}
+
 export function useAccountProviders() {
   const client = useClient(),
     { workspace } = useWorkspace();

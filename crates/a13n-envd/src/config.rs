@@ -24,11 +24,7 @@ const DEFAULT_MAX_COMMAND_ENVIRONMENT_ENTRIES: usize = 1024;
 const DEFAULT_MAX_COMMAND_ENVIRONMENT_BYTES: usize = 2 * 1024 * 1024;
 
 const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
-    "A13N_ENVD_API_KEY",
     "A13N_ENVD_TRANSPORT",
-    "A13N_ENVD_LISTEN_ADDRESS",
-    "A13N_ENVD_HTTP_ENABLED",
-    "A13N_ENVD_WEBSOCKET_ENABLED",
     "A13N_ENVD_HTTP_BIND",
     "A13N_ENVD_HTTP_CREDENTIAL_FILE",
     "A13N_ENVD_HTTP_TLS_CERT_FILE",
@@ -37,20 +33,13 @@ const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
     "A13N_ENVD_REVERSE_WS_URL",
     "A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE",
     "A13N_ENVD_REVERSE_WS_CA_FILE",
-    "A13N_ENVD_ENVIRONMENT_ID",
+    "A13N_ENVD_DEVICE_ID",
     "A13N_ENVD_RUNTIME_DIR",
-    "A13N_ENVD_EXECUTION_ISOLATION",
-    "A13N_ENVD_EXECUTION_NETWORK",
-    "A13N_ENVD_EXECUTION_EXTRA_READ_ONLY_PATHS",
-    "A13N_ENVD_EXECUTION_UID",
-    "A13N_ENVD_EXECUTION_GID",
+    "A13N_ENVD_STATE_DIR",
+    "A13N_ENVD_DEFAULT_WORKING_DIRECTORY",
+    "A13N_ENVD_DIRECTORY_DISCOVERY",
 ];
 
-const LEGACY_NETWORK_VARIABLES: &[&str] = &[
-    "A13N_ENVD_LISTEN_ADDRESS",
-    "A13N_ENVD_HTTP_ENABLED",
-    "A13N_ENVD_WEBSOCKET_ENABLED",
-];
 const HTTP_VARIABLES: &[&str] = &[
     "A13N_ENVD_HTTP_BIND",
     "A13N_ENVD_HTTP_CREDENTIAL_FILE",
@@ -63,19 +52,6 @@ const REVERSE_WEBSOCKET_VARIABLES: &[&str] = &[
     "A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE",
     "A13N_ENVD_REVERSE_WS_CA_FILE",
 ];
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct TrustedMountConfig {
-    pub(crate) mount_id: String,
-    pub(crate) native_root: PathBuf,
-    pub(crate) writable: bool,
-    #[serde(default = "default_allow_command_execution")]
-    pub(crate) allow_command_execution: bool,
-    pub(crate) max_file_bytes: u64,
-    #[serde(default)]
-    pub(crate) allowed_operations: Vec<String>,
-}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -95,8 +71,6 @@ pub(crate) struct TrustedShellProfileConfig {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CommandConfig {
-    pub(crate) private_home: PathBuf,
-    pub(crate) private_temp: PathBuf,
     pub(crate) base_environment: BTreeMap<String, String>,
     pub(crate) trusted_executable_roots: Vec<PathBuf>,
     pub(crate) shell_profiles: Vec<TrustedShellProfileConfig>,
@@ -109,44 +83,37 @@ pub(crate) struct CommandConfig {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FileConfig {
+    device_id: Option<String>,
+    name: Option<String>,
+    description: Option<String>,
+    default_working_directory: Option<PathBuf>,
+    installation_state_directory: Option<PathBuf>,
+    directory_discovery: Option<bool>,
+    idle_timeout_ms: Option<u64>,
+    disconnect_grace_ms: Option<u64>,
     #[serde(default)]
-    root_mount_id: Option<String>,
-    #[serde(default)]
-    limits: FileLimitsConfig,
-    #[serde(default)]
-    mounts: Vec<TrustedMountConfig>,
+    limits: DaemonLimits,
     #[serde(default)]
     trusted_executable_roots: Vec<PathBuf>,
     #[serde(default)]
     shell_profiles: Vec<TrustedShellProfileConfig>,
-    #[serde(default)]
-    execution: FileExecutionConfig,
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FileExecutionConfig {
-    #[serde(default)]
-    isolation: Option<ExecutionIsolationMode>,
-    #[serde(default)]
-    network: Option<ExecutionNetworkMode>,
-    #[serde(default)]
-    extra_read_only_paths: Vec<PathBuf>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FileLimitsConfig {
-    #[serde(default)]
-    max_output_preview_bytes: Option<u64>,
-    #[serde(default)]
-    max_output_bytes_per_stream: Option<u64>,
-    #[serde(default)]
-    max_spool_bytes: Option<u64>,
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub(crate) struct DaemonLimits {
+    pub(crate) max_device_spool_bytes: u64,
+    pub(crate) max_device_spool_objects: u64,
+    pub(crate) max_device_staged_file_bytes: u64,
+    pub(crate) max_device_staged_file_objects: u64,
+    pub(crate) max_device_concurrent_operations: u64,
+    pub(crate) max_device_processes: u64,
+    pub(crate) max_device_operation_records: u64,
+    pub(crate) max_device_process_records: u64,
+    pub(crate) max_device_file_transfers: u64,
+    pub(crate) max_device_file_transfer_records: u64,
+    pub(crate) max_sessions: usize,
+    pub(crate) max_file_bytes: u64,
     pub(crate) max_request_bytes: u64,
     pub(crate) max_response_bytes: u64,
     pub(crate) max_concurrent_operations: u64,
@@ -169,9 +136,16 @@ pub(crate) struct DaemonLimits {
     pub(crate) max_file_transfer_duration_ms: u64,
 }
 
+impl Default for DaemonLimits {
+    fn default() -> Self {
+        default_limits()
+    }
+}
+
 impl DaemonLimits {
     pub(crate) fn descriptor(&self) -> EIPLimits {
         EIPLimits {
+            max_file_bytes: self.max_file_bytes,
             max_request_bytes: self.max_request_bytes,
             max_response_bytes: self.max_response_bytes,
             max_concurrent_operations: self.max_concurrent_operations,
@@ -184,31 +158,6 @@ impl DaemonLimits {
             max_file_transfer_bytes: self.max_staged_file_bytes,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ExecutionIsolationMode {
-    Required,
-    Disabled,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ExecutionNetworkMode {
-    Host,
-    Deny,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct ExecutionConfig {
-    pub(crate) isolation: ExecutionIsolationMode,
-    pub(crate) network: ExecutionNetworkMode,
-    pub(crate) extra_read_only_paths: Vec<PathBuf>,
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    pub(crate) payload_uid: Option<u32>,
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    pub(crate) payload_gid: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -235,15 +184,16 @@ pub(crate) struct ReverseWebSocketConfig {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Config {
-    pub(crate) environment_id: String,
+    pub(crate) device_id: String,
+    pub(crate) default_working_directory: String,
+    pub(crate) directory_discovery: bool,
+    pub(crate) display_name: Option<String>,
+    pub(crate) description: Option<String>,
     pub(crate) transport: TransportConfig,
-    pub(crate) execution: ExecutionConfig,
-    pub(crate) config_file: Option<PathBuf>,
     pub(crate) limits: DaemonLimits,
     pub(crate) initialization_timeout: Duration,
     pub(crate) session_idle_timeout: Duration,
-    pub(crate) root_mount_id: Option<String>,
-    pub(crate) mounts: Vec<TrustedMountConfig>,
+    pub(crate) disconnect_grace: Duration,
     pub(crate) command: Option<CommandConfig>,
     pub(crate) runtime: Option<RuntimeState>,
 }
@@ -251,27 +201,10 @@ pub(crate) struct Config {
 impl Config {
     pub(crate) fn from_environment() -> Result<Self, ConfigError> {
         reject_unknown_environment_variables()?;
-        let config_file = config_file_argument()?;
-        let file = load_file_config(config_file.clone())?;
-        let config_file = config_file
-            .map(fs::canonicalize)
-            .transpose()
-            .map_err(|error| {
-                ConfigError::new(format!("cannot canonicalize config file: {error}"))
-            })?;
+        let arguments = StartupArguments::parse(env::args_os().skip(1))?;
+        let mut file = load_file_config(arguments.config.clone())?;
+        arguments.apply(&mut file)?;
 
-        if env::var_os("A13N_ENVD_API_KEY").is_some() {
-            return Err(ConfigError::new(
-                "A13N_ENVD_API_KEY is unsupported; each network transport uses its profile-specific credential file",
-            ));
-        }
-        for name in LEGACY_NETWORK_VARIABLES {
-            if env::var_os(name).is_some() {
-                return Err(ConfigError::new(format!(
-                    "{name} is unsupported; select an explicit A13N_ENVD_TRANSPORT profile"
-                )));
-            }
-        }
         let transport_name =
             optional_unicode("A13N_ENVD_TRANSPORT")?.unwrap_or_else(|| "stdio".to_owned());
         let transport = match transport_name.as_str() {
@@ -299,8 +232,6 @@ impl Config {
             }
         };
 
-        let execution = prepare_execution_config(file.execution)?;
-
         let runtime_dir = PathBuf::from(required_unicode("A13N_ENVD_RUNTIME_DIR")?);
         if !runtime_dir.is_absolute() {
             return Err(ConfigError::new(
@@ -308,34 +239,66 @@ impl Config {
             ));
         }
 
-        let environment_id = required_unicode("A13N_ENVD_ENVIRONMENT_ID")?;
-        if environment_id.trim() != environment_id
-            || environment_id.is_empty()
-            || environment_id.len() > 256
-            || environment_id.chars().any(char::is_control)
+        let device_id = match file.device_id.or(optional_unicode("A13N_ENVD_DEVICE_ID")?) {
+            Some(identity) => identity,
+            None => {
+                let state_dir = file
+                    .installation_state_directory
+                    .or(optional_unicode("A13N_ENVD_STATE_DIR")?.map(PathBuf::from))
+                    .unwrap_or_else(|| runtime_dir.with_extension("state"));
+                crate::runtime::installation_identity(&state_dir).map_err(ConfigError::new)?
+            }
+        };
+        validate_identity(&device_id, "device_id")?;
+        let default_native = file
+            .default_working_directory
+            .or(optional_unicode("A13N_ENVD_DEFAULT_WORKING_DIRECTORY")?.map(PathBuf::from))
+            .map(Ok)
+            .unwrap_or_else(env::current_dir)
+            .map_err(|error| ConfigError::new(format!("cannot resolve startup cwd: {error}")))?;
+        let default_native = fs::canonicalize(&default_native).unwrap_or(default_native);
+        let default_working_directory =
+            crate::device_path::from_native(&default_native).map_err(|_| {
+                ConfigError::new("default_working_directory must be an absolute native path")
+            })?;
+        let directory_discovery = match file.directory_discovery {
+            Some(value) => value,
+            None => optional_unicode("A13N_ENVD_DIRECTORY_DISCOVERY")?
+                .map(|value| {
+                    value.parse::<bool>().map_err(|_| {
+                        ConfigError::new("A13N_ENVD_DIRECTORY_DISCOVERY must be true or false")
+                    })
+                })
+                .transpose()?
+                .unwrap_or(true),
+        };
+        validate_presentation(file.name.as_deref(), "name", 256)?;
+        validate_presentation(file.description.as_deref(), "description", 4096)?;
+
+        let idle_timeout_ms = file.idle_timeout_ms.unwrap_or(DEFAULT_SESSION_IDLE_TTL_MS);
+        let disconnect_grace_ms = file.disconnect_grace_ms.unwrap_or(30_000);
+        if idle_timeout_ms == 0
+            || disconnect_grace_ms == 0
+            || disconnect_grace_ms >= idle_timeout_ms
         {
             return Err(ConfigError::new(
-                "A13N_ENVD_ENVIRONMENT_ID must be 1..=256 non-control characters without surrounding whitespace",
+                "Session lifecycle durations must be positive and disconnect grace shorter than idle timeout",
             ));
         }
-
-        let mut limits = default_limits();
-        apply_file_limits(&mut limits, file.limits)?;
+        let limits = file.limits;
+        validate_limits(&limits)?;
         let runtime = Some(RuntimeState::prepare(&runtime_dir).map_err(ConfigError::new)?);
-        let command = prepare_command_config(
-            runtime.as_ref(),
-            file.trusted_executable_roots,
-            file.shell_profiles,
-        )?;
+        let command = prepare_command_config(file.trusted_executable_roots, file.shell_profiles)?;
         Ok(Self {
-            environment_id,
+            device_id,
+            default_working_directory,
+            directory_discovery,
+            display_name: file.name,
+            description: file.description,
             transport,
-            execution,
-            config_file,
             initialization_timeout: INITIALIZATION_TIMEOUT,
-            session_idle_timeout: Duration::from_millis(DEFAULT_SESSION_IDLE_TTL_MS),
-            root_mount_id: file.root_mount_id,
-            mounts: file.mounts,
+            session_idle_timeout: Duration::from_millis(idle_timeout_ms),
+            disconnect_grace: Duration::from_millis(disconnect_grace_ms),
             command,
             runtime,
             limits,
@@ -343,23 +306,21 @@ impl Config {
     }
 
     #[cfg(test)]
-    pub(crate) fn for_test(environment_id: &str) -> Self {
+    pub(crate) fn for_test(device_id: &str) -> Self {
         Self {
-            environment_id: environment_id.to_owned(),
+            device_id: device_id.to_owned(),
+            default_working_directory: crate::device_path::from_native(
+                &env::current_dir().unwrap(),
+            )
+            .unwrap(),
+            directory_discovery: true,
+            display_name: None,
+            description: None,
             transport: TransportConfig::Stdio,
-            execution: ExecutionConfig {
-                isolation: ExecutionIsolationMode::Disabled,
-                network: ExecutionNetworkMode::Host,
-                extra_read_only_paths: Vec::new(),
-                payload_uid: None,
-                payload_gid: None,
-            },
-            config_file: None,
             limits: default_limits(),
             initialization_timeout: Duration::from_millis(20),
             session_idle_timeout: Duration::from_secs(1),
-            root_mount_id: None,
-            mounts: Vec::new(),
+            disconnect_grace: Duration::from_millis(100),
             command: None,
             runtime: None,
         }
@@ -497,22 +458,94 @@ fn validate_bootstrap_file(path: &Path, name: &str) -> Result<(), ConfigError> {
     Ok(())
 }
 
-fn apply_file_limits(
-    limits: &mut DaemonLimits,
-    configured: FileLimitsConfig,
-) -> Result<(), ConfigError> {
-    limits.max_output_preview_bytes = configured
-        .max_output_preview_bytes
-        .unwrap_or(limits.max_output_preview_bytes);
-    limits.max_output_bytes_per_stream = configured
-        .max_output_bytes_per_stream
-        .unwrap_or(limits.max_output_bytes_per_stream);
-    limits.max_spool_bytes = configured.max_spool_bytes.unwrap_or(limits.max_spool_bytes);
-    if limits.max_output_preview_bytes == 0
-        || limits.max_output_bytes_per_stream == 0
-        || limits.max_spool_bytes == 0
+fn validate_limits(limits: &DaemonLimits) -> Result<(), ConfigError> {
+    let values = [
+        limits.max_sessions as u64,
+        limits.max_file_bytes,
+        limits.max_request_bytes,
+        limits.max_response_bytes,
+        limits.max_concurrent_operations,
+        limits.max_processes,
+        limits.max_operation_duration_ms,
+        limits.max_output_preview_bytes,
+        limits.max_output_bytes_per_stream,
+        limits.max_spool_bytes,
+        limits.max_spool_objects,
+        limits.max_operation_records,
+        limits.operation_record_ttl_ms,
+        limits.max_process_records,
+        limits.max_transfer_frame_bytes,
+        limits.max_concurrent_file_transfers,
+        limits.max_file_transfer_records,
+        limits.file_transfer_record_ttl_ms,
+        limits.max_staged_file_bytes,
+        limits.max_staged_file_objects,
+        limits.file_transfer_idle_ttl_ms,
+        limits.max_file_transfer_duration_ms,
+        limits.max_device_spool_bytes,
+        limits.max_device_spool_objects,
+        limits.max_device_staged_file_bytes,
+        limits.max_device_staged_file_objects,
+        limits.max_device_concurrent_operations,
+        limits.max_device_processes,
+        limits.max_device_operation_records,
+        limits.max_device_process_records,
+        limits.max_device_file_transfers,
+        limits.max_device_file_transfer_records,
+    ];
+    if values
+        .iter()
+        .any(|value| *value == 0 || *value > (usize::MAX >> 3) as u64)
     {
-        return Err(ConfigError::new("output and spool limits must be positive"));
+        return Err(ConfigError::new(
+            "resource limits must be positive and fit this platform",
+        ));
+    }
+    for (session, device) in [
+        (limits.max_spool_bytes, limits.max_device_spool_bytes),
+        (limits.max_spool_objects, limits.max_device_spool_objects),
+        (
+            limits.max_staged_file_bytes,
+            limits.max_device_staged_file_bytes,
+        ),
+        (
+            limits.max_staged_file_objects,
+            limits.max_device_staged_file_objects,
+        ),
+        (
+            limits.max_concurrent_operations,
+            limits.max_device_concurrent_operations,
+        ),
+        (limits.max_processes, limits.max_device_processes),
+        (
+            limits.max_operation_records,
+            limits.max_device_operation_records,
+        ),
+        (
+            limits.max_process_records,
+            limits.max_device_process_records,
+        ),
+        (
+            limits.max_concurrent_file_transfers,
+            limits.max_device_file_transfers,
+        ),
+        (
+            limits.max_file_transfer_records,
+            limits.max_device_file_transfer_records,
+        ),
+    ] {
+        if session > device {
+            return Err(ConfigError::new(
+                "Session capacity must not exceed Device capacity",
+            ));
+        }
+    }
+    if limits.max_process_records < limits.max_processes
+        || limits.max_file_transfer_records < limits.max_concurrent_file_transfers
+    {
+        return Err(ConfigError::new(
+            "record capacity must cover active resource capacity",
+        ));
     }
     if limits.max_output_preview_bytes > limits.max_output_bytes_per_stream {
         return Err(ConfigError::new(
@@ -531,145 +564,13 @@ fn apply_file_limits(
     Ok(())
 }
 
-fn default_allow_command_execution() -> bool {
-    true
-}
-
-fn prepare_execution_config(file: FileExecutionConfig) -> Result<ExecutionConfig, ConfigError> {
-    let isolation = match optional_unicode("A13N_ENVD_EXECUTION_ISOLATION")? {
-        Some(value) => parse_isolation_mode(&value)?,
-        None => file.isolation.unwrap_or(ExecutionIsolationMode::Required),
-    };
-    let network = match optional_unicode("A13N_ENVD_EXECUTION_NETWORK")? {
-        Some(value) => parse_network_mode(&value)?,
-        None => file.network.unwrap_or(ExecutionNetworkMode::Host),
-    };
-    let paths = match optional_unicode("A13N_ENVD_EXECUTION_EXTRA_READ_ONLY_PATHS")? {
-        Some(value) => serde_json::from_str::<Vec<PathBuf>>(&value).map_err(|_| {
-            ConfigError::new(
-                "A13N_ENVD_EXECUTION_EXTRA_READ_ONLY_PATHS must be a JSON array of strings",
-            )
-        })?,
-        None => file.extra_read_only_paths,
-    };
-
-    if isolation == ExecutionIsolationMode::Disabled {
-        if network != ExecutionNetworkMode::Host {
-            return Err(ConfigError::new(
-                "disabled execution isolation supports only A13N_ENVD_EXECUTION_NETWORK=host",
-            ));
-        }
-        if !paths.is_empty() {
-            return Err(ConfigError::new(
-                "extra read-only execution paths require native isolation",
-            ));
-        }
-    }
-    let payload_uid = optional_positive_u32("A13N_ENVD_EXECUTION_UID")?;
-    let payload_gid = optional_positive_u32("A13N_ENVD_EXECUTION_GID")?;
-    if payload_uid.is_some() != payload_gid.is_some() {
-        return Err(ConfigError::new(
-            "A13N_ENVD_EXECUTION_UID and A13N_ENVD_EXECUTION_GID must be provided together",
-        ));
-    }
-    if payload_uid.is_some() && isolation != ExecutionIsolationMode::Required {
-        return Err(ConfigError::new(
-            "execution UID and GID require required Linux native isolation",
-        ));
-    }
-    #[cfg(not(target_os = "linux"))]
-    if payload_uid.is_some() {
-        return Err(ConfigError::new(
-            "execution UID and GID require the Linux native isolation backend",
-        ));
-    }
-
-    let mut extra_read_only_paths = paths
-        .into_iter()
-        .map(|path| canonical_directory(&path, "execution extra read-only path"))
-        .collect::<Result<Vec<_>, _>>()?;
-    extra_read_only_paths.sort();
-    extra_read_only_paths.dedup();
-    for (index, path) in extra_read_only_paths.iter().enumerate() {
-        if extra_read_only_paths
-            .iter()
-            .skip(index + 1)
-            .any(|other| paths_overlap(path, other))
-        {
-            return Err(ConfigError::new(
-                "execution extra read-only paths must not overlap",
-            ));
-        }
-    }
-    Ok(ExecutionConfig {
-        isolation,
-        network,
-        extra_read_only_paths,
-        payload_uid,
-        payload_gid,
-    })
-}
-
-fn parse_isolation_mode(value: &str) -> Result<ExecutionIsolationMode, ConfigError> {
-    match value {
-        "required" => Ok(ExecutionIsolationMode::Required),
-        "disabled" => Ok(ExecutionIsolationMode::Disabled),
-        _ => Err(ConfigError::new(
-            "A13N_ENVD_EXECUTION_ISOLATION must be required or disabled",
-        )),
-    }
-}
-
-fn parse_network_mode(value: &str) -> Result<ExecutionNetworkMode, ConfigError> {
-    match value {
-        "host" => Ok(ExecutionNetworkMode::Host),
-        "deny" => Ok(ExecutionNetworkMode::Deny),
-        _ => Err(ConfigError::new(
-            "A13N_ENVD_EXECUTION_NETWORK must be host or deny",
-        )),
-    }
-}
-
-fn optional_positive_u32(name: &str) -> Result<Option<u32>, ConfigError> {
-    optional_unicode(name)?
-        .map(|value| {
-            value
-                .parse::<u32>()
-                .ok()
-                .filter(|parsed| *parsed > 0)
-                .ok_or_else(|| ConfigError::new(format!("{name} must be a positive integer")))
-        })
-        .transpose()
-}
-
-fn paths_overlap(left: &Path, right: &Path) -> bool {
-    left == right || left.starts_with(right) || right.starts_with(left)
-}
-
-pub(crate) fn execution_config_for_probe(
-    config_file: Option<PathBuf>,
-) -> Result<ExecutionConfig, ConfigError> {
-    reject_unknown_environment_variables()?;
-    let file = load_file_config(config_file)?;
-    prepare_execution_config(file.execution)
-}
-
 fn prepare_command_config(
-    runtime: Option<&RuntimeState>,
     trusted_roots: Vec<PathBuf>,
     shell_profiles: Vec<TrustedShellProfileConfig>,
 ) -> Result<Option<CommandConfig>, ConfigError> {
     if trusted_roots.is_empty() && shell_profiles.is_empty() {
         return Ok(None);
     }
-    let runtime = runtime.ok_or_else(|| {
-        ConfigError::new(
-            "A13N_ENVD_RUNTIME_DIR is required when command execution policy is configured",
-        )
-    })?;
-    let private_home = runtime.home().to_path_buf();
-    let private_temp = runtime.temp().to_path_buf();
-
     let mut canonical_roots = Vec::with_capacity(trusted_roots.len());
     for root in trusted_roots {
         canonical_roots.push(canonical_directory(&root, "trusted executable root")?);
@@ -719,8 +620,6 @@ fn prepare_command_config(
     prepared_profiles.sort_by(|left, right| left.profile_id.cmp(&right.profile_id));
 
     Ok(Some(CommandConfig {
-        private_home,
-        private_temp,
         base_environment: inherited_command_environment(),
         trusted_executable_roots: canonical_roots,
         shell_profiles: prepared_profiles,
@@ -812,82 +711,116 @@ pub(crate) fn valid_environment_name(name: &str) -> bool {
 
 pub(crate) fn reserved_environment_name(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
-    matches!(upper.as_str(), "PATH" | "HOME" | "TMPDIR" | "TMP" | "TEMP")
-        || upper.starts_with("A13N_ENVD_")
-        || upper.starts_with("LD_")
-        || upper.starts_with("DYLD_")
-        || upper.starts_with("EIP_")
+    upper.starts_with("A13N_ENVD_") || upper.starts_with("EIP_")
 }
 
 fn inherited_command_environment() -> BTreeMap<String, String> {
     env::vars_os()
         .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
         .filter(|(name, value)| {
-            common_environment_name(name)
-                && valid_environment_name(name)
+            valid_environment_name(name)
                 && !reserved_environment_name(name)
                 && !value.contains('\0')
         })
         .collect()
 }
 
-fn common_environment_name(name: &str) -> bool {
-    matches!(
-        name,
-        "LANG"
-            | "LANGUAGE"
-            | "TZ"
-            | "TERM"
-            | "COLORTERM"
-            | "NO_COLOR"
-            | "FORCE_COLOR"
-            | "SSL_CERT_FILE"
-            | "SSL_CERT_DIR"
-            | "REQUESTS_CA_BUNDLE"
-            | "CURL_CA_BUNDLE"
-            | "HTTP_PROXY"
-            | "HTTPS_PROXY"
-            | "ALL_PROXY"
-            | "NO_PROXY"
-            | "http_proxy"
-            | "https_proxy"
-            | "all_proxy"
-            | "no_proxy"
-            | "CARGO_HOME"
-            | "RUSTUP_HOME"
-            | "GOPATH"
-            | "GOMODCACHE"
-            | "NPM_CONFIG_PREFIX"
-            | "PNPM_HOME"
-            | "UV_CACHE_DIR"
-            | "PIP_CACHE_DIR"
-            | "XDG_CACHE_HOME"
-            | "XDG_CONFIG_HOME"
-            | "XDG_DATA_HOME"
-    ) || name.starts_with("LC_")
+#[derive(Debug, Default)]
+struct StartupArguments {
+    config: Option<PathBuf>,
+    default_working_directory: Option<PathBuf>,
+    device_id: Option<String>,
+    name: Option<String>,
+    description: Option<String>,
 }
 
-fn config_file_argument() -> Result<Option<PathBuf>, ConfigError> {
-    let mut arguments = env::args_os().skip(1);
-    let Some(flag) = arguments.next() else {
-        return Ok(None);
-    };
-    if flag != "--config" {
-        return Err(ConfigError::new(
-            "the only supported argument is --config <absolute-json-path>",
-        ));
+impl StartupArguments {
+    fn parse(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Self, ConfigError> {
+        let mut result = Self::default();
+        let mut arguments = arguments.into_iter();
+        let mut seen = BTreeSet::new();
+        while let Some(flag) = arguments.next() {
+            let flag = flag
+                .into_string()
+                .map_err(|_| ConfigError::new("argument must be UTF-8"))?;
+            if !matches!(
+                flag.as_str(),
+                "--config"
+                    | "--default-working-directory"
+                    | "--device-id"
+                    | "--name"
+                    | "--description"
+            ) {
+                return Err(ConfigError::new(format!("unknown argument: {flag}")));
+            }
+            if !seen.insert(flag.clone()) {
+                return Err(ConfigError::new(format!("duplicate argument: {flag}")));
+            }
+            let value = arguments
+                .next()
+                .ok_or_else(|| ConfigError::new(format!("{flag} requires a value")))?;
+            if matches!(flag.as_str(), "--config" | "--default-working-directory") {
+                let path = PathBuf::from(value);
+                if !path.is_absolute() {
+                    return Err(ConfigError::new(format!("{flag} path must be absolute")));
+                }
+                if flag == "--config" {
+                    result.config = Some(path);
+                } else {
+                    result.default_working_directory = Some(path);
+                }
+                continue;
+            }
+            let value = value
+                .into_string()
+                .map_err(|_| ConfigError::new(format!("{flag} must be UTF-8")))?;
+            match flag.as_str() {
+                "--device-id" => result.device_id = Some(value),
+                "--name" => result.name = Some(value),
+                "--description" => result.description = Some(value),
+                _ => unreachable!(),
+            }
+        }
+        Ok(result)
     }
-    let path = arguments
-        .next()
-        .ok_or_else(|| ConfigError::new("--config requires a path"))?;
-    if arguments.next().is_some() {
-        return Err(ConfigError::new("unexpected arguments after --config path"));
+
+    fn apply(self, file: &mut FileConfig) -> Result<(), ConfigError> {
+        file.device_id = self.device_id.or(file.device_id.take());
+        file.name = self.name.or(file.name.take());
+        file.description = self.description.or(file.description.take());
+        file.default_working_directory = self
+            .default_working_directory
+            .or(file.default_working_directory.take());
+        Ok(())
     }
-    let path = PathBuf::from(path);
-    if !path.is_absolute() {
-        return Err(ConfigError::new("--config path must be absolute"));
+}
+
+fn validate_identity(value: &str, field: &str) -> Result<(), ConfigError> {
+    if value.trim() != value
+        || value.is_empty()
+        || value.len() > 256
+        || value.chars().any(char::is_control)
+    {
+        return Err(ConfigError::new(format!(
+            "{field} must be 1..=256 non-control bytes without surrounding whitespace"
+        )));
     }
-    Ok(Some(path))
+    Ok(())
+}
+
+fn validate_presentation(
+    value: Option<&str>,
+    field: &str,
+    max_chars: usize,
+) -> Result<(), ConfigError> {
+    if let Some(value) = value
+        && (value.chars().count() > max_chars || value.chars().any(char::is_control))
+    {
+        return Err(ConfigError::new(format!(
+            "{field} must contain at most {max_chars} non-control characters"
+        )));
+    }
+    Ok(())
 }
 
 fn load_file_config(path: Option<PathBuf>) -> Result<FileConfig, ConfigError> {
@@ -909,6 +842,18 @@ fn load_file_config(path: Option<PathBuf>) -> Result<FileConfig, ConfigError> {
 
 fn default_limits() -> DaemonLimits {
     DaemonLimits {
+        max_device_spool_bytes: 4 * 1024 * 1024 * 1024,
+        max_device_spool_objects: 65_536,
+        max_device_staged_file_bytes: 32 * 1024 * 1024 * 1024,
+        max_device_staged_file_objects: 2048,
+        max_device_concurrent_operations: 256,
+        max_device_processes: 512,
+        max_device_operation_records: 65_536,
+        max_device_process_records: 4096,
+        max_device_file_transfers: 128,
+        max_device_file_transfer_records: 2048,
+        max_sessions: 128,
+        max_file_bytes: 8 * 1024 * 1024 * 1024,
         max_request_bytes: DEFAULT_MAX_REQUEST_BYTES,
         max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
         max_concurrent_operations: DEFAULT_MAX_CONCURRENT_OPERATIONS,
@@ -1037,6 +982,46 @@ mod tests {
     }
 
     #[test]
+    fn startup_arguments_override_device_metadata_and_default_working_directory() {
+        let root = std::env::temp_dir();
+        let mut file: super::FileConfig = serde_json::from_value(serde_json::json!({
+            "device_id": "device-shared", "name": "Old"
+        }))
+        .unwrap();
+        let args = [
+            std::ffi::OsString::from("--default-working-directory"),
+            root.clone().into_os_string(),
+            "--device-id".into(),
+            "env-build".into(),
+            "--name".into(),
+            "Build Linux".into(),
+        ];
+        super::StartupArguments::parse(args)
+            .unwrap()
+            .apply(&mut file)
+            .unwrap();
+
+        assert_eq!(file.device_id.as_deref(), Some("env-build"));
+        assert_eq!(file.name.as_deref(), Some("Build Linux"));
+        assert_eq!(file.default_working_directory, Some(root));
+    }
+
+    #[test]
+    fn startup_arguments_reject_ambiguous_or_unbounded_configuration() {
+        for args in [
+            vec!["--default-working-directory"],
+            vec!["--default-working-directory", "relative"],
+            vec!["--name", "a", "--name", "b"],
+            vec!["--unknown", "a"],
+        ] {
+            assert!(super::StartupArguments::parse(args.into_iter().map(Into::into)).is_err());
+        }
+        assert!(super::validate_identity(" device", "device_id").is_err());
+        assert!(super::validate_presentation(Some("bad\nname"), "name", 256).is_err());
+        assert!(super::validate_presentation(Some(&"a".repeat(257)), "name", 256).is_err());
+    }
+
+    #[test]
     fn test_configuration_has_finite_valid_limits() {
         let config = Config::for_test("env-test");
 
@@ -1045,7 +1030,7 @@ mod tests {
             .descriptor()
             .validate()
             .expect("limits are valid");
-        assert_eq!(config.environment_id, "env-test");
+        assert_eq!(config.device_id, "env-test");
         assert_eq!(config.limits.max_request_bytes, 16 * 1024 * 1024);
         assert_eq!(config.limits.max_response_bytes, 16 * 1024 * 1024);
         assert_eq!(config.limits.max_processes, 128);

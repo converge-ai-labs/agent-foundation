@@ -21,7 +21,7 @@ from .loader import _MAX_TOTAL_BYTES, _read_bounded_stable, _scan_tree, load_har
 from .models import LoadedHarnessUiConfiguration
 
 _MAX_SOURCE_BYTES = 1024 * 1024
-_RESOURCE_DIRECTORIES = frozenset({"models", "extensions", "mcp", "agents", "projects"})
+_RESOURCE_DIRECTORIES = frozenset({"models", "extensions", "mcp", "agents", "projects", "devices"})
 
 type CandidateValidator = Callable[[LoadedHarnessUiConfiguration], None]
 

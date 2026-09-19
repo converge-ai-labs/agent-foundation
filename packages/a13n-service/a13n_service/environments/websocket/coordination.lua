@@ -1,4 +1,4 @@
--- One bounded state document owns connection, takeover, and exclusive use.
+-- One bounded state document owns connection, takeover, and binding use leases.
 -- Ticket consumption and candidate admission share this script. A rejected
 -- candidate consumes its valid ticket but never changes an occupied slot.
 local state_key, ticket_key = KEYS[1], KEYS[2]
@@ -25,7 +25,7 @@ local operation = input.operation
 if not state then
     -- Even an empty Redis after data loss cannot prove that cached dispatch
     -- authority has expired. Wait the maximum grant horizon before new use.
-    state = {version = 1, server_id = server_id, barrier_ms = now + input.lease_ms}
+    state = {version = 1, server_id = server_id, barrier_ms = now + input.lease_ms, uses = {}}
     if operation ~= 'issue' and operation ~= 'observe' then return fail('authority_lost') end
 end
 local function same(left, right)
@@ -37,7 +37,21 @@ end
 local function same_use(left, right)
     return left and right and same(left.connection, right.connection) and left.use_id == right.use_id and
         left.run_id == right.run_id and left.attempt_id == right.attempt_id and
-        left.attempt_fence == right.attempt_fence and left.worker_instance_id == right.worker_instance_id
+        left.attempt_fence == right.attempt_fence and left.worker_instance_id == right.worker_instance_id and
+        left.mount_name == right.mount_name and left.admission_deadline_ms == right.admission_deadline_ms
+end
+local function same_binding(left, right)
+    return left.run_id == right.run_id and left.attempt_id == right.attempt_id and
+        left.mount_name == right.mount_name
+end
+local function prune_uses()
+    -- An acquisition has a fixed retry deadline. After both that deadline and
+    -- the last granted authority expire, no tombstone is needed to stop revival.
+    for id, grant in pairs(state.uses) do
+        if math.max(grant.expires_at_ms, grant.identity.admission_deadline_ms) <= now then
+            state.uses[id] = nil
+        end
+    end
 end
 local function persist()
     -- Keep retirement evidence longer than every granted local deadline, even
@@ -54,7 +68,7 @@ end
 local function retire_owner()
     if state.owner then
         local until_ms = math.max(state.barrier_ms or 0, state.owner.expires_at_ms)
-        if state.use then until_ms = math.max(until_ms, state.use.expires_at_ms) end
+        for _, grant in pairs(state.uses) do until_ms = math.max(until_ms, grant.expires_at_ms) end
         if not retired() then
             state.retiring = {identity = state.owner.identity, until_ms = until_ms, acknowledged = false}
         end
@@ -70,11 +84,14 @@ local function observation()
         status = state.owner.online and 'online' or 'connecting'
         identity, expires = state.owner.identity, state.owner.expires_at_ms
     end
-    return cjson.encode({
+    local result = cjson.encode({
         code = 'ok', now_ms = now, status = status, connection = identity, expires_at_ms = expires,
         barrier_ms = state.barrier_ms or 0, retiring = state.retiring or cjson.null,
-        use = state.use or cjson.null, error = state.error or cjson.null
+        error = state.error or cjson.null
     })
+    -- Lua's empty-table encoding differs across Redis backends; this field is a map.
+    local uses = next(state.uses) and cjson.encode(state.uses) or '{}'
+    return string.sub(result, 1, -2) .. ',"uses":' .. uses .. '}'
 end
 
 if operation == 'observe' then
@@ -109,39 +126,55 @@ elseif operation == 'promote' then
         return fail('handover_pending')
     end
     state.owner = {identity = state.candidate.identity, expires_at_ms = now + input.lease_ms, online = false}
-    state.candidate, state.retiring, state.use, state.error = nil, nil, nil, nil
+    state.candidate, state.retiring, state.error = nil, nil, nil
+    state.uses = {}
     state.barrier_ms = 0
 elseif operation == 'online' or operation == 'renew' then
     if not owner_live() then return fail('authority_lost') end
     state.owner.expires_at_ms = now + input.lease_ms
+    prune_uses()
     if operation == 'online' then state.owner.online = true end
 elseif operation == 'acquire_use' then
     if not owner_live() or not state.owner.online then return fail('authority_lost') end
-    if state.use then
-        if same_use(state.use.identity, input.use) and state.use.expires_at_ms > now then
+    local current = state.uses[input.use.use_id]
+    if current then
+        if same_use(current.identity, input.use) and current.expires_at_ms > now and not current.released then
             return observation()
         end
-        return fail('environment_busy')
+        return fail('authority_lost')
     end
-    if not same(input.use.connection, input.connection) then return fail('authority_lost') end
+    if not same(input.use.connection, input.connection) or input.use.admission_deadline_ms <= now or
+       input.use.admission_deadline_ms > now + input.lease_ms then return fail('authority_lost') end
+    prune_uses()
+    local count = 0
+    for _, grant in pairs(state.uses) do
+        count = count + 1
+        -- Release is not acknowledgement of physical fencing. A replacement of
+        -- this binding waits its greatest grant; other bindings never wait it.
+        if same_binding(grant.identity, input.use) and grant.expires_at_ms > now then
+            return fail('environment_busy')
+        end
+    end
+    if count >= input.max_uses then return fail('environment_overloaded') end
     local expires = math.min(now + input.lease_ms, state.owner.expires_at_ms, input.attempt_expires_at_ms)
     if expires <= now then return fail('authority_lost') end
-    state.use = {identity = input.use, expires_at_ms = expires}
+    state.uses[input.use.use_id] = {identity = input.use, expires_at_ms = expires, released = false}
 elseif operation == 'renew_use' then
-    if not owner_live() or not state.owner.online or not state.use or
-       not same_use(state.use.identity, input.use) or state.use.expires_at_ms <= now then
+    local current = state.uses[input.use.use_id]
+    if not owner_live() or not state.owner.online or not current or current.released or
+       not same_use(current.identity, input.use) or current.expires_at_ms <= now then
         return fail('authority_lost')
     end
     local expires = math.min(now + input.lease_ms, state.owner.expires_at_ms, input.attempt_expires_at_ms)
     if expires <= now then return fail('authority_lost') end
-    state.use.expires_at_ms = expires
+    current.expires_at_ms = expires
 elseif operation == 'release_use' then
+    local current = state.uses[input.use.use_id]
     if not state.owner or not same(state.owner.identity, input.connection) or
-       not state.use or not same_use(state.use.identity, input.use) then
+       not current or not same_use(current.identity, input.use) then
         return fail('authority_lost')
     end
-    retire_owner()
-    state.error = 'environment_unavailable'
+    current.released = true
 elseif operation == 'retire' then
     if not state.owner or not same(state.owner.identity, input.connection) then return fail('authority_lost') end
     retire_owner()

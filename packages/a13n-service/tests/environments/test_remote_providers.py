@@ -59,13 +59,13 @@ async def test_http_registration_runtime_and_external_only_metadata(
             ),
         )
     selected_state = EnvironmentState(
-        provider_key="a13n.http-envd", state_version="1", state={"daemon_environment_id": "env-native"}
+        provider_key="a13n.http-envd", state_version="1", state={"device_id": "dev-native"}
     )
     environment = await service.create_environment(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="external",
-        request=RegisterEnvironmentRequest(provider_id=provider.id, configuration={}, state=selected_state),
+        request=RegisterEnvironmentRequest(provider_id=provider.id, configuration={}, device_id="dev-native"),
     )
     assert environment.ownership == "external"
     lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path)
@@ -93,7 +93,7 @@ async def test_http_registration_runtime_and_external_only_metadata(
         assert adapter.descriptor.generation == "unprepared"
         assert adapter.operations.files is None
     finally:
-        await adapter.close()
+        await lifecycle.close_environment(adapter)
 
 
 async def test_remote_registration_requires_exact_state_without_network(environment_service):
@@ -107,7 +107,7 @@ async def test_remote_registration_requires_exact_state_without_network(environm
             credential={"token": "test-token"},
         ),
     )
-    with pytest.raises(EnvironmentManagementError, match="state is invalid"):
+    with pytest.raises(EnvironmentManagementError, match="requires device_id"):
         await environment_service.create_environment(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
@@ -131,19 +131,76 @@ async def test_connection_tuning_cannot_register_the_same_target_twice(environme
                 ),
             )
         )
-    state = EnvironmentState(
-        provider_key="a13n.http-envd", state_version="1", state={"daemon_environment_id": "env-native"}
-    )
     await environment_service.create_environment(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="first-owner",
-        request=RegisterEnvironmentRequest(provider_id=providers[0].id, configuration={}, state=state),
+        request=RegisterEnvironmentRequest(provider_id=providers[0].id, configuration={}, device_id="dev-native"),
     )
     with pytest.raises(EnvironmentManagementError, match="already"):
         await environment_service.create_environment(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="duplicate-owner",
-            request=RegisterEnvironmentRequest(provider_id=providers[1].id, configuration={}, state=state),
+            request=RegisterEnvironmentRequest(provider_id=providers[1].id, configuration={}, device_id="dev-native"),
         )
+
+
+@pytest.mark.parametrize("provider_key", ["a13n.http-envd", "a13n.websocket-envd"])
+@pytest.mark.parametrize("invalid", ["state", "directory", "missing_identity"])
+async def test_device_registration_rejects_opaque_state_and_binding_options(environment_service, provider_key, invalid):
+    provider = await environment_service.create_provider(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateProviderRequest(
+            type=provider_key,
+            name="External",
+            configuration={"endpoint": "https://envd.example"} if provider_key == "a13n.http-envd" else {},
+            credential={"token": "test-token"} if provider_key == "a13n.http-envd" else None,
+        ),
+    )
+    request = RegisterEnvironmentRequest(
+        provider_id=provider.id,
+        configuration={"working_directory": "/workspace"} if invalid == "directory" else {},
+        device_id=None if invalid == "missing_identity" else "dev-native",
+        state=EnvironmentState(provider_key=provider_key, state_version="1", state={"device_id": "dev-native"})
+        if invalid == "state"
+        else None,
+    )
+    with pytest.raises(EnvironmentManagementError):
+        await environment_service.create_environment(
+            actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="invalid-device", request=request
+        )
+
+
+@pytest.mark.parametrize("provider_key", ["a13n.http-envd", "a13n.websocket-envd"])
+async def test_device_registration_constructs_state_without_discovery(environment_service, provider_key, monkeypatch):
+    async def discovery_forbidden(*args, **kwargs):
+        pytest.fail("Registration must not require an online Device")
+
+    monkeypatch.setattr(environment_service.devices, "describe", discovery_forbidden)
+    provider = await environment_service.create_provider(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateProviderRequest(
+            type=provider_key,
+            name="Offline Device",
+            configuration={"endpoint": "https://envd.example"} if provider_key == "a13n.http-envd" else {},
+            credential={"token": "test-token"} if provider_key == "a13n.http-envd" else None,
+        ),
+    )
+    environment = await environment_service.create_environment(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="offline-device",
+        request=RegisterEnvironmentRequest(provider_id=provider.id, configuration={}, device_id="dev-native"),
+    )
+    from a13n_service.environments.models import EnvironmentRecord
+
+    async with short_session(environment_service.sessions) as database:
+        stored = await database.get(EnvironmentRecord, environment.id)
+        assert stored.state == {
+            "provider_key": provider_key,
+            "state_version": "1",
+            "state": {"device_id": "dev-native"},
+        }

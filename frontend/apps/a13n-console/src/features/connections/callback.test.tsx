@@ -35,7 +35,10 @@ vi.mock("./authorization-context", () => ({
   requireCompletedAuthorization: (value: unknown) => value,
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 afterEach(cleanup);
 it("redeems once under StrictMode and directs an uncertain completion to connection status", async () => {

@@ -42,6 +42,7 @@ struct MethodRecord {
     replay_class: String,
     introduced: String,
     error_family: String,
+    device_scoped: bool,
     transfer_action: Option<String>,
     transfer_direction: Option<String>,
     params_type: String,
@@ -101,7 +102,13 @@ pub fn render(pool: &DescriptorPool) -> Result<String, String> {
          fn validate_absolute_path(value: &str) -> bool {\n\
          \x20   value.starts_with('/')\n\
          \x20       && !value.contains('\\0')\n\
-         \x20       && (value == \"/\" || (!value.ends_with('/') && value.split('/').skip(1).all(|part| !matches!(part, \"\" | \".\" | \"..\"))))\n\
+         \x20       && (value == \"/\" || {\n\
+         \x20           let path = value.strip_suffix('/').unwrap_or(value);\n\
+         \x20           let parts: Vec<_> = path.split('/').skip(1).collect();\n\
+         \x20           let drive_root = parts.len() == 1 && parts[0].len() == 2 && parts[0].as_bytes()[0].is_ascii_alphabetic() && parts[0].ends_with(':');\n\
+         \x20           let unc_root = parts.len() == 3 && parts[0] == \"UNC\";\n\
+         \x20           (!value.ends_with('/') || drive_root || unc_root) && parts.iter().all(|part| !matches!(*part, \"\" | \".\" | \"..\"))\n\
+         \x20       })\n\
          }\n\n\
          fn validate_protocol_version(value: &str) -> bool {\n\
          \x20   let Some((major, minor)) = value.split_once('.') else { return false; };\n\
@@ -292,13 +299,14 @@ fn render_data_frame(
     let version = u32_field(profile, "profile_version")?;
     let eip_major = u32_field(profile, "eip_major")?;
     let header_bytes = u32_field(profile, "header_bytes")?;
+    let transfer_window_chunks = u32_field(profile, "transfer_window_chunks")?;
     let widths = [
         u32_field(profile, "magic_bytes")?,
         u32_field(profile, "version_bytes")?,
         u32_field(profile, "kind_bytes")?,
         u32_field(profile, "status_bytes")?,
         u32_field(profile, "handle_length_bytes")?,
-        u32_field(profile, "reserved_bytes")?,
+        u32_field(profile, "session_length_bytes")?,
         u32_field(profile, "stream_offset_bytes")?,
         u32_field(profile, "payload_length_bytes")?,
     ];
@@ -306,6 +314,7 @@ fn render_data_frame(
         || version != 1
         || eip_major != 1
         || header_bytes != 24
+        || transfer_window_chunks != 8
         || widths != [4, 1, 1, 2, 2, 2, 8, 4]
         || widths.iter().sum::<u32>() != header_bytes
     {
@@ -320,6 +329,7 @@ fn render_data_frame(
         ("End".to_owned(), 4),
         ("EndAck".to_owned(), 5),
         ("Reset".to_owned(), 6),
+        ("Credit".to_owned(), 7),
     ];
     let expected_statuses = vec![
         ("Protocol".to_owned(), 1),
@@ -339,6 +349,7 @@ fn render_data_frame(
          pub const EIP_DATA_FRAME_PROFILE_VERSION: u8 = {version};\n\
          pub const EIP_DATA_FRAME_EIP_MAJOR: u8 = {eip_major};\n\
          pub const EIP_DATA_FRAME_HEADER_BYTES: usize = {header_bytes};\n\
+         pub const EIP_TRANSFER_WINDOW_CHUNKS: usize = {transfer_window_chunks};\n\
          pub const EIP_DATA_FRAME_MAX_HANDLE_BYTES: usize = u16::MAX as usize;\n\
          pub const EIP_DATA_FRAME_MAX_PAYLOAD_BYTES: usize = u32::MAX as usize;\n\n"
     ));
@@ -381,6 +392,7 @@ impl std::error::Error for DataFrameCodecError {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataFrame {
     pub kind: DataFrameKind,
+    pub session_id: String,
     pub handle: String,
     pub offset: u64,
     pub payload: Vec<u8>,
@@ -388,6 +400,10 @@ pub struct DataFrame {
 }
 
 fn validate_data_frame(frame: &DataFrame, max_frame_bytes: usize) -> Result<(Vec<u8>, u16), DataFrameCodecError> {
+    let session = frame.session_id.as_bytes();
+    if session.is_empty() || session.len() > u16::MAX as usize {
+        return Err(DataFrameCodecError("EIP data-frame Session must be bounded non-empty UTF-8".to_owned()));
+    }
     let handle = frame.handle.as_bytes();
     if handle.is_empty() {
         return Err(DataFrameCodecError("EIP data-frame handle must be non-empty UTF-8".to_owned()));
@@ -411,6 +427,9 @@ fn validate_data_frame(frame: &DataFrame, max_frame_bytes: usize) -> Result<(Vec
     if frame.kind != DataFrameKind::Chunk && !frame.payload.is_empty() {
         return Err(DataFrameCodecError("payload is valid only for CHUNK".to_owned()));
     }
+    if frame.kind == DataFrameKind::Chunk && frame.payload.is_empty() {
+        return Err(DataFrameCodecError("CHUNK payload must be non-empty".to_owned()));
+    }
     if frame.kind == DataFrameKind::Chunk
         && frame.offset.checked_add(frame.payload.len() as u64).is_none()
     {
@@ -419,11 +438,12 @@ fn validate_data_frame(frame: &DataFrame, max_frame_bytes: usize) -> Result<(Vec
     if matches!(frame.kind, DataFrameKind::Attach | DataFrameKind::Attached) && frame.offset != 0 {
         return Err(DataFrameCodecError("attachment frames must use offset zero".to_owned()));
     }
-    if max_frame_bytes < EIP_DATA_FRAME_HEADER_BYTES + 1 {
+    if max_frame_bytes < EIP_DATA_FRAME_HEADER_BYTES + 2 {
         return Err(DataFrameCodecError("invalid EIP data-frame ceiling".to_owned()));
     }
     let total = EIP_DATA_FRAME_HEADER_BYTES
-        .checked_add(handle.len())
+        .checked_add(session.len())
+        .and_then(|value| value.checked_add(handle.len()))
         .and_then(|value| value.checked_add(frame.payload.len()))
         .ok_or_else(|| DataFrameCodecError("EIP data frame length overflows usize".to_owned()))?;
     if total > max_frame_bytes {
@@ -434,22 +454,24 @@ fn validate_data_frame(frame: &DataFrame, max_frame_bytes: usize) -> Result<(Vec
 
 pub fn encode_data_frame(frame: &DataFrame, max_frame_bytes: usize) -> Result<Vec<u8>, DataFrameCodecError> {
     let (handle, status) = validate_data_frame(frame, max_frame_bytes)?;
-    let mut output = Vec::with_capacity(EIP_DATA_FRAME_HEADER_BYTES + handle.len() + frame.payload.len());
+    let session = frame.session_id.as_bytes();
+    let mut output = Vec::with_capacity(EIP_DATA_FRAME_HEADER_BYTES + session.len() + handle.len() + frame.payload.len());
     output.extend_from_slice(&EIP_DATA_FRAME_MAGIC);
     output.push(EIP_DATA_FRAME_PROFILE_VERSION);
     output.push(frame.kind as u8);
     output.extend_from_slice(&status.to_be_bytes());
+    output.extend_from_slice(&(session.len() as u16).to_be_bytes());
     output.extend_from_slice(&(handle.len() as u16).to_be_bytes());
-    output.extend_from_slice(&0u16.to_be_bytes());
     output.extend_from_slice(&frame.offset.to_be_bytes());
     output.extend_from_slice(&(frame.payload.len() as u32).to_be_bytes());
+    output.extend_from_slice(session);
     output.extend_from_slice(&handle);
     output.extend_from_slice(&frame.payload);
     Ok(output)
 }
 
 pub fn decode_data_frame(payload: &[u8], max_frame_bytes: usize) -> Result<DataFrame, DataFrameCodecError> {
-    if max_frame_bytes < EIP_DATA_FRAME_HEADER_BYTES + 1 {
+    if max_frame_bytes < EIP_DATA_FRAME_HEADER_BYTES + 2 {
         return Err(DataFrameCodecError("invalid EIP data-frame ceiling".to_owned()));
     }
     if payload.len() > max_frame_bytes {
@@ -466,21 +488,24 @@ pub fn decode_data_frame(payload: &[u8], max_frame_bytes: usize) -> Result<DataF
     }
     let kind = DataFrameKind::try_from(payload[5])?;
     let status_value = u16::from_be_bytes([payload[6], payload[7]]);
-    let handle_length = u16::from_be_bytes([payload[8], payload[9]]) as usize;
-    if payload[10] != 0 || payload[11] != 0 {
-        return Err(DataFrameCodecError("EIP data-frame reserved field must be zero".to_owned()));
-    }
+    let session_length = u16::from_be_bytes([payload[8], payload[9]]) as usize;
+    let handle_length = u16::from_be_bytes([payload[10], payload[11]]) as usize;
     let offset = u64::from_be_bytes(payload[12..20].try_into().expect("fixed-width offset"));
     let payload_length = u32::from_be_bytes(payload[20..24].try_into().expect("fixed-width payload length")) as usize;
     let expected = EIP_DATA_FRAME_HEADER_BYTES
-        .checked_add(handle_length)
+        .checked_add(session_length)
+        .and_then(|value| value.checked_add(handle_length))
         .and_then(|value| value.checked_add(payload_length))
         .ok_or_else(|| DataFrameCodecError("EIP data-frame body length overflow".to_owned()))?;
     if expected != payload.len() {
         return Err(DataFrameCodecError("EIP data-frame body length mismatch".to_owned()));
     }
-    let handle_end = EIP_DATA_FRAME_HEADER_BYTES + handle_length;
-    let handle = std::str::from_utf8(&payload[EIP_DATA_FRAME_HEADER_BYTES..handle_end])
+    let session_end = EIP_DATA_FRAME_HEADER_BYTES + session_length;
+    let handle_end = session_end + handle_length;
+    let session_id = std::str::from_utf8(&payload[EIP_DATA_FRAME_HEADER_BYTES..session_end])
+        .map_err(|_| DataFrameCodecError("EIP data-frame Session must be UTF-8".to_owned()))?
+        .to_owned();
+    let handle = std::str::from_utf8(&payload[session_end..handle_end])
         .map_err(|_| DataFrameCodecError("EIP data-frame handle must be non-empty UTF-8".to_owned()))?
         .to_owned();
     let reset_status = if kind == DataFrameKind::Reset {
@@ -493,6 +518,7 @@ pub fn decode_data_frame(payload: &[u8], max_frame_bytes: usize) -> Result<DataF
     };
     let frame = DataFrame {
         kind,
+        session_id,
         handle,
         offset,
         payload: payload[handle_end..].to_vec(),
@@ -1305,6 +1331,7 @@ fn method_record(
         replay_class,
         introduced: format!("{major}.{minor}"),
         error_family,
+        device_scoped: bool_field(&option, "device_scoped"),
         transfer_action,
         transfer_direction,
         params_type: method.input().name().to_owned(),
@@ -1344,6 +1371,8 @@ fn validate_jsonrpc_envelope(
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eip_session: Option<String>,
     pub id: JsonRpcId,
     pub method: String,
     pub params: BTreeMap<String, serde_json::Value>,
@@ -1360,6 +1389,8 @@ impl EipValidate for JsonRpcRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonRpcSuccessResponse {
     pub jsonrpc: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eip_session: Option<String>,
     pub id: JsonRpcId,
     pub result: BTreeMap<String, serde_json::Value>,
     #[serde(default, flatten, skip_serializing)]
@@ -1375,6 +1406,8 @@ impl EipValidate for JsonRpcSuccessResponse {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonRpcErrorResponse {
     pub jsonrpc: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eip_session: Option<String>,
     #[serde(deserialize_with = "deserialize_nullable_jsonrpc_id")]
     pub id: Option<JsonRpcId>,
     pub error: EIPError,
@@ -1402,6 +1435,7 @@ fn render_registry(output: &mut String, methods: &[MethodRecord]) {
          \x20   pub replay_class: &'static str,\n\
          \x20   pub introduced: &'static str,\n\
          \x20   pub error_family: &'static str,\n\
+         \x20   pub device_scoped: bool,\n\
          \x20   pub transfer_action: Option<&'static str>,\n\
          \x20   pub transfer_direction: Option<&'static str>,\n\
          \x20   pub params_type: &'static str,\n\
@@ -1423,12 +1457,13 @@ fn render_registry(output: &mut String, methods: &[MethodRecord]) {
             .as_ref()
             .map_or_else(|| "None".to_owned(), |value| format!("Some(\"{value}\")"));
         output.push_str(&format!(
-            "    MethodSpec {{ name: \"{}\", kind: \"{}\", replay_class: \"{}\", introduced: \"{}\", error_family: \"{}\", transfer_action: {}, transfer_direction: {}, params_type: \"{}\", result_type: \"{}\" }},\n",
+            "    MethodSpec {{ name: \"{}\", kind: \"{}\", replay_class: \"{}\", introduced: \"{}\", error_family: \"{}\", device_scoped: {}, transfer_action: {}, transfer_direction: {}, params_type: \"{}\", result_type: \"{}\" }},\n",
             method.jsonrpc_method,
             method.kind,
             method.replay_class,
             method.introduced,
             method.error_family,
+            method.device_scoped,
             transfer_action,
             transfer_direction,
             method.params_type,
@@ -1457,21 +1492,29 @@ fn render_dispatch(output: &mut String, methods: &[MethodRecord]) {
                 .expect("validated EIP request-response has a result type")
         ));
     }
-    output.push_str("}\n\n#[allow(async_fn_in_trait)]\npub trait EipHandler {\n");
-    for method in methods {
+    output.push_str("}\n\n");
+    for (device_scoped, trait_name) in [(true, "EipDeviceHandler"), (false, "EipSessionHandler")] {
         output.push_str(&format!(
-            "    async fn {}(&self, params: {}) -> Result<{}, EIPError>;\n",
-            method.rust_name,
-            method.params_type,
-            method
-                .result_type
-                .as_deref()
-                .expect("validated EIP request-response has a result type")
+            "#[allow(async_fn_in_trait)]\npub trait {trait_name} {{\n"
         ));
+        for method in methods
+            .iter()
+            .filter(|method| method.device_scoped == device_scoped)
+        {
+            output.push_str(&format!(
+                "    async fn {}(&self, params: {}) -> Result<{}, EIPError>;\n",
+                method.rust_name,
+                method.params_type,
+                method
+                    .result_type
+                    .as_deref()
+                    .expect("validated result type")
+            ));
+        }
+        output.push_str("}\n\n");
     }
     output.push_str(
-        "}\n\n\
-         #[derive(Debug)]\n\
+        "#[derive(Debug)]\n\
          pub struct DispatchSuccess {\n\
          \x20   pub result: serde_json::Value,\n\
          \x20   pub method: &'static str,\n\
@@ -1485,15 +1528,22 @@ fn render_dispatch(output: &mut String, methods: &[MethodRecord]) {
          \x20   Encode(serde_json::Error),\n\
          \x20   Method { error: EIPError, method: &'static str, params: serde_json::Value },\n\
          }\n\n\
-         pub async fn dispatch<H: EipHandler>(handler: &H, method: &str, params_json: &str) -> Result<DispatchSuccess, DispatchError> {\n\
-         \x20   match method {\n",
+         ",
     );
-    // Keep each method's decode/execute/encode locals in its own poll frame.
-    // A monolithic dispatch poll reserves stack slots for every arm in debug
-    // builds and overflows the native Windows 1 MiB main-thread stack. Boxing
-    // the per-method future also keeps the outer dispatch future small.
-    for method in methods {
-        output.push_str(&format!(
+    for (device_scoped, trait_name, function) in [
+        (true, "EipDeviceHandler", "dispatch_device"),
+        (false, "EipSessionHandler", "dispatch_session"),
+    ] {
+        output.push_str(&format!("pub async fn {function}<H: {trait_name}>(handler: &H, method: &str, params_json: &str) -> Result<DispatchSuccess, DispatchError> {{\n    match method {{\n"));
+        // Keep each method's decode/execute/encode locals in its own poll frame.
+        // A monolithic dispatch poll reserves stack slots for every arm in debug
+        // builds and overflows the native Windows 1 MiB main-thread stack. Boxing
+        // the per-method future also keeps the outer dispatch future small.
+        for method in methods
+            .iter()
+            .filter(|method| method.device_scoped == device_scoped)
+        {
+            output.push_str(&format!(
             "        \"{}\" => Box::pin(async {{ let params: {} = decode(params_json).map_err(DispatchError::InvalidParams)?; let normalized_params = serde_json::to_value(&params).map_err(DispatchError::Encode)?; let result = handler.{}(params).await.map_err(|error| DispatchError::Method {{ error, method: \"{}\", params: normalized_params.clone() }})?; result.validate().map_err(DispatchError::InvalidResult)?; let result = serde_json::to_value(result).map_err(DispatchError::Encode)?; Ok(DispatchSuccess {{ result, method: \"{}\", params: normalized_params }}) }}).await,\n",
             method.jsonrpc_method,
             method.params_type,
@@ -1501,6 +1551,7 @@ fn render_dispatch(output: &mut String, methods: &[MethodRecord]) {
             method.jsonrpc_method,
             method.jsonrpc_method
         ));
+        }
+        output.push_str("        _ => Err(DispatchError::MethodNotFound),\n    }\n}\n");
     }
-    output.push_str("        _ => Err(DispatchError::MethodNotFound),\n    }\n}\n");
 }

@@ -712,6 +712,8 @@ async def _accept_root(
     execution_deadline_at: datetime | None = None,
     environment_id: str | None = None,
     coordination: ConnectionCoordination | None = None,
+    devices=None,
+    environment_working_directory: str | None = None,
     idempotency_key: str | None = None,
 ) -> tuple[RunStateStore, Run, RunCheckpoint]:
     config = config or effective_agent_config()
@@ -767,6 +769,7 @@ async def _accept_root(
         lifecycle=test_lifecycle_writer(),
         bindings=ordinary_memory(sessions),
         coordination=coordination,
+        devices=devices,
     ).accept_new_thread(
         session=Session(
             id=session_id,
@@ -789,7 +792,12 @@ async def _accept_root(
         ),
         run=run,
         state=state,
-        environment=ExplicitEnvironment(ExistingEnvironmentSelection(environment_id=environment_id))
+        environment=ExplicitEnvironment(
+            ExistingEnvironmentSelection(
+                environment_id=environment_id,
+                working_directory=environment_working_directory,
+            )
+        )
         if environment_id is not None
         else EnvironmentDefault.agent,
     )

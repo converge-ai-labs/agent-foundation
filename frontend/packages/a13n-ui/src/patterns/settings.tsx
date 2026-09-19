@@ -20,12 +20,14 @@ export function SettingsSection({
       aria-labelledby={title ? id : undefined}
     >
       {title && (
-        <div className="mb-3 px-1">
-          <h3 id={id} className="font-medium text-muted-foreground">
+        <div className="mb-2.5 px-1">
+          <h3 id={id} className="font-medium text-[15px] text-foreground">
             {title}
           </h3>
           {description && (
-            <p className="mt-1 text-muted-foreground">{description}</p>
+            <p className="mt-1 text-[12.5px] text-muted-foreground">
+              {description}
+            </p>
           )}
         </div>
       )}
@@ -33,7 +35,7 @@ export function SettingsSection({
         className={cn(
           "[&>form]:py-5",
           variant === "grouped"
-            ? "rounded-xl bg-muted px-5 py-1 [&>*+*]:border-t [&>*+*]:border-border/75"
+            ? "rounded-[12px] bg-muted px-4 py-0.5 [&>*+*]:border-border/75 [&>*+*]:border-t"
             : "",
         )}
         data-slot="settings-section-content"

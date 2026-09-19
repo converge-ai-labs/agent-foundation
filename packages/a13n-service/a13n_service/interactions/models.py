@@ -202,6 +202,7 @@ class ThreadRecord(Base):
     head_run_id: Mapped[str | None] = mapped_column(String(72))
     current_run_id: Mapped[str | None] = mapped_column(String(72))
     default_environment_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id"))
+    default_environment_working_directory: Mapped[str | None] = mapped_column(String(4096))
     labels: Mapped[dict[str, str]] = mapped_column(
         LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
     )
@@ -222,6 +223,7 @@ class ThreadRecord(Base):
             head_run_id=self.head_run_id,
             current_run_id=self.current_run_id,
             default_environment_id=self.default_environment_id,
+            default_environment_working_directory=self.default_environment_working_directory,
             labels=self.labels or {},
             created_at=assume_utc(self.created_at),
             updated_at=assume_utc(self.updated_at),
@@ -455,6 +457,7 @@ class RunRecord(Base):
     )
 
     environment_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id"), index=True)
+    environment_working_directory: Mapped[str | None] = mapped_column(String(4096))
     environment_use_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -548,6 +551,7 @@ class RunRecord(Base):
             "parent_run_id": self.parent_run_id,
             "retry_of_run_id": self.retry_of_run_id,
             "environment_id": self.environment_id,
+            "environment_working_directory": self.environment_working_directory,
             "environment_use_started_at": optional_assume_utc(self.environment_use_started_at),
             "lineage_kind": RunLineageKind(self.lineage_kind),
             "trigger_type": self.trigger_type,

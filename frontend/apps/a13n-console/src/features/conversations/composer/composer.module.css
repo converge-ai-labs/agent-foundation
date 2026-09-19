@@ -1,0 +1,133 @@
+.composer {
+  border-radius: 16px;
+  background: var(--a13n-elevated);
+  box-shadow: var(--a13n-shadow);
+  padding: 10px 10px 8px;
+  min-width: 0;
+}
+.composer:focus-within {
+  box-shadow:
+    var(--a13n-shadow),
+    0 0 0 1px color-mix(in srgb, var(--a13n-focus) 45%, transparent);
+}
+.fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+.messageInput {
+  display: block;
+  width: 100%;
+}
+.messageInput textarea {
+  min-height: 40px;
+  max-height: 240px;
+  resize: none;
+  padding: 6px 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.messageInput textarea::placeholder {
+  color: var(--a13n-muted);
+}
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 4px;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.tools,
+.send {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.tools {
+  flex-wrap: wrap;
+}
+.send {
+  flex: none;
+}
+.hint {
+  color: var(--a13n-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.sendButton {
+  border-radius: 999px;
+  width: 32px;
+  height: 32px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.chip:hover {
+  background: var(--a13n-hover);
+  color: var(--a13n-text);
+}
+.chip:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
+}
+.chipLabel {
+  flex: none;
+}
+.chipValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-text);
+}
+
+/* Dialogs ---------------------------------------------------------------- */
+.attach,
+.optionFields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.segments {
+  justify-self: start;
+}
+.attachRow {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.optionSwitch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+@media (max-width: 720px) {
+  .hint {
+    display: none;
+  }
+}

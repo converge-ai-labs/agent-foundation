@@ -118,8 +118,12 @@
   justify-content: space-between;
   padding: 4px 8px 4px 14px;
   color: var(--a13n-secondary);
-  font: 400 11px/1.5 var(--a13n-mono);
+  font: 400 11px/1.5 var(--a13n-font);
   border-bottom: 1px solid var(--a13n-border-soft);
+}
+/* The language is code; the copy control stays in the interface font. */
+.codeToolbar > span:first-child {
+  font-family: var(--a13n-mono);
 }
 .markdown .codeBlock pre {
   margin: 0;

@@ -394,3 +394,39 @@ async def test_shutdown_stops_admission_before_waiting_in_composition_order(
         "environment stopped",
         "subagents stopped",
     ]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("role", tuple(ProcessRole))
+async def test_environment_roles_share_one_response_reader_without_starting_one_for_connectivity(
+    local_settings, tmp_path, redis_url, role
+):
+    import asyncio
+
+    settings = local_settings(
+        tmp_path / role.value,
+        role=role,
+        redis_backend="redis",
+        redis_url=redis_url,
+        environment_provider_builtins=("a13n.websocket-envd",),
+        environment_client_public_origin="wss://service.example",
+    )
+    app = create_app(settings)
+    async with app.router.lifespan_context(app):
+        runtime = app.state.runtime
+        responses = runtime.shared.relay_responses
+        if role is ProcessRole.connectivity:
+            assert responses is None
+            assert runtime.shared.devices.relay is None
+            return
+        assert responses is not None
+        async with asyncio.timeout(2):
+            while not responses.responses._running:
+                await asyncio.sleep(0)
+        assert runtime.shared.devices.relay._runtime is responses
+        if runtime.control is not None:
+            assert runtime.control.environments.devices is runtime.shared.devices
+        if runtime.worker is not None:
+            assert runtime.worker.client_connections._responses is responses.responses
+            assert runtime.worker.client_connections.instance_id == responses.instance_id
+    assert responses.is_closed()

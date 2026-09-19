@@ -4,7 +4,8 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { JsonView } from "../../shared/form";
+import { JsonView } from "../../shared/forms";
+import layout from "./connectors.module.css";
 
 export function ConnectorToolPreview({
   connector,
@@ -42,8 +43,8 @@ export function ConnectorToolPreview({
       </Button>
       <ErrorNotice error={preview.error} />
       {preview.data && (
-        <div className="mt-3 max-h-64 overflow-y-auto">
-          <p className="mb-2 text-sm text-muted-foreground">
+        <div className={`a13n-scrollbar ${layout.preview}`}>
+          <p className={layout.checkNote}>
             {t(
               "{{count}} tools. Availability is verified after authorization.",
               { count: preview.data.items.length },
@@ -51,7 +52,7 @@ export function ConnectorToolPreview({
           </p>
           {preview.data.items.map((tool) => (
             <DisclosureSection key={tool.key} title={tool.key}>
-              <p className="text-sm">{tool.description}</p>
+              <p className={layout.previewDescription}>{tool.description}</p>
               <JsonView value={tool.input_schema} />
             </DisclosureSection>
           ))}

@@ -1,4 +1,9 @@
-import { Identifier } from "../../shared/copy";
+import {
+  ChatCircleDotsIcon,
+  GitBranchIcon,
+  PencilSimpleIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import {
   Button,
   ChoiceField,
@@ -6,35 +11,41 @@ import {
   FormField,
   Input,
   Label,
+  MenuItem,
   ModalFrame,
   Switch,
 } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link } from "react-router";
-import {
-  MessagingFields,
-  messagingPolicy,
-  responseLabels,
-  placementLabels,
-} from "./messaging-fields";
+import { useState, type ReactElement } from "react";
+import { MessagingFields } from "./messaging-fields";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { Confirm, FormActions, TextAreaField } from "../../shared/form";
+import {
+  CollectionFooter,
+  Empty,
+  Pagination,
+  ResourceIdentity,
+  ResourceTable,
+  useCursor,
+} from "../../shared/collection";
+import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import { Confirm } from "../../shared/dialogs";
+import { Section } from "../../shared/page";
+import { FormActions, TextAreaField } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
-import { SchemaFields } from "../../shared/schema-fields";
+import { SchemaFields } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import {
   inputOverride,
   jsonObject,
   validateSettings,
-} from "../../shared/validation";
+} from "../../shared/forms";
+import { AgentLink } from "../agents/link";
+import { ReceptionPill } from "../integrations/platform";
 import { useAccountProviders, useReceptionOptions } from "./data";
 import { BatchingFields } from "./form";
 
@@ -46,7 +57,7 @@ export function AccountTargets({
   bot?: boolean;
 }) {
   const client = useClient(),
-    { can, basePath } = useWorkspace(),
+    { can } = useWorkspace(),
     { t } = useTranslation(),
     page = useCursor();
   const query = useQuery({
@@ -67,161 +78,155 @@ export function AccountTargets({
         })
         .then(data),
   });
+  const add = can("account_target.manage") && (
+    <TargetEditor account={account} bot={bot} />
+  );
+  const items = query.data?.items ?? [];
   return (
-    <div className={styles.stack}>
-      <div className={styles.filters}>
-        <p className={styles.muted}>
-          {t(
-            bot
-              ? "Configure where this bot receives messages and how it responds."
-              : "Override routing for one exact conversation or repository.",
-          )}
-        </p>
-        {can("account_target.manage") && (
-          <TargetEditor account={account} bot={bot} />
-        )}
-      </div>
-      <ErrorNotice error={query.error} />
+    <Section
+      title={t("Targets")}
+      description={t(
+        "Override routing for one exact conversation or repository.",
+      )}
+      actions={add}
+    >
+      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
         <Loading variant="table" columns={4} rows={5} />
-      ) : query.data?.items.length ? (
+      ) : items.length ? (
         <>
           <ResourceTable
-            items={query.data.items}
+            items={items}
+            caption={t("Targets")}
+            rowMenuLabel={t("Target actions")}
+            rowMenu={(item) =>
+              can("account_target.manage") ? (
+                <>
+                  <TargetEditor
+                    account={account}
+                    target={item}
+                    bot={bot}
+                    triggerElement={
+                      <MenuItem closeOnClick={false}>
+                        <PencilSimpleIcon size={14} />
+                        {t("Edit")}
+                      </MenuItem>
+                    }
+                  />
+                  <Confirm
+                    subject={item.external_target_id}
+                    title={t("Delete target override")}
+                    description={t(
+                      account.reception_scope === "configured_targets"
+                        ? "This conversation will no longer be admitted. Existing accepted work is not cancelled."
+                        : "The account's default routing will apply to future events for this target.",
+                    )}
+                    triggerElement={
+                      <MenuItem closeOnClick={false} variant="destructive">
+                        <TrashIcon size={14} />
+                        {t("Delete")}
+                      </MenuItem>
+                    }
+                    danger
+                    action={() =>
+                      client.http.DELETE(
+                        "/api/v1/application-accounts/{account_id}/targets/{target_id}",
+                        {
+                          params: {
+                            path: {
+                              account_id: account.id,
+                              target_id: item.id,
+                            },
+                            query: { expected_version: item.version },
+                          },
+                        },
+                      )
+                    }
+                  />
+                </>
+              ) : null
+            }
             columns={[
               {
-                label: t(
-                  account.provider_key === "github"
-                    ? "Repository"
-                    : bot
-                      ? "Conversation"
-                      : "Target",
-                ),
+                label: t("Target"),
                 tone: "primary",
                 render: (item) => (
-                  <>
-                    {bot ? (
-                      <Link
-                        to={`${basePath}/bots/${account.id}/channels/${item.id}`}
-                      >
-                        {item.external_target_id}
-                      </Link>
-                    ) : (
-                      <Identifier value={item.external_target_id} primary />
+                  <ResourceIdentity
+                    name={item.external_target_id}
+                    description={t(
+                      item.target_kind === "repository"
+                        ? "Repository"
+                        : "Conversation",
                     )}
-                    <small>
-                      {t(
-                        item.target_kind === "repository"
-                          ? "Repository"
-                          : "Conversation",
-                      )}
-                    </small>
-                  </>
-                ),
-              },
-              {
-                label: t("Agent"),
-                render: (item) => item.agent_id ?? t("Account default"),
-              },
-              ...(bot && account.provider_key !== "github"
-                ? [
-                    {
-                      label: t("Response policy"),
-                      render: (item: Schema["AccountTarget"]) => {
-                        const selected = messagingPolicy(
-                          item.provider_policy ?? account.provider_policy,
-                        );
-                        return (
-                          <>
-                            {selected
-                              ? `${t(responseLabels[selected.interaction_mode])} · ${t(placementLabels[selected.reply_mode])}`
-                              : t("Platform default")}
-                            <small>
-                              {t(
-                                item.provider_policy
-                                  ? "Conversation override"
-                                  : "Account default",
-                              )}
-                            </small>
-                          </>
-                        );
-                      },
-                    },
-                  ]
-                : []),
-              {
-                label: t("Reception"),
-                render: (item) => (
-                  <StateBadge
-                    state={item.receive_enabled ? "enabled" : "disabled"}
+                    resourceId={item.id}
+                    icon={
+                      item.target_kind === "repository" ? (
+                        <GitBranchIcon aria-hidden="true" size={16} />
+                      ) : (
+                        <ChatCircleDotsIcon aria-hidden="true" size={16} />
+                      )
+                    }
                   />
                 ),
               },
               {
-                label: t("Actions"),
-                align: "right",
+                label: t("Agent"),
                 render: (item) =>
-                  can("account_target.manage") && (
-                    <div className={styles.actions}>
-                      <TargetEditor account={account} target={item} bot={bot} />
-                      <Confirm
-                        subject={item.external_target_id}
-                        triggerVariant="ghost"
-                        title={t("Delete target override")}
-                        description={t(
-                          account.reception_scope === "configured_targets"
-                            ? "This conversation will no longer be admitted. Existing accepted work is not cancelled."
-                            : "The account's default routing will apply to future events for this target.",
-                        )}
-                        trigger={t("Delete")}
-                        danger
-                        action={() =>
-                          client.http.DELETE(
-                            "/api/v1/application-accounts/{account_id}/targets/{target_id}",
-                            {
-                              params: {
-                                path: {
-                                  account_id: account.id,
-                                  target_id: item.id,
-                                },
-                                query: { expected_version: item.version },
-                              },
-                            },
-                          )
-                        }
-                      />
-                    </div>
+                  item.agent_id ? (
+                    <AgentLink agentId={item.agent_id} />
+                  ) : (
+                    t("Account default")
                   ),
+              },
+              {
+                label: t("Reception"),
+                render: (item) => (
+                  <ReceptionPill enabled={!!item.receive_enabled} />
+                ),
+              },
+              {
+                label: t("Updated"),
+                tone: "muted",
+                render: (item) => (
+                  <Timestamp value={item.updated_at} relative />
+                ),
               },
             ]}
           />
-          <Pagination page={page} next={query.data.next_cursor} />
+          <CollectionFooter
+            count={t("{{count}} targets on this page", { count: items.length })}
+          >
+            <Pagination page={page} next={query.data?.next_cursor} />
+          </CollectionFooter>
         </>
       ) : (
         !query.error && (
           <Empty
-            title={t(
-              bot ? "No conversations configured" : "No target overrides",
-            )}
+            icon={<ChatCircleDotsIcon aria-hidden="true" />}
+            title={t("No target overrides")}
             description={t(
               account.reception_scope === "configured_targets"
                 ? "Add a conversation before enabling reception. Unconfigured conversations cannot trigger this bot."
                 : "Incoming events use the account defaults unless an exact target overrides them.",
             )}
+            action={add}
           />
         )
       )}
-    </div>
+    </Section>
   );
 }
 export function TargetEditor({
   account,
   target,
   bot = false,
+  triggerElement,
 }: {
   account: Schema["Account"];
   target?: Schema["AccountTarget"];
   bot?: boolean;
+  /** Lets a row menu present the editor without a second button. */
+  triggerElement?: ReactElement;
 }) {
   const { t } = useTranslation(),
     [open, setOpen] = useState(false);
@@ -229,21 +234,23 @@ export function TargetEditor({
     <ModalFrame
       onOpenChange={setOpen}
       trigger={
-        <Button
-          size="sm"
-          variant={target ? "outline" : "default"}
-          type="button"
-        >
-          {t(
-            target
-              ? "Edit"
-              : account.provider_key === "github"
-                ? "Add repository"
-                : bot
-                  ? "Add conversation"
-                  : "Add target",
-          )}
-        </Button>
+        triggerElement ?? (
+          <Button
+            size="sm"
+            variant={target ? "outline" : "default"}
+            type="button"
+          >
+            {t(
+              target
+                ? "Edit"
+                : account.provider_key === "github"
+                  ? "Add repository"
+                  : bot
+                    ? "Add conversation"
+                    : "Add target",
+            )}
+          </Button>
+        )
       }
       size={"md"}
       title={t(

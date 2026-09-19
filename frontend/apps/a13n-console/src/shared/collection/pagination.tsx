@@ -13,7 +13,7 @@ export function Pagination({
   const { t } = useTranslation();
   if (!page.previous && !next) return null;
   return (
-    <div className="flex justify-end gap-2 py-4">
+    <div className="flex justify-end gap-2">
       <Button
         size="sm"
         variant="outline"

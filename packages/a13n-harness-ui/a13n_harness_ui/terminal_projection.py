@@ -114,6 +114,8 @@ class TerminalProjectionService:
 
         matches: list[tuple[int, ProjectSummary]] = []
         for project in source.projects.values():
+            if not project.roots:
+                continue
             first_root = Path(project.roots[0].path)
             if _is_relative_to(normalized, first_root):
                 matches.append((len(first_root.parts), by_id[project.id]))

@@ -85,7 +85,7 @@ it("keeps settings drafts across tabs and saves against the original version", a
     screen.getByRole("textbox", { name: "Name" }),
     "Unsaved draft",
   );
-  await user.click(screen.getByRole("tab", { name: "Template configuration" }));
+  await user.click(screen.getByRole("tab", { name: "Configuration" }));
   await waitFor(() =>
     expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull(),
   );

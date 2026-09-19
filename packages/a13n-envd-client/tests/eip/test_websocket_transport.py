@@ -44,7 +44,7 @@ def test_websocket_transport_maps_text_and_binary_messages() -> None:
     async def scenario() -> None:
         connection = FakeAcceptedConnection()
         transport = accepted(connection)
-        data = DataFrame(kind=DataFrameKind.CHUNK, handle="reader-one", payload=b"payload")
+        data = DataFrame(session_id="ses-test", kind=DataFrameKind.CHUNK, handle="reader-one", payload=b"payload")
         await connection.incoming.put('{"jsonrpc":"2.0"}')
         await connection.incoming.put(encode_data_frame(data, max_frame_bytes=1024 * 1024))
 
@@ -59,7 +59,7 @@ def test_websocket_transport_sends_control_as_text_and_data_as_binary() -> None:
     async def scenario() -> None:
         connection = FakeAcceptedConnection()
         transport = accepted(connection)
-        data = DataFrame(kind=DataFrameKind.CHUNK, handle="writer-one", payload=b"payload")
+        data = DataFrame(session_id="ses-test", kind=DataFrameKind.CHUNK, handle="writer-one", payload=b"payload")
 
         await transport.send(ControlFrame(b'{"jsonrpc":"2.0"}'))
         await transport.send(data)

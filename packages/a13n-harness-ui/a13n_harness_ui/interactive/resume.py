@@ -171,7 +171,7 @@ class ResumeBrowser:
             configuration = await self.backend.app.current_configuration()
             self.matching_projects = frozenset(await self.backend.app.cwd_project_ids(self.backend.directory))
             if configuration is not None:
-                self.locations = {key: item.roots[0].path for key, item in configuration.projects.items()}
+                self.locations = {key: item.roots[0].path for key, item in configuration.projects.items() if item.roots}
             if not self.closed:
                 self.reload()
         except Exception as exc:

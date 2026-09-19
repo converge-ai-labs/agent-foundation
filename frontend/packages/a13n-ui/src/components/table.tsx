@@ -93,7 +93,7 @@ export function TableRow({
   return (
     <tr
       className={cn(
-        "relative border-b not-in-data-[variant=card]:hover:bg-[color-mix(in_srgb,var(--background),var(--color-black)_2%)] not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] dark:not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)] dark:not-in-data-[variant=card]:hover:bg-[color-mix(in_srgb,var(--background),var(--color-white)_2%)]",
+        "relative border-b transition-colors not-in-data-[variant=card]:hover:bg-accent not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] dark:not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)]",
         className,
       )}
       data-slot="table-row"
@@ -109,7 +109,7 @@ export function TableHead({
   return (
     <th
       className={cn(
-        "h-10 whitespace-nowrap px-2.5 text-left align-middle font-medium text-muted-foreground leading-none has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
+        "h-9 whitespace-nowrap px-3 text-left align-middle font-medium text-[11px] text-muted-foreground uppercase leading-none tracking-[0.04em] not-in-data-[variant=card]:first:ps-4 not-in-data-[variant=card]:last:pe-4 has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
         className,
       )}
       data-slot="table-head"
@@ -125,7 +125,7 @@ export function TableCell({
   return (
     <td
       className={cn(
-        "whitespace-nowrap bg-clip-padding p-2.5 in-data-[slot=table-footer]:py-3.5 align-middle leading-none in-data-[variant=card]:first:ps-[calc(--spacing(2.5)-1px)] in-data-[variant=card]:last:pe-[calc(--spacing(2.5)-1px)] has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
+        "whitespace-nowrap bg-clip-padding px-3 py-3 in-data-[slot=table-footer]:py-3.5 align-middle leading-none in-data-[variant=card]:first:ps-[calc(--spacing(2.5)-1px)] in-data-[variant=card]:last:pe-[calc(--spacing(2.5)-1px)] not-in-data-[variant=card]:first:ps-4 not-in-data-[variant=card]:last:pe-4 has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
         className,
       )}
       data-slot="table-cell"

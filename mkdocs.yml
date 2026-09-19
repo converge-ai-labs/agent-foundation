@@ -95,7 +95,7 @@ nav:
       - Configuration and transports: a13n-envd/configuration.md
       - Sessions and output: a13n-envd/operations.md
       - Python EIP client: a13n-envd/python-client.md
-      - Isolation and troubleshooting: a13n-envd/isolation.md
+      - Host security boundaries: a13n-envd/isolation.md
   - Service:
       - Overview: a13n-service/index.md
       - Get started:

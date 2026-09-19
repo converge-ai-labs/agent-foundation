@@ -87,30 +87,25 @@ it("renders a full Session page from collection previews without per-row Thread 
     </QueryClientProvider>,
   );
   expect(await screen.findByText("Question 18")).toBeTruthy();
-  expect(screen.getByText("Agent 18")).toBeTruthy();
-  expect(screen.getByText("session_18")).toBeTruthy();
-  expect(screen.getByText("19")).toBeTruthy();
+  expect(screen.getByText("Agent 18 · {{count}} runs")).toBeTruthy();
   expect(
     screen.getAllByRole("columnheader").map((column) => column.textContent),
-  ).toEqual([
-    "Session ID",
-    "Request summary",
-    "Recent agent",
-    "Recent run status",
-    "Runs",
-    "Trigger source",
-    "Last updated",
-  ]);
+  ).toEqual(["Session", "Status", "Trigger", "Updated"]);
   expect(screen.getByText("No request text")).toBeTruthy();
-  expect(screen.getAllByText("—")).toHaveLength(4);
+  expect(screen.getAllByText("—")).toHaveLength(2);
   expect(screen.getByRole("searchbox")).toBeTruthy();
   expect(screen.queryByText("Session detail")).toBeNull();
   expect(requests).toEqual(["/api/v1/workspaces/workspace/sessions"]);
   const row = screen.getByText("Question 0").closest("tr")!;
-  await user.click(within(row).getByRole("button", { name: "Copy ID" }));
+  await user.click(
+    within(row).getByRole("button", { name: "Show resource reference" }),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Copy resource ID" }),
+  );
   expect(copy).toHaveBeenCalledWith("session_0");
   expect(screen.queryByText("Session detail")).toBeNull();
-  await user.click(within(row).getByText("Agent 0"));
+  await user.click(within(row).getByText("Question 0"));
   expect(
     await screen.findByText("/workspace/design/sessions/session_0"),
   ).toBeTruthy();
@@ -165,13 +160,13 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  await screen.findByText("sess_one");
+  await screen.findByText("No request text");
   expect(urls[0].searchParams.get("agent_id")).toBe("agt_one");
   await user.type(screen.getByRole("searchbox"), "  thread_one  ");
   await waitFor(() =>
     expect(urls.at(-1)?.searchParams.get("q")).toBe("thread_one"),
   );
-  await user.click(screen.getByRole("button", { name: "Run status" }));
+  await user.click(screen.getByRole("button", { name: "Status" }));
   await user.click(
     await screen.findByRole("menuitemcheckbox", { name: "state.failed" }),
   );
@@ -185,7 +180,7 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
       "waiting",
     ]),
   );
-  await user.click(screen.getByRole("button", { name: "Trigger source" }));
+  await user.click(screen.getByRole("button", { name: "Trigger" }));
   await user.click(
     await screen.findByRole("menuitemcheckbox", { name: "trigger.inbound" }),
   );
@@ -195,7 +190,7 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
       "inbound",
     ]),
   );
-  await user.click(screen.getByRole("button", { name: "Last updated" }));
+  await user.click(screen.getByRole("button", { name: "Updated" }));
   expect(
     await screen.findByRole("button", { name: "Start time" }),
   ).toBeTruthy();

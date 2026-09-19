@@ -11,7 +11,10 @@ vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => true }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 afterEach(() => {
   cleanup();
@@ -45,7 +48,7 @@ const presets = {
   },
 } satisfies Record<string, Schema["MCPServer"]>;
 
-it("shows preset authentication as a disabled input with a setup link", () => {
+it("shows preset authentication as a read-only value with a setup link", () => {
   const preset = presets.airtable;
   const cache = new QueryClient();
   render(
@@ -60,11 +63,8 @@ it("shows preset authentication as a disabled input with a setup link", () => {
   );
 
   expect(screen.queryByRole("combobox", { name: "Authentication" })).toBeNull();
-  const authentication = screen.getByRole("textbox", {
-    name: "Authentication",
-  }) as HTMLInputElement;
-  expect(authentication.disabled).toBe(true);
-  expect(authentication.value).toBe(`auth.${preset.auth_mode}`);
+  expect(screen.queryByRole("textbox", { name: "Authentication" })).toBeNull();
+  expect(screen.getByText(`auth.${preset.auth_mode}`)).toBeTruthy();
   const guide = screen.getByRole("link", { name: "Setup guide" });
   expect(guide.getAttribute("href")).toBe(preset.documentation_url);
   expect(guide.getAttribute("target")).toBe("_blank");

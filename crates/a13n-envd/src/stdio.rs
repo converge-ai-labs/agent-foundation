@@ -2,16 +2,16 @@ use std::{collections::HashSet, future::Future, io, sync::Arc, time::Duration};
 
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader},
-    sync::{Semaphore, mpsc, oneshot, watch},
+    sync::mpsc,
     task::JoinSet,
-    time::{Instant, MissedTickBehavior, timeout, timeout_at},
+    time::{MissedTickBehavior, timeout},
 };
 
 use crate::{
     config::Config,
-    daemon::Daemon,
+    daemon::{Daemon, ResponseHandoff},
+    data_dispatch::DataDispatcher,
     eip::{DataFrame, DataFrameKind, decode_data_frame, encode_data_frame},
-    operation::ActiveResponseHandoff,
     transfer::reset_status,
 };
 
@@ -21,10 +21,6 @@ const MAX_HEADER_COUNT: usize = 32;
 const JSON_CONTENT_TYPE: &str = "application/json; charset=utf-8";
 const DATA_CONTENT_TYPE: &str = "application/vnd.a13n.eip-data";
 const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
-#[cfg(not(test))]
-const SESSION_CLOSE_BARRIER_TIMEOUT: Duration = Duration::from_secs(5);
-#[cfg(test)]
-const SESSION_CLOSE_BARRIER_TIMEOUT: Duration = Duration::from_millis(250);
 const MAX_CONTROL_BURST: usize = 8;
 
 enum InboundFrame {
@@ -32,15 +28,9 @@ enum InboundFrame {
     Data(DataFrame),
 }
 
-enum InboundData {
-    Frame(DataFrame),
-    Barrier(oneshot::Sender<()>),
-}
-
 struct ControlResponse {
     payload: Vec<u8>,
-    handoff: Option<ActiveResponseHandoff>,
-    closes_session: bool,
+    handoff: Option<ResponseHandoff>,
 }
 
 pub(crate) async fn serve(daemon: Arc<Daemon>, config: &Config) -> io::Result<()> {
@@ -61,96 +51,25 @@ where
     W: AsyncWrite + Unpin + Send + 'static,
     S: Future<Output = io::Result<()>>,
 {
-    let max_request_bytes = usize::try_from(config.limits.max_request_bytes)
-        .map_err(|_| invalid_data("max_request_bytes does not fit this platform"))?;
-    let max_response_bytes = usize::try_from(config.limits.max_response_bytes)
-        .map_err(|_| invalid_data("max_response_bytes does not fit this platform"))?;
-    let max_data_bytes = usize::try_from(config.limits.max_transfer_frame_bytes)
-        .map_err(|_| invalid_data("max_transfer_frame_bytes does not fit this platform"))?;
-    let max_concurrency = usize::try_from(config.limits.max_concurrent_operations)
-        .map_err(|_| invalid_data("max_concurrent_operations does not fit this platform"))?;
-    let max_transfers = usize::try_from(config.limits.max_concurrent_file_transfers)
-        .map_err(|_| invalid_data("max_concurrent_file_transfers does not fit this platform"))?;
-    let transfer_timeout = Duration::from_millis(config.limits.max_file_transfer_duration_ms);
-
-    let (control_tx, control_rx) = mpsc::channel::<ControlResponse>(max_concurrency);
-    let (rearm_tx, mut rearm_rx) = mpsc::unbounded_channel::<()>();
-    let data_capacity = max_transfers.saturating_mul(2).max(2);
-    let (data_tx, data_rx) = mpsc::channel::<DataFrame>(data_capacity);
-    let (inbound_data_tx, mut inbound_data_rx) = mpsc::channel::<InboundData>(data_capacity);
-    daemon
-        .begin_session(data_tx.clone())
-        .map_err(|error| invalid_data_owned(error.to_string()))?;
-
-    let (writer_stopped, mut writer_stopped_rx) = watch::channel(false);
-    let mut writer_task = tokio::spawn(async move {
-        let result = writer_loop(
-            writer,
-            control_rx,
-            data_rx,
-            max_response_bytes,
-            max_data_bytes,
-            rearm_tx,
-        )
-        .await;
-        writer_stopped.send_replace(true);
-        result
-    });
-
-    let inbound_daemon = Arc::clone(&daemon);
-    let inbound_responses = data_tx.clone();
-    let (inbound_stopped, mut inbound_stopped_rx) = watch::channel(false);
-    let mut inbound_data_task = tokio::spawn(async move {
-        let result = async {
-            while let Some(message) = inbound_data_rx.recv().await {
-                let InboundData::Frame(frame) = message else {
-                    let InboundData::Barrier(completed) = message else {
-                        unreachable!();
-                    };
-                    let _ = completed.send(());
-                    continue;
-                };
-                let handled = timeout(
-                    transfer_timeout,
-                    inbound_daemon.handle_data_frame(frame.clone()),
-                )
-                .await
-                .map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        "stdio transfer handling exceeded its deadline",
-                    )
-                })?;
-                if let Err(error) = handled {
-                    let reset = DataFrame {
-                        kind: DataFrameKind::Reset,
-                        handle: frame.handle,
-                        offset: frame.offset,
-                        payload: Vec::new(),
-                        reset_status: Some(reset_status(error)),
-                    };
-                    timeout(SHUTDOWN_DRAIN_TIMEOUT, inbound_responses.send(reset))
-                        .await
-                        .map_err(|_| {
-                            io::Error::new(
-                                io::ErrorKind::TimedOut,
-                                "stdio transfer RESET enqueue exceeded its deadline",
-                            )
-                        })?
-                        .map_err(|_| {
-                            io::Error::new(io::ErrorKind::BrokenPipe, "stdio data writer stopped")
-                        })?;
-                }
-            }
-            Ok(())
-        }
-        .await;
-        inbound_stopped.send_replace(true);
-        result
-    });
-
-    let maintenance_daemon = Arc::clone(&daemon);
-    let maintenance_task = tokio::spawn(async move {
+    let max_request_bytes = config.limits.max_request_bytes as usize;
+    let max_response_bytes = config.limits.max_response_bytes as usize;
+    let max_data_bytes = config.limits.max_transfer_frame_bytes as usize;
+    let capacity = config.limits.max_concurrent_operations as usize;
+    let (control_tx, control_rx) = mpsc::channel::<ControlResponse>(capacity);
+    let (data_tx, data_rx) =
+        mpsc::channel::<DataFrame>(config.limits.max_concurrent_file_transfers as usize * 2);
+    let carrier = daemon.carrier(data_tx.clone());
+    let mut inbound_data =
+        DataDispatcher::new(daemon.clone(), carrier.clone(), data_tx.clone(), config);
+    let mut writer_task = tokio::spawn(writer_loop(
+        writer,
+        control_rx,
+        data_rx,
+        max_response_bytes,
+        max_data_bytes,
+    ));
+    let maintenance_daemon = daemon.clone();
+    let maintenance = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_millis(100));
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
@@ -158,428 +77,125 @@ where
             maintenance_daemon.maintenance().await;
         }
     });
-
-    let admission = Arc::new(Semaphore::new(max_concurrency));
     let mut requests = JoinSet::new();
-    let mut closed = daemon.subscribe_closed();
     let mut shutdown = std::pin::pin!(shutdown);
-    let mut first_frame = true;
-    let mut initial_carrier_session = true;
-    let mut request_task_error = None;
-    let mut session_close_deadline = None;
-
-    'carrier: loop {
-        while let Some(result) = requests.try_join_next() {
-            if let Err(error) = result {
-                request_task_error = Some(io::Error::other(format!(
-                    "stdio request task failed: {error}"
-                )));
-                break 'carrier;
-            }
-        }
-        if *closed.borrow() {
-            let close_deadline = *session_close_deadline
-                .get_or_insert_with(|| Instant::now() + SESSION_CLOSE_BARRIER_TIMEOUT);
-            let rearmed = tokio::select! {
-                biased;
-                changed = writer_stopped_rx.changed() => {
-                    match changed {
-                        Ok(()) | Err(_) => break,
-                    }
-                }
-                changed = inbound_stopped_rx.changed() => {
-                    match changed {
-                        Ok(()) | Err(_) => break,
-                    }
-                }
-                signal = &mut shutdown => {
-                    signal?;
-                    break;
-                }
-                rearmed = timeout_at(close_deadline, rearm_rx.recv()) => {
-                    match rearmed {
-                        Ok(rearmed) => rearmed,
-                        Err(_) => {
-                            request_task_error = Some(io::Error::new(
-                                io::ErrorKind::TimedOut,
-                                "stdio session close response flush exceeded its deadline",
-                            ));
-                            break 'carrier;
-                        }
-                    }
-                }
-            };
-            let Some(()) = rearmed else {
-                break;
-            };
-            daemon
-                .begin_session(data_tx.clone())
-                .map_err(|error| invalid_data_owned(error.to_string()))?;
-            session_close_deadline = None;
-            first_frame = true;
-            initial_carrier_session = false;
-            continue;
-        }
-
-        let read_timeout = if daemon.has_active_file_transfers() {
-            Duration::from_millis(config.limits.max_file_transfer_duration_ms)
-        } else {
-            config.session_idle_timeout
-        };
-        let waiting_for_initialize = first_frame;
-        let initial_session_frame = waiting_for_initialize && initial_carrier_session;
-        let read = async {
-            if initial_session_frame {
-                match timeout(
-                    config.initialization_timeout,
-                    read_frame(&mut reader, max_request_bytes, max_data_bytes),
-                )
-                .await
-                {
-                    Ok(frame) => frame,
-                    Err(_) => Ok(None),
-                }
-            } else if waiting_for_initialize {
-                read_frame(&mut reader, max_request_bytes, max_data_bytes).await
-            } else {
-                match timeout(
-                    read_timeout,
-                    read_frame(&mut reader, max_request_bytes, max_data_bytes),
-                )
-                .await
-                {
-                    Ok(frame) => frame,
-                    Err(_) => Ok(None),
-                }
-            }
-        };
-        tokio::pin!(read);
-        let frame = tokio::select! {
-            biased;
-            changed = closed.changed() => {
-                match changed {
-                    Ok(()) => continue,
-                    Err(_) => break,
-                }
-            }
-            changed = writer_stopped_rx.changed() => {
-                match changed {
-                    Ok(()) | Err(_) => break,
-                }
-            }
-            changed = inbound_stopped_rx.changed() => {
-                match changed {
-                    Ok(()) | Err(_) => break,
-                }
-            }
-            signal = &mut shutdown => {
-                signal?;
-                break;
-            }
-            frame = &mut read => frame?,
-        };
-        let Some(frame) = frame else {
-            break;
-        };
-
-        if first_frame {
-            let InboundFrame::Control(frame) = frame else {
-                return Err(invalid_data("initialize must be the first stdio frame"));
-            };
-            let payload = String::from_utf8(frame)
-                .map_err(|_| invalid_data("stdio control body must be UTF-8 JSON"))?;
-            let response = daemon.handle_payload_for_carrier(&payload).await;
-            let (payload, handoff, closes_session) = response.into_parts();
-            if control_tx
-                .send(ControlResponse {
-                    payload,
-                    handoff,
-                    closes_session,
-                })
-                .await
-                .is_err()
-            {
-                break;
-            }
-            if !daemon.session_initialized() {
-                break;
-            }
-            first_frame = false;
-            continue;
-        }
-
-        match frame {
-            InboundFrame::Control(frame) => {
-                let payload = String::from_utf8(frame)
-                    .map_err(|_| invalid_data("stdio control body must be UTF-8 JSON"))?;
-                if is_session_close_request(&payload) {
-                    let close_deadline = Instant::now() + SESSION_CLOSE_BARRIER_TIMEOUT;
-                    session_close_deadline = Some(close_deadline);
-                    let pending_operation = daemon.track_pending_payload(&payload);
-                    let close_daemon = Arc::clone(&daemon);
-                    let close_request = async move {
-                        let _pending_operation = pending_operation;
-                        close_daemon.handle_payload_for_carrier(&payload).await
-                    };
-                    let (inbound_barrier_tx, inbound_barrier_rx) = oneshot::channel();
-                    let inbound_barrier = async {
-                        inbound_data_tx
-                            .send(InboundData::Barrier(inbound_barrier_tx))
-                            .await
-                            .map_err(|_| {
-                                io::Error::new(
-                                    io::ErrorKind::BrokenPipe,
-                                    "stdio inbound data task stopped before session close",
-                                )
-                            })?;
-                        inbound_barrier_rx.await.map_err(|_| {
-                            io::Error::new(
-                                io::ErrorKind::BrokenPipe,
-                                "stdio inbound data barrier was not completed",
-                            )
-                        })
-                    };
-                    let close_barrier = async {
-                        let (response, drained, inbound_drained) = tokio::join!(
-                            close_request,
-                            drain_request_tasks(&mut requests),
-                            inbound_barrier,
-                        );
-                        drained?;
-                        inbound_drained?;
-                        Ok::<_, io::Error>(response)
-                    };
-                    tokio::pin!(close_barrier);
-                    let response = tokio::select! {
-                        biased;
-                        changed = writer_stopped_rx.changed() => {
-                            match changed {
-                                Ok(()) | Err(_) => break 'carrier,
-                            }
-                        }
-                        changed = inbound_stopped_rx.changed() => {
-                            match changed {
-                                Ok(()) | Err(_) => break 'carrier,
-                            }
-                        }
-                        signal = &mut shutdown => {
-                            signal?;
-                            break 'carrier;
-                        }
-                        result = timeout_at(close_deadline, &mut close_barrier) => {
-                            match result {
-                                Ok(Ok(response)) => response,
-                                Ok(Err(error)) => {
-                                    request_task_error = Some(error);
-                                    break 'carrier;
-                                }
-                                Err(_) => {
-                                    request_task_error = Some(io::Error::new(
-                                        io::ErrorKind::TimedOut,
-                                        "stdio session close barrier exceeded its deadline",
-                                    ));
-                                    break 'carrier;
-                                }
-                            }
-                        }
-                    };
-                    let (payload, handoff, closes_session) = response.into_parts();
-                    let response = ControlResponse {
-                        payload,
-                        handoff,
-                        closes_session,
-                    };
-                    let sent = tokio::select! {
-                        biased;
-                        changed = writer_stopped_rx.changed() => {
-                            match changed {
-                                Ok(()) | Err(_) => break 'carrier,
-                            }
-                        }
-                        changed = inbound_stopped_rx.changed() => {
-                            match changed {
-                                Ok(()) | Err(_) => break 'carrier,
-                            }
-                        }
-                        signal = &mut shutdown => {
-                            signal?;
-                            break 'carrier;
-                        }
-                        sent = timeout_at(close_deadline, control_tx.send(response)) => sent,
-                    };
-                    match sent {
-                        Ok(Ok(())) => {}
-                        Ok(Err(_)) => {
-                            request_task_error = Some(io::Error::new(
-                                io::ErrorKind::BrokenPipe,
-                                "stdio session close response writer stopped",
-                            ));
-                            break 'carrier;
-                        }
-                        Err(_) => {
-                            request_task_error = Some(io::Error::new(
-                                io::ErrorKind::TimedOut,
-                                "stdio session close response enqueue exceeded its deadline",
-                            ));
-                            break 'carrier;
-                        }
-                    }
-                    continue;
-                }
-                let permit = tokio::select! {
-                    biased;
-                    changed = closed.changed() => {
-                        match changed {
-                            Ok(()) | Err(_) => break,
-                        }
-                    }
-                    changed = writer_stopped_rx.changed() => {
-                        match changed {
-                            Ok(()) | Err(_) => break,
-                        }
-                    }
-                    signal = &mut shutdown => {
-                        signal?;
-                        break;
-                    }
-                    permit = admission.clone().acquire_owned() => {
-                        match permit {
-                            Ok(permit) => permit,
-                            Err(_) => break,
-                        }
-                    }
-                };
-                let pending_operation = daemon.track_pending_payload(&payload);
-                let daemon = Arc::clone(&daemon);
-                let responses = control_tx.clone();
-                requests.spawn(async move {
-                    let _pending_operation = pending_operation;
-                    let response = daemon.handle_payload_for_carrier(&payload).await;
-                    let (payload, handoff, closes_session) = response.into_parts();
-                    let _ = responses
-                        .send(ControlResponse {
-                            payload,
-                            handoff,
-                            closes_session,
-                        })
-                        .await;
-                    drop(permit);
-                });
-            }
-            InboundFrame::Data(frame) => {
-                let sent = timeout(
-                    transfer_timeout,
-                    inbound_data_tx.send(InboundData::Frame(frame)),
-                )
-                .await;
-                if !matches!(sent, Ok(Ok(()))) {
-                    break;
-                }
-            }
-        }
-    }
-
-    maintenance_task.abort();
-    let _ = maintenance_task.await;
-    drop(inbound_data_tx);
-    let inbound_data_result = match timeout(SHUTDOWN_DRAIN_TIMEOUT, &mut inbound_data_task).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(error)) => Err(io::Error::other(format!("stdio data task failed: {error}"))),
-        Err(_) => {
-            inbound_data_task.abort();
-            Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "stdio data drain exceeded its shutdown deadline",
-            ))
-        }
-    };
-    let session_result = if daemon.transport_closed(SHUTDOWN_DRAIN_TIMEOUT).await {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "session transfer drain exceeded its shutdown deadline",
-        ))
-    };
-    let process_result = if daemon.drain_processes(SHUTDOWN_DRAIN_TIMEOUT).await {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "owned process drain exceeded its shutdown deadline",
-        ))
-    };
-    let operation_result = if daemon.drain_owned_operations(SHUTDOWN_DRAIN_TIMEOUT).await {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "owned operation drain exceeded its shutdown deadline",
-        ))
-    };
-    let request_result = if let Some(error) = request_task_error {
-        Err(error)
-    } else {
-        match timeout(SHUTDOWN_DRAIN_TIMEOUT, async {
-            while let Some(result) = requests.join_next().await {
-                result.map_err(|error| {
-                    io::Error::other(format!("stdio request task failed: {error}"))
-                })?;
-            }
-            Ok(())
-        })
+    let outcome = async {
+        let first = timeout(
+            config.initialization_timeout,
+            read_frame(&mut reader, max_request_bytes, max_data_bytes),
+        )
         .await
-        {
-            Ok(result) => result,
-            Err(_) => Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "stdio request drain exceeded its shutdown deadline",
-            )),
+        .map_err(|_| {
+            io::Error::new(io::ErrorKind::TimedOut, "Device initialization timed out")
+        })??;
+        let first = match first {
+            None => return Ok(()),
+            Some(InboundFrame::Control(first)) => first,
+            Some(InboundFrame::Data(_)) => {
+                return Err(invalid_data("initialize must be the first frame"));
+            }
+        };
+        let payload =
+            String::from_utf8(first).map_err(|_| invalid_data("control must be UTF-8"))?;
+        let (payload, handoff) = daemon
+            .handle_payload_for_carrier(&carrier, &payload)
+            .await
+            .into_parts();
+        control_tx
+            .send(ControlResponse { payload, handoff })
+            .await
+            .map_err(|_| io::ErrorKind::BrokenPipe)?;
+        if !carrier.initialized() {
+            return Ok(());
         }
+        loop {
+            while let Some(result) = requests.try_join_next() {
+                result.map_err(io::Error::other)?;
+            }
+            // The outer shutdown select cancels the entire carrier, never restarts a partial frame.
+            let frame = read_frame(&mut reader, max_request_bytes, max_data_bytes).await?;
+            match frame {
+                None => break,
+                Some(InboundFrame::Control(bytes)) => {
+                    let payload = String::from_utf8(bytes)
+                        .map_err(|_| invalid_data("control must be UTF-8"))?;
+                    let permit = daemon.admit_payload(&payload);
+                    if permit.is_none() {
+                        let payload = daemon.busy_response(&payload);
+                        timeout(
+                            SHUTDOWN_DRAIN_TIMEOUT,
+                            control_tx.send(ControlResponse {
+                                payload,
+                                handoff: None,
+                            }),
+                        )
+                        .await
+                        .map_err(|_| io::ErrorKind::TimedOut)?
+                        .map_err(|_| io::ErrorKind::BrokenPipe)?;
+                        continue;
+                    }
+                    let pending = daemon.track_pending_payload(&payload);
+                    let daemon = daemon.clone();
+                    let carrier = carrier.clone();
+                    let responses = control_tx.clone();
+                    requests.spawn(async move {
+                        let (_permit, _pending) = (permit, pending);
+                        let (payload, handoff) = daemon
+                            .handle_payload_for_carrier(&carrier, &payload)
+                            .await
+                            .into_parts();
+                        let _ = responses.send(ControlResponse { payload, handoff }).await;
+                    });
+                }
+                Some(InboundFrame::Data(frame)) => {
+                    if let Err(error) = inbound_data.enqueue(frame.clone()) {
+                        let reset = DataFrame {
+                            kind: DataFrameKind::Reset,
+                            session_id: frame.session_id,
+                            handle: frame.handle,
+                            offset: frame.offset,
+                            payload: Vec::new(),
+                            reset_status: Some(reset_status(error)),
+                        };
+                        timeout(SHUTDOWN_DRAIN_TIMEOUT, data_tx.send(reset))
+                            .await
+                            .map_err(|_| io::ErrorKind::TimedOut)?
+                            .map_err(|_| io::ErrorKind::BrokenPipe)?;
+                    }
+                }
+            }
+        }
+        Ok(())
     };
-    if request_result.is_err() {
-        requests.abort_all();
-        while requests.join_next().await.is_some() {}
-    }
-
+    let outcome = tokio::select! {
+        signal = &mut shutdown => signal,
+        result = outcome => result,
+    };
+    carrier.close();
+    drop(inbound_data);
+    maintenance.abort();
+    let _ = maintenance.await;
+    let clean = daemon.drain(Duration::from_secs(10)).await;
+    requests.abort_all();
+    while requests.join_next().await.is_some() {}
     drop(control_tx);
     drop(data_tx);
-    let writer_result = match timeout(SHUTDOWN_DRAIN_TIMEOUT, &mut writer_task).await {
-        Ok(result) => result
-            .map_err(|error| io::Error::other(format!("stdio writer task failed: {error}")))?,
+    drop(carrier);
+    let written = match timeout(SHUTDOWN_DRAIN_TIMEOUT, &mut writer_task).await {
+        Ok(result) => result.map_err(io::Error::other)?,
         Err(_) => {
             writer_task.abort();
             Err(io::Error::new(
                 io::ErrorKind::TimedOut,
-                "stdio response drain exceeded its shutdown deadline",
+                "response drain timed out",
             ))
         }
     };
-    inbound_data_result?;
-    session_result?;
-    process_result?;
-    operation_result?;
-    request_result?;
-    writer_result
-}
-
-fn is_session_close_request(payload: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(payload)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("method")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .is_some_and(|method| method == "session.close")
-}
-
-async fn drain_request_tasks(requests: &mut JoinSet<()>) -> io::Result<()> {
-    while let Some(result) = requests.join_next().await {
-        result.map_err(|error| io::Error::other(format!("stdio request task failed: {error}")))?;
+    outcome?;
+    if !clean {
+        return Err(io::Error::other("Device cleanup incomplete"));
     }
-    Ok(())
+    written
 }
 
 async fn writer_loop<W>(
@@ -588,7 +204,6 @@ async fn writer_loop<W>(
     mut data: mpsc::Receiver<DataFrame>,
     max_control_bytes: usize,
     max_data_bytes: usize,
-    rearm: mpsc::UnboundedSender<()>,
 ) -> io::Result<()>
 where
     W: AsyncWrite + Unpin,
@@ -616,18 +231,6 @@ where
             control = controls.recv(), if control_open => {
                 match control {
                     Some(response) => {
-                        if response.closes_session {
-                            loop {
-                                match data.try_recv() {
-                                    Ok(_old_session_frame) => {}
-                                    Err(mpsc::error::TryRecvError::Disconnected) => {
-                                        data_open = false;
-                                        break;
-                                    }
-                                    Err(mpsc::error::TryRecvError::Empty) => break,
-                                }
-                            }
-                        }
                         write_outer_frame(
                             &mut writer,
                             JSON_CONTENT_TYPE,
@@ -635,19 +238,8 @@ where
                             max_control_bytes,
                         )
                         .await?;
-                        if response.closes_session {
-                            writer.flush().await?;
-                        }
                         if let Some(handoff) = response.handoff {
                             handoff.complete();
-                        }
-                        if response.closes_session {
-                            rearm.send(()).map_err(|_| {
-                                io::Error::new(
-                                    io::ErrorKind::BrokenPipe,
-                                    "stdio session rearm receiver stopped",
-                                )
-                            })?;
                         }
                         control_burst = control_burst.saturating_add(1);
                     }
@@ -864,10 +456,6 @@ fn invalid_data(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
-fn invalid_data_owned(message: String) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message)
-}
-
 #[cfg(unix)]
 async fn shutdown_signal() -> io::Result<()> {
     use tokio::signal::unix::{SignalKind, signal};
@@ -891,15 +479,15 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 
     use crate::{
-        config::{Config, TrustedMountConfig},
+        config::Config,
         daemon::Daemon,
         eip::{DataFrame, DataFrameKind},
         operation::random_selector,
     };
 
     use super::{
-        ControlResponse, InboundFrame, drain_request_tasks, encode_data_frame,
-        is_session_close_request, read_frame, serve_io, write_outer_frame, writer_loop,
+        ControlResponse, InboundFrame, encode_data_frame, read_frame, serve_io, write_outer_frame,
+        writer_loop,
     };
 
     struct TempTree(PathBuf);
@@ -938,85 +526,42 @@ mod tests {
         .expect("JSON frame writes");
     }
 
-    #[test]
-    fn recognizes_only_explicit_session_close_requests_as_reuse_barriers() {
-        assert!(is_session_close_request(
-            r#"{"jsonrpc":"2.0","id":1,"method":"session.close","params":{}}"#
-        ));
-        assert!(!is_session_close_request(
-            r#"{"jsonrpc":"2.0","id":1,"method":"environment.describe","params":{}}"#
-        ));
-        assert!(!is_session_close_request("not-json"));
-    }
-
     #[tokio::test]
-    async fn session_close_barrier_enqueues_after_earlier_request_responses() {
-        let (responses, mut received) = tokio::sync::mpsc::channel(2);
-        let mut requests = tokio::task::JoinSet::new();
-        let earlier_responses = responses.clone();
-        requests.spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-            earlier_responses
-                .send("earlier")
-                .await
-                .expect("response receiver remains open");
-        });
-
-        let close_request = async { "close" };
-        let (close, drained) = tokio::join!(close_request, drain_request_tasks(&mut requests));
-        drained.expect("earlier request tasks drain");
-        responses
-            .send(close)
-            .await
-            .expect("response receiver remains open");
-
-        assert_eq!(received.recv().await, Some("earlier"));
-        assert_eq!(received.recv().await, Some("close"));
-    }
-
-    #[tokio::test]
-    async fn writer_discards_queued_session_data_before_the_close_response() {
+    async fn writer_preserves_sibling_data_when_control_responses_are_queued() {
         let (control_tx, control_rx) = tokio::sync::mpsc::channel(2);
         let (data_tx, data_rx) = tokio::sync::mpsc::channel(2);
-        data_tx
-            .send(DataFrame {
-                kind: DataFrameKind::Reset,
-                handle: "reader-old".to_owned(),
-                offset: 0,
-                payload: Vec::new(),
-                reset_status: None,
-            })
-            .await
-            .expect("queues old session data");
+        let frame = DataFrame {
+            session_id: "session-b".to_owned(),
+            kind: DataFrameKind::Chunk,
+            handle: "reader-b".to_owned(),
+            offset: 0,
+            payload: b"sibling".to_vec(),
+            reset_status: None,
+        };
+        data_tx.send(frame.clone()).await.unwrap();
         control_tx
             .send(ControlResponse {
-                payload: b"{}".to_vec(),
+                payload: br#"{"eip_session":"session-a","result":{"closed":true}}"#.to_vec(),
                 handoff: None,
-                closes_session: true,
             })
             .await
-            .expect("queues close response");
+            .unwrap();
         drop(control_tx);
         drop(data_tx);
-
         let (writer, mut reader) = duplex(4096);
-        let (rearm_tx, mut rearm_rx) = tokio::sync::mpsc::unbounded_channel();
-        writer_loop(writer, control_rx, data_rx, 1024, 1024, rearm_tx)
+        writer_loop(writer, control_rx, data_rx, 1024, 1024)
             .await
-            .expect("writer completes");
-        assert_eq!(rearm_rx.recv().await, Some(()));
-
-        let frame = read_frame(&mut reader, 1024, 1024)
-            .await
-            .expect("close response framing is valid")
-            .expect("close response is present");
-        assert!(matches!(frame, InboundFrame::Control(payload) if payload == b"{}"));
-        assert!(
-            read_frame(&mut reader, 1024, 1024)
-                .await
-                .expect("writer closes cleanly")
-                .is_none()
-        );
+            .unwrap();
+        assert!(matches!(
+            read_frame(&mut reader, 1024, 1024).await.unwrap(),
+            Some(InboundFrame::Control(_))
+        ));
+        let Some(InboundFrame::Data(received)) = read_frame(&mut reader, 1024, 1024).await.unwrap()
+        else {
+            panic!("sibling data remains queued")
+        };
+        assert_eq!(received, frame);
+        assert!(read_frame(&mut reader, 1024, 1024).await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -1034,7 +579,7 @@ mod tests {
             pending::<io::Result<()>>(),
         )
         .await
-        .expect("idle initialization timeout is a clean session close");
+        .expect_err("an uninitialized carrier expires");
 
         let mut response = Vec::new();
         output_client
@@ -1044,314 +589,125 @@ mod tests {
         assert!(response.is_empty());
     }
 
-    #[tokio::test]
-    async fn reuses_one_stdio_carrier_after_the_initialization_timeout() {
-        let config = Config::for_test("env-test");
-        let initialization_timeout = config.initialization_timeout;
-        let daemon = Arc::new(Daemon::new(&config).expect("daemon builds"));
-        let (mut client, server) = duplex(128 * 1024);
-        let (server_reader, server_writer) = tokio::io::split(server);
-        let serving = tokio::spawn(async move {
-            serve_io(
-                server_reader,
-                server_writer,
-                daemon,
-                &config,
-                pending::<io::Result<()>>(),
-            )
-            .await
-        });
-
-        let mut generation = None;
-        for session in 0..2 {
-            if session == 1 {
-                tokio::time::sleep(initialization_timeout * 3).await;
-                assert!(!serving.is_finished());
-            }
-            let initialize = serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": session * 2 + 1,
-                "method": "initialize",
-                "params": {
-                    "supported_protocol_versions": ["0.1"],
-                    "client": {"name": "stdio-test", "version": "1"},
-                    "expected_environment_id": "env-test",
-                    "required_methods": []
-                }
-            })
-            .to_string();
-            write_outer_frame(
-                &mut client,
-                super::JSON_CONTENT_TYPE,
-                initialize.as_bytes(),
-                64 * 1024,
-            )
-            .await
-            .expect("initialize frame writes");
-            let initialized = read_frame(&mut client, 64 * 1024, 64 * 1024)
-                .await
-                .expect("initialize response frame is valid")
-                .expect("initialize response is present");
-            let InboundFrame::Control(initialized) = initialized else {
-                panic!("initialize response is a control frame");
-            };
-            let initialized: serde_json::Value =
-                serde_json::from_slice(&initialized).expect("initialize response is JSON");
-            let current_generation = initialized["result"]["descriptor"]["generation"]
-                .as_u64()
-                .expect("initialize returns a generation");
-            assert_eq!(
-                *generation.get_or_insert(current_generation),
-                current_generation
-            );
-
-            let close = serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": session * 2 + 2,
-                "method": "session.close",
-                "params": {
-                    "context": {"operation_id": format!("close-{session}")}
-                }
-            })
-            .to_string();
-            write_outer_frame(
-                &mut client,
-                super::JSON_CONTENT_TYPE,
-                close.as_bytes(),
-                64 * 1024,
-            )
-            .await
-            .expect("session.close frame writes");
-            let closed = read_frame(&mut client, 64 * 1024, 64 * 1024)
-                .await
-                .expect("session.close response frame is valid")
-                .expect("session.close response is present");
-            let InboundFrame::Control(closed) = closed else {
-                panic!("session.close response is a control frame");
-            };
-            let closed: serde_json::Value =
-                serde_json::from_slice(&closed).expect("session.close response is JSON");
-            assert_eq!(closed["result"]["closed"], true);
-        }
-
-        client.shutdown().await.expect("client closes carrier");
-        serving
-            .await
-            .expect("stdio task joins")
-            .expect("carrier EOF shuts down cleanly");
+    async fn read_json<R: tokio::io::AsyncRead + Unpin>(reader: &mut R) -> serde_json::Value {
+        let Some(InboundFrame::Control(bytes)) =
+            read_frame(reader, 64 * 1024, 64 * 1024).await.unwrap()
+        else {
+            panic!("control response expected")
+        };
+        serde_json::from_slice(&bytes).unwrap()
     }
 
     #[tokio::test]
-    async fn sequential_session_starts_after_all_old_transfer_frames_are_fenced() {
+    async fn multiplexed_sessions_keep_sibling_transfer_and_allow_open_without_reinitialize() {
         let tree = TempTree::new();
-        let native_root = tree.child("native");
-        fs::create_dir(&native_root).expect("creates native root");
-        fs::write(native_root.join("source.bin"), vec![b'x'; 1024 * 1024])
-            .expect("writes transfer source");
-        let mut config = Config::for_test("env-test");
-        config.root_mount_id = Some("workspace".to_owned());
-        config.mounts.push(TrustedMountConfig {
-            mount_id: "workspace".to_owned(),
-            native_root,
-            writable: false,
-            allow_command_execution: false,
-            max_file_bytes: 2 * 1024 * 1024,
-            allowed_operations: vec!["open_reader".to_owned()],
-        });
-        let daemon = Arc::new(Daemon::new(&config).expect("daemon builds"));
-        let (mut input_client, input_server) = duplex(2 * 1024 * 1024);
-        let (output_server, mut output_client) = duplex(8 * 1024);
+        let source = tree.child("source.bin");
+        fs::write(&source, b"sibling-transfer").unwrap();
+        let config = Config::for_test("env-test");
+        let cwd = config.default_working_directory.clone();
+        let daemon = Arc::new(Daemon::new(&config).unwrap());
+        let (mut client, server) = duplex(128 * 1024);
+        let (reader, writer) = tokio::io::split(server);
         let serving = tokio::spawn(async move {
-            serve_io(
-                input_server,
-                output_server,
-                daemon,
-                &config,
-                pending::<io::Result<()>>(),
-            )
-            .await
+            serve_io(reader, writer, daemon, &config, pending::<io::Result<()>>()).await
         });
-
-        write_json_frame(
-            &mut input_client,
-            serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "supported_protocol_versions": ["0.1"],
-                    "client": {"name": "stdio-test", "version": "1"},
-                    "expected_environment_id": "env-test",
-                    "required_methods": [
-                        "environment.readiness",
-                        "file.open_reader",
-                        "session.close"
-                    ]
-                }
-            }),
-        )
-        .await;
-        let initialized = read_frame(&mut output_client, 64 * 1024, 4 * 1024 * 1024)
-            .await
-            .expect("initialize response is valid")
-            .expect("initialize response is present");
-        assert!(matches!(initialized, InboundFrame::Control(_)));
-
-        write_json_frame(
-            &mut input_client,
-            serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 20,
-                "method": "environment.readiness",
-                "params": {
-                    "context": {
-                        "operation_id": "readiness-old-session",
-                        "timeout_ms": 2_000
-                    }
-                }
-            }),
-        )
-        .await;
-        let readiness = read_frame(&mut output_client, 64 * 1024, 4 * 1024 * 1024)
-            .await
-            .expect("readiness response is valid")
-            .expect("readiness response is present");
-        let InboundFrame::Control(readiness) = readiness else {
-            panic!("readiness response is control JSON");
-        };
-        let readiness: serde_json::Value =
-            serde_json::from_slice(&readiness).expect("readiness response is JSON");
-        assert_eq!(readiness["result"]["ready"], true);
-
-        write_json_frame(
-            &mut input_client,
-            serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "file.open_reader",
-                "params": {
-                    "context": {"operation_id": "open-old-reader"},
-                    "path": {"mount_id": "workspace", "path": "/source.bin"}
-                }
-            }),
-        )
-        .await;
-        let opened = read_frame(&mut output_client, 64 * 1024, 4 * 1024 * 1024)
-            .await
-            .expect("open response is valid")
-            .expect("open response is present");
-        let InboundFrame::Control(opened) = opened else {
-            panic!("open response is control JSON");
-        };
-        let opened: serde_json::Value =
-            serde_json::from_slice(&opened).expect("open response is JSON");
-        let handle = opened["result"]["reader"]
-            .as_str()
-            .expect("open response contains a reader handle")
-            .to_owned();
-        let attach = encode_data_frame(
-            &DataFrame {
+        write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+            "supported_protocol_versions":["0.1"],"client":{"name":"stdio-test","version":"1"},"expected_device_id":"env-test"
+        }})).await;
+        let initialized = read_json(&mut client).await;
+        let generation = initialized["result"]["descriptor"]["generation"].clone();
+        let mut sessions = Vec::new();
+        for id in [2, 3] {
+            write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":id,"method":"session.open","params":{
+                "expected_device_id":"env-test","expected_generation":generation,"protocol_version":"0.1","working_directory":cwd,"required_methods":[]
+            }})).await;
+            let opened = read_json(&mut client).await;
+            let session = opened["result"]["descriptor"]["session_id"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":id+10,"eip_session":session,"method":"environment.readiness","params":{"context":{"operation_id":"ready"}}})).await;
+            assert_eq!(read_json(&mut client).await["result"]["ready"], true);
+            sessions.push(session);
+        }
+        let mut handles = Vec::new();
+        for session in &sessions {
+            write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":20,"eip_session":session,"method":"file.open_reader","params":{
+                "context":{"operation_id":"open"},"path":{"path":crate::device_path::from_native(&source).unwrap()}
+            }})).await;
+            handles.push(
+                read_json(&mut client).await["result"]["reader"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            );
+        }
+        write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":30,"eip_session":sessions[0],"method":"session.close","params":{}})).await;
+        assert_eq!(read_json(&mut client).await["result"]["closed"], true);
+        // A's old handle is fenced without disrupting B on the same data carrier.
+        for index in [0, 1] {
+            let frame = DataFrame {
+                session_id: sessions[index].clone(),
                 kind: DataFrameKind::Attach,
-                handle,
+                handle: handles[index].clone(),
                 offset: 0,
                 payload: Vec::new(),
                 reset_status: None,
-            },
-            4 * 1024 * 1024,
-        )
-        .expect("attach frame encodes");
-        write_outer_frame(
-            &mut input_client,
-            super::DATA_CONTENT_TYPE,
-            &attach,
-            4 * 1024 * 1024,
-        )
-        .await
-        .expect("attach frame writes");
-        write_json_frame(
-            &mut input_client,
-            serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 3,
-                "method": "session.close",
-                "params": {"context": {"operation_id": "close-old-session"}}
-            }),
-        )
-        .await;
-
-        loop {
-            match read_frame(&mut output_client, 64 * 1024, 4 * 1024 * 1024)
+            };
+            let bytes = encode_data_frame(&frame, 65536).unwrap();
+            write_outer_frame(&mut client, super::DATA_CONTENT_TYPE, &bytes, 65536)
                 .await
-                .expect("old session output is framed")
-                .expect("close response is present")
-            {
-                InboundFrame::Data(_) => {}
-                InboundFrame::Control(payload) => {
-                    let response: serde_json::Value =
-                        serde_json::from_slice(&payload).expect("control response is JSON");
-                    if response["id"] == 3 {
-                        assert_eq!(response["result"]["closed"], true);
-                        break;
+                .unwrap();
+            let mut received = Vec::new();
+            loop {
+                let Some(InboundFrame::Data(frame)) =
+                    read_frame(&mut client, 65536, 65536).await.unwrap()
+                else {
+                    panic!("data frame expected")
+                };
+                assert_eq!(frame.session_id, sessions[index]);
+                if index == 0 {
+                    assert_eq!(frame.kind, DataFrameKind::Reset);
+                    break;
+                }
+                match frame.kind {
+                    DataFrameKind::Attached => {}
+                    DataFrameKind::Chunk => {
+                        received.extend(frame.payload);
+                        let credit = DataFrame {
+                            session_id: frame.session_id,
+                            kind: DataFrameKind::Credit,
+                            handle: frame.handle,
+                            offset: received.len() as u64,
+                            payload: Vec::new(),
+                            reset_status: None,
+                        };
+                        let bytes = encode_data_frame(&credit, 65536).unwrap();
+                        write_outer_frame(&mut client, super::DATA_CONTENT_TYPE, &bytes, 65536)
+                            .await
+                            .unwrap();
                     }
+                    DataFrameKind::End => break,
+                    other => panic!("unexpected {other:?}"),
                 }
             }
+            if index == 1 {
+                assert_eq!(received, b"sibling-transfer");
+            }
         }
-
-        write_json_frame(
-            &mut input_client,
-            serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 4,
-                "method": "initialize",
-                "params": {
-                    "supported_protocol_versions": ["0.1"],
-                    "client": {"name": "stdio-test", "version": "1"},
-                    "expected_environment_id": "env-test",
-                    "required_methods": ["session.close"]
-                }
-            }),
-        )
-        .await;
-        let next = read_frame(&mut output_client, 64 * 1024, 4 * 1024 * 1024)
-            .await
-            .expect("next session output is framed")
-            .expect("next initialize response is present");
-        let InboundFrame::Control(next) = next else {
-            panic!("no old data frame follows the close response");
-        };
-        let next: serde_json::Value =
-            serde_json::from_slice(&next).expect("next initialize response is JSON");
-        assert_eq!(next["id"], 4);
-        assert!(next.get("result").is_some());
-
-        write_json_frame(
-            &mut input_client,
-            serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 5,
-                "method": "session.close",
-                "params": {"context": {"operation_id": "close-next-session"}}
-            }),
-        )
-        .await;
-        let closed = read_frame(&mut output_client, 64 * 1024, 4 * 1024 * 1024)
-            .await
-            .expect("second close response is framed")
-            .expect("second close response is present");
-        assert!(matches!(closed, InboundFrame::Control(_)));
-
-        input_client
-            .shutdown()
-            .await
-            .expect("client closes carrier");
-        serving
-            .await
-            .expect("stdio task joins")
-            .expect("carrier EOF shuts down cleanly");
+        write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":40,"method":"session.open","params":{
+            "expected_device_id":"env-test","expected_generation":generation,"protocol_version":"0.1","working_directory":cwd,"required_methods":[]
+        }})).await;
+        let opened = read_json(&mut client).await;
+        assert!(opened["result"]["descriptor"]["session_id"].is_string());
+        assert_ne!(opened["result"]["descriptor"]["session_id"], sessions[0]);
+        client.shutdown().await.unwrap();
+        serving.await.unwrap().unwrap();
     }
 
-    async fn run_close_barrier_under_stdout_backpressure(signal_shutdown: bool) {
-        let config = Config::for_test("env-test");
+    async fn run_shutdown_under_stdout_backpressure(signal_shutdown: bool, data_storm: bool) {
+        let mut config = Config::for_test("env-test");
+        config.limits.max_device_concurrent_operations = 2;
         let daemon = Arc::new(Daemon::new(&config).expect("daemon builds"));
         let (mut input_client, input_server) = duplex(512 * 1024);
         let (output_server, mut output_client) = duplex(1024);
@@ -1372,8 +728,7 @@ mod tests {
             "params": {
                 "supported_protocol_versions": ["0.1"],
                 "client": {"name": "stdio-test", "version": "1"},
-                "expected_environment_id": "env-test",
-                "required_methods": []
+                "expected_device_id": "env-test"
             }
         })
         .to_string();
@@ -1390,12 +745,29 @@ mod tests {
             .expect("initialize response is valid")
             .expect("initialize response is present");
 
-        for index in 0..128 {
+        for index in 0..512 {
+            if data_storm {
+                super::write_data_frame(
+                    &mut input_client,
+                    &DataFrame {
+                        kind: DataFrameKind::Attach,
+                        session_id: "session-unknown".into(),
+                        handle: "transfer-unknown".into(),
+                        offset: 0,
+                        payload: Vec::new(),
+                        reset_status: None,
+                    },
+                    64 * 1024,
+                )
+                .await
+                .unwrap();
+                continue;
+            }
             let describe = serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": index + 2,
-                "method": "environment.describe",
-                "params": {"context": {"operation_id": format!("describe-{index}")}}
+                "method": "device.describe",
+                "params": {}
             })
             .to_string();
             write_outer_frame(
@@ -1407,24 +779,11 @@ mod tests {
             .await
             .expect("describe frame writes");
         }
-        let close = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1000,
-            "method": "session.close",
-            "params": {"context": {"operation_id": "close-under-backpressure"}}
-        })
-        .to_string();
-        write_outer_frame(
-            &mut input_client,
-            super::JSON_CONTENT_TYPE,
-            close.as_bytes(),
-            64 * 1024,
-        )
-        .await
-        .expect("close frame writes");
         tokio::time::sleep(Duration::from_millis(20)).await;
         if signal_shutdown {
             shutdown_tx.send(()).expect("signals shutdown");
+        } else {
+            input_client.shutdown().await.unwrap();
         }
 
         let result = tokio::time::timeout(Duration::from_secs(4), serving)
@@ -1438,13 +797,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shutdown_interrupts_a_close_barrier_under_stdout_backpressure() {
-        run_close_barrier_under_stdout_backpressure(true).await;
+    async fn shutdown_interrupts_stdout_backpressure() {
+        run_shutdown_under_stdout_backpressure(true, false).await;
     }
 
     #[tokio::test]
-    async fn close_barrier_deadline_covers_response_flush_and_rearm() {
-        run_close_barrier_under_stdout_backpressure(false).await;
+    async fn eof_drain_deadline_covers_response_flush() {
+        run_shutdown_under_stdout_backpressure(false, false).await;
+    }
+
+    #[tokio::test]
+    async fn reset_queue_saturation_observes_signal_and_eof() {
+        run_shutdown_under_stdout_backpressure(true, true).await;
+        run_shutdown_under_stdout_backpressure(false, true).await;
     }
 
     #[tokio::test]

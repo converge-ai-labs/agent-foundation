@@ -1,16 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {} from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
+import { FormActions } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
-import { SchemaFields } from "../../shared/schema-fields";
+import { SchemaFields } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
-import { stringValues, validateSettings } from "../../shared/validation";
+import { stringValues, validateSettings } from "../../shared/forms";
 import { useAccountProviders } from "./data";
 export function AccountCredentials({
   account,
@@ -67,11 +66,6 @@ export function AccountCredentials({
         save.mutate();
       }}
     >
-      <p className={styles.muted}>
-        {t(
-          "Existing credentials are never displayed. Supply a complete replacement.",
-        )}
-      </p>
       <ErrorNotice error={definitions.error} />
       {definition && (
         <SchemaFields
@@ -82,7 +76,11 @@ export function AccountCredentials({
         />
       )}
       <ErrorNotice error={save.error} retry={() => void reload()} />
-      <FormActions pending={save.isPending} label={t("Replace credentials")} />
+      <FormActions
+        pending={save.isPending}
+        label={t("Replace credentials")}
+        variant="outline"
+      />
     </form>
   );
 }

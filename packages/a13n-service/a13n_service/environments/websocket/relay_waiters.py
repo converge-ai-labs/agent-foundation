@@ -6,7 +6,7 @@ import asyncio
 import base64
 import hashlib
 from collections import OrderedDict, deque
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from time import monotonic
@@ -25,8 +25,9 @@ from .relay_protocol import (
     RelayRequest,
     RelayTerminal,
     TransferPosition,
+    canonical_message,
 )
-from .relay_storage import RelayStoreError, WorkerResponseMailbox
+from .relay_storage import ConnectionRelayStore, RelayStoreError, ResponseMailbox
 
 
 class RelayOperationError(EnvironmentError):
@@ -90,6 +91,46 @@ class PendingRelayRequest:
         self._check()
         self._possibly_published = True
 
+    async def publish(self, store: ConnectionRelayStore, *, check_authority: Callable[[], None] | None = None) -> None:
+        """Publish once by identity, resolving a lost reply through retained evidence."""
+        message = self.request
+        canonical_message(
+            message,
+            max_bytes=store.limits.control_bytes
+            if message.operation in CONTROL_OPERATIONS
+            else store.limits.request_bytes,
+        )
+        self.begin_publication()
+        for attempt in range(2):
+            try:
+                async with self._authority.write(message.scope):
+                    if check_authority is not None:
+                        check_authority()
+                    evidence = await store.append(message)
+                if evidence.phase == "completed":
+                    result = evidence.terminal()
+                    if result is None or result.request_id != message.request_id or result.scope != message.scope:
+                        raise RelayStoreError("outcome_unknown")
+                    self.accept(result)
+                return
+            except RelayStoreError as error:
+                if error.code == "relay_unavailable" and attempt == 0:
+                    continue
+                known = attempt == 0 and error.code in {"relay_overloaded", "request_expired", "request_invalid"}
+                code = {
+                    "relay_overloaded": "environment_overloaded",
+                    "request_expired": "environment_timeout",
+                    "request_invalid": "environment_request_invalid",
+                }.get(error.code, "environment_unknown_outcome")
+                failure = RelayFailure.model_validate(
+                    {"code": code, "certainty": "not_dispatched" if known else "unknown"}
+                )
+                self.fail(failure.code, certainty=failure.certainty)
+                raise RelayOperationError(failure) from error
+            except DispatchDenied as error:
+                self.fail("environment_unavailable")
+                raise RelayOperationError(RelayFailure(code="environment_unavailable", certainty="unknown")) from error
+
     def fail(self, code: str, *, certainty: str | None = None) -> None:
         self._accept_failure(
             RelayFailure.model_validate(
@@ -106,7 +147,7 @@ class PendingRelayRequest:
             self._changed.set()
 
     def accept(self, frame: RelayFrame) -> None:
-        if frame.request_id != self.request.request_id or frame.use != self.request.use:
+        if frame.request_id != self.request.request_id or frame.scope != self.request.scope:
             return
         if self._terminal is not None or self._failure is not None:
             return
@@ -227,7 +268,7 @@ class PendingRelayRequest:
                 self.fail("environment_timeout")
             else:
                 try:
-                    self._authority.check(self.request.use)
+                    self._authority.check(self.request.scope)
                 except DispatchDenied:
                     self.fail("environment_unavailable")
         if self._failure is not None:
@@ -246,7 +287,7 @@ class PendingRelayRequest:
 class RelayResponseDispatcher:
     def __init__(
         self,
-        mailbox: WorkerResponseMailbox,
+        mailbox: ResponseMailbox,
         *,
         max_pending: int = 128,
         control_reserve: int = 16,
@@ -273,7 +314,7 @@ class RelayResponseDispatcher:
         *,
         streaming: Literal["download", "upload"] | None = None,
     ) -> Iterator[PendingRelayRequest]:
-        if self._closed or request.use.worker_instance_id != self._mailbox.worker_instance_id:
+        if self._closed or request.scope.origin_instance_id != self._mailbox.origin_instance_id:
             raise RelayOperationError(RelayFailure(code="environment_unavailable", certainty="not_dispatched"))
         limit = (
             self._max_pending if request.operation in CONTROL_OPERATIONS else self._max_pending - self._control_reserve
@@ -282,7 +323,7 @@ class RelayResponseDispatcher:
             raise RelayOperationError(RelayFailure(code="environment_overloaded", certainty="not_dispatched"))
         if request.request_id in self._pending:
             raise ValueError("Relay request already has a waiter")
-        authority.check(request.use)
+        authority.check(request.scope)
         pending = PendingRelayRequest(
             request,
             authority,
@@ -305,7 +346,7 @@ class RelayResponseDispatcher:
 
     def fence_use(self, use: UseIdentity) -> None:
         for pending in self._pending.values():
-            if pending.request.use == use:
+            if pending.request.scope == use:
                 pending.fail("environment_unavailable")
 
     def close(self) -> None:

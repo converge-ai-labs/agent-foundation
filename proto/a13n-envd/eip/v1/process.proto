@@ -63,17 +63,10 @@ message CommandLimits {
   optional uint64 cpu_time_ms = 5;
 }
 
-enum CommandNetwork {
-  COMMAND_NETWORK_UNSPECIFIED = 0;
-  COMMAND_NETWORK_CONFIGURED = 1 [(eip_enum_value).json_name = "configured"];
-  COMMAND_NETWORK_DENY = 2 [(eip_enum_value).json_name = "deny"];
-}
-
 message CommandRequest {
   CommandSpec command = 1;
-  EIPPath cwd = 2;
+  optional EIPPath cwd = 2;
   optional CommandEnvironment environment = 3 [(eip_field).default_message = true];
-  optional CommandNetwork network = 4 [(eip_field).default_string = "configured"];
   optional CommandLimits limits = 5 [(eip_field).default_message = true];
   optional EncodedBytes initial_stdin = 6;
   optional bool keep_stdin_open = 7 [(eip_field).default_bool = false];
@@ -143,7 +136,8 @@ message ProcessInfo {
   reserved "lease";
 
   ProcessHandle handle = 1;
-  string environment_id = 2 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  string device_id = 2 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  string session_id = 8 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
   uint64 generation = 3 [(eip_field).minimum = 1];
   ProcessStatus status = 4;
   bool stdin_open = 5;

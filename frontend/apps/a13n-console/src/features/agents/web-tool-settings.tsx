@@ -13,7 +13,7 @@ import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { ProviderIcon } from "../../shared/provider-icon";
+import { ProviderIcon } from "../../shared/identity";
 import { providersPath } from "../providers/navigation";
 import {
   eligibleWebProvider,
@@ -81,8 +81,6 @@ export function WebToolSettings({
         {can("web_provider.manage") && (
           <a
             href={providersPath("web", "workspace", workspace.key)}
-            target="_blank"
-            rel="noopener noreferrer"
             className={styles.webProviderLink}
           >
             {t("Manage")}

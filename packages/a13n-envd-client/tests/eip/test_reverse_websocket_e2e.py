@@ -8,13 +8,15 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
-from a13n_envd_client import AcceptedWebSocketTransport, EIPMethodError, EIPSession
+from a13n_envd_client import AcceptedWebSocketTransport, EIPDeviceConnection
 from a13n_envd_client.eip.v1 import EIPPath, FileWriteMode
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.http11 import Request, Response
 
+from .test_stdio_e2e import device_path
+
 _TOKEN = "test-attachment-token-without-secret-meaning"
-_ENVIRONMENT_ID = "env-websocket-e2e"
+_DEVICE_ID = "env-websocket-e2e"
 _TLS_FIXTURES = Path(__file__).parent / "fixtures" / "tls"
 
 
@@ -37,12 +39,11 @@ async def start_daemon(
     ca_file: Path | None = None,
 ) -> asyncio.subprocess.Process:
     environment = {
-        "A13N_ENVD_ENVIRONMENT_ID": _ENVIRONMENT_ID,
+        "A13N_ENVD_DEVICE_ID": _DEVICE_ID,
         "A13N_ENVD_TRANSPORT": "reverse_websocket",
         "A13N_ENVD_REVERSE_WS_URL": endpoint,
         "A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE": str(credential_file),
         "A13N_ENVD_RUNTIME_DIR": str(runtime_dir),
-        "A13N_ENVD_EXECUTION_ISOLATION": "disabled",
         "LANG": os.environ.get("LANG", "C.UTF-8"),
     }
     if ca_file is not None:
@@ -77,23 +78,7 @@ def prepare_config(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     credential = secrets / "attachment-token"
     credential.write_text(f"{_TOKEN}\n")
     config = tmp_path / "a13n-envd.json"
-    config.write_text(
-        json.dumps(
-            {
-                "root_mount_id": "workspace",
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(workspace),
-                        "writable": True,
-                        "allow_command_execution": False,
-                        "max_file_bytes": 1024 * 1024,
-                        "allowed_operations": ["open_reader", "open_writer"],
-                    }
-                ],
-            }
-        )
-    )
+    config.write_text(json.dumps({"default_working_directory": str(workspace)}))
     return runtime, workspace, credential, config
 
 
@@ -155,18 +140,13 @@ def test_real_daemon_authenticates_transfers_and_reconnects(tmp_path: Path) -> N
         )
         try:
             first_connection = await asyncio.wait_for(accepted.get(), timeout=5)
-            first = await EIPSession.initialize(
-                AcceptedWebSocketTransport(first_connection),
-                expected_environment_id=_ENVIRONMENT_ID,
-                required_methods=("file.open_reader", "file.open_writer"),
-                request_timeout=5,
+            first_device = await EIPDeviceConnection.initialize(
+                AcceptedWebSocketTransport(first_connection), expected_device_id=_DEVICE_ID, request_timeout=5
             )
+            first = await first_device.open_session(required_methods=("file.open_reader", "file.open_writer"))
             generation = first.generation
-            with pytest.raises(EIPMethodError):
-                async with first.open_reader(EIPPath(mount_id="workspace", path="/secrets/attachment-token")):
-                    pass
 
-            path = EIPPath(mount_id="workspace", path="/binary.dat")
+            path = EIPPath(path=device_path(workspace / "binary.dat"))
             payload = bytes(range(256)) * 8
             async with first.open_writer(path, mode=FileWriteMode.CREATE) as writer:
                 await writer.write(payload[:777])
@@ -181,16 +161,19 @@ def test_real_daemon_authenticates_transfers_and_reconnects(tmp_path: Path) -> N
                     downloaded.extend(chunk)
             assert bytes(downloaded) == payload
 
-            await first.abort()
+            original_descriptor = first.descriptor
+            await first_connection.close()
+            await first_device.close()
             second_connection = await asyncio.wait_for(accepted.get(), timeout=5)
-            second = await EIPSession.initialize(
-                AcceptedWebSocketTransport(second_connection),
-                expected_environment_id=_ENVIRONMENT_ID,
-                request_timeout=5,
+            second_device = await EIPDeviceConnection.initialize(
+                AcceptedWebSocketTransport(second_connection), expected_device_id=_DEVICE_ID, request_timeout=5
             )
+            second = await second_device.attach_session(original_descriptor)
+            assert second.session_id == original_descriptor.session_id
             assert second.generation == generation
             assert (await second.describe()).generation == generation
             await second.close()
+            await second_device.close()
         finally:
             stderr = await stop_daemon(process)
             server.close()
@@ -220,13 +203,13 @@ def test_real_daemon_validates_tls_and_hostname(tmp_path: Path) -> None:
         )
         try:
             connection = await asyncio.wait_for(accepted.get(), timeout=5)
-            session = await EIPSession.initialize(
-                AcceptedWebSocketTransport(connection),
-                expected_environment_id=_ENVIRONMENT_ID,
-                request_timeout=5,
+            session_device = await EIPDeviceConnection.initialize(
+                AcceptedWebSocketTransport(connection), expected_device_id=_DEVICE_ID, request_timeout=5
             )
+            session = await session_device.open_session(required_methods=())
             assert (await session.describe()).generation == session.generation
             await session.abort()
+            await session_device.close()
         finally:
             await stop_daemon(process)
             server.close()
