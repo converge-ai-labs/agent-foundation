@@ -3083,5 +3083,16 @@
   "{{count}} {{state}}": "{{count}} {{state}}",
   "Retry check": "Retry check",
   "state.open": "Open",
-  "After enabling, check the connection. Open the Authorization tab if new credentials are needed.": "After enabling, check the connection. Open the Authorization tab if new credentials are needed."
+  "After enabling, check the connection. Open the Authorization tab if new credentials are needed.": "After enabling, check the connection. Open the Authorization tab if new credentials are needed.",
+  "Choose the backend that stores your agents' memories.": "Choose the backend that stores your agents' memories.",
+  "Choose the service that brokers your agents' accounts.": "Choose the service that brokers your agents' accounts.",
+  "Paste the API key from your {{provider}} account.": "Paste the API key from your {{provider}} account.",
+  "Paste the access token for {{provider}}.": "Paste the access token for {{provider}}.",
+  "Enter the token ID and secret from your {{provider}} account.": "Enter the token ID and secret from your {{provider}} account.",
+  "Enter the credentials from your {{provider}} account.": "Enter the credentials from your {{provider}} account.",
+  "OAuth callback setup": "OAuth callback setup",
+  "Get an API token": "Get an API token",
+  "Get an access token": "Get an access token",
+  "Open setup guide": "Open setup guide",
+  "Get an API key": "Get an API key"
 }

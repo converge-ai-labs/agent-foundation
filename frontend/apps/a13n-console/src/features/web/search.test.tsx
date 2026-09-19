@@ -44,7 +44,10 @@ const definition = {
   configuration_schema: {},
   credential_schema: {
     type: "object",
-    properties: { api_key: { type: "string", writeOnly: true } },
+    properties: {
+      api_key: { type: "string", title: "Api Key", writeOnly: true },
+    },
+    required: ["api_key"],
     writeOnly: true,
   },
   credential_required: true,
@@ -100,7 +103,7 @@ it("creates a saved provider independently and clears its credential on close wi
   const name = await screen.findByRole("textbox", { name: "Name" });
   await user.clear(name);
   await user.type(name, "Research");
-  await user.type(screen.getByLabelText("API Key"), "test-secret");
+  await user.type(screen.getByLabelText("API key"), "test-secret");
   expect(http.POST).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await waitFor(() => expect(saved).toHaveBeenCalledOnce());
@@ -119,7 +122,7 @@ it("creates a saved provider independently and clears its credential on close wi
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await user.click(await screen.findByRole("button", { name: /Brave Search/ }));
-  expect(await screen.findByLabelText("API Key")).toHaveProperty("value", "");
+  expect(await screen.findByLabelText("API key")).toHaveProperty("value", "");
 });
 
 it("creates a credential-free DuckDuckGo provider without an API key", async () => {
@@ -141,7 +144,7 @@ it("creates a credential-free DuckDuckGo provider without an API key", async () 
   setup(<AddWebProvider scope={scope} />);
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await user.click(await screen.findByRole("button", { name: /DuckDuckGo/ }));
-  expect(screen.queryByLabelText("API Key")).toBeNull();
+  expect(screen.queryByLabelText("API key")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
   expect(http.POST.mock.calls[0][1].body).toMatchObject({
@@ -161,7 +164,7 @@ it("keeps the existing credential write-only and sends If-Match for edits", asyn
       onClose={() => {}}
     />,
   );
-  expect(await screen.findByLabelText("API Key")).toHaveProperty("value", "");
+  expect(await screen.findByLabelText("API key")).toHaveProperty("value", "");
   await user.type(screen.getByRole("textbox", { name: "Name" }), " renamed");
   await user.click(screen.getByRole("switch", { name: "Enabled" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
@@ -182,7 +185,7 @@ it("reconciles an uncertain create before allowing another attempt", async () =>
   const name = await screen.findByRole("textbox", { name: "Name" });
   await user.clear(name);
   await user.type(name, "Research");
-  await user.type(screen.getByLabelText("API Key"), "test-secret");
+  await user.type(screen.getByLabelText("API key"), "test-secret");
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await screen.findByRole("button", { name: "Use this provider" });
   expect(
@@ -208,7 +211,7 @@ it("retains the provider draft across a stale ETag and requires loading the curr
     await screen.findByRole("textbox", { name: "Name" }),
     " draft",
   );
-  await user.type(screen.getByLabelText("API Key"), "replacement-secret");
+  await user.type(screen.getByLabelText("API key"), "replacement-secret");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   const reload = await screen.findByRole("button", {
     name: "Load current version and keep my draft",
@@ -228,7 +231,7 @@ it("retains the provider draft across a stale ETag and requires loading the curr
       }),
     ).toBeNull(),
   );
-  expect(screen.getByLabelText("API Key")).toHaveProperty(
+  expect(screen.getByLabelText("API key")).toHaveProperty(
     "value",
     "replacement-secret",
   );

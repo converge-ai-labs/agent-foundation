@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 export function ProviderKeyLink({
   href,
-  label = "Get an API Key",
+  label = "Get an API key",
 }: {
   href: string;
   label?: string;

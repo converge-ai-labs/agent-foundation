@@ -1,3 +1,4 @@
+/** Where a provider hands out the secret its connect step asks for. */
 export const providerKeyUrls: Record<string, { href: string; label?: string }> =
   {
     openai: { href: "https://platform.openai.com/api-keys" },
@@ -24,4 +25,21 @@ export const providerKeyUrls: Record<string, { href: string; label?: string }> =
       href: "https://docs.aws.amazon.com/IAM/latest/UserGuide/access-key-self-managed.html",
       label: "Get access keys",
     },
+    e2b: { href: "https://e2b.dev/dashboard?tab=keys" },
+    daytona: { href: "https://app.daytona.io/dashboard/keys" },
+    modal: {
+      href: "https://modal.com/settings/tokens",
+      label: "Get an API token",
+    },
+    vercel: {
+      href: "https://vercel.com/account/settings/tokens",
+      label: "Get an access token",
+    },
+    sprites: {
+      href: "https://fly.io/user/personal_access_tokens",
+      label: "Get an access token",
+    },
+    runloop: { href: "https://platform.runloop.ai/settings" },
+    "a13n.mem0-platform": { href: "https://app.mem0.ai/dashboard/api-keys" },
+    composio: { href: "https://platform.composio.dev/settings" },
   };

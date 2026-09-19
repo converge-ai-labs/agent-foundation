@@ -17,8 +17,6 @@ import {
   FormActions,
   FormSection,
   ProviderEnabled,
-  ProviderKeyLink,
-  ProviderTypeField,
   formSectionStyles,
 } from "../../shared/forms";
 import { ProviderIcon } from "../../shared/identity";
@@ -27,6 +25,10 @@ import {
   AddProviderDialog,
   CredentialsPill,
   EditProviderDialog,
+  ProviderConnectFields,
+  credentialDescription,
+  credentialHint,
+  providerStyles,
 } from "../providers";
 import { webProviderApi, type WebProviderScope } from "./api";
 
@@ -67,13 +69,11 @@ export function AddWebProvider({
       open={open}
       onOpenChange={change}
       description={t("Choose a search or scrape service for your agents.")}
-      hint={(definition) =>
-        definition.credential_required ? "API key" : "No credentials"
-      }
+      hint={(definition) => credentialHint(definition.credential_schema)}
       connectDescription={(definition) =>
-        definition.credential_required
-          ? t("Paste the API key from your provider account.")
-          : t("This service needs no credentials.")
+        t(credentialDescription(definition.credential_schema), {
+          provider: definition.display_name,
+        })
       }
     >
       {(definition, back) => (
@@ -129,6 +129,7 @@ export function WebProviderEditor({
       name={resource.data?.value.name}
       id={providerId}
       readOnly={readOnly}
+      description={definition?.display_name}
       loading={definitions.isPending || resource.isPending}
       error={definitions.error ?? resource.error}
     >
@@ -201,12 +202,13 @@ export function WebProviderForm({
         definitions[0]?.display_name ??
         "",
     ),
-    [credential, setCredential] = useState(""),
+    [credential, setCredential] = useState<Record<string, unknown>>({}),
     [enabled, setEnabled] = useState(resource?.value.enabled ?? true);
   const [existing, setExisting] = useState<Schema["WebProvider"][]>();
   const [reloadError, setReloadError] = useState<unknown>();
   const api = webProviderApi(client, scope),
-    definition = definitions.find((item) => item.type === type);
+    definition = definitions.find((item) => item.type === type) ?? chosen;
+  const apiKey = String(credential.api_key ?? "");
   const reconcile = useMutation({
     retry: false,
     mutationFn: () =>
@@ -228,9 +230,8 @@ export function WebProviderForm({
         throw new Error(t("Choose a provider type and name."));
       if (
         definition.credential_required &&
-        (!original || credential) &&
-        (!credential.trim() ||
-          new TextEncoder().encode(credential).length > 4096)
+        (!original || apiKey) &&
+        (!apiKey.trim() || new TextEncoder().encode(apiKey).length > 4096)
       )
         throw new Error(t("Enter a nonblank API key of at most 4096 bytes."));
       if (!original) {
@@ -238,7 +239,7 @@ export function WebProviderForm({
           type,
           name,
           ...(definition.credential_required
-            ? { credential: { api_key: credential } }
+            ? { credential: { api_key: apiKey } }
             : {}),
           configuration: {},
           enabled,
@@ -251,11 +252,11 @@ export function WebProviderForm({
       return api.updateProvider(original.value.id, original.etag, {
         name,
         enabled,
-        ...(credential ? { credential: { api_key: credential } } : {}),
+        ...(apiKey ? { credential: { api_key: apiKey } } : {}),
       });
     },
     onSuccess: (provider) => {
-      setCredential("");
+      setCredential({});
       void cache.invalidateQueries({ queryKey: ["web-providers"] });
       void cache.invalidateQueries({ queryKey: ["web-provider"] });
       onSaved(provider);
@@ -272,65 +273,8 @@ export function WebProviderForm({
   });
   const conflict = save.error instanceof ApiError && save.error.status === 412;
   const unconfirmed = !original && (reconcile.isPending || !!existing);
-  return (
-    <form
-      className={formSectionStyles.form}
-      onSubmit={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        save.mutate();
-      }}
-    >
-      <FormSection>
-        <FormField label={t("Name")}>
-          <Input
-            required
-            maxLength={128}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </FormField>
-        {original && (
-          <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        )}
-      </FormSection>
-      <FormSection title={t("Connection")}>
-        <ProviderTypeField
-          definitions={definitions}
-          value={type}
-          readOnly
-          onValueChange={() => {}}
-          labelAction={
-            definition?.credential_required && (
-              <ProviderKeyLink href={definition.setup_url} />
-            )
-          }
-        />
-        {definition?.credential_required && (
-          <FormField
-            label={t("API Key")}
-            description={t(
-              original
-                ? "Leave empty to keep the current credential."
-                : "The key is stored securely and cannot be read back.",
-            )}
-          >
-            <Input
-              type="password"
-              placeholder={
-                original?.value.credential_configured
-                  ? t("Saved credential · enter to replace")
-                  : undefined
-              }
-              autoComplete="new-password"
-              name="search-api-key"
-              required={!original}
-              value={credential}
-              onChange={(event) => setCredential(event.target.value)}
-            />
-          </FormField>
-        )}
-      </FormSection>
+  const notices = (
+    <>
       <ErrorNotice error={reloadError ?? (conflict ? undefined : save.error)} />
       {conflict && original && (
         <ConflictNotice
@@ -394,7 +338,7 @@ export function WebProviderForm({
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        setCredential("");
+                        setCredential({});
                         onSaved(item);
                       }}
                     >
@@ -412,11 +356,80 @@ export function WebProviderForm({
           )}
         </ConflictNotice>
       )}
+    </>
+  );
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    save.mutate();
+  }
+  if (!original)
+    return (
+      <form className={providerStyles.connectForm} onSubmit={submit}>
+        <ProviderConnectFields
+          credentialSchema={definition?.credential_schema}
+          credential={credential}
+          onCredentialChange={setCredential}
+          name={name}
+          onNameChange={setName}
+          keyLink={
+            definition?.credential_required && definition.setup_url
+              ? { href: definition.setup_url }
+              : undefined
+          }
+        />
+        {notices}
+        <FormActions
+          onCancel={onCancel}
+          label={t("Add provider")}
+          pending={save.isPending}
+          disabled={unconfirmed}
+        />
+      </form>
+    );
+  return (
+    <form className={formSectionStyles.form} onSubmit={submit}>
+      <FormSection>
+        <FormField label={t("Name")}>
+          <Input
+            required
+            maxLength={128}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </FormField>
+        <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+      </FormSection>
+      {definition?.credential_required && (
+        <FormSection title={t("Credentials")}>
+          <FormField
+            label={t("API key")}
+            description={t("Leave empty to keep the current credential.")}
+          >
+            <Input
+              type="password"
+              placeholder={
+                original.value.credential_configured
+                  ? t("Saved credential · enter to replace")
+                  : undefined
+              }
+              autoComplete="new-password"
+              name="search-api-key"
+              value={apiKey}
+              onChange={(event) =>
+                setCredential(
+                  event.target.value ? { api_key: event.target.value } : {},
+                )
+              }
+            />
+          </FormField>
+        </FormSection>
+      )}
+      {notices}
       <FormActions
         onCancel={onCancel}
-        label={t(original ? "Save changes" : "Add provider")}
+        label={t("Save changes")}
         pending={save.isPending}
-        disabled={unconfirmed}
       />
     </form>
   );

@@ -3083,5 +3083,16 @@
   "{{count}} {{state}}": "{{count}} 条{{state}}",
   "Retry check": "重试检查",
   "state.open": "进行中",
-  "After enabling, check the connection. Open the Authorization tab if new credentials are needed.": "启用后请检查连接。如需新凭据，请打开“授权”标签页。"
+  "After enabling, check the connection. Open the Authorization tab if new credentials are needed.": "启用后请检查连接。如需新凭据，请打开“授权”标签页。",
+  "Choose the backend that stores your agents' memories.": "选择存储智能体记忆的后端。",
+  "Choose the service that brokers your agents' accounts.": "选择为智能体代理账号授权的服务。",
+  "Paste the API key from your {{provider}} account.": "粘贴你 {{provider}} 账号中的 API 密钥。",
+  "Paste the access token for {{provider}}.": "粘贴 {{provider}} 的访问令牌。",
+  "Enter the token ID and secret from your {{provider}} account.": "输入你 {{provider}} 账号中的令牌 ID 和密钥。",
+  "Enter the credentials from your {{provider}} account.": "输入你 {{provider}} 账号中的凭据。",
+  "OAuth callback setup": "OAuth 回调设置",
+  "Get an API token": "获取 API 令牌",
+  "Get an access token": "获取访问令牌",
+  "Open setup guide": "打开设置指南",
+  "Get an API key": "获取 API 密钥"
 }

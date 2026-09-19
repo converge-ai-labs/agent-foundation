@@ -205,7 +205,7 @@ it("chooses a platform before accounts and filters reuse without creating duplic
   await userEvent.click(
     screen.getByRole("tab", { name: "Create a new account" }),
   );
-  await screen.findByLabelText("App Secret");
+  await screen.findByLabelText("App secret");
   expect(screen.queryByLabelText("Bot token")).toBeNull();
   expect(state.http.POST).not.toHaveBeenCalled();
 });
@@ -396,11 +396,11 @@ const feishuIdentity = {
 };
 async function fillFeishuCredentials() {
   await userEvent.type(
-    screen.getByLabelText("App Secret"),
+    screen.getByLabelText("App secret"),
     "fictional-app-secret",
   );
   await userEvent.type(
-    screen.getByLabelText("Verification Token"),
+    screen.getByLabelText("Verification token"),
     "fictional-verification",
   );
 }
@@ -417,8 +417,8 @@ async function startFeishu() {
     screen.getByRole("textbox", { name: "App ID" }),
     "cli_test",
   );
-  expect(screen.queryByLabelText("Tenant Key")).toBeNull();
-  expect(screen.queryByLabelText("Bot Open Id")).toBeNull();
+  expect(screen.queryByLabelText("Tenant key")).toBeNull();
+  expect(screen.queryByLabelText("Bot open ID")).toBeNull();
   await fillFeishuCredentials();
 }
 it("discovers Feishu identity before saving without asking for installation IDs", async () => {
@@ -465,7 +465,7 @@ it("does not create an account when Feishu discovery fails", async () => {
   );
   await screen.findByText("Feishu app credentials rejected");
   expect(state.http.POST).toHaveBeenCalledTimes(1);
-  expect((screen.getByLabelText("App Secret") as HTMLInputElement).value).toBe(
+  expect((screen.getByLabelText("App secret") as HTMLInputElement).value).toBe(
     "",
   );
 });
@@ -506,8 +506,8 @@ it("creates a Feishu long connection with app credentials only", async () => {
   await userEvent.click(
     await screen.findByRole("option", { name: "Long connection (WebSocket)" }),
   );
-  expect(screen.queryByLabelText("Verification Token")).toBeNull();
-  await userEvent.type(screen.getByLabelText("App Secret"), "socket-secret");
+  expect(screen.queryByLabelText("Verification token")).toBeNull();
+  await userEvent.type(screen.getByLabelText("App secret"), "socket-secret");
   await userEvent.click(
     screen.getByRole("button", { name: "Save and verify" }),
   );

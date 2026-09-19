@@ -6,7 +6,11 @@ import { BrandTitle, CatalogStep } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions, ProviderKeyLink, SchemaFields } from "../../shared/forms";
 import { ProviderIcon } from "../../shared/identity";
-import { AddProviderDialog, ProviderCatalog } from "../providers";
+import {
+  AddProviderDialog,
+  ProviderCatalog,
+  providerKeyUrls,
+} from "../providers";
 import { type ModelScope } from "./api";
 import {
   ProviderConnection,
@@ -15,7 +19,6 @@ import {
 import { requiresProviderCredential } from "./provider-credentials";
 import { useModelProviderDefinitions } from "./provider-definitions";
 import { credentialFieldFor, useProviderDraft } from "./provider-draft";
-import { providerKeyUrls } from "./provider-key-urls";
 
 type Definition = Schema["ModelProviderDefinition"];
 

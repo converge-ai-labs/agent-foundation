@@ -130,17 +130,13 @@ it.each(cases)(
     const { connector, type, listPath, detailPath } = setup(kind, surface);
     await screen.findByText("Existing provider");
     await user.click(screen.getByRole("button", { name: "Add provider" }));
-    if (connector) {
-      // Connector creation still selects its type inside the form.
-      await user.click(screen.getByRole("combobox", { name: "Provider type" }));
-      await user.click(await screen.findByRole("option", { name: "Composio" }));
-    } else {
-      // Environment creation starts from the provider catalog.
-      expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
-      await user.click(
-        await screen.findByRole("button", { name: new RegExp(type) }),
-      );
-    }
+    // Every category starts creation from the provider catalog.
+    expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
+    await user.click(
+      await screen.findByRole("button", {
+        name: new RegExp(connector ? "Composio" : type),
+      }),
+    );
     const nameField = screen.getByRole("textbox", {
       name: "Name",
     }) as HTMLInputElement;
@@ -181,19 +177,11 @@ it.each(cases)(
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await user.click(screen.getByRole("button", { name: "Add provider" }));
-    if (connector) {
-      expect(
-        (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement)
-          .value,
-      ).toBe("");
-      expect(
-        screen.getByRole("combobox", { name: "Provider type" }).textContent,
-      ).toContain("Select provider type");
-    } else {
-      // The catalog comes back, so the previous draft cannot leak forward.
-      expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
-      await screen.findByRole("button", { name: new RegExp(type) });
-    }
+    // The catalog comes back, so the previous draft cannot leak forward.
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+    await screen.findByRole("button", {
+      name: new RegExp(connector ? "Composio" : type),
+    });
   },
 );
 
@@ -210,12 +198,14 @@ it.each(cases)(
     await user.keyboard("{Enter}");
     const name = await screen.findByRole("textbox", { name: "Name" });
     expect((name as HTMLInputElement).value).toBe(provider.name);
+    // The dialog title names the provider, so its type is the description.
     expect(
       screen.queryByRole("combobox", { name: "Provider type" }),
     ).toBeNull();
-    expect(
-      screen.getByRole("group", { name: "Provider type" }).textContent,
-    ).toContain(connector ? "Composio" : provider.type);
+    expect(screen.queryByRole("group", { name: "Provider type" })).toBeNull();
+    expect(screen.getByRole("dialog").textContent).toContain(
+      connector ? "Composio" : provider.type,
+    );
     expect(http.GET).toHaveBeenCalledWith(detailPath, expect.anything());
     await user.clear(name);
     await user.type(name, "Renamed provider");

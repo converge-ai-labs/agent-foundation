@@ -11,3 +11,18 @@
   font-size: 12.5px;
   line-height: 1.6;
 }
+/* The connect step: one column of fields, then the notices and the actions. */
+.connectForm {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+/* A connect step that disables its fields while the create request is in flight. */
+.connectFields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}

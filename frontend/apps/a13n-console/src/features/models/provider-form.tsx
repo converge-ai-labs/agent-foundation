@@ -20,7 +20,7 @@ import {
 } from "./provider-connection";
 import { requiresProviderCredential } from "./provider-credentials";
 import { useProviderDraft } from "./provider-draft";
-import { providerKeyUrls } from "./provider-key-urls";
+import { providerKeyUrls } from "../providers";
 
 /**
  * Identity, then connection, then the advanced disclosure — the group order

@@ -30,8 +30,6 @@ import {
   FormActions,
   FormSection,
   ProviderEnabled,
-  ProviderKeyLink,
-  ProviderTypeField,
   SchemaFields,
   formSectionStyles,
   jsonObject,
@@ -41,9 +39,13 @@ import styles from "../../shared/shared.module.css";
 import {
   AddProviderDialog,
   EditProviderDialog,
+  ProviderConnectFields,
   ProviderTable,
+  credentialDescription,
+  credentialHint,
+  providerKeyUrls,
+  providerStyles,
 } from "../providers";
-import providerStyles from "../providers/providers.module.css";
 import { environmentApi, type EnvironmentScope } from "./api";
 
 type Definition = Schema["EnvironmentProviderDefinition"];
@@ -182,6 +184,12 @@ function AddEnvironmentProvider({
       open={open}
       onOpenChange={change}
       description={t("Choose where your environments run.")}
+      hint={(definition) => credentialHint(definition.credential_schema)}
+      connectDescription={(definition) =>
+        t(credentialDescription(definition.credential_schema), {
+          provider: definition.display_name,
+        })
+      }
     >
       {(definition, back) => (
         <CatalogStep backLabel={t("All providers")} onBack={back}>
@@ -229,6 +237,9 @@ function EditEnvironmentProvider({
         })
         .then(representation),
   });
+  const definition = definitions.data?.items.find(
+    (item) => item.type === provider.type,
+  );
   return (
     <EditProviderDialog
       modalProps={state.modalProps}
@@ -236,6 +247,7 @@ function EditEnvironmentProvider({
       name={query.data?.value.name ?? provider.name}
       id={provider.id}
       readOnly={provider.configuration_source === "deployment"}
+      description={definition?.display_name}
       loading={definitions.isPending || query.isPending}
       error={definitions.error ?? query.error}
     >
@@ -284,6 +296,7 @@ function ProviderForm({
       initial?.value.configuration ?? {},
     ),
     [removeCredential, setRemoveCredential] = useState(false),
+    [advancedOpen, setAdvancedOpen] = useState(false),
     [credential, setCredential] = useState<Record<string, unknown>>({});
   const deployment = basis?.value.configuration_source === "deployment";
   const definition = definitions.find((item) => item.type === type) ?? chosen,
@@ -341,6 +354,36 @@ function ProviderForm({
     },
     onSuccess: done,
   });
+  if (!basis)
+    return (
+      <form
+        className={providerStyles.connectForm}
+        onSubmit={(event) => {
+          event.preventDefault();
+          save.mutate();
+        }}
+      >
+        <ProviderConnectFields
+          credentialSchema={credentialSchema}
+          configurationSchema={configSchema}
+          credential={credential}
+          onCredentialChange={setCredential}
+          configuration={configuration}
+          onConfigurationChange={setConfiguration}
+          name={name}
+          onNameChange={setName}
+          keyLink={providerKeyUrls[type]}
+          advancedOpen={advancedOpen}
+          onAdvancedOpenChange={setAdvancedOpen}
+        />
+        <ErrorNotice error={save.error} />
+        <FormActions
+          pending={save.isPending}
+          onCancel={close}
+          label={t("Add provider")}
+        />
+      </form>
+    );
   return (
     <form
       className={formSectionStyles.form}
@@ -362,7 +405,7 @@ function ProviderForm({
             />
           </FormField>
         )}
-        {!deployment && basis && (
+        {!deployment && (
           <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
         )}
       </FormSection>
@@ -376,18 +419,7 @@ function ProviderForm({
             : undefined
         }
       >
-        <ProviderTypeField
-          definitions={definition ? [definition] : definitions}
-          value={type}
-          readOnly
-          onValueChange={() => {}}
-          labelAction={
-            type === "e2b" && (
-              <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
-            )
-          }
-        />
-        {basis?.value.type === "docker" && (
+        {basis.value.type === "docker" && (
           <div className="flex flex-wrap items-center gap-2" role="status">
             <StatePill
               state={connectivity.data?.status ?? "unknown"}
@@ -400,30 +432,13 @@ function ProviderForm({
             )}
           </div>
         )}
-        {basis && Object.keys(configuration).length > 0 && (
+        {Object.keys(configuration).length > 0 && (
           <DisclosureSection title={t("Configuration details")}>
             <ConfigurationSummary value={configuration} schema={configSchema} />
           </DisclosureSection>
         )}
-        {!basis && (
-          <>
-            <SchemaFields
-              key={type}
-              schema={configSchema}
-              value={configuration}
-              onChange={setConfiguration}
-            />
-            <SchemaFields
-              secret
-              key={`${type}-credential`}
-              schema={credentialSchema}
-              value={credential}
-              onChange={setCredential}
-            />
-          </>
-        )}
       </FormSection>
-      {basis && !!Object.keys(schema(credentialSchema.properties)).length && (
+      {!!Object.keys(schema(credentialSchema.properties)).length && (
         <FormSection title={t("Credentials")}>
           <CredentialEditor
             configured={basis.value.credential_configured}
@@ -442,10 +457,7 @@ function ProviderForm({
           </CredentialEditor>
         </FormSection>
       )}
-      <ErrorNotice
-        error={save.error}
-        retry={basis ? () => void reload() : undefined}
-      />
+      <ErrorNotice error={save.error} retry={() => void reload()} />
       {deployment ? (
         <footer data-a13n-form-actions className={styles.formActions}>
           <Button type="button" variant="outline" onClick={close}>
@@ -456,7 +468,7 @@ function ProviderForm({
         <FormActions
           pending={save.isPending}
           onCancel={close}
-          label={t(basis ? "Save changes" : "Add provider")}
+          label={t("Save changes")}
         />
       )}
     </form>

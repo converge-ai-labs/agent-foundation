@@ -24,7 +24,6 @@ import {
   FormActions,
   FormSection,
   ProviderEnabled,
-  ProviderTypeField,
   SchemaFields,
   formSectionStyles,
   jsonObject,
@@ -37,6 +36,11 @@ import {
   AddProviderDialog,
   CredentialsPill,
   EditProviderDialog,
+  ProviderConnectFields,
+  credentialDescription,
+  credentialHint,
+  providerKeyUrls,
+  providerStyles,
 } from "../providers";
 import { memoryProviderApi, type MemoryProviderScope } from "./providers-api";
 
@@ -130,9 +134,13 @@ export function AddMemoryProvider({
       finalFocus={finalFocus}
       trigger={controlledOpen === undefined ? undefined : null}
       onOpenChange={change}
-      description={t(
-        "Connect a memory backend. Saving configuration does not test the connection.",
-      )}
+      description={t("Choose the backend that stores your agents' memories.")}
+      hint={(definition) => credentialHint(definition.credential_schema)}
+      connectDescription={(definition) =>
+        t(credentialDescription(definition.credential_schema), {
+          provider: definition.display_name,
+        })
+      }
     >
       {(definition, back) => (
         <CatalogStep backLabel={t("All providers")} onBack={back}>
@@ -193,6 +201,7 @@ function EditMemoryProvider({
       name={resource.data?.value.name}
       id={providerId}
       readOnly={readOnly}
+      description={definition?.display_name}
       loading={definitions.isPending || resource.isPending}
       error={resource.error}
     >
@@ -276,6 +285,7 @@ export function MemoryProviderForm({
   const [credential, setCredential] = useState<Record<string, unknown>>({});
   const [removeCredential, setRemoveCredential] = useState(false);
   const [enabled, setEnabled] = useState(resource?.value.enabled ?? true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [error, setError] = useState<unknown>();
   const [uncertainCreate, setUncertainCreate] = useState(false);
   const [existing, setExisting] = useState<Schema["MemoryProvider"][]>();
@@ -350,104 +360,16 @@ export function MemoryProviderForm({
       ),
   });
   const conflict = save.error instanceof ApiError && save.error.status === 412;
-  return (
-    <form
-      className={formSectionStyles.form}
-      onSubmit={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!save.isPending && !uncertainCreate) {
-          onPending?.(true);
-          save.mutate();
-        }
-      }}
-    >
-      <fieldset disabled={save.isPending} className="fieldset-reset">
-        <FormSection>
-          <FormField label={t("Name")}>
-            <Input
-              required
-              maxLength={128}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </FormField>
-          {original && (
-            <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-          )}
-        </FormSection>
-        <FormSection title={t("Connection")}>
-          <ProviderTypeField
-            definitions={definition ? [definition] : definitions}
-            value={type}
-            readOnly
-            onValueChange={() => {}}
-          />
-          {original ? (
-            <>
-              <ConfigurationSummary
-                value={original.value.configuration}
-                schema={configSchema}
-              />
-              <p className={styles.muted}>
-                {t(
-                  "Storage configuration cannot be changed. Create a new provider for a different target; existing memories are not migrated.",
-                )}
-              </p>
-            </>
-          ) : (
-            <SchemaFields
-              key={type}
-              schema={configSchema}
-              value={configuration}
-              onChange={setConfiguration}
-            />
-          )}
-          {original ? (
-            <CredentialEditor
-              configured={original.value.credential_configured}
-              removing={removeCredential}
-              onRemovingChange={(value) => {
-                setRemoveCredential(value);
-                setCredential({});
-              }}
-            >
-              {definition ? (
-                <SchemaFields
-                  secret
-                  schema={{ ...credentialSchema, required: [] }}
-                  value={credential}
-                  onChange={setCredential}
-                />
-              ) : (
-                <p className={styles.muted}>
-                  {t(
-                    "The backend definition is unavailable. Credential replacement requires its installed schema.",
-                  )}
-                </p>
-              )}
-            </CredentialEditor>
-          ) : (
-            <SchemaFields
-              secret
-              key={`${type}-credentials`}
-              schema={credentialSchema}
-              value={credential}
-              onChange={setCredential}
-            />
-          )}
-        </FormSection>
-        {original && (
-          <FormSection>
-            <p className={styles.muted}>
-              {t(
-                "Disabling a provider prevents memory access but does not delete stored records.",
-              )}
-            </p>
-          </FormSection>
-        )}
-      </fieldset>
-      {extra}
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!save.isPending && !uncertainCreate) {
+      onPending?.(true);
+      save.mutate();
+    }
+  }
+  const notices = (
+    <>
       <ErrorNotice error={error ?? (conflict ? undefined : save.error)} />
       {conflict && original && (
         <ConflictNotice
@@ -532,11 +454,101 @@ export function MemoryProviderForm({
         </ConflictNotice>
       )}
       <ErrorNotice error={reconcile.error} />
+    </>
+  );
+  if (!original)
+    return (
+      <form className={providerStyles.connectForm} onSubmit={submit}>
+        <fieldset
+          disabled={save.isPending}
+          className={providerStyles.connectFields}
+        >
+          <ProviderConnectFields
+            credentialSchema={credentialSchema}
+            configurationSchema={configSchema}
+            credential={credential}
+            onCredentialChange={setCredential}
+            configuration={configuration}
+            onConfigurationChange={setConfiguration}
+            name={name}
+            onNameChange={setName}
+            keyLink={providerKeyUrls[type]}
+            advancedOpen={advancedOpen}
+            onAdvancedOpenChange={setAdvancedOpen}
+          />
+        </fieldset>
+        {extra}
+        {notices}
+        <FormActions
+          onCancel={onCancel}
+          label={t("Add provider")}
+          pending={save.isPending}
+          disabled={uncertainCreate}
+        />
+      </form>
+    );
+  return (
+    <form className={formSectionStyles.form} onSubmit={submit}>
+      <fieldset disabled={save.isPending} className="fieldset-reset">
+        <FormSection>
+          <FormField label={t("Name")}>
+            <Input
+              required
+              maxLength={128}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </FormField>
+          <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+        </FormSection>
+        <FormSection title={t("Connection")}>
+          <ConfigurationSummary
+            value={original.value.configuration}
+            schema={configSchema}
+          />
+          <p className={styles.muted}>
+            {t(
+              "Storage configuration cannot be changed. Create a new provider for a different target; existing memories are not migrated.",
+            )}
+          </p>
+          <CredentialEditor
+            configured={original.value.credential_configured}
+            removing={removeCredential}
+            onRemovingChange={(value) => {
+              setRemoveCredential(value);
+              setCredential({});
+            }}
+          >
+            {definition ? (
+              <SchemaFields
+                secret
+                schema={{ ...credentialSchema, required: [] }}
+                value={credential}
+                onChange={setCredential}
+              />
+            ) : (
+              <p className={styles.muted}>
+                {t(
+                  "The backend definition is unavailable. Credential replacement requires its installed schema.",
+                )}
+              </p>
+            )}
+          </CredentialEditor>
+        </FormSection>
+        <FormSection>
+          <p className={styles.muted}>
+            {t(
+              "Disabling a provider prevents memory access but does not delete stored records.",
+            )}
+          </p>
+        </FormSection>
+      </fieldset>
+      {extra}
+      {notices}
       <FormActions
         onCancel={onCancel}
-        label={t(original ? "Save changes" : "Add provider")}
+        label={t("Save changes")}
         pending={save.isPending}
-        disabled={uncertainCreate}
       />
     </form>
   );

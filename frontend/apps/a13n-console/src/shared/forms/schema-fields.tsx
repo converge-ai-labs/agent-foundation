@@ -7,10 +7,11 @@ import {
   Textarea,
 } from "a13n-ui";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";
 import styles from "./forms.module.css";
+import { fieldLabel } from "./labels";
 import { jsonValue } from "./validation";
 
 /** A nested group reads as "Shell profiles" when the schema names nothing. */
@@ -85,12 +86,18 @@ export function SchemaFields({
   onChange,
   secret = false,
   descriptions = true,
+  autoFocus = false,
+  labelAction,
 }: {
   schema: Record<string, unknown>;
   value: Record<string, unknown>;
   onChange: (value: Record<string, unknown>) => void;
   secret?: boolean;
   descriptions?: boolean;
+  /** The first field is where a catalog step lands. */
+  autoFocus?: boolean;
+  /** Sits beside the first field's label, such as a link to the key page. */
+  labelAction?: ReactNode;
 }) {
   const { t } = useTranslation();
   const properties = object(schema.properties) ? schema.properties : {};
@@ -102,9 +109,15 @@ export function SchemaFields({
   }
   return (
     <div className={styles.schemaFields}>
-      {Object.entries(properties).map(([key, definition]) => {
+      {Object.entries(properties).map(([key, definition], index) => {
         const field = fieldSchema(definition, schema),
-          label = t(typeof field.title === "string" ? field.title : key),
+          // A title is prose the console writes in sentence case; a bare key is
+          // the schema's own name and stays as it is.
+          label =
+            typeof field.title === "string"
+              ? fieldLabel(t(field.title))
+              : t(key),
+          first = index === 0,
           required =
             Array.isArray(schema.required) && schema.required.includes(key);
         const description =
@@ -202,9 +215,11 @@ export function SchemaFields({
               className="min-w-0 w-full"
               label={label}
               description={description}
+              labelAction={first ? labelAction : undefined}
               key={key}
             >
               <Input
+                autoFocus={first && autoFocus}
                 required={required}
                 placeholder={
                   typeof field["x-placeholder"] === "string"
