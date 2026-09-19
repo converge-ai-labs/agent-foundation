@@ -10,8 +10,8 @@ import httpx2
 from a13n_logging import get_logger
 from anyio import move_on_after
 
+from a13n_harness.http import ProviderHttpError, bounded_response_body, retry_after_seconds
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
-from a13n_harness.providers.http import ProviderHttpError, bounded_response_body, retry_after_seconds
 from a13n_harness.providers.web.contracts import (
     WebProviderError,
 )

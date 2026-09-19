@@ -20,7 +20,7 @@ from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_work
 from a13n_service.ids import new_object_id
 from a13n_service.memory.execution import MemoryProviderAccess, open_memory_backend
 from a13n_service.memory.models import MemoryProviderRecord
-from a13n_service.memory.resources import require_document_support, require_provider
+from a13n_service.memory.resources import binds_host_files, require_document_support, require_provider
 from a13n_service.memory.service import MemoryService, failure, memory_io
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import utc_now
@@ -216,15 +216,14 @@ class BotMemoryService:
                     ErrorCategory.conflict,
                 )
             provider_access = await self._provider(session, scope)
-            if provider_access.provider_type == "filesystem" and body.visibility == "installation":
+            host_files = binds_host_files(provider_access.provider_type, self.memory.catalog)
+            if host_files and body.visibility == "installation":
                 raise failure(
                     "memory_visibility_unavailable",
                     "File-based conversation stores currently require group-only visibility.",
                     ErrorCategory.conflict,
                 )
-            if body.auto_organize and (
-                provider_access.provider_type != "filesystem" or not body.use_memory or not body.save_on_request
-            ):
+            if body.auto_organize and (not host_files or not body.use_memory or not body.save_on_request):
                 raise failure(
                     "memory_organization_unsupported",
                     "Automatic organization requires File-based memory with reading and saving enabled.",

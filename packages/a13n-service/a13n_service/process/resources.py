@@ -6,6 +6,7 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
 import httpx2
+from a13n_harness.models.transport import DEFAULT_MODEL_HTTP_CONNECT_TIMEOUT_SECONDS, DEFAULT_MODEL_HTTP_TIMEOUT_SECONDS
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.apis import MODEL_APIS
@@ -45,9 +46,13 @@ async def build_execution_resources(
     async def validate_model_request(request: httpx2.Request) -> None:
         await model_endpoint_policy.validate(str(request.url), resolve_dns=True)
 
+    # Google's SDK derives its request deadline from this client, so the timeout must be the model one.
     model_http_client = await stack.enter_async_context(
         httpx2.AsyncClient(
             follow_redirects=False,
+            timeout=httpx2.Timeout(
+                DEFAULT_MODEL_HTTP_TIMEOUT_SECONDS, connect=DEFAULT_MODEL_HTTP_CONNECT_TIMEOUT_SECONDS
+            ),
             event_hooks={"request": [validate_model_request]},
         )
     )

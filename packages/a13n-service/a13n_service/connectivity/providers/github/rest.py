@@ -5,7 +5,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx2
-from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 from pydantic import JsonValue
 
 from .api import read_github_response

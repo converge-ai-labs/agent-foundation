@@ -93,7 +93,7 @@ async def test_http_registration_runtime_and_external_only_metadata(
         assert adapter.descriptor.generation == "unprepared"
         assert adapter.operations.files is None
     finally:
-        await lifecycle.close_environment(adapter)
+        await adapter.close()
 
 
 async def test_remote_registration_requires_exact_state_without_network(environment_service):

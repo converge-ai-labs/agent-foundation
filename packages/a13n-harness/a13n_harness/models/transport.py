@@ -10,6 +10,9 @@ from pydantic_ai.retries import AsyncHTTPX2TenacityTransport, RetryConfig, wait_
 from tenacity import retry_if_exception, stop_after_attempt, wait_exponential
 
 DEFAULT_MODEL_HTTP_RETRY_STATUS_CODES = frozenset({429, 502, 503, 504})
+# Model requests stream for minutes; connection setup does not.
+DEFAULT_MODEL_HTTP_TIMEOUT_SECONDS = 600
+DEFAULT_MODEL_HTTP_CONNECT_TIMEOUT_SECONDS = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,8 +46,8 @@ DEFAULT_MODEL_HTTP_RETRY_CONFIG = ModelHttpRetryConfig()
 
 def create_model_http_client(
     *,
-    timeout: int = 600,
-    connect: int = 5,
+    timeout: int = DEFAULT_MODEL_HTTP_TIMEOUT_SECONDS,
+    connect: int = DEFAULT_MODEL_HTTP_CONNECT_TIMEOUT_SECONDS,
     transport: httpx2.AsyncBaseTransport | None = None,
     retry: ModelHttpRetryConfig | None = DEFAULT_MODEL_HTTP_RETRY_CONFIG,
 ) -> httpx2.AsyncClient:

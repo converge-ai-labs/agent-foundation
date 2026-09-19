@@ -5,8 +5,8 @@ from datetime import timedelta
 
 import httpx2
 import pytest
+from a13n_harness.http import ProviderHttpError
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.http import ProviderHttpError
 from a13n_service.bots.connectivity.models import BotReplyRecord
 from a13n_service.bots.connectivity.replies import BotReplyObserver
 from a13n_service.bots.connectivity.reply_queries import list_bot_replies

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import httpx2
-from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 from pydantic import ValidationError
 
 from a13n_service.connectivity.domain import JsonObject

@@ -1,4 +1,4 @@
-"""Bounded response mechanics shared by provider transports and hosts."""
+"""Bounded HTTP response mechanics shared by Harness transports and their hosts."""
 
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime

@@ -78,6 +78,13 @@ def supports_document_entries(definition: MemoryProviderDefinition) -> bool:
     return definition.supports_documents and not definition.supports_records
 
 
+def binds_host_files(provider_type: str, catalog: ProviderCatalog[MemoryProviderDefinition]) -> bool:
+    """Whether documents on this Provider type are Host-owned files rather than vendor records."""
+
+    definition = catalog.get(provider_type)
+    return definition is not None and supports_document_entries(definition)
+
+
 def require_document_support(provider_type: str, catalog: ProviderCatalog[MemoryProviderDefinition] | None) -> None:
     definition = catalog.get(provider_type) if catalog is not None else None
     if definition is None:

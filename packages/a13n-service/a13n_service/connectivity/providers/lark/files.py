@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from urllib.parse import quote
 
 import httpx2
-from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.file_content import FileContent, media_type, read_file, safe_filename

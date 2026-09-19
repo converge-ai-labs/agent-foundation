@@ -67,9 +67,7 @@ async def _exercise_image(
     engine: DockerSDKEngine, configuration: DockerEnvironmentConfiguration, image_id: str
 ) -> tuple[str, ...]:
     test_config = configuration.model_copy(update={"image": image_id, "mounts": (), "init_script": None})
-    environment = DockerEnvironment(
-        test_config, f"envtest_{uuid4().hex}", None, DockerProviderRuntime(engine, owns_engine=False)
-    )
+    environment = DockerEnvironment(test_config, f"envtest_{uuid4().hex}", None, DockerProviderRuntime(engine))
     try:
         try:
             await environment.prepare()
@@ -135,7 +133,7 @@ async def _exercise_image(
                     test_config,
                     environment.environment_id,
                     environment.dump_state(),
-                    DockerProviderRuntime(engine, owns_engine=False),
+                    DockerProviderRuntime(engine),
                 )
                 await cleanup_environment.destroy()
 

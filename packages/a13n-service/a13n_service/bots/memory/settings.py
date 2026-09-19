@@ -11,7 +11,7 @@ from a13n_service.database.metadata import Base
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_workspace
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.ids import new_object_id
-from a13n_service.memory.resources import require_document_support, require_provider
+from a13n_service.memory.resources import binds_host_files, require_document_support, require_provider
 from a13n_service.memory.service import MemoryService, failure
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import utc_now
@@ -115,7 +115,9 @@ async def replace_settings(
             )
             require_document_support(provider.type, service.catalog)
             if selected.auto_organize and (
-                provider.type != "filesystem" or not selected.use_memory or not selected.save_on_request
+                not binds_host_files(provider.type, service.catalog)
+                or not selected.use_memory
+                or not selected.save_on_request
             ):
                 raise failure(
                     "memory_organization_unsupported",

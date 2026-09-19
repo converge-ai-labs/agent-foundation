@@ -6,7 +6,7 @@ from typing import Literal
 from urllib.parse import quote, urlsplit
 
 import httpx2
-from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 from pydantic import JsonValue, ValidationError
 
 from a13n_service.connectivity.domain import JsonObject

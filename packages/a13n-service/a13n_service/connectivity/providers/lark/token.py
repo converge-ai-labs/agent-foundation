@@ -7,7 +7,7 @@ from time import monotonic
 
 import anyio
 import httpx2
-from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 
 from .api import read_lark_response
 

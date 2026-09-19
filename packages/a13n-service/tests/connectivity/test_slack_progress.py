@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 
 import httpx2
 import pytest
-from a13n_harness.providers.http import ProviderHttpError
+from a13n_harness.http import ProviderHttpError
 from a13n_service.bots.progress.actions import ProgressActions
 from a13n_service.bots.progress.models import ProgressRecord
 from a13n_service.connectivity.accounts.models import AccountRecord

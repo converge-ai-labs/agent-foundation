@@ -11,7 +11,7 @@ from time import monotonic
 from typing import Annotated, Literal
 
 import httpx2
-from a13n_harness.providers.http import ProviderHttpError, bounded_response_body, retry_after_seconds
+from a13n_harness.http import ProviderHttpError, bounded_response_body, retry_after_seconds
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, ValidationError
 
 from a13n_service.connectivity.adapters import JsonObject

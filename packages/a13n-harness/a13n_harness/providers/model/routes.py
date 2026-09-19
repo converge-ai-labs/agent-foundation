@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 import httpx2
 from anyio import move_on_after
 
+from ...models.transport import create_model_http_client
 from ..endpoint_policy import EndpointPolicy
 from .builtins import BUILT_IN_MODEL_PROVIDERS
 from .credentials import ApiKeyCredential
@@ -57,8 +58,9 @@ _OPENAI_CLIENT_ROUTES = frozenset({"together", "fireworks"})
 async def build_api_key_model(route: str, credential: ApiKeyCredential, *, base_url: str | None = None) -> Model:
     """Build a native route with explicit credentials and host-selected endpoint access.
 
-    The returned native Model owns its HTTP client. A custom URL is deliberately
-    allowed to resolve to private addresses for local embedding applications.
+    The returned native Model owns its HTTP client, built with the shared model
+    transport timeouts and retries. A custom URL is deliberately allowed to
+    resolve to private addresses for local embedding applications.
     Service uses definitions with its deployment policy instead.
     """
     provider_name, separator, model_name = route.partition(":")
@@ -77,7 +79,7 @@ async def _build_declared_route(
     definition = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == route.provider_type)
     hostname = urlsplit(base_url).hostname if base_url else None
     policy = EndpointPolicy.from_operator_allowlist(private_domains=[hostname] if hostname else [])
-    client = httpx2.AsyncClient()
+    client = create_model_http_client()
     try:
         model = await definition.build(
             model_name,
@@ -90,7 +92,7 @@ async def _build_declared_route(
         # Native Provider context management also supports later re-entry.
         assert model.provider is not None
         model.provider._own_http_client = client
-        model.provider._http_client_factory = httpx2.AsyncClient
+        model.provider._http_client_factory = create_model_http_client
         return route.post_construct(model_name, model) if route.post_construct is not None else model
     except BaseException:
         with move_on_after(5, shield=True):
@@ -115,14 +117,14 @@ async def build_inferred_route(route: str, credential: ApiKeyCredential, *, base
         if base_url is not None and requested in _OPENAI_CLIENT_ROUTES:
             from openai import AsyncOpenAI
 
-            client = owned_client = httpx2.AsyncClient()
+            client = owned_client = create_model_http_client()
             native = constructor(
                 openai_client=AsyncOpenAI(
                     api_key=credential.api_key.get_secret_value(), base_url=base_url, http_client=client
                 )
             )
             native._own_http_client = client
-            native._http_client_factory = httpx2.AsyncClient
+            native._http_client_factory = create_model_http_client
             return native
         options = {"api_key": credential.api_key.get_secret_value()}
         if base_url is not None:

@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 
 import httpx2
+from a13n_harness.http import ProviderHttpError
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.http import ProviderHttpError
 
 from a13n_service.connectivity.http import cookie_free_bounded_request
 

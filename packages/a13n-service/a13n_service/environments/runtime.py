@@ -142,7 +142,7 @@ class RunEnvironment(Environment):
             if not reusable:
                 try:
                     with fail_after(10, shield=True):
-                        await self._coordinator.close_environment(delegate)
+                        await delegate.close()
                 except Exception:
                     logger.exception("Discarded Environment connection cleanup failed")
                 delegate = None
@@ -155,7 +155,7 @@ class RunEnvironment(Environment):
         except BaseException as error:
             try:
                 with fail_after(10, shield=True):
-                    await self._coordinator.close_environment(delegate)
+                    await delegate.close()
             except BaseException as cleanup_error:
                 error.add_note(f"Environment cleanup also failed: {cleanup_error!r}")
             raise
@@ -182,7 +182,7 @@ class RunEnvironment(Environment):
 
     async def _close(self) -> None:
         if self._delegate is not None:
-            await self._coordinator.close_environment(self._delegate)
+            await self._delegate.close()
 
     async def _destroy(self) -> None:
         raise RuntimeError("Run objects do not own target deletion authority")

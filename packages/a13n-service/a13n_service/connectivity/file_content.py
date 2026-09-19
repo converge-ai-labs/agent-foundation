@@ -4,7 +4,7 @@ import mimetypes
 from dataclasses import dataclass
 
 import httpx2
-from a13n_harness.providers.http import ProviderHttpError, bounded_response_body
+from a13n_harness.http import ProviderHttpError, bounded_response_body
 
 from a13n_service.assets.domain import normalize_asset_filename
 

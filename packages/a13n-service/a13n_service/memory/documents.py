@@ -19,7 +19,7 @@ from a13n_service.storage import short_session
 
 from .domain import MemoryScope
 from .models import MemoryStorageRecord
-from .resources import require_provider, supports_document_entries
+from .resources import binds_host_files, require_provider
 from .scopes import authorize_memory_subject
 from .service import MemoryService, failure, memory_io
 from .sources import authorize_sources
@@ -80,8 +80,8 @@ async def authorize_storage(
     if (subject.value, organization_id) != (storage.subject, storage.organization_id):
         raise AuthorizationError("memory_scope_unavailable", concealed=True)
     # An inline backend records its Provider type as the identity; a saved one records its ID.
-    definition = memory.catalog.get(storage.provider_identity)
-    if definition is None:
+    provider_type = storage.provider_identity
+    if provider_type not in memory.catalog:
         provider = await require_provider(
             session,
             organization_id=organization_id,
@@ -90,8 +90,8 @@ async def authorize_storage(
             eligible=True,
             catalog=memory.catalog,
         )
-        definition = memory.catalog.get(provider.type)
-    if definition is None or not supports_document_entries(definition):
+        provider_type = provider.type
+    if not binds_host_files(provider_type, memory.catalog):
         raise AuthorizationError("memory_scope_unavailable", concealed=True)
 
 

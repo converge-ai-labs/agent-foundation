@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import httpx2
-from a13n_harness.providers.http import ProviderHttpError, bounded_response_body, retry_after_seconds
+from a13n_harness.http import ProviderHttpError, bounded_response_body, retry_after_seconds
 from pydantic import TypeAdapter, ValidationError
 
 from a13n_service.connectivity.domain import JsonObject

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.errors import EnvironmentProviderError
 from a13n_harness.providers.environment.management import Environment
 from a13n_harness.providers.environment.models import (
@@ -10,6 +13,7 @@ from a13n_harness.providers.environment.models import (
     EnvironmentState,
 )
 from a13n_harness.providers.environment.operations import EnvironmentOperations
+from pydantic import BaseModel
 
 pytestmark = pytest.mark.anyio
 
@@ -191,3 +195,78 @@ async def test_undeclared_lifecycle_operations_answer_with_one_typed_error() -> 
             await operation
         assert failure.value.code == "provider_operation_unsupported"
         assert failure.value.safe_projection().category.value == "unsupported"
+
+
+class _Inputs(BaseModel):
+    pass
+
+
+class _Runtime:
+    def __init__(self) -> None:
+        self.closed = 0
+
+    async def close(self) -> None:
+        self.closed += 1
+
+
+def _definition(created: list[_Runtime]) -> EnvironmentProviderDefinition:
+    async def runtime_factory(*, configuration, credential, operation_id, allow_create):  # type: ignore[no-untyped-def]
+        del configuration, credential, operation_id, allow_create
+        created.append(_Runtime())
+        return created[-1]
+
+    def construct(*, configuration, environment_id, state, runtime):  # type: ignore[no-untyped-def]
+        del configuration, environment_id, runtime
+        return _Environment(state)
+
+    return EnvironmentProviderDefinition(
+        type="test_provider",
+        display_name="Test",
+        configuration_model=_Inputs,
+        environment_model=_Inputs,
+        construct=construct,
+        describe_environment=lambda configuration: _Environment().descriptor,
+        runtime_factory=runtime_factory,
+    )
+
+
+async def test_create_releases_the_runtime_it_acquired_but_never_a_borrowed_one() -> None:
+    created: list[_Runtime] = []
+    definition = _definition(created)
+
+    owned = await definition.create({})
+    async with owned:
+        await owned.prepare()
+        assert created[0].closed == 0
+    assert created[0].closed == 1
+    await owned.close()
+    assert created[0].closed == 1
+
+    borrowed_runtime = _Runtime()
+    borrowed = await definition.create({}, runtime=borrowed_runtime)
+    await borrowed.close()
+    assert borrowed_runtime.closed == 0
+    assert len(created) == 1
+
+    destroyed = await definition.create({})
+    await destroyed.destroy()
+    assert created[1].closed == 1
+
+    failing_close = await definition.create({})
+    assert isinstance(failing_close, _Environment)
+    failing_close.close_error = RuntimeError("close failed")
+    with pytest.raises(RuntimeError, match="close failed"):
+        await failing_close.close()
+    assert created[2].closed == 1
+
+
+async def test_create_releases_the_acquired_runtime_when_construction_fails() -> None:
+    created: list[_Runtime] = []
+
+    def construct(**kwargs: object) -> Environment:
+        raise TypeError("construction failed")
+
+    definition = replace(_definition(created), construct=construct)
+    with pytest.raises(TypeError, match="construction failed"):
+        await definition.create({})
+    assert created[0].closed == 1

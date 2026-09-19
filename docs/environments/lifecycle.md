@@ -23,11 +23,11 @@ A normal Run follows this sequence:
 1. The Host resolves an allowlisted Provider type from its catalog.
 2. The definition validates the account configuration, the credential, and the credential-free target recipe.
 3. The Host supplies the latest authoritative `EnvironmentState`.
-4. The definition acquires its runtime collaborator, then constructs one fresh adapter; everything before the runtime factory is pure.
+4. The definition acquires its runtime collaborator, then constructs one fresh adapter; everything before the runtime factory is pure. A runtime the Host passes in is borrowed; one the definition acquires belongs to the adapter.
 5. The Host prepares eagerly, or lets the first operation prepare lazily. Harness binds the local scope, uses operations, exports cached state, and closes it.
 6. The Host persists the latest state and applies retention policy separately.
 
-`close()` releases the Session, temporary output, clients, and admission owned by that adapter. It is idempotent and non-destructive. Shared Envd Device runtimes belong to the Host and are closed separately at Host shutdown. Harness never calls `destroy()`.
+`close()` releases the Session, temporary output, clients, and admission owned by that adapter, including a runtime `create()` acquired for it. It is idempotent and non-destructive. Shared Envd Device runtimes the Host passes in belong to the Host and are closed separately at Host shutdown. Harness never calls `destroy()`.
 
 When retention policy selects removal, the Host constructs a different fresh adapter from the exact current state and calls `destroy()` explicitly. Successful destruction clears that adapter's cached state. A failed or unknown outcome preserves the last validated state for inspection or retry.
 

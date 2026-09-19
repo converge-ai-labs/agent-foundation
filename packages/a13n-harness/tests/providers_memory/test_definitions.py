@@ -23,3 +23,14 @@ def test_mem0_configuration_and_credential_are_independent_pure_models():
         Mem0Credential(api_key="   ")
     with pytest.raises(ValidationError):
         config.base_url = "http://other"
+
+
+def test_document_only_definitions_declare_the_host_file_store_inputs():
+    from dataclasses import replace
+
+    from a13n_harness.providers.memory.builtins import FILESYSTEM
+
+    with pytest.raises(ValueError, match="FilesystemMemoryConfiguration"):
+        replace(FILESYSTEM, configuration_model=Mem0OSSConfiguration)
+    with pytest.raises(ValueError, match="records or documents"):
+        replace(FILESYSTEM, supports_documents=False)

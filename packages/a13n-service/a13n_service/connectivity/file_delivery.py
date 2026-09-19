@@ -5,7 +5,7 @@ from typing import Literal
 
 import anyio
 import httpx2
-from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 from pydantic import BaseModel, ConfigDict
 
 from a13n_service.assets.catalog import AssetCatalog

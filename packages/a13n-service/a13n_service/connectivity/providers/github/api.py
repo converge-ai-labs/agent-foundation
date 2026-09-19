@@ -6,7 +6,7 @@ import json
 import time
 
 import httpx2
-from a13n_harness.providers.http import ProviderHttpError, bounded_response_body, retry_after_seconds
+from a13n_harness.http import ProviderHttpError, bounded_response_body, retry_after_seconds
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 _JSON_VALUE = TypeAdapter(JsonValue)

@@ -8,8 +8,8 @@ from typing import Any, Literal, cast
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx2
+from a13n_harness.http import ProviderHttpError
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
-from a13n_harness.providers.http import ProviderHttpError
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from authlib.oauth2 import OAuth2Client

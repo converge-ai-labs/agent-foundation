@@ -344,7 +344,6 @@ async def test_primary_and_mount_same_device_have_independent_sessions(
     finally:
         await primary.close()
         await sibling.close()
-    assert not lifecycle._http_runtimes
 
 
 async def test_invalid_directory_fails_only_execution_and_cleans_http_owner(
@@ -369,7 +368,6 @@ async def test_invalid_directory_fails_only_execution_and_cleans_http_owner(
 
     with pytest.raises(EnvironmentProviderError):
         await prepare_run_environment(lifecycle, context)
-    assert not lifecycle._http_runtimes
     assert (
         await service.device_info(actor=hook_actor(), environment_id=environment.id)
     ).default_working_directory == str(root)

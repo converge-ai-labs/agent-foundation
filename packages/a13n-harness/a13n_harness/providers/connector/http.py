@@ -11,7 +11,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from a13n_harness.providers.connector.contracts import JsonObject
 
-from ..http import (
+from ...http import (
     EndpointValidator,
     ProviderHttpError,
     bounded_response_body,

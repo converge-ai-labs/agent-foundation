@@ -5,7 +5,7 @@ from email.utils import format_datetime
 
 import httpx2
 import pytest
-from a13n_harness.providers.http import ProviderHttpError
+from a13n_harness.http import ProviderHttpError
 from a13n_service.bots.connectivity.collection import list_bots
 from a13n_service.bots.connectivity.domain import BotCheckRequest
 from a13n_service.bots.connectivity.service import BotService

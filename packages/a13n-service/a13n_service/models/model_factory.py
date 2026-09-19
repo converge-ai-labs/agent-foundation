@@ -6,9 +6,9 @@ from typing import Any
 
 import httpx2
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.http import EndpointValidator
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
-from a13n_harness.providers.http import EndpointValidator
 from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.model.types import ModelConnection
 from pydantic_ai.models import Model as PydanticModel

@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Literal
 
 import anyio
-from a13n_harness.providers.http import ProviderHttpError
+from a13n_harness.http import ProviderHttpError
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker

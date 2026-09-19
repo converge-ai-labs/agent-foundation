@@ -1,6 +1,6 @@
 """Feishu/Lark inspection response validation."""
 
-from a13n_harness.providers.http import ProviderHttpError
+from a13n_harness.http import ProviderHttpError
 from pydantic import ValidationError
 
 from a13n_service.connectivity.domain import JsonObject

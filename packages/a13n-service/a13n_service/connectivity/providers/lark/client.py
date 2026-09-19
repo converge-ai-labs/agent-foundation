@@ -8,7 +8,7 @@ from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid5
 
 import httpx2
-from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from a13n_service.connectivity.domain import JsonObject

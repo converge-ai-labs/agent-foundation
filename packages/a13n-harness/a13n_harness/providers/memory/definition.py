@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from ..definition import ProviderDefinition
 from .contracts import MemoryBackend, MemoryDocumentBackend
+from .filesystem.configuration import FilesystemMemoryConfiguration
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -28,8 +29,13 @@ class MemoryProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition[C,
         return self.open_backend is not None
 
     def validate_domain(self) -> None:
-        if not self.supports_records and not self.supports_documents:
+        if self.supports_records:
+            return
+        if not self.supports_documents:
             raise ValueError("Memory Provider must support records or documents")
+        # Hosts bind document-only storage as their own files, so its inputs are the file store's.
+        if self.configuration_model is not FilesystemMemoryConfiguration:
+            raise ValueError("Document-only Memory Providers must use FilesystemMemoryConfiguration")
 
     @asynccontextmanager
     async def open(self, configuration: object, credential: object = None) -> AsyncIterator[MemoryBackend]:

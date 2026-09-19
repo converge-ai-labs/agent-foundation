@@ -10,9 +10,9 @@ import httpx2
 from anyio import fail_after, move_on_after, to_thread
 from pydantic import BaseModel, TypeAdapter
 
+from ...http import EndpointValidator, ProviderHttpError, bounded_response_body
 from ..definition import ProviderDefinition
 from ..endpoint_policy import EndpointPolicy
-from ..http import EndpointValidator, ProviderHttpError, bounded_response_body
 from .apis import MODEL_APIS
 from .credentials import ApiKeyCredential
 from .headers import ExtraHeaders, validate_header_names

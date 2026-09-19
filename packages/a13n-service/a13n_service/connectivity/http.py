@@ -7,7 +7,7 @@ from http.cookiejar import Cookie, CookieJar, DefaultCookiePolicy
 from typing import Any
 
 import httpx2
-from a13n_harness.providers.http import bounded_response_body
+from a13n_harness.http import bounded_response_body
 
 
 @dataclass(frozen=True, slots=True)

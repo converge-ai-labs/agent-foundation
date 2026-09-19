@@ -7,7 +7,7 @@ from urllib.parse import parse_qs
 
 import httpx2
 import pytest
-from a13n_harness.providers.http import ProviderHttpError
+from a13n_harness.http import ProviderHttpError
 from a13n_service.assets.catalog import AssetCatalog, PreparedAssetContent
 from a13n_service.assets.domain import Asset, RunOutputAssetSource, UploadedAssetSource
 from a13n_service.assets.models import AssetRecord

@@ -632,7 +632,7 @@ async def test_answer_waits_for_progress_lease_without_losing_content(replying):
 
 @pytest.mark.parametrize("failure", ["rejected", "unknown"])
 async def test_failed_card_reply_has_honest_receipt_and_never_falls_back_to_text(replying, failure):
-    from a13n_harness.providers.http import ProviderHttpError
+    from a13n_harness.http import ProviderHttpError
     from a13n_service.bots.connectivity.models import BotReplyRecord
 
     task = replying
@@ -669,7 +669,7 @@ async def test_failed_card_reply_has_honest_receipt_and_never_falls_back_to_text
 
 
 async def test_oversized_reply_is_rejected_before_persistence_or_network(replying):
-    from a13n_harness.providers.http import ProviderHttpError
+    from a13n_harness.http import ProviderHttpError
 
     with pytest.raises(ProviderHttpError, match="invalid_arguments"):
         await replying.reply("x" * 30_000)
@@ -764,7 +764,7 @@ async def test_multiple_concurrent_replies_append_instead_of_overwriting(replyin
 
 
 async def test_conflicting_placement_is_rejected_without_sending(replying):
-    from a13n_harness.providers.http import ProviderHttpError
+    from a13n_harness.http import ProviderHttpError
     from a13n_service.bots.progress.replies import CardReplies
     from a13n_service.connectivity.providers.lark.actions import LarkAutoReplyArguments, LarkTextContent
 

@@ -248,7 +248,7 @@ finally:
     await environment.close()
 ```
 
-`create()` validates the account configuration, enforces the declared credential rule, validates the recipe, and only then calls the Provider's runtime factory. Everything before that factory is pure.
+`create()` validates the account configuration, enforces the declared credential rule, validates the recipe, and only then calls the Provider's runtime factory. Everything before that factory is pure. A runtime you pass in stays yours to close; one `create()` acquires closes with the adapter.
 
 ### Cloud validation
 

@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from types import TracebackType
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
 from a13n_logging import get_logger
@@ -23,6 +23,13 @@ from .models import (
 from .operations import EnvironmentOperations
 
 
+@runtime_checkable
+class ClosableRuntime(Protocol):
+    """A runtime collaborator holding resources that outlive one request: a client, a daemon, a Device."""
+
+    async def close(self) -> None: ...
+
+
 class Environment(ABC):
     """Fresh single-use process-local adapter for one provider target."""
 
@@ -36,6 +43,22 @@ class Environment(ABC):
         self._observer: Callable[[str, str, BaseException | None], None] | None = None
         self._prepare_lock = asyncio.Lock()
         self._mount_id = "mount-" + uuid4().hex
+        self._owned_runtime: ClosableRuntime | None = None
+
+    def adopt_runtime(self, runtime: ClosableRuntime) -> None:
+        """Release `runtime` when this adapter closes or is destroyed.
+
+        A runtime the Host passes to `create()` is borrowed and outlives the adapter;
+        `create()` adopts the one it acquired from `runtime_factory` itself.
+        """
+        if self._owned_runtime is not None:
+            raise RuntimeError("Environment already owns a runtime")
+        self._owned_runtime = runtime
+
+    async def _release_runtime(self) -> None:
+        runtime, self._owned_runtime = self._owned_runtime, None
+        if runtime is not None:
+            await runtime.close()
 
     @property
     @abstractmethod
@@ -224,6 +247,7 @@ class Environment(ABC):
                 self._observe("closed")
             finally:
                 self._lifecycle = "closed"
+                await self._release_runtime()
 
     async def destroy(self) -> None:
         if self._lifecycle != "constructed":
@@ -234,6 +258,8 @@ class Environment(ABC):
         except BaseException:
             self._lifecycle = "failed"
             raise
+        finally:
+            await self._release_runtime()
         self._known_state = None
         self._lifecycle = "destroyed"
 

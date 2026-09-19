@@ -11,7 +11,7 @@ from pydantic import BaseModel, JsonValue
 
 from ..definition import ProviderDefinition
 from .errors import EnvironmentProviderErrorCategory, provider_error
-from .management import Environment
+from .management import ClosableRuntime, Environment
 from .models import EnvironmentDescriptor, EnvironmentState
 
 
@@ -88,7 +88,11 @@ class EnvironmentProviderDefinition[C: BaseModel, K: BaseModel, E: BaseModel, R]
         allow_create: bool = True,
         runtime: R | None = None,
     ) -> Environment:
-        """Construct a single-use target; preparation and remote lifecycle remain explicit."""
+        """Construct a single-use target; preparation and remote lifecycle remain explicit.
+
+        A `runtime` passed in is borrowed and outlives the adapter. Without one, the
+        runtime the factory acquires belongs to the adapter and closes with it.
+        """
         if allow_create and not self.supports_managed:
             raise provider_error(self.type, "provider_external_only", EnvironmentProviderErrorCategory.UNSUPPORTED)
         connection = self.configuration_model.model_validate({} if configuration is None else configuration)
@@ -100,11 +104,20 @@ class EnvironmentProviderDefinition[C: BaseModel, K: BaseModel, E: BaseModel, R]
             ) from error
         desired = self.validate_environment(environment)
         identity = environment_id or "env-" + uuid4().hex
-        if runtime is None and self.runtime_factory is not None:
-            runtime = await self.runtime_factory(
-                configuration=connection,
-                credential=secret,
-                operation_id=operation_id or "op-" + uuid4().hex,
-                allow_create=allow_create,
-            )
-        return self.construct(configuration=desired, environment_id=identity, state=state, runtime=runtime)
+        if runtime is not None or self.runtime_factory is None:
+            return self.construct(configuration=desired, environment_id=identity, state=state, runtime=runtime)
+        acquired = await self.runtime_factory(
+            configuration=connection,
+            credential=secret,
+            operation_id=operation_id or "op-" + uuid4().hex,
+            allow_create=allow_create,
+        )
+        try:
+            environment = self.construct(configuration=desired, environment_id=identity, state=state, runtime=acquired)
+        except BaseException:
+            if isinstance(acquired, ClosableRuntime):
+                await acquired.close()
+            raise
+        if isinstance(acquired, ClosableRuntime):
+            environment.adopt_runtime(acquired)
+        return environment

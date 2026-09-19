@@ -28,4 +28,6 @@ class DockerSDKEngine:
 class DockerProviderRuntime:
     engine: DockerSDKEngine
     managed: bool = True
-    owns_engine: bool = False
+
+    async def close(self) -> None:
+        await self.engine.close()

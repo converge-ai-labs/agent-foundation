@@ -32,7 +32,7 @@ from a13n_service.temporal import utc_now
 
 from .domain import InlineMemoryBackend, MemoryEntrySelection
 from .models import MemoryStorageRecord, RunMemoryStorageRecord
-from .resources import require_provider, supports_document_entries
+from .resources import binds_host_files, require_provider
 from .scopes import memory_subject
 from .service import MemoryService
 from .sources import authorize_sources
@@ -167,14 +167,9 @@ async def filesystem_store(
             )
             declared = provider.configuration
             provider_type = provider.type
-    definition = service.catalog.get(provider_type)
-    if definition is None or not supports_document_entries(definition):
+    if not binds_host_files(provider_type, service.catalog):
         raise MemoryDocumentError("memory_documents_unsupported")
-    try:
-        configuration = FilesystemMemoryConfiguration.model_validate(declared)
-    except ValueError as error:
-        # A document Provider configures Host-owned file storage; anything else cannot bind one.
-        raise MemoryDocumentError("memory_documents_unsupported") from error
+    configuration = FilesystemMemoryConfiguration.model_validate(declared)
     return await bind_filesystem_store(
         context,
         service,

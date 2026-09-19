@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from email.utils import format_datetime, parsedate_to_datetime
 from urllib.parse import urlsplit
 
-from a13n_harness.providers.http import ProviderHttpError
+from a13n_harness.http import ProviderHttpError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from a13n_service.connectivity.domain import JsonObject

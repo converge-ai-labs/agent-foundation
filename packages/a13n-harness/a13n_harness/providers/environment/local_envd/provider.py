@@ -94,7 +94,7 @@ LOCAL_ENVD = EnvironmentProviderDefinition(
 
 
 class LocalEnvdEnvironment(Environment):
-    """One fixed-cwd Session on the Host-owned Device; it never owns the daemon."""
+    """One fixed-cwd Session on a shared Device; a borrowed daemon runtime outlives it."""
 
     def __init__(
         self,

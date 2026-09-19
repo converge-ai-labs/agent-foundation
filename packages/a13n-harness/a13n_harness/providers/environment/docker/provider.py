@@ -281,12 +281,8 @@ class DockerEnvironment(Environment):
         finally:
             if self.commands is not None:
                 self.commands.closed = True
-            try:
-                if self.retention is not None:
-                    await self.retention.close()
-            finally:
-                if self.runtime.owns_engine:
-                    await self.runtime.engine.close()
+            if self.retention is not None:
+                await self.retention.close()
 
     async def reconcile(self) -> Literal["running", "stopped", "absent"]:
         with engine_errors(mutation=False):
@@ -340,7 +336,7 @@ async def _release_engine(acquisition: asyncio.Task[DockerSDKEngine]) -> None:
 async def _runtime(
     *, configuration: BaseModel, credential: BaseModel | None, operation_id: str, allow_create: bool
 ) -> DockerProviderRuntime:
-    """Own the acquired engine: a cancelled caller never leaks a live Docker client."""
+    """Acquire the engine; a cancelled caller never leaks a live Docker client."""
     del credential, operation_id
     if not isinstance(configuration, DockerConnectionConfiguration):
         raise TypeError("Docker requires DockerConnectionConfiguration")
@@ -350,7 +346,7 @@ async def _runtime(
     except asyncio.CancelledError:
         await _release_engine(acquisition)
         raise
-    return DockerProviderRuntime(engine, managed=allow_create, owns_engine=True)
+    return DockerProviderRuntime(engine, managed=allow_create)
 
 
 def _describe(configuration: DockerEnvironmentConfiguration) -> EnvironmentDescriptor:

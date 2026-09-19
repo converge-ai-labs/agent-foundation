@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Protocol
 
 import httpx2
+from a13n_harness.http import EndpointValidator
 from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.http import EndpointValidator
 from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.model.types import ModelConnection
 

@@ -17,6 +17,8 @@ async def test_google_routes_preserve_developer_and_cloud_transports(provider):
     async with model:
         assert isinstance(model, GoogleModel)
         assert model.client.vertexai is (provider != "google")
+        # The SDK deadline follows the shared model transport, not httpx's five-second default.
+        assert model.client._api_client.get_read_only_http_options()["timeout"] == 600_000
 
 
 def test_credentials_reject_blank_keys_and_invalid_service_account_pem():
