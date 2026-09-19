@@ -19,6 +19,9 @@ impl Fixture {
         let root =
             std::env::temp_dir().join(format!("envd-connect-{:016x}", u64::from_le_bytes(random)));
         fs::create_dir_all(&root).unwrap();
+        // macOS temp paths may use /var while the shell reports /private/var.
+        #[cfg(unix)]
+        let root = fs::canonicalize(root).unwrap();
         #[cfg(unix)]
         {
             fs::create_dir(root.join("bin")).unwrap();
