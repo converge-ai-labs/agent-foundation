@@ -57,6 +57,9 @@ def runtime(tmp_path, *, discovery=True):
 
 
 def environment(owner, directory):
+    if isinstance(directory, Path):
+        value = directory.as_posix()
+        directory = "/UNC/" + value[2:] if value.startswith("//") else "/" + value if directory.drive else value
     return LocalEnvdEnvironment(
         LocalEnvdProviderConfiguration(working_directory=directory), owner, environment_id="local-test"
     )
@@ -105,8 +108,8 @@ def scopes(monkeypatch):
 
 async def test_local_adapters_share_device_but_own_distinct_scopes(tmp_path, owners, scopes):
     owner = runtime(tmp_path)
-    first = environment(owner, tmp_path.as_posix())
-    second = environment(owner, tmp_path.as_posix())
+    first = environment(owner, tmp_path)
+    second = environment(owner, tmp_path)
     assert owners == []
     await first.enter(thread_id="t", run_id="r", agent_instance_id="a", mount_id="m")
     assert owners == []
@@ -131,7 +134,7 @@ async def test_backing_identity_tracks_filesystem_and_launch_not_sessions(tmp_pa
 
     async def observe(*, discovery=True):
         async with runtime(tmp_path, discovery=discovery) as owner:
-            adapter = environment(owner, root.as_posix())
+            adapter = environment(owner, root)
             assert adapter.descriptor.backing_identity is None
             try:
                 await adapter.prepare()
@@ -179,7 +182,7 @@ async def test_local_session_open_cancellation_preserves_shared_device(tmp_path,
 
     monkeypatch.setattr(provider_module, "open_eip_environment", pending)
     async with runtime(tmp_path) as owner:
-        adapter = environment(owner, tmp_path.as_posix())
+        adapter = environment(owner, tmp_path)
         task = asyncio.create_task(adapter.prepare())
         await started.wait()
         task.cancel()
@@ -217,7 +220,7 @@ async def test_local_lifecycle_never_destroys_host_files(tmp_path):
     marker = tmp_path / "host-owned.txt"
     marker.write_text("preserve")
     async with runtime(tmp_path) as owner:
-        adapter = environment(owner, tmp_path.as_posix())
+        adapter = environment(owner, tmp_path)
         for operation in (adapter.stop, adapter.destroy):
             with pytest.raises(EnvironmentProviderError) as failure:
                 await operation()

@@ -1774,16 +1774,13 @@ mod tests {
         config::Config,
         eip::{
             DataFrame, DataFrameKind, DataResetStatus, EIPCallContext, EIPPath, FileByteRange,
-            FileReaderOpenParams,
+            FileReaderOpenParams, FileWriteMode, FileWriterOpenParams,
         },
         filesystem::DeviceFilesystem,
         operation::random_selector,
     };
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    use crate::{
-        eip::{FileWriteMode, FileWriterCommitParams, FileWriterOpenParams},
-        operation::OperationLedger,
-    };
+    use crate::{eip::FileWriterCommitParams, operation::OperationLedger};
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     use super::{ContentDigest, FileWriterAbortStatus, TransferRecord, WriterPhase};
