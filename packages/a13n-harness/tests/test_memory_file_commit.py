@@ -36,7 +36,6 @@ async def stores(tmp_path, request):
 
                 files = LocalFileOperator(
                     root=workspace,
-                    read_only=False,
                     policy=_DirectLocalFilePolicy(max_value_bytes=1024 * 1024),
                     mount_id="memory",
                     generation="one",

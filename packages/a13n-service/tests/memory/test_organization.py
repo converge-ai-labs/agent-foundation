@@ -67,7 +67,6 @@ async def test_completed_work_is_admitted_once_and_rechecks_organization_policy(
     subject = memory_subject(ORGANIZATION_ID, WORKSPACE_ID, "a13n.filesystem", MemoryScope.THREAD, run.thread_id).value
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=1024 * 1024),
         mount_id="test",
         generation="one",

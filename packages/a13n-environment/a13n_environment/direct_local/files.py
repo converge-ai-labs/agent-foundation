@@ -211,8 +211,6 @@ class LocalFileOperator:
         from .commit import publish
 
         self._require_open()
-        if self._read_only:
-            raise EnvironmentError("Direct Local root is read-only", code="environment_denied")
         cancelled = Event()
         task = asyncio.create_task(
             asyncio.to_thread(

@@ -30,7 +30,6 @@ async def test_manage_retained_scope_and_reject_another_user(memory_sessions, tm
     service = MemoryService(catalog, protector(), MemoryAuthorizer(memory_sessions, catalog))
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=1024 * 1024),
         mount_id="memory",
         generation="one",
