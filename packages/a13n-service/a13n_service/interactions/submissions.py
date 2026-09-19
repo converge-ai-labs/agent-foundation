@@ -13,9 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import (
+    EvidenceAlreadyCommitted,
     EvidenceScope,
     IdempotencyConflict,
     IdempotencyIdentity,
+    find_evidence,
+    insert_evidence,
     is_evidence_unique_race,
     load_evidence,
     new_evidence,
@@ -114,7 +117,7 @@ class QueuedSubmissionService:
                 identity=command_identity(idempotency_key, request),
                 evidence_scope=_evidence_scope(actor, operation="thread.submit", scope_id=thread_id),
             )
-        except (InteractionCommandError, RunAcceptanceError, IntegrityError) as error:
+        except (InteractionCommandError, RunAcceptanceError, IntegrityError, EvidenceAlreadyCommitted) as error:
             if isinstance(error, IntegrityError) and not is_evidence_unique_race(error):
                 raise
             # Another copy can commit after preflight, including before source eligibility checks.
@@ -731,11 +734,21 @@ class QueuedSubmissionService:
             raise _idempotency_conflict() from error
         except QueuedSubmissionConflict as error:
             raise _queue_error(error) from error
-        except IntegrityError as error:
-            if not is_evidence_unique_race(error):
+        except (IntegrityError, EvidenceAlreadyCommitted) as error:
+            if isinstance(error, IntegrityError) and not is_evidence_unique_race(error):
                 raise
-            async with short_session(self._sessions) as database:
-                replayed = await replay(database)
+            try:
+                async with short_session(self._sessions) as database:
+                    replayed = await _load_receipt(
+                        database,
+                        evidence_scope=evidence_scope,
+                        identity=identity,
+                        response_type=response_type,
+                        now=self._clock(),
+                        read_only=True,
+                    )
+            except IdempotencyConflict as conflict:
+                raise _idempotency_conflict() from conflict
             if replayed is None:
                 raise InteractionCommandError(
                     "idempotency_reconciliation_failed",
@@ -754,7 +767,8 @@ class QueuedSubmissionService:
         receipt: BaseModel,
     ) -> None:
         now = self._clock()
-        database.add(
+        await insert_evidence(
+            database,
             new_evidence(
                 organization_id=scope.organization_id,
                 scope=evidence_scope,
@@ -763,7 +777,7 @@ class QueuedSubmissionService:
                 result_ref=scope.thread_id,
                 receipt=receipt.model_dump(mode="json", by_alias=True),
                 now=now,
-            )
+            ),
         )
 
     async def _pre_replay[ReceiptT: BaseModel](
@@ -793,6 +807,7 @@ class QueuedSubmissionService:
                     identity=identity,
                     response_type=response_type,
                     now=self._clock(),
+                    read_only=True,
                 )
         except IdempotencyConflict as error:
             raise _idempotency_conflict() from error
@@ -949,8 +964,10 @@ async def _load_receipt[ReceiptT: BaseModel](
     identity: IdempotencyIdentity,
     response_type: type[ReceiptT],
     now: datetime,
+    read_only: bool = False,
 ) -> ReceiptT | None:
-    evidence = await load_evidence(database, scope=evidence_scope, identity=identity, now=now)
+    lookup = find_evidence if read_only else load_evidence
+    evidence = await lookup(database, scope=evidence_scope, identity=identity, now=now)
     if evidence is None:
         return None
     if evidence.result_kind != "thread_command" or evidence.receipt_json is None:

@@ -7,12 +7,13 @@ import hmac
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import cast
 
 import rfc8785
 from a13n_harness import SafeFailure
 from a13n_harness.usage import ModelUsageRecord, UsageRecord
 from pydantic import JsonValue
-from sqlalchemy import Select, insert, select
+from sqlalchemy import Select, Table, column, insert, select, tuple_, update, values
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import load_only
 
@@ -158,27 +159,79 @@ class AttemptExecutionService:
         *,
         lease_duration: timedelta,
     ) -> AttemptMutationReceipt:
-        if lease_duration <= timedelta(0):
+        receipts = await self.heartbeat_many((authority,), lease_duration=lease_duration)
+        if authority.run_attempt_id not in receipts:
+            raise AttemptAuthorityError("Attempt lease, fencing number, or selection is no longer authoritative")
+        return receipts[authority.run_attempt_id]
+
+    async def heartbeat_many(
+        self,
+        authorities: Sequence[AttemptContext],
+        *,
+        lease_duration: timedelta | None = None,
+    ) -> dict[str, AttemptMutationReceipt]:
+        """Renew a bounded batch, returning only individually authorized Attempts.
+
+        Lock only Attempt rows, in stable order. All lease checks use the clock
+        after lock acquisition, so lock waits cannot revive an expired lease.
+        Receipts escape only after the whole short transaction commits.
+        """
+
+        if lease_duration is not None and lease_duration <= timedelta(0):
             raise ValueError("lease_duration must be positive")
+        if not authorities:
+            return {}
+        if len(authorities) > 128:
+            raise ValueError("Heartbeat batches cannot exceed 128 Attempts")
+        by_id = {authority.run_attempt_id: authority for authority in authorities}
+        if len(by_id) != len(authorities):
+            raise ValueError("Heartbeat batches cannot repeat an Attempt")
+        receipts: dict[str, AttemptMutationReceipt] = {}
         async with transaction(self._sessions) as session:
             # Every release/replacement of current authority terminalizes this
             # Attempt under its row lock. Renewal need not lock its ancestors.
-            row = (
+            rows = (
                 await session.execute(
-                    _attempt_authority_query(authority, load_execution_state=False).with_for_update(of=RunAttemptRecord)
+                    _attempt_authority_rows(load_execution_state=False)
+                    .where(
+                        tuple_(RunRecord.organization_id, RunRecord.id, RunAttemptRecord.id).in_(
+                            [(item.organization_id, item.run_id, item.run_attempt_id) for item in authorities]
+                        )
+                    )
+                    .order_by(RunAttemptRecord.id)
+                    .with_for_update(of=RunAttemptRecord)
                 )
-            ).one_or_none()
-            if row is None:
-                raise AttemptAuthorityError("Attempt authority was not found")
-            run, attempt, thread = row
-            # Lock contention must not allow an already expired lease to revive.
+            ).all()
             now = assume_utc(self._clock())
-            _validate_lease(run, attempt, thread, authority, now)
-            attempt.heartbeat_at = now
-            attempt.lease_expires_at = now + lease_duration
-            attempt.updated_at = now
-            attempt.version += 1
-            return _receipt(run, attempt)
+            for run, attempt, thread in rows:
+                authority = by_id[attempt.id]
+                try:
+                    _validate_lease(run, attempt, thread, authority, now)
+                except AttemptAuthorityError:
+                    continue
+                receipts[attempt.id] = AttemptMutationReceipt(
+                    run_version=run.version,
+                    attempt_version=attempt.version + 1,
+                    lease_expires_at=now + (lease_duration or authority.lease_duration),
+                )
+            if receipts:
+                table = cast(Table, RunAttemptRecord.__table__)
+                renewals = values(
+                    column("attempt_id", table.c.id.type),
+                    column("expires_at", table.c.lease_expires_at.type),
+                    name="renewals",
+                ).data([(attempt_id, receipt.lease_expires_at) for attempt_id, receipt in receipts.items()])
+                await session.execute(
+                    update(table)
+                    .where(table.c.id == renewals.c.attempt_id)
+                    .values(
+                        heartbeat_at=now,
+                        lease_expires_at=renewals.c.expires_at,
+                        updated_at=now,
+                        version=table.c.version + 1,
+                    )
+                )
+        return receipts
 
     async def can_handoff(self, authority: AttemptContext) -> bool:
         """Check the current handoff budget before stopping local execution."""
@@ -576,19 +629,24 @@ async def read_attempt_authority(
 def _attempt_authority_query(
     authority: AttemptContext, *, load_execution_state: bool
 ) -> Select[tuple[RunRecord, RunAttemptRecord, ThreadRecord]]:
+    return _attempt_authority_rows(load_execution_state=load_execution_state).where(
+        RunRecord.organization_id == authority.organization_id,
+        RunRecord.id == authority.run_id,
+        RunAttemptRecord.id == authority.run_attempt_id,
+    )
+
+
+def _attempt_authority_rows(*, load_execution_state: bool) -> Select[tuple[RunRecord, RunAttemptRecord, ThreadRecord]]:
     statement = (
         select(RunRecord, RunAttemptRecord, ThreadRecord)
         .join(
             RunAttemptRecord,
-            (RunAttemptRecord.organization_id == RunRecord.organization_id)
-            & (RunAttemptRecord.run_id == RunRecord.id)
-            & (RunAttemptRecord.id == authority.run_attempt_id),
+            (RunAttemptRecord.organization_id == RunRecord.organization_id) & (RunAttemptRecord.run_id == RunRecord.id),
         )
         .join(
             ThreadRecord,
             (ThreadRecord.organization_id == RunRecord.organization_id) & (ThreadRecord.id == RunRecord.thread_id),
         )
-        .where(RunRecord.organization_id == authority.organization_id, RunRecord.id == authority.run_id)
     )
     if not load_execution_state:
         statement = statement.options(

@@ -198,28 +198,30 @@ async def build_worker_runtime(
         ).queued,
         item_timeout_seconds=settings.control.recovery_item_timeout_seconds,
     )
+    attempts = WorkerAttempts(
+        shared,
+        execution,
+        environments=environments,
+        client_connections=client_connections,
+        external_tools=external_tools,
+        skills=skills,
+        stream=run_stream,
+        display=run_display,
+        assets=assets,
+        asset_publication=asset_publication,
+        observability=observability,
+        queue_drain=queue_drain,
+        web_registry=WebProviderRegistry(selected_provider_catalogs.web),
+        configuration_drafts=None
+        if configuration_resolver is None
+        else ConfigurationDrafts(shared.storage.sessions, configuration_resolver),
+    )
     execution_loop = WorkerExecutionLoop(
         shared.storage.sessions,
         AttemptScheduler(shared.storage.sessions, lifecycle=shared.lifecycle),
         plugin_catalog,
-        WorkerAttempts(
-            shared,
-            execution,
-            environments=environments,
-            client_connections=client_connections,
-            external_tools=external_tools,
-            skills=skills,
-            stream=run_stream,
-            display=run_display,
-            assets=assets,
-            asset_publication=asset_publication,
-            observability=observability,
-            queue_drain=queue_drain,
-            web_registry=WebProviderRegistry(selected_provider_catalogs.web),
-            configuration_drafts=None
-            if configuration_resolver is None
-            else ConfigurationDrafts(shared.storage.sessions, configuration_resolver),
-        ),
+        attempts,
+        renewals=attempts.renewals,
         build_id=settings.service.build_version,
         worker_id=worker_id,
         queue_name=settings.gateway.run_queue_name,

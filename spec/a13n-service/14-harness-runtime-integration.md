@@ -138,6 +138,8 @@ flowchart TB
         end
 
         Loop -->|successful claim: start root task<br/>pass AttemptContext and capacity slot| Root
+        Renewals["Worker renewal batch task"]
+        Loop -->|owns through executor cleanup| Renewals
     end
 
     PG[("PostgreSQL<br/>Run / RunAttempt / inbox authority")]
@@ -145,7 +147,8 @@ flowchart TB
     Objects[("Object storage<br/>state.json / artifacts")]
 
     Loop <-->|candidate scan / claim| PG
-    Lease <-->|lease-renewal CAS| PG
+    Lease <-->|bounded request and individual confirmation| Renewals
+    Renewals <-->|batched fenced renewal| PG
 
     Redis -->|Thread reconcile wakeup| Watcher
     Watcher -->|Thread / Run / Attempt / inbox reread| PG
@@ -156,12 +159,12 @@ flowchart TB
     Root -->|publish live events| Redis
 ```
 
-The executor uses structured concurrency rather than a Go-style single `select` loop. From the Worker's perspective, one successful claim creates one executor root task. Per Attempt, that root and its two children are the only Service async tasks: the root awaits `HarnessDriver.run()`, `LeaseMonitor.run()` renews authority, and `ControlWatcher.run()` watches for reconciliation hints. `HarnessDriver`, `RunAttemptControl`, `RunControlGate`, `RunControlCapability`, `AttemptContext`, `HarnessHookBoundary`, and `HarnessRunStream` are objects, not additional tasks. The executor root is the lifecycle supervisor; there is no separate supervisor component or fourth control loop. The root cancels and joins both children before releasing its capacity slot.
+The executor uses structured concurrency rather than a Go-style single `select` loop. From the Worker's perspective, one successful claim creates one executor root task. Per Attempt, that root and its two children are the only Service async tasks: the root awaits `HarnessDriver.run()`, `LeaseMonitor.run()` supervises renewal authority, and `ControlWatcher.run()` watches for reconciliation hints. One Worker-scoped renewal task coalesces monitor requests under the [batch renewal contract](13-run-attempt-scheduling-and-recovery.md#renewal-and-authority-loss); its lifetime surrounds all executor roots, including drain and cleanup. It does not supervise Agent execution or create another task per Attempt. `HarnessDriver`, `RunAttemptControl`, `RunControlGate`, `RunControlCapability`, `AttemptContext`, `HarnessHookBoundary`, and `HarnessRunStream` are objects, not additional tasks. The executor root remains the lifecycle supervisor and cancels and joins both children before releasing its capacity slot.
 
 | Component                   | Owns                                                                                                                                                                                           | Must not do                                                                                                                        |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Executor root task          | Structured task scope, preparation, live-object construction, awaiting the driver, state/outcome candidates, ordered cancellation, bounded cleanup, and capacity release                       | Hold the private gate while awaiting the next stream item, create a second stream consumer, or let child work outlive cleanup      |
-| `LeaseMonitor` child task   | Bounded periodic short transactions that renew only the exact selected Attempt and direct awaited authority-loss notification                                                                  | Interpret Agent progress, consume Redis, call the driver or private gate, or continue after authority cannot be confirmed          |
+| `LeaseMonitor` child task   | Bounded renewal requests, individual committed confirmation through the Worker batcher, and direct awaited authority-loss notification                                                         | Interpret Agent progress, consume Redis, call the driver or private gate, or continue after authority cannot be confirmed          |
 | `ControlWatcher` child task | Initial PostgreSQL reconciliation, Thread control-signal consumption, bounded PostgreSQL reread, direct awaited reconciliation, and post-reconciliation acknowledgement                        | Treat a Redis entry as a command, carry its payload into Harness, call the driver or private gate, or mark an inbox entry consumed |
 | `HarnessDriver`             | Entered `HarnessRunStream`, every direct Harness stream call, sole event iteration, and creation of callback-scoped `HarnessHookBoundary` adapters                                             | Own durable control facts, retain a hook context beyond its callback, RunAttempt authority, another task, or a second consumer     |
 | `HarnessHookBoundary`       | Temporary adaptation of the current hook's `RunContext` and `AgentContext` into enqueue and complete-state-export operations                                                                   | Outlive its awaited hook, enter another task or queue, expose raw context to control code, or call stream APIs                     |

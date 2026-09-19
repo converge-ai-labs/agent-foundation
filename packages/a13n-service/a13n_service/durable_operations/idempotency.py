@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import cast
 
 from pydantic import JsonValue
-from sqlalchemy import select, text
+from sqlalchemy import Select, Table, select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +30,10 @@ class InvalidIdempotencyKey(ValueError):
 
 class IdempotencyConflict(Exception):
     """An unexpired key was reused for different request content."""
+
+
+class EvidenceAlreadyCommitted(Exception):
+    """A live receipt won; roll back tentative mutations before replaying it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,18 +91,7 @@ async def load_evidence(
     )
     lock_id = int.from_bytes(bytes.fromhex(material)[:8], signed=True)
     await session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_id})
-    evidence = await session.scalar(
-        select(IdempotencyEvidenceRecord)
-        .where(
-            IdempotencyEvidenceRecord.boundary_scope_id == boundary_id,
-            IdempotencyEvidenceRecord.actor_type == scope.actor_type,
-            IdempotencyEvidenceRecord.actor_id == scope.actor_id,
-            IdempotencyEvidenceRecord.operation == scope.operation,
-            IdempotencyEvidenceRecord.scope_id == scope.scope_id,
-            IdempotencyEvidenceRecord.key_digest == identity.key_digest,
-        )
-        .with_for_update()
-    )
+    evidence = await session.scalar(_evidence_query(scope, identity).with_for_update())
     if evidence is None:
         return None
     if assume_utc(evidence.expires_at) <= assume_utc(now):
@@ -106,6 +101,55 @@ async def load_evidence(
     if evidence.request_digest != identity.request_digest:
         raise IdempotencyConflict
     return evidence
+
+
+async def find_evidence(
+    session: AsyncSession,
+    *,
+    scope: EvidenceScope,
+    identity: IdempotencyIdentity,
+    now: datetime,
+) -> IdempotencyEvidenceRecord | None:
+    """Read an eligible receipt without locking, reserving a key, or deleting expiry."""
+
+    evidence = await session.scalar(
+        _evidence_query(scope, identity).where(IdempotencyEvidenceRecord.expires_at > assume_utc(now))
+    )
+    if evidence is not None and evidence.request_digest != identity.request_digest:
+        raise IdempotencyConflict
+    return evidence
+
+
+async def insert_evidence(session: AsyncSession, evidence: IdempotencyEvidenceRecord) -> None:
+    """Arbitrate acceptance or expired-key reuse in the business transaction.
+
+    A live winner is never overwritten, including when its digest matches. The
+    caller must roll back its tentative business writes before reading that winner.
+    """
+
+    table = cast(Table, IdempotencyEvidenceRecord.__table__)
+    statement = insert(table).values({column.name: getattr(evidence, column.name) for column in table.columns})
+    statement = statement.on_conflict_do_update(
+        constraint=_EVIDENCE_UNIQUE_CONSTRAINT,
+        set_={column.name: statement.excluded[column.name] for column in table.columns},
+        where=table.c.expires_at <= evidence.created_at,
+    ).returning(table.c.id)
+    if await session.scalar(statement) is None:
+        raise EvidenceAlreadyCommitted
+
+
+def _evidence_query(scope: EvidenceScope, identity: IdempotencyIdentity) -> Select[tuple[IdempotencyEvidenceRecord]]:
+    boundary_id = scope.workspace_id or scope.organization_id
+    if boundary_id is None:
+        raise ValueError("Idempotency evidence requires a Workspace or Organization boundary")
+    return select(IdempotencyEvidenceRecord).where(
+        IdempotencyEvidenceRecord.boundary_scope_id == boundary_id,
+        IdempotencyEvidenceRecord.actor_type == scope.actor_type,
+        IdempotencyEvidenceRecord.actor_id == scope.actor_id,
+        IdempotencyEvidenceRecord.operation == scope.operation,
+        IdempotencyEvidenceRecord.scope_id == scope.scope_id,
+        IdempotencyEvidenceRecord.key_digest == identity.key_digest,
+    )
 
 
 async def delete_expired_evidence(session: AsyncSession, *, now: datetime, limit: int) -> int:
@@ -171,12 +215,15 @@ def is_evidence_unique_race(error: IntegrityError) -> bool:
 __all__ = [
     "IDEMPOTENCY_EVIDENCE_TTL",
     "IDEMPOTENCY_KEY_MAX_BYTES",
+    "EvidenceAlreadyCommitted",
     "EvidenceScope",
     "IdempotencyConflict",
     "IdempotencyIdentity",
     "InvalidIdempotencyKey",
     "delete_expired_evidence",
     "digest_visible_ascii_key",
+    "find_evidence",
+    "insert_evidence",
     "is_evidence_unique_race",
     "load_evidence",
     "new_evidence",

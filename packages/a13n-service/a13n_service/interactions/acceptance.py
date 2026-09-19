@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.durable_operations.idempotency import EvidenceAlreadyCommitted
 from a13n_service.environments.devices import DeviceDiscovery
 from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.environments.websocket.admission import OnlineAdmission, OnlineEvidence
@@ -182,7 +183,7 @@ class RunAcceptanceService:
 
         try:
             receipt = await self._online.commit(accept)
-        except (IntegrityError, EnvironmentManagementError, RunAcceptanceError) as error:
+        except (IntegrityError, EvidenceAlreadyCommitted, EnvironmentManagementError, RunAcceptanceError) as error:
             return await self._reconcile_acceptance_error(run, state, error, accepted_thread_version=1)
         return receipt
 
@@ -313,7 +314,7 @@ class RunAcceptanceService:
 
         try:
             receipt = await self._online.commit(accept)
-        except (IntegrityError, EnvironmentManagementError, RunAcceptanceError) as error:
+        except (IntegrityError, EvidenceAlreadyCommitted, EnvironmentManagementError, RunAcceptanceError) as error:
             return await self._reconcile_acceptance_error(
                 run,
                 state,
@@ -465,7 +466,7 @@ class RunAcceptanceService:
 
         try:
             receipt = await self._online.commit(accept)
-        except (IntegrityError, EnvironmentManagementError, RunAcceptanceError) as error:
+        except (IntegrityError, EvidenceAlreadyCommitted, EnvironmentManagementError, RunAcceptanceError) as error:
             replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
             if replay is not None:
                 queued = await self._validate_queue_replay(
@@ -479,7 +480,7 @@ class RunAcceptanceService:
                     queue_version=expected_queue_version + 1,
                     run=replay,
                 )
-            if not isinstance(error, IntegrityError):
+            if not isinstance(error, (IntegrityError, EvidenceAlreadyCommitted)):
                 raise
             raise RunAcceptanceError(
                 "run_acceptance_conflict", "Queue consumption lost a concurrent mutation"
@@ -614,14 +615,14 @@ class RunAcceptanceService:
         self,
         run: Run,
         state: RunCheckpoint,
-        error: IntegrityError | EnvironmentManagementError | RunAcceptanceError,
+        error: IntegrityError | EvidenceAlreadyCommitted | EnvironmentManagementError | RunAcceptanceError,
         *,
         accepted_thread_version: int,
     ) -> RunAcceptanceReceipt:
         replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
             return replay
-        if not isinstance(error, IntegrityError):
+        if not isinstance(error, (IntegrityError, EvidenceAlreadyCommitted)):
             raise error
         raise RunAcceptanceError("run_acceptance_conflict", "Run acceptance lost a concurrent mutation") from error
 
