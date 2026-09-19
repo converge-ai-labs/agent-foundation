@@ -12,6 +12,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import EvidenceAlreadyCommitted
 from a13n_service.environments.devices import DeviceDiscovery
 from a13n_service.environments.errors import EnvironmentManagementError
+from a13n_service.environments.selection import Omitted
 from a13n_service.environments.websocket.admission import OnlineAdmission, OnlineEvidence
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.hooks import InlineHookValidator
@@ -22,7 +23,6 @@ from a13n_service.interactions.environment_acceptance import add_run_with_enviro
 from a13n_service.interactions.environment_selection import (
     EnvironmentDefault,
     EnvironmentIntent,
-    queued_environment_choice,
     requested_environment,
 )
 from a13n_service.labels import merge_labels
@@ -38,6 +38,7 @@ from .acceptance_validation import (
     validate_waiting_input,
 )
 from .control_domain import (
+    QueuedSubmission,
     QueuedSubmissionConsumptionReceipt,
     QueuedSubmissionFailure,
     RunAcceptanceReceipt,
@@ -328,8 +329,7 @@ class RunAcceptanceService:
         *,
         run: Run,
         state: RunCheckpoint,
-        queued_submission_id: str,
-        submission_digest_sha256: str,
+        queued: QueuedSubmission,
         accepted_input: AcceptedAgentInput,
         expected_thread_version: int,
         expected_queue_version: int,
@@ -346,22 +346,19 @@ class RunAcceptanceService:
         accepted_thread_version = expected_thread_version + 1
         replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
-            queued = await self._validate_queue_replay(
+            consumed = await self._validate_queue_replay(
                 run=run,
-                queued_submission_id=queued_submission_id,
-                submission_digest_sha256=submission_digest_sha256,
+                queued_submission_id=queued.queued_submission_id,
+                submission_digest_sha256=queued.submission_digest_sha256,
             )
             return QueuedSubmissionConsumptionReceipt(
                 outcome="run_accepted",
-                queued_submission=queued.to_resource(),
+                queued_submission=consumed.to_resource(),
                 queue_version=expected_queue_version + 1,
                 run=replay,
             )
-        await self._inline_hooks.validate_queued_destination(
-            organization_id=run.organization_id,
-            queued_submission_id=queued_submission_id,
-            submission_digest_sha256=submission_digest_sha256,
-        )
+        # Reuse the detached intent; the final locked queue check verifies its digest.
+        await self._inline_hooks.validate_destination(queued.submission.hook_subscription)
         candidate_payload = await self._verify_input_payload(run)
         validate_queued_run_input(run, candidate_payload, accepted_input)
         await self._publish_initial(run, state)
@@ -391,7 +388,9 @@ class RunAcceptanceService:
             )
             session_record_value = await require_session(database, run)
             accepted_run = run.model_copy(update={"labels": _accepted_labels(thread.labels, label_overrides)})
-            choice = await queued_environment_choice(database, queued_submission_id)
+            choice = (
+                queued.submission.environment if "environment" in queued.submission.model_fields_set else Omitted.UNSET
+            )
             run_record_value = await add_run_with_environment(
                 database,
                 online=online,
@@ -412,8 +411,8 @@ class RunAcceptanceService:
                     database,
                     organization_id=run.organization_id,
                     thread_id=thread.id,
-                    queued_submission_id=queued_submission_id,
-                    submission_digest_sha256=submission_digest_sha256,
+                    queued_submission_id=queued.queued_submission_id,
+                    submission_digest_sha256=queued.submission_digest_sha256,
                     authority_principal=run.authority_principal,
                     consumed_run_id=run.id,
                     now=now,
@@ -469,14 +468,14 @@ class RunAcceptanceService:
         except (IntegrityError, EvidenceAlreadyCommitted, EnvironmentManagementError, RunAcceptanceError) as error:
             replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
             if replay is not None:
-                queued = await self._validate_queue_replay(
+                consumed = await self._validate_queue_replay(
                     run=run,
-                    queued_submission_id=queued_submission_id,
-                    submission_digest_sha256=submission_digest_sha256,
+                    queued_submission_id=queued.queued_submission_id,
+                    submission_digest_sha256=queued.submission_digest_sha256,
                 )
                 return QueuedSubmissionConsumptionReceipt(
                     outcome="run_accepted",
-                    queued_submission=queued.to_resource(),
+                    queued_submission=consumed.to_resource(),
                     queue_version=expected_queue_version + 1,
                     run=replay,
                 )

@@ -80,8 +80,7 @@ async def test_queue_admission_waits_for_online_at_consumption_and_retains_origi
         return await service.consume_queued(
             run=run,
             state=state,
-            queued_submission_id=queued.queued_submission.queued_submission_id,
-            submission_digest_sha256=queued.queued_submission.submission_digest_sha256,
+            queued=queued.queued_submission,
             accepted_input=accepted_input,
             expected_thread_version=2,
             expected_queue_version=1,

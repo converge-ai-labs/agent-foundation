@@ -55,13 +55,16 @@ class MemoryBehaviors:
         if len(self.behaviors) != len(behaviors) + 1:
             raise ValueError("Duplicate memory behavior key")
 
-    async def _selected(self, session: AsyncSession, run_id: str) -> MemoryBehavior:
-        selection = await session.get(RunMemorySelectionRecord, run_id)
+    def _behavior(self, selection: RunMemorySelectionRecord | None) -> MemoryBehavior:
         if selection is None:
             raise RunAcceptanceError("memory_binding_missing", "Accepted memory selection is missing")
         behavior = self.behaviors.get(selection.behavior_key)
         if behavior is None or behavior.schema_version != selection.binding_schema_version:
             raise RunAcceptanceError("memory_binding_unavailable", "Accepted memory behavior is unavailable")
+        return behavior
+
+    async def _selected(self, session: AsyncSession, run_id: str) -> MemoryBehavior:
+        behavior = self._behavior(await session.get(RunMemorySelectionRecord, run_id))
         await behavior.validate(session, run_id)
         return behavior
 
@@ -75,19 +78,18 @@ class MemoryBehaviors:
                 raise RunAcceptanceError("memory_binding_conflict", "Inherited memory selection cannot be replaced")
             behavior = await self._selected(session, source_run_id)
             await behavior.inherit(session, source_run_id, run.id)
-            session.add(
-                RunMemorySelectionRecord(
-                    run_id=run.id, behavior_key=behavior.key, binding_schema_version=behavior.schema_version
-                )
+            selection = RunMemorySelectionRecord(
+                run_id=run.id, behavior_key=behavior.key, binding_schema_version=behavior.schema_version
             )
+            session.add(selection)
         elif selection is None:
-            session.add(
-                RunMemorySelectionRecord(
-                    run_id=run.id, behavior_key=self.default.key, binding_schema_version=self.default.schema_version
-                )
+            selection = RunMemorySelectionRecord(
+                run_id=run.id, behavior_key=self.default.key, binding_schema_version=self.default.schema_version
             )
+            session.add(selection)
         await session.flush()
-        await self.validate(session, run.id)
+        # The selection is already known; each behavior still validates its own binding.
+        await self._behavior(selection).validate(session, run.id)
 
     async def prepare(
         self,

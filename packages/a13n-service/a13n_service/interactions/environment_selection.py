@@ -172,16 +172,6 @@ async def select_run_environment(
     )
 
 
-async def queued_environment_choice(session: AsyncSession, submission_id: str) -> EnvironmentSelection | Omitted | None:
-    from a13n_service.interactions.control_models import QueuedSubmissionRecord
-
-    row = await session.get(QueuedSubmissionRecord, submission_id)
-    if row is None:
-        raise invalid_environment("Queued submission is unavailable")
-    submission = row.to_resource().submission
-    return submission.environment if "environment" in submission.model_fields_set else Omitted.UNSET
-
-
 async def child_environment_choice(
     session: AsyncSession, *, parent: Run, policy: ChildEnvironmentPolicy
 ) -> EnvironmentSelection | None:

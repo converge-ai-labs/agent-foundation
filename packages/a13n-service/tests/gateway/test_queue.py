@@ -43,6 +43,7 @@ from tests.hooks.support import seed_hook_actor_access
 from tests.interactions.conftest import NOW, WORKSPACE_ID
 from tests.interactions.conftest import interaction_sessions as interaction_sessions
 from tests.interactions.test_queue import _inline_hooks
+from tests.sql_capture import capture_sql
 
 pytestmark = pytest.mark.anyio
 
@@ -258,12 +259,16 @@ async def test_explicit_queue_consumption_accepts_under_retained_authority_and_r
         thread.labels = {"team": "latest-before-consume", "batch": "parent"}
     request = ConsumeQueuedSubmissionRequest(expected_thread_version=2, expected_queue_version=1)
 
-    first = await service.consume(
-        actor=_actor(),
-        thread_id=source.thread_id,
-        request=request,
-        idempotency_key="consume-first",
-    )
+    with capture_sql(lifecycle_interaction_sessions) as statements:
+        first = await service.consume(
+            actor=_actor(),
+            thread_id=source.thread_id,
+            request=request,
+            idempotency_key="consume-first",
+        )
+    queue_reads = [sql for sql in statements if sql.startswith("SELECT") and "FROM thread_queued_submissions" in sql]
+    assert len(queue_reads) == 2
+    assert any("FOR UPDATE" in sql for sql in queue_reads)
     async with transaction(lifecycle_interaction_sessions) as database:
         thread = await database.get(ThreadRecord, source.thread_id)
         thread.labels = {"team": "after-acceptance"}

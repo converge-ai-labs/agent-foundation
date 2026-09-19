@@ -449,8 +449,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         await service.consume_queued(
             run=run,
             state=state,
-            queued_submission_id=first.queued_submission.queued_submission_id,
-            submission_digest_sha256=first.queued_submission.submission_digest_sha256,
+            queued=first.queued_submission,
             accepted_input=accepted_input,
             expected_thread_version=2,
             expected_queue_version=3,
@@ -475,8 +474,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
     receipt = await service.consume_queued(
         run=run,
         state=state,
-        queued_submission_id=first.queued_submission.queued_submission_id,
-        submission_digest_sha256=first.queued_submission.submission_digest_sha256,
+        queued=first.queued_submission,
         accepted_input=accepted_input,
         expected_thread_version=2,
         expected_queue_version=3,

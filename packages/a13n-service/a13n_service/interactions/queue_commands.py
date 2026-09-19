@@ -227,8 +227,7 @@ class QueuedRunCommands:
                 return await self._acceptance.consume_queued(
                     run=run,
                     state=candidate.state,
-                    queued_submission_id=queued.queued_submission_id,
-                    submission_digest_sha256=queued.submission_digest_sha256,
+                    queued=queued,
                     accepted_input=candidate.input,
                     expected_thread_version=request.expected_thread_version,
                     expected_queue_version=request.expected_queue_version,

@@ -19,7 +19,6 @@ from a13n_service.storage import short_session
 from .domain import Run
 from .errors import RunAcceptanceError
 from .models import RunRecord
-from .queue_persistence import QueueConsumptionConflict, load_live_queued_submission
 
 
 class InlineHookAcceptance:
@@ -75,28 +74,6 @@ class InlineHookAcceptance:
             hook_names=tuple(revision.hook_names),
             webhook=revision.to_resource().webhook,
         )
-
-    async def validate_queued_destination(
-        self,
-        *,
-        organization_id: str,
-        queued_submission_id: str,
-        submission_digest_sha256: str,
-    ) -> None:
-        async with short_session(self._sessions) as database:
-            try:
-                queued = await load_live_queued_submission(
-                    database,
-                    organization_id=organization_id,
-                    queued_submission_id=queued_submission_id,
-                    submission_digest_sha256=submission_digest_sha256,
-                )
-            except QueueConsumptionConflict as error:
-                raise RunAcceptanceError(
-                    "queue_consumption_conflict",
-                    "Queued submission changed before Run acceptance",
-                ) from error
-        await self.validate_destination(queued.submission.hook_subscription)
 
     async def authorize(
         self,
