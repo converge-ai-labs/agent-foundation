@@ -280,7 +280,14 @@ async def test_cancelled_runtime_validation_stops_its_process_group(tmp_path):
     assert scope.cancel_called
     status = Path(f"/proc/{child_file.read_text()}/stat")
     async with asyncio.timeout(2):
-        while status.exists() and status.read_text().split()[2] != "Z":
+        while True:
+            try:
+                state = status.read_text().split()[2]
+            except (FileNotFoundError, ProcessLookupError):
+                # Reaping can remove procfs state before opening or during the read.
+                break
+            if state == "Z":
+                break
             await asyncio.sleep(0.01)
 
 
