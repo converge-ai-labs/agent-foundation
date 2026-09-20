@@ -283,7 +283,8 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     model_factory.build.return_value = FunctionModel(stream_function=model)
     settings = Settings(
         service={"build_version": "test"},
-        worker={"concurrency": 1, "poll_interval_seconds": 0.02, "lease_seconds": 12},
+        # A shorter lease expires under CI load before the attempt renews it, which reclaims the run.
+        worker={"concurrency": 1, "poll_interval_seconds": 0.02, "lease_seconds": 30},
     )
     exporter = InMemorySpanExporter()
     observation = observation_runtime(exporter)
