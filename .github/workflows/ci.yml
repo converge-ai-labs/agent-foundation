@@ -47,3 +47,20 @@ jobs:
 
       - name: Run repository lint checks
         run: make lint
+
+      - name: Test CI routing and failure propagation
+        run: >-
+          uv run --locked python -m pytest
+          scripts/tests/test_ci_inputs.py
+          scripts/tests/test_envd_ci_workflow.py
+          scripts/tests/test_harness_ui_ci_workflow.py
+          scripts/tests/test_image_workflows.py
+          --junitxml=test-results/workflows.xml
+
+      - name: Retain workflow test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workflow-tests-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
