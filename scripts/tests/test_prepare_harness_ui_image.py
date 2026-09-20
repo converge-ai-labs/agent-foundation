@@ -17,6 +17,8 @@ def test_release_context_copies_exact_wheel_and_no_source_dependencies(tmp_path,
     commands = []
 
     def run(command, **kwargs):
+        assert kwargs["stdout"] == subprocess.PIPE
+        assert "stderr" not in kwargs and "capture_output" not in kwargs
         commands.append(command)
         return subprocess.CompletedProcess(command, 0, stdout="anyio==4.14.2\n")
 

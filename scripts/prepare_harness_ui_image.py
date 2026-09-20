@@ -55,7 +55,7 @@ def prepare(target: Path, release_dist: Path | None = None) -> None:
             ],
             cwd=ROOT,
             check=True,
-            capture_output=True,
+            stdout=subprocess.PIPE,
             text=True,
         ).stdout
         (staging / "constraints.txt").write_text(constraints, encoding="utf-8")

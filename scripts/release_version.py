@@ -151,6 +151,14 @@ def _project_dependency_requirement(root: Path, relative_path: Path, package_nam
     return matches[0]
 
 
+def _dependency_with_constraint(requirement: str, package_name: str, constraint: str) -> str:
+    """Replace release bounds without dropping the dependency's selected extras."""
+    match = re.match(rf"^{re.escape(package_name)}(?:\[[^\]]+\])?", requirement)
+    if match is None:
+        raise ReleaseVersionError(f"Expected {package_name} dependency, found {requirement}")
+    return f"{match.group(0)}{constraint}"
+
+
 def validate_dependency_range(value: str) -> str:
     """Normalize the supported inclusive-minimum/exclusive-maximum release policy."""
     parts = [part.strip() for part in value.split(",")]
@@ -337,8 +345,8 @@ def validate_component_version(root: Path, component: str, version: str) -> None
         return
     if component == "a13n-harness":
         for manifest, package_name in ((STREAM_PROTOCOL_MANIFEST, HARNESS_PACKAGE),):
-            expected = f"{package_name}=={release_version.python_package}"
             actual = _project_dependency_requirement(root, manifest, package_name)
+            expected = _dependency_with_constraint(actual, package_name, f"=={release_version.python_package}")
             if actual != expected:
                 raise ReleaseVersionError(f"Expected {manifest} dependency {expected}, found {actual}")
     manifests = {
@@ -347,8 +355,8 @@ def validate_component_version(root: Path, component: str, version: str) -> None
     }.get(component, ())
     for manifest in manifests:
         for package_name, constraint in release_dependency_ranges(root, manifest).items():
-            expected = f"{package_name}{constraint}"
             actual = _project_dependency_requirement(root, manifest, package_name)
+            expected = _dependency_with_constraint(actual, package_name, constraint)
             if actual != expected:
                 raise ReleaseVersionError(f"Expected {manifest} dependency {expected}, found {actual}")
 
@@ -380,7 +388,7 @@ def _replace_table_version(content: str, table_name: str, version: str, path: Pa
 def _replace_project_dependency(
     content: str,
     package_name: str,
-    requirement: str,
+    constraint: str,
     path: Path,
 ) -> str:
     package_pattern = re.compile(rf"^{re.escape(package_name)}(?=$|\s|[<>=!~;@\[])")
@@ -398,6 +406,7 @@ def _replace_project_dependency(
     match = _DEPENDENCY_LINE_PATTERN.fullmatch(lines[index])
     if match is None:
         raise AssertionError("dependency line disappeared")
+    requirement = _dependency_with_constraint(match.group("requirement"), package_name, constraint)
     lines[index] = f"{match.group('prefix')}{requirement}{match.group('suffix')}{match.group('newline') or ''}"
     return "".join(lines)
 
@@ -487,7 +496,7 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
             planned[manifest] = _replace_project_dependency(
                 planned[manifest],
                 package_name,
-                f"{package_name}=={python_version}",
+                f"=={python_version}",
                 manifest,
             )
         lock_content = _read_text(root, ROOT_UV_LOCK)
@@ -575,9 +584,7 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
     }.get(component, ())
     for manifest in manifests:
         for package_name, constraint in release_dependency_ranges(root, manifest).items():
-            planned[manifest] = _replace_project_dependency(
-                planned[manifest], package_name, f"{package_name}{constraint}", manifest
-            )
+            planned[manifest] = _replace_project_dependency(planned[manifest], package_name, constraint, manifest)
 
     changed = tuple(path for path in sorted(planned) if planned[path] != _read_text(root, path))
     for relative_path in changed:
