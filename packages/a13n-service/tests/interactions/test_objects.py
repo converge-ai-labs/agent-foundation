@@ -218,7 +218,9 @@ async def test_run_state_read_verifies_every_selected_seal_field(
         attempt_number=1,
     )
     run = _accepted_run(
-        run_id=envelope.run_id, thread_id=envelope.thread_id, idempotency_key="sealed", request_fingerprint="a" * 64
+        run_id=envelope.run_id,
+        thread_id=envelope.thread_id,
+        idempotency_key="sealed",
     ).model_copy(
         update={
             "status": RunStatus.completed,

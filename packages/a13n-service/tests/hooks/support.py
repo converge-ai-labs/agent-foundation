@@ -171,7 +171,6 @@ async def seed_run_and_secret(sessions: async_sessionmaker[AsyncSession]) -> Non
                     attempts_charged=0,
                     handoffs_completed=0,
                     usage_charged=RunUsage(),
-                    request_fingerprint="f" * 64,
                     status=RunStatus.accepted,
                     input_kind=RunInputKind.agent_input,
                     input={"message": "hello"},

@@ -12,14 +12,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.durable_operations.entity_keys import find_by_key, scope_key
 from a13n_service.durable_operations.idempotency import (
     EvidenceAlreadyCommitted,
     EvidenceScope,
-    IdempotencyConflict,
     IdempotencyIdentity,
     find_evidence,
     insert_evidence,
-    is_evidence_unique_race,
     load_evidence,
     new_evidence,
 )
@@ -27,7 +26,7 @@ from a13n_service.durable_operations.requests import request_scope
 from a13n_service.environments.selection import Omitted
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.iam.operation import authorization_operation
-from a13n_service.interactions.command_evidence import command_identity
+from a13n_service.interactions.command_evidence import command_identity, run_receipt
 from a13n_service.interactions.command_values import ContinueRunCommand, WaitingContinueRunCommand
 from a13n_service.interactions.commands import InteractionCommands
 from a13n_service.interactions.control_domain import (
@@ -114,12 +113,10 @@ class QueuedSubmissionService:
                 actor=actor,
                 thread_id=thread_id,
                 request=request,
-                identity=command_identity(idempotency_key, request),
+                identity=command_identity(idempotency_key),
                 evidence_scope=_evidence_scope(actor, operation="thread.submit", scope_id=thread_id),
             )
         except (InteractionCommandError, RunAcceptanceError, IntegrityError, EvidenceAlreadyCommitted) as error:
-            if isinstance(error, IntegrityError) and not is_evidence_unique_race(error):
-                raise
             # Another copy can commit after preflight, including before source eligibility checks.
             replayed = await replay()
             if replayed is not None:
@@ -172,6 +169,9 @@ class QueuedSubmissionService:
                         "Queued intent gained precedence before Run acceptance.",
                         category=ErrorCategory.conflict,
                     )
+            key = scope_key(evidence_scope, identity.key_digest)
+            if await find_by_key(database, QueuedSubmissionRecord, key) is not None:
+                raise EvidenceAlreadyCommitted
             selected_thread = await database.get(ThreadRecord, thread.id)
             if selected_thread is None:
                 raise _not_found()
@@ -202,7 +202,7 @@ class QueuedSubmissionService:
             await self._commands.runs.accept_continuation(
                 actor=actor,
                 source_run_id=head.id,
-                request_fingerprint=identity.request_digest,
+                request_key=scope_key(evidence_scope, identity.key_digest),
                 request=continuation,
                 inherit_parent_environment=False,
                 transaction_hook=commit_run,
@@ -211,7 +211,7 @@ class QueuedSubmissionService:
             await self._commands.runs.accept_empty_thread(
                 actor=actor,
                 thread_id=thread_id,
-                request_fingerprint=identity.request_digest,
+                request_key=scope_key(evidence_scope, identity.key_digest),
                 request=continuation,
                 transaction_hook=commit_run,
             )
@@ -226,7 +226,7 @@ class QueuedSubmissionService:
             await self._commands.continuations.accept_waiting_continue(
                 actor=actor,
                 run_id=current.id,
-                request_fingerprint=identity.request_digest,
+                request_key=scope_key(evidence_scope, identity.key_digest),
                 request=WaitingContinueRunCommand(
                     expected_thread_version=request.expected_thread_version,
                     sealed_state_digest_sha256=request.waiting_resolution.sealed_state_digest_sha256,
@@ -343,6 +343,10 @@ class QueuedSubmissionService:
                 expected_thread_version=expected_thread_version,
                 authority_principal=actor.principal,
                 submission=submission,
+                request_key=scope_key(
+                    _evidence_scope(actor, operation="queue.enqueue", scope_id=thread_id),
+                    command_identity(idempotency_key).key_digest,
+                ),
                 replay=replay,
                 transaction_hook=commit,
             ),
@@ -405,29 +409,12 @@ class QueuedSubmissionService:
         request: DeleteQueuedSubmissionRequest,
         idempotency_key: str,
     ) -> ThreadQueueMutationReceipt:
-        async def replay() -> ThreadQueueMutationReceipt | None:
-            return await self._pre_replay(
-                actor=actor,
-                operation="queue.delete",
-                scope_id=queued_submission_id,
-                idempotency_key=idempotency_key,
-                request=request,
-                response_type=ThreadQueueMutationReceipt,
-            )
-
-        if replayed := await replay():
-            return replayed
-        try:
-            scope = await self._submission_scope(
-                actor=actor,
-                queued_submission_id=queued_submission_id,
-                action=WorkspaceAction.queued_submission_delete,
-            )
-        except InteractionCommandError:
-            # Another matching request can delete the row after preflight.
-            if replayed := await replay():
-                return replayed
-            raise
+        command_identity(idempotency_key)
+        scope = await self._submission_scope(
+            actor=actor,
+            queued_submission_id=queued_submission_id,
+            action=WorkspaceAction.queued_submission_delete,
+        )
         return await self._mutate(
             actor=actor,
             scope=scope,
@@ -523,7 +510,7 @@ class QueuedSubmissionService:
             if wrapped is None:
                 return None
             if wrapped.queued_submission is None:
-                raise IdempotencyConflict
+                raise EvidenceAlreadyCommitted
             return QueuedSubmissionMutationReceipt(
                 queued_submission=wrapped.queued_submission,
                 queue_version=wrapped.queue_version,
@@ -561,11 +548,10 @@ class QueuedSubmissionService:
                 expected_thread_version=request.expected_thread_version,
                 authority_principal=actor.principal,
                 submission=request.intent(),
+                request_key=scope_key(evidence_scope, identity.key_digest),
                 replay=replay,
                 transaction_hook=commit,
             )
-        except IdempotencyConflict as error:
-            raise _idempotency_conflict() from error
         except QueuedSubmissionConflict as error:
             raise _queue_error(error) from error
         return ThreadRunSubmissionReceipt(
@@ -691,7 +677,7 @@ class QueuedSubmissionService:
             Awaitable[ReceiptT],
         ],
     ) -> ReceiptT:
-        identity = command_identity(idempotency_key, request)
+        identity = command_identity(idempotency_key)
         evidence_scope = EvidenceScope(
             workspace_id=scope.workspace_id,
             actor_type=actor.principal.principal_type.value,
@@ -732,25 +718,20 @@ class QueuedSubmissionService:
 
         try:
             return await invoke(replay, commit)
-        except IdempotencyConflict as error:
-            raise _idempotency_conflict() from error
         except QueuedSubmissionConflict as error:
+            if operation == "queue.delete" and "not found" in str(error):
+                raise _not_found() from error
             raise _queue_error(error) from error
         except (IntegrityError, EvidenceAlreadyCommitted) as error:
-            if isinstance(error, IntegrityError) and not is_evidence_unique_race(error):
-                raise
-            try:
-                async with short_session(self._sessions) as database:
-                    replayed = await _load_receipt(
-                        database,
-                        evidence_scope=evidence_scope,
-                        identity=identity,
-                        response_type=response_type,
-                        now=self._clock(),
-                        read_only=True,
-                    )
-            except IdempotencyConflict as conflict:
-                raise _idempotency_conflict() from conflict
+            async with short_session(self._sessions) as database:
+                replayed = await _load_receipt(
+                    database,
+                    evidence_scope=evidence_scope,
+                    identity=identity,
+                    response_type=response_type,
+                    now=self._clock(),
+                    read_only=True,
+                )
             if replayed is None:
                 raise InteractionCommandError(
                     "idempotency_reconciliation_failed",
@@ -768,17 +749,22 @@ class QueuedSubmissionService:
         identity: IdempotencyIdentity,
         receipt: BaseModel,
     ) -> None:
-        now = self._clock()
+        if evidence_scope.operation in {"thread.submit", "queue.enqueue", "queue.delete"}:
+            return
+        result_ref = (
+            receipt.queued_submission.queued_submission_id
+            if isinstance(receipt, QueuedSubmissionMutationReceipt)
+            else scope.thread_id
+        )
         await insert_evidence(
             database,
             new_evidence(
                 organization_id=scope.organization_id,
                 scope=evidence_scope,
                 identity=identity,
-                result_kind="thread_command",
-                result_ref=scope.thread_id,
-                receipt=receipt.model_dump(mode="json", by_alias=True),
-                now=now,
+                result_kind="queued_submission" if evidence_scope.operation == "queue.update" else "thread",
+                result_ref=result_ref,
+                now=self._clock(),
             ),
         )
 
@@ -792,7 +778,7 @@ class QueuedSubmissionService:
         request: StrictModel,
         response_type: type[ReceiptT],
     ) -> ReceiptT | None:
-        identity = command_identity(idempotency_key, request)
+        identity = command_identity(idempotency_key)
         evidence_scope = EvidenceScope(
             workspace_id=actor.workspace_id,
             actor_type=actor.principal.principal_type.value,
@@ -801,18 +787,32 @@ class QueuedSubmissionService:
             scope_id=scope_id,
             organization_id=actor.boundary_organization_id,
         )
-        try:
-            async with short_session(self._sessions) as database:
-                return await _load_receipt(
-                    database,
-                    evidence_scope=evidence_scope,
-                    identity=identity,
-                    response_type=response_type,
-                    now=self._clock(),
-                    read_only=True,
-                )
-        except IdempotencyConflict as error:
-            raise _idempotency_conflict() from error
+        async with short_session(self._sessions) as database:
+            result = await _load_receipt(
+                database,
+                evidence_scope=evidence_scope,
+                identity=identity,
+                response_type=response_type,
+                now=self._clock(),
+                read_only=True,
+            )
+
+        if result is None:
+            return None
+        if isinstance(result, ThreadRunSubmissionReceipt):
+            if result.run is not None:
+                thread_id, action = result.run.thread_id, WorkspaceAction.run_read
+            else:
+                assert result.queued_submission is not None
+                thread_id, action = result.queued_submission.thread_id, WorkspaceAction.queued_submission_read
+        elif isinstance(result, QueuedSubmissionMutationReceipt):
+            thread_id, action = result.queued_submission.thread_id, WorkspaceAction.queued_submission_read
+        elif isinstance(result, ThreadQueueMutationReceipt):
+            thread_id, action = result.thread_id, WorkspaceAction.queued_submission_read
+        else:
+            raise TypeError("Unsupported queue result")
+        await self._thread_scope(actor=actor, thread_id=thread_id, action=action)
+        return result
 
     async def _thread_scope(
         self,
@@ -968,13 +968,55 @@ async def _load_receipt[ReceiptT: BaseModel](
     now: datetime,
     read_only: bool = False,
 ) -> ReceiptT | None:
-    lookup = find_evidence if read_only else load_evidence
-    evidence = await lookup(database, scope=evidence_scope, identity=identity, now=now)
-    if evidence is None:
+    operation = evidence_scope.operation
+    key = scope_key(evidence_scope, identity.key_digest)
+    queued = None
+    run = None
+    if operation in {"queue.enqueue", "thread.submit"}:
+        queued = await find_by_key(database, QueuedSubmissionRecord, key)
+        if queued is None and operation == "thread.submit":
+            run = await find_by_key(database, RunRecord, key)
+        if queued is None and run is None:
+            return None
+        if queued is not None:
+            thread_id = queued.thread_id
+        else:
+            assert run is not None
+            thread_id = run.thread_id
+    elif operation == "queue.delete":
         return None
-    if evidence.result_kind != "thread_command" or evidence.receipt_json is None:
-        raise RuntimeError("Thread command evidence has no original receipt")
-    return response_type.model_validate(evidence.receipt_json)
+    else:
+        lookup = find_evidence if read_only else load_evidence
+        evidence = await lookup(database, scope=evidence_scope, identity=identity, now=now)
+        if evidence is None:
+            return None
+        if operation == "queue.update":
+            queued = await database.get(QueuedSubmissionRecord, evidence.result_ref)
+            if queued is None:
+                return None
+            thread_id = queued.thread_id
+        else:
+            thread_id = evidence.result_ref
+    thread = await database.get(ThreadRecord, thread_id)
+    if thread is None:
+        return None
+    if run is not None:
+        value = ThreadRunSubmissionReceipt(
+            outcome="run_accepted", run=await run_receipt(database, run), queue_version=thread.queue_version
+        )
+    elif queued is not None:
+        value = (
+            ThreadRunSubmissionReceipt(
+                outcome="queued", queued_submission=queued.to_resource(), queue_version=thread.queue_version
+            )
+            if operation == "thread.submit"
+            else QueuedSubmissionMutationReceipt(
+                queued_submission=queued.to_resource(), queue_version=thread.queue_version
+            )
+        )
+    else:
+        value = ThreadQueueMutationReceipt(thread_id=thread.id, queue_version=thread.queue_version)
+    return response_type.model_validate(value.model_dump())
 
 
 def _evidence_scope(actor: AuthenticatedActor, *, operation: str, scope_id: str) -> EvidenceScope:
@@ -984,14 +1026,6 @@ def _evidence_scope(actor: AuthenticatedActor, *, operation: str, scope_id: str)
 def _not_found() -> InteractionCommandError:
     return InteractionCommandError(
         "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
-    )
-
-
-def _idempotency_conflict() -> InteractionCommandError:
-    return InteractionCommandError(
-        "idempotency_conflict",
-        "The Idempotency-Key was already used with different request content.",
-        category=ErrorCategory.conflict,
     )
 
 

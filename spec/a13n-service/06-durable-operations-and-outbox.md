@@ -28,34 +28,28 @@ Immutable revisions and append-only records do not gain an artificial version. A
 
 ## Idempotency Evidence
 
-A create or command that can be retried under the public contract records bounded evidence scoped to:
+A retryable HTTP command identifies a request solely by its opaque caller key within the authenticated Principal, Workspace or Organization boundary, operation, and resource or parent scope. The key digest is non-reversible. Request content is not fingerprinted or compared for HTTP idempotency. The same scoped key selects the accepted result even if the retry supplies different content.
 
-| Field                               | Meaning                                                   |
-| ----------------------------------- | --------------------------------------------------------- |
-| Principal identity                  | Authenticated caller that owns the replay scope           |
-| Credential or boundary scope        | Additional safe boundary required by the owning operation |
-| Operation kind                      | Stable command identity                                   |
-| Resource or parent scope            | Exact target collection or resource                       |
-| Idempotency key digest              | Non-reversible identity for the opaque caller key         |
-| Canonical request digest            | Detects reuse with different semantic input               |
-| Result reference or bounded receipt | Reconstructs the original accepted response               |
-| Evidence expiry                     | 24 hours from the original successful commit              |
+Service reauthorizes access and builds the response from retained business records using current projection logic. Mutable fields, versions, status, and derived values may differ from the first response. No original HTTP response snapshot is retained. Replay precedes new-mutation version, ETag, and semantic-input checks; ordinary transport/schema validation still applies.
 
-Raw idempotency keys and secret request content are not stored in logs, events, traces, or diagnostics. The canonical request includes the semantic operation input and excludes transport-only values such as request ID and trace context.
+| Operation shape                                                                                                                                                | Key owner                                                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Create an Agent, Session, Thread, Asset, Skill, upload candidate, Environment/template/command, mount, Account, target, Connection, authorization, or Bot test | The created business record                                                                              |
+| Accept a Run                                                                                                                                                   | The accepted Run                                                                                         |
+| Submit Thread input                                                                                                                                            | The accepted Run or queued submission; both branches serialize through the Thread                        |
+| Enqueue and explicitly consume queued input                                                                                                                    | Creation key and separate consumption key on the queued submission                                       |
+| Interrupt, discard a draft, or delete a Connection                                                                                                             | The terminal business record                                                                             |
+| Steer                                                                                                                                                          | Its inbox entry                                                                                          |
+| Apply a reviewed configuration                                                                                                                                 | Its immutable application record; additional keys for an already applied version use a minimal reference |
+| Repeatable updates, lifecycle commands, or publication that may reuse an existing Revision                                                                     | A minimal scoped key-to-result reference in `idempotency_evidence`                                       |
 
-Workspace and Organization credential boundaries are distinct replay scopes. Organization-scoped operations have an explicit non-null boundary identity even though their resources have no Workspace; lookup, uniqueness, and concurrency serialization use the same boundary.
+The shared reference contains scope, key digest, result kind/reference, and creation time. It contains no content digest, response snapshot, or expiry. It is not an audit record, external-effect journal, or retention hold. External cleanup and test outcomes belong to the Connection or Provider that owns those business facts. An audit remains independent.
 
-All ordinary HTTP command families use the same replay semantics and deterministic digest of domain-normalized input. Most store evidence in `idempotency_evidence`; [public steer](19-agent-control-active-execution.md#steer-idempotency-storage) stores the same identity, digest, and expiry semantics on its authoritative inbox entry, using its Thread lock to serialize final admission. Omission and explicit null remain distinct where the owning contract gives them different meaning. Credential fingerprints include the protected input value, never its redacted display, and receipts contain no credential plaintext.
+Keys have no time-based expiry and are not reusable after 24 hours. Their useful lifetime follows the owning business data. Ordinary deletion or collection may end deduplication; no tombstone, replay-specific retention pin, or reconstruction of deleted data is required. A missing result does not prove that its external effect never happened. Independently owned protocol identities, execution identities, security evidence, and object integrity digests retain their own contracts.
 
-The operation serializes concurrent uses of the same evidence scope. The same key and canonical request return the original result; the same key with different input returns a conflict. Replay resolves before a version or ETag comparison so a successful mutation can return its original result after advancing the resource state.
+Preflight reads are hints. Final acceptance uses the owning resource lock and unique key constraint in the same short transaction as the mutation. A losing request rolls back every tentative business write before reading the winner. No reservation or database transaction spans external I/O. Where an effect follows acceptance, Service commits its business intent first and uses that operation's reconciliation rules; retrying its HTTP key does not redispatch the effect.
 
-Run acceptance, queued-submission, and interrupt preflight reads eligible committed evidence without reserving the key, locking evidence, or deleting expired records. A miss is only a preparation hint: another request may commit before acceptance. Final acceptance arbitrates the same scope in the business transaction, using the owning locked check or a unique-scope conditional insert that replaces only expired evidence. A live winner is never overwritten. A losing request rolls back every tentative business write before loading the winner and checking its canonical request digest. Expired-key replacement rolls back with the business mutation; preflight and post-conflict replay cannot perform that replacement. Public steer retains its inbox-owned arbitration.
-
-Idempotency evidence commits in the same relational transaction as the accepted mutation and result reference. An operation does not hold an idempotency reservation or database transaction across external I/O. If acceptance requires an external effect, Service first commits durable intent and performs the effect outside the transaction under an owning idempotency or reconciliation contract.
-
-Eligibility ends exactly at expiry. A bounded control-plane retention sweep physically deletes expired shared HTTP evidence and clears expired steer replay metadata without deleting inbox entries, independently of protocol bindings, execution identities, and audit retention, under [Control Background Tasks](07-control-background-tasks.md#evidence-and-lifecycle-retention). Receipts preserve accepted response facts instead of reconstructing them from later mutable resource state.
-
-Expired or absent evidence does not prove that an earlier operation was never dispatched. Clients do not invent a new key merely because an acknowledgement was lost.
+Raw keys and secret request content are excluded from logs, events, traces, and diagnostics. Workspace and Organization boundaries remain distinct replay scopes.
 
 ## Atomic Durable Commit
 
@@ -143,17 +137,17 @@ Before an external effect can occur, the worker commits the owning dispatch boun
 
 ## Failure Semantics
 
-| Failure                                              | Durable outcome                                                                     | Retry or reconciliation                              |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Validation or authorization fails before transaction | No mutation evidence or outbox intent                                               | Caller corrects intent or authority                  |
-| Transaction rolls back                               | Entire logical bundle is absent                                                     | Retry only when the operation remains safe           |
-| Response is lost after commit                        | Mutation outcome is unknown to caller                                               | Replay the same idempotency key or read authority    |
-| Same key carries different request                   | Existing result is preserved                                                        | Return conflict; never replace evidence              |
-| External effect outcome is unknown                   | Durable intent remains without invented result                                      | Use owning receipt or reconciliation                 |
-| Publisher crashes before acknowledgement             | Source can be delivered again                                                       | Stable identity deduplicates downstream              |
-| Redis or another sink is unavailable                 | Outbox remains pending; affected runtime is unready when the dependency is required | Restore dependency and resume bounded publication    |
-| Permanent delivery rejection                         | Intent remains durably failed and observable                                        | Correct configuration or use owning repair operation |
-| Stale worker publishes                               | Fenced transaction rejects the mutation and outbox                                  | Current RunAttempt or owning domain decides outcome  |
+| Failure                                              | Durable outcome                                                                     | Retry or reconciliation                                |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Validation or authorization fails before transaction | No mutation evidence or outbox intent                                               | Caller corrects intent or authority                    |
+| Transaction rolls back                               | Entire logical bundle is absent                                                     | Retry only when the operation remains safe             |
+| Response is lost after commit                        | Mutation outcome is unknown to caller                                               | Replay the same idempotency key or read authority      |
+| Same key carries different request                   | Existing result is preserved                                                        | Project the existing result; never repeat the mutation |
+| External effect outcome is unknown                   | Durable intent remains without invented result                                      | Use owning receipt or reconciliation                   |
+| Publisher crashes before acknowledgement             | Source can be delivered again                                                       | Stable identity deduplicates downstream                |
+| Redis or another sink is unavailable                 | Outbox remains pending; affected runtime is unready when the dependency is required | Restore dependency and resume bounded publication      |
+| Permanent delivery rejection                         | Intent remains durably failed and observable                                        | Correct configuration or use owning repair operation   |
+| Stale worker publishes                               | Fenced transaction rejects the mutation and outbox                                  | Current RunAttempt or owning domain decides outcome    |
 
 ## Compatibility
 

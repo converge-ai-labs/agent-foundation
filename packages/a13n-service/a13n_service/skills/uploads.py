@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.durable_operations.idempotency import is_evidence_unique_race
+from a13n_service.durable_operations.entity_keys import is_key_conflict
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.object_retention.persistence import require_object_publications
 from a13n_service.storage import transaction
@@ -29,7 +29,7 @@ from .support import (
     authorize_skill_workspace,
     idempotency_identity,
     load_replay,
-    new_replay_evidence,
+    skill_request_key,
 )
 
 UPLOAD_LIFETIME = timedelta(hours=24)
@@ -56,8 +56,7 @@ class SkillUploadService:
         idempotency_key: str,
         archive: bytes,
     ) -> ReplayResult[SkillUploadReceipt]:
-        archive_sha256 = await asyncio.to_thread(lambda: hashlib.sha256(archive).hexdigest())
-        identity = idempotency_identity(idempotency_key, {"archive_sha256": archive_sha256})
+        identity = idempotency_identity(idempotency_key)
         replay, organization_id = await self._preauthorize_and_replay(
             actor=actor,
             workspace_id=workspace_id,
@@ -65,6 +64,7 @@ class SkillUploadService:
         )
         if replay is not None:
             return replay
+        archive_sha256 = await asyncio.to_thread(lambda: hashlib.sha256(archive).hexdigest())
         try:
             package = await asyncio.to_thread(normalize_skill_zip, archive)
         except SkillPackageError as error:
@@ -111,6 +111,7 @@ class SkillUploadService:
                 )
                 session.add(
                     SkillUploadRecord(
+                        request_key=skill_request_key(scope),
                         id=upload_id,
                         organization_id=workspace.organization_id,
                         workspace_id=workspace_id,
@@ -123,18 +124,10 @@ class SkillUploadService:
                         consumed_by_revision_id=None,
                     )
                 )
-                session.add(
-                    new_replay_evidence(
-                        scope=scope,
-                        response=receipt,
-                        created=True,
-                        now=now,
-                    )
-                )
                 await session.flush()
                 return ReplayResult(result=receipt, created=True)
         except IntegrityError as error:
-            if not is_evidence_unique_race(error):
+            if not is_key_conflict(error, "skill_uploads"):
                 raise
             return await self._require_committed_replay(
                 actor=actor,

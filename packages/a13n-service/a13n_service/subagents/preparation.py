@@ -16,7 +16,6 @@ from a13n_service.agents.domain import (
 from a13n_service.connectivity.selection_domain import (
     ConnectionRunSelection,
 )
-from a13n_service.digests import digest_request
 from a13n_service.interactions.domain import (
     ExecutionBudget,
     JsonObject,
@@ -121,19 +120,6 @@ def prepare_child_run(
         created_at=created_at,
     )
     input_payload = accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True)
-    request_fingerprint = digest_request(
-        {
-            "schema_version": "1",
-            "parent_run_id": parent_run.id,
-            "subagent_name": subagent_name,
-            "child_agent_id": child_agent_id,
-            "child_agent_revision_id": child_agent_revision_id,
-            "child_effective_config_digest": child_effective_config.content_digest,
-            "input": input_payload,
-            "cancellation_policy": cancellation_policy.value,
-            "result_visibility": result_visibility.value,
-        }
-    )
     thread = Thread(
         id=child_thread_id,
         version=1,
@@ -174,7 +160,6 @@ def prepare_child_run(
         child_effective_config=child_effective_config,
         connection_selections=tuple(item.model_dump(mode="json", by_alias=True) for item in connection_selections),
         execution_budget=execution_budget,
-        request_fingerprint=request_fingerprint,
         input_payload=input_payload,
         delegated_input=delegated_input,
         created_at=created_at,
@@ -246,21 +231,6 @@ def prepare_child_resume(
         created_at=created_at,
     )
     input_payload = accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True)
-    request_fingerprint = digest_request(
-        {
-            "schema_version": "1",
-            "parent_run_id": parent_run.id,
-            "resumed_from_relationship_id": source_relationship.id,
-            "source_child_run_id": source_run.id,
-            "subagent_name": subagent_name,
-            "child_agent_id": child_agent_id,
-            "child_agent_revision_id": child_agent_revision_id,
-            "child_effective_config_digest": child_effective_config.content_digest,
-            "input": input_payload,
-            "cancellation_policy": cancellation_policy.value,
-            "result_visibility": result_visibility.value,
-        }
-    )
     state = initialize_completed_continuation_state(
         RunStateSeed(
             run_id=child_run_id,
@@ -286,7 +256,6 @@ def prepare_child_resume(
         child_effective_config=child_effective_config,
         connection_selections=source_run.connection_selections,
         execution_budget=parent_run.execution_budget,
-        request_fingerprint=request_fingerprint,
         input_payload=input_payload,
         delegated_input=delegated_input,
         created_at=created_at,
@@ -351,7 +320,6 @@ def _child_run(
     child_effective_config: EffectiveAgentConfig,
     connection_selections: tuple[JsonObject, ...],
     execution_budget: ExecutionBudget,
-    request_fingerprint: str,
     input_payload: JsonValue,
     delegated_input: str,
     created_at: datetime,
@@ -378,7 +346,6 @@ def _child_run(
         priority=parent_run.priority,
         queue_name=parent_run.queue_name,
         execution_budget=execution_budget,
-        request_fingerprint=request_fingerprint,
         input_kind=RunInputKind.agent_input,
         input=input_payload,
         input_text=delegated_input if len(delegated_input) <= 65_536 else None,

@@ -8,7 +8,6 @@ from a13n_service.agent_configuration.definition import load_definition
 from a13n_service.agent_configuration.readiness import ConfigurationReadiness
 from a13n_service.agent_configuration.system_agent import SystemConfigurationAgent
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
-from a13n_service.database import DatabaseMigrator
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.etags import resource_etag
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
@@ -63,11 +62,10 @@ async def test_concurrent_provisioning_and_apply_have_one_committed_result(postg
     assert len(agents) == 2 and len(revisions) == 1
     assert len(publications) == 1
     assert sum(agent.system_purpose is not None for agent in agents) == 1
-    migrator = DatabaseMigrator(service_database)
+    from tests.database.revision_steps import apply_revision_steps
+
     with pytest.raises(RuntimeError, match="protected configuration assistant data"):
-        await anyio.to_thread.run_sync(lambda: migrator.downgrade("042c77935852"))
-    # Later revisions can commit their downgrades before the protected revision refuses.
-    await anyio.to_thread.run_sync(migrator.upgrade)
+        await anyio.to_thread.run_sync(apply_revision_steps, service_database, (("0264713d02b1", "downgrade"),))
     retained = await drafts.get(actor=actor(), draft_id=saved.id)
     assert retained.status == "open" and retained.version == saved.version + 1
     assert (await applications.list_applications(actor=actor(), draft_id=draft.id, limit=10, cursor=None)).items == (

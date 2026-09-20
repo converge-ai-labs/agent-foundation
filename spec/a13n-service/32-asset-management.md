@@ -123,7 +123,7 @@ The accepted access paths are:
 
 Asset operations reuse shared durable records instead of adding Asset-specific coordination tables:
 
-- Native upload stores its caller-key digest, canonical request digest, `asset_id` result reference, and 24-hour expiry in the shared idempotency-evidence boundary; the `assets` row stores no key or request digest.
+- Native upload stores one scoped request key on the `assets` row. The content digest remains a business integrity field and is not compared for HTTP idempotency.
 - Delete conditionally sets `deleted_at` and commits security audit plus one shared `outbox_records` cleanup intent in the same transaction. That intent uses `source_kind="asset"`, `source_id=asset_id`, `destination_kind="asset_content_cleanup"`, and a bounded `destination_ref` selecting the configured Asset object store. The derived object key is not copied into the Outbox row.
 - The Asset tombstone remains while cleanup is deliverable or redriveable, upload reconciliation evidence can return it, or a source RunAttempt can still reconcile the publication. After cleanup and those retention dependencies finish, policy can prune the row; the Asset ID is never reused.
 
@@ -135,7 +135,7 @@ Every deployment configures a positive finite `assets.max_size_bytes`. The same 
 
 Publication streams through bounded private staging and never buffers the complete body in an API or Worker process. Service computes size and SHA-256 while staging, applies content policy and any reliable format checks, and rejects a positive media-type conflict before publication. Unknown content remains representable as `application/octet-stream`.
 
-Asset upload idempotency evidence is retained for 24 hours after the accepted commit. The canonical create input consists of Workspace, normalized filename, normalized media type, exact size, and computed content digest. Same-key replay with the same canonical input returns the original Asset; reuse with different metadata or bytes returns an idempotency conflict. After evidence expires, its absence does not prove an earlier create did not commit.
+The same scoped upload key returns the existing Asset through current projection logic, without reading or comparing replacement bytes or metadata. Its key has no separate expiry. Ordinary Asset collection can remove the row and its key; HTTP replay does not pin deleted Assets.
 
 ## Native Management API
 
@@ -168,7 +168,7 @@ The content route authorizes the active Asset before opening object storage and 
 
 Delete terminally tombstones an active Asset and returns `204`. A missing, concealed, or already deleted Asset returns the owning not-found result. Asset has no `PATCH`, complete replacement `PUT`, rename, restore, revision collection, or historical-content route.
 
-Stable domain errors include `asset_not_found`, `asset_content_unavailable`, `asset_limit`, `asset_media_type_invalid`, `asset_content_invalid`, and `asset_idempotency_conflict`. Errors never expose staged paths, object keys, private Environment paths, raw scanner output, or content bytes.
+Stable domain errors include `asset_not_found`, `asset_content_unavailable`, `asset_limit`, `asset_media_type_invalid`, `asset_content_invalid`. Errors never expose staged paths, object keys, private Environment paths, raw scanner output, or content bytes.
 
 ## Publication and Storage Authority
 

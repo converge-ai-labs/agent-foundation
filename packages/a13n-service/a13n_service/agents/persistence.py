@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +14,7 @@ from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     InvalidIdempotencyKey,
 )
-from a13n_service.durable_operations.requests import ReplayReceipt, evidence_record
+from a13n_service.durable_operations.requests import ReplayReference, evidence_record
 from a13n_service.durable_operations.requests import load_replay as load_request_replay
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import (
@@ -379,7 +378,6 @@ def add_command_evidence_and_audit(
     result_kind: str,
     result_ref: str,
     now: datetime,
-    response: BaseModel,
     audit_details: dict[str, object] | None = None,
     audit: bool = True,
 ) -> None:
@@ -393,7 +391,6 @@ def add_command_evidence_and_audit(
             identity=identity,
             result_kind=result_kind,
             result_ref=result_ref,
-            response=response,
             now=now,
         )
     )
@@ -411,9 +408,9 @@ def add_command_evidence_and_audit(
         )
 
 
-def request_identity(idempotency_key: str, request: object) -> IdempotencyIdentity:
+def request_identity(idempotency_key: str) -> IdempotencyIdentity:
     try:
-        return IdempotencyIdentity.from_request(idempotency_key, request)
+        return IdempotencyIdentity.from_key(idempotency_key)
     except InvalidIdempotencyKey as error:
         raise invalid_idempotency_key() from error
 
@@ -426,7 +423,7 @@ async def load_replay(
     scope_id: str,
     identity: IdempotencyIdentity,
     now: datetime,
-) -> ReplayReceipt | None:
+) -> ReplayReference | None:
     # Agent commands require a Workspace even though shared receipts also support Organizations.
     _ = actor.workspace_id
     try:
@@ -466,3 +463,12 @@ def new_agent_audit(
         occurred_at=now,
         details=details,
     )
+
+
+async def created_agent_result(session: AsyncSession, agent: AgentRecord) -> AgentRevisionCreateResult:
+    revision = await session.scalar(
+        select(AgentRevisionRecord).where(AgentRevisionRecord.agent_id == agent.id, AgentRevisionRecord.version == 1)
+    )
+    if revision is None:
+        raise agent_not_found()
+    return AgentRevisionCreateResult(agent=agent.to_resource(), revision=revision.to_resource())

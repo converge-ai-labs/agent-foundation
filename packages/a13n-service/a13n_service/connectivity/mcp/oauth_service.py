@@ -16,11 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.connections.domain import Connection
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.management import canonical_json, record_command, replay_command
+from a13n_service.connectivity.management import canonical_json
 from a13n_service.credentials import CredentialSnapshot
-from a13n_service.digests import digest_request
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
 from a13n_service.durable_operations.idempotency import (
-    IdempotencyConflict,
     InvalidIdempotencyKey,
     digest_visible_ascii_key,
 )
@@ -158,13 +157,11 @@ class MCPOAuthService:
                 category=ErrorCategory.invalid_request,
             )
         key_digest = _idempotency_digest(idempotency_key)
-        request_fingerprint = digest_request({"expected_version": expected_version, "redirect_uri": redirect_uri})
         source = await self._authorize_source(
             actor=actor,
             connection_id=connection_id,
             expected_version=expected_version,
             key_digest=key_digest,
-            request_fingerprint=request_fingerprint,
             redirect_uri=redirect_uri,
         )
         if isinstance(source, OAuthSessionSnapshot):
@@ -196,29 +193,11 @@ class MCPOAuthService:
         *,
         actor: AuthenticatedActor,
         connection_id: str,
-        idempotency_key: str,
         expected_version: int,
     ) -> Connection:
-        key_digest = _idempotency_digest(idempotency_key)
-        fingerprint = digest_request({"expected_version": expected_version})
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id)
             await authorize_connection(session, actor, connection, mode="manage")
-            try:
-                replay = await replay_command(
-                    session,
-                    actor=actor,
-                    workspace_id=connection.workspace_id,
-                    operation="mcp_connection.client_credentials",
-                    scope_id=connection.id,
-                    idempotency_key_digest=key_digest,
-                    fingerprint=fingerprint,
-                    now=self._clock(),
-                )
-            except IdempotencyConflict as error:
-                raise map_management_error(error) from error
-            if replay is not None:
-                return replay.restore(Connection)
             require_version(connection.version, expected_version)
             if connection.status == "disabled":
                 raise MCPConnectionError(
@@ -267,24 +246,11 @@ class MCPOAuthService:
             connection.updated_at = now
             invalidate_refresh_claim(connection, now=now)
             resource = connection.to_resource()
-            command_id = record_command(
-                session,
-                actor=actor,
-                organization_id=connection.organization_id,
-                workspace_id=connection.workspace_id,
-                operation="mcp_connection.client_credentials",
-                scope_id=connection.id,
-                idempotency_key_digest=key_digest,
-                fingerprint=fingerprint,
-                resource_type="mcp_connection",
-                resource_id=connection.id,
-                result_version=connection.version,
-                now=now,
-                resource=resource,
-            ).id
             session.add(audit(actor, connection, action="mcp_connection.client_credentials", now=now))
         try:
-            return (await self._discovery.discover(connection_id, actor=actor, command_id=command_id)).connection
+            return (
+                await self._discovery.discover(connection_id, actor=actor, expected_version=resource.version)
+            ).connection
         except MCPConnectionError as error:
             if error.code != "mcp_discovery_unavailable":
                 raise
@@ -390,7 +356,6 @@ class MCPOAuthService:
         connection_id: str,
         expected_version: int,
         key_digest: str,
-        request_fingerprint: str,
         redirect_uri: str,
     ) -> OAuthSource | OAuthSessionSnapshot:
         async with transaction(self._sessions) as session:
@@ -402,21 +367,19 @@ class MCPOAuthService:
                     "Connection does not use OAuth.",
                     category=ErrorCategory.conflict,
                 )
-            try:
-                replay = await replay_command(
-                    session,
-                    actor=actor,
-                    workspace_id=connection.workspace_id,
-                    operation="mcp_connection.authorize",
+            replay = await find_by_key(
+                session,
+                MCPAuthorizationRecord,
+                entity_key(
+                    actor,
+                    operation="connection.authorize",
                     scope_id=connection.id,
-                    idempotency_key_digest=key_digest,
-                    fingerprint=request_fingerprint,
-                    now=self._clock(),
-                )
-            except IdempotencyConflict as error:
-                raise map_management_error(error) from error
+                    key_digest=key_digest,
+                    workspace_id=connection.workspace_id,
+                ),
+            )
             if replay is not None:
-                oauth_session = await session.get(MCPAuthorizationRecord, replay.resource_id)
+                oauth_session = replay
                 if oauth_session is None or oauth_session.connection_id != connection.id:
                     raise MCPConnectionError(
                         "oauth_session_unavailable",
@@ -484,22 +447,14 @@ class MCPOAuthService:
                 created_at=now,
                 updated_at=now,
             )
-            session.add(authorization)
-            record_command(
-                session,
-                actor=actor,
-                organization_id=connection.organization_id,
-                workspace_id=connection.workspace_id,
-                operation="mcp_connection.authorize",
+            authorization.request_key = entity_key(
+                actor,
+                operation="connection.authorize",
                 scope_id=connection.id,
-                idempotency_key_digest=key_digest,
-                fingerprint=request_fingerprint,
-                resource_type="connection_authorization",
-                resource_id=authorization.id,
-                result_version=connection.version,
-                now=now,
-                resource=None,
+                key_digest=key_digest,
+                workspace_id=connection.workspace_id,
             )
+            session.add(authorization)
             session.add(audit(actor, connection, action="connection.authorize", now=now))
             return OAuthSource(
                 authorization_id=authorization.id,

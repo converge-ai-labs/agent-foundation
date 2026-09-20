@@ -11,17 +11,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
+from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt, cleanup_receipt
 from a13n_service.connectivity.connections.domain import Connection
-from a13n_service.connectivity.management import CommandReceipt, fingerprint, record_command, replay_command
 from a13n_service.credentials import CredentialSnapshot
-from a13n_service.digests import digest_request
+from a13n_service.durable_operations.entity_keys import entity_key
 from a13n_service.durable_operations.idempotency import (
-    IdempotencyConflict,
     InvalidIdempotencyKey,
     digest_visible_ascii_key,
 )
-from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
@@ -50,7 +47,7 @@ _RegistrationCleanupStatus = Literal["succeeded", "failed", "unknown"]
 
 class ConnectionDiscovery(Protocol):
     async def discover(
-        self, connection_id: str, *, actor: AuthenticatedActor, command_id: str | None = None
+        self, connection_id: str, *, actor: AuthenticatedActor, expected_version: int | None = None
     ) -> DiscoveryResult: ...
 
 
@@ -95,26 +92,13 @@ class MCPConnectionService:
         *,
         actor: AuthenticatedActor,
         connection_id: str,
-        idempotency_key: str,
         request: ReplaceMCPCredentialsRequest,
     ) -> Connection:
-        key_digest = _idempotency_digest(idempotency_key)
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id, lock=True)
             await authorize_connection(session, actor, record, mode="manage")
-            credential_value = _credential_value(record, request)
-            request_fingerprint = fingerprint(request, credentials={"bundle": credential_value})
-            replay = await self._replay(
-                session,
-                actor=actor,
-                record=record,
-                operation="mcp_connection.credentials.replace",
-                key_digest=key_digest,
-                request_fingerprint=request_fingerprint,
-            )
-            if replay:
-                return _restore_connection(replay)
             require_version(record.version, request.expected_version)
+            credential_value = _credential_value(record, request)
             try:
                 record.replace_credential(credential_value, self._protector)
                 record.authorization_generation += 1
@@ -130,16 +114,9 @@ class MCPConnectionService:
             record.version += 1
             record.updated_at = self._clock()
             invalidate_refresh_claim(record, now=record.updated_at)
-            command_id = self._record(
-                session,
-                actor=actor,
-                record=record,
-                operation="mcp_connection.credentials.replace",
-                key_digest=key_digest,
-                request_fingerprint=request_fingerprint,
-                discovery_pending=True,
-            )
-        result = await self._discovery.discover(connection_id, actor=actor, command_id=command_id)
+            session.add(audit(actor, record, action="mcp_connection.credentials.replace", now=self._clock()))
+            accepted_version = record.version
+        result = await self._discovery.discover(connection_id, actor=actor, expected_version=accepted_version)
         return result.connection
 
     async def delete(
@@ -151,26 +128,19 @@ class MCPConnectionService:
         expected_version: int,
     ) -> ConnectionCleanupReceipt:
         key_digest = _idempotency_digest(idempotency_key)
-        request_fingerprint = digest_request({"expected_version": expected_version})
         credentials = []
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id, lock=True, include_deleted=True)
             await authorize_connection(session, actor, record, mode="manage")
-            try:
-                replay = await replay_command(
-                    session,
-                    actor=actor,
-                    workspace_id=record.workspace_id,
-                    operation="mcp_connection.delete",
-                    scope_id=connection_id,
-                    idempotency_key_digest=key_digest,
-                    fingerprint=request_fingerprint,
-                    now=self._clock(),
-                )
-            except IdempotencyConflict as error:
-                raise map_management_error(error) from error
-            if replay is not None:
-                return replay.restore(ConnectionCleanupReceipt)
+            request_key = entity_key(
+                actor,
+                operation="mcp_connection.delete",
+                scope_id=connection_id,
+                key_digest=key_digest,
+                workspace_id=record.workspace_id,
+            )
+            if record.deletion_key == request_key:
+                return cleanup_receipt(record)
             require_version(record.version, expected_version)
             if record.auth_mode == "oauth" and record.ciphertext is not None:
                 credentials.append(record.credential_snapshot())
@@ -206,34 +176,20 @@ class MCPConnectionService:
                 local_status="deleted",
                 remote_status="unknown" if credentials else "not_required",
             )
-            command = record_command(
-                session,
-                actor=actor,
-                organization_id=record.organization_id,
-                workspace_id=record.workspace_id,
-                operation="mcp_connection.delete",
-                scope_id=connection_id,
-                idempotency_key_digest=key_digest,
-                fingerprint=request_fingerprint,
-                resource_type="mcp_connection",
-                resource_id=connection_id,
-                result_version=record.version,
-                now=now,
-                resource=receipt,
-            )
-            command_id = command.id
+            record.deletion_key = request_key
+            record.remote_cleanup_status = receipt.remote_status
+            record.cleanup_version = record.version
+            cleanup_version = record.version
             session.add(audit(actor, record, action="mcp_connection.delete", now=now))
         if not credentials:
             return receipt
         outcome = await self._cleanup_registrations(credentials)
         receipt = ConnectionCleanupReceipt(connection_id=connection_id, local_status="deleted", remote_status=outcome)
         async with transaction(self._sessions) as session:
-            command = await session.get(IdempotencyEvidenceRecord, command_id, with_for_update=True)
-            if command is not None and command.receipt_json is not None:
-                command.receipt_json = {
-                    "version": command.receipt_json["version"],
-                    "resource": receipt.model_dump(mode="json"),
-                }
+            record = await require_connection(session, connection_id, lock=True, include_deleted=True)
+            if record.version == cleanup_version and record.cleanup_version == cleanup_version:
+                record.remote_cleanup_status = outcome
+            receipt = cleanup_receipt(record)
         return receipt
 
     async def _cleanup_registrations(self, credentials: list[CredentialSnapshot]) -> _RegistrationCleanupStatus:
@@ -254,70 +210,6 @@ class MCPConnectionService:
                 outcome = "unknown"
             outcomes.append(outcome)
         return "unknown" if "unknown" in outcomes else "failed" if "failed" in outcomes else "succeeded"
-
-    async def _replay(
-        self,
-        session: AsyncSession,
-        *,
-        actor: AuthenticatedActor,
-        record: MCPConnectionRecord,
-        operation: str,
-        key_digest: str,
-        request_fingerprint: str,
-    ) -> CommandReceipt | None:
-        try:
-            result = await replay_command(
-                session,
-                actor=actor,
-                workspace_id=record.workspace_id,
-                operation=operation,
-                scope_id=record.id,
-                idempotency_key_digest=key_digest,
-                fingerprint=request_fingerprint,
-                now=self._clock(),
-            )
-        except IdempotencyConflict as error:
-            raise map_management_error(error) from error
-        return result
-
-    def _record(
-        self,
-        session: AsyncSession,
-        *,
-        actor: AuthenticatedActor,
-        record: MCPConnectionRecord,
-        operation: str,
-        key_digest: str,
-        request_fingerprint: str,
-        discovery_pending: bool = False,
-    ) -> str:
-        command = record_command(
-            session,
-            actor=actor,
-            organization_id=record.organization_id,
-            workspace_id=record.workspace_id,
-            operation=operation,
-            scope_id=record.id,
-            idempotency_key_digest=key_digest,
-            fingerprint=request_fingerprint,
-            resource_type="mcp_connection",
-            resource_id=record.id,
-            result_version=record.version,
-            now=self._clock(),
-            resource=None if discovery_pending else record.to_resource(),
-        )
-        session.add(audit(actor, record, action=operation, now=self._clock()))
-        return command.id
-
-
-def _restore_connection(receipt: CommandReceipt) -> Connection:
-    if receipt.resource is None:
-        raise MCPConnectionError(
-            "mcp_discovery_incomplete",
-            "Discovery has not completed for this command. Read the connection before starting a new command.",
-            category=ErrorCategory.conflict,
-        )
-    return receipt.restore(Connection)
 
 
 def _validate_auth_identity(auth_mode: MCPAuthMode, header_names: tuple[str, ...]) -> None:

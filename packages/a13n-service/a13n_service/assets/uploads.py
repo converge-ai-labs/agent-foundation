@@ -8,11 +8,9 @@ from dataclasses import dataclass
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.durable_operations.entity_keys import entity_key, is_key_conflict
 from a13n_service.durable_operations.idempotency import (
-    EvidenceScope,
     IdempotencyIdentity,
-    is_evidence_unique_race,
-    new_evidence,
 )
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -39,7 +37,6 @@ from .persistence import (
     UPLOAD_OPERATION,
     add_asset_publication,
     authorization_error,
-    canonical_upload_digest,
     idempotency_key_digest,
     load_upload_replay,
 )
@@ -82,6 +79,12 @@ class AssetUploadService:
     ) -> Asset:
         key_digest = idempotency_key_digest(idempotency_key)
         organization_id = await self._preauthorize_create(actor=actor, workspace_id=workspace_id)
+        identity = IdempotencyIdentity(key_digest)
+        replay = await self._load_authorized_upload_replay(
+            actor=actor, organization_id=organization_id, workspace_id=workspace_id, identity=identity
+        )
+        if replay is not None:
+            return replay
         async with self._publisher.stage(
             organization_id=organization_id,
             workspace_id=workspace_id,
@@ -92,25 +95,6 @@ class AssetUploadService:
             content_length=content_length,
         ) as candidate:
             asset = candidate.asset
-            identity = IdempotencyIdentity(
-                key_digest=key_digest,
-                request_digest=canonical_upload_digest(
-                    workspace_id=workspace_id,
-                    filename=asset.filename,
-                    media_type=asset.media_type,
-                    size_bytes=asset.size_bytes,
-                    content_sha256=asset.content_sha256,
-                ),
-            )
-            replay = await self._load_authorized_upload_replay(
-                actor=actor,
-                organization_id=organization_id,
-                workspace_id=workspace_id,
-                identity=identity,
-            )
-            if replay is not None:
-                return replay
-
             await self._publisher.publish(candidate)
             return await self._commit_upload(
                 actor=actor,
@@ -329,30 +313,25 @@ class AssetUploadService:
                             ),
                         )
                         asset = asset.model_copy(update={"created_at": now})
-                        add_asset_publication(session, asset=asset, actor=actor, now=now)
-                        session.add(
-                            new_evidence(
-                                organization_id=asset.organization_id,
-                                scope=EvidenceScope(
-                                    workspace_id=asset.workspace_id,
-                                    actor_type=actor.principal.principal_type.value,
-                                    actor_id=actor.principal.principal_id,
-                                    operation=UPLOAD_OPERATION,
-                                    scope_id=asset.workspace_id,
-                                    organization_id=actor.boundary_organization_id,
-                                ),
-                                identity=identity,
-                                result_kind="asset",
-                                result_ref=asset.id,
-                                now=now,
-                            )
+                        add_asset_publication(
+                            session,
+                            asset=asset,
+                            actor=actor,
+                            now=now,
+                            request_key=entity_key(
+                                actor,
+                                operation=UPLOAD_OPERATION,
+                                scope_id=asset.workspace_id,
+                                key_digest=identity.key_digest,
+                                workspace_id=asset.workspace_id,
+                            ),
                         )
                         await session.flush()
                         result = asset
                 candidate_is_authoritative = result.id == asset.id
                 return result
             except IntegrityError as error:
-                if not is_evidence_unique_race(error):
+                if not is_key_conflict(error, "assets"):
                     raise
                 replay = await self._load_authorized_upload_replay(
                     actor=actor,

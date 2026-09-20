@@ -8,7 +8,7 @@ from sqlalchemy import String, cast, delete, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.background import Sweep
-from a13n_service.durable_operations.models import IdempotencyEvidenceRecord, OutboxRecord
+from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import transaction
@@ -61,19 +61,8 @@ class HookRetention:
                         cast(SecurityAuditRecord.details, String).contains(revision.id),
                     ),
                 )
-                evidence = exists().where(
-                    IdempotencyEvidenceRecord.organization_id == head.organization_id,
-                    IdempotencyEvidenceRecord.expires_at > now,
-                    or_(
-                        IdempotencyEvidenceRecord.scope_id.in_((head.id, revision.id)),
-                        IdempotencyEvidenceRecord.result_ref.in_((head.id, revision.id)),
-                        IdempotencyEvidenceRecord.result_ref == head.inline_run_id,
-                        cast(IdempotencyEvidenceRecord.receipt_json, String).contains(head.id),
-                        cast(IdempotencyEvidenceRecord.receipt_json, String).contains(revision.id),
-                    ),
-                )
                 delivery = exists().where(OutboxRecord.destination_ref == revision.id)
-                if await database.scalar(select(or_(audit, evidence, delivery))):
+                if await database.scalar(select(or_(audit, delivery))):
                     deferred += 1
                     continue
                 if revision.id == head.current_revision_id:

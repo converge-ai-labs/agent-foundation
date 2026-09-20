@@ -76,9 +76,7 @@ Collection checks both outgoing work and incoming references. It preserves evide
 
 ### Evidence and Lifecycle Retention
 
-The sweep also clears expired public-steer idempotency metadata in bounded inbox batches using row locks with `SKIP LOCKED`. It never acquires Thread locks or removes accepted input; [Steer Idempotency Storage](19-agent-control-active-execution.md#steer-idempotency-storage) owns the replay window and lazy replacement rules.
-
-The HTTP evidence sweep covers the shared command evidence independently of protocol bindings, execution identities, and security audit. Expired evidence never proves that an earlier external operation did not happen.
+HTTP request keys do not expire independently. They are removed with their owning business records, and HTTP result references do not pin those records. Protocol, execution, audit, and unfinished external-operation retention remain independent.
 
 Outbox retention evaluates each source and destination under its own delivery-audit, duplicate-suppression, redrive, and progress requirements. Pending or claimed work is not deleted by a terminal-history sweep. Releasing an Outbox dependency does not automatically delete its source or destination; their remaining dependencies are evaluated separately.
 
@@ -86,13 +84,13 @@ Lifecycle retention removes only settled, eligible event ranges and preserves th
 
 ### HookSubscription Collection
 
-The collector evaluates the head and immutable Revisions against the full [Hook retention contract](26-hook-notifications.md#hook_subscriptions-and-hook_subscription_revisions). It preserves an inline head and Revision v1 while its owning Run remains an eligible Feedback, waiting-Continue, or Retry source, even after automatic expiry or manual deletion. It also checks retained command evidence, delivery/redrive, audit, and relational references.
+The collector evaluates the head and immutable Revisions against the full [Hook retention contract](26-hook-notifications.md#hook_subscriptions-and-hook_subscription_revisions). It preserves an inline head and Revision v1 while its owning Run remains an eligible Feedback, waiting-Continue, or Retry source, even after automatic expiry or manual deletion. It also checks delivery/redrive, audit, and relational references.
 
 After all dependencies end, periodic collection removes the eligible head and Revisions in a referentially valid order. Deleting a Revision cannot leave a retained head's current Revision or an Outbox destination dangling. Collecting a historical Revision does not change a managed subscription's current version, and collection never reuses a subscription or Revision identity. The collector does not replace missing configuration with an empty Hook or reconstruct it from Run input or state.
 
 ### Objects and Upload Evidence
 
-An expired upload receipt and its package object have separate eligibility. Receipt cleanup preserves any still-required command replay evidence; package cleanup proves that no retained publication, unexpired candidate, or accepted Run/Revision lock requires the same object. A consumed receipt's expiry cannot delete its published Skill Revision.
+An expired upload receipt and its package object have separate eligibility. HTTP retry protection does not delay receipt cleanup; package cleanup proves that no retained publication, unexpired candidate, or accepted Run/Revision lock requires the same object. A consumed receipt's expiry cannot delete its published Skill Revision.
 
 Object listings, timestamps, digest equality, and a missing response can locate candidates but never prove absence of ownership. An orphan scan covers service-owned object namespaces and checks authoritative selections, including publication that may have committed with a lost acknowledgement. Temporary files local to another process are not inferred to be abandoned from age alone.
 
@@ -112,7 +110,7 @@ Known namespaces include Asset content, Skill packages, native Run state/display
 
 ### Effective Collection Policies
 
-Hook history and Asset tombstones have separate default minimum ages of 30 days. Required security audit and unexpired command receipts continue to pin them beyond those ages. Asset tombstones also wait for retained cleanup Outbox records and source RunAttempt reconstruction; published cleanup receipts use the configured published-delivery horizon, while unfinished cleanup dead letters remain durable progress. Skill upload receipts expire at their own deadline, subject to unexpired HTTP replay evidence. Object orphan discovery uses a default 24-hour minimum age in addition to publication fencing.
+Hook history and Asset tombstones have separate default minimum ages of 30 days. Required security audit can pin them beyond those ages. Asset tombstones also wait for retained cleanup Outbox records and source RunAttempt reconstruction; published cleanup receipts use the configured published-delivery horizon, while unfinished cleanup dead letters remain durable progress. Skill upload receipts expire at their own business deadline. Object orphan discovery uses a default 24-hour minimum age in addition to publication fencing.
 
 Owner cleanup rotates bounded batches of Service Accounts, live RoleBindings, and Assets beneath deleted Workspaces; Secret erasure has its own bounded scan. Asset cleanup uses the same atomic tombstone, audit, and Outbox transition as explicit deletion. Reversible User or Service Account disablement does not authorize erasure. The implementation establishes no hard-delete horizon for retained Runs, finalized inbox/queue history, Secret metadata, IAM tombstones, or security audit; those authorities remain retained until their owners establish such a policy.
 

@@ -16,7 +16,6 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.connections.domain import Connection
 from a13n_service.connectivity.management import replay_command
 from a13n_service.durable_operations.idempotency import (
-    IdempotencyConflict,
     InvalidIdempotencyKey,
     digest_visible_ascii_key,
 )
@@ -98,22 +97,17 @@ async def replay_connection_command(
     connection: ConnectorConnectionRecord,
     operation: str,
     key_digest: str,
-    request_fingerprint: str,
     now: datetime,
 ):
-    try:
-        return await replay_command(
-            session,
-            actor=actor,
-            workspace_id=connection.workspace_id,
-            operation=operation,
-            scope_id=connection.id,
-            idempotency_key_digest=key_digest,
-            fingerprint=request_fingerprint,
-            now=now,
-        )
-    except IdempotencyConflict as error:
-        raise map_management_value_error(error) from error
+    return await replay_command(
+        session,
+        actor=actor,
+        workspace_id=connection.workspace_id,
+        operation=operation,
+        scope_id=connection.id,
+        idempotency_key_digest=key_digest,
+        now=now,
+    )
 
 
 def external_error(error: ConnectorProviderError) -> ConnectorError:

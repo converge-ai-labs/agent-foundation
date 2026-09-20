@@ -59,7 +59,7 @@ async def mount_api(mount_run, process_runtime_factory, interaction_sessions, re
             await coordination.retire(connection)
 
 
-async def test_mount_http_receipt_replay_conflict_and_ordered_pagination(mount_api):
+async def test_mount_http_current_replay_and_ordered_pagination(mount_api):
     client, _, _, path, environment_id = mount_api
     # An online fixture must survive the original connection lease.
     await sleep(DEFAULT_LIMITS.lease_ms / 1000 + 0.1)
@@ -78,8 +78,8 @@ async def test_mount_http_receipt_replay_conflict_and_ordered_pagination(mount_a
     assert replay.status_code == 201 and replay.json() == receipt
     second = {**first, "name": "archive"}
     conflict = await client.post(path, json=second, headers={"Idempotency-Key": "first"})
-    assert conflict.status_code == 409
-    assert conflict.json()["error"]["code"] == "idempotency_conflict"
+    assert conflict.status_code == 201
+    assert conflict.json() == receipt
     added = await client.post(path, json=second, headers={"Idempotency-Key": "second"})
     assert added.status_code == 201, added.text
     page = await client.get(path, params={"limit": 1})

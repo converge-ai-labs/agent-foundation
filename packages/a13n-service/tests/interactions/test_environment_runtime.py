@@ -421,7 +421,7 @@ async def test_postgresql_concurrent_thread_key_allocates_one_environment(intera
     from sqlalchemy import func, select
 
     _, template, _ = await template_config(interaction_sessions, tmp_path, "on_use")
-    read = thread_creation.load_replay
+    read = thread_creation.find_by_key
     barrier = asyncio.Barrier(2)
     calls = 0
 
@@ -433,7 +433,7 @@ async def test_postgresql_concurrent_thread_key_allocates_one_environment(intera
             await barrier.wait()
         return await read(*args, **kwargs)
 
-    monkeypatch.setattr(thread_creation, "load_replay", synchronized_read)
+    monkeypatch.setattr(thread_creation, "find_by_key", synchronized_read)
     body = CreateThreadRequest(environment=NewEnvironmentSelection(template_id=template.id))
     first, second = await asyncio.gather(
         *(
@@ -549,7 +549,6 @@ async def test_postgresql_shared_approval_wait_is_idle_only_after_last_active_us
             run_id="run_shared123456789012",
             thread_id=shared_thread.id,
             idempotency_key="shared",
-            request_fingerprint="a" * 64,
         ).model_copy(
             update={
                 "session_id": shared_session.id,

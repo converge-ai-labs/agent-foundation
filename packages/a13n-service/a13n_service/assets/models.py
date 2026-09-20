@@ -8,13 +8,14 @@ from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKeyConstrai
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import Asset, RunOutputAssetSource, UploadedAssetSource
 
 
-class AssetRecord(Base):
+class AssetRecord(EntityRequestKey, Base):
     __tablename__ = "assets"
     __table_args__ = (
         ForeignKeyConstraint(

@@ -6,11 +6,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key, is_key_conflict
 from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
-    is_evidence_unique_race,
 )
-from a13n_service.durable_operations.requests import evidence_record
 from a13n_service.environments.authoring import authorize_template
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -40,7 +39,6 @@ from .models import AgentRecord
 from .persistence import (
     authorize_agent_scope,
     copy_revision,
-    load_replay,
     lock_agent,
     lock_revision,
     new_agent_audit,
@@ -73,7 +71,7 @@ class AgentDuplication:
         request: DuplicateAgentRequest,
         if_match: str,
     ) -> Agent:
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
         replay = await self._duplicate_replay(actor=actor, agent_id=agent_id, identity=identity)
         if replay is not None:
             return replay
@@ -107,16 +105,19 @@ class AgentDuplication:
                     source_workspace.workspace_id,
                     agent_id,
                 )
-                replay_ref = await load_replay(
+                replay_ref = await find_by_key(
                     session,
-                    actor=actor,
-                    operation="agent.duplicate",
-                    scope_id=agent_id,
-                    identity=identity,
-                    now=now,
+                    AgentRecord,
+                    entity_key(
+                        actor,
+                        operation="agent.duplicate",
+                        scope_id=agent_id,
+                        key_digest=identity.key_digest,
+                        workspace_id=source_workspace.workspace_id,
+                    ),
                 )
                 if replay_ref is not None:
-                    return replay_ref.restore(Agent)
+                    return replay_ref.to_resource()
                 require_etag(source, if_match)
                 if source.archived_at is not None:
                     raise agent_archived()
@@ -168,6 +169,13 @@ class AgentDuplication:
                     created_at=now,
                     updated_at=now,
                 )
+                duplicate.request_key = entity_key(
+                    actor,
+                    operation="agent.duplicate",
+                    scope_id=agent_id,
+                    key_digest=identity.key_digest,
+                    workspace_id=source.workspace_id,
+                )
                 await insert_with_key(session, duplicate, prefix="agent", requested=request.key)
                 revision = copy_revision(
                     source_revision,
@@ -179,20 +187,6 @@ class AgentDuplication:
                     now=now,
                 )
                 session.add_all((duplicate, revision))
-                session.add(
-                    evidence_record(
-                        actor=actor,
-                        organization_id=source.organization_id,
-                        workspace_id=source.workspace_id,
-                        operation="agent.duplicate",
-                        scope_id=agent_id,
-                        identity=identity,
-                        result_kind="agent",
-                        result_ref=duplicate.id,
-                        now=now,
-                        response=duplicate.to_resource(),
-                    )
-                )
                 session.add(
                     new_agent_audit(
                         actor=actor,
@@ -209,7 +203,7 @@ class AgentDuplication:
         except AuthorizationError as error:
             raise map_authorization_error(error, exact=True) from error
         except IntegrityError as error:
-            if is_evidence_unique_race(error):
+            if is_key_conflict(error, "agents"):
                 replay = await self._duplicate_replay(actor=actor, agent_id=agent_id, identity=identity)
                 if replay is not None:
                     return replay
@@ -235,14 +229,17 @@ class AgentDuplication:
                 workspace_id=source_workspace.workspace_id,
                 action=WorkspaceAction.agent_duplicate,
             )
-            replay_ref = await load_replay(
+            replay_ref = await find_by_key(
                 session,
-                actor=actor,
-                operation="agent.duplicate",
-                scope_id=agent_id,
-                identity=identity,
-                now=self._clock(),
+                AgentRecord,
+                entity_key(
+                    actor,
+                    operation="agent.duplicate",
+                    scope_id=agent_id,
+                    key_digest=identity.key_digest,
+                    workspace_id=source_workspace.workspace_id,
+                ),
             )
             if replay_ref is None:
                 return None
-            return replay_ref.restore(Agent)
+            return replay_ref.to_resource()

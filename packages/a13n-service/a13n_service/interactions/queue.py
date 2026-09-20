@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import delete, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.hooks import InlineHookValidationError, InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.storage import short_session, transaction
@@ -68,15 +69,16 @@ class QueuedSubmissionStore:
         authority_principal: PrincipalRef,
         submission: ThreadRunSubmissionIntent,
         queued_submission_id: str | None = None,
+        request_key: str | None = None,
         replay: Callable[[AsyncSession], Awaitable[QueuedSubmissionMutationReceipt | None]] | None = None,
         transaction_hook: (Callable[[AsyncSession, QueuedSubmissionMutationReceipt], Awaitable[None]] | None) = None,
     ) -> QueuedSubmissionMutationReceipt:
         await self._validate_inline_hook_destination(submission)
         now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
+            thread = await _lock_thread(database, organization_id=organization_id, thread_id=thread_id)
             if replay is not None and (replayed := await replay(database)) is not None:
                 return replayed
-            thread = await _lock_thread(database, organization_id=organization_id, thread_id=thread_id)
             if thread.version != expected_thread_version:
                 raise QueuedSubmissionConflict("Thread version changed before queue admission")
             rows = await _lock_live(database, organization_id=organization_id, thread_id=thread_id)
@@ -123,7 +125,9 @@ class QueuedSubmissionStore:
                 created_at=now,
                 updated_at=now,
             )
-            database.add(queued_submission_record(value, organization_id=organization_id))
+            record = queued_submission_record(value, organization_id=organization_id)
+            record.request_key = request_key
+            database.add(record)
             thread.queue_version += 1
             thread.updated_at = now
             await database.flush()
@@ -292,9 +296,20 @@ class QueuedSubmissionStore:
             thread = await _lock_thread(database, organization_id=organization_id, thread_id=scope)
             rows = await _lock_live(database, organization_id=organization_id, thread_id=scope)
             target = next((row for row in rows if row.id == queued_submission_id), None)
-            if target is None or target.version != expected_version:
+            if target is None:
+                # A concurrent deletion can commit while this request waits for the Thread lock.
+                await _load(database, organization_id=organization_id, queued_submission_id=queued_submission_id)
+                raise QueuedSubmissionConflict("queued submission lifecycle changed")
+            if target.version != expected_version:
                 raise QueuedSubmissionConflict("queued submission version or lifecycle changed")
             deleted_position = target.position
+            await database.execute(
+                delete(IdempotencyEvidenceRecord).where(
+                    IdempotencyEvidenceRecord.organization_id == organization_id,
+                    IdempotencyEvidenceRecord.result_kind == "queued_submission",
+                    IdempotencyEvidenceRecord.result_ref == target.id,
+                )
+            )
             await database.delete(target)
             await database.flush()
             if deleted_position is None:
@@ -333,9 +348,9 @@ class QueuedSubmissionStore:
     ) -> ThreadQueueMutationReceipt:
         now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
+            thread = await _lock_thread(database, organization_id=organization_id, thread_id=thread_id)
             if replay is not None and (replayed := await replay(database)) is not None:
                 return replayed
-            thread = await _lock_thread(database, organization_id=organization_id, thread_id=thread_id)
             rows = await _lock_live(database, organization_id=organization_id, thread_id=thread_id)
             if thread.queue_version != expected_queue_version:
                 raise QueuedSubmissionConflict("Thread queue version changed")

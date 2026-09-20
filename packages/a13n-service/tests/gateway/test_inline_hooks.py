@@ -141,9 +141,8 @@ async def test_successor_hook_selection_expiry_and_replay(
         old.deleted_at = NOW + timedelta(seconds=10)
     assert await command(actor=_actor(), run_id=source.run_id, idempotency_key="successor", request=request) == receipt
     changed = request.model_copy(update={"hook_subscription": _hook() if selection == "null" else None})
-    with pytest.raises(InteractionCommandError) as conflict:
-        await command(actor=_actor(), run_id=source.run_id, idempotency_key="successor", request=changed)
-    assert conflict.value.code == "idempotency_conflict"
+    changed = await command(actor=_actor(), run_id=source.run_id, idempotency_key="successor", request=changed)
+    assert changed == receipt
 
 
 @pytest.mark.parametrize("operation", ["feedback", "continue_waiting", "retry"])

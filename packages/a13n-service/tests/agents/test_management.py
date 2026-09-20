@@ -57,7 +57,27 @@ async def test_create_is_atomic_idempotent_and_starts_at_v1(agent_management: Ag
 
 
 @pytest.mark.anyio
-async def test_expired_agent_evidence_allows_reusing_the_key(
+async def test_concurrent_create_with_explicit_key_returns_one_agent(
+    agent_management: AgentManagement,
+    agent_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    async def create():
+        return await agent_management.commands.create(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            idempotency_key="concurrent-create",
+            request=CreateAgentRequest(name="Concurrent", key="concurrent", config=agent_config()),
+        )
+
+    first, second = await asyncio.gather(create(), create())
+    assert first == second
+    async with transaction(agent_sessions) as session:
+        assert len((await session.scalars(select(AgentRecord))).all()) == 1
+        assert await session.scalar(select(IdempotencyEvidenceRecord)) is None
+
+
+@pytest.mark.anyio
+async def test_agent_key_is_retained_with_the_agent(
     agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -68,12 +88,10 @@ async def test_expired_agent_evidence_allows_reusing_the_key(
         request=CreateAgentRequest(name="First", config=agent_config()),
     )
     async with transaction(agent_sessions) as session:
-        evidence = await session.scalar(
-            select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation == "agent.create")
-        )
-        assert evidence is not None
-        evidence.created_at = NOW - timedelta(hours=24)
-        evidence.expires_at = NOW
+        row = await session.get(AgentRecord, first.agent.id)
+        row.created_at = NOW - timedelta(days=2)
+        assert row.request_key is not None
+        assert await session.scalar(select(IdempotencyEvidenceRecord)) is None
 
     second = await agent_management.commands.create(
         actor=actor(),
@@ -82,7 +100,7 @@ async def test_expired_agent_evidence_allows_reusing_the_key(
         request=CreateAgentRequest(name="Second", config=agent_config(instructions="Second")),
     )
 
-    assert second.agent.id != first.agent.id
+    assert second.agent.id == first.agent.id
 
 
 @pytest.mark.anyio
@@ -193,16 +211,15 @@ async def test_revision_noop_default_switch_and_monotonic_lineage(
         if_match=resource_etag(second.agent.id, second.agent.updated_at),
     )
     assert replay == selected
-    with pytest.raises(AgentError) as wrong_target:
-        await agent_management.revisions.set_default_revision(
-            actor=actor(),
-            agent_id=created.agent.id,
-            revision_id=second.revision.id,
-            idempotency_key="select-lineage",
-            request=SetDefaultAgentRevisionRequest(),
-            if_match=resource_etag(selected.agent.id, selected.agent.updated_at),
-        )
-    assert wrong_target.value.code == "idempotency_conflict"
+    changed = await agent_management.revisions.set_default_revision(
+        actor=actor(),
+        agent_id=created.agent.id,
+        revision_id=second.revision.id,
+        idempotency_key="select-lineage",
+        request=SetDefaultAgentRevisionRequest(),
+        if_match=resource_etag(selected.agent.id, selected.agent.updated_at),
+    )
+    assert changed == replay
     same_default = await agent_management.revisions.set_default_revision(
         actor=actor(),
         agent_id=created.agent.id,
@@ -511,24 +528,21 @@ async def test_list_filters_enabled_and_archived_axes(agent_management: AgentMan
 
 
 @pytest.mark.anyio
-async def test_create_replay_preserves_agent_conflict_error(agent_management: AgentManagement) -> None:
-    await agent_management.commands.create(
+async def test_create_replay_ignores_changed_agent_content(agent_management: AgentManagement) -> None:
+    original = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="conflicting-create",
         request=CreateAgentRequest(name="Original", config=agent_config()),
     )
 
-    with pytest.raises(AgentError) as failure:
-        await agent_management.commands.create(
-            actor=actor(),
-            workspace_id=WORKSPACE_ID,
-            idempotency_key="conflicting-create",
-            request=CreateAgentRequest(name="Different", config=agent_config()),
-        )
-
-    assert failure.value.code == "idempotency_conflict"
-    assert application_error_status(failure.value) == 409
+    changed = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="conflicting-create",
+        request=CreateAgentRequest(name="Different", config=agent_config()),
+    )
+    assert changed == original
 
 
 @pytest.mark.anyio
@@ -541,6 +555,6 @@ async def test_agent_replay_rejects_organization_boundary(agent_sessions: async_
                 actor=organization_actor,
                 operation="agent.create",
                 scope_id=WORKSPACE_ID,
-                identity=request_identity("workspace-only", {}),
+                identity=request_identity("workspace-only"),
                 now=NOW,
             )

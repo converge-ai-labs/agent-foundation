@@ -10,8 +10,7 @@ from urllib.parse import urlencode
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
-from a13n_service.connectivity.management import fingerprint, record_command, replay_command
-from a13n_service.durable_operations.idempotency import IdempotencyConflict
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtector
@@ -71,6 +70,20 @@ class AuthorizationService:
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id)
             await authorize(session, actor, record.workspace_id, mode="manage")
+            replay = await find_by_key(
+                session,
+                AuthorizationRecord,
+                entity_key(
+                    actor,
+                    operation="connection.authorize",
+                    scope_id=connection_id,
+                    key_digest=idempotency_digest(idempotency_key),
+                    workspace_id=record.workspace_id,
+                ),
+            )
+            if replay is not None:
+                await self._authorize(session, actor, replay)
+                return self._project(record, replay)
             kind = record.kind
         if request.method != "browser":
             if kind == "mcp":
@@ -167,35 +180,23 @@ class AuthorizationService:
                 category=ErrorCategory.invalid_request,
             )
         key = idempotency_digest(idempotency_key)
-        request_fingerprint = fingerprint(
-            request,
-            credentials={name: value.get_secret_value() for name, value in request.credentials.items()}
-            if request.credentials is not None
-            else None,
-        )
         now = self._clock()
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id, lock=True)
             await authorize(session, actor, connection.workspace_id, mode="manage")
-            try:
-                replay = await replay_command(
-                    session,
-                    actor=actor,
-                    workspace_id=connection.workspace_id,
+            replay = await find_by_key(
+                session,
+                AuthorizationRecord,
+                entity_key(
+                    actor,
                     operation="connection.authorize",
                     scope_id=connection.id,
-                    idempotency_key_digest=key,
-                    fingerprint=request_fingerprint,
-                    now=now,
-                )
-            except IdempotencyConflict as error:
-                raise ConnectionError(
-                    "idempotency_conflict",
-                    "Idempotency key was used for another request.",
-                    category=ErrorCategory.conflict,
-                ) from error
+                    key_digest=key,
+                    workspace_id=connection.workspace_id,
+                ),
+            )
             if replay is not None:
-                attempt = await session.get(AuthorizationRecord, replay.resource_id)
+                attempt = replay
                 if attempt is None:
                     raise invalid_handoff()
                 return self._project(connection, attempt)
@@ -234,28 +235,20 @@ class AuthorizationService:
                 created_at=now,
                 updated_at=now,
             )
-            session.add(attempt)
-            identifier = attempt.id
-            record_command(
-                session,
-                actor=actor,
-                organization_id=connection.organization_id,
-                workspace_id=connection.workspace_id,
+            attempt.request_key = entity_key(
+                actor,
                 operation="connection.authorize",
                 scope_id=connection.id,
-                idempotency_key_digest=key,
-                fingerprint=request_fingerprint,
-                resource_type="connection_authorization",
-                resource_id=identifier,
-                result_version=connection.version,
-                now=now,
-                resource=None,
+                key_digest=key,
+                workspace_id=connection.workspace_id,
             )
+            session.add(attempt)
+            identifier = attempt.id
         error_code = None
         try:
             if request.method == "client_credentials":
                 await self._mcp.authenticate_client_credentials(
-                    actor=actor, connection_id=connection_id, idempotency_key=identifier, expected_version=version
+                    actor=actor, connection_id=connection_id, expected_version=version
                 )
             else:
                 assert request.credentials is not None
@@ -271,7 +264,7 @@ class AuthorizationService:
                     static_headers=request.credentials if mode == "static_headers" else None,
                 )
                 await self._mcp_connections.replace_credentials(
-                    actor=actor, connection_id=connection_id, idempotency_key=identifier, request=replacement
+                    actor=actor, connection_id=connection_id, request=replacement
                 )
         except ApplicationError as error:
             error_code = "setup_outcome_unknown" if error.code == "mcp_oauth_unavailable" else error.code

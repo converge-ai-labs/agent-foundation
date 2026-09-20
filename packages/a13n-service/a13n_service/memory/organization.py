@@ -14,7 +14,8 @@ from a13n_harness.providers.memory.filesystem.organization import (
 from pydantic_ai import Agent
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy import or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import AgentConfig
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
@@ -25,7 +26,6 @@ from a13n_service.interactions.domain import Run, RunInputKind
 from a13n_service.interactions.input import AcceptedAgentInput
 from a13n_service.interactions.models import RunRecord, SessionRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
-from a13n_service.lifecycle.models import LifecycleEventRecord
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.storage import ObjectStore, short_session, transaction
@@ -41,26 +41,33 @@ def digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-async def admit_organization(session: AsyncSession, event: LifecycleEventRecord) -> None:
-    if event.event_type != "run.completed":
-        return
-    for binding in await session.scalars(
-        select(RunMemoryStorageRecord).where(RunMemoryStorageRecord.run_id == event.run_id)
-    ):
-        if not binding.organization_policy or "erasure_digest" not in binding.organization_policy:
-            continue
-        work_id = "morg_" + digest(f"{event.run_id}:{binding.selection_digest}:1")
-        if await session.get(MemoryOrganizationRecord, work_id) is None:
-            session.add(
-                MemoryOrganizationRecord(
-                    id=work_id,
-                    run_id=event.run_id,
-                    storage_id=binding.storage_id,
-                    policy=binding.organization_policy,
-                    status="pending",
-                    available_at=utc_now(),
-                    created_at=utc_now(),
-                )
+async def admit_organization(sessions: async_sessionmaker[AsyncSession], *, organization_id: str, run_id: str) -> None:
+    """Create optional work in a separate transaction after durable Run completion."""
+    async with transaction(sessions) as session:
+        bindings = await session.scalars(
+            select(RunMemoryStorageRecord)
+            .join(RunRecord, RunRecord.id == RunMemoryStorageRecord.run_id)
+            .where(
+                RunRecord.id == run_id, RunRecord.organization_id == organization_id, RunRecord.status == "completed"
+            )
+        )
+        now = utc_now()
+        records = [
+            {
+                "id": "morg_" + digest(f"{run_id}:{binding.selection_digest}:1"),
+                "run_id": run_id,
+                "storage_id": binding.storage_id,
+                "policy": binding.organization_policy,
+                "status": "pending",
+                "available_at": now,
+                "created_at": now,
+            }
+            for binding in bindings
+            if binding.organization_policy and "erasure_digest" in binding.organization_policy
+        ]
+        if records:
+            await session.execute(
+                insert(MemoryOrganizationRecord).values(records).on_conflict_do_nothing(index_elements=["id"])
             )
 
 

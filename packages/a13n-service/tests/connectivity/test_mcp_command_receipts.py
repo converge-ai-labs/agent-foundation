@@ -1,24 +1,23 @@
-"""Discovery publishes its connection snapshot and command receipt together."""
+"""Credential authorization retries read their live operation without repeating I/O."""
 
 from asyncio import create_task
 from contextlib import asynccontextmanager
 
 import pytest
-from a13n_service.connectivity.connections.domain import CreateConnectionRequest, MCPSource
-from a13n_service.connectivity.mcp.domain import MCPAuthMode, ReplaceMCPCredentialsRequest
-from a13n_service.connectivity.mcp.errors import MCPConnectionError
+from a13n_service.connectivity.connections.domain import CreateAuthorizationRequest, CreateConnectionRequest, MCPSource
+from a13n_service.connectivity.mcp.domain import MCPAuthMode
 from anyio import Event, fail_after
 
 from .conftest import WORKSPACE_ID, actor
-from .connection_helpers import management, mcp_checks
+from .connection_helpers import authorizations, management, mcp_checks
 from .test_mcp_service import MCP_ENDPOINT
 from .test_mcp_service import mcp_services as mcp_services
 
 pytestmark = pytest.mark.anyio
 
 
-async def test_credential_command_replays_completed_snapshot_without_repeating_io(mcp_services, monkeypatch):
-    connections, _, remote = mcp_services
+async def test_credential_command_projects_current_result_without_repeating_io(mcp_services, monkeypatch):
+    connections, oauth, remote = mcp_services
     remote.allow_anonymous = True
     creation = CreateConnectionRequest(
         name="Command MCP", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.bearer)
@@ -27,12 +26,16 @@ async def test_credential_command_replays_completed_snapshot_without_repeating_i
         actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="setup", request=creation
     )
 
+    service = authorizations(connections, oauth)
+
     async def invoke():
-        return await connections.replace_credentials(
+        return await service.create(
             actor=actor(),
             connection_id=created.id,
             idempotency_key="command",
-            request=ReplaceMCPCredentialsRequest(expected_version=created.version, bearer="bearer-secret"),
+            request=CreateAuthorizationRequest(
+                expected_version=created.version, method="credentials", credentials={"bearer": "bearer-secret"}
+            ),
         )
 
     arrived, release = Event(), Event()
@@ -52,28 +55,29 @@ async def test_credential_command_replays_completed_snapshot_without_repeating_i
         try:
             await arrived.wait()
             request_count = len(remote.requests)
-            with pytest.raises(MCPConnectionError) as incomplete:
-                await invoke()
-            assert incomplete.value.code == "mcp_discovery_incomplete"
+            pending = await invoke()
+            assert pending.status == "preparing"
             assert len(remote.requests) == request_count
         finally:
             release.set()
             result = await first
 
-        assert result.status == "ready"
-        assert await management(connections).get(actor=actor(), connection_id=result.id) == result
+        assert result.status == "completed"
+        assert await service.get(actor=actor(), authorization_id=result.id) == result
         assert await invoke() == result
         assert len(remote.requests) == request_count
 
         disabled = await management(connections).set_enabled(
             actor=actor(),
-            connection_id=result.id,
+            connection_id=created.id,
             idempotency_key="disable",
-            expected_version=result.version,
+            expected_version=(await management(connections).get(actor=actor(), connection_id=created.id)).version,
             enabled=False,
         )
         assert disabled.status == "disabled"
-        assert await invoke() == result
+        replay = await invoke()
+        assert replay.id == result.id and replay.status == "completed"
+        assert replay.next_action.type == "check_connection"
         assert len(remote.requests) == request_count
 
 

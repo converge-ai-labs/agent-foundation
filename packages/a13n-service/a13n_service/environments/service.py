@@ -18,8 +18,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.durable_operations.idempotency import is_evidence_unique_race
-from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key, is_key_conflict
+from a13n_service.durable_operations.requests import request_identity
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.audit import security_audit_record
@@ -347,7 +347,7 @@ class EnvironmentService:
         idempotency_key: str,
     ) -> EnvironmentTemplate:
         now = utc_now()
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
         async with short_session(self.sessions) as session:
             owner = await authorize_environment_workspace(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_template_manage
@@ -357,17 +357,20 @@ class EnvironmentService:
                 workspace = await authorize_environment_workspace(
                     session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_template_manage
                 )
-                replay = await load_replay(
+                replay = await find_by_key(
                     session,
-                    actor=actor,
-                    operation="environment_template.create",
-                    scope_id=owner.id,
-                    identity=identity,
-                    now=now,
+                    EnvironmentTemplateRecord,
+                    entity_key(
+                        actor,
+                        operation="environment_template.create",
+                        scope_id=owner.id,
+                        key_digest=identity.key_digest,
+                        workspace_id=workspace_id,
+                    ),
                 )
                 if replay:
-                    await self._template(session, actor, replay.result_ref)
-                    return replay.restore(EnvironmentTemplate)
+                    await self._template(session, actor, replay.id)
+                    return replay.to_resource()
                 template_config = TemplateConfiguration.model_validate(
                     request.model_dump(exclude={"name", "description", "labels"})
                 )
@@ -386,38 +389,34 @@ class EnvironmentService:
                     created_at=now,
                     updated_at=now,
                 )
+                row.request_key = entity_key(
+                    actor,
+                    operation="environment_template.create",
+                    scope_id=owner.id,
+                    key_digest=identity.key_digest,
+                    workspace_id=workspace_id,
+                )
                 session.add(row)
                 await session.flush()
                 session.add(self._revision(row, template_config, now))
-                session.add(
-                    evidence_record(
-                        actor=actor,
-                        organization_id=workspace.organization_id,
-                        workspace_id=workspace_id,
-                        operation="environment_template.create",
-                        scope_id=owner.id,
-                        identity=identity,
-                        result_kind="environment_template",
-                        result_ref=row.id,
-                        now=now,
-                        response=row.to_resource(),
-                    )
-                )
                 return row.to_resource()
         except IntegrityError as error:
-            if is_evidence_unique_race(error):
+            if is_key_conflict(error, "environment_templates"):
                 async with transaction(self.sessions) as session:
-                    replay = await load_replay(
+                    replay = await find_by_key(
                         session,
-                        actor=actor,
-                        operation="environment_template.create",
-                        scope_id=owner.id,
-                        identity=identity,
-                        now=utc_now(),
+                        EnvironmentTemplateRecord,
+                        entity_key(
+                            actor,
+                            operation="environment_template.create",
+                            scope_id=owner.id,
+                            key_digest=identity.key_digest,
+                            workspace_id=workspace_id,
+                        ),
                     )
                     if replay is not None:
-                        await self._template(session, actor, replay.result_ref)
-                        return replay.restore(EnvironmentTemplate)
+                        await self._template(session, actor, replay.id)
+                        return replay.to_resource()
             raise
 
     async def validate_template_config(
@@ -546,7 +545,7 @@ class EnvironmentService:
         self, *, actor: AuthenticatedActor, workspace_id: str, request: CreateEnvironmentRequest, idempotency_key: str
     ) -> Environment:
         now = utc_now()
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
         try:
             async with transaction(self.sessions) as session:
                 await authorize_environment_workspace(
@@ -557,17 +556,20 @@ class EnvironmentService:
                     if isinstance(request, CreateManagedEnvironmentRequest)
                     else WorkspaceAction.environment_manage,
                 )
-                replay = await load_replay(
+                replay = await find_by_key(
                     session,
-                    actor=actor,
-                    operation="environment.create",
-                    scope_id=workspace_id,
-                    identity=identity,
-                    now=now,
+                    EnvironmentRecord,
+                    entity_key(
+                        actor,
+                        operation="environment.create",
+                        scope_id=workspace_id,
+                        key_digest=identity.key_digest,
+                        workspace_id=workspace_id,
+                    ),
                 )
                 if replay:
-                    await self.require_environment(session, actor, replay.result_ref)
-                    return replay.restore(Environment)
+                    await self.require_environment(session, actor, replay.id)
+                    return replay.to_resource()
                 if isinstance(request, CreateManagedEnvironmentRequest):
                     row = await self.allocate(
                         session,
@@ -577,45 +579,47 @@ class EnvironmentService:
                         now=now,
                         labels=request.labels,
                     )
+                    row.request_key = entity_key(
+                        actor,
+                        operation="environment.create",
+                        scope_id=workspace_id,
+                        key_digest=identity.key_digest,
+                        workspace_id=workspace_id,
+                    )
                     if request.name is not None:
                         row.name = request.name
                 else:
                     row = await self.register_external(session, actor, workspace_id, request, now)
-                session.add(
-                    evidence_record(
-                        actor=actor,
-                        organization_id=row.organization_id,
-                        workspace_id=workspace_id,
+                    row.request_key = entity_key(
+                        actor,
                         operation="environment.create",
                         scope_id=workspace_id,
-                        identity=identity,
-                        result_kind="environment",
-                        result_ref=row.id,
-                        now=now,
-                        response=row.to_resource(),
+                        key_digest=identity.key_digest,
+                        workspace_id=workspace_id,
                     )
-                )
                 return row.to_resource()
         except IntegrityError as error:
+            async with transaction(self.sessions) as session:
+                replay = await find_by_key(
+                    session,
+                    EnvironmentRecord,
+                    entity_key(
+                        actor,
+                        operation="environment.create",
+                        scope_id=workspace_id,
+                        key_digest=identity.key_digest,
+                        workspace_id=workspace_id,
+                    ),
+                )
+                if replay is not None:
+                    await self.require_environment(session, actor, replay.id)
+                    return replay.to_resource()
             if is_target_identity_conflict(error):
                 raise EnvironmentManagementError(
                     "environment_target_conflict",
                     "This backend target already has an Environment owner.",
                     category=ErrorCategory.conflict,
                 ) from error
-            if is_evidence_unique_race(error):
-                async with transaction(self.sessions) as session:
-                    replay = await load_replay(
-                        session,
-                        actor=actor,
-                        operation="environment.create",
-                        scope_id=workspace_id,
-                        identity=identity,
-                        now=utc_now(),
-                    )
-                    if replay is not None:
-                        await self.require_environment(session, actor, replay.result_ref)
-                        return replay.restore(Environment)
             raise
 
     async def register_external(
@@ -989,29 +993,25 @@ class EnvironmentService:
         from .retention import has_active_use
 
         now = utc_now()
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
         async with transaction(self.sessions) as session:
-            environment = await self.require_environment(session, actor, environment_id)
+            environment = await self.require_environment(session, actor, environment_id, lock=True)
             await authorize_environment_workspace(
                 session, actor=actor, workspace_id=environment.workspace_id, action=WorkspaceAction.environment_manage
             )
-            replay = await load_replay(
+            replay = await find_by_key(
                 session,
-                actor=actor,
-                operation="environment.command",
-                scope_id=environment.id,
-                identity=identity,
-                now=now,
+                EnvironmentCommandRecord,
+                entity_key(
+                    actor,
+                    operation="environment.command",
+                    scope_id=environment.id,
+                    key_digest=identity.key_digest,
+                    workspace_id=environment.workspace_id,
+                ),
             )
-            if replay:
-                command = await session.get(EnvironmentCommandRecord, replay.result_ref)
-                if command is None:
-                    raise environment_not_found()
-                return replay.restore(EnvironmentCommand)
-            environment = await session.scalar(
-                select(EnvironmentRecord).where(EnvironmentRecord.id == environment.id).with_for_update()
-            )
-            assert environment is not None
+            if replay is not None:
+                return replay.to_resource()
             if (
                 environment.ownership != "managed"
                 or environment.operation_id
@@ -1038,24 +1038,17 @@ class EnvironmentService:
                 status="pending",
                 created_at=now,
             )
+            command.request_key = entity_key(
+                actor,
+                operation="environment.command",
+                scope_id=environment.id,
+                key_digest=identity.key_digest,
+                workspace_id=environment.workspace_id,
+            )
             session.add(command)
             environment.operation_id = command.id
             environment.operation_action = request.action
             environment.next_maintenance_at = now
-            session.add(
-                evidence_record(
-                    actor=actor,
-                    organization_id=environment.organization_id,
-                    workspace_id=environment.workspace_id,
-                    operation="environment.command",
-                    scope_id=environment.id,
-                    identity=identity,
-                    result_kind="environment_command",
-                    result_ref=command.id,
-                    now=now,
-                    response=command.to_resource(),
-                )
-            )
             return command.to_resource()
 
     async def get_command(self, *, actor: AuthenticatedActor, command_id: str) -> EnvironmentCommand:

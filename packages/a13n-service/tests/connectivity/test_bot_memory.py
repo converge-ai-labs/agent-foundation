@@ -167,9 +167,11 @@ async def test_directory_pagination_date_filter_and_request_replay(bot_memory):
             actor(), ACCOUNT_ID, lab.scope_id, limit=2, activity_date=date(2026, 9, 16), cursor=first.next_cursor
         )
     assert mismatch.value.code == "invalid_cursor"
-    with pytest.raises(ApplicationError) as reused:
-        await create(lab.service, actor(), ACCOUNT_ID, lab.scope_id, CreateDocument(text="changed", title="Topic"), "0")
-    assert reused.value.code == "idempotency_conflict"
+    replay = await create(
+        lab.service, actor(), ACCOUNT_ID, lab.scope_id, CreateDocument(text="changed", title="Topic"), "0"
+    )
+    assert replay.title == "Topic 0"
+    assert len(lab.records) == 3
 
 
 async def test_deleted_document_disappears_and_stale_reference_cannot_read(bot_memory):

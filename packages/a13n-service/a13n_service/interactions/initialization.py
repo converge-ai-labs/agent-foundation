@@ -243,7 +243,7 @@ class NewRunPolicy:
         lineage_kind: RunLineageKind,
         invocation: FrozenAgentInvocation,
         input: AcceptedAgentInput,
-        request_fingerprint: str,
+        request_key: str | None = None,
         origin: SubmissionOrigin,
         configuration_context: ConfigurationRunContext | None = None,
     ) -> Run:
@@ -264,7 +264,7 @@ class NewRunPolicy:
             priority=self.priority,
             queue_name=self.queue_name,
             execution_budget=self.execution_budget,
-            request_fingerprint=request_fingerprint,
+            request_key=request_key,
             input_kind=RunInputKind.agent_input,
             input=input.model_dump(mode="json", by_alias=True, exclude_none=True),
             input_text=input_text(input),

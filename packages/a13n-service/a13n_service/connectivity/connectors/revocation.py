@@ -8,10 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
+from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt, cleanup_receipt
 from a13n_service.connectivity.management import record_command
-from a13n_service.digests import digest_request
-from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.durable_operations.entity_keys import entity_key
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.secrets import SecretProtectionError, SecretProtector
@@ -63,7 +62,6 @@ class ConnectorRevocationService:
         delete: bool,
     ) -> ConnectionCleanupReceipt:
         key = idempotency_digest(idempotency_key)
-        digest = digest_request({"expected_version": expected_version})
         operation = "connector_connection.delete" if delete else "connector_connection.revoke"
         binding = None
         credential = None
@@ -71,17 +69,18 @@ class ConnectorRevocationService:
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id, lock=True, include_deleted=True)
             await authorize_connection(session, actor, connection, mode="manage")
-            replay = await replay_connection_command(
-                session,
-                actor=actor,
-                connection=connection,
-                operation=operation,
-                key_digest=key,
-                request_fingerprint=digest,
-                now=self._clock(),
+            request_key = entity_key(
+                actor, operation=operation, scope_id=connection_id, key_digest=key, workspace_id=connection.workspace_id
             )
-            if replay is not None:
-                return replay.restore(ConnectionCleanupReceipt)
+            if delete:
+                if connection.deletion_key == request_key:
+                    return cleanup_receipt(connection)
+            else:
+                replay = await replay_connection_command(
+                    session, actor=actor, connection=connection, operation=operation, key_digest=key, now=self._clock()
+                )
+                if replay is not None:
+                    return cleanup_receipt(connection)
             require_version(connection.version, expected_version)
             try:
                 if connection.external_ref is not None and connection.external_user_correlation is not None:
@@ -158,22 +157,25 @@ class ConnectorRevocationService:
                 if connection.external_ref is not None or remote_setup_exists
                 else "not_required",
             )
-            command = record_command(
-                session,
-                actor=actor,
-                organization_id=connection.organization_id,
-                workspace_id=connection.workspace_id,
-                operation=operation,
-                scope_id=connection_id,
-                idempotency_key_digest=key,
-                fingerprint=digest,
-                resource_type="connector_connection",
-                resource_id=connection_id,
-                result_version=connection.version,
-                now=now,
-                resource=receipt,
-            )
-            command_id = command.id
+            if delete:
+                connection.deletion_key = request_key
+            else:
+                record_command(
+                    session,
+                    actor=actor,
+                    organization_id=connection.organization_id,
+                    workspace_id=connection.workspace_id,
+                    operation=operation,
+                    scope_id=connection_id,
+                    idempotency_key_digest=key,
+                    resource_type="connector_connection",
+                    resource_id=connection_id,
+                    now=now,
+                )
+            command_id = request_key
+            connection.remote_cleanup_status = receipt.remote_status
+            connection.cleanup_version = connection.version
+            cleanup_version = connection.version
             session.add(
                 audit(
                     actor,
@@ -210,10 +212,8 @@ class ConnectorRevocationService:
             connection_id=connection_id, local_status="deleted" if delete else "disabled", remote_status=outcome
         )
         async with transaction(self._sessions) as session:
-            command = await session.get(IdempotencyEvidenceRecord, command_id, with_for_update=True)
-            if command is not None and command.receipt_json is not None:
-                command.receipt_json = {
-                    "version": command.receipt_json["version"],
-                    "resource": receipt.model_dump(mode="json"),
-                }
+            connection = await require_connection(session, connection_id, lock=True, include_deleted=True)
+            if connection.version == cleanup_version and connection.cleanup_version == cleanup_version:
+                connection.remote_cleanup_status = outcome
+            receipt = cleanup_receipt(connection)
         return receipt

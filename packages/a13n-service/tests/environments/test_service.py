@@ -1,7 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from a13n_service.application_errors import ApplicationError
 from a13n_service.environments.domain import (
     CreateManagedEnvironmentRequest,
     CreateProviderRequest,
@@ -102,21 +101,21 @@ async def test_empty_thread_allocates_only_metadata_and_distinguishes_null(
         == thread
     )
     assert not (tmp_path / "absent").exists()
-    await allocate_thread(
+    original = await allocate_thread(
         environment_sessions,
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         body=CreateThreadRequest(),
         idempotency_key="null-distinction",
     )
-    with pytest.raises(ApplicationError, match="different request"):
-        await allocate_thread(
-            environment_sessions,
-            actor=actor(),
-            workspace_id=WORKSPACE_ID,
-            body=CreateThreadRequest(environment=None),
-            idempotency_key="null-distinction",
-        )
+    replay = await allocate_thread(
+        environment_sessions,
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        body=CreateThreadRequest(environment=None),
+        idempotency_key="null-distinction",
+    )
+    assert replay == original
 
 
 async def test_provider_disable_blocks_new_allocation(environment_service, tmp_path):
@@ -389,23 +388,11 @@ async def test_registering_same_target_under_another_provider_is_a_conflict(envi
     assert application_error_status(caught.value) == 409
 
 
-def test_request_identity_canonicalizes_objects_but_preserves_semantics():
+def test_request_identity_depends_only_on_the_key():
     from a13n_service.durable_operations.requests import request_identity
 
-    first = CreateTemplateRequest(
-        name="Docker",
-        provider_id="envp_1234567890123456",
-        configuration={"image": "debian:bookworm", "resources": {"cpus": 1, "memory_mb": 512}},
-        retention={"idle": {"stop_after": None, "delete_after": None}},
-    )
-    reordered = first.model_copy(
-        update={"configuration": {"resources": {"memory_mb": 512, "cpus": 1}, "image": "debian:bookworm"}}
-    )
-    assert first == reordered
-    assert request_identity("key", first) == request_identity("key", reordered)
-    changed = first.model_copy(update={"configuration": {"steps": [1, 2]}})
-    reversed_steps = first.model_copy(update={"configuration": {"steps": [2, 1]}})
-    assert request_identity("key", changed) != request_identity("key", reversed_steps)
+    assert request_identity("key") == request_identity("key")
+    assert request_identity("key") != request_identity("another-key")
 
 
 @pytest.mark.parametrize("provider_type", ["direct_local", "docker"])

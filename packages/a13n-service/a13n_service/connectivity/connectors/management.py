@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
+from a13n_service.durable_operations.idempotency import InvalidIdempotencyKey
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -184,13 +184,7 @@ def audit(
     )
 
 
-def map_management_value_error(error: IdempotencyConflict | InvalidIdempotencyKey) -> ConnectorError:
-    if isinstance(error, IdempotencyConflict):
-        return ConnectorError(
-            "idempotency_conflict",
-            "Idempotency key was used for another request.",
-            category=ErrorCategory.conflict,
-        )
+def map_management_value_error(error: InvalidIdempotencyKey) -> ConnectorError:
     return ConnectorError("invalid_request", "Idempotency-Key is invalid.", category=ErrorCategory.invalid_request)
 
 

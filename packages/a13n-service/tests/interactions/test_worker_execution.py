@@ -34,6 +34,7 @@ from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt, WorkerClaim
 from a13n_service.interactions.worker_preparation import WorkerAttemptPreparer
 from a13n_service.models.model_factory import NativeModelFactory
+from a13n_service.process import attempts as attempts_module
 from a13n_service.settings import Settings
 from a13n_service.storage import short_session, transaction
 from anyio import create_task_group, fail_after, sleep
@@ -64,6 +65,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     recover_candidate,
     late_input,
     handoff=False,
+    memory_admission_error=None,
 ):
     # Worker recovery must not hide an unexpected executor failure in this success-path test.
     execute = RunAttemptExecutor.run
@@ -79,6 +81,22 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
             raise
 
     monkeypatch.setattr(RunAttemptExecutor, "run", checked_execute)
+    admit = attempts_module.admit_organization
+    admitted = []
+
+    async def checked_admit(sessions, *, organization_id, run_id):
+        async with short_session(sessions) as session:
+            completed = await session.get(RunRecord, run_id)
+            assert completed.status == "completed"
+            assert completed.sealed_at is not None
+            attempt = await session.get(RunAttemptRecord, completed.sealed_state_committed_by_run_attempt_id)
+            assert attempt.status == "succeeded"
+        admitted.append(run_id)
+        if memory_admission_error is not None:
+            raise memory_admission_error
+        await admit(sessions, organization_id=organization_id, run_id=run_id)
+
+    monkeypatch.setattr(attempts_module, "admit_organization", checked_admit)
     config = acceptance.effective_agent_config()
     config = config.model_copy(
         update={
@@ -341,6 +359,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                 f"handoff_requested={handed_off}, late_input_injected={injected}, model_requests={len(requests)}"
             )
         assert not failures, failures
+        assert admitted == [run.id]
         async with short_session(interaction_sessions) as session:
             attempt = await session.scalar(
                 select(RunAttemptRecord)
@@ -413,6 +432,22 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                 # Earlier successful or yielded Attempts did not seal user-visible output.
                 assert "output.value" not in root.attributes
                 assert root.attributes["a13n.run_attempt.output.capture"] == "not_committed"
+
+
+@pytest.mark.parametrize("error", [RuntimeError("admission unavailable"), TimeoutError("admission timed out")])
+async def test_memory_admission_failure_preserves_completed_run(
+    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, caplog, error
+):
+    await test_worker_claims_and_executes_an_accepted_run_in_process(
+        interaction_sessions,
+        interaction_object_store,
+        tmp_path,
+        monkeypatch,
+        recover_candidate=True,
+        late_input=False,
+        memory_admission_error=error,
+    )
+    assert "memory_organization_admission_failed" in caplog.text
 
 
 @pytest.mark.parametrize("recover_candidate", [False, True])

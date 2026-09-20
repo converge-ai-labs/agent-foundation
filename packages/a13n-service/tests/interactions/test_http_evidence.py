@@ -1,4 +1,4 @@
-"""Concurrent ordinary HTTP evidence must have one winner even at expiry."""
+"""Concurrent ordinary HTTP references do not expire."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from datetime import timedelta
 import pytest
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
-    IdempotencyConflict,
     IdempotencyIdentity,
     digest_visible_ascii_key,
     load_evidence,
@@ -23,11 +22,8 @@ from tests.interactions.conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("same_request", [True, False])
 @pytest.mark.parametrize("organization_scope", [True, False])
-async def test_postgresql_expired_key_replacement_has_one_winner(
-    interaction_sessions, same_request, organization_scope
-):
+async def test_postgresql_retained_key_has_one_result_past_old_deadline(interaction_sessions, organization_scope):
     scope = EvidenceScope(
         None if organization_scope else WORKSPACE_ID,
         "user",
@@ -42,7 +38,7 @@ async def test_postgresql_expired_key_replacement_has_one_winner(
             new_evidence(
                 organization_id=ORGANIZATION_ID,
                 scope=scope,
-                identity=IdempotencyIdentity(key, "0" * 64),
+                identity=IdempotencyIdentity(key),
                 result_kind="test",
                 result_ref="expired",
                 now=NOW,
@@ -52,7 +48,7 @@ async def test_postgresql_expired_key_replacement_has_one_winner(
 
     async def accept(index):
         await barrier.wait()
-        identity = IdempotencyIdentity(key, "1" * 64 if same_request or index == 0 else "2" * 64)
+        identity = IdempotencyIdentity(key)
         async with transaction(interaction_sessions) as database:
             replay = await load_evidence(database, scope=scope, identity=identity, now=NOW + timedelta(hours=24))
             if replay is not None:
@@ -71,12 +67,8 @@ async def test_postgresql_expired_key_replacement_has_one_winner(
             return result
 
     results = await asyncio.gather(accept(0), accept(1), return_exceptions=True)
-    if same_request:
-        assert results[0] == results[1]
-    else:
-        assert sum(isinstance(result, IdempotencyConflict) for result in results) == 1
-        assert sum(isinstance(result, str) for result in results) == 1
+    assert results == ["expired", "expired"]
     async with transaction(interaction_sessions) as database:
         records = (await database.scalars(select(IdempotencyEvidenceRecord))).all()
         assert len(records) == 1
-        assert records[0].result_ref in {"winner-0", "winner-1"}
+        assert records[0].result_ref == "expired"

@@ -7,7 +7,8 @@ from typing import Literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.application_errors import ErrorCategory
+from a13n_service.application_errors import ApplicationError, ErrorCategory
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
 from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     is_evidence_unique_race,
@@ -36,6 +37,7 @@ from .domain import (
 )
 from .errors import (
     AgentError,
+    agent_not_found,
     map_authorization_error,
 )
 from .invocation_resolution import AgentInvocationResolver, PreparedAgentInvocation, RootAgentStatePolicy
@@ -43,6 +45,7 @@ from .models import AgentRecord
 from .persistence import (
     apply_lifecycle_transition,
     authorize_agent_scope,
+    created_agent_result,
     load_replay,
     lock_agent,
     new_agent_audit,
@@ -81,7 +84,7 @@ class AgentCommands:
         idempotency_key: str,
         request: CreateAgentRequest,
     ) -> AgentRevisionCreateResult:
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
         agent_id = new_agent_id()
         revision_id = new_agent_revision_id()
         now = self._clock()
@@ -93,16 +96,19 @@ class AgentCommands:
                     workspace_id=workspace_id,
                     action=WorkspaceAction.agent_create,
                 )
-                replay_ref = await load_replay(
+                replay_ref = await find_by_key(
                     session,
-                    actor=actor,
-                    operation="agent.create",
-                    scope_id=workspace_id,
-                    identity=identity,
-                    now=now,
+                    AgentRecord,
+                    entity_key(
+                        actor,
+                        operation="agent.create",
+                        scope_id=workspace_id,
+                        key_digest=identity.key_digest,
+                        workspace_id=workspace_id,
+                    ),
                 )
                 if replay_ref is not None:
-                    return replay_ref.restore(AgentRevisionCreateResult)
+                    return await created_agent_result(session, replay_ref)
                 organization_id = workspace.organization_id
         except AuthorizationError as error:
             raise map_authorization_error(error) from error
@@ -125,16 +131,19 @@ class AgentCommands:
                     workspace_id=workspace_id,
                     action=WorkspaceAction.agent_create,
                 )
-                replay_ref = await load_replay(
+                replay_ref = await find_by_key(
                     session,
-                    actor=actor,
-                    operation="agent.create",
-                    scope_id=workspace_id,
-                    identity=identity,
-                    now=now,
+                    AgentRecord,
+                    entity_key(
+                        actor,
+                        operation="agent.create",
+                        scope_id=workspace_id,
+                        key_digest=identity.key_digest,
+                        workspace_id=workspace_id,
+                    ),
                 )
                 if replay_ref is not None:
-                    return replay_ref.restore(AgentRevisionCreateResult)
+                    return await created_agent_result(session, replay_ref)
                 try:
                     resolved = await self._resolver.freeze_in_transaction(session, prepared=prepared)
                 except Exception as error:
@@ -159,6 +168,13 @@ class AgentCommands:
                     created_at=now,
                     updated_at=now,
                 )
+                record.request_key = entity_key(
+                    actor,
+                    operation="agent.create",
+                    scope_id=workspace_id,
+                    key_digest=identity.key_digest,
+                    workspace_id=workspace_id,
+                )
                 await insert_with_key(session, record, prefix="agent", requested=request.key)
                 revision = new_revision(
                     record,
@@ -171,20 +187,6 @@ class AgentCommands:
                     now=now,
                 )
                 session.add_all((record, revision))
-                session.add(
-                    evidence_record(
-                        actor=actor,
-                        organization_id=workspace.organization_id,
-                        workspace_id=workspace_id,
-                        operation="agent.create",
-                        scope_id=workspace_id,
-                        identity=identity,
-                        result_kind="agent_revision",
-                        result_ref=revision_id,
-                        now=now,
-                        response=AgentRevisionCreateResult(agent=record.to_resource(), revision=revision.to_resource()),
-                    )
-                )
                 session.add(
                     new_agent_audit(
                         actor=actor,
@@ -200,19 +202,26 @@ class AgentCommands:
                 return AgentRevisionCreateResult(agent=record.to_resource(), revision=revision.to_resource())
         except AuthorizationError as error:
             raise map_authorization_error(error) from error
-        except IntegrityError as error:
-            if is_evidence_unique_race(error):
-                async with transaction(self._sessions) as session:
-                    replay_ref = await load_replay(
-                        session,
-                        actor=actor,
+        except (IntegrityError, ApplicationError) as error:
+            if isinstance(error, ApplicationError) and error.code != "resource_key_conflict":
+                raise
+            async with transaction(self._sessions) as session:
+                await authorize_workspace(
+                    session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.agent_create
+                )
+                replay_ref = await find_by_key(
+                    session,
+                    AgentRecord,
+                    entity_key(
+                        actor,
                         operation="agent.create",
                         scope_id=workspace_id,
-                        identity=identity,
-                        now=self._clock(),
-                    )
-                    if replay_ref is not None:
-                        return replay_ref.restore(AgentRevisionCreateResult)
+                        key_digest=identity.key_digest,
+                        workspace_id=workspace_id,
+                    ),
+                )
+                if replay_ref is not None:
+                    return await created_agent_result(session, replay_ref)
             raise
 
     async def replace_labels(
@@ -308,7 +317,7 @@ class AgentCommands:
         if_match: str,
     ) -> Agent:
         operation = f"agent.{action}"
-        identity = request_identity(idempotency_key, {"action": action})
+        identity = request_identity(idempotency_key)
         replay = await self._agent_command_replay(
             actor=actor,
             agent_id=agent_id,
@@ -352,6 +361,11 @@ class AgentCommands:
                     action=WorkspaceAction.agent_lifecycle,
                 )
                 record = await lock_agent(session, workspace.organization_id, workspace.workspace_id, agent_id)
+                replay_ref = await load_replay(
+                    session, actor=actor, operation=operation, scope_id=agent_id, identity=identity, now=now
+                )
+                if replay_ref is not None:
+                    return record.to_resource()
                 require_etag(record, if_match)
                 apply_lifecycle_transition(record, action=action, now=now)
                 if prepared_lifecycle is not None:
@@ -373,7 +387,6 @@ class AgentCommands:
                         result_kind="agent",
                         result_ref=agent_id,
                         now=now,
-                        response=record.to_resource(),
                     )
                 )
                 session.add(
@@ -429,4 +442,7 @@ class AgentCommands:
             )
             if replay_ref is None:
                 return None
-            return replay_ref.restore(Agent)
+            record = await session.get(AgentRecord, replay_ref.result_ref)
+            if record is None:
+                raise agent_not_found()
+            return record.to_resource()

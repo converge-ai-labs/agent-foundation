@@ -7,7 +7,6 @@ from a13n_service.gateway.notifications import NotificationService, Notification
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.interactions.command_values import ForkRunCommand
 from a13n_service.interactions.control_domain import ThreadRunSubmissionRequest
-from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.submissions import QueuedSubmissionService
@@ -57,8 +56,10 @@ async def test_start_environment_choice_replays_without_duplicate_allocation(
             environment = await database.get(EnvironmentRecord, run.environment_id)
             assert environment.status == "unprepared"
     altered = request.model_copy(update={"environment": None}) if selection == "default" else _request()
-    with pytest.raises(InteractionCommandError):
+    assert (
         await commands.runs.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="start", request=altered)
+        == accepted
+    )
 
 
 async def test_empty_thread_is_readable_and_accepts_first_input_with_explicit_null_environment(

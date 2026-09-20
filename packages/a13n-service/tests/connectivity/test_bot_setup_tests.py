@@ -54,23 +54,22 @@ async def test_start_is_idempotent_with_no_provider_dispatch(setup_test, connect
     assert first.event_received_at is first.accepted_at is first.reply is None
     assert first.expires_at == NOW + timedelta(minutes=15)
     service, accounts, _, account, _, request = setup_test
-    # The original receipt is replayed even after a change; GET reports current staleness.
+    # Retry and GET both project current staleness.
     await accounts.update_account(
         actor=actor(),
         account_id=account.id,
         request=UpdateAccountRequest(expected_version=account.version, receive_enabled=False),
     )
-    assert await _create(setup_test) == first
+    assert (await _create(setup_test)).stale
     latest = (await service.test(actor=actor(), account_id=account.id, test_id=first.id)).latest
     assert latest.stale
-    with pytest.raises(NativeError) as conflict:
-        await service.create_test(
-            actor=actor(),
-            account_id=account.id,
-            request=request.model_copy(update={"target_version": 2}),
-            idempotency_key="test-start",
-        )
-    assert conflict.value.code == "idempotency_conflict"
+    replay = await service.create_test(
+        actor=actor(),
+        account_id=account.id,
+        request=request.model_copy(update={"target_version": 2}),
+        idempotency_key="test-start",
+    )
+    assert replay.id == first.id and replay.stale
     async with transaction(connectivity_sessions) as session:
         assert len((await session.scalars(select(BotTestRecord))).all()) == 1
 

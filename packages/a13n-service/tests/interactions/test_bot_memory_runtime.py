@@ -602,8 +602,9 @@ async def test_memory_cutover_preserves_run_and_binding(
 ):
     import anyio
     from a13n_service.bots.memory.bindings import RunMemoryBindingRecord
-    from a13n_service.database.migration import DatabaseMigrator
     from a13n_service.memory.behaviors import RunMemorySelectionRecord
+
+    from tests.database.revision_steps import apply_revision_steps
 
     _, _, run, _, _, _, _, _ = runtime_memory
     if sealed:
@@ -637,9 +638,12 @@ async def test_memory_cutover_preserves_run_and_binding(
             stored.use_memory = stored.save_on_request = False
         expected = None if kind == "ordinary" else stored.binding()
         original = (await session.get(RunRecord, run.id)).to_resource()
-    migrator = DatabaseMigrator(service_database)
-    await anyio.to_thread.run_sync(migrator.downgrade, "0264713d02b1")
-    await anyio.to_thread.run_sync(migrator.upgrade)
+    await anyio.to_thread.run_sync(
+        apply_revision_steps, service_database, (("7925615e9e83", "downgrade"), ("1ca0ca92df47", "downgrade"))
+    )
+    await anyio.to_thread.run_sync(
+        apply_revision_steps, service_database, (("1ca0ca92df47", "upgrade"), ("7925615e9e83", "upgrade"))
+    )
     async with transaction(interaction_sessions) as session:
         assert (await session.get(RunRecord, run.id)).to_resource() == original
         selection = await session.get(RunMemorySelectionRecord, run.id)
@@ -652,34 +656,41 @@ async def test_memory_cutover_preserves_run_and_binding(
 
 async def test_invalid_old_binding_aborts_cutover(runtime_memory, interaction_sessions, service_database):
     import anyio
-    from a13n_service.database.migration import DatabaseMigrator
     from sqlalchemy import text
 
-    migrator = DatabaseMigrator(service_database)
-    await anyio.to_thread.run_sync(migrator.downgrade, "0264713d02b1")
+    from tests.database.revision_steps import apply_revision_steps
+
+    await anyio.to_thread.run_sync(
+        apply_revision_steps, service_database, (("7925615e9e83", "downgrade"), ("1ca0ca92df47", "downgrade"))
+    )
     async with transaction(interaction_sessions) as session:
         await session.execute(text("UPDATE runs SET bot_memory_json = :invalid"), {"invalid": "[]"})
     with pytest.raises(RuntimeError, match="Invalid retained memory"):
-        await anyio.to_thread.run_sync(migrator.upgrade)
+        await anyio.to_thread.run_sync(
+            apply_revision_steps, service_database, (("1ca0ca92df47", "upgrade"), ("7925615e9e83", "upgrade"))
+        )
     async with transaction(interaction_sessions) as session:
-        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0264713d02b1"
+        assert (await session.execute(text("SELECT bot_memory_json FROM runs LIMIT 1"))).scalar_one() == []
 
 
 async def test_cutover_downgrade_preserves_revocation_fences(runtime_memory, interaction_sessions, service_database):
     import anyio
     from a13n_service.bots.memory.lifecycle import invalidate_conversation
-    from a13n_service.database.migration import DatabaseMigrator
     from sqlalchemy import text
+
+    from tests.database.revision_steps import apply_revision_steps
 
     _, _, _, _, _, _, binding, _ = runtime_memory
     async with transaction(interaction_sessions) as session:
         await invalidate_conversation(session, ACCOUNT, binding.external_conversation_id)
     with pytest.raises(RuntimeError, match="revocation fences cannot be downgraded"):
-        await anyio.to_thread.run_sync(DatabaseMigrator(service_database).downgrade, "4662868f6a0f")
+        await anyio.to_thread.run_sync(apply_revision_steps, service_database, (("eb41d745e5d0", "downgrade"),))
     async with transaction(interaction_sessions) as session:
         scope = await session.get(ScopeRecord, binding.scope_id)
         assert scope.binding_floor > binding.scope_version
-        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "eb41d745e5d0"
+        assert (
+            await session.execute(text("SELECT binding_floor FROM bot_memory_scopes WHERE id = :id"), {"id": scope.id})
+        ).scalar_one() == scope.binding_floor
 
 
 async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(

@@ -16,7 +16,6 @@ from a13n_service.environments.websocket.coordination import ConnectionCoordinat
 from a13n_service.iam import AuthorizationError, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions.attempts import AttemptExecutionService
-from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.storage import short_session, transaction
@@ -105,9 +104,8 @@ async def test_mount_receipt_survives_offline_disabled_provider_and_terminal_run
         (await database.get(EnvironmentProviderRecord, provider.id)).enabled = False
     assert await _add(service, run, environment) == accepted
     assert observations == 1
-    with pytest.raises(InteractionCommandError) as caught:
-        await _add(service, run, environment, name="changed")
-    assert caught.value.code == "idempotency_conflict"
+    changed = await _add(service, run, environment, name="changed")
+    assert changed == accepted
     async with short_session(interaction_sessions) as database:
         assert await database.scalar(select(func.count()).select_from(RunEnvironmentMountRecord)) == 1
         assert (await database.get(RunRecord, run.id)).environment_id is None

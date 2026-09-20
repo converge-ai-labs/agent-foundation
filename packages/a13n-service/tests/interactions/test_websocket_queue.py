@@ -61,7 +61,6 @@ async def test_queue_admission_waits_for_online_at_consumption_and_retains_origi
         run_id=state.run_id,
         thread_id=source.thread_id,
         idempotency_key="consume-client",
-        request_fingerprint="6" * 64,
         config=config,
     ).model_copy(update={"input": accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True)})
     coordination = ConnectionCoordination(relay_redis)

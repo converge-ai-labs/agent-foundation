@@ -7,7 +7,6 @@ import pytest
 from a13n_service.durable_operations.idempotency import (
     EvidenceAlreadyCommitted,
     EvidenceScope,
-    IdempotencyConflict,
     IdempotencyIdentity,
     find_evidence,
     insert_evidence,
@@ -26,7 +25,7 @@ from tests.sql_capture import capture_sql
 pytestmark = pytest.mark.anyio
 
 SCOPE = EvidenceScope(WORKSPACE_ID, "user", USER_ID, "test.create", "parent", ORGANIZATION_ID)
-IDENTITY = IdempotencyIdentity.from_request("test-key", {"input": "same"})
+IDENTITY = IdempotencyIdentity.from_key("test-key")
 
 
 def _evidence(*, identity=IDENTITY, now=NOW, result="original"):
@@ -36,7 +35,6 @@ def _evidence(*, identity=IDENTITY, now=NOW, result="original"):
         identity=identity,
         result_kind="test",
         result_ref=result,
-        receipt={"result": result},
         now=now,
     )
 
@@ -56,7 +54,7 @@ async def test_preflight_reads_committed_receipt_without_waiting_for_final_lock(
 
 
 @pytest.mark.parametrize("offset", [-1, 0, 1])
-async def test_preflight_expiry_never_deletes_or_reserves_evidence(interaction_sessions, offset):
+async def test_key_remains_valid_across_the_former_expiry_boundary(interaction_sessions, offset):
     sessions = interaction_sessions
     evidence = _evidence()
     async with transaction(sessions) as database:
@@ -65,7 +63,7 @@ async def test_preflight_expiry_never_deletes_or_reserves_evidence(interaction_s
     with capture_sql(sessions) as statements:
         async with short_session(sessions) as database:
             result = await find_evidence(database, scope=SCOPE, identity=IDENTITY, now=now)
-            assert (result is not None) == (offset < 0)
+            assert result is not None and result.result_ref == "original"
     assert len(statements) == 1 and statements[0].startswith("SELECT")
     async with short_session(sessions) as database:
         assert await database.get(IdempotencyEvidenceRecord, evidence.id) is not None
@@ -75,43 +73,26 @@ async def test_preflight_expiry_never_deletes_or_reserves_evidence(interaction_s
         )
 
 
-async def test_expired_replacement_rolls_back_with_business_transaction(interaction_sessions):
+async def test_existing_key_never_replaces_business_result(interaction_sessions):
     sessions = interaction_sessions
-    original = _evidence()
     async with transaction(sessions) as database:
-        await insert_evidence(database, original)
-    changed = IdempotencyIdentity.from_request("test-key", {"input": "changed"})
-    expiry = NOW + timedelta(hours=24)
-    with pytest.raises(RuntimeError, match="business failure"):
+        await insert_evidence(database, _evidence())
+    with pytest.raises(EvidenceAlreadyCommitted):
         async with transaction(sessions) as database:
-            await insert_evidence(database, _evidence(identity=changed, now=expiry, result="replacement"))
-            raise RuntimeError("business failure")
+            await insert_evidence(database, _evidence(now=NOW + timedelta(days=365), result="replacement"))
     async with short_session(sessions) as database:
-        assert await database.get(IdempotencyEvidenceRecord, original.id) is not None
-    with capture_sql(sessions) as statements:
-        async with transaction(sessions) as database:
-            await insert_evidence(database, _evidence(identity=changed, now=expiry, result="replacement"))
-    assert len(statements) == 1 and "ON CONFLICT" in statements[0]
-    async with short_session(sessions) as database:
-        assert (await find_evidence(database, scope=SCOPE, identity=changed, now=expiry)).result_ref == "replacement"
-        with pytest.raises(IdempotencyConflict):
-            await find_evidence(database, scope=SCOPE, identity=IDENTITY, now=expiry)
+        assert (await find_evidence(database, scope=SCOPE, identity=IDENTITY, now=NOW)).result_ref == "original"
 
 
-@pytest.mark.parametrize("different_input", [False, True])
-async def test_final_arbitration_rolls_back_loser_after_both_preflights_miss(interaction_sessions, different_input):
+async def test_final_arbitration_rolls_back_loser_after_both_preflights_miss(interaction_sessions):
     sessions = interaction_sessions
     ready = Event()
     arrivals = 0
-    committed, replayed, conflicts = [], [], []
+    committed, replayed = [], []
 
     async def submit(index):
         nonlocal arrivals
-        identity = (
-            IdempotencyIdentity.from_request("test-key", {"input": "changed"})
-            if different_input and index == 1
-            else IDENTITY
-        )
+        identity = IDENTITY
         async with short_session(sessions) as database:
             assert await find_evidence(database, scope=SCOPE, identity=identity, now=NOW) is None
         arrivals += 1
@@ -135,20 +116,16 @@ async def test_final_arbitration_rolls_back_loser_after_both_preflights_miss(int
                 await insert_evidence(database, _evidence(identity=identity, result=result_id))
             committed.append(result_id)
         except EvidenceAlreadyCommitted:
-            try:
-                async with short_session(sessions) as database:
-                    result = await find_evidence(database, scope=SCOPE, identity=identity, now=NOW)
-                    replayed.append(result.result_ref)
-            except IdempotencyConflict:
-                conflicts.append(result_id)
+            async with short_session(sessions) as database:
+                result = await find_evidence(database, scope=SCOPE, identity=identity, now=NOW)
+                replayed.append(result.result_ref)
 
     with fail_after(10):
         async with create_task_group() as tasks:
             tasks.start_soon(submit, 0)
             tasks.start_soon(submit, 1)
     assert len(committed) == 1
-    assert len(conflicts) == int(different_input)
-    assert replayed == ([] if different_input else committed)
+    assert replayed == committed
     async with short_session(sessions) as database:
         assert (
             list(await database.scalars(select(WorkspaceRecord.id).where(WorkspaceRecord.id.like("business-%"))))

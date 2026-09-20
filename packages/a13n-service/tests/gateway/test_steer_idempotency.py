@@ -5,7 +5,6 @@ from datetime import timedelta
 
 import anyio
 import pytest
-from a13n_service.database.migration import DatabaseMigrator
 from a13n_service.iam.auth.passwords import csrf_token, token_hash
 from a13n_service.iam.configuration import IdentityConfiguration
 from a13n_service.iam.http.authentication import DatabaseAuthenticator
@@ -14,13 +13,11 @@ from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import ThreadRecord
 from a13n_service.interactions.objects import RunObjectIntegrityError
-from a13n_service.interactions.steer_idempotency import clear_expired_steer_idempotency
 from a13n_service.memory.behaviors import RunMemorySelectionRecord
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.temporal import utc_now
 from sqlalchemy import delete, func, select, text, update
-from sqlalchemy.exc import DBAPIError
 from starlette.requests import HTTPConnection
 
 from tests.gateway.test_commands import _actor, _commands, _complete_run, _Freezing, _frozen, _Preparation, _request
@@ -77,7 +74,7 @@ async def test_concurrent_same_key_never_allocates_twice(steer_case, monkeypatch
         async with anyio.create_task_group() as tasks:
             tasks.start_soon(submit, "one")
             tasks.start_soon(submit, "two" if different_input else "one")
-    assert errors == (["idempotency_conflict"] if different_input else [])
+    assert errors == []
     assert len({receipt.steer_id for receipt in results}) == 1
     async with short_session(sessions) as database:
         assert await database.scalar(select(func.count()).select_from(ThreadInboxRecord)) == 1
@@ -123,7 +120,7 @@ async def test_final_replay_precedes_terminal_target_check(steer_case, monkeypat
     )
 
 
-async def test_expiry_releases_key_without_deleting_input(steer_case, monkeypatch):
+async def test_key_remains_on_the_original_input_after_twenty_four_hours(steer_case, monkeypatch):
     sessions, _, commands, run = steer_case
     now = NOW
     monkeypatch.setattr(commands.active, "_clock", lambda: now)
@@ -142,16 +139,14 @@ async def test_expiry_releases_key_without_deleting_input(steer_case, monkeypatc
     second = await commands.active.steer(
         actor=_actor(), run_id=run.run_id, idempotency_key="same", input=_request("two").input
     )
-    assert second.steer_id != first.steer_id
-    assert second.delivery_sequence == first.delivery_sequence + 1
+    assert second == first
     async with transaction(sessions) as database:
         first_row = await database.get(ThreadInboxRecord, first.steer_id)
-        assert first_row.idempotency_key_digest is None
+        assert first_row.idempotency_key_digest is not None
         assert first_row.status == "pending"
-        assert await clear_expired_steer_idempotency(database, now=now + timedelta(hours=24), limit=1) == 1
         thread = await database.get(ThreadRecord, run.thread_id)
-        assert thread.pending_count == 2
-        assert await database.scalar(select(func.count()).select_from(ThreadInboxRecord)) == 2
+        assert thread.pending_count == 1
+        assert await database.scalar(select(func.count()).select_from(ThreadInboxRecord)) == 1
 
 
 async def test_rollback_leaves_no_inbox_or_reserved_key(steer_case):
@@ -263,82 +258,18 @@ async def test_request_identity_is_reused_only_when_explicitly_verified(steer_ca
         )
 
 
-async def test_migration_roundtrip_preserves_live_replay(steer_case, service_database, monkeypatch):
+async def test_schema_has_keys_without_fingerprint_or_expiry(steer_case):
     sessions, _, commands, run = steer_case
-    now = utc_now()
-    monkeypatch.setattr(commands.active, "_clock", lambda: now)
-    monkeypatch.setattr(commands.active._inbox, "_clock", lambda: now)
     first = await commands.active.steer(
-        actor=_actor(), run_id=run.run_id, idempotency_key="migrated", input=_request().input
+        actor=_actor(), run_id=run.run_id, idempotency_key="stored", input=_request().input
     )
-    migrator = DatabaseMigrator(service_database)
-    engine = sessions.kw["bind"]
-    await engine.dispose()
-    await anyio.to_thread.run_sync(migrator.downgrade, "469419a1470b")
     async with short_session(sessions) as database:
-        evidence = (
-            await database.execute(
-                text("SELECT result_ref, actor_id, expires_at FROM idempotency_evidence WHERE operation = 'run.steer'")
+        columns = set(
+            await database.scalars(
+                text("SELECT column_name FROM information_schema.columns WHERE table_name = 'thread_inbox'")
             )
-        ).one()
-        assert evidence.result_ref == first.steer_id
-        assert evidence.actor_id == USER_ID
-        assert evidence.expires_at == now + timedelta(hours=24)
-    await engine.dispose()
-    await anyio.to_thread.run_sync(migrator.upgrade)
-    await engine.dispose()
-    assert (
-        await commands.active.steer(
-            actor=_actor(), run_id=run.run_id, idempotency_key="migrated", input=_request().input
         )
-        == first
-    )
-    async with short_session(sessions) as database:
-        assert (
-            await database.scalar(text("SELECT count(*) FROM idempotency_evidence WHERE operation = 'run.steer'")) == 0
-        )
-        assert await database.scalar(select(func.count()).select_from(ThreadInboxRecord)) == 1
-
-
-async def test_migration_rejects_broken_live_evidence(steer_case, service_database, monkeypatch):
-    sessions, _, commands, run = steer_case
-    now = utc_now()
-    monkeypatch.setattr(commands.active._inbox, "_clock", lambda: now)
-    await commands.active.steer(actor=_actor(), run_id=run.run_id, idempotency_key="migrated", input=_request().input)
-    migrator = DatabaseMigrator(service_database)
-    engine = sessions.kw["bind"]
-    await engine.dispose()
-    await anyio.to_thread.run_sync(migrator.downgrade, "469419a1470b")
-    async with transaction(sessions) as database:
-        await database.execute(
-            text("UPDATE idempotency_evidence SET result_ref = 'missing' WHERE operation = 'run.steer'")
-        )
-    await engine.dispose()
-    with pytest.raises(DBAPIError, match="Invalid steer replay evidence"):
-        await anyio.to_thread.run_sync(migrator.upgrade)
-
-
-async def test_expiry_sweep_skips_locked_entry_and_lazy_replacement_recovers(steer_case, monkeypatch):
-    sessions, _, commands, run = steer_case
-    now = NOW
-    monkeypatch.setattr(commands.active, "_clock", lambda: now)
-    monkeypatch.setattr(commands.active._inbox, "_clock", lambda: now)
-    first = await commands.active.steer(
-        actor=_actor(), run_id=run.run_id, idempotency_key="same", input=_request().input
-    )
-    now += timedelta(hours=24)
-    with anyio.fail_after(5):
-        async with transaction(sessions) as owner:
-            await owner.scalar(
-                select(ThreadInboxRecord).where(ThreadInboxRecord.id == first.steer_id).with_for_update()
-            )
-            async with transaction(sessions) as sweeper:
-                assert await clear_expired_steer_idempotency(sweeper, now=now, limit=1) == 0
-    second = await commands.active.steer(
-        actor=_actor(), run_id=run.run_id, idempotency_key="same", input=_request().input
-    )
-    assert second.steer_id != first.steer_id
-    async with short_session(sessions) as database:
-        thread = await database.get(ThreadRecord, run.thread_id)
-        assert thread.pending_count == 2
-        assert thread.next_delivery_sequence == 3
+        assert "idempotency_key_digest" in columns
+        assert {"idempotency_request_digest", "idempotency_expires_at"}.isdisjoint(columns)
+        row = await database.get(ThreadInboxRecord, first.steer_id)
+        assert row.idempotency_key_digest is not None

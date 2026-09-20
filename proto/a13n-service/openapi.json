@@ -5454,6 +5454,9 @@
           },
           "local_status": {
             "enum": [
+              "pending",
+              "ready",
+              "action_required",
               "disabled",
               "deleted"
             ],

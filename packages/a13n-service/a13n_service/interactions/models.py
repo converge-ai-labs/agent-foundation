@@ -23,6 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.labels import LABELS_SQL_TYPE
 from a13n_service.models.domain import ModelExecutionObservation
@@ -62,7 +63,7 @@ _RUN_PAYLOAD_REF_ADAPTER = TypeAdapter(RunPayloadObjectRef)
 _SEALED_STATE_ADAPTER = TypeAdapter(SealedRunState)
 
 
-class SessionRecord(Base):
+class SessionRecord(EntityRequestKey, Base):
     __tablename__ = "sessions"
     __table_args__ = (
         ForeignKeyConstraint(
@@ -116,7 +117,7 @@ class SessionRecord(Base):
         )
 
 
-class ThreadRecord(Base):
+class ThreadRecord(EntityRequestKey, Base):
     __tablename__ = "threads"
     __table_args__ = (
         ForeignKeyConstraint(
@@ -230,8 +231,9 @@ class ThreadRecord(Base):
         )
 
 
-class RunRecord(Base):
+class RunRecord(EntityRequestKey, Base):
     __tablename__ = "runs"
+    interrupt_key: Mapped[str | None] = mapped_column(String(64), unique=True)
     configuration_context: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     configuration_draft_id: Mapped[str | None] = mapped_column(String(72))
     __table_args__ = (
@@ -389,7 +391,6 @@ class RunRecord(Base):
             name="current_attempt_lifecycle_valid",
         ),
         CheckConstraint("length(effective_agent_config_digest) = 64", name="effective_config_digest_sha256"),
-        CheckConstraint("length(request_fingerprint) = 64", name="request_fingerprint_sha256"),
         CheckConstraint(
             "(input_object_digest_sha256 IS NULL OR length(input_object_digest_sha256) = 64) AND "
             "(output_object_digest_sha256 IS NULL OR length(output_object_digest_sha256) = 64) AND "
@@ -503,7 +504,6 @@ class RunRecord(Base):
     handoffs_completed: Mapped[int] = mapped_column(Integer, nullable=False)
     usage_charged_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     idempotency_key: Mapped[str | None] = mapped_column(String(256))
-    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     wait_reason: Mapped[str | None] = mapped_column(String(16))
     pending_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
@@ -586,7 +586,7 @@ class RunRecord(Base):
             "handoffs_completed": self.handoffs_completed,
             "usage_charged": _RUN_USAGE_ADAPTER.validate_python(self.usage_charged_json),
             "idempotency_key": self.idempotency_key,
-            "request_fingerprint": self.request_fingerprint,
+            "request_key": self.request_key,
             "status": RunStatus(self.status),
             "wait_reason": None if self.wait_reason is None else RunWaitReason(self.wait_reason),
             "input_kind": RunInputKind(self.input_kind),

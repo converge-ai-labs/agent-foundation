@@ -346,15 +346,15 @@ async def test_application_history_survives_later_versions_and_no_change_applica
         )
         == receipts[0]
     )
-    # An old reviewed version must not mask a key used by a different application.
-    with pytest.raises(ApplicationError, match="Idempotency-Key"):
-        await applications.apply(
-            actor=actor(),
-            draft_id=original.id,
-            request=apply_request(original),
-            idempotency_key="apply-1",
-            if_match=resource_etag(original.id, original.updated_at),
-        )
+    # A reused key selects its own application, regardless of the supplied review.
+    replay = await applications.apply(
+        actor=actor(),
+        draft_id=original.id,
+        request=apply_request(original),
+        idempotency_key="apply-1",
+        if_match=resource_etag(original.id, original.updated_at),
+    )
+    assert replay == receipts[1]
     assert await drafts.get(actor=actor(), draft_id=original.id) == saved
 
 
@@ -376,8 +376,7 @@ async def test_semantic_replay_binds_its_new_idempotency_key(agent_sessions):
     assert await apply(request, "replay-alias") == receipt
     current = await drafts.get(actor=actor(), draft_id=saved.id)
     validated = await save(drafts, current, key="validate")
-    with pytest.raises(ApplicationError, match="Idempotency-Key"):
-        await apply(apply_request(validated), "replay-alias")
+    assert await apply(apply_request(validated), "replay-alias") == receipt
 
 
 @pytest.mark.parametrize("mutation", ["ordinary_revision", "update_baseline", "source_version"])

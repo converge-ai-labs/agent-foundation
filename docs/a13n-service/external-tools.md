@@ -158,7 +158,7 @@ The initial migrations create the current schema directly, without persisted too
 
 ## Retrying management commands
 
-Use an `Idempotency-Key` containing 1–512 visible ASCII bytes for retryable management commands. If a response is lost, repeat the same key and request. For 24 hours from the original successful commit, an authorized replay returns the original accepted result, even if the resource has since advanced. Changing the request while reusing that key returns a conflict. Replay does not renew the window.
+Use an `Idempotency-Key` containing 1–512 visible ASCII bytes for retryable management commands. If a response is lost, repeat its key. An authorized retry reads the existing business result using current logic; its status or version may have advanced. The key alone identifies the request, so use a new key for a new intended mutation. Keys do not expire after 24 hours, but deleting the owning business data may end deduplication.
 
 Read the Connection after a mutation to observe current discovery status; the mutation receipt records its accepted state. Supply credentials through the owning Account, Provider, or MCP connection. Run configuration selects those managed resources and does not accept direct credential overrides.
 

@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.connections.domain import Connection
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
-from a13n_service.connectivity.management import fingerprint, record_command, replay_command
+from a13n_service.connectivity.management import record_command, replay_command
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
 from a13n_service.durable_operations.idempotency import (
-    IdempotencyConflict,
     InvalidIdempotencyKey,
     digest_visible_ascii_key,
 )
@@ -45,6 +45,19 @@ class ConnectionService:
         source = request.source
         async with transaction(self._sessions) as session:
             await authorize(session, actor, workspace_id, mode="manage")
+            replay = await find_by_key(
+                session,
+                ConnectionRecord,
+                entity_key(
+                    actor,
+                    operation="connection.create",
+                    scope_id=workspace_id,
+                    key_digest=key,
+                    workspace_id=workspace_id,
+                ),
+            )
+            if replay is not None:
+                return replay.to_resource()
         if isinstance(source, MCPSource):
             try:
                 endpoint = await self._endpoint_policy.validate(source.endpoint_url, resolve_dns=True)
@@ -56,23 +69,23 @@ class ConnectionService:
                 raise ConnectionError(
                     "invalid_source", "Connection source is invalid.", category=ErrorCategory.invalid_request
                 ) from error
-        request_fingerprint = fingerprint(request.model_copy(update={"source": source}))
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
                 workspace = await authorize(session, actor, workspace_id, mode="manage")
-                replay = await replay_command(
+                replay = await find_by_key(
                     session,
-                    actor=actor,
-                    workspace_id=workspace_id,
-                    operation="connection.create",
-                    scope_id=workspace_id,
-                    idempotency_key_digest=key,
-                    fingerprint=request_fingerprint,
-                    now=now,
+                    ConnectionRecord,
+                    entity_key(
+                        actor,
+                        operation="connection.create",
+                        scope_id=workspace_id,
+                        key_digest=key,
+                        workspace_id=workspace_id,
+                    ),
                 )
                 if replay is not None:
-                    return replay.restore(Connection)
+                    return replay.to_resource()
                 values = dict(
                     id=new_object_id("conn"),
                     organization_id=workspace.organization_id,
@@ -96,6 +109,13 @@ class ConnectionService:
                 if isinstance(source, MCPSource):
                     values["static_header_names_json"] = list(source.static_header_names)
                     record = MCPConnectionRecord(**values, endpoint_url=source.endpoint_url, auth_mode=source.auth_mode)
+                    record.request_key = entity_key(
+                        actor,
+                        operation="connection.create",
+                        scope_id=workspace_id,
+                        key_digest=key,
+                        workspace_id=workspace_id,
+                    )
                 else:
                     provider = await require_connector_provider(
                         session, source.provider_id, scope=await connector_actor_scope(session, actor)
@@ -112,31 +132,34 @@ class ConnectionService:
                     record = ConnectorConnectionRecord(
                         **values, connector_provider_id=provider.id, connector_key=source.connector_key
                     )
+                    record.request_key = entity_key(
+                        actor,
+                        operation="connection.create",
+                        scope_id=workspace_id,
+                        key_digest=key,
+                        workspace_id=workspace_id,
+                    )
                 session.add(record)
                 await session.flush()
                 resource = project(record)
-                record_command(
-                    session,
-                    actor=actor,
-                    organization_id=workspace.organization_id,
-                    workspace_id=workspace_id,
-                    operation="connection.create",
-                    scope_id=workspace_id,
-                    idempotency_key_digest=key,
-                    fingerprint=request_fingerprint,
-                    resource_type="connection",
-                    resource_id=record.id,
-                    result_version=record.version,
-                    now=now,
-                    resource=resource,
-                )
                 session.add(audit(actor, record, action="connection.create", now=now))
                 return resource
-        except IdempotencyConflict as error:
-            raise ConnectionError(
-                "idempotency_conflict", "Idempotency key was used for another request.", category=ErrorCategory.conflict
-            ) from error
         except IntegrityError as error:
+            async with transaction(self._sessions) as session:
+                await authorize(session, actor, workspace_id, mode="manage")
+                replay = await find_by_key(
+                    session,
+                    ConnectionRecord,
+                    entity_key(
+                        actor,
+                        operation="connection.create",
+                        scope_id=workspace_id,
+                        key_digest=key,
+                        workspace_id=workspace_id,
+                    ),
+                )
+                if replay is not None:
+                    return replay.to_resource()
             raise ConnectionError(
                 "connection_conflict", "Connection name already exists.", category=ErrorCategory.conflict
             ) from error
@@ -217,29 +240,20 @@ class ConnectionService:
     ) -> Connection:
         operation = "connection.enable" if enabled else "connection.disable"
         key = idempotency_digest(idempotency_key)
-        request_fingerprint = fingerprint(UpdateConnectionRequest(name="command", expected_version=expected_version))
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id, lock=True)
             await authorize(session, actor, record.workspace_id, mode="manage")
-            try:
-                replay = await replay_command(
-                    session,
-                    actor=actor,
-                    workspace_id=record.workspace_id,
-                    operation=operation,
-                    scope_id=record.id,
-                    idempotency_key_digest=key,
-                    fingerprint=request_fingerprint,
-                    now=self._clock(),
-                )
-            except IdempotencyConflict as error:
-                raise ConnectionError(
-                    "idempotency_conflict",
-                    "Idempotency key was used for another request.",
-                    category=ErrorCategory.conflict,
-                ) from error
+            replay = await replay_command(
+                session,
+                actor=actor,
+                workspace_id=record.workspace_id,
+                operation=operation,
+                scope_id=record.id,
+                idempotency_key_digest=key,
+                now=self._clock(),
+            )
             if replay is not None:
-                return replay.restore(Connection)
+                return record.to_resource()
             require_version(record, expected_version)
             record.status = "pending" if enabled else "disabled"
             record.status_reason = None
@@ -259,12 +273,9 @@ class ConnectionService:
                 operation=operation,
                 scope_id=record.id,
                 idempotency_key_digest=key,
-                fingerprint=request_fingerprint,
                 resource_type="connection",
                 resource_id=record.id,
-                result_version=record.version,
                 now=self._clock(),
-                resource=resource,
             )
             session.add(audit(actor, record, action=operation, now=self._clock()))
             return resource

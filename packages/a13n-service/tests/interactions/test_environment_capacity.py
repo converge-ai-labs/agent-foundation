@@ -55,7 +55,6 @@ async def sibling_run(sessions, run, environment_id):
             run_id="run_capacity123456789012",
             thread_id=sibling_thread.id,
             idempotency_key="capacity",
-            request_fingerprint="a" * 64,
         ).model_copy(update={"session_id": sibling_session.id, "environment_id": environment_id})
         session.add(run_record(sibling))
         await session.flush()

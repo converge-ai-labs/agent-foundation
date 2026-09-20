@@ -15,14 +15,13 @@ from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.ingress.admission_domain import BatchConfiguration
 from a13n_service.connectivity.ingress.provider import InboundEvent
-from a13n_service.connectivity.management import fingerprint, record_command
 from a13n_service.connectivity.native_management import (
     audit,
     authorize,
     idempotency_key_digest,
-    replay_command,
     require_version,
 )
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
@@ -116,18 +115,19 @@ async def create_bot_test(
     async with transaction(sessions) as database:
         account = await require_account(database, account_id, lock=True)
         await authorize(database, actor, account.workspace_id, WorkspaceAction.application_account_manage)
-        replay = await replay_command(
+        replay = await find_by_key(
             database,
-            actor=actor,
-            workspace_id=account.workspace_id,
-            operation="bot_test.create",
-            scope_id=account.id,
-            idempotency_key_digest=digest,
-            fingerprint=fingerprint(request),
-            now=now,
+            BotTestRecord,
+            entity_key(
+                actor,
+                operation="bot_test.create",
+                scope_id=account.id,
+                key_digest=digest,
+                workspace_id=account.workspace_id,
+            ),
         )
         if replay is not None:
-            return replay.restore(BotTest)
+            return await _read_test(database, actor, account, replay, clock)
         require_version(account.version, request.expected_version)
         target = await database.get(AccountTargetRecord, request.target_id)
         if (
@@ -164,24 +164,16 @@ async def create_bot_test(
             created_at=now,
             expires_at=now + timedelta(minutes=15),
         )
+        record.request_key = entity_key(
+            actor,
+            operation="bot_test.create",
+            scope_id=account.id,
+            key_digest=digest,
+            workspace_id=account.workspace_id,
+        )
         database.add(record)
         await database.flush()
         resource = _project(record, account, target, await settings_version(database, account.id))
-        record_command(
-            database,
-            actor=actor,
-            organization_id=account.organization_id,
-            workspace_id=account.workspace_id,
-            operation="bot_test.create",
-            scope_id=account.id,
-            idempotency_key_digest=digest,
-            fingerprint=fingerprint(request),
-            resource_type="bot_test",
-            resource_id=record.id,
-            result_version=1,
-            now=now,
-            resource=resource,
-        )
         database.add(audit(actor, account.organization_id, account.workspace_id, "bot_test.create", record.id, now))
         return resource
 
@@ -205,49 +197,53 @@ async def get_bot_test(
         )
         if record is None:
             return BotTestHistory(latest=None)
-        run = None
-        if record.run_id is not None:
-            run = await database.get(RunRecord, record.run_id)
-            if run is None:
-                raise NativeError(
-                    "resource_not_found", "Test execution is no longer available.", category=ErrorCategory.not_found
-                )
-            for action in (WorkspaceAction.session_read, WorkspaceAction.thread_read, WorkspaceAction.run_read):
-                await authorize_agent(
-                    database, actor=actor, workspace_id=account.workspace_id, agent_id=run.agent_id, action=action
-                )
-        target = await database.get(AccountTargetRecord, record.target_id)
-        reply_row = (
-            await database.execute(
-                select(BotReplyRecord, RunRecord, RunAttemptRecord)
-                .join(RunRecord, RunRecord.id == BotReplyRecord.run_id)
-                .join(RunAttemptRecord, RunAttemptRecord.id == BotReplyRecord.run_attempt_id)
-                .where(BotReplyRecord.test_id == record.id, BotReplyRecord.account_id == account.id)
-                .order_by(
-                    case((BotReplyRecord.status == "succeeded", 0), else_=1),
-                    BotReplyRecord.started_at.desc(),
-                    BotReplyRecord.id.desc(),
-                )
-                .limit(1)
+        return BotTestHistory(latest=await _read_test(database, actor, account, record, clock))
+
+
+async def _read_test(
+    database: AsyncSession, actor: AuthenticatedActor, account: AccountRecord, record: BotTestRecord, clock: Clock
+) -> BotTest:
+    run = None
+    if record.run_id is not None:
+        run = await database.get(RunRecord, record.run_id)
+        if run is None:
+            raise NativeError(
+                "resource_not_found", "Test execution is no longer available.", category=ErrorCategory.not_found
             )
-        ).one_or_none()
-        reply = None
-        if reply_row is not None:
-            evidence, reply_run, attempt = reply_row
-            for action in (WorkspaceAction.session_read, WorkspaceAction.thread_read, WorkspaceAction.run_read):
-                await authorize_agent(
-                    database, actor=actor, workspace_id=account.workspace_id, agent_id=reply_run.agent_id, action=action
-                )
-            reply = reply_observation(evidence, reply_run, attempt, clock())
-        return BotTestHistory(
-            latest=_project(record, account, target, await settings_version(database, account.id)).model_copy(
-                update={
-                    "reply": reply,
-                    "session_id": run.session_id if run else None,
-                    "thread_id": run.thread_id if run else None,
-                }
+        for action in (WorkspaceAction.session_read, WorkspaceAction.thread_read, WorkspaceAction.run_read):
+            await authorize_agent(
+                database, actor=actor, workspace_id=account.workspace_id, agent_id=run.agent_id, action=action
             )
+    target = await database.get(AccountTargetRecord, record.target_id)
+    reply_row = (
+        await database.execute(
+            select(BotReplyRecord, RunRecord, RunAttemptRecord)
+            .join(RunRecord, RunRecord.id == BotReplyRecord.run_id)
+            .join(RunAttemptRecord, RunAttemptRecord.id == BotReplyRecord.run_attempt_id)
+            .where(BotReplyRecord.test_id == record.id, BotReplyRecord.account_id == account.id)
+            .order_by(
+                case((BotReplyRecord.status == "succeeded", 0), else_=1),
+                BotReplyRecord.started_at.desc(),
+                BotReplyRecord.id.desc(),
+            )
+            .limit(1)
         )
+    ).one_or_none()
+    reply = None
+    if reply_row is not None:
+        evidence, reply_run, attempt = reply_row
+        for action in (WorkspaceAction.session_read, WorkspaceAction.thread_read, WorkspaceAction.run_read):
+            await authorize_agent(
+                database, actor=actor, workspace_id=account.workspace_id, agent_id=reply_run.agent_id, action=action
+            )
+        reply = reply_observation(evidence, reply_run, attempt, clock())
+    return _project(record, account, target, await settings_version(database, account.id)).model_copy(
+        update={
+            "reply": reply,
+            "session_id": run.session_id if run else None,
+            "thread_id": run.thread_id if run else None,
+        }
+    )
 
 
 async def record_test_admission(

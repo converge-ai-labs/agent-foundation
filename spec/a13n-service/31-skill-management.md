@@ -84,16 +84,15 @@ The ZIP contains only files named by the Revision manifest. ZIP byte encoding is
 
 Service enforces the shared package maxima and additionally fixes these public bounds:
 
-| Value                                        |                          Limit |
-| -------------------------------------------- | -----------------------------: |
-| Staged ZIP lifetime                          |                       24 hours |
-| `Idempotency-Key` evidence                   | 24 hours after accepted commit |
-| GitHub acquisition deadline                  |                     60 seconds |
-| Available Skill selections in one Agent node |                            512 |
+| Value                                        |      Limit |
+| -------------------------------------------- | ---------: |
+| Staged ZIP lifetime                          |   24 hours |
+| GitHub acquisition deadline                  | 60 seconds |
+| Available Skill selections in one Agent node |        512 |
 
 Deployments can impose lower quotas on active Skills, Revisions, or concurrent uploads. Reaching a quota rejects the operation and never evicts retained content. `name` is NFC, contains 1 through 256 Unicode scalar values, has no leading or trailing whitespace, and contains no control character.
 
-Service retains `Idempotency-Key` evidence for ZIP staging, Skill creation, and Revision publication for 24 hours after the accepted commit. Replay within that horizon returns the original bounded result before current resource state is evaluated. After expiry, Service no longer promises replay, and absent evidence does not prove that the earlier request never committed.
+ZIP staging and Skill creation store a scoped request key with the resulting upload or Skill. Revision publication retains a minimal key-to-Revision reference because a no-change publication can reuse an existing Revision. Retries project the retained business records and do not compare request content. Keys have no independent expiry; normal business collection, including upload expiry, may end deduplication.
 
 ## Persistence
 
@@ -128,7 +127,7 @@ class SkillUploadReceipt:
     consumed_by_revision_id: SkillRevisionId | None
 ```
 
-POST returns `201`; GET returns `200`; deleting an unconsumed receipt returns `204`. The receipt is scoped to the Workspace and uploading Principal, grants no package or Agent authority, and can be consumed once. The same idempotency key and archive bytes return the same receipt; different bytes conflict. Expired candidates are removed without affecting published Revisions.
+POST returns `201`; GET returns `200`; deleting an unconsumed receipt returns `204`. The receipt is scoped to the Workspace and uploading Principal, grants no package or Agent authority, and can be consumed once. The same scoped idempotency key returns the retained upload using current projection logic without comparing archive bytes. Deleting the upload releases its key. Expired candidates are removed without affecting published Revisions.
 
 ### Create a Skill or Revision
 
@@ -229,7 +228,7 @@ Each reference includes the current Agent name and key for navigation. The refer
 
 DELETE otherwise requires the current strong `ETag`, tombstones the Skill, and releases its Workspace key. It appends no Revision and advances no version. After commit, the Skill is absent from collections and every ordinary public read for that Skill, its Revisions, and its content returns `404`. An exact mutation replay within its idempotency-evidence horizon remains operation evidence and follows the shared replay contract.
 
-Stable error codes include `skill_not_found`, `skill_key_conflict`, `skill_key_mismatch`, `skill_in_use`, `skill_version_conflict`, `skill_upload_not_found`, `skill_upload_expired`, `skill_upload_consumed`, `skill_package_invalid`, `skill_package_limit`, `github_source_invalid`, `github_commit_mismatch`, `github_auth_failed`, `github_rate_limited`, and `github_unavailable`. Invalid inputs use `400`; absent or concealed resources use `404`; key, lifecycle, version, upload, and idempotency conflicts use `409`; GitHub rate limiting uses `429`; retryable dependencies use `503`. Errors never include package bodies, credentials, object keys, or private paths.
+Stable error codes include `skill_not_found`, `skill_key_conflict`, `skill_key_mismatch`, `skill_in_use`, `skill_version_conflict`, `skill_upload_not_found`, `skill_upload_expired`, `skill_upload_consumed`, `skill_package_invalid`, `skill_package_limit`, `github_source_invalid`, `github_commit_mismatch`, `github_auth_failed`, `github_rate_limited`, and `github_unavailable`. Invalid inputs use `400`; absent or concealed resources use `404`; key, lifecycle, version, and upload conflicts use `409`; GitHub rate limiting uses `429`; retryable dependencies use `503`. Errors never include package bodies, credentials, object keys, or private paths.
 
 ## Deletion, Retention, and Concurrency
 

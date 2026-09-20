@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -11,8 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.management import record_command
-from a13n_service.digests import digest_request
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.ids import new_object_id
@@ -24,7 +21,6 @@ from ..connections.handoff import BrowserHandoff
 from .connection_access import (
     authorize_connection,
     idempotency_digest,
-    replay_connection_command,
     require_version,
 )
 from .domain import (
@@ -41,7 +37,7 @@ from .models import (
     ConnectorAuthorizationRecord,
 )
 from .revocation import ConnectorRevocationService
-from .setup import ConnectorSetupCoordinator, browser_digest
+from .setup import ConnectorSetupCoordinator
 
 
 class ConnectorConnectionService:
@@ -94,33 +90,25 @@ class ConnectorConnectionService:
         credentials: JsonObject | None = None,
     ) -> ConnectorSetupLaunch:
         key_digest = idempotency_digest(idempotency_key)
-        request_fingerprint = digest_request(
-            {
-                "expected_version": expected_version,
-                "setup": setup,
-                "return_url": return_url,
-                "browser_binding": browser_digest(browser_nonce),
-                "handoff": asdict(handoff) if handoff is not None else None,
-                "credentials_digest": digest_request(credentials) if credentials is not None else None,
-            }
-        )
         attempt_id = new_object_id("csa")
         initial_claim = None
         now = self._clock()
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id, lock=True)
             await authorize_connection(session, actor, connection, mode="manage")
-            replay = await replay_connection_command(
+            replay = await find_by_key(
                 session,
-                actor=actor,
-                connection=connection,
-                operation="connector_connection.setup",
-                key_digest=key_digest,
-                request_fingerprint=request_fingerprint,
-                now=self._clock(),
+                ConnectorAuthorizationRecord,
+                entity_key(
+                    actor,
+                    operation="connection.authorize",
+                    scope_id=connection.id,
+                    key_digest=key_digest,
+                    workspace_id=connection.workspace_id,
+                ),
             )
             if replay is not None:
-                attempt = await session.get(ConnectorAuthorizationRecord, replay.resource_id)
+                attempt = replay
                 if attempt is None:
                     raise ConnectorError(
                         "setup_unavailable", "ConnectorProvider setup is unavailable.", category=ErrorCategory.not_found
@@ -167,24 +155,16 @@ class ConnectorConnectionService:
                     handoff=handoff,
                     direct_credentials=credentials is not None,
                 )
+                attempt.request_key = entity_key(
+                    actor,
+                    operation="connection.authorize",
+                    scope_id=connection.id,
+                    key_digest=key_digest,
+                    workspace_id=connection.workspace_id,
+                )
                 session.add(attempt)
                 assert attempt.claim_owner is not None
                 initial_claim = (attempt.claim_owner, attempt.claim_generation)
-                record_command(
-                    session,
-                    actor=actor,
-                    organization_id=connection.organization_id,
-                    workspace_id=connection.workspace_id,
-                    operation="connector_connection.setup",
-                    scope_id=connection.id,
-                    idempotency_key_digest=key_digest,
-                    fingerprint=request_fingerprint,
-                    resource_type="connector_setup_attempt",
-                    resource_id=attempt_id,
-                    result_version=connection.version,
-                    now=now,
-                    resource=None,
-                )
                 session.add(
                     audit(
                         actor,

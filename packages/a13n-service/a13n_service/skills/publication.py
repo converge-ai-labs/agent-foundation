@@ -49,6 +49,7 @@ from .support import (
     new_replay_evidence,
     record_failed_skill_attempt,
     skill_audit_record,
+    skill_request_key,
 )
 
 _CREATE_OPERATION = "skill.create"
@@ -136,7 +137,7 @@ class SkillPublicationService:
             action=WorkspaceAction.skill_create,
             operation=_CREATE_OPERATION,
             resource_scope_id=workspace_id,
-            identity=idempotency_identity(idempotency_key, request),
+            identity=idempotency_identity(idempotency_key),
         )
         replay, organization_id = await self._preauthorize_replay(command)
         if replay is not None:
@@ -195,6 +196,7 @@ class SkillPublicationService:
                     version=1,
                     prepared=prepared,
                 )
+                skill.request_key = skill_request_key(command.scope(workspace.organization_id))
                 session.add_all((skill, revision))
                 await session.flush((skill, revision))
                 if upload is not None:
@@ -215,19 +217,12 @@ class SkillPublicationService:
                         details={"selected_revision_id": revision_id, "source_kind": request.source.kind},
                     )
                 )
-                session.add(
-                    new_replay_evidence(
-                        scope=command.scope(workspace.organization_id),
-                        response=result,
-                        created=True,
-                        now=now,
-                    )
-                )
                 await session.flush()
                 return ReplayResult(result=result, created=True)
         except IntegrityError as error:
-            if is_evidence_unique_race(error):
-                return await self._require_replay(command)
+            replay, _organization_id = await self._preauthorize_replay(command)
+            if replay is not None:
+                return replay
             if is_skill_key_race(error):
                 raise skill_key_conflict() from error
             raise
@@ -274,7 +269,7 @@ class SkillPublicationService:
             action=WorkspaceAction.skill_revision_publish,
             operation=_REVISION_OPERATION,
             resource_scope_id=skill_id,
-            identity=idempotency_identity(idempotency_key, request),
+            identity=idempotency_identity(idempotency_key),
         )
         replay, organization_id = await self._preauthorize_replay(command)
         if replay is not None:
@@ -395,7 +390,6 @@ class SkillPublicationService:
                 new_replay_evidence(
                     scope=scope,
                     response=result,
-                    created=created,
                     now=now,
                 )
             )

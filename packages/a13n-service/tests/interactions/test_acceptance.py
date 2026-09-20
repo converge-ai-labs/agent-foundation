@@ -64,7 +64,6 @@ def _accepted_run(
     run_id: str,
     thread_id: str,
     idempotency_key: str,
-    request_fingerprint: str,
     config: EffectiveAgentConfig | None = None,
 ) -> Run:
     config = config or effective_agent_config()
@@ -98,7 +97,6 @@ def _accepted_run(
         handoffs_completed=0,
         usage_charged=RunUsage(),
         idempotency_key=idempotency_key,
-        request_fingerprint=request_fingerprint,
         status=RunStatus.accepted,
         input_kind=RunInputKind.agent_input,
         input={"schema_version": "1", "content": "hello"},
@@ -141,7 +139,6 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
         run_id=seed.run_id,
         thread_id=state.thread_id,
         idempotency_key="start-1",
-        request_fingerprint="1" * 64,
     )
     session = Session(
         id=SESSION_ID,
@@ -190,8 +187,8 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
         record.version += 1
     replay = await service.accept_new_thread(session=session, thread=thread, run=run, state=state)
 
-    assert replay == receipt
-    assert (replay.run_version, replay.status) == (1, "accepted")
+    assert replay == receipt.model_copy(update={"run_version": 2})
+    assert (replay.run_version, replay.status) == (2, "accepted")
 
 
 async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
@@ -238,7 +235,6 @@ async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
         run_id=seed.run_id,
         thread_id=THREAD_ID,
         idempotency_key="inline-hook",
-        request_fingerprint="9" * 64,
     )
     session = Session(
         id=SESSION_ID,
@@ -296,16 +292,16 @@ async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
 
     assert receipt.hook_subscription_id is not None
     assert replay == receipt
-    with pytest.raises(RunAcceptanceError, match="different inline Hook"):
-        await service.accept_new_thread(
-            session=session,
-            thread=thread,
-            run=run,
-            state=state,
-            hook_subscription=hook.model_copy(
-                update={"webhook": hook.webhook.model_copy(update={"endpoint_url": "https://other.example.com/hook"})}
-            ),
-        )
+    changed_replay = await service.accept_new_thread(
+        session=session,
+        thread=thread,
+        run=run,
+        state=state,
+        hook_subscription=hook.model_copy(
+            update={"webhook": hook.webhook.model_copy(update={"endpoint_url": "https://other.example.com/hook"})}
+        ),
+    )
+    assert changed_replay == receipt
     async with short_session(interaction_sessions) as database:
         head = await database.get(HookSubscriptionRecord, receipt.hook_subscription_id)
         assert head is not None
@@ -342,7 +338,6 @@ async def test_acceptance_rejects_input_payload_owned_by_another_run(
         run_id=seed.run_id,
         thread_id=state.thread_id,
         idempotency_key="wrong-input-owner",
-        request_fingerprint="a" * 64,
     )
     run = _with_input_object(
         inline,
@@ -408,7 +403,6 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
         run_id=first_seed.run_id,
         thread_id=first_state.thread_id,
         idempotency_key="start-2",
-        request_fingerprint="2" * 64,
         config=config,
     ).model_copy(
         update={
@@ -491,7 +485,6 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
         run_id=second_seed.run_id,
         thread_id=first.thread_id,
         idempotency_key="continue-after-failure",
-        request_fingerprint="3" * 64,
         config=config,
     )
     second = _with_input_object(
@@ -544,19 +537,18 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
     conflicting = second.model_copy(
         update={
             "id": "run_4444444444444444",
-            "request_fingerprint": "4" * 64,
         }
     )
     conflicting_state = second_state.model_copy(update={"run_id": conflicting.id})
-    with pytest.raises(RunAcceptanceError, match="different Run intent"):
-        await service.advance_thread(
-            run=conflicting,
-            state=conflicting_state,
-            expected_thread_version=3,
-            expected_current_run_id=second.id,
-            expected_head_run_id=None,
-            next_head_run_id=None,
-        )
+    repeated = await service.advance_thread(
+        run=conflicting,
+        state=conflicting_state,
+        expected_thread_version=3,
+        expected_current_run_id=second.id,
+        expected_head_run_id=None,
+        next_head_run_id=None,
+    )
+    assert repeated == receipt
 
 
 async def test_new_session_cannot_begin_with_a_child_thread(
@@ -584,7 +576,6 @@ async def test_new_session_cannot_begin_with_a_child_thread(
         run_id=seed.run_id,
         thread_id=state.thread_id,
         idempotency_key="invalid-child-session",
-        request_fingerprint="6" * 64,
     )
     thread = Thread(
         id=state.thread_id,
@@ -641,7 +632,6 @@ async def test_existing_session_cannot_accept_another_root_thread(
         run_id=seed.run_id,
         thread_id=state.thread_id,
         idempotency_key="invalid-second-root",
-        request_fingerprint="8" * 64,
     )
     thread = Thread(
         id=state.thread_id,

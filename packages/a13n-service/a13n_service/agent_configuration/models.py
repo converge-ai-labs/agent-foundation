@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
@@ -93,6 +94,7 @@ class ConfigurationDraftRecord(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     latest_validation: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     evidence_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    discard_key: Mapped[str | None] = mapped_column(String(64))
     terminal_reason: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -132,9 +134,36 @@ class ConfigurationApplicationRecord(Base):
     reviewed_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     agent_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
     key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
-    receipt: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    reviewed_digest: Mapped[str] = mapped_column(String(64))
+    reviewed_mode: Mapped[str] = mapped_column(String(16))
+    reviewed_target_agent_id: Mapped[str | None] = mapped_column(String(72))
+    reviewed_base_agent_revision_id: Mapped[str | None] = mapped_column(String(72))
+    reviewed_creation_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    agent_id: Mapped[str] = mapped_column(String(72))
+    agent_revision_version: Mapped[int] = mapped_column(BigInteger)
+    applied_by_user_id: Mapped[str] = mapped_column(String(72))
+    no_change: Mapped[bool] = mapped_column(Boolean)
+    verification_acknowledgement: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    verification_run_ids: Mapped[list[str]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     def to_resource(self) -> ConfigurationApplicationReceipt:
-        return ConfigurationApplicationReceipt.model_validate(self.receipt)
+        return ConfigurationApplicationReceipt.model_validate(
+            {
+                "draft_id": self.draft_id,
+                "reviewed_version": self.reviewed_version,
+                "reviewed_digest": self.reviewed_digest,
+                "reviewed_mode": self.reviewed_mode,
+                "reviewed_target_agent_id": self.reviewed_target_agent_id,
+                "reviewed_base_agent_revision_id": self.reviewed_base_agent_revision_id,
+                "reviewed_creation_metadata": self.reviewed_creation_metadata,
+                "agent_id": self.agent_id,
+                "agent_revision_id": self.agent_revision_id,
+                "agent_revision_version": self.agent_revision_version,
+                "applied_by_user_id": self.applied_by_user_id,
+                "applied_at": assume_utc(self.created_at),
+                "no_change": self.no_change,
+                "verification_acknowledgement": self.verification_acknowledgement,
+                "verification_run_ids": self.verification_run_ids,
+            }
+        )

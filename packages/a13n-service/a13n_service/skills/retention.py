@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import String, cast, exists, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.background import Sweep
-from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.storage import transaction
 from a13n_service.temporal import assume_utc, utc_now
 
@@ -20,21 +19,11 @@ class SkillUploadRetention:
 
     async def scan(self) -> Sweep:
         now = utc_now()
-        # Receipts can embed the upload identity instead of using it as result_ref.
-        replay = exists().where(
-            IdempotencyEvidenceRecord.organization_id == SkillUploadRecord.organization_id,
-            IdempotencyEvidenceRecord.expires_at > now,
-            or_(
-                IdempotencyEvidenceRecord.result_ref == SkillUploadRecord.id,
-                IdempotencyEvidenceRecord.scope_id == SkillUploadRecord.id,
-                cast(IdempotencyEvidenceRecord.receipt_json, String).contains(SkillUploadRecord.id),
-            ),
-        )
         async with transaction(self._sessions) as session:
             records = tuple(
                 await session.scalars(
                     select(SkillUploadRecord)
-                    .where(SkillUploadRecord.expires_at <= now, ~replay)
+                    .where(SkillUploadRecord.expires_at <= now)
                     .order_by(SkillUploadRecord.expires_at, SkillUploadRecord.id)
                     .limit(self._batch_limit)
                     .with_for_update(skip_locked=True)

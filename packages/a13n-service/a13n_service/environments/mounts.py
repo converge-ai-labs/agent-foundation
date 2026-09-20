@@ -10,13 +10,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, IdempotencyIdentity
-from a13n_service.durable_operations.requests import evidence_record, load_receipt, request_identity, request_scope
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
+from a13n_service.durable_operations.idempotency import IdempotencyIdentity
+from a13n_service.durable_operations.requests import request_identity
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction
 from a13n_service.iam.authorization import authorize_persisted_workspace_principal_action
 from a13n_service.iam.resource_scope import actor_scope
 from a13n_service.interactions.access import authorize_interaction, authorize_retained_execution
-from a13n_service.interactions.errors import command_not_found, idempotency_conflict
+from a13n_service.interactions.errors import command_not_found
 from a13n_service.interactions.inbox import ThreadControlSignalPublisher
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.storage import short_session
@@ -59,7 +60,7 @@ class RunEnvironmentMountService:
         idempotency_key: str,
         request: AddEnvironmentMountRequest,
     ) -> RunEnvironmentMount:
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
 
         async def accept(database: AsyncSession, online: OnlineEvidence) -> tuple[RunEnvironmentMount, str, str]:
             run, workspace_id = await _load_run(database, actor, run_id, WorkspaceAction.run_steer)
@@ -132,6 +133,13 @@ class RunEnvironmentMountService:
             )
             database.add(
                 RunEnvironmentMountRecord(
+                    request_key=entity_key(
+                        actor,
+                        operation=_OPERATION,
+                        scope_id=run_id,
+                        key_digest=identity.key_digest,
+                        workspace_id=workspace_id,
+                    ),
                     run_id=run_id,
                     name=request.name,
                     organization_id=run.organization_id,
@@ -142,20 +150,6 @@ class RunEnvironmentMountService:
                     principal_type=actor.principal.principal_type.value,
                     principal_id=actor.principal.principal_id,
                     application_status="pending",
-                )
-            )
-            database.add(
-                evidence_record(
-                    actor=actor,
-                    organization_id=run.organization_id,
-                    workspace_id=workspace_id,
-                    operation=_OPERATION,
-                    scope_id=run_id,
-                    identity=identity,
-                    result_kind="run_environment_mount",
-                    result_ref=request.name,
-                    now=now,
-                    response=receipt,
                 )
             )
             return receipt, run.organization_id, run.thread_id
@@ -259,16 +253,17 @@ async def _replay(
     identity: IdempotencyIdentity,
     now: datetime,
 ) -> RunEnvironmentMount | None:
-    try:
-        receipt = await load_receipt(
-            database,
-            scope=request_scope(actor, workspace_id=workspace_id, operation=_OPERATION, scope_id=run_id),
-            identity=identity,
-            now=now,
-        )
-    except IdempotencyConflict as error:
-        raise idempotency_conflict() from error
-    return receipt.restore(RunEnvironmentMount) if receipt is not None else None
+    record = await find_by_key(
+        database,
+        RunEnvironmentMountRecord,
+        entity_key(
+            actor, operation=_OPERATION, scope_id=run_id, key_digest=identity.key_digest, workspace_id=workspace_id
+        ),
+    )
+    if record is None:
+        return None
+    run = await database.get(RunRecord, run_id)
+    return None if run is None else _project(record, run)
 
 
 def _project(row: RunEnvironmentMountRecord, run: RunRecord) -> RunEnvironmentMount:

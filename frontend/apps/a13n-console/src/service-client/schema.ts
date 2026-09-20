@@ -6255,7 +6255,8 @@ export interface components {
        * Local Status
        * @enum {string}
        */
-      local_status: "disabled" | "deleted";
+      local_status:
+        "pending" | "ready" | "action_required" | "disabled" | "deleted";
       /**
        * Remote Status
        * @enum {string}

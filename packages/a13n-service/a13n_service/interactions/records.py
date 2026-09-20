@@ -96,7 +96,7 @@ def run_record(value: Run) -> RunRecord:
         handoffs_completed=value.handoffs_completed,
         usage_charged_json=_json(value.usage_charged),
         idempotency_key=value.idempotency_key,
-        request_fingerprint=value.request_fingerprint,
+        request_key=value.request_key,
         status=value.status.value,
         wait_reason=None if value.wait_reason is None else value.wait_reason.value,
         pending_json=_optional_json(value.pending),

@@ -72,7 +72,10 @@ async def test_successor_acceptance_copies_mounts_atomically_with_fresh_observat
         agent_revision_id=source.agent_revision_id,
         effective_agent_config=initial.effective_agent_config,
     )
-    changes = {"id": seed.run_id, "idempotency_key": "successor", "request_fingerprint": "7" * 64}
+    changes = {
+        "id": seed.run_id,
+        "idempotency_key": "successor",
+    }
     if kind == "retry":
         await cancel(sessions, interaction_object_store, source, NOW + timedelta(seconds=1))
         state = initialize_retry_state(

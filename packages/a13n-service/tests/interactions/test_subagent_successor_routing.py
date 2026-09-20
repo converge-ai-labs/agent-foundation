@@ -207,7 +207,6 @@ async def test_failed_current_uses_preserved_completed_head_as_result_parent(
         run_id=manual_run_id,
         thread_id=parent.thread_id,
         idempotency_key="manual-before-result",
-        request_fingerprint="5" * 64,
         config=completed_state.envelope.effective_agent_config,
     ).model_copy(
         update={

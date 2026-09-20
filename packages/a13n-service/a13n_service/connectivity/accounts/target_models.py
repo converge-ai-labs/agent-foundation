@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc
 
@@ -24,7 +25,7 @@ from .reception import InputBatchingPolicy, InputOverride
 from .targets import AccountTarget
 
 
-class AccountTargetRecord(Base):
+class AccountTargetRecord(EntityRequestKey, Base):
     __tablename__ = "account_targets"
     __table_args__ = (
         ForeignKeyConstraint(

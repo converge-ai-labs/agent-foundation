@@ -6,7 +6,7 @@ from sqlalchemy import String, cast, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.background import Sweep
-from a13n_service.durable_operations.models import IdempotencyEvidenceRecord, OutboxRecord
+from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.interactions.models import RunAttemptRecord
 from a13n_service.storage import transaction
@@ -40,14 +40,6 @@ class AssetRetention:
             )
             for record in records:
                 pending = exists().where(OutboxRecord.source_kind == "asset", OutboxRecord.source_id == record.id)
-                replay = exists().where(
-                    IdempotencyEvidenceRecord.organization_id == record.organization_id,
-                    IdempotencyEvidenceRecord.expires_at > now,
-                    or_(
-                        IdempotencyEvidenceRecord.result_ref == record.id,
-                        cast(IdempotencyEvidenceRecord.receipt_json, String).contains(record.id),
-                    ),
-                )
                 audit = exists().where(
                     SecurityAuditRecord.organization_id == record.organization_id,
                     or_(
@@ -60,7 +52,7 @@ class AssetRetention:
                     RunAttemptRecord.status.in_(("leased", "running")),
                     RunAttemptRecord.lease_expires_at > now,
                 )
-                if await session.scalar(select(or_(pending, replay, audit, attempt))):
+                if await session.scalar(select(or_(pending, audit, attempt))):
                     continue
                 await session.delete(record)
                 completed += 1

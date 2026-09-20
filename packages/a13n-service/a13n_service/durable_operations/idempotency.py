@@ -1,13 +1,12 @@
-"""Canonical idempotency-key and bounded replay-evidence primitives."""
+"""Scoped key-to-result references for repeatable mutations of existing resources."""
 
 from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import cast
 
-from pydantic import JsonValue
 from sqlalchemy import Select, Table, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
@@ -15,11 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service import digests
 from a13n_service.ids import new_object_id
-from a13n_service.temporal import assume_utc
 
 from .models import IdempotencyEvidenceRecord
 
-IDEMPOTENCY_EVIDENCE_TTL = timedelta(hours=24)
 IDEMPOTENCY_KEY_MAX_BYTES = 512
 _EVIDENCE_UNIQUE_CONSTRAINT = "uq_idempotency_evidence_replay_scope"
 
@@ -28,24 +25,19 @@ class InvalidIdempotencyKey(ValueError):
     """An idempotency key does not satisfy its feature's accepted byte policy."""
 
 
-class IdempotencyConflict(Exception):
-    """An unexpired key was reused for different request content."""
-
-
 class EvidenceAlreadyCommitted(Exception):
     """A live receipt won; roll back tentative mutations before replaying it."""
 
 
 @dataclass(frozen=True, slots=True)
 class IdempotencyIdentity:
-    """Digests which identify one key and its canonical request content."""
+    """The validated digest of an opaque caller key."""
 
     key_digest: str
-    request_digest: str
 
     @classmethod
-    def from_request(cls, key: str, request: object) -> IdempotencyIdentity:
-        return cls(digest_visible_ascii_key(key), digests.digest_request(request))
+    def from_key(cls, key: str) -> IdempotencyIdentity:
+        return cls(digest_visible_ascii_key(key))
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,12 +71,12 @@ async def load_evidence(
     identity: IdempotencyIdentity,
     now: datetime,
 ) -> IdempotencyEvidenceRecord | None:
-    """Load matching evidence, deleting it atomically once its TTL elapses."""
+    """Serialize a mutation key and load its result reference."""
 
     boundary_id = scope.workspace_id or scope.organization_id
     if boundary_id is None:
         raise ValueError("Idempotency evidence requires a Workspace or Organization boundary")
-    # Serialize a key even before its first row exists; expiry replacement
+    # Serialize a key even before its first row exists; key lookup
     # and the mutation use this same transaction and bounded DB timeouts.
     material = digests.digest_request(
         (boundary_id, scope.actor_type, scope.actor_id, scope.operation, scope.scope_id, identity.key_digest)
@@ -94,12 +86,6 @@ async def load_evidence(
     evidence = await session.scalar(_evidence_query(scope, identity).with_for_update())
     if evidence is None:
         return None
-    if assume_utc(evidence.expires_at) <= assume_utc(now):
-        await session.delete(evidence)
-        await session.flush()
-        return None
-    if evidence.request_digest != identity.request_digest:
-        raise IdempotencyConflict
     return evidence
 
 
@@ -110,30 +96,22 @@ async def find_evidence(
     identity: IdempotencyIdentity,
     now: datetime,
 ) -> IdempotencyEvidenceRecord | None:
-    """Read an eligible receipt without locking, reserving a key, or deleting expiry."""
+    """Read a key-to-result reference without locking."""
 
-    evidence = await session.scalar(
-        _evidence_query(scope, identity).where(IdempotencyEvidenceRecord.expires_at > assume_utc(now))
-    )
-    if evidence is not None and evidence.request_digest != identity.request_digest:
-        raise IdempotencyConflict
+    evidence = await session.scalar(_evidence_query(scope, identity))
     return evidence
 
 
 async def insert_evidence(session: AsyncSession, evidence: IdempotencyEvidenceRecord) -> None:
-    """Arbitrate acceptance or expired-key reuse in the business transaction.
+    """Arbitrate key insertion in the business transaction.
 
-    A live winner is never overwritten, including when its digest matches. The
+    An existing winner is never overwritten. The
     caller must roll back its tentative business writes before reading that winner.
     """
 
     table = cast(Table, IdempotencyEvidenceRecord.__table__)
     statement = insert(table).values({column.name: getattr(evidence, column.name) for column in table.columns})
-    statement = statement.on_conflict_do_update(
-        constraint=_EVIDENCE_UNIQUE_CONSTRAINT,
-        set_={column.name: statement.excluded[column.name] for column in table.columns},
-        where=table.c.expires_at <= evidence.created_at,
-    ).returning(table.c.id)
+    statement = statement.on_conflict_do_nothing(constraint=_EVIDENCE_UNIQUE_CONSTRAINT).returning(table.c.id)
     if await session.scalar(statement) is None:
         raise EvidenceAlreadyCommitted
 
@@ -152,25 +130,6 @@ def _evidence_query(scope: EvidenceScope, identity: IdempotencyIdentity) -> Sele
     )
 
 
-async def delete_expired_evidence(session: AsyncSession, *, now: datetime, limit: int) -> int:
-    """Physically remove one bounded batch without waiting on active commands."""
-    if not 1 <= limit <= 1000:
-        raise ValueError("Evidence cleanup limit must be between 1 and 1000")
-    records = (
-        await session.scalars(
-            select(IdempotencyEvidenceRecord)
-            .where(IdempotencyEvidenceRecord.expires_at <= now)
-            .order_by(IdempotencyEvidenceRecord.expires_at, IdempotencyEvidenceRecord.id)
-            .limit(limit)
-            .with_for_update(skip_locked=True)
-        )
-    ).all()
-    for record in records:
-        await session.delete(record)
-    await session.flush()
-    return len(records)
-
-
 def new_evidence(
     *,
     organization_id: str,
@@ -179,9 +138,8 @@ def new_evidence(
     result_kind: str,
     result_ref: str,
     now: datetime,
-    receipt: dict[str, JsonValue] | None = None,
 ) -> IdempotencyEvidenceRecord:
-    """Build one bounded replay-evidence row using the canonical lifetime."""
+    """Build a key-to-result reference with no response snapshot or expiry."""
 
     return IdempotencyEvidenceRecord(
         id=new_object_id("idem"),
@@ -193,12 +151,9 @@ def new_evidence(
         operation=scope.operation,
         scope_id=scope.scope_id,
         key_digest=identity.key_digest,
-        request_digest=identity.request_digest,
         result_kind=result_kind,
         result_ref=result_ref,
-        receipt_json=receipt,
         created_at=now,
-        expires_at=now + IDEMPOTENCY_EVIDENCE_TTL,
     )
 
 
@@ -213,14 +168,11 @@ def is_evidence_unique_race(error: IntegrityError) -> bool:
 
 
 __all__ = [
-    "IDEMPOTENCY_EVIDENCE_TTL",
     "IDEMPOTENCY_KEY_MAX_BYTES",
     "EvidenceAlreadyCommitted",
     "EvidenceScope",
-    "IdempotencyConflict",
     "IdempotencyIdentity",
     "InvalidIdempotencyKey",
-    "delete_expired_evidence",
     "digest_visible_ascii_key",
     "find_evidence",
     "insert_evidence",

@@ -313,30 +313,28 @@ async def test_start_accepts_root_run_and_replays_before_resolution(
     assert session is not None and session.workspace_id == WORKSPACE_ID
 
 
-async def test_start_rejects_idempotency_key_reuse_with_changed_request(
+async def test_start_replays_key_reuse_with_changed_request(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
 ) -> None:
     interaction_sessions = lifecycle_interaction_sessions
     interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
     commands = _commands(interaction_sessions, interaction_object_store, _Preparation(), _Freezing([_frozen()]))
-    await commands.runs.start(
+    await seed_hook_actor_access(interaction_sessions)
+    original = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="start-conflict",
         request=_request("first"),
     )
 
-    with pytest.raises(InteractionCommandError) as captured:
-        await commands.runs.start(
-            actor=_actor(),
-            workspace_id=WORKSPACE_ID,
-            idempotency_key="start-conflict",
-            request=_request("different"),
-        )
-
-    assert captured.value.code == "idempotency_conflict"
-    assert application_error_status(captured.value) == 409
+    changed = await commands.runs.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="start-conflict",
+        request=_request("different"),
+    )
+    assert changed == original
 
 
 async def test_start_rejects_second_root_thread_in_existing_session(
@@ -450,10 +448,11 @@ async def test_interrupt_is_atomic_and_replays_exact_stable_receipt(
     assert run is not None and run.status == "cancelled" and run.version == 2
     assert first.interrupted_at == run.to_resource().sealed_at
     assert thread is not None and thread.version == 2
-    assert len(evidence) == 1
+    assert len(evidence) == 0
+    assert run.interrupt_key is not None
 
 
-async def test_interrupt_idempotency_conflicts_before_terminal_precondition_check(
+async def test_interrupt_replays_key_before_terminal_precondition_check(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
 ) -> None:
@@ -471,22 +470,20 @@ async def test_interrupt_idempotency_conflicts_before_terminal_precondition_chec
         idempotency_key="interrupt-conflict-source",
         request=_request(),
     )
-    await commands.active.interrupt(
+    original = await commands.active.interrupt(
         actor=_actor(),
         run_id=accepted.run_id,
         idempotency_key="interrupt-conflict",
         request=InterruptRequest(expected_run_version=1, expected_thread_version=1),
     )
 
-    with pytest.raises(InteractionCommandError) as captured:
-        await commands.active.interrupt(
-            actor=_actor(),
-            run_id=accepted.run_id,
-            idempotency_key="interrupt-conflict",
-            request=InterruptRequest(expected_run_version=2, expected_thread_version=2),
-        )
-
-    assert captured.value.code == "idempotency_conflict"
+    changed = await commands.active.interrupt(
+        actor=_actor(),
+        run_id=accepted.run_id,
+        idempotency_key="interrupt-conflict",
+        request=InterruptRequest(expected_run_version=2, expected_thread_version=2),
+    )
+    assert changed == original
 
 
 async def test_retry_copies_cancelled_root_intent_and_replays(
@@ -786,7 +783,7 @@ async def test_fork_creates_child_thread_and_replays(
     assert (forked_thread.next_delivery_sequence, forked_thread.pending_count, forked_thread.pending_bytes) == (1, 0, 0)
 
 
-async def test_fork_idempotency_rejects_changed_input(
+async def test_fork_idempotency_ignores_changed_input(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
 ) -> None:
@@ -809,22 +806,20 @@ async def test_fork_idempotency_rejects_changed_input(
         interaction_object_store,
         run_id=source.run_id,
     )
-    await commands.runs.fork(
+    original = await commands.runs.fork(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="fork-conflict",
         request=ForkRunCommand(input=_request("first").input),
     )
 
-    with pytest.raises(InteractionCommandError) as captured:
-        await commands.runs.fork(
-            actor=_actor(),
-            run_id=source.run_id,
-            idempotency_key="fork-conflict",
-            request=ForkRunCommand(input=_request("different").input),
-        )
-
-    assert captured.value.code == "idempotency_conflict"
+    changed = await commands.runs.fork(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="fork-conflict",
+        request=ForkRunCommand(input=_request("different").input),
+    )
+    assert changed == original
 
 
 async def test_feedback_advances_waiting_run_and_replays_semantically_equivalent_request(
@@ -910,7 +905,7 @@ async def test_feedback_advances_waiting_run_and_replays_semantically_equivalent
     assert thread.head_run_id == waiting.id
 
 
-async def test_feedback_rejects_changed_idempotent_intent_before_stale_head(
+async def test_feedback_replays_changed_input_before_stale_head_check(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
 ) -> None:
@@ -937,7 +932,7 @@ async def test_feedback_rejects_changed_idempotent_intent_before_stale_head(
         expected_thread_version=2,
         sealed_state_digest_sha256=digest,
     )
-    await commands.continuations.feedback(
+    original = await commands.continuations.feedback(
         actor=_actor(),
         run_id=source.run_id,
         idempotency_key="feedback-conflict",
@@ -951,15 +946,13 @@ async def test_feedback_rejects_changed_idempotent_intent_before_stale_head(
         }
     )
 
-    with pytest.raises(InteractionCommandError) as captured:
-        await commands.continuations.feedback(
-            actor=_actor(),
-            run_id=source.run_id,
-            idempotency_key="feedback-conflict",
-            request=approved,
-        )
-
-    assert captured.value.code == "idempotency_conflict"
+    changed = await commands.continuations.feedback(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="feedback-conflict",
+        request=approved,
+    )
+    assert changed == original
 
 
 async def test_waiting_continue_defaults_feedback_and_preserves_new_input(
@@ -1080,7 +1073,7 @@ async def test_steer_is_atomic_replayable_and_does_not_advance_thread(
     assert entries[0].idempotency_key_digest is not None
 
 
-async def test_steer_idempotency_rejects_changed_input(
+async def test_steer_idempotency_ignores_changed_input(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
 ) -> None:
@@ -1098,22 +1091,20 @@ async def test_steer_idempotency_rejects_changed_input(
         idempotency_key="steer-conflict-source",
         request=_request(),
     )
-    await commands.active.steer(
+    original = await commands.active.steer(
         actor=_actor(),
         run_id=accepted.run_id,
         idempotency_key="steer-conflict",
         input=_request("first").input,
     )
 
-    with pytest.raises(InteractionCommandError) as captured:
-        await commands.active.steer(
-            actor=_actor(),
-            run_id=accepted.run_id,
-            idempotency_key="steer-conflict",
-            input=_request("different").input,
-        )
-
-    assert captured.value.code == "idempotency_conflict"
+    changed = await commands.active.steer(
+        actor=_actor(),
+        run_id=accepted.run_id,
+        idempotency_key="steer-conflict",
+        input=_request("different").input,
+    )
+    assert changed == original
 
 
 @pytest.mark.parametrize("revoke_at", ["before_request", "after_precheck", "during_preparation"])

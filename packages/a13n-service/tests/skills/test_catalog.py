@@ -187,7 +187,7 @@ async def staged_source(uploads: SkillUploadService, *, key: str, content: bytes
 
 
 @pytest.mark.anyio
-async def test_zip_stage_replays_and_conflicts_on_different_bytes(
+async def test_zip_stage_replays_without_comparing_archive_bytes(
     skill_services: SkillTestServices,
 ) -> None:
     uploads = skill_services.uploads
@@ -204,15 +204,15 @@ async def test_zip_stage_replays_and_conflicts_on_different_bytes(
         archive=archive(),
     )
 
-    assert replay == first
-    with pytest.raises(SkillError) as captured:
-        await uploads.stage(
-            actor=actor(),
-            workspace_id=WORKSPACE_ID,
-            idempotency_key="upload-key",
-            archive=archive(body="# Different"),
-        )
-    assert captured.value.code == "idempotency_conflict"
+    assert replay.result == first.result
+    assert replay.created is False
+    changed = await uploads.stage(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="upload-key",
+        archive=archive(body="# Different"),
+    )
+    assert changed == replay
 
 
 @pytest.mark.anyio
@@ -246,7 +246,7 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
         assert upload is not None
         assert upload.consumed_by_revision_id == created.result.revision.id
         evidence = tuple((await session.scalars(select(IdempotencyEvidenceRecord))).all())
-        assert len(evidence) == 2
+        assert len(evidence) == 0
 
     updated = await catalog.update(
         actor=actor(),
@@ -261,7 +261,9 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
         request=request,
         idempotency_key="create-key",
     )
-    assert replay == created
+    assert replay.result.skill == updated
+    assert replay.result.revision == created.result.revision
+    assert replay.created is False
 
     same_source = await staged_source(uploads, key="upload-same", content=archive())
     same = await publication.publish_revision(
@@ -722,7 +724,7 @@ async def test_read_content_tombstone_and_viewer_authorization(
 
 
 @pytest.mark.anyio
-async def test_expired_idempotency_evidence_allows_a_new_upload_receipt(
+async def test_upload_key_survives_its_business_expiry_until_collection(
     skill_services: SkillTestServices,
 ) -> None:
     first = await skill_services.uploads.stage(
@@ -748,7 +750,7 @@ async def test_expired_idempotency_evidence_allows_a_new_upload_receipt(
         idempotency_key="expiring-key",
         archive=archive(body="# Replacement"),
     )
-    assert second.result.upload_id != first.result.upload_id
+    assert second.result.upload_id == first.result.upload_id
 
 
 @pytest.mark.anyio
@@ -771,6 +773,9 @@ async def test_upload_delete_rejects_consumed_receipt_and_removes_unconsumed_rec
     with pytest.raises(SkillError) as missing:
         await skill_services.uploads.get(actor=actor(), upload_id=unconsumed.upload_id)
     assert missing.value.code == "skill_upload_not_found"
+
+    replacement = await staged_source(skill_services.uploads, key="deletable-upload", content=archive())
+    assert replacement.upload_id != unconsumed.upload_id
 
 
 @pytest.mark.anyio

@@ -287,7 +287,7 @@ class Run(StrictModel):
     handoffs_completed: int = Field(ge=0)
     usage_charged: RunUsage
     idempotency_key: BoundedText | None = None
-    request_fingerprint: Sha256Digest
+    request_key: Sha256Digest | None = Field(default=None, exclude=True)
     status: RunStatus
     wait_reason: RunWaitReason | None = None
     input_kind: RunInputKind
@@ -512,7 +512,7 @@ def accepted_run(
     queue_name: BoundedText,
     execution_budget: ExecutionBudget,
     idempotency_key: BoundedText | None = None,
-    request_fingerprint: Sha256Digest,
+    request_key: Sha256Digest | None = None,
     input_kind: RunInputKind,
     input: JsonValue | None = None,
     input_object: RunPayloadObjectRef | None = None,
@@ -547,7 +547,7 @@ def accepted_run(
         queue_name=queue_name,
         execution_budget=execution_budget,
         idempotency_key=idempotency_key,
-        request_fingerprint=request_fingerprint,
+        request_key=request_key,
         input_kind=input_kind,
         input_text=input_text,
         labels=labels or {},

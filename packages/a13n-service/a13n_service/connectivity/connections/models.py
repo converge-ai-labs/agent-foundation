@@ -10,12 +10,16 @@ from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
 
 
-class ConnectionRecord(ResourceCredential[str], Base):
+class ConnectionRecord(EntityRequestKey, ResourceCredential[str], Base):
     credential_owner_type = "connection"
     __tablename__ = "connections"
+    deletion_key: Mapped[str | None] = mapped_column(String(64), unique=True)
+    cleanup_version: Mapped[int | None] = mapped_column(BigInteger)
+    remote_cleanup_status: Mapped[str | None] = mapped_column(String(32))
     __table_args__ = (
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"), ("workspaces.id", "workspaces.organization_id"), ondelete="CASCADE"
@@ -104,7 +108,7 @@ class ConnectionRecord(ResourceCredential[str], Base):
         return project(self)
 
 
-class AuthorizationRecord(ResourceCredential[str], Base):
+class AuthorizationRecord(EntityRequestKey, ResourceCredential[str], Base):
     """A short-lived authorization operation; protocol material is encrypted."""
 
     credential_owner_type = "connection_authorization"

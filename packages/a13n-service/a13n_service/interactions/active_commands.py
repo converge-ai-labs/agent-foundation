@@ -10,14 +10,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.durable_operations.entity_keys import scope_key
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
-    IdempotencyConflict,
     IdempotencyIdentity,
-    find_evidence,
-    is_evidence_unique_race,
-    load_evidence,
-    new_evidence,
 )
 from a13n_service.durable_operations.requests import request_scope
 from a13n_service.iam import (
@@ -54,7 +50,7 @@ from .command_evidence import (
 )
 from .command_preparation import CommandInput
 from .control_domain import InterruptReceipt
-from .errors import InteractionCommandError, command_not_found, idempotency_conflict
+from .errors import InteractionCommandError, command_not_found
 from .session_scope import SessionScope
 from .steer_idempotency import SteerIdempotency, find_steer, steer_receipt
 
@@ -90,19 +86,24 @@ class ActiveRunCommands:
         idempotency_key: str,
         request: InterruptRequest,
     ) -> InterruptReceipt:
-        identity = command_identity(idempotency_key, request)
+        identity = command_identity(idempotency_key)
         scope = request_scope(actor, workspace_id=actor.workspace_id, operation="run.interrupt", scope_id=run_id)
         replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
         if replay is not None:
             return replay
-        source, thread, session_scope = await self._load_interrupt_source(actor=actor, run_id=run_id)
-        if source.version != request.expected_run_version or thread.version != request.expected_thread_version:
-            raise InteractionCommandError(
-                "run_precondition_changed",
-                "The Run or Thread version changed before interruption.",
-                category=ErrorCategory.conflict,
-            )
-        now = assume_utc(self._clock())
+        try:
+            source, thread, session_scope = await self._load_interrupt_source(actor=actor, run_id=run_id)
+            if source.version != request.expected_run_version or thread.version != request.expected_thread_version:
+                raise InteractionCommandError(
+                    "run_precondition_changed",
+                    "The Run or Thread version changed before interruption.",
+                    category=ErrorCategory.conflict,
+                )
+        except InteractionCommandError:
+            replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
+            if replay is not None:
+                return replay
+            raise
 
         async def validate_final(database: AsyncSession) -> None:
             try:
@@ -118,22 +119,10 @@ class ActiveRunCommands:
             except AuthorizationError as error:
                 raise command_not_found() from error
 
-        async def record_evidence(database: AsyncSession) -> None:
-            try:
-                existing = await load_evidence(database, scope=scope, identity=identity, now=now)
-            except IdempotencyConflict as error:
-                raise idempotency_conflict() from error
-            if existing is None:
-                database.add(
-                    new_evidence(
-                        organization_id=source.organization_id,
-                        scope=scope,
-                        identity=identity,
-                        result_kind="run_interrupt",
-                        result_ref=run_id,
-                        now=now,
-                    )
-                )
+            record = await database.get(RunRecord, run_id)
+            if record is None:
+                raise command_not_found()
+            record.interrupt_key = scope_key(scope, identity.key_digest)
 
         try:
             outcome = await self._outcomes.cancel(
@@ -147,15 +136,8 @@ class ActiveRunCommands:
                     retry_hint="new_run",
                 ),
                 final_validator=validate_final,
-                transaction_hook=record_evidence,
             )
         except IntegrityError as error:
-            if not is_evidence_unique_race(error):
-                raise InteractionCommandError(
-                    "run_interrupt_conflict",
-                    "Run interruption lost a concurrent mutation.",
-                    category=ErrorCategory.conflict,
-                ) from error
             replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
             if replay is not None:
                 return replay
@@ -186,7 +168,7 @@ class ActiveRunCommands:
         input: AgentInput,
         transaction_hook: Callable[[AsyncSession, SteerReceipt], Awaitable[None]] | None = None,
     ) -> SteerReceipt:
-        idempotency = SteerIdempotency(actor.principal, command_identity(idempotency_key, input))
+        idempotency = SteerIdempotency(actor.principal, command_identity(idempotency_key))
         replay = await self._steer_replay(actor=actor, run_id=run_id, idempotency=idempotency)
         if replay is not None:
             return replay
@@ -195,16 +177,13 @@ class ActiveRunCommands:
         async def replay_prepared() -> SteerReceipt | None:
             # Preserve this request's authorization when recovering a concurrent acceptance.
             async with short_session(self._sessions) as database:
-                try:
-                    row = await find_steer(
-                        database,
-                        organization_id=source.organization_id,
-                        run_id=run_id,
-                        idempotency=idempotency,
-                        now=assume_utc(self._clock()),
-                    )
-                except IdempotencyConflict as error:
-                    raise idempotency_conflict() from error
+                row = await find_steer(
+                    database,
+                    organization_id=source.organization_id,
+                    run_id=run_id,
+                    idempotency=idempotency,
+                    now=assume_utc(self._clock()),
+                )
                 return None if row is None else steer_receipt(row, session_id=source.session_id)
 
         try:
@@ -237,8 +216,6 @@ class ActiveRunCommands:
                 idempotency=idempotency,
                 transaction_hook=transaction_hook,
             )
-        except IdempotencyConflict as error:
-            raise idempotency_conflict() from error
         except IntegrityError as error:
             if is_unique_conflict(error, constraint="uq_thread_inbox_steer_idempotency"):
                 replay = await replay_prepared()
@@ -315,8 +292,6 @@ class ActiveRunCommands:
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
-            except IdempotencyConflict as error:
-                raise idempotency_conflict() from error
             return None if entry is None else steer_receipt(entry, session_id=run.session_id)
 
     async def _load_steer_source(
@@ -378,7 +353,6 @@ class ActiveRunCommands:
         scope: EvidenceScope,
         identity: IdempotencyIdentity,
     ) -> InterruptReceipt | None:
-        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             row = (
                 await database.execute(
@@ -408,14 +382,12 @@ class ActiveRunCommands:
                     agent_id=run.agent_id,
                     action=WorkspaceAction.run_interrupt,
                 )
-                evidence = await find_evidence(database, scope=scope, identity=identity, now=now)
+                matched = run.interrupt_key == scope_key(scope, identity.key_digest)
             except AuthorizationError as error:
                 raise command_not_found() from error
-            except IdempotencyConflict as error:
-                raise idempotency_conflict() from error
-            if evidence is None:
+            if not matched:
                 return None
-            if evidence.result_kind != "run_interrupt" or evidence.result_ref != run.id or run.sealed_at is None:
+            if run.sealed_at is None:
                 raise InteractionCommandError(
                     "idempotency_evidence_invalid",
                     "The Run interruption replay evidence is invalid.",
