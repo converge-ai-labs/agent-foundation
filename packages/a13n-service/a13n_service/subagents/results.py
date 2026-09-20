@@ -28,18 +28,22 @@ from a13n_service.interactions.inbox_persistence import (
     ThreadInboxConflict,
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
+from a13n_service.interactions.session_scope import SessionScope
 from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .domain import ChildRunRelationship
 from .models import ChildRunRelationshipRecord
+from .result_binding import select_result_binding
 from .result_payload import (
     AsyncSubagentResultError,
     AsyncSubagentResultItemUnavailable,
     build_async_subagent_result_payload,
     load_async_subagent_terminal_item,
     parse_async_subagent_result_entry,
+    read_child_result_source,
+    validate_child_result_source,
 )
 
 logger = logging.getLogger("a13n_service.subagents.results")
@@ -50,6 +54,7 @@ class _PublicationAuthority:
     relationship: ChildRunRelationship
     parent_thread_id: str
     child: Run
+    session_scope: SessionScope
 
 
 class AsyncSubagentResultPublisher:
@@ -113,39 +118,38 @@ class AsyncSubagentResultPublisher:
                     )
                     .with_for_update()
                 )
-                locked_relationship = await database.scalar(
-                    select(ChildRunRelationshipRecord)
-                    .where(
-                        ChildRunRelationshipRecord.organization_id == organization_id,
-                        ChildRunRelationshipRecord.id == authority.relationship.id,
+                result_row = (
+                    await database.execute(
+                        select(ChildRunRelationshipRecord, RunRecord)
+                        .join(
+                            RunRecord,
+                            (RunRecord.organization_id == ChildRunRelationshipRecord.organization_id)
+                            & (RunRecord.id == ChildRunRelationshipRecord.child_run_id),
+                        )
+                        .where(
+                            ChildRunRelationshipRecord.organization_id == organization_id,
+                            ChildRunRelationshipRecord.id == authority.relationship.id,
+                            ChildRunRelationshipRecord.child_run_id == child_run_id,
+                        )
+                        .with_for_update(of=ChildRunRelationshipRecord)
                     )
-                    .with_for_update()
-                )
-                child = await database.scalar(
-                    select(RunRecord).where(
-                        RunRecord.organization_id == organization_id,
-                        RunRecord.id == child_run_id,
-                    )
-                )
-                if (
-                    thread is None
-                    or parent is None
-                    or locked_relationship is None
-                    or child is None
-                    or parent.thread_id != thread.id
-                    or locked_relationship.parent_run_id != parent.id
-                    or locked_relationship.child_run_id != child.id
-                ):
+                ).one_or_none()
+                if thread is None or parent is None or result_row is None or parent.thread_id != thread.id:
                     raise AsyncSubagentResultError("child result relationship authority is incomplete")
+                locked_relationship, child = result_row
+                source = validate_child_result_source(
+                    locked_relationship.to_resource(), child.to_resource(), parent.to_resource()
+                )
                 await _authorize_publication(
                     database,
-                    parent=parent,
-                    child=child,
+                    parent=source.parent,
+                    child=source.child,
                     relationship_id=authority.relationship.id,
+                    session_scope=authority.session_scope,
                 )
                 payload = build_async_subagent_result_payload(
-                    locked_relationship.to_resource(),
-                    child.to_resource(),
+                    source.relationship,
+                    source.child,
                     terminal_item=terminal_item,
                 )
                 existing = await _load_inbox_entry(
@@ -165,6 +169,7 @@ class AsyncSubagentResultPublisher:
                     target_run_id, source_waiting_run_id = await _initial_binding(
                         database,
                         thread=thread,
+                        origin=parent,
                     )
                 entry = await allocate_async_result(
                     database,
@@ -287,43 +292,20 @@ class AsyncSubagentResultPublisher:
         child_run_id: str,
     ) -> _PublicationAuthority:
         async with short_session(self._sessions) as database:
-            relationship = await database.scalar(
-                select(ChildRunRelationshipRecord).where(
-                    ChildRunRelationshipRecord.organization_id == organization_id,
-                    ChildRunRelationshipRecord.child_run_id == child_run_id,
-                )
+            source = await read_child_result_source(
+                database, organization_id=organization_id, child_run_id=child_run_id
             )
-            if relationship is None:
-                raise AsyncSubagentResultError("child Run relationship was not found")
-            parent = await database.scalar(
-                select(RunRecord).where(
-                    RunRecord.organization_id == organization_id,
-                    RunRecord.id == relationship.parent_run_id,
-                )
-            )
-            child = await database.scalar(
-                select(RunRecord).where(
-                    RunRecord.organization_id == organization_id,
-                    RunRecord.id == child_run_id,
-                )
-            )
-            if (
-                parent is None
-                or child is None
-                or relationship.child_run_id != child.id
-                or relationship.child_thread_id != child.thread_id
-            ):
-                raise AsyncSubagentResultError("child result relationship authority is incomplete")
-            await _authorize_publication(
+            session_scope = await _authorize_publication(
                 database,
-                parent=parent,
-                child=child,
-                relationship_id=relationship.id,
+                parent=source.parent,
+                child=source.child,
+                relationship_id=source.relationship.id,
             )
             return _PublicationAuthority(
-                relationship=relationship.to_resource(),
-                parent_thread_id=parent.thread_id,
-                child=child.to_resource(),
+                relationship=source.relationship,
+                parent_thread_id=source.parent.thread_id,
+                child=source.child,
+                session_scope=session_scope,
             )
 
     async def _read_existing(self, *, organization_id: str, relationship_id: str) -> ThreadInboxEntry | None:
@@ -361,23 +343,32 @@ async def _load_inbox_entry(
 async def _authorize_publication(
     database: AsyncSession,
     *,
-    parent: RunRecord,
-    child: RunRecord,
+    parent: Run,
+    child: Run,
     relationship_id: str,
-) -> None:
-    session = await database.scalar(
-        select(SessionRecord).where(
-            SessionRecord.organization_id == parent.organization_id,
-            SessionRecord.id == parent.session_id,
+    session_scope: SessionScope | None = None,
+) -> SessionScope:
+    if session_scope is None:
+        session = await database.scalar(
+            select(SessionRecord).where(
+                SessionRecord.organization_id == parent.organization_id,
+                SessionRecord.id == parent.session_id,
+            )
         )
-    )
-    if session is None or child.session_id != session.id:
+        session_scope = None if session is None else SessionScope.from_record(session)
+    if (
+        session_scope is None
+        or parent.organization_id != session_scope.organization_id
+        or parent.session_id != session_scope.id
+        or child.organization_id != session_scope.organization_id
+        or child.session_id != session_scope.id
+    ):
         raise AsyncSubagentResultError("child result Session authority is incomplete")
     actor = AuthenticatedActor(
-        principal=parent.to_resource().authority_principal,
+        principal=parent.authority_principal,
         auth_method="run_authority",
         credential_id=f"run_{parent.id}",
-        boundary_workspace_id=session.workspace_id,
+        boundary_workspace_id=session_scope.workspace_id,
         request_id=relationship_id,
     )
     try:
@@ -385,41 +376,56 @@ async def _authorize_publication(
             await authorize_agent(
                 database,
                 actor=actor,
-                workspace_id=session.workspace_id,
+                workspace_id=session_scope.workspace_id,
                 agent_id=agent_id,
                 action=WorkspaceAction.run_read,
             )
     except AuthorizationError as error:
         raise AsyncSubagentResultError("child result publication is no longer authorized") from error
+    return session_scope
 
 
 async def _initial_binding(
     database: AsyncSession,
     *,
     thread: ThreadRecord,
+    origin: RunRecord,
 ) -> tuple[str | None, str | None]:
-    current = await database.scalar(
-        select(RunRecord)
-        .where(RunRecord.organization_id == thread.organization_id, RunRecord.id == thread.current_run_id)
-        .with_for_update()
+    current = (
+        origin
+        if origin.id == thread.current_run_id
+        else await database.scalar(
+            select(RunRecord)
+            .where(
+                RunRecord.organization_id == thread.organization_id,
+                RunRecord.thread_id == thread.id,
+                RunRecord.id == thread.current_run_id,
+            )
+            .with_for_update()
+        )
     )
     if current is None:
         raise AsyncSubagentResultError("parent Thread current Run was not found")
-    if current.status in {RunStatus.accepted.value, RunStatus.running.value}:
-        return current.id, None
-    if current.status == RunStatus.waiting.value and thread.head_run_id == current.id:
-        return None, current.id
+    head = None
     if current.status in {RunStatus.failed.value, RunStatus.cancelled.value} and thread.head_run_id is not None:
-        head = await database.scalar(
-            select(RunRecord)
-            .where(RunRecord.organization_id == thread.organization_id, RunRecord.id == thread.head_run_id)
-            .with_for_update()
+        head = (
+            origin
+            if origin.id == thread.head_run_id
+            else await database.scalar(
+                select(RunRecord)
+                .where(
+                    RunRecord.organization_id == thread.organization_id,
+                    RunRecord.thread_id == thread.id,
+                    RunRecord.id == thread.head_run_id,
+                )
+                .with_for_update()
+            )
         )
         if head is None:
             raise AsyncSubagentResultError("parent Thread selected head was not found")
-        if head.status == RunStatus.waiting.value:
-            return None, head.id
-    return None, None
+    return select_result_binding(
+        thread.to_resource(), current.to_resource(), None if head is None else head.to_resource()
+    )
 
 
 __all__ = [

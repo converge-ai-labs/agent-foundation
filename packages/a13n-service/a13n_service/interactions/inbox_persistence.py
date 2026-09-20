@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime
 from typing import Literal
 
@@ -367,6 +367,7 @@ async def finalize_ineligible_async_results(
     rows: Sequence[ThreadInboxRecord],
     now: datetime,
     terminal_origin_run_id: str | None = None,
+    locked_origins: Mapping[str, RunRecord] | None = None,
 ) -> None:
     origin_ids = {
         row.origin_run_id
@@ -374,7 +375,14 @@ async def finalize_ineligible_async_results(
         if row.kind == ThreadInboxKind.async_subagent_result.value and row.origin_run_id is not None
     }
     failed = set()
-    if origin_ids:
+    if locked_origins is not None:
+        for origin_id in origin_ids:
+            origin = locked_origins.get(origin_id)
+            if origin is None or origin.id != origin_id or origin.organization_id != thread.organization_id:
+                raise ThreadInboxConflict("Locked async result origins do not cover the pending inbox")
+            if origin.status in {"failed", "cancelled"}:
+                failed.add(origin_id)
+    elif origin_ids:
         failed.update(
             (
                 await database.scalars(
