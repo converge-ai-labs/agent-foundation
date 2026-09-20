@@ -1815,8 +1815,8 @@ mod tests {
     use crate::{eip::FileWriterCommitParams, operation::OperationLedger};
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    use super::{ContentDigest, FileWriterAbortStatus, TransferRecord, WriterPhase};
-    use super::{TransferError, TransferRegistry};
+    use super::{ContentDigest, FileWriterAbortStatus, WriterPhase};
+    use super::{TransferError, TransferRecord, TransferRegistry};
 
     struct TempTree(PathBuf);
 
