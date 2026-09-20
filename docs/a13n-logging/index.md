@@ -1,6 +1,6 @@
 # Logging
 
-`a13n-logging` supplies standard-library loggers, a process configuration builder, and pretty or JSON formatting. Use it when embedding Foundation packages in your own executable. It does not provide a log server, trace exporter, storage, rotation, or automatic secret redaction.
+`a13n-logging` supplies standard-library loggers, a process configuration builder, and pretty or JSON formatting. Use it when embedding Foundation packages in your own executable. It does not provide a log server, trace exporter, centralized storage or automatic secret redaction.
 
 ## Install and emit a record
 
@@ -55,13 +55,13 @@ The default `logger_names=()` selects **no namespaces**. The helper does not con
 | `logger_names: Sequence[str]`           | `()`               | Exact namespaces to attach to the generated `default` handler                           |
 | `context: Mapping[str, object] \| None` | `None`             | Stable process fields added through `ContextFilter`                                     |
 
-The returned dictionary uses logging schema version `1` and `disable_existing_loggers=False`. Each selected logger receives the chosen level, the `default` handler, and `propagate=False`, preventing a second emission through ancestors. Other loggers are not disabled.
+The returned dictionary uses logging schema version `1` and `disable_existing_loggers=False`. Each selected logger receives the chosen level, the selected output handlers, and `propagate=False`, preventing a second emission through ancestors. Other loggers are not disabled.
 
 ### Pretty output
 
 `PrettyFormatter` produces `logger-name message` followed by extra fields sorted by name. Field values are compact JSON; unsupported values fall back to their string representation.
 
-The configured handler is Rich's `RichHandler` with `markup=False`, `rich_tracebacks=True`, and `show_path=False`. Rich owns console rendering and traceback presentation. The helper exposes no console/file/rotation settings; customize the dictionary when the embedding process needs them.
+The configured handler is Rich's `RichHandler` with `markup=False`, `rich_tracebacks=True`, and `show_path=False`. Rich owns console rendering and traceback presentation. File output uses the selected formatter without Rich terminal rendering.
 
 ### JSON output
 
@@ -80,6 +80,28 @@ The default JSON handler is `logging.StreamHandler` targeting `sys.stdout`, not 
 
 `default=str` is used for unsupported JSON values. The formatter is not a typed telemetry schema validator or a guarantee that every arbitrary Python value meets a strict downstream JSON policy. Pass bounded, serializable application values.
 
+## File output and task context
+
+Set `destination=LogDestination.file` or `LogDestination.both`, `file_path`, `file_max_bytes` (default 10 MiB), and `file_backup_count` (default 5). The default destination is `LogDestination.stdout`. Backups exclude the active file; both size and backup count must be positive. The size is a rotation threshold, so a single large record can exceed it. Each process must own a different file.
+
+`BoundedRotatingFileHandler` uses standard `RotatingFileHandler` rotation with one background writer. Its queue holds up to 4096 formatted records; overflow drops the new record. Disk errors increment `failed_records`, and overflow or writes after closure increment `dropped_records` on the handler. They do not recursively log through the failing output. Shutdown waits at most five seconds; queued records may be lost when the process exits. Stdout remains synchronous.
+
+```python
+from a13n_logging import LogDestination, bind_log_context, configure_logging
+
+configure_logging(
+    logger_names=("my_application",),
+    destination=LogDestination.both,
+    file_path="var/log/app.log",
+    file_max_bytes=10 * 1024 * 1024,
+    file_backup_count=5,
+)
+with bind_log_context(request_id="req-example"):
+    logger.info("request_started")
+```
+
+`bind_log_context(**fields)` restores the previous context on exit. `set_log_context(**fields)` adds fields inside that boundary; it is intended for identities discovered later during a request. Values should be bounded immutable scalars. The package has no OpenTelemetry dependency.
+
 ## Context precedence and exceptions
 
 `ContextFilter(fields)` adds a field only if the record does not already have that attribute. Call-site `extra` therefore takes precedence over process defaults, and built-in LogRecord attributes are not replaced by the filter. The input mapping is copied when the filter is constructed.
@@ -88,7 +110,7 @@ The default JSON handler is `logging.StreamHandler` targeting `sys.stdout`, not 
 logger.info("phase_changed", extra={"role": "control", "phase": "draining"})
 ```
 
-For the initial example, this record uses `role="control"`; other records continue to inherit `role="worker"`. This is record enrichment, not mutable request-local storage.
+For the initial example, this record uses `role="control"`; other records continue to inherit `role="worker"`. Task-local context can be bound separately with `bind_log_context`; call-site fields still take precedence.
 
 Use `logger.exception(...)` inside an exception handler to include traceback information. JSON records add `exception`; Rich renders the exception in its terminal format. The logging package does not remove tokens, personal data, model content, or sensitive exception strings. Redact at the owner before emitting the record.
 
@@ -96,16 +118,20 @@ Use `exception_details(error)` when a structured diagnostic needs exception type
 
 ## Public API and ownership
 
-| Export                      | Role                                                            |
-| --------------------------- | --------------------------------------------------------------- |
-| `LogFormat`                 | Enum containing `pretty` and `json`                             |
-| `get_logger(name)`          | Return the standard-library logger without configuring it       |
-| `build_logging_config(...)` | Return a `dictConfig` dictionary without applying it            |
-| `configure_logging(...)`    | Apply that configuration to the current process                 |
-| `ContextFilter`             | Add non-overwriting process defaults                            |
-| `JsonFormatter`             | Produce structured JSON records                                 |
-| `PrettyFormatter`           | Produce event-style text for Rich                               |
-| `exception_details(error)`  | Return bounded exception structure without messages or payloads |
+| Export                       | Role                                                            |
+| ---------------------------- | --------------------------------------------------------------- |
+| `LogDestination`             | Enum containing `stdout`, `file`, and `both`                    |
+| `BoundedRotatingFileHandler` | Bounded background file output with standard rotation           |
+| `bind_log_context(**fields)` | Bind and restore task-local fields                              |
+| `set_log_context(**fields)`  | Add fields inside an existing context boundary                  |
+| `LogFormat`                  | Enum containing `pretty` and `json`                             |
+| `get_logger(name)`           | Return the standard-library logger without configuring it       |
+| `build_logging_config(...)`  | Return a `dictConfig` dictionary without applying it            |
+| `configure_logging(...)`     | Apply that configuration to the current process                 |
+| `ContextFilter`              | Add non-overwriting process defaults                            |
+| `JsonFormatter`              | Produce structured JSON records                                 |
+| `PrettyFormatter`            | Produce event-style text for Rich                               |
+| `exception_details(error)`   | Return bounded exception structure without messages or payloads |
 
 For Harness traces, metrics, and semantic events, see [Observation](../a13n-harness/observation.md). Logging neither creates OpenTelemetry spans nor persists `HarnessState`.
 

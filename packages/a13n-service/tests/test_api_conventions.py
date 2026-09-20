@@ -47,12 +47,14 @@ async def test_public_error_handler_preserves_the_safe_error_snapshot() -> None:
         response = await client.get("/details", headers={"X-Request-ID": "req-public-error"})
 
     assert response.status_code == 409
+    request_id = response.headers["X-Request-ID"]
+    assert request_id.startswith("req-") and request_id != "req-public-error"
     assert response.json() == {
         "error": {
             "code": "example_conflict",
             "message": "The example conflicts.",
             "details": {},
-            "request_id": "req-public-error",
+            "request_id": request_id,
         }
     }
     assert ApplicationError in app.exception_handlers
@@ -68,12 +70,13 @@ async def test_skill_retry_after_is_carried_by_the_public_error() -> None:
 
     assert response.status_code == 429
     assert response.headers["Retry-After"] == "12"
+    request_id = response.headers["X-Request-ID"]
     assert response.json() == {
         "error": {
             "code": "github_rate_limited",
             "message": "GitHub rate limit exceeded.",
             "details": {},
-            "request_id": "req-skill-retry",
+            "request_id": request_id,
         }
     }
 
@@ -90,12 +93,13 @@ async def test_request_validation_keeps_its_independent_error_handler() -> None:
         )
 
     assert response.status_code == 400
+    request_id = response.headers["X-Request-ID"]
     assert response.json() == {
         "error": {
             "code": "invalid_request",
             "message": "The request is invalid.",
             "details": {"fields": ["count"]},
-            "request_id": "req-validation",
+            "request_id": request_id,
         }
     }
 
@@ -149,7 +153,8 @@ async def test_framework_http_errors_use_safe_envelope_and_preserve_headers(stat
     error = response.json()["error"]
     assert error["code"] == code
     assert error["message"] and error["details"] == {}
-    assert error["request_id"] == response.headers["X-Request-ID"] == "req-framework"
+    assert error["request_id"] == response.headers["X-Request-ID"]
+    assert error["request_id"] != "req-framework"
     assert response.headers["Retry-After"] == "12"
     assert "private-provider-error" not in response.text
 
@@ -180,12 +185,13 @@ async def test_unexpected_500_is_json_and_keeps_request_identity_without_excepti
     async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.get("/broken", headers={"X-Request-ID": "req-unexpected"})
     assert response.status_code == 500
-    assert response.headers["X-Request-ID"] == "req-unexpected"
+    request_id = response.headers["X-Request-ID"]
+    assert request_id != "req-unexpected"
     assert response.json() == {
         "error": {
             "code": "internal_error",
             "message": "An unexpected service error occurred.",
             "details": {},
-            "request_id": "req-unexpected",
+            "request_id": request_id,
         }
     }

@@ -992,6 +992,16 @@
       ],
       "type": "string"
     },
+    "LogDestination": {
+      "description": "Supported process log destinations.",
+      "enum": [
+        "stdout",
+        "file",
+        "both"
+      ],
+      "title": "LogDestination",
+      "type": "string"
+    },
     "LogFormat": {
       "description": "Supported process log formats.",
       "enum": [
@@ -1012,6 +1022,37 @@
         "format": {
           "$ref": "#/$defs/LogFormat",
           "default": "pretty"
+        },
+        "destination": {
+          "$ref": "#/$defs/LogDestination",
+          "default": "stdout"
+        },
+        "file_path": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File Path"
+        },
+        "file_max_bytes": {
+          "default": 10485760,
+          "maximum": 1073741824,
+          "minimum": 1,
+          "title": "File Max Bytes",
+          "type": "integer"
+        },
+        "file_backup_count": {
+          "default": 5,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "File Backup Count",
+          "type": "integer"
         }
       },
       "title": "LoggingSettings",
@@ -1432,6 +1473,11 @@
         "tracing": {
           "default": true,
           "title": "Tracing",
+          "type": "boolean"
+        },
+        "metrics": {
+          "default": false,
+          "title": "Metrics",
           "type": "boolean"
         },
         "trace_content": {

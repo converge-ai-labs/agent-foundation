@@ -11,6 +11,7 @@ from a13n_service.interactions.control_domain import (
 )
 from a13n_service.interactions.models import RunRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
+from a13n_service.observability.correlation import bind_run_acceptance_observer
 from a13n_service.storage import short_session
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import select
@@ -84,11 +85,16 @@ async def test_run_commands_reuse_scope_and_allocate_events_without_readback(
                 idempotency_key="measured",
                 request=ForkRunCommand(input=_request().input),
             )
-    with capture_sql(sessions) as statements:
+    correlated: list[str] = []
+    with bind_run_acceptance_observer(correlated.append), capture_sql(sessions) as statements:
         receipt = await invoke()
+    assert correlated == [receipt.run_id]
     _assert_acceptance_sql(operation, statements)
     await _assert_committed(sessions, receipt)
-    assert await invoke() == receipt
+    correlated.clear()
+    with bind_run_acceptance_observer(correlated.append):
+        assert await invoke() == receipt
+    assert correlated == [receipt.run_id]
 
 
 async def test_interrupt_reuses_session_scope(lifecycle_interaction_sessions, tmp_path):

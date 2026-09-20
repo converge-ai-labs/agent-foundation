@@ -217,3 +217,33 @@ Prefix commands with `a13n-service --config PATH` to select the deployment file.
 `GET /healthz` and `GET /readyz` are operational probes. Native schema/docs are under `/api/openapi.json`, `/api/docs`, and `/api/redoc` on control-capable processes. Worker-only and connectivity-only roles do not expose the Native product API.
 
 See [Background tasks](background-tasks.md) for periodic work and retention, [HTTP contracts](http-contracts.md) for client behavior, and [the generated reference](configuration-reference.md) for exact knobs.
+
+## Logs, metrics and request traces
+
+Service uses its existing OTel/OTLP trace destination, including Langfuse; no second backend is required. Search recorded HTTP traces by request ID, then use Run ID for the existing Agent traces. In Langfuse's trace table, filter metadata `attributes.a13n.request.id`; its Observations v2 API supports metadata key `request_id`. HTTP traces cover the request, while asynchronous Agent work retains separate bounded RunAttempt traces. Sampling or failed export can leave no trace. The Service Trace Query API continues to expose authorized Agent traces only.
+
+```toml
+[logging]
+format = "json"
+destination = "both" # stdout (default), file, or both
+file_path = "var/log/service.log" # a distinct file for each process
+file_max_bytes = 10485760
+file_backup_count = 5 # rotated files, excluding the active file
+
+[observability]
+metrics = true # default false; enable only with /metrics kept internal
+```
+
+File output uses a bounded background queue and standard rotation. A full queue drops new records, disk failures can lose records, and shutdown waits at most five seconds. See [Logging](../a13n-logging/index.md) for lifecycle details. Container deployments can keep stdout and let their existing platform collect logs.
+
+Prometheus pulls `/metrics` directly from each Service process. Service and Harness share one OTel meter provider; no Collector is needed. OTel supplies instrumentation inside the process, while Prometheus stores and queries the scraped measurements. Supply each instance address, not a load-balanced Service address:
+
+```yaml
+scrape_configs:
+  - job_name: a13n-service
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["control-1:8000", "worker-1:8000"]
+```
+
+The endpoint is unauthenticated. Keep it out of public ingress and proxies before enabling it. Setting `observability.metrics=false` returns 404 without changing tracing. Only HTTP and existing Harness metrics are included; there is no database sampler or additional business instrumentation. HTTP labels use method, route template, status and outcome, never request/Run IDs. Request durations include streaming time; exclude `/healthz`, `/readyz` and cancellation when constructing a user-facing HTTP SLI, and evaluate stream latency separately from ordinary API latency.

@@ -84,6 +84,7 @@ async def open_process_runtime(
 
     observability = build_observability_runtime(
         enabled=settings.observability.tracing,
+        metrics_enabled=settings.observability.metrics,
         trace_content=settings.observability.trace_content,
         service_name=settings.service.name,
         service_version=settings.service.build_version,

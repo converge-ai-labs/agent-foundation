@@ -18,6 +18,7 @@ from urllib.parse import unquote
 import anyio
 from a13n_harness import HarnessInstrumentation, HarnessTraceContent
 from a13n_harness.observation import record_span_metadata
+from a13n_logging import bind_log_context
 from anyio import to_thread
 from opentelemetry import context as otel_context
 from opentelemetry import trace
@@ -28,8 +29,10 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
 from opentelemetry.sdk.trace.sampling import ALWAYS_OFF, ALWAYS_ON, ParentBased, Sampler, TraceIdRatioBased
-from opentelemetry.trace import Link, SpanContext, Status, StatusCode, Tracer
+from opentelemetry.trace import Link, SpanContext, SpanKind, Status, StatusCode, Tracer
 from opentelemetry.trace import Span as APISpan
+
+from a13n_service.observability.metrics import MetricsRuntime, build_metrics_runtime
 
 logger = logging.getLogger("a13n_service.observability")
 
@@ -50,6 +53,7 @@ _PHASE_NAMES = frozenset(
     }
 )
 _REGISTERED_SPAN_NAMES = _PHASE_NAMES | {_RUN_ATTEMPT_ROOT}
+_HTTP_REQUEST = "a13n.service.http.request"
 _MAX_CORRELATION_BYTES = 1024
 _MAX_FAILURE_CODE_BYTES = 256
 _DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 30.0
@@ -210,8 +214,8 @@ def observe_phase_result(span: APISpan | None, **facts: str | bool | int) -> Non
         _safe_warning("observability_content_projection_failed")
 
 
-class _RunAttemptSpanProcessor(SpanProcessor):
-    """Project correlation and export only approved RunAttempt spans."""
+class _ServiceSpanProcessor(SpanProcessor):
+    """Project Attempt correlation and export only approved Service topology."""
 
     def __init__(self, delegate: SpanProcessor | None = None) -> None:
         self._delegate = delegate
@@ -219,10 +223,11 @@ class _RunAttemptSpanProcessor(SpanProcessor):
     def on_start(self, span: Span, parent_context: Context | None = None) -> None:
         correlation = _current_run_attempt.get()
         scope = span.instrumentation_scope
-        if correlation is None or scope is None or scope.name not in _ALLOWED_INSTRUMENTATION_SCOPES:
+        if scope is None or scope.name not in _ALLOWED_INSTRUMENTATION_SCOPES:
             return
-        for key, value in correlation.attributes().items():
-            span.set_attribute(key, value)
+        if correlation is not None:
+            for key, value in correlation.attributes().items():
+                span.set_attribute(key, value)
         if self._delegate is not None:
             try:
                 self._delegate.on_start(span, parent_context)
@@ -235,9 +240,14 @@ class _RunAttemptSpanProcessor(SpanProcessor):
             self._delegate is not None
             and scope is not None
             and scope.name in _ALLOWED_INSTRUMENTATION_SCOPES
-            and (scope.name != INSTRUMENTATION_SCOPE or span.name in _REGISTERED_SPAN_NAMES)
-            and span.attributes is not None
-            and "a13n.run_attempt.id" in span.attributes
+            and (
+                (scope.name == INSTRUMENTATION_SCOPE and span.name == _HTTP_REQUEST)
+                or (
+                    (scope.name != INSTRUMENTATION_SCOPE or span.name in _REGISTERED_SPAN_NAMES)
+                    and span.attributes is not None
+                    and "a13n.run_attempt.id" in span.attributes
+                )
+            )
         ):
             try:
                 self._delegate.on_end(span)
@@ -279,17 +289,50 @@ class ObservabilityRuntime:
     """One process-owned tracer provider and its Harness projection."""
 
     tracer_provider: TracerProvider | None
+    metrics_runtime: MetricsRuntime | None
     trace_content: TraceContent
     shutdown_timeout_seconds: float = _DEFAULT_SHUTDOWN_TIMEOUT_SECONDS
 
     @property
     def harness_instrumentation(self) -> HarnessInstrumentation | None:
-        if self.tracer_provider is None:
+        meter_provider = None if self.metrics_runtime is None else self.metrics_runtime.provider
+        if self.tracer_provider is None and meter_provider is None:
             return None
         return HarnessInstrumentation(
             tracer_provider=self.tracer_provider,
+            meter_provider=meter_provider,
             trace_content=HarnessTraceContent(self.trace_content.value),
         )
+
+    def render_metrics(self) -> bytes | None:
+        return None if self.metrics_runtime is None else self.metrics_runtime.render()
+
+    @contextmanager
+    def http_request(self, attributes: dict[str, str | int | float | bool]) -> Generator[APISpan | None]:
+        """Keep one independent request trace without capturing request content."""
+        if self.tracer_provider is None:
+            yield None
+            return
+        try:
+            span = self.tracer_provider.get_tracer(INSTRUMENTATION_SCOPE).start_span(
+                _HTTP_REQUEST,
+                context=Context(),
+                kind=SpanKind.SERVER,
+                attributes=attributes,
+            )
+        except Exception:
+            _safe_warning("observability_span_start_failed")
+            yield None
+            return
+        token = otel_context.attach(trace.set_span_in_context(span))
+        try:
+            yield span
+        finally:
+            otel_context.detach(token)
+            try:
+                span.end()
+            except Exception:
+                _safe_warning("observability_span_end_failed")
 
     @contextmanager
     def run_attempt(
@@ -305,7 +348,8 @@ class ObservabilityRuntime:
         if _current_run_attempt.get() is not None:
             raise RuntimeError("A RunAttempt trace is already active in this context")
         if self.tracer_provider is None:
-            yield RunAttemptTrace(None, self.trace_content)
+            with bind_log_context(run_id=correlation.run_id, run_attempt_id=correlation.run_attempt_id):
+                yield RunAttemptTrace(None, self.trace_content)
             return
 
         _validate_links(links)
@@ -330,41 +374,52 @@ class ObservabilityRuntime:
         attempt = RunAttemptTrace(span, self.trace_content, tracer=tracer)
         attempt.set_input(input_value, external=input_external)
         attempt_token = _current_attempt_trace.set(attempt)
-        try:
-            yield attempt
-        except asyncio.CancelledError:
-            # Local cancellation is not a durable Attempt decision or an execution error.
-            raise
-        except BaseException:
-            attempt.mark_local_error()
-            raise
-        finally:
-            _current_attempt_trace.reset(attempt_token)
-            otel_context.detach(otel_token)
-            _current_run_attempt.reset(run_token)
-            attempt.end()
+        with bind_log_context(run_id=correlation.run_id, run_attempt_id=correlation.run_attempt_id):
+            try:
+                yield attempt
+            except asyncio.CancelledError:
+                # Local cancellation is not a durable Attempt decision or an execution error.
+                raise
+            except BaseException:
+                attempt.mark_local_error()
+                raise
+            finally:
+                _current_attempt_trace.reset(attempt_token)
+                otel_context.detach(otel_token)
+                _current_run_attempt.reset(run_token)
+                attempt.end()
 
     async def aclose(self) -> None:
         """Flush and stop the provider without extending process shutdown indefinitely."""
 
         provider = self.tracer_provider
+        metrics_runtime = self.metrics_runtime
         self.tracer_provider = None
-        if provider is None:
+        self.metrics_runtime = None
+        if provider is None and metrics_runtime is None:
             return
         timeout_millis = max(1, int(self.shutdown_timeout_seconds * 1000))
 
         def flush_and_shutdown() -> tuple[bool, bool]:
             flush_ok = False
             shutdown_ok = False
-            try:
-                flush_ok = provider.force_flush(timeout_millis)
-            except Exception:
-                pass
-            try:
-                provider.shutdown()
-                shutdown_ok = True
-            except Exception:
-                pass
+            if provider is not None:
+                try:
+                    flush_ok = provider.force_flush(timeout_millis)
+                except Exception:
+                    pass
+                try:
+                    provider.shutdown()
+                    shutdown_ok = True
+                except Exception:
+                    pass
+            else:
+                flush_ok = shutdown_ok = True
+            if metrics_runtime is not None:
+                try:
+                    metrics_runtime.shutdown()
+                except Exception:
+                    shutdown_ok = False
             return flush_ok, shutdown_ok
 
         result: tuple[bool, bool] | None = None
@@ -385,7 +440,13 @@ class ObservabilityRuntime:
 class RunAttemptTrace:
     """Mutable local handle for one already-started RunAttempt span."""
 
-    def __init__(self, span: APISpan | None, trace_content: TraceContent, *, tracer: Tracer | None = None) -> None:
+    def __init__(
+        self,
+        span: APISpan | None,
+        trace_content: TraceContent,
+        *,
+        tracer: Tracer | None = None,
+    ) -> None:
         self._span = span
         self._trace_content = trace_content
         self._tracer = tracer
@@ -534,6 +595,7 @@ class RunAttemptTrace:
 def build_observability_runtime(
     *,
     enabled: bool,
+    metrics_enabled: bool = False,
     trace_content: TraceContent,
     service_name: str,
     service_version: str,
@@ -545,8 +607,6 @@ def build_observability_runtime(
 ) -> ObservabilityRuntime:
     """Build the one process tracing stack from Service and standard OTel settings."""
 
-    if not enabled:
-        return ObservabilityRuntime(None, trace_content, shutdown_timeout_seconds)
     if not isinstance(trace_content, TraceContent):
         raise ValueError("trace_content is invalid")
     if not isfinite(shutdown_timeout_seconds) or shutdown_timeout_seconds <= 0:
@@ -559,20 +619,23 @@ def build_observability_runtime(
         service_instance_id=service_instance_id,
     )
 
-    exporter = span_exporter if span_exporter is not None else _exporter_from_environment()
-    delegate = _batch_span_processor(_SafeSpanExporter(exporter)) if exporter is not None else None
-    provider = TracerProvider(
-        sampler=_sampler_from_environment(),
-        resource=resource,
-        shutdown_on_exit=False,
-    )
-    provider.add_span_processor(_RunAttemptSpanProcessor(delegate))
-    if exporter is None:
-        logger.warning(
-            "observability_exporter_unconfigured",
-            extra={"event": "observability_exporter_unconfigured"},
+    metrics_runtime = build_metrics_runtime(resource=resource) if metrics_enabled else None
+    provider = None
+    if enabled:
+        exporter = span_exporter if span_exporter is not None else _exporter_from_environment()
+        delegate = _batch_span_processor(_SafeSpanExporter(exporter)) if exporter is not None else None
+        provider = TracerProvider(
+            sampler=_sampler_from_environment(),
+            resource=resource,
+            shutdown_on_exit=False,
         )
-    return ObservabilityRuntime(provider, trace_content, shutdown_timeout_seconds)
+        provider.add_span_processor(_ServiceSpanProcessor(delegate))
+        if exporter is None:
+            logger.warning(
+                "observability_exporter_unconfigured",
+                extra={"event": "observability_exporter_unconfigured"},
+            )
+    return ObservabilityRuntime(provider, metrics_runtime, trace_content, shutdown_timeout_seconds)
 
 
 def _resource(

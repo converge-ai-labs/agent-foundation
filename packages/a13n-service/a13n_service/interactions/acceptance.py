@@ -26,6 +26,7 @@ from a13n_service.interactions.environment_selection import (
     requested_environment,
 )
 from a13n_service.labels import merge_labels
+from a13n_service.observability.correlation import publish_run_acceptance
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -122,6 +123,7 @@ class RunAcceptanceService:
         replay = await self._load_replay(run, state, accepted_thread_version=1)
         if replay is not None:
             await self._require_inline_hook_replay(run, hook_subscription)
+            publish_run_acceptance(replay.run_id)
             return replay
         if session is None and session_scope is None:
             session_scope = await self._observe_session(run)
@@ -203,7 +205,10 @@ class RunAcceptanceService:
         try:
             receipt = await self._online.commit(accept)
         except (IntegrityError, EvidenceAlreadyCommitted, EnvironmentManagementError, RunAcceptanceError) as error:
-            return await self._reconcile_acceptance_error(run, state, error, accepted_thread_version=1)
+            replay = await self._reconcile_acceptance_error(run, state, error, accepted_thread_version=1)
+            publish_run_acceptance(replay.run_id)
+            return replay
+        publish_run_acceptance(receipt.run_id)
         return receipt
 
     async def advance_thread(
@@ -231,6 +236,7 @@ class RunAcceptanceService:
         if replay is not None:
             if hook_source_run_id is None:
                 await self._require_inline_hook_replay(run, hook_subscription)
+            publish_run_acceptance(replay.run_id)
             return replay
         if session_scope is None:
             session_scope = await self._observe_session(run)
@@ -345,12 +351,15 @@ class RunAcceptanceService:
         try:
             receipt = await self._online.commit(accept)
         except (IntegrityError, EvidenceAlreadyCommitted, EnvironmentManagementError, RunAcceptanceError) as error:
-            return await self._reconcile_acceptance_error(
+            replay = await self._reconcile_acceptance_error(
                 run,
                 state,
                 error,
                 accepted_thread_version=accepted_thread_version,
             )
+            publish_run_acceptance(replay.run_id)
+            return replay
+        publish_run_acceptance(receipt.run_id)
         return receipt
 
     async def consume_queued(
@@ -381,6 +390,7 @@ class RunAcceptanceService:
                 queued_submission_id=queued.queued_submission_id,
                 submission_digest_sha256=queued.submission_digest_sha256,
             )
+            publish_run_acceptance(replay.run_id)
             return QueuedSubmissionConsumptionReceipt(
                 outcome="run_accepted",
                 queued_submission=consumed.to_resource(),
@@ -506,17 +516,20 @@ class RunAcceptanceService:
                     queued_submission_id=queued.queued_submission_id,
                     submission_digest_sha256=queued.submission_digest_sha256,
                 )
-                return QueuedSubmissionConsumptionReceipt(
+                receipt = QueuedSubmissionConsumptionReceipt(
                     outcome="run_accepted",
                     queued_submission=consumed.to_resource(),
                     queue_version=expected_queue_version + 1,
                     run=replay,
                 )
+                publish_run_acceptance(replay.run_id)
+                return receipt
             if not isinstance(error, (IntegrityError, EvidenceAlreadyCommitted)):
                 raise
             raise RunAcceptanceError(
                 "run_acceptance_conflict", "Queue consumption lost a concurrent mutation"
             ) from error
+        publish_run_acceptance(run.id)
         return receipt
 
     async def fail_queued_permanently(

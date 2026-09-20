@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
 from collections.abc import Mapping
 
 from fastapi import FastAPI, Request
@@ -11,19 +10,14 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from a13n_service.application_errors import ApplicationError
+from a13n_service.error_response import api_error_body
 from a13n_service.http_errors import application_error_headers, application_error_status
 from a13n_service.iam import AuthenticationError, AuthorizationError
+from a13n_service.observability.http import RequestObservabilityMiddleware
 
 
 def install_api_conventions(app: FastAPI) -> None:
-    @app.middleware("http")
-    async def request_identity(request: Request, call_next):
-        supplied = request.headers.get("X-Request-ID")
-        request_id = supplied if supplied and _safe_request_id(supplied) else f"req-{secrets.token_hex(12)}"
-        request.state.request_id = request_id
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+    app.add_middleware(RequestObservabilityMiddleware)
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, error: HTTPException) -> JSONResponse:
@@ -104,16 +98,5 @@ def api_error_response(
     return JSONResponse(
         status_code=status_code,
         headers={**(headers or {}), "X-Request-ID": request_id},
-        content={
-            "error": {
-                "code": code,
-                "message": message,
-                "details": details or {},
-                "request_id": request_id,
-            }
-        },
+        content=api_error_body(request_id, code, message, details),
     )
-
-
-def _safe_request_id(value: str) -> bool:
-    return len(value) <= 128 and all(0x21 <= ord(character) <= 0x7E for character in value)

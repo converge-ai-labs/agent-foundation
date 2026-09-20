@@ -95,6 +95,7 @@ The complete machine-readable validation schema, including named enum/union defi
 | Setting                                    | Environment variable                                    | Type / choices             | Constraints and default                                     |
 | ------------------------------------------ | ------------------------------------------------------- | -------------------------- | ----------------------------------------------------------- |
 | `observability.tracing`                    | `A13N_SERVICE_OBSERVABILITY_TRACING`                    | boolean                    | default=true                                                |
+| `observability.metrics`                    | `A13N_SERVICE_OBSERVABILITY_METRICS`                    | boolean                    | default=false                                               |
 | `observability.trace_content`              | `A13N_SERVICE_OBSERVABILITY_TRACE_CONTENT`              | "none", "standard", "full" | default="none"                                              |
 | `observability.query.logfire_base_url`     | `A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_BASE_URL`     | string or null             | default=null                                                |
 | `observability.query.logfire_read_token`   | `A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_READ_TOKEN`   | string or null             | default=null                                                |
@@ -347,7 +348,11 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `logging`
 
-| Setting          | Environment variable      | Type / choices   | Constraints and default |
-| ---------------- | ------------------------- | ---------------- | ----------------------- |
-| `logging.level`  | `A13N_SERVICE_LOG_LEVEL`  | string           | default="INFO"          |
-| `logging.format` | `A13N_SERVICE_LOG_FORMAT` | "pretty", "json" | default="pretty"        |
+| Setting                     | Environment variable                 | Type / choices           | Constraints and default                         |
+| --------------------------- | ------------------------------------ | ------------------------ | ----------------------------------------------- |
+| `logging.level`             | `A13N_SERVICE_LOG_LEVEL`             | string                   | default="INFO"                                  |
+| `logging.format`            | `A13N_SERVICE_LOG_FORMAT`            | "pretty", "json"         | default="pretty"                                |
+| `logging.destination`       | `A13N_SERVICE_LOG_DESTINATION`       | "stdout", "file", "both" | default="stdout"                                |
+| `logging.file_path`         | `A13N_SERVICE_LOG_FILE_PATH`         | string or null           | default=null                                    |
+| `logging.file_max_bytes`    | `A13N_SERVICE_LOG_FILE_MAX_BYTES`    | integer                  | minimum=1; maximum=1073741824; default=10485760 |
+| `logging.file_backup_count` | `A13N_SERVICE_LOG_FILE_BACKUP_COUNT` | integer                  | minimum=1; maximum=100; default=5               |

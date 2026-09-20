@@ -26,6 +26,7 @@ from a13n_service.environments.selection import Omitted
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt
 from a13n_service.interactions.models import RunRecord
+from a13n_service.observability.correlation import publish_run_acceptance
 from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
@@ -89,7 +90,9 @@ class RunCommandEvidence:
                     agent_id=run.agent_id,
                     action=WorkspaceAction.run_read,
                 )
-                return RunAcceptanceReceipt.model_validate(evidence.receipt_json)
+                receipt = RunAcceptanceReceipt.model_validate(evidence.receipt_json)
+            publish_run_acceptance(receipt.run_id)
+            return receipt
         except IdempotencyConflict as error:
             raise idempotency_conflict() from error
         except AuthorizationError as error:

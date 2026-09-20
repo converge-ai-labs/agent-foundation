@@ -15,9 +15,9 @@ configure_logging(
 get_logger("my_application.tasks").info("ready", extra={"task_id": "task-example"})
 ```
 
-Configure once at the executable boundary. Libraries only create namespaced loggers. JSON goes to stdout; `LogFormat.pretty` selects Rich terminal rendering. No logger namespace or root logger is configured by default, and this package does not redact secret values or store/rotate log files.
+Configure once at the executable boundary. Libraries only create namespaced loggers. JSON goes to stdout; `LogFormat.pretty` selects Rich terminal rendering. No logger namespace or root logger is configured by default, and this package does not redact secret values. Optional file output uses standard size-based rotation.
 
-The [Logging guide](../../docs/a13n-logging/index.md) documents all seven exports, configuration defaults, field precedence, exception behavior, output ownership, and customization.
+The [Logging guide](../../docs/a13n-logging/index.md) documents the public exports, configuration defaults, field precedence, exception behavior, output ownership, and customization.
 
 ## Validate
 
