@@ -176,6 +176,21 @@ Model name, description, upstream model, catalog reference, calling API, setting
 
 For OpenRouter, the initial API is `openrouter.chat_completions` and an omitted downstream routing setting leaves selection to OpenRouter. Users can configure native routing settings, including `openrouter_provider`, on the Model. Two Models such as `openrouter-claude` and `openrouter-aws-claude` can reference the same upstream Claude ID while one uses platform defaults and the other restricts eligible downstream providers. Downstream identifiers are upstream data rather than a Service release-pinned enum. OpenRouter performs that routing; it does not create additional Service Providers or a routing-policy resource.
 
+## Workspace media understanding defaults
+
+Each Workspace owns independent image, video, and audio Model defaults for file `view` understanding. The defaults may select Workspace Models or visible Organization Models by their immutable `key`. There are no Organization defaults, inheritance, or Agent/Run overrides. Reading requires `models.read`; replacement requires `models.manage` and a matching strong ETag. A missing stored configuration reads as version zero with all selections null. Every accepted replacement increments its version, validates scope, Model and Provider availability, and the matching declared media capability, and records a security audit event without making provider requests.
+
+```http
+GET /api/v1/workspaces/{workspace}/media-understanding-defaults
+PUT /api/v1/workspaces/{workspace}/media-understanding-defaults
+```
+
+The replacement body contains nullable `image`, `video`, and `audio` Model keys; omitted fields clear that selection. Reads additionally return `workspace_id` and `version`. Console exposes three concise selectors on the Workspace Models page, restricted to compatible Models. Null clears the Workspace selection; it does not disable environment fallback.
+
+Harness retains native-first dispatch. A native-capable active Model receives the media directly without initializing auxiliary credentials. Otherwise, the captured default for that kind performs auxiliary inference with its own saved settings, not the primary Agent's settings. An unset kind retains the existing Harness environment fallback. This fallback is deployment-operator configuration shared by that Worker's tenants, not a Workspace-managed Model, and does not enter the Service Model/Provider management chain. A configured Model failure never falls back to the environment.
+
+Configuration selection captures auxiliary Model execution snapshots and saved settings in the effective execution configuration, including nested children. New selections observe the Workspace defaults; retries, replacement attempts, and continuations that retain effective configuration reuse their captures. Existing captures without this field retain environment behavior. Auxiliary requests use the executing root or child Harness Thread's affinity identity and the same live Provider, credential rotation, endpoint policy, disablement, and request retry rules as primary inference. Model/provider disablement remains a live kill switch rather than clearing defaults. This setting affects file `view` only, not composer attachment conversion or primary Model selection.
+
 ## Catalog and manual Model creation
 
 The authenticated `GET /workspaces/{workspace}/model-catalog` and Organization counterpart expose a public models.dev directory. The collection contains `items`, `status` (`ready`, `stale`, or `unavailable`), and `released_since`. Each item contains its provider-qualified `ref`, name, provider name, release date, editable declarations, and an optional pricing warning. These are authoring values, not durable resources or proof of inference access.

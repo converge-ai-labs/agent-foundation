@@ -43,6 +43,7 @@ from a13n_service.environments.mount_runtime import RunMountRuntime
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
 from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
 from a13n_service.interactions.environment_observation import EnvironmentHookProjector, observe_environment_entry
+from a13n_service.models.media_runtime import FileMediaUnderstanding, FileMediaUnderstandingCapability
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
@@ -291,8 +292,21 @@ class WorkerAttemptPreparer:
             stack=stack,
         )
 
+        model_resolver = SnapshotRunModelResolver(
+            snapshots=resources.models,
+            organization_id=run.organization_id,
+            workspace_id=self._workspace_id,
+            provider_resolver=self._model_resolver,
+            model_factory=self._model_factory,
+        )
+        root_media = (
+            FileMediaUnderstanding(config.media_understanding, model_resolver) if config.media_understanding else None
+        )
+
         def capabilities(context: AgentDefinitionReconstructionContext):
             selected = resources.for_definition(context)
+            if context.config.media_understanding:
+                selected = (*selected, FileMediaUnderstandingCapability())
             if context.is_root and run.configuration_context is not None:
                 assert self._configuration_capability is not None
                 selected = (
@@ -328,7 +342,16 @@ class WorkerAttemptPreparer:
             )
 
         def run_bindings(node: AgentDefinitionReconstructionContext, bindings: RunBindings) -> RunBindings:
-            return replace(bindings, web=web_binding(node))
+            media = (
+                FileMediaUnderstanding(node.config.media_understanding, model_resolver)
+                if node.config.media_understanding
+                else None
+            )
+            return replace(
+                bindings,
+                web=web_binding(node),
+                file_media_understanding=media,
+            )
 
         root_web = web_binding(
             AgentDefinitionReconstructionContext(
@@ -436,12 +459,7 @@ class WorkerAttemptPreparer:
                 instance=instance,
                 web=root_web,
                 capabilities=(self._bound_secrets.capability(),) if self._bound_secrets is not None else (),
-                model_resolver=SnapshotRunModelResolver(
-                    snapshots=resources.models,
-                    organization_id=run.organization_id,
-                    workspace_id=self._workspace_id,
-                    provider_resolver=self._model_resolver,
-                    model_factory=self._model_factory,
-                ),
+                file_media_understanding=root_media,
+                model_resolver=model_resolver,
             ),
         )

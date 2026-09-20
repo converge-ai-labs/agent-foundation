@@ -22,7 +22,7 @@ from a13n_service.interactions.control_domain import (
 from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.initialization import (
     RunStateSeed,
-    initialize_empty_thread_state,
+    initialize_start_state,
 )
 from a13n_service.interactions.input import AcceptedAgentInput, AgentInput, TextContent
 from a13n_service.interactions.models import RunRecord, ThreadRecord
@@ -420,7 +420,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config=config,
     )
-    state = initialize_empty_thread_state(seed, thread_id=source.thread_id)
+    state = initialize_start_state(seed, thread_id=source.thread_id)
     run = _accepted_run(
         run_id=seed.run_id,
         thread_id=source.thread_id,

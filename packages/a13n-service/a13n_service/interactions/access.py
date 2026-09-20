@@ -16,8 +16,10 @@ from a13n_service.iam.authorization import AuthorizedWorkspace, read_principal_p
 from a13n_service.iam.domain import PrincipalType
 
 from .domain import Run
+from .errors import command_not_found
 from .models import SessionRecord
 from .session_scope import SessionScope
+from .state import RunCheckpoint
 
 
 async def configuration_visibility(
@@ -152,4 +154,57 @@ async def authorize_retained_execution(
         workspace_id=workspace_id,
         agent_id=source.agent_id,
         actions=frozenset({WorkspaceAction.agent_invoke}),
+    )
+
+
+async def authorize_run_actions(
+    database: AsyncSession,
+    *,
+    actor: AuthenticatedActor,
+    source: Run,
+    session_scope: SessionScope,
+    actions: tuple[WorkspaceAction, ...],
+    reuse_request_authentication: bool = False,
+) -> None:
+    """Authorize each command action with the already observed conversation scope."""
+    try:
+        for action in actions:
+            await authorize_interaction(
+                database,
+                actor=actor,
+                workspace_id=actor.workspace_id,
+                session_id=source.session_id,
+                session_scope=session_scope,
+                agent_id=source.agent_id,
+                action=action,
+                reuse_request_authentication=reuse_request_authentication,
+            )
+    except AuthorizationError as error:
+        raise command_not_found() from error
+
+
+async def authorize_inherited_run(
+    database: AsyncSession,
+    *,
+    actor: AuthenticatedActor,
+    source: Run,
+    state: RunCheckpoint,
+    session_scope: SessionScope,
+    actions: tuple[WorkspaceAction, ...],
+) -> None:
+    """Check command authority separately from the retained execution's authority and Skills."""
+    from a13n_service.agents.invocation_resolution.skills import validate_retained_skills
+
+    await authorize_run_actions(database, actor=actor, source=source, session_scope=session_scope, actions=actions)
+    try:
+        await authorize_retained_execution(
+            database, source=source, workspace_id=actor.workspace_id, session_scope=session_scope
+        )
+    except AuthorizationError as error:
+        raise command_not_found() from error
+    await validate_retained_skills(
+        database,
+        organization_id=source.organization_id,
+        workspace_id=actor.workspace_id,
+        locks=state.effective_agent_config.skills,
     )

@@ -193,3 +193,98 @@ async def test_skill_publication_after_selection_does_not_refresh_root_or_child(
         else frozen.effective_config
     )
     assert config.skills[0].version == 2
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+async def test_media_capture_rejects_conflicting_model_snapshots_before_acceptance(
+    agent_management, agent_invocation_resolver, conflict
+):
+    from dataclasses import replace
+
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="media-agent",
+        request=CreateAgentRequest(name="Media", config=agent_config()),
+    )
+    prepared = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=created.agent.id)
+    media = replace(prepared.model, settings_layers=())
+    if conflict:
+        media = replace(media, resource=media.resource.model_copy(update={"upstream_model": "concurrently-edited"}))
+    prepared = replace(prepared, media_models={"image": media})
+    if conflict:
+        with pytest.raises(AgentError) as failure:
+            agent_invocation_resolver.freezing.freeze_selected(prepared=prepared)
+        assert failure.value.details == {"reason": "model_configuration_changed"}
+    else:
+        frozen = agent_invocation_resolver.freezing.freeze_selected(prepared=prepared)
+        assert (
+            frozen.effective_config.media_understanding["image"].execution
+            == frozen.effective_config.resolved_model.execution
+        )
+
+
+@pytest.mark.parametrize("operation", ["continue", "retry"])
+async def test_media_defaults_follow_fresh_selection_and_retained_retry(
+    agent_management, agent_invocation_resolver, agent_sessions, tmp_path, operation
+):
+    from a13n_service.interactions.command_values import RetryRunCommand
+    from a13n_service.interactions.control_domain import InterruptRequest
+    from a13n_service.models.models import MediaUnderstandingDefaultsRecord
+
+    async with transaction(agent_sessions) as session:
+        session.add(MediaUnderstandingDefaultsRecord(workspace_id=WORKSPACE_ID, version=1, image_model_id=MODEL_ID))
+        (await session.get(ModelRecord, MODEL_ID)).settings = {"temperature": 0.7}
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="captured-media",
+        request=CreateAgentRequest(name="Media", config=agent_config()),
+    )
+    objects = await LocalObjectStore.create(tmp_path / "objects")
+    resolver = agent_invocation_resolver
+    commands = _commands(agent_sessions, objects, resolver.preparation, resolver.freezing)
+    request = _request().model_copy(update={"agent_id": created.agent.id})
+    source = await commands.runs.start(
+        actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="source", request=request
+    )
+    if operation == "continue":
+        await _complete_run(agent_sessions, objects, run_id=source.run_id)
+    else:
+        await commands.active.interrupt(
+            actor=actor(),
+            run_id=source.run_id,
+            idempotency_key="cancel",
+            request=InterruptRequest(expected_run_version=1, expected_thread_version=1),
+        )
+    stored = await RunStateStore(objects).read(created.agent.organization_id, source.run_id)
+    media = stored.envelope.effective_agent_config.media_understanding["image"]
+    assert media.settings == {"temperature": 0.7}
+    async with transaction(agent_sessions) as session:
+        defaults = await session.get(MediaUnderstandingDefaultsRecord, WORKSPACE_ID)
+        defaults.image_model_id = None
+        defaults.version += 1
+        (await session.get(ModelRecord, MODEL_ID)).settings = {"temperature": 0.1}
+    if operation == "continue":
+        successor = await commands.runs.continue_from(
+            actor=actor(),
+            source_run_id=source.run_id,
+            idempotency_key="continue",
+            request=ContinueRunCommand(expected_thread_version=2, input=request.input),
+        )
+    else:
+        successor = await commands.continuations.retry(
+            actor=actor(),
+            run_id=source.run_id,
+            idempotency_key="retry",
+            request=RetryRunCommand(expected_thread_version=2),
+        )
+    continued = await RunStateStore(objects).read(created.agent.organization_id, successor.run_id)
+    assert continued.envelope.effective_agent_config.media_understanding == (
+        {"image": media} if operation == "retry" else {}
+    )
+    fresh = await commands.runs.start(
+        actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="fresh", request=request
+    )
+    latest = await RunStateStore(objects).read(created.agent.organization_id, fresh.run_id)
+    assert latest.envelope.effective_agent_config.media_understanding == {}

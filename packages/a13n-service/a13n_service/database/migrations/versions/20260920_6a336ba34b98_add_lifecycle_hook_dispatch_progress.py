@@ -1,7 +1,7 @@
 """add lifecycle hook dispatch progress.
 
 Revision ID: 6a336ba34b98
-Revises: ec56e4426fb7
+Revises: fe344bbb730f
 Create Date: 2026-09-20 08:42:32.944904+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "6a336ba34b98"
-down_revision: str | Sequence[str] | None = "ec56e4426fb7"
+down_revision: str | Sequence[str] | None = "fe344bbb730f"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -1273,7 +1273,7 @@ it.each([
   [true, false],
   [false, true],
 ])(
-  "loads previous turns without filling execution pages (short viewport: %s, retry: %s)",
+  "loads previous turns independently of complete turn loading (short viewport: %s, retry: %s)",
   async (short, retry) => {
     const requests: string[] = [];
     const original = vi.mocked(fetch).getMockImplementation()!;
@@ -1281,8 +1281,28 @@ it.each([
       const url = new URL((request as Request).url);
       if (!url.pathname.endsWith("/transcript")) return original(request);
       const cursor = url.searchParams.get("cursor") ?? "latest";
+      if (url.searchParams.has("turn_id"))
+        return json({
+          continuation_id: "initial:one",
+          entries: Array.from({ length: 97 }, (_, index) => ({
+            position: index + 4,
+            message_kind: index === 0 ? "request" : "response",
+            parts:
+              index === 0
+                ? [{ kind: "user", text: "Current task" }]
+                : index === 96
+                  ? [{ kind: "assistant", text: "Current answer" }]
+                  : index === 1
+                    ? [{ kind: "thinking", text: "Folded intermediate work" }]
+                    : [],
+          })),
+          next_cursor: "previous-turn",
+        });
       requests.push(cursor);
-      if (retry && requests.length === 2)
+      if (
+        retry &&
+        requests.filter((item) => item === "previous-turn").length === 1
+      )
         return json(
           { error: { message: "History temporarily unavailable" } },
           503,
@@ -1375,21 +1395,24 @@ it.each([
     expect(requests).toEqual(expectedRequests);
     expect(top).toBe(short ? 600 : 940);
     expect(
-      screen.getByRole("button", {
+      screen.queryByRole("button", {
         name: "Load earlier messages in this turn",
       }),
-    ).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /Execution details/ }),
     ).toBeNull();
-    expect(screen.queryByText("Folded intermediate work")).toBeNull();
+    const details = await screen.findByRole("button", {
+      name: /Execution details/,
+    });
+    expect(details.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.getByText("Folded intermediate work").closest("[hidden]"),
+    ).toBeTruthy();
     fireEvent.scroll(reader);
     await act(async () => {});
     expect(requests).toEqual(expectedRequests);
   },
 );
 
-it("loads missing turn details on request when away from the top", async () => {
+it("automatically loads the whole visible turn when away from the top", async () => {
   const requests: string[] = [];
   const original = vi.mocked(fetch).getMockImplementation()!;
   vi.mocked(fetch).mockImplementation(async (request) => {
@@ -1443,20 +1466,12 @@ it("loads missing turn details on request when away from the top", async () => {
     scrollHeight: { get: () => 1400 },
     scrollTop: { get: () => 800, set: () => {} },
   });
-  const toggle = await screen.findByRole("button", {
-    name: "Load earlier messages in this turn",
-  });
+  await screen.findByText("Short final");
+  await waitFor(() => expect(requests).toHaveLength(3));
+  await waitFor(() => expect(screen.queryByText("Loading turn…")).toBeNull());
   fireEvent.scroll(reader);
   await act(async () => {});
-  expect(requests).toHaveLength(1);
-  fireEvent.click(toggle);
-  await waitFor(() => expect(requests).toHaveLength(2));
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Load earlier messages in this turn",
-    }),
-  );
-  await waitFor(() => expect(requests).toHaveLength(3));
+  expect(requests).toHaveLength(3);
   expect(requests[1]).toContain("turn_id=long");
   expect(requests[2]).toContain("turn_id=long");
   expect(requests[2]).toContain("cursor=older");
@@ -1588,7 +1603,7 @@ it.each(["new", "existing"])(
 );
 
 it.each(["desktop", "mobile"])(
-  "loads hidden %s messages outside collapsed details, reconciling steering and retrying gaps",
+  "loads complete %s turns automatically, reconciling steering and retrying failures",
   async (layout) => {
     if (layout === "mobile")
       vi.stubGlobal("matchMedia", (query: string) => ({
@@ -1716,47 +1731,21 @@ it.each(["desktop", "mobile"])(
         },
       },
     });
-    const toggle = await screen.findByRole("button", {
-      name: /Execution details/,
+    const retry = await screen.findByRole("button", {
+      name: "Retry loading turn",
     });
-    expect(requests).toEqual(["conversation:latest"]);
+    expect(requests).toEqual([
+      "conversation:latest",
+      "execution:latest",
+      "execution:steps",
+    ]);
     expect(
       screen.getByText("Current answer").closest("[data-execution-reader]"),
     ).toBeNull();
-    // Opening a segment never fetches hidden conversation messages.
-    fireEvent.click(toggle);
-    await screen.findByRole("region", { name: "Execution details" });
-    expect(requests).toEqual(["conversation:latest"]);
-    if (layout === "mobile") {
-      const inspectionTop = reader.scrollTop;
-      liveGrowth = 100;
-      await act(async () => {
-        queries.setQueriesData<{ pages: Schema<"TranscriptPage">[] }>(
-          { queryKey: ["thread", id, "history"] },
-          (current) =>
-            current && {
-              ...current,
-              pages: current.pages.map((page) => ({
-                ...page,
-                completion_version: (page.completion_version ?? 0) + 1,
-              })),
-            },
-        );
-      });
-      expect(reader.scrollTop).toBe(inspectionTop);
-      fireEvent.click(
-        screen.getByRole("button", { name: "Back to conversation" }),
-      );
-      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    } else fireEvent.click(toggle);
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Load earlier messages in this turn",
-      }),
-    );
-    await waitFor(() =>
-      expect(requests).toEqual(["conversation:latest", "execution:latest"]),
-    );
+    // A failed complete-turn read cannot reveal a partial execution segment.
+    expect(
+      screen.queryByRole("button", { name: /Execution details/ }),
+    ).toBeNull();
     await act(async () => {
       const draft = drafts.get(id)!;
       draft.localInputs = [
@@ -1770,23 +1759,14 @@ it.each(["desktop", "mobile"])(
       draft.notify();
     });
     expect(screen.getAllByText("Please use plan B")).toHaveLength(1);
-    // The outer gesture loads the previous prompt, not the expanded execution's cursor.
+    // The outer gesture loads the previous prompt, not the incomplete turn's cursor.
     fireEvent.wheel(reader, { deltaY: -100 });
     reader.scrollTop = 40;
     fireEvent.scroll(reader);
     await screen.findByText("Previous answer");
     expect(requests.at(-1)).toBe("conversation:previous-turn");
     expect(screen.queryByText("Earlier execution work")).toBeNull();
-    // Gaps load from the conversation, with every detail segment still closed.
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Load earlier messages in this turn",
-      }),
-    );
-    const retry = await screen.findByRole("button", {
-      name: "Retry earlier messages",
-    });
-    expect(requests.at(-1)).toBe("execution:steps");
+    // One retry completes the turn without exposing transport-page controls.
     fireEvent.click(retry);
     await screen.findByText("Earlier progress text");
     expect(drafts.get(id)!.localInputs).toHaveLength(0);
@@ -1813,8 +1793,9 @@ it.each(["desktop", "mobile"])(
     expect(requests).toEqual([
       "conversation:latest",
       "execution:latest",
-      "conversation:previous-turn",
       "execution:steps",
+      "conversation:previous-turn",
+      "execution:latest",
       "execution:steps",
     ]);
     const segments = screen.getAllByRole("button", {
@@ -1828,6 +1809,22 @@ it.each(["desktop", "mobile"])(
     expect(within(execution).getByText("Earlier execution work")).toBeTruthy();
     expect(within(execution).queryByText("Recent execution work")).toBeNull();
     if (layout === "mobile") {
+      const inspectionTop = reader.scrollTop;
+      liveGrowth = 100;
+      await act(async () => {
+        queries.setQueriesData<{ pages: Schema<"TranscriptPage">[] }>(
+          { queryKey: ["thread", id, "history"] },
+          (current) =>
+            current && {
+              ...current,
+              pages: current.pages.map((page) => ({
+                ...page,
+                completion_version: (page.completion_version ?? 0) + 1,
+              })),
+            },
+        );
+      });
+      expect(reader.scrollTop).toBe(inspectionTop);
       fireEvent.click(
         screen.getByRole("button", { name: "Back to conversation" }),
       );
@@ -1837,6 +1834,6 @@ it.each(["desktop", "mobile"])(
     expect(
       await screen.findByRole("region", { name: "Execution details" }),
     ).toBe(execution);
-    expect(requests).toHaveLength(5);
+    expect(requests).toHaveLength(6);
   },
 );

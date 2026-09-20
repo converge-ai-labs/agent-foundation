@@ -16,7 +16,7 @@ from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.iam.models import RoleBindingRecord
-from a13n_service.interactions import active_commands
+from a13n_service.interactions import access
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.attempts import AttemptExecutionService, AttemptPreparationAccepted
 from a13n_service.interactions.command_values import (
@@ -1139,7 +1139,7 @@ async def test_steer_authorization_is_fixed_at_precheck_but_not_reused_by_later_
                 )
             )
 
-    authorize = active_commands.authorize_interaction
+    authorize = access.authorize_interaction
 
     async def authorize_then_revoke(*args, **kwargs):
         result = await authorize(*args, **kwargs)
@@ -1147,7 +1147,7 @@ async def test_steer_authorization_is_fixed_at_precheck_but_not_reused_by_later_
             await revoke_access()
         return result
 
-    monkeypatch.setattr(active_commands, "authorize_interaction", authorize_then_revoke)
+    monkeypatch.setattr(access, "authorize_interaction", authorize_then_revoke)
     read_run = commands.active._states.read_run
 
     async def read_then_revoke(run):

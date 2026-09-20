@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+
+from a13n_harness.toolsets.file_media import NativeInputMediaKind
 
 from a13n_service.agent_configuration.context import ConfigurationRunContext
 from a13n_service.connectivity.selection_domain import (
@@ -61,6 +63,7 @@ class PreparedAgentInvocation:
     skills: tuple[PreparedSkillLock, ...]
     subagents: tuple[PreparedChildInvocation, ...]
     connectivity: PreparedConnectivity
+    media_models: dict[NativeInputMediaKind, PreparedModelExecution] = field(default_factory=dict)
     reviewer_model: PreparedModelExecution | None = None
     configuration_context: ConfigurationRunContext | None = None
 

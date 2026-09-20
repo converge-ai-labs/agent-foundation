@@ -29,6 +29,7 @@ import { Page, PageActions } from "../../shared/page";
 import { ManageProvidersLink } from "../providers";
 import { modelApi, type ModelScope } from "./api";
 import { ModelEditor } from "./model-editor";
+import { MediaUnderstandingDefaults } from "./media-understanding";
 import { ModelIcon } from "./model-icon";
 import styles from "./models.module.css";
 
@@ -130,6 +131,9 @@ export function Models({ scope }: { scope: ModelScope }) {
           />
         )}
       </PageActions>
+      {scope.kind === "workspace" && (
+        <MediaUnderstandingDefaults key={scope.id} />
+      )}
       {selected && (
         <ModelEditor
           key={selected.id}

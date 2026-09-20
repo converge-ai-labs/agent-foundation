@@ -293,3 +293,32 @@ async def test_catalog_is_readonly_and_manual_models_do_not_depend_on_it(api_cli
     assert response.json()["status"] == "ready"
     assert response.json()["released_since"] == "2026-04-23"
     assert (await api_client.get("/api/v1/base-models")).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_workspace_media_defaults_http_etag_and_replace(api_client):
+    url = f"/api/v1/workspaces/{WORKSPACE_ID}/media-understanding-defaults"
+    initial = await api_client.get(url)
+    assert initial.status_code == 200
+    assert initial.json() == {"workspace_id": WORKSPACE_ID, "version": 0, "image": None, "video": None, "audio": None}
+    assert (await api_client.put(url, json={})).status_code == 400
+    provider = await create_provider(api_client)
+    created = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/models",
+        json={
+            "key": "vision",
+            "name": "Vision",
+            "provider_id": provider["id"],
+            "upstream_model": "vision-test",
+            "model_api": "openai.responses",
+            "declarations": {"capabilities": ["image_understanding"]},
+        },
+    )
+    assert created.status_code == 201
+    saved = await api_client.put(url, json={"image": "vision"}, headers={"If-Match": initial.headers["etag"]})
+    assert saved.status_code == 200 and saved.json()["image"] == "vision"
+    assert saved.headers["etag"] != initial.headers["etag"]
+    assert (await api_client.put(url, json={}, headers={"If-Match": initial.headers["etag"]})).status_code == 412
+    cleared = await api_client.put(url, json={}, headers={"If-Match": saved.headers["etag"]})
+    assert cleared.status_code == 200 and cleared.json()["image"] is None
+    assert (await api_client.get(f"/api/v1/organizations/{ORG_ID}/media-understanding-defaults")).status_code == 404

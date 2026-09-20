@@ -20,6 +20,7 @@ from a13n_harness import (
     RunCleanupError,
     RunError,
     SemanticRunInput,
+    StateError,
 )
 from a13n_harness.environment import EnvironmentError
 from a13n_harness.environment.advanced import (
@@ -236,6 +237,37 @@ async def test_cleanup_failure_withholds_terminal_delivery_and_retains_outcome()
     assert exc_info.value.outcome.output == "output"
     assert len(exc_info.value.causes) == 1
     assert isinstance(exc_info.value.causes[0], RuntimeError)
+
+
+async def test_prestart_cancellation_respects_middleware_state_omission() -> None:
+    candidates: list[HarnessRunResult[Any]] = []
+
+    class OmitStatePlugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self) -> str:
+            return "omit-state"
+
+        def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> PluginRunResponse[Any]:
+            async def iterate():
+                async for item in call_next(exchange):
+                    if isinstance(item, HarnessRunResult):
+                        candidates.append(item)
+                        yield item.replace(state=None)
+                    else:
+                        yield item
+
+            return PluginRunResponse(iterate())
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=_model([]), plugins=(OmitStatePlugin(),))
+    async with executable.stream("cancel before model work") as stream:
+        stream.cancel()
+        async for _ in stream:
+            pass
+    assert len(candidates) == 1
+    assert candidates[0].state is not None
+    assert stream.result is not None and stream.result.state is None
+    with pytest.raises(StateError, match="No complete shutdown checkpoint"):
+        await stream.export_state()
 
 
 class InvalidOutputPlugin(AbstractHarnessPlugin):
