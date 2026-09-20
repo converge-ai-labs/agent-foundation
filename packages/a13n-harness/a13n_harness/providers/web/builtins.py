@@ -2,7 +2,7 @@
 
 from .configuration import ApiKeyCredential, EmptyConfiguration
 from .definition import WebProviderDefinition
-from .vendors import brave, duckduckgo, exa, firecrawl, jina, parallel, perplexity, serpapi, tavily
+from .vendors import brave, duckduckgo, exa, firecrawl, jina, parallel, perplexity, serpapi, tavily, tinyfish
 
 
 def built_in_web_providers() -> tuple[WebProviderDefinition, ...]:
@@ -24,6 +24,13 @@ def built_in_web_providers() -> tuple[WebProviderDefinition, ...]:
         ("jina", "Jina", "https://jina.ai/reader/", jina.search, jina.scrape),
         ("perplexity", "Perplexity", "https://www.perplexity.ai/settings/api", perplexity.search, None),
         ("serpapi", "SerpApi", "https://serpapi.com/manage-api-key", serpapi.search, None),
+        (
+            "tinyfish",
+            "TinyFish",
+            "https://agent.tinyfish.ai/api-keys",
+            tinyfish.search,
+            tinyfish.scrape,
+        ),
     ):
         definitions.append(
             WebProviderDefinition(
