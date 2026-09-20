@@ -161,9 +161,14 @@ def test_sigterm_restarts_tasks_once_across_three_processes(tmp_path, mode):
         deadline = time.monotonic() + 10
         while True:
             response = api.get(f"/api/threads/{thread_id}/transcript")
-            assert response.status_code == 200, response.text
-            if "continued" in response.text.lower():
-                break
+            # The model's completion marker precedes durable history publication.
+            # A continuation conflict is explicitly retryable while that settles.
+            if response.status_code == 400:
+                assert response.json()["error"]["code"] == "thread_history_continuation_changed", response.text
+            else:
+                assert response.status_code == 200, response.text
+                if "continued" in response.text.lower():
+                    break
             assert time.monotonic() < deadline
             time.sleep(0.02)
     before = (tmp_path / "requests.jsonl").read_text()

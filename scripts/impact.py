@@ -122,7 +122,12 @@ def select(impact: ImpactMap, files: Iterable[str]) -> Selection:
     wanted = {path for path in files if path.endswith(".py")}
     result.unmapped = {path for path in wanted if path not in impact.funcmaps}
     mapped = wanted - result.unmapped
-    changed = {p: k for p, k in diff.changed_lines(impact.commit, cwd=str(REPOSITORY_ROOT)).items() if p in mapped}
+    deleted = {path for path in mapped if not (REPOSITORY_ROOT / path).is_file()}
+    changed = {
+        p: k
+        for p, k in diff.changed_lines(impact.commit, cwd=str(REPOSITORY_ROOT)).items()
+        if p in mapped and p not in deleted
+    }
     for path in list(changed):
         old = resolve._git_show(impact.commit, path, str(REPOSITORY_ROOT))
         if old is not None and not semantic.is_semantic_change(old, (REPOSITORY_ROOT / path).read_text("utf-8")):
@@ -136,7 +141,12 @@ def select(impact: ImpactMap, files: Iterable[str]) -> Selection:
         if any(impact.funcmaps[path].get(line) is None for line in kinds["ins"]):
             module_files.add(path)
     module_files, _ = tia_select.escalate_dynamic(func_changes, module_files, impact.dynamic)
-    selected = tia_select.select_tests(impact.tests, func_changes, module_files, set())
+    module_files.update(deleted)
+    selected = {
+        nodeid
+        for nodeid in tia_select.select_tests(impact.tests, func_changes, module_files, set())
+        if (REPOSITORY_ROOT / nodeid.split("::", 1)[0]).is_file()
+    }
     if len(selected) > WIDEN_RATIO * len(impact.tests):
         result.tests = {impact.tests_dir}
         result.widened = True

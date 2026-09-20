@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -13,8 +14,8 @@ from a13n_harness_ui.errors import ContentPluginError
 
 
 @pytest.mark.anyio
-async def test_install_list_and_uninstall_deletes_content(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+async def test_install_list_and_uninstall_deletes_content(tmp_path: Path, repository_factory) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
 
     installed = await store.install(os.fspath(repository))
@@ -37,8 +38,8 @@ async def test_install_list_and_uninstall_deletes_content(tmp_path: Path) -> Non
 
 
 @pytest.mark.anyio
-async def test_install_requires_selection_for_multi_plugin_repository(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer", "plugin-writer"))
+async def test_install_requires_selection_for_multi_plugin_repository(tmp_path: Path, repository_factory) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer", "plugin-writer"))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
 
     with pytest.raises(ContentPluginError) as required:
@@ -53,8 +54,8 @@ async def test_install_requires_selection_for_multi_plugin_repository(tmp_path: 
 
 
 @pytest.mark.anyio
-async def test_install_rejects_duplicate_registration(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+async def test_install_rejects_duplicate_registration(tmp_path: Path, repository_factory) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
     await store.install(os.fspath(repository))
 
@@ -65,8 +66,8 @@ async def test_install_rejects_duplicate_registration(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_install_rejects_symlinked_plugin_content(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",), commit=False)
+async def test_install_rejects_symlinked_plugin_content(tmp_path: Path, repository_factory) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",), commit=False)
     target = repository / "outside.txt"
     target.write_text("outside", encoding="utf-8")
     (repository / "plugins" / "reviewer" / "skills" / "review" / "linked.txt").symlink_to(target)
@@ -82,9 +83,10 @@ async def test_install_rejects_symlinked_plugin_content(tmp_path: Path) -> None:
 
 def test_cli_installs_lists_and_uninstalls_content_plugin(
     tmp_path: Path,
+    repository_factory,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",))
     data_root = tmp_path / "data"
 
     main(["--data-root", os.fspath(data_root), "plugin", "install", os.fspath(repository), "--format", "json"])
@@ -103,8 +105,10 @@ def test_cli_installs_lists_and_uninstalls_content_plugin(
 
 
 @pytest.mark.anyio
-async def test_configuration_loads_plugin_subagent_and_prefers_local_override(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+async def test_configuration_loads_plugin_subagent_and_prefers_local_override(
+    tmp_path: Path, repository_factory
+) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
     await store.install(os.fspath(repository))
     configuration = _configuration(tmp_path / "configuration")
@@ -138,8 +142,10 @@ async def test_configuration_loads_plugin_subagent_and_prefers_local_override(tm
 
 
 @pytest.mark.anyio
-async def test_configuration_resolves_plugin_subagent_conflicts_deterministically(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer", "plugin-writer"))
+async def test_configuration_resolves_plugin_subagent_conflicts_deterministically(
+    tmp_path: Path, repository_factory
+) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer", "plugin-writer"))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
     await store.install(os.fspath(repository), plugin_id="plugin-reviewer")
     await store.install(os.fspath(repository), plugin_id="plugin-writer")
@@ -151,8 +157,8 @@ async def test_configuration_resolves_plugin_subagent_conflicts_deterministicall
 
 
 @pytest.mark.anyio
-async def test_installed_content_can_be_edited_and_deleted_on_uninstall(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+async def test_installed_content_can_be_edited_and_deleted_on_uninstall(tmp_path: Path, repository_factory) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
     installed = await store.install(os.fspath(repository))
     fingerprint_before = await store.fingerprint()
@@ -183,8 +189,8 @@ async def test_installed_content_can_be_edited_and_deleted_on_uninstall(tmp_path
 
 
 @pytest.mark.anyio
-async def test_reinstall_starts_with_fresh_repository_content(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+async def test_reinstall_starts_with_fresh_repository_content(tmp_path: Path, repository_factory) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
     installed = await store.install(os.fspath(repository))
     skill_document = Path(installed.path) / "skills" / "review" / "SKILL.md"
@@ -199,8 +205,10 @@ async def test_reinstall_starts_with_fresh_repository_content(tmp_path: Path) ->
 
 
 @pytest.mark.anyio
-async def test_invalid_local_subagent_does_not_block_plugin_or_configuration(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+async def test_invalid_local_subagent_does_not_block_plugin_or_configuration(
+    tmp_path: Path, repository_factory
+) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
     installed = await store.install(os.fspath(repository))
     (Path(installed.path) / "subagents" / "explorer.md").write_text(
@@ -216,8 +224,8 @@ async def test_invalid_local_subagent_does_not_block_plugin_or_configuration(tmp
 
 
 @pytest.mark.anyio
-async def test_install_keeps_invalid_subagent_for_editing(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",), commit=False)
+async def test_install_keeps_invalid_subagent_for_editing(tmp_path: Path, repository_factory) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",), commit=False)
     (repository / "plugins" / "reviewer" / "subagents" / "explorer.md").write_text(
         "Missing frontmatter.\n",
         encoding="utf-8",
@@ -232,8 +240,8 @@ async def test_install_keeps_invalid_subagent_for_editing(tmp_path: Path) -> Non
 
 
 @pytest.mark.anyio
-async def test_install_loads_duplicate_subagent_ids_deterministically(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",), commit=False)
+async def test_install_loads_duplicate_subagent_ids_deterministically(tmp_path: Path, repository_factory) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",), commit=False)
     (repository / "plugins" / "reviewer" / "subagents" / "second.md").write_text(
         "---\nname: explorer\ndescription: Duplicate explorer.\n---\n\nDuplicate.\n",
         encoding="utf-8",
@@ -250,9 +258,10 @@ async def test_install_loads_duplicate_subagent_ids_deterministically(tmp_path: 
 @pytest.mark.anyio
 async def test_failed_directory_publication_leaves_no_installed_files(
     tmp_path: Path,
+    repository_factory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
 
     def fail_link(*_args: object, **_kwargs: object) -> None:
@@ -334,6 +343,23 @@ def _configuration(path: Path) -> Path:
     return configuration
 
 
+@pytest.fixture(scope="module")
+def repository_factory(tmp_path_factory: pytest.TempPathFactory):
+    """Copy committed templates; each test owns its repository and writable Git history."""
+    root = tmp_path_factory.mktemp("content-plugin-repositories")
+    templates: dict[tuple[str, ...], Path] = {}
+
+    def create(path: Path, plugin_ids: tuple[str, ...], *, commit: bool = True) -> Path:
+        if not commit:
+            return _repository(path, plugin_ids, commit=False)
+        if plugin_ids not in templates:
+            templates[plugin_ids] = _repository(root / str(len(templates)), plugin_ids)
+        shutil.copytree(templates[plugin_ids], path, symlinks=True)
+        return path
+
+    return create
+
+
 def _repository(path: Path, plugin_ids: tuple[str, ...], *, commit: bool = True) -> Path:
     path.mkdir(parents=True)
     marketplace_entries: list[str] = []
@@ -401,8 +427,8 @@ def _commit(repository: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_manifest_is_the_only_authority_for_editable_metadata(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+async def test_manifest_is_the_only_authority_for_editable_metadata(tmp_path: Path, repository_factory) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "content-plugins")
     installed = await store.install(os.fspath(repository))
     root = Path(installed.path)
@@ -416,8 +442,8 @@ async def test_manifest_is_the_only_authority_for_editable_metadata(tmp_path: Pa
 
 
 @pytest.mark.anyio
-async def test_bad_plugin_and_bad_subagent_do_not_hide_healthy_content(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer", "plugin-writer"))
+async def test_bad_plugin_and_bad_subagent_do_not_hide_healthy_content(tmp_path: Path, repository_factory) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer", "plugin-writer"))
     store = ContentPluginStore(tmp_path / "content-plugins")
     first = await store.install(os.fspath(repository), plugin_id="plugin-reviewer")
     second = await store.install(os.fspath(repository), plugin_id="plugin-writer")
@@ -435,8 +461,8 @@ async def test_bad_plugin_and_bad_subagent_do_not_hide_healthy_content(tmp_path:
 
 
 @pytest.mark.anyio
-async def test_empty_and_extra_files_are_valid_editable_content(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+async def test_empty_and_extra_files_are_valid_editable_content(tmp_path: Path, repository_factory) -> None:
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "content-plugins")
     installed = await store.install(os.fspath(repository))
     root = Path(installed.path)
@@ -449,10 +475,12 @@ async def test_empty_and_extra_files_are_valid_editable_content(tmp_path: Path) 
 
 
 @pytest.mark.anyio
-async def test_loading_does_not_read_supporting_asset_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_loading_does_not_read_supporting_asset_bytes(
+    tmp_path: Path, repository_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import a13n_harness_ui.content_plugins as plugins
 
-    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+    repository = repository_factory(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "content-plugins")
     installed = await store.install(os.fspath(repository))
     asset = Path(installed.path) / "skills" / "review" / "asset.bin"

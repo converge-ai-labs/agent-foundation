@@ -2,6 +2,8 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Local measurements favor threads; preserve the existing CI pool.
+    pool: process.env.CI ? "forks" : "threads",
     // CI uses an eight-core runner; leave capacity for the real Python App fixtures.
     maxWorkers: process.env.CI ? 4 : 2,
     deps: {

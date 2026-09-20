@@ -20,6 +20,7 @@ from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.storage import short_session, transaction
+from anyio import create_task_group, sleep
 from sqlalchemy import func, select
 
 from tests.environments.websocket.conftest import relay_redis as relay_redis
@@ -44,6 +45,30 @@ async def mount_run(interaction_sessions, interaction_object_store, client_envir
         interaction_sessions, OnlineAdmission(interaction_sessions, coordination), clock=lambda: NOW
     )
     return service, coordination, run, provider, environment
+
+
+@pytest.fixture
+async def online_mount_run(mount_run):
+    service, coordination, run, provider, environment = mount_run
+    # These cases verify relational acceptance, not expiration of connection evidence.
+    coordination.limits = replace(coordination.limits, lease_ms=5_000, candidate_ms=30_000)
+    connection = await _connect(coordination, environment.id)
+
+    async def keep_online(*, task_status):
+        observed = await coordination.renew(connection)
+        assert observed.value.connection == connection
+        task_status.started()
+        while True:
+            await sleep(coordination.limits.lease_ms / 3000)
+            observed = await coordination.renew(connection)
+            assert observed.value.connection == connection and observed.value.status == "online"
+
+    async with create_task_group() as tasks:
+        await tasks.start(keep_online)
+        try:
+            yield service, coordination, run, provider, environment
+        finally:
+            tasks.cancel_scope.cancel()
 
 
 async def _add(service, run, environment, *, name="computer", key="mount", actor=None):
@@ -105,9 +130,8 @@ async def test_mount_offline_acceptance_has_no_association(interaction_sessions,
         assert await database.scalar(select(func.count()).select_from(RunEnvironmentMountRecord)) == 0
 
 
-async def test_concurrent_names_preserve_acceptance_order_and_clock_rollback(mount_run):
-    service, coordination, run, _, environment = mount_run
-    await _connect(coordination, environment.id)
+async def test_concurrent_names_preserve_acceptance_order_and_clock_rollback(online_mount_run):
+    service, _, run, _, environment = online_mount_run
     first, second = await asyncio.gather(
         _add(service, run, environment, name="first", key="first"),
         _add(service, run, environment, name="second", key="second"),
@@ -126,9 +150,8 @@ async def test_concurrent_names_preserve_acceptance_order_and_clock_rollback(mou
     assert caught.value.code == "environment_mount_conflict"
 
 
-async def test_same_key_concurrent_mount_requests_share_one_receipt(mount_run):
-    service, coordination, run, _, environment = mount_run
-    await _connect(coordination, environment.id)
+async def test_same_key_concurrent_mount_requests_share_one_receipt(online_mount_run):
+    service, _, run, _, environment = online_mount_run
     first, second = await asyncio.gather(_add(service, run, environment), _add(service, run, environment))
     assert first == second
     assert (await service.list(actor=hook_actor(), run_id=run.id)).items == (first,)
@@ -256,9 +279,8 @@ async def test_observations_survive_sealing_but_not_retry(interaction_sessions, 
         assert observed == ready
 
 
-async def test_failed_signal_cannot_undo_committed_mount(interaction_sessions, mount_run):
-    service, coordination, run, _, environment = mount_run
-    await _connect(coordination, environment.id)
+async def test_failed_signal_cannot_undo_committed_mount(interaction_sessions, online_mount_run):
+    service, _, run, _, environment = online_mount_run
     calls = []
 
     class BrokenSignals:

@@ -145,10 +145,8 @@ test("semantic search has independent results and options, including threshold z
   const user = userEvent.setup();
   setup();
   await screen.findByText("41 records loaded");
-  await user.type(
-    screen.getByRole("searchbox", { name: "Search memories" }),
-    "remember language",
-  );
+  await user.click(screen.getByRole("searchbox", { name: "Search memories" }));
+  await user.paste("remember language");
   await user.click(screen.getByRole("button", { name: "Search options" }));
   await user.type(
     screen.getByRole("spinbutton", { name: "Similarity threshold" }),

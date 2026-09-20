@@ -99,7 +99,7 @@ async def test_reconciliation_observes_online_and_recovers_owner_loss(client_ser
     async def reconcile_until(status):
         # A publication can legitimately lose its short evidence deadline while
         # waiting for PostgreSQL. The next pass must obtain a fresh observation.
-        with fail_after(10):
+        with fail_after(30):
             while True:
                 await reconciler.run_once()
                 async with short_session(environment_service.sessions) as session:

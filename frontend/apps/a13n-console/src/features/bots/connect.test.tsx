@@ -300,52 +300,35 @@ it("reconciles a lost save using the same command and rejects changed credential
   state.http.POST.mockRejectedValueOnce(
     new TypeError("Network error"),
   ).mockResolvedValue(response(account));
+  const user = userEvent.setup();
+  // Credential reconciliation depends on complete values, not individual keys.
+  async function enter(input: HTMLElement, value: string) {
+    await user.click(input);
+    await user.paste(value);
+  }
   setup();
-  await userEvent.click(
-    screen.getByRole("button", { name: new RegExp("^Slack") }),
-  );
-  await userEvent.type(
-    await screen.findByRole("textbox", { name: "Name" }),
-    "Pilot",
-  );
-  await userEvent.type(
-    screen.getByRole("textbox", { name: "Workspace ID" }),
-    "T1",
-  );
-  await userEvent.type(screen.getByLabelText("Bot token"), "fictional-token");
-  await userEvent.type(
-    screen.getByLabelText("Signing secret"),
-    "fictional-secret",
-  );
-  await userEvent.click(
-    screen.getByRole("button", { name: "Save and verify" }),
-  );
+  await user.click(screen.getByRole("button", { name: new RegExp("^Slack") }));
+  await enter(await screen.findByRole("textbox", { name: "Name" }), "Pilot");
+  await enter(screen.getByRole("textbox", { name: "Workspace ID" }), "T1");
+  await enter(screen.getByLabelText("Bot token"), "fictional-token");
+  await enter(screen.getByLabelText("Signing secret"), "fictional-secret");
+  await user.click(screen.getByRole("button", { name: "Save and verify" }));
   await waitFor(() =>
     expect((screen.getByLabelText("Bot token") as HTMLInputElement).value).toBe(
       "",
     ),
   );
-  await userEvent.type(screen.getByLabelText("Bot token"), "different-token");
-  await userEvent.type(
-    screen.getByLabelText("Signing secret"),
-    "fictional-secret",
-  );
-  await userEvent.click(
-    screen.getByRole("button", { name: "Save and verify" }),
-  );
+  await enter(screen.getByLabelText("Bot token"), "different-token");
+  await enter(screen.getByLabelText("Signing secret"), "fictional-secret");
+  await user.click(screen.getByRole("button", { name: "Save and verify" }));
   await screen.findByText(
     "The previous save is unconfirmed. Re-enter the same credentials and retry the unchanged setup to recover its result.",
   );
   expect(state.http.POST).toHaveBeenCalledTimes(1);
   // Re-entering fields in another order still recovers the same command.
-  await userEvent.type(
-    screen.getByLabelText("Signing secret"),
-    "fictional-secret",
-  );
-  await userEvent.type(screen.getByLabelText("Bot token"), "fictional-token");
-  await userEvent.click(
-    screen.getByRole("button", { name: "Save and verify" }),
-  );
+  await enter(screen.getByLabelText("Signing secret"), "fictional-secret");
+  await enter(screen.getByLabelText("Bot token"), "fictional-token");
+  await user.click(screen.getByRole("button", { name: "Save and verify" }));
   await screen.findByText("Event endpoint");
   expect(state.http.POST).toHaveBeenCalledTimes(2);
   expect(state.http.POST.mock.calls[1][1].params.header).toEqual(
