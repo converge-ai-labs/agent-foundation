@@ -378,6 +378,52 @@ async def test_close_waits_for_final_display_before_expiry(any_redis_client: Red
     assert all([0 < await any_redis_client.ttl(key) <= 60 for key in keys])
 
 
+@pytest.mark.parametrize("max_events", [3, 4], ids=["at_limit", "below_limit"])
+async def test_acknowledgement_within_retention_limit_avoids_bulk_reverse_reads(
+    any_redis_client: Redis, max_events: int
+) -> None:
+    from a13n_service.run_stream.redis import _SCRIPT, _keys
+
+    stream = RedisRunStream(any_redis_client, max_events=max_events, closed_ttl_seconds=60)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    last = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
+    events, metadata = _keys(ORGANIZATION_ID, RUN_ID)
+    before = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    rows = await any_redis_client.xrange(events, min=f"({opening.leased_stream_id}")
+    pending_bytes = sum(len(fields[b"body"]) for _, fields in rows)
+    # Enforce a Redis read budget without depending on timings or payload size.
+    stream._script = any_redis_client.register_script(
+        """
+local call = redis.call
+local redis = {call = function(command, ...)
+    local args = {...}
+    if command == 'XREVRANGE' and args[4] == 'COUNT' and tonumber(args[5]) > 1 then
+        error('unexpected bulk reverse read within retention limit')
+    end
+    return call(command, ...)
+end}
+"""
+        + _SCRIPT
+    )
+
+    for _ in range(2):
+        await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=opening.leased_stream_id, finalized=False)
+        page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+        assert page.items == before.items and not page.trimmed
+        assert page.pending_events == 1 and page.pending_bytes == pending_bytes
+        assert await any_redis_client.hget(metadata, "durable_cursor") == opening.leased_stream_id.encode()
+
+    await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
+    for _ in range(2):
+        await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=last, finalized=True)
+        page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+        assert page.items == before.items and page.closed and not page.trimmed
+        assert page.pending_events == page.pending_bytes == 0
+        assert await any_redis_client.hget(metadata, "durable_cursor") == last.encode()
+        assert await any_redis_client.hget(metadata, "pending") is None
+        assert all([0 < await any_redis_client.ttl(key) <= 60 for key in (events, metadata)])
+
+
 async def test_acknowledgement_never_trims_beyond_durable_cursor(any_redis_client: Redis) -> None:
     stream = RedisRunStream(any_redis_client, max_events=1)
     opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)

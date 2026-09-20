@@ -114,13 +114,16 @@ if operation == 'acknowledge_display' then
             if row[2][index] == 'body' then bytes = bytes + #row[2][index + 1] end
         end
     end
-    local retained = redis.call('XREVRANGE', stream, '+', '-', 'COUNT', request.max_events)
-    local cutoff = retained[#retained][1]
-    if compare_ids(cursor, cutoff) < 0 then cutoff = cursor end
-    local removed = redis.call('XREVRANGE', stream, '(' .. cutoff, '-', 'COUNT', 1)
-    if #removed > 0 then
-        redis.call('HSET', metadata, 'trimmed', '1', 'trimmed_through', removed[1][1])
-        redis.call('XTRIM', stream, 'MINID', cutoff)
+    -- Finding the retention boundary loads full event bodies; skip it when no trim is needed.
+    if redis.call('XLEN', stream) > request.max_events then
+        local retained = redis.call('XREVRANGE', stream, '+', '-', 'COUNT', request.max_events)
+        local cutoff = retained[#retained][1]
+        if compare_ids(cursor, cutoff) < 0 then cutoff = cursor end
+        local removed = redis.call('XREVRANGE', stream, '(' .. cutoff, '-', 'COUNT', 1)
+        if #removed > 0 then
+            redis.call('HSET', metadata, 'trimmed', '1', 'trimmed_through', removed[1][1])
+            redis.call('XTRIM', stream, 'MINID', cutoff)
+        end
     end
     redis.call('HSET', metadata, 'durable_cursor', cursor,
         'pending_events', #suffix, 'pending_bytes', bytes, 'length', redis.call('XLEN', stream))
