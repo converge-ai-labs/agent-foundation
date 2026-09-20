@@ -717,15 +717,15 @@ Responses:
 
 Documents.
 
-| Parameter        | Location | Required | Type / schema                | Constraints and default            |
-| ---------------- | -------- | -------- | ---------------------------- | ---------------------------------- |
-| `account_id`     | path     | true     | string                       | —                                  |
-| `scope_id`       | path     | true     | string                       | —                                  |
-| `limit`          | query    | false    | integer                      | minimum=1; maximum=100; default=50 |
-| `cursor`         | query    | false    | string or null               | —                                  |
-| `activity_date`  | query    | false    | string or null               | —                                  |
-| `kind`           | query    | false    | "daily", "long_term" or null | —                                  |
-| `include_shared` | query    | false    | boolean                      | default=true                       |
+| Parameter        | Location | Required | Type / schema                                | Constraints and default            |
+| ---------------- | -------- | -------- | -------------------------------------------- | ---------------------------------- |
+| `account_id`     | path     | true     | string                                       | —                                  |
+| `scope_id`       | path     | true     | string                                       | —                                  |
+| `limit`          | query    | false    | integer                                      | minimum=1; maximum=100; default=50 |
+| `cursor`         | query    | false    | string or null                               | —                                  |
+| `activity_date`  | query    | false    | string or null                               | —                                  |
+| `kind`           | query    | false    | "semantic", "procedural", "episodic" or null | —                                  |
+| `include_shared` | query    | false    | boolean                                      | default=true                       |
 
 Responses:
 

@@ -49,12 +49,14 @@ class _EntryToolset(PrefixedToolset[AgentContext]):
         self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
     ) -> Any:
         arguments = dict(tool_args)
-        if "reference" in arguments:
-            reference = arguments["reference"]
+        for field in ("reference", "correction_of"):
+            if field not in arguments or (field == "correction_of" and arguments[field] is None):
+                continue
+            reference = arguments[field]
             prefix = f"memory://{self.prefix}/"
             if not isinstance(reference, str) or not reference.startswith(prefix):
                 return tool_failure("memory_entry_invalid", "Use a document reference returned by this memory entry.")
-            arguments["reference"] = "memory://" + reference.removeprefix(prefix)
+            arguments[field] = "memory://" + reference.removeprefix(prefix)
         result = await super().call_tool(name, arguments, ctx, tool)
         if isinstance(result, dict):
             result = self._references(result)

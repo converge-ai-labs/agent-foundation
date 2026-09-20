@@ -1493,3 +1493,51 @@ async def test_concurrent_handoff_summaries_accept_one_state_transition() -> Non
     restored_text = str(calls[1])
     assert summaries[0].summary in _user_text(calls[1])
     assert ("first-summary-only" in restored_text) != ("second-summary-only" in restored_text)
+
+
+async def test_compaction_preserves_the_effective_request_model() -> None:
+    from dataclasses import replace
+
+    from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+
+    calls: list[tuple[str, bool]] = []
+
+    async def original(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        calls.append(("original", _COMPACTION_PROMPT in _user_text(messages)))
+        yield "wrong model"
+
+    async def selected(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        compacting = _COMPACTION_PROMPT in _user_text(messages)
+        calls.append(("selected", compacting))
+        yield "summary" if compacting else "done"
+
+    selected_model = FunctionModel(stream_function=selected)
+
+    class SelectModel(AbstractCapability):
+        outer_run_id: str | None = None
+
+        def get_ordering(self) -> CapabilityOrdering:
+            return CapabilityOrdering(wraps=(CompactionCapability,))
+
+        async def before_model_request(self, ctx, request_context):
+            if self.outer_run_id is None:
+                self.outer_run_id = ctx.run_id
+            return (
+                replace(request_context, model=selected_model) if ctx.run_id == self.outer_run_id else request_context
+            )
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart("prior task")]),
+            ModelResponse(parts=[TextPart("prior response")], usage=RequestUsage(input_tokens=2100, output_tokens=100)),
+        )
+    )
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=original),
+        capabilities=(SelectModel(), CompactionCapability(CompactionPolicy(trigger_tokens=2000))),
+    )
+    result = await executable.run("continue", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert calls == [("selected", True), ("selected", False)]

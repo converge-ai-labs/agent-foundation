@@ -270,3 +270,43 @@ async def test_create_releases_the_acquired_runtime_when_construction_fails() ->
     with pytest.raises(TypeError, match="construction failed"):
         await definition.create({})
     assert created[0].closed == 1
+
+
+@pytest.mark.parametrize("cancel_cleanup", [False, True])
+async def test_confirmed_destroy_clears_state_before_runtime_cleanup_failure(cancel_cleanup: bool) -> None:
+    import asyncio
+
+    error = asyncio.CancelledError() if cancel_cleanup else RuntimeError("runtime close failed")
+
+    class FailingRuntime(_Runtime):
+        async def close(self) -> None:
+            await super().close()
+            raise error
+
+    state = EnvironmentState(provider_key="test_provider", state_version="1", state={"target_id": "target-1"})
+    environment = _Environment(state)
+    runtime = FailingRuntime()
+    environment.adopt_runtime(runtime)
+    with pytest.raises(type(error)):
+        await environment.destroy()
+    assert environment.events == ["destroy"]
+    assert environment.dump_state() is None
+    assert environment._lifecycle == "destroyed"
+    assert runtime.closed == 1
+    await environment.close()
+    assert runtime.closed == 1
+
+
+async def test_unconfirmed_destroy_preserves_state_after_runtime_cleanup() -> None:
+    class FailingDestroy(_Environment):
+        async def _destroy(self) -> None:
+            raise RuntimeError("destroy outcome unknown")
+
+    state = EnvironmentState(provider_key="test_provider", state_version="1", state={"target_id": "target-1"})
+    environment = FailingDestroy(state)
+    runtime = _Runtime()
+    environment.adopt_runtime(runtime)
+    with pytest.raises(RuntimeError, match="destroy outcome unknown"):
+        await environment.destroy()
+    assert environment.dump_state() == state
+    assert runtime.closed == 1

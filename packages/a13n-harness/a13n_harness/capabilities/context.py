@@ -851,6 +851,7 @@ async def _compact_with_same_agent(
     with disabled_tool_execution():
         result = await compact_agent.run(
             _COMPACTION_PROMPT,
+            model=request_context.model,
             message_history=deepcopy(request_context.messages),
             deps=ctx.deps,
             # This is another model request in the same logical Harness Run,

@@ -1033,3 +1033,33 @@ async def test_event_consumer_stop_wakes_a_blocked_environment_change_producer()
         await asyncio.wait_for(blocked, timeout=0.2)
     assert stopped.value.code == "event_consumer_stopped"
     emitter.close()
+
+
+async def test_binding_failure_during_cancellation_preserves_empty_history_state() -> None:
+    from pydantic_ai import RunContext
+    from pydantic_ai.capabilities import AbstractCapability
+
+    class SavedValue(BaseModel):
+        value: int
+
+    class FailingBinding(AbstractCapability[AgentContext]):
+        async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
+            await ctx.deps.state.write("test.saved", SavedValue(value=7), version="1")
+            stream.cancel()
+            raise RuntimeError("binding failed during cancellation")
+
+    calls: list[tuple[ModelMessage, ...]] = []
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=_turn_model(calls), capabilities=(FailingBinding(),)
+    )
+    stream = executable.stream("start")
+    async with stream:
+        items = [item async for item in stream]
+    terminal = items[-1]
+    assert isinstance(terminal, HarnessRunResultEvent)
+    assert terminal.result.status == "cancelled"
+    assert terminal.result.state is not None
+    assert terminal.result.state.message_history == ()
+    assert terminal.result.state.agent_context_state.entries["test.saved"].data == {"value": 7}
+    assert await stream.export_state() == terminal.result.state
+    assert calls == []

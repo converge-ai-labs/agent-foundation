@@ -114,8 +114,8 @@ class ScopedFileAccess:
             return await self._files._copy_resolved(
                 source,
                 destination,
-                source_selected=source_selection.resolved_path,
-                destination_selected=destination_selection.resolved_path,
+                source_selected=source_selection,
+                destination_selected=destination_selection,
                 replace=replace,
             )
         same_mount = (

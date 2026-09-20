@@ -77,7 +77,7 @@ class DocumentRecord(Base):
         UniqueConstraint("scope_id", "request_key", name="uq_bot_memory_document_request"),
         UniqueConstraint("scope_id", "native_id", name="uq_bot_memory_document_native"),
         CheckConstraint("state IN ('pending', 'active', 'unconfirmed', 'deleting', 'deleted')", name="state_valid"),
-        CheckConstraint("kind IN ('daily', 'long_term')", name="kind_valid"),
+        CheckConstraint("kind IN ('semantic', 'procedural', 'episodic', 'daily', 'long_term')", name="kind_valid"),
         CheckConstraint(
             "state != 'active' OR (native_id IS NOT NULL AND saved_at IS NOT NULL)", name="active_confirmed"
         ),
@@ -115,7 +115,8 @@ class DocumentRecord(Base):
                 "path": f"{self.id}.md",
                 "title": self.title,
                 "description": self.description,
-                "kind": self.kind,
+                "kind": None if self.kind in {"daily", "long_term"} else self.kind,
+                "legacy_kind": self.kind if self.kind in {"daily", "long_term"} else None,
                 "activity_date": self.activity_date,
                 "timezone": self.timezone,
                 "saved_at": assume_utc(self.saved_at) if self.saved_at else None,

@@ -6690,10 +6690,9 @@ export interface components {
       description?: string;
       /**
        * Kind
-       * @default long_term
        * @enum {string}
        */
-      kind?: "daily" | "long_term";
+      kind: "semantic" | "procedural" | "episodic";
       /** Text */
       text: string;
       /** Title */
@@ -7102,11 +7101,10 @@ export interface components {
       description: string;
       /** Id */
       id: string;
-      /**
-       * Kind
-       * @enum {string}
-       */
-      kind: "daily" | "long_term";
+      /** Kind */
+      kind: ("semantic" | "procedural" | "episodic") | null;
+      /** Legacy Kind */
+      legacy_kind?: ("daily" | "long_term") | null;
       /** Owner Name */
       owner_name?: string | null;
       /** Path */
@@ -7167,11 +7165,10 @@ export interface components {
       description: string;
       /** Id */
       id: string;
-      /**
-       * Kind
-       * @enum {string}
-       */
-      kind: "daily" | "long_term";
+      /** Kind */
+      kind: ("semantic" | "procedural" | "episodic") | null;
+      /** Legacy Kind */
+      legacy_kind?: ("daily" | "long_term") | null;
       /** Path */
       path: string;
       /** Publication Source Id */
@@ -13268,7 +13265,7 @@ export interface operations {
         limit?: number;
         cursor?: string | null;
         activity_date?: string | null;
-        kind?: ("daily" | "long_term") | null;
+        kind?: ("semantic" | "procedural" | "episodic") | null;
         include_shared?: boolean;
       };
       header?: never;

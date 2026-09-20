@@ -7,6 +7,7 @@ from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from dataclasses import dataclass
 from typing import Any
 
+from a13n_harness.environment.providers import FileScopeSelection
 from a13n_harness.providers.environment.files import (
     FileCommitOperator,
     FileCommitRequest,
@@ -33,9 +34,9 @@ class _PreparedFile:
     virtualize_path: Callable[[str], str]
 
 
-ResolvePath = Callable[[str], EnvironmentPath]
+ResolvePath = Callable[[str], FileScopeSelection]
 PrepareFile = Callable[
-    [EnvironmentPath, EnvironmentAction],
+    [FileScopeSelection, EnvironmentAction],
     AbstractAsyncContextManager[_PreparedFile],
 ]
 
@@ -50,10 +51,20 @@ class VirtualFileOperator:
 
         def routed(path: str) -> str:
             resolved = self._resolve(path)
-            if resolved.mount_id != selected.mount_id:
+            if (
+                resolved.resolved_path.mount_id != selected.resolved_path.mount_id
+                or resolved.observed_generation != selected.observed_generation
+            ):
                 raise EnvironmentError("Commit paths must share one mount", code="environment_denied")
-            return resolved.path
+            return resolved.resolved_path.path
 
+        routed_request = FileCommitRequest(
+            root=selected.resolved_path.path,
+            conditions=tuple(item.model_copy(update={"path": routed(item.path)}) for item in request.conditions),
+            directories=tuple(routed(path) for path in request.directories),
+            writes=tuple(item.model_copy(update={"path": routed(item.path)}) for item in request.writes),
+            removals=tuple(routed(path) for path in request.removals),
+        )
         async with AsyncExitStack() as stack:
             prepared = None
             for action in (
@@ -66,17 +77,7 @@ class VirtualFileOperator:
             assert prepared is not None
             if not isinstance(prepared.backend, FileCommitOperator):
                 raise EnvironmentError("Conditional publication is unavailable", code="environment_unsupported")
-            result = await prepared.backend.commit(
-                FileCommitRequest(
-                    root=selected.path,
-                    conditions=tuple(
-                        item.model_copy(update={"path": routed(item.path)}) for item in request.conditions
-                    ),
-                    directories=tuple(routed(path) for path in request.directories),
-                    writes=tuple(item.model_copy(update={"path": routed(item.path)}) for item in request.writes),
-                    removals=tuple(routed(path) for path in request.removals),
-                )
-            )
+            result = await prepared.backend.commit(routed_request)
             prepared.validate_result(result)
             return result.model_copy(update={"path": request.root})
 
@@ -250,8 +251,8 @@ class VirtualFileOperator:
         source: str,
         destination: str,
         *,
-        source_selected: EnvironmentPath,
-        destination_selected: EnvironmentPath,
+        source_selected: FileScopeSelection,
+        destination_selected: FileScopeSelection,
         replace: bool,
     ) -> FileCopyResult:
         """Copy through exact preselected routes using copy-specific actions."""

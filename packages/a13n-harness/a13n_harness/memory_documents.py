@@ -5,6 +5,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Literal
 
+from a13n_harness.providers.memory.documents import DocumentKind
+
 
 @dataclass(frozen=True, slots=True)
 class MemoryDocumentReference:
@@ -65,7 +67,7 @@ class MemoryDocumentStore(ABC):
         *,
         title: str,
         description: str,
-        kind: Literal["daily", "long_term"],
+        kind: DocumentKind,
         correction_of: str | None,
         request_key: str,
     ) -> MemoryDocumentReference: ...

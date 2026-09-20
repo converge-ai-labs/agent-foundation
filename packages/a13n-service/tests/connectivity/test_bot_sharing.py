@@ -78,14 +78,19 @@ async def test_visibility_includes_history_new_documents_and_future_groups_witho
     source = await group(lab, target_service, connectivity_sessions, "product")
     receiver = await group(lab, target_service, connectivity_sessions, "support")
     old = await create(
-        lab.service, actor(), ACCOUNT_ID, source.id, CreateDocument(text="Historical decision", title="Old"), "old"
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        source.id,
+        CreateDocument(kind="semantic", text="Historical decision", title="Old"),
+        "old",
     )
     private = await create(
         lab.service,
         actor(),
         ACCOUNT_ID,
         receiver.id,
-        CreateDocument(text="Private support", title="Private"),
+        CreateDocument(kind="semantic", text="Private support", title="Private"),
         "private",
     )
     assert source.visibility == "group"
@@ -96,7 +101,7 @@ async def test_visibility_includes_history_new_documents_and_future_groups_witho
         actor(),
         ACCOUNT_ID,
         source.id,
-        CreateDocument(text="Daily result", title="Daily", kind="daily"),
+        CreateDocument(text="Daily result", title="Daily", kind="episodic"),
         "new",
     )
     later = await group(lab, target_service, connectivity_sessions, "later")
@@ -146,7 +151,12 @@ async def test_ineligible_groups_cannot_share(bot_memory, target_service, connec
     receiver = await group(lab, target_service, connectivity_sessions, "support")
     source = await visibility(lab, source, "installation")
     doc = await create(
-        lab.service, actor(), ACCOUNT_ID, source.id, CreateDocument(text="Decision", title="Decision"), "seed"
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        source.id,
+        CreateDocument(kind="semantic", text="Decision", title="Decision"),
+        "seed",
     )
     assert doc.id in (await lab.service.index(actor(), ACCOUNT_ID, receiver.id)).text
     async with transaction(connectivity_sessions) as session:
@@ -202,7 +212,12 @@ async def test_visibility_never_crosses_installation_or_storage_boundaries(
     receiver = await group(lab, target_service, connectivity_sessions, "support")
     await visibility(lab, source, "installation")
     doc = await create(
-        lab.service, actor(), ACCOUNT_ID, source.id, CreateDocument(text="Decision", title="Decision"), "seed"
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        source.id,
+        CreateDocument(kind="semantic", text="Decision", title="Decision"),
+        "seed",
     )
     async with transaction(connectivity_sessions) as session:
         row = await session.get(ScopeRecord, receiver.id)
@@ -232,10 +247,20 @@ async def test_legacy_publication_is_never_exposed_and_source_delete_cleans_it_u
     source = await group(lab, target_service, connectivity_sessions, "product")
     receiver = await group(lab, target_service, connectivity_sessions, "support")
     doc = await create(
-        lab.service, actor(), ACCOUNT_ID, source.id, CreateDocument(text="Original", title="Original"), "original"
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        source.id,
+        CreateDocument(kind="semantic", text="Original", title="Original"),
+        "original",
     )
     legacy = await create(
-        lab.service, actor(), ACCOUNT_ID, source.id, CreateDocument(text="Legacy copy", title="Legacy"), "legacy"
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        source.id,
+        CreateDocument(kind="semantic", text="Legacy copy", title="Legacy"),
+        "legacy",
     )
     async with transaction(connectivity_sessions) as session:
         copy = await session.get(DocumentRecord, legacy.id)

@@ -1,8 +1,9 @@
 """Account-owned Bot memory APIs; every use case reauthorizes its scope."""
 
 from datetime import date
-from typing import Annotated, Literal
+from typing import Annotated
 
+from a13n_harness.providers.memory.documents import DocumentKind
 from fastapi import APIRouter, Header, Query, Request, Response
 
 from a13n_service.memory.router import Actor, _memory
@@ -67,7 +68,7 @@ async def documents(
     limit: Limit = 50,
     cursor: Cursor = None,
     activity_date: date | None = None,
-    kind: Literal["daily", "long_term"] | None = None,
+    kind: DocumentKind | None = None,
     include_shared: bool = True,
 ) -> DocumentCollection:
     return await _service(request).list(

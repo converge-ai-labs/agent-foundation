@@ -2404,7 +2404,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         self._pydantic_events = None
                         self._latest_messages = messages
                         if self._cancel_requested:
-                            state = await exchange.context.export_state(messages) if messages else None
+                            state = await exchange.context.export_state(messages)
                             yield self._record_inner_candidate(
                                 HarnessRunResult(
                                     thread_id=self.thread_id,

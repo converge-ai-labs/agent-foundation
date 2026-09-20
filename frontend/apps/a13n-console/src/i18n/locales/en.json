@@ -3256,5 +3256,7 @@
   "No environments yet. Use the current run environment.": "No environments yet. Use the current run environment.",
   "Let the agent search, read, and modify memory documents. Turning this off keeps the memory index available; automatic organization is controlled separately.": "Let the agent search, read, and modify memory documents. Turning this off keeps the memory index available; automatic organization is controlled separately.",
   "Let the agent search and manage saved memories. Automatic recall is controlled separately.": "Let the agent search and manage saved memories. Automatic recall is controlled separately.",
-  "When enabled, memory loading or recall failures stop the run. When disabled, the run continues without the unavailable memory. Having no saved memories is not an error.": "When enabled, memory loading or recall failures stop the run. When disabled, the run continues without the unavailable memory. Having no saved memories is not an error."
+  "When enabled, memory loading or recall failures stop the run. When disabled, the run continues without the unavailable memory. Having no saved memories is not an error.": "When enabled, memory loading or recall failures stop the run. When disabled, the run continues without the unavailable memory. Having no saved memories is not an error.",
+  "Procedures": "Procedures",
+  "Unclassified": "Unclassified"
 }

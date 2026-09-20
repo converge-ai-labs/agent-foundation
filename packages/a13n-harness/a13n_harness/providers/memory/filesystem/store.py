@@ -37,6 +37,7 @@ from ..documents import (
     DocumentChange,
     DocumentHeading,
     DocumentInput,
+    DocumentKind,
     DocumentMutation,
     DocumentRead,
     MemoryDocumentError,
@@ -513,6 +514,9 @@ class FilesystemMemoryStore(MemoryDocumentStore):
                     if commit.request_digest != request or commit.payload_digest != payload:
                         raise MemoryDocumentError("memory_conflict")
                 return await self._result(tx.files, await self._document(tx.files, commit.after), commit.id)
+            if value.correction_of is not None:
+                source, _ = await self._head(tx.files, value.correction_of)
+                await self._document(tx.files, source)
             now = datetime.now(UTC)
             document = Document(
                 **value.model_dump(),
@@ -860,12 +864,24 @@ class FilesystemMemoryStore(MemoryDocumentStore):
         *,
         title: str,
         description: str,
-        kind: Literal["daily", "long_term"],
+        kind: DocumentKind,
         correction_of: str | None,
         request_key: str,
     ) -> MemoryDocumentReference:
-        # Legacy labels are not inferred into semantic types.
-        raise MemoryDocumentError("memory_document_kind_required")
+        slug = re.sub(r"[^\w-]+", "-", title, flags=re.UNICODE).strip("-")[:80] or "document"
+        result = await self.create_document(
+            DocumentInput(
+                kind=kind,
+                path=f"{kind}/{slug}.md",
+                title=title,
+                description=description,
+                text=text,
+                correction_of=correction_of,
+            ),
+            request_key=request_key,
+        )
+        document = result.document
+        return MemoryDocumentReference(document.id, document.title, document.description)
 
     async def delete(self, document_id: str) -> None:
         await self.authorize(True)

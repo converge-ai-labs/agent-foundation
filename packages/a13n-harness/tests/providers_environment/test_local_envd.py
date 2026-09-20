@@ -282,3 +282,18 @@ async def test_cancelled_runtime_validation_stops_its_process_group(tmp_path):
     async with asyncio.timeout(2):
         while status.exists() and status.read_text().split()[2] != "Z":
             await asyncio.sleep(0.01)
+
+
+@pytest.mark.parametrize("directory", [None, "/project"])
+async def test_lazy_descriptor_preserves_recipe_working_directory(tmp_path, directory):
+    from a13n_harness.environment.sources import EnvironmentMount
+
+    owner = runtime(tmp_path)
+    recipe = LocalEnvdEnvironmentConfiguration(working_directory=directory)
+    adapter = LocalEnvdEnvironment(recipe, owner, environment_id="local-test")
+    assert LOCAL_ENVD.describe_environment(recipe).working_directory == (directory or "/")
+    assert adapter.descriptor.working_directory == (directory or "/")
+    assert EnvironmentMount(adapter).working_directory == (directory or "/")
+    assert EnvironmentMount(adapter, working_directory="/override").working_directory == "/override"
+    await adapter.close()
+    await owner.close()
