@@ -7,6 +7,15 @@ export interface PresentedItem {
   parentId: string | null;
   firstCursor: string;
   lastCursor: string;
+  /**
+   * `occurred_at` of the first observed event for this Item, and of the event
+   * that gave it a terminal state. Both are null for an Item read from a
+   * retained snapshot, which carries stream cursors but no timestamps, and
+   * `endedAt` stays null when an Item is interrupted without a terminal
+   * observation.
+   */
+  startedAt: string | null;
+  endedAt: string | null;
   text: string;
   role: string;
   toolName: string;
@@ -16,6 +25,8 @@ export interface PresentedItem {
   protectedReasoning: boolean;
   detail?: unknown;
   display?: boolean;
+  /** `a13n.steering-source` presentation provenance for enqueued user content. */
+  steeringSource?: string;
 }
 export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -35,7 +46,12 @@ export function compareCursors(a: string, b: string): number {
           ? 1
           : 0;
 }
-function emptyItem(id: string, kind: string, cursor: string): PresentedItem {
+function emptyItem(
+  id: string,
+  kind: string,
+  cursor: string,
+  occurredAt: string | null = null,
+): PresentedItem {
   return {
     id,
     kind,
@@ -43,6 +59,8 @@ function emptyItem(id: string, kind: string, cursor: string): PresentedItem {
     parentId: null,
     firstCursor: cursor,
     lastCursor: cursor,
+    startedAt: occurredAt,
+    endedAt: null,
     text: "",
     role: "assistant",
     toolName: "",
@@ -54,16 +72,22 @@ function applyPayload(
   item: PresentedItem,
   type: string,
   payload: Record<string, unknown>,
+  occurredAt: string,
 ): PresentedItem {
   const next = { ...item };
   if (typeof payload.item_kind === "string") next.kind = payload.item_kind;
   if (typeof payload.parent_item_id === "string")
     next.parentId = payload.parent_item_id;
-  if (typeof payload.item_state === "string") next.state = payload.item_state;
+  if (typeof payload.item_state === "string") {
+    next.state = payload.item_state;
+    if (payload.item_state !== "in_progress") next.endedAt = occurredAt;
+  }
   if (typeof payload.role === "string") next.role = payload.role;
   if (isObject(payload.metadata)) {
     if (typeof payload.metadata.display === "boolean")
       next.display = payload.metadata.display;
+    const source = payload.metadata["a13n.steering-source"];
+    if (typeof source === "string") next.steeringSource = source;
   }
   if (
     ["agui.text_message_content", "agui.reasoning_message_content"].includes(
@@ -117,9 +141,11 @@ export function applyRunEvent(
         event.item_id,
         String(event.payload.item_kind ?? "unknown"),
         cursor,
+        event.occurred_at,
       ),
     event.event_type,
     event.payload,
+    event.occurred_at,
   );
   item.lastCursor = cursor;
   const result = new Map(items);
@@ -142,11 +168,12 @@ export function presentRetainedItem(
     presented.result = content.result;
     presented.failure = content.failure ?? content.interruption;
     presented.protectedReasoning = "encrypted_value" in content;
-    if (
-      isObject(content.metadata) &&
-      typeof content.metadata.display === "boolean"
-    )
-      presented.display = content.metadata.display;
+    if (isObject(content.metadata)) {
+      if (typeof content.metadata.display === "boolean")
+        presented.display = content.metadata.display;
+      const source = content.metadata["a13n.steering-source"];
+      if (typeof source === "string") presented.steeringSource = source;
+    }
   } else presented.detail = content;
   return {
     ...presented,
@@ -166,7 +193,12 @@ export function mergeRetainedItems(
       !previous ||
       compareCursors(item.last_stream_id, previous.lastCursor) >= 0
     )
-      merged.set(item.id, presentRetainedItem(item));
+      // A retained snapshot has no timestamps; keep any already observed.
+      merged.set(item.id, {
+        ...presentRetainedItem(item),
+        startedAt: previous?.startedAt ?? null,
+        endedAt: previous?.endedAt ?? null,
+      });
   }
   return merged;
 }

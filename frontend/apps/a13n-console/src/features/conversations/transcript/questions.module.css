@@ -1,74 +1,108 @@
 .questions {
   display: grid;
-  gap: 1.25rem;
+  gap: 18px;
+  min-width: 0;
 }
 .question {
   min-width: 0;
   display: grid;
-  gap: 0.75rem;
+  gap: 8px;
   border: 0;
   padding: 0;
   margin: 0;
 }
 .question legend {
   display: grid;
-  gap: 0.5rem;
+  gap: 2px;
   padding: 0;
-  margin-bottom: 0.5rem;
-  font-size: 0.9375rem;
-  font-weight: 500;
-  line-height: 1.6;
+  margin-bottom: 2px;
 }
 .header {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
+.prompt {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.5;
 }
 .hint {
-  font-size: 0.8125rem;
-  color: var(--muted-foreground);
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
 }
 .options {
   display: grid;
-  gap: 0.5rem;
+  gap: 4px;
 }
 .option {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  border: 1px solid var(--border);
-  background: var(--background);
-  border-radius: 10px;
-  padding: 0.875rem 1rem;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
   cursor: pointer;
+  transition: background 120ms ease;
+}
+.option:hover {
+  background: var(--a13n-hover);
 }
 .option:has(input:checked) {
-  border-color: var(--foreground);
-  background: var(--accent);
+  background: var(--a13n-selected);
 }
 .option:focus-within {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: -2px;
 }
+/* Drawn rather than native, so the resting state stays quiet in both themes. */
 .option input {
-  flex-shrink: 0;
-  margin-top: 0.25rem;
-  accent-color: var(--foreground);
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 3px 0 0;
+  border: 1.5px solid var(--a13n-input-border);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.option input[type="checkbox"] {
+  border-radius: 4px;
+}
+.option input:checked {
+  border-color: var(--a13n-text);
+  background: var(--a13n-text);
+  box-shadow: inset 0 0 0 2.5px var(--a13n-elevated);
+}
+.option input:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
 }
 .option > span {
   min-width: 0;
   display: grid;
-  gap: 0.25rem;
+  gap: 1px;
   overflow-wrap: anywhere;
 }
 .label {
-  font-size: 0.875rem;
+  font-size: 13px;
   font-weight: 500;
 }
 .description {
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  color: var(--muted-foreground);
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
-.questions > button {
+.custom {
+  margin-top: 2px;
+}
+.skip {
   justify-self: start;
+}
+@media (prefers-reduced-motion: reduce) {
+  .option {
+    transition: none;
+  }
 }

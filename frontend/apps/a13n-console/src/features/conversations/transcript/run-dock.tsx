@@ -1,5 +1,9 @@
 import { Button } from "a13n-ui";
-import { SquareIcon } from "@phosphor-icons/react";
+import {
+  GitBranchIcon,
+  LockSimpleIcon,
+  SquareIcon,
+} from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
@@ -80,7 +84,8 @@ export function RunDock({
     can("run.continue") &&
     can("agent.invoke") &&
     headRun.data?.status === "completed";
-  const stop = active && can("run.interrupt") && (
+  const canStop = active && can("run.interrupt");
+  const stop = canStop && (
     <Button
       size="icon-sm"
       variant="ghost"
@@ -140,10 +145,12 @@ export function RunDock({
       <div className={styles.dock}>
         {above}
         {!current ? (
-          <p className={styles.notice}>
-            {t("You are viewing a historical run.")}{" "}
+          <p className={styles.dockNotice}>
+            <GitBranchIcon size={13} aria-hidden="true" />
+            {t("You are viewing a historical run.")}
             {thread.current_run_id && (
               <Link
+                className={styles.dockLink}
                 to={runPath(basePath, {
                   session_id: thread.session_id,
                   thread_id: thread.id,
@@ -156,17 +163,27 @@ export function RunDock({
           </p>
         ) : (
           <>
+            {debug && !active && !waiting && !thread.head_run_id && (
+              <p className={styles.dockNotice}>
+                {t(
+                  "There is no completed state to continue. Retry this run or start a new debug session.",
+                )}
+              </p>
+            )}
             {debug && !waiting && (
               <Composer
                 agentName={agentName}
                 label={t(active ? "Send guidance" : "Run next step")}
-                placeholder={t(
+                placeholder={
                   active
-                    ? "Add guidance to the current run…"
-                    : "Enter the next test input…",
-                )}
+                    ? t("Send guidance while it works")
+                    : agentName
+                      ? t("Message {{agent}}…", { agent: agentName })
+                      : t("Message your agent…")
+                }
                 disabled={active ? !can("run.steer") : !canContinue}
-                leading={stop}
+                stop={canStop ? () => interrupt.mutate() : undefined}
+                stopping={interrupt.isPending}
                 submit={async (input, key) => {
                   try {
                     if (active) {
@@ -210,27 +227,21 @@ export function RunDock({
                 }}
               />
             )}
-            {debug && !active && !waiting && !thread.head_run_id && (
-              <p className={styles.notice}>
-                {t(
-                  "There is no completed state to continue. Retry this run or start a new debug session.",
-                )}
-              </p>
-            )}
             {!interactive && (
-              <div className={styles.readOnly}>
-                <p className={styles.notice}>
+              <div className={styles.dockNotice}>
+                <LockSimpleIcon size={13} aria-hidden="true" />
+                <span>
                   {t(
                     "This session is controlled by its originating application. Use New session to start your own debug session.",
                   )}
-                </p>
+                </span>
                 {stop}
               </div>
             )}
           </>
         )}
         {steer && (
-          <p className={styles.notice} role="status">
+          <p className={styles.dockReceipt} role="status">
             {t(
               steerStatus.data?.status === "consumed"
                 ? "Guidance applied to the run."

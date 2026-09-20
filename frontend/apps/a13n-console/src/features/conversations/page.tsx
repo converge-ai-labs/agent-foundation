@@ -1,16 +1,7 @@
-import {
-  Button,
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuTrigger,
-  SearchPicker,
-  StatusPill,
-} from "a13n-ui";
+import { SearchPicker } from "a13n-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useState } from "react";
 import {
-  Link,
   Navigate,
   Outlet,
   useLocation,
@@ -18,33 +9,22 @@ import {
   useParams,
   useSearchParams,
 } from "react-router";
-import {
-  ArrowSquareOutIcon,
-  CaretLeftIcon,
-  ChatIcon,
-  DotsThreeOutlineVerticalIcon,
-  InfoIcon,
-  TreeStructureIcon,
-} from "@phosphor-icons/react";
+import { ChatIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, commandHeaders, data } from "../../shared/api";
 import { Empty } from "../../shared/collection";
-import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
-import { CopyButton, IconTile } from "../../shared/identity";
+import { ErrorNotice, Loading } from "../../shared/feedback";
+import { IconTile } from "../../shared/identity";
 import { useIdempotency } from "../../shared/idempotency";
 import { AgentAvatar } from "../agents/avatar";
-import { useAgent } from "../agents/queries";
-import { memoriesPath } from "../memory/api";
-import { useMemoryProviders } from "../memory/availability";
 import { conversationQueries, invalidateConversation, runPath } from "./api";
 import { Composer, RunOptions, useRunOptions } from "./composer";
-import { inputText } from "./input";
 import { SessionList } from "./list";
 import { useConversationNotifications } from "./notifications";
-import { RunInspector, SessionMap } from "./panels";
-import { useRun } from "./queries";
+import { SessionHeader } from "./session-header";
+import { RunCollapseProvider } from "./transcript/debug/collapse";
 import { ThreadQueue } from "./transcript/queue";
 import styles from "./conversations.module.css";
 
@@ -168,141 +148,21 @@ export function NewConversation() {
   );
 }
 
-const PANEL_WIDTH_KEY = "a13n-session-panel-width";
-
 export function SessionLayout() {
   const { t } = useTranslation(),
-    { sessionId = "", threadId, runId } = useParams(),
-    { workspace, basePath, can } = useWorkspace(),
+    { sessionId = "", threadId } = useParams(),
+    { workspace } = useWorkspace(),
     client = useClient(),
     queries = conversationQueries(client, workspace.id);
   const threads = useQuery(queries.threads(sessionId));
-  const { visible: memoryVisible } = useMemoryProviders();
-  const [mapOpen, setMapOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [mapTrigger, setMapTrigger] = useState<HTMLButtonElement | null>(null);
-  const [inspectorTrigger, setInspectorTrigger] =
-    useState<HTMLButtonElement | null>(null);
-  const [panelWidth, setPanelWidth] = useState(() => {
-    const stored = Number(localStorage.getItem(PANEL_WIDTH_KEY));
-    return stored >= 360 ? Math.min(stored, 760) : 400;
-  });
-  const whichPanel: "inspector" | "map" | null =
-    inspectorOpen && runId ? "inspector" : mapOpen ? "map" : null;
-  const [renderedPanel, setRenderedPanel] = useState<
-    "inspector" | "map" | null
-  >(null);
-  useEffect(() => {
-    if (whichPanel) {
-      setRenderedPanel(whichPanel);
-      return;
-    }
-    if (!renderedPanel) return;
-    const timer = setTimeout(() => setRenderedPanel(null), 200);
-    return () => clearTimeout(timer);
-  }, [whichPanel, renderedPanel]);
   const first = threads.data?.[0];
-  const debug = first?.session_purpose === "debug";
-  function resize(width: number) {
-    setPanelWidth(width);
-    localStorage.setItem(PANEL_WIDTH_KEY, String(width));
-  }
+  // The disclosure level lives in the search string; redirects keep it.
+  const { search } = useLocation();
   return (
-    <div
-      className={styles.sessionDetail}
-      data-panel-open={whichPanel !== null || undefined}
-      style={{ "--panel-width": `${panelWidth}px` } as CSSProperties}
-    >
-      <div className={styles.sessionMain}>
-        <header className={styles.sessionHeader}>
-          <Link className={styles.back} to={`${basePath}/sessions`}>
-            <CaretLeftIcon size={13} aria-hidden="true" />
-            {t("Sessions")}
-          </Link>
-          <SessionIdentity debug={debug} />
-          <div className={styles.sessionControls}>
-            <Button
-              ref={setMapTrigger}
-              variant="ghost"
-              size="sm"
-              aria-pressed={mapOpen}
-              disabled={threads.isPending || (!threads.data && threads.isError)}
-              onClick={() => {
-                setMapOpen((value) => !value);
-                setInspectorOpen(false);
-              }}
-            >
-              <TreeStructureIcon size={15} aria-hidden="true" />
-              {t("Map")}
-            </Button>
-            <Button
-              ref={setInspectorTrigger}
-              variant="ghost"
-              size="sm"
-              aria-pressed={inspectorOpen && !!runId}
-              disabled={!runId}
-              onClick={() => {
-                setInspectorOpen((value) => !value);
-                setMapOpen(false);
-              }}
-            >
-              <InfoIcon size={15} aria-hidden="true" />
-              {t("Details")}
-            </Button>
-            <CopyButton
-              value={sessionId}
-              iconOnly
-              copyLabel={t("Copy session ID")}
-            />
-            <Menu>
-              <MenuTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    type="button"
-                    aria-label={t("Session actions")}
-                    title={t("Session actions")}
-                  />
-                }
-              >
-                <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
-              </MenuTrigger>
-              <MenuPopup align="end">
-                {memoryVisible &&
-                  threadId &&
-                  threads.data?.some(
-                    (thread) =>
-                      thread.id === threadId && thread.session_id === sessionId,
-                  ) && (
-                    <MenuItem
-                      render={
-                        <a
-                          href={memoriesPath(basePath, {
-                            scope: "thread",
-                            subject_id: threadId,
-                          })}
-                        />
-                      }
-                    >
-                      <ArrowSquareOutIcon size={14} aria-hidden="true" />
-                      {t("Thread memories")}
-                    </MenuItem>
-                  )}
-                {can("trace.read") && (
-                  <MenuItem
-                    render={
-                      <Link to={`${basePath}/traces?session_id=${sessionId}`} />
-                    }
-                  >
-                    <ArrowSquareOutIcon size={14} aria-hidden="true" />
-                    {t("Open in traces")}
-                  </MenuItem>
-                )}
-              </MenuPopup>
-            </Menu>
-          </div>
-        </header>
+    // The header and the run sections share one owner for what is collapsed.
+    <RunCollapseProvider>
+      <div className={styles.sessionDetail}>
+        <SessionHeader threads={threads.data ?? []} />
         <ErrorNotice
           error={threads.error}
           retry={() => void threads.refetch()}
@@ -314,7 +174,7 @@ export function SessionLayout() {
           {threadId ? (
             <Outlet />
           ) : first ? (
-            <Navigate to={`threads/${first.id}`} replace />
+            <Navigate to={`threads/${first.id}${search}`} replace />
           ) : threads.isPending ? (
             <Loading variant="list" rows={3} />
           ) : (
@@ -327,72 +187,7 @@ export function SessionLayout() {
           )}
         </div>
       </div>
-      {renderedPanel && (
-        <div className={styles.panelSlot}>
-          {renderedPanel === "inspector" && runId && (
-            <RunInspector
-              runId={runId}
-              width={panelWidth}
-              onWidthChange={resize}
-              onClose={() => {
-                setInspectorOpen(false);
-                inspectorTrigger?.focus();
-              }}
-            />
-          )}
-          {renderedPanel === "map" && (
-            <SessionMap
-              threads={threads.data ?? []}
-              width={panelWidth}
-              onWidthChange={resize}
-              onClose={() => {
-                setMapOpen(false);
-                mapTrigger?.focus();
-              }}
-            />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** The session is known by what was asked and which agent answered. */
-function SessionIdentity({ debug }: { debug: boolean }) {
-  const { runId, sessionId, threadId } = useParams();
-  const { basePath } = useWorkspace(),
-    { t } = useTranslation();
-  const run = useRun(runId);
-  const valid =
-    run.data?.session_id === sessionId && run.data?.thread_id === threadId;
-  const agent = useAgent(
-    valid && !run.data?.configuration_draft_id ? run.data?.agent_id : undefined,
-  );
-  const title = valid
-    ? inputText(run.data?.input, run.data?.input_text)
-        .replace(/\s+/g, " ")
-        .trim()
-    : undefined;
-  return (
-    <div className={styles.sessionIdentity}>
-      <h1 title={title || t("Session")}>{title || t("Session")}</h1>
-      {agent.data && (
-        <Link
-          className={styles.agentChip}
-          to={`${basePath}/agents/${agent.data.key}`}
-        >
-          <AgentAvatar
-            name={agent.data.name}
-            id={run.data?.agent_id}
-            url={agent.data.image_url}
-            className={styles.chipAvatar}
-          />
-          {agent.data.name}
-        </Link>
-      )}
-      {valid && run.data && <StatePill state={run.data.status} />}
-      {debug && <StatusPill variant="neutral">{t("Debug")}</StatusPill>}
-    </div>
+    </RunCollapseProvider>
   );
 }
 
@@ -400,6 +195,7 @@ export function ThreadLayout() {
   const { t } = useTranslation(),
     { sessionId = "", threadId = "", runId } = useParams(),
     { workspace, basePath } = useWorkspace(),
+    { search } = useLocation(),
     client = useClient(),
     queries = conversationQueries(client, workspace.id);
   const thread = useQuery(queries.thread(threadId));
@@ -433,7 +229,7 @@ export function ThreadLayout() {
       ) : runId ? (
         <Outlet />
       ) : selected ? (
-        <Navigate to={`runs/${selected}`} replace />
+        <Navigate to={`runs/${selected}${search}`} replace />
       ) : (
         thread.data && (
           <div className={styles.emptyThread}>

@@ -1,32 +1,39 @@
 .composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  padding: 8px 8px 8px 12px;
   border-radius: 16px;
   background: var(--a13n-elevated);
   box-shadow: var(--a13n-shadow);
-  padding: 10px 10px 8px;
-  min-width: 0;
+  transition: box-shadow 140ms ease;
 }
 .composer:focus-within {
   box-shadow:
     var(--a13n-shadow),
     0 0 0 1px color-mix(in srgb, var(--a13n-focus) 45%, transparent);
 }
+/* The fieldset carries the disabled state, never the layout: the send button
+   stays reachable so an active run can always be stopped. */
 .fields {
+  display: contents;
   border: 0;
   padding: 0;
   margin: 0;
-  min-width: 0;
-  display: grid;
-  gap: 8px;
 }
 .messageInput {
+  grid-column: 1 / -1;
   display: block;
   width: 100%;
 }
 .messageInput textarea {
-  min-height: 40px;
+  min-height: 34px;
   max-height: 240px;
+  padding: 6px 0;
+  border: 0;
   resize: none;
-  padding: 6px 8px;
   background: transparent;
   color: inherit;
   font-size: 14px;
@@ -36,53 +43,54 @@
   color: var(--a13n-muted);
 }
 .attachments {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 0 4px;
-}
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-.tools,
-.send {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+  padding-bottom: 2px;
 }
 .tools {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
   flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  margin-left: -4px;
 }
 .send {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex: none;
 }
 .hint {
   color: var(--a13n-muted);
-  font-size: 12px;
+  font-size: 11px;
   white-space: nowrap;
 }
 .sendButton {
-  border-radius: 999px;
   width: 32px;
   height: 32px;
+  border-radius: 999px;
+}
+.composer > [role="alert"] {
+  grid-column: 1 / -1;
 }
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   max-width: 220px;
-  padding: 3px 9px;
+  padding: 4px 10px;
   border: 0;
   border-radius: 999px;
   background: var(--a13n-surface);
   color: var(--a13n-secondary);
   font-size: 12px;
   cursor: pointer;
+  transition: background 120ms ease;
 }
 .chip:hover {
   background: var(--a13n-hover);
@@ -98,9 +106,9 @@
 .chipValue {
   min-width: 0;
   overflow: hidden;
+  color: var(--a13n-text);
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--a13n-text);
 }
 
 /* Dialogs ---------------------------------------------------------------- */
@@ -129,5 +137,11 @@
 @media (max-width: 720px) {
   .hint {
     display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer,
+  .chip {
+    transition: none;
   }
 }

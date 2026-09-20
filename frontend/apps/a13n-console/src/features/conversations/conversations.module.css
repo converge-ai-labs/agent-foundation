@@ -8,33 +8,11 @@
 }
 .sessionDetail {
   height: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 0px;
-  min-height: 0;
-  position: relative;
-  transition: grid-template-columns 0.18s ease-out;
-}
-.sessionDetail[data-panel-open] {
-  grid-template-columns: minmax(0, 1fr) min(var(--panel-width, 400px), 55%);
-}
-.panelSlot {
-  position: relative;
-  display: flex;
-  justify-content: flex-end;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-.panelSlot > aside {
-  flex: none;
-  width: var(--panel-width, 400px);
-  height: 100%;
-}
-.sessionMain {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  position: relative;
 }
 .sessionContent {
   flex: 1;
@@ -42,6 +20,12 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sessionContent {
+    scroll-behavior: auto;
+  }
 }
 .emptyThread {
   display: grid;
@@ -55,19 +39,20 @@
 .sessionHeader {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   flex-shrink: 0;
-  min-height: 56px;
-  padding: 0 20px;
+  height: 52px;
+  padding: 0 16px 0 14px;
   background: var(--a13n-canvas);
   border-bottom: 1px solid var(--a13n-border-soft);
 }
 .back {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   flex: none;
-  border-radius: 6px;
+  padding: 3px 6px 3px 2px;
+  border-radius: var(--a13n-radius-tile);
   color: var(--a13n-secondary);
   font-size: 12.5px;
   text-decoration: none;
@@ -77,7 +62,13 @@
 }
 .back:focus-visible {
   outline: 2px solid var(--a13n-focus);
-  outline-offset: 3px;
+  outline-offset: 1px;
+}
+.headerRule {
+  width: 1px;
+  height: 18px;
+  flex: none;
+  background: var(--a13n-border-soft);
 }
 .sessionIdentity {
   display: flex;
@@ -86,51 +77,84 @@
   flex: 1;
   min-width: 0;
 }
-.sessionIdentity h1 {
-  margin: 0;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 16px;
-  font-weight: 500;
-  letter-spacing: -0.2px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.agentChip {
+.agentLink {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   flex: none;
-  max-width: 180px;
-  padding: 2px 9px 2px 3px;
-  border-radius: 999px;
-  background: var(--a13n-surface);
-  color: var(--a13n-secondary);
-  font-size: 12px;
+  max-width: 220px;
+  min-width: 0;
+  padding: 2px 4px 2px 2px;
+  margin-left: -2px;
+  border-radius: var(--a13n-radius-tile);
+  color: var(--a13n-text);
+  font-size: 13px;
+  font-weight: 500;
   text-decoration: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.agentChip:hover {
+a.agentLink:hover {
   background: var(--a13n-hover);
-  color: var(--a13n-text);
 }
-.chipAvatar {
+a.agentLink:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 1px;
+}
+.headerAvatar {
   width: 20px;
   height: 20px;
   flex: none;
-  border-radius: 999px;
+  border-radius: 6px;
   font-size: 10px;
+}
+.sessionId {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.subNote {
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subNote::before {
+  content: "·";
+  margin-right: 8px;
 }
 .sessionControls {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
   flex: none;
 }
-.sessionControls [aria-pressed="true"] {
-  background: var(--a13n-selected);
+.breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.breadcrumb a {
+  color: var(--a13n-secondary);
+  text-decoration: none;
+}
+.breadcrumb a:hover {
+  color: var(--a13n-text);
+}
+.breadcrumb span {
+  color: var(--a13n-text);
 }
 
 /* Start page ------------------------------------------------------------- */
@@ -248,38 +272,20 @@
 
 @media (max-width: 1024px) {
   .sessionHeader {
-    padding-inline: 14px;
+    padding-inline: 12px;
+  }
+  .subNote {
+    display: none;
   }
 }
 @media (max-width: 760px) {
   .agentFilter {
     width: 100%;
   }
-  .sessionIdentity .agentChip {
+  .sessionId {
     display: none;
   }
   .startPage {
     padding: 24px 16px 64px;
-  }
-}
-@media (max-width: 600px) {
-  .sessionDetail {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 0px minmax(0, 1fr);
-    transition: grid-template-rows 0.18s ease-out;
-  }
-  .sessionDetail[data-panel-open] {
-    grid-template-rows: minmax(180px, 38%) minmax(0, 1fr);
-  }
-  .panelSlot {
-    grid-column: 1;
-    grid-row: 1;
-  }
-  .panelSlot > aside {
-    width: 100%;
-  }
-  .sessionDetail > .sessionMain {
-    grid-column: 1;
-    grid-row: 2;
   }
 }

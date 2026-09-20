@@ -54,7 +54,7 @@ const run: Schema["RunResource"] = {
 
   status: "completed",
   wait_reason: null,
-  input_kind: "input",
+  input_kind: "agent_input",
   input: null,
   input_text: "Test",
   output: null,
@@ -201,7 +201,7 @@ it("continues the completed head with version evidence and navigates to the acce
   const posts = mount();
   await waitFor(() =>
     expect(
-      screen.getByRole("button", { name: "Run next step" }).closest("fieldset")
+      screen.getByRole("textbox", { name: "Message" }).closest("fieldset")
         ?.disabled,
     ).toBe(false),
   );
@@ -239,7 +239,7 @@ it("retains rejected guidance and never falls through to a new Run", async () =>
     screen
       .getByRole("textbox", { name: "Message" })
       .getAttribute("placeholder"),
-  ).toBe("Add guidance to the current run…");
+  ).toBe("Send guidance while it works");
   expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty(
     "value",
     "Keep this input",
@@ -293,11 +293,36 @@ it("does not give independently interactive controls to child Threads", () => {
   mount({ role: "child" });
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
 });
-it("keeps steer disabled without its permission", () => {
+it("keeps steer disabled without its permission and still allows stopping", () => {
   denied = ["run.steer"];
   mount({ status: "running" });
   expect(
-    screen.getByRole("button", { name: "Send guidance" }).closest("fieldset")
+    screen.getByRole("textbox", { name: "Message" }).closest("fieldset")
       ?.disabled,
   ).toBe(true);
+  const stop = screen.getByRole("button", {
+    name: "Stop",
+  }) as HTMLButtonElement;
+  expect(stop.disabled).toBe(false);
+});
+
+it("offers Stop in place of Send while a run is active and the draft is empty", async () => {
+  const posts = mount({ status: "running" });
+  expect(screen.queryByRole("button", { name: "Send guidance" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]?.path).toBe("/api/v1/runs/run/interrupt");
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+    target: { value: "Keep going, but smaller" },
+  });
+  expect(screen.getByRole("button", { name: "Send guidance" })).toBeTruthy();
+});
+
+it("leaves retrying a stopped run to the run itself", async () => {
+  cleanup();
+  mount({ status: "failed" });
+  expect(
+    await screen.findByRole("button", { name: "Run next step" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Retry run" })).toBeNull();
 });

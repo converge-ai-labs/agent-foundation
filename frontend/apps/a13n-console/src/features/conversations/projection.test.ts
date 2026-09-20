@@ -136,3 +136,49 @@ it("does not interrupt an Item already read beyond a replayed recovery event", (
   });
   expect(recovered.get("new")?.state).toBe("in_progress");
 });
+
+it("times an Item from its first and terminal observation and never from a snapshot", () => {
+  let items = applyRunEvent(
+    new Map(),
+    event("300-0", "agui.text_message_start", {
+      item_kind: "text_message",
+      role: "assistant",
+    }),
+  );
+  expect(items.get("itm_message")).toMatchObject({
+    startedAt: "2026-09-08T00:00:00Z",
+    endedAt: null,
+  });
+  items = applyRunEvent(
+    items,
+    event("300-1", "item.completed", { item_state: "completed" }),
+  );
+  expect(items.get("itm_message")?.endedAt).toBe("2026-09-08T00:00:00Z");
+  const retained = mergeRetainedItems(new Map(), [
+    {
+      id: "itm_snapshot",
+      kind: "text_message",
+      state: "completed",
+      parent_item_id: null,
+      first_stream_id: "100-0",
+      last_stream_id: "100-1",
+      content: { text: "Hello" },
+    },
+  ]);
+  expect(retained.get("itm_snapshot")).toMatchObject({
+    startedAt: null,
+    endedAt: null,
+  });
+});
+
+it("keeps steering provenance so an enqueued notice is not read as authored input", () => {
+  const items = applyRunEvent(
+    new Map(),
+    event("400-0", "agui.text_message_start", {
+      item_kind: "text_message",
+      role: "user",
+      metadata: { "a13n.steering-source": "async_subagent" },
+    }),
+  );
+  expect(items.get("itm_message")?.steeringSource).toBe("async_subagent");
+});

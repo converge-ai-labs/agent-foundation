@@ -88,7 +88,7 @@ How a resource presents itself.
 
 ## `shared/` root
 
-Infrastructure with no visual surface: `api.ts` (typed request helpers and pagination), `idempotency.ts`, `download.ts`, `paths.ts`, `time.ts`, `local-date-time.ts`, `markdown.tsx`, `authorization-link.tsx`, `configuration-summary.tsx`, and `shared.module.css` — layout utilities (`stack`, `form`, `twoColumns`, `filters`, `cardGrid`, `card`, `muted`) that feature screens reuse.
+Infrastructure with no visual surface: `api.ts` (typed request helpers and pagination), `idempotency.ts`, `download.ts`, `paths.ts`, `time.ts`, `local-date-time.ts`, `markdown.tsx`, `cost.ts`, `unknown.ts` (the one mark for a value the service never reported), `authorization-link.tsx`, `configuration-summary.tsx`, and `shared.module.css` — layout utilities (`stack`, `form`, `twoColumns`, `filters`, `cardGrid`, `card`, `muted`) that feature screens reuse.
 
 ## Page anatomies
 

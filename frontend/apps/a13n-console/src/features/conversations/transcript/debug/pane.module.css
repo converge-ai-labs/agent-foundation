@@ -1,0 +1,204 @@
+/* Expanded rows: what one entry held, on the soft surface under it. */
+.pane {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px 14px 30px;
+  border-radius: var(--a13n-radius-tile);
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+  background: var(--a13n-surface);
+}
+.paneStats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+.paneFacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.paneFacts span + span::before {
+  content: "·";
+  margin-right: 8px;
+  color: color-mix(in srgb, var(--a13n-secondary) 55%, transparent);
+}
+.rawTrigger {
+  flex: none;
+  color: var(--a13n-secondary);
+  font-weight: 400;
+}
+.paneSection {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.paneLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
+.paneColumns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.paneCode {
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  padding: 9px 11px;
+  border-radius: var(--a13n-radius-tile);
+  background: var(--a13n-elevated);
+  font-family: var(--a13n-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.paneNote {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.panePath {
+  font-family: var(--a13n-mono);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.paneLinks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+}
+.paneLinks span {
+  color: var(--a13n-secondary);
+}
+.paneDisclosure {
+  margin-top: 2px;
+}
+.responseBody {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.responseText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.responseCall {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.responseCall code {
+  flex: none;
+  font-family: var(--a13n-mono);
+  font-size: 12px;
+}
+.responseCall span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--a13n-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.questionSummary {
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+.questionSummary strong {
+  font-weight: 500;
+}
+.questionSummary p {
+  margin: 2px 0 0;
+  line-height: 1.6;
+}
+.reasoningProse {
+  min-width: 0;
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+.observations {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.observations li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.observations code {
+  overflow: hidden;
+  font-family: var(--a13n-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.observations span {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Patch ------------------------------------------------------------------ */
+.patch {
+  max-height: 280px;
+  overflow: auto;
+  border-radius: var(--a13n-radius-tile);
+  background: var(--a13n-elevated);
+}
+.patch pre {
+  margin: 0;
+  padding: 9px 0;
+  font-family: var(--a13n-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.hunk {
+  display: block;
+}
+.hunk + .hunk {
+  margin-top: 8px;
+}
+.patchLine {
+  display: block;
+  padding: 0 11px;
+  white-space: pre;
+}
+.patchLine[data-sign="added"] {
+  color: var(--a13n-success);
+}
+.patchLine[data-sign="removed"] {
+  color: var(--a13n-danger);
+}
+.patchLine[data-sign="hunk"] {
+  color: var(--a13n-secondary);
+}

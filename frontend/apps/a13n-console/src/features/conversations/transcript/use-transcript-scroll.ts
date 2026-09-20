@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 
 /**
  * The transcript follows new output until the reader scrolls away, and stops
@@ -12,6 +18,7 @@ export function useTranscriptScroll(
 ) {
   const [following, setFollowing] = useState(true);
   const viewport = useRef<HTMLElement | null>(null);
+  const resume = useRef<(() => void) | null>(null);
   useEffect(() => {
     const element = content.current;
     const stage = element?.closest("[data-session-stage]");
@@ -22,6 +29,11 @@ export function useTranscriptScroll(
       follow = stage.scrollHeight - stage.scrollTop - stage.clientHeight < 100;
       setFollowing(follow);
     };
+    // Sending a message always returns the reader to the live end.
+    resume.current = () => {
+      follow = true;
+      setFollowing(true);
+    };
     const observer = new ResizeObserver(() => {
       if (follow && !stage.dataset.loadingEarlier)
         stage.scrollTop = stage.scrollHeight;
@@ -31,13 +43,13 @@ export function useTranscriptScroll(
     return () => {
       observer.disconnect();
       stage.removeEventListener("scroll", onScroll);
+      resume.current = null;
     };
   }, [content, ready]);
-  return {
-    following,
-    jumpToLatest() {
-      const stage = viewport.current;
-      stage?.scrollTo({ top: stage.scrollHeight, behavior: "smooth" });
-    },
-  };
+  const jumpToLatest = useCallback(() => {
+    resume.current?.();
+    const stage = viewport.current;
+    stage?.scrollTo({ top: stage.scrollHeight, behavior: "smooth" });
+  }, []);
+  return { following, jumpToLatest };
 }

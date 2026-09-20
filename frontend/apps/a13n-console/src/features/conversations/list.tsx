@@ -20,6 +20,7 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
+import { UNKNOWN } from "../../shared/unknown";
 import { Page } from "../../shared/page";
 import { AgentAvatar } from "../agents/avatar";
 import { conversationQueries, type SessionFilters } from "./api";
@@ -91,9 +92,10 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
         <ResourceTable
           items={items}
           caption={t("Sessions")}
+          // The collection opens a session to inspect it: that is the Debug level.
           onRowActivate={(session) =>
             navigate(
-              `${basePath}/sessions/${session.id}${filters.q && filters.q !== session.id ? `/threads/${encodeURIComponent(filters.q)}` : ""}`,
+              `${basePath}/sessions/${session.id}${filters.q && filters.q !== session.id ? `/threads/${encodeURIComponent(filters.q)}` : ""}?view=debug`,
             )
           }
           columns={[
@@ -129,7 +131,7 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
                 session.preview ? (
                   <StatePill state={session.preview.run_status} />
                 ) : (
-                  "—"
+                  UNKNOWN
                 ),
             },
             {
@@ -140,7 +142,7 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
                   ? t(`trigger.${session.preview.trigger_type}`, {
                       defaultValue: session.preview.trigger_type,
                     })
-                  : "—",
+                  : UNKNOWN,
             },
             {
               label: t("Updated"),

@@ -5,7 +5,7 @@ import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../../shared/api";
 import { Composer } from "../composer";
-import styles from "./transcript.module.css";
+import styles from "./cards.module.css";
 
 /** Resolving the whole waiting batch by default is a decision, so it is confirmed. */
 export function ContinueWithoutFeedback({
@@ -36,13 +36,14 @@ export function ContinueWithoutFeedback({
       closeLabel={t("Close")}
     >
       <div className={styles.continuation}>
-        <Label className={styles.pendingSwitch}>
+        <Label className={styles.cardSwitch}>
           <Switch checked={confirmed} onCheckedChange={setConfirmed} />
           {t("Reject pending approvals and leave other actions unanswered.")}
         </Label>
         <Composer
           disabled={!confirmed}
           label={t("Resolve and continue")}
+          placeholder={t("Answer above, or send a new message")}
           submit={async (input, key) => {
             const receipt = data(
               await client.http.POST("/api/v1/threads/{thread_id}/runs", {

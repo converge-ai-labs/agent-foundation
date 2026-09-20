@@ -28,7 +28,7 @@ The following routes are relative to `/workspace/:workspaceKey`:
 | -------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Agents               | `agents`, `agents/new`, `agents/:agentKey`                | Definitions, configuration, immutable revisions, lifecycle controls         |
 | Conversations        | `sessions`, `sessions/new`                                | Sessions, Threads, Runs, live/retained output, attachments                  |
-| A specific Run       | `sessions/:sessionId/threads/:threadId/runs/:runId`       | Output, waiting feedback, control actions, execution detail                 |
+| A specific Run       | `sessions/:sessionId/threads/:threadId/runs/:runId`       | Chat and Debug views: output, feedback, control actions, execution timeline |
 | Models               | `models`                                                  | Models and configured Providers                                             |
 | Search               | `settings?section=providers&category=search`              | Provider accounts, tests, and references                                    |
 | Skills               | `skills`, `skills/:skillId`                               | Uploads, resources, immutable revisions, and default selection              |
