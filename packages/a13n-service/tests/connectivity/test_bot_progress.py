@@ -21,7 +21,7 @@ from a13n_service.iam.models import RoleBindingRecord, ServiceAccountRecord
 from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import short_session, transaction
-from a13n_service.temporal import utc_now
+from a13n_service.temporal import assume_utc, utc_now
 from sqlalchemy import func, select
 
 from tests.gateway.test_commands import _commands, _Freezing, _frozen, _Preparation, _request
@@ -808,3 +808,41 @@ async def test_post_reply_preserves_title_and_paragraphs(replying):
     assert result.kind == "succeeded"
     content = cards(replying)[-1][1]["elements"][0]["content"]
     assert content == "Report\n\nFirst paragraph\n\nSecond paragraph"
+
+
+@pytest.mark.parametrize("task", ["slack", "lark"], indirect=True)
+async def test_pending_stop_takes_priority_over_explicit_replies(replying):
+    from a13n_service.bots.progress.replies import CardReplies
+    from a13n_service.connectivity.providers.lark.actions import LarkAutoReplyArguments
+    from a13n_service.connectivity.providers.slack.client import SlackAutoReplyArguments
+
+    task = replying
+    await task.service.scan()
+    await due(task)
+    run_id, lease = await task.service._claim()
+    # A provider callback arrives while an explicit answer holds the shared lease.
+    changes = (
+        {"actor_id": "U123", "conversation_id": "C123", "message_id": "1788422401.000100"}
+        if task.provider == "slack"
+        else {}
+    )
+    await action(task, **changes)
+    await task.service.delivery.publish(run_id, lease)
+    async with short_session(task.sessions) as db:
+        row = await db.get(ProgressRecord, run_id)
+        assert assume_utc(row.available_at) <= utc_now()
+        assert row.rendered_status == "stopping"
+    arguments = (
+        SlackAutoReplyArguments(text="Must wait for stop")
+        if task.provider == "slack"
+        else LarkAutoReplyArguments(content={"kind": "text", "text": "Must wait for stop"})
+    )
+    replies = CardReplies(task.service.delivery)
+    for _ in range(3):
+        assert await replies._claim(task.attempt, task.context, arguments, 1, task.generation) is None
+    assert (await task.service.scan()).failed == 0
+    async with short_session(task.sessions) as db:
+        assert (await db.get(RunRecord, run_id)).status == "cancelled"
+        row = await db.get(ProgressRecord, run_id)
+        assert row.done and row.rendered_status == "cancelled"
+        assert not row.replies_json

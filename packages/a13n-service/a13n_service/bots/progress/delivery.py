@@ -259,4 +259,6 @@ class CardDelivery:
                 row.rendered_reply_count = reply_count
                 row.done = done
                 row.attempts = 0
-                row.available_at = utc_now() + timedelta(seconds=5)
+                # A stop can arrive while a reply owns the delivery lease.
+                # Releasing that lease must not postpone canonical interruption.
+                row.available_at = utc_now() if row.stop_requested and not done else utc_now() + timedelta(seconds=5)

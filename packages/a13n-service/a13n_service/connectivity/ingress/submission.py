@@ -269,6 +269,10 @@ class IngressInputAcceptor:
         run_id = (thread.current_run_id or thread.head_run_id) if thread is not None else None
         run = await session.get(RunRecord, run_id) if run_id is not None else None
         steer = run is not None and run.status in {"accepted", "running", "waiting"}
+        # Failed/cancelled Runs remain current but are not continuation sources.
+        # Preserve the completed head, or restart in the same empty Thread.
+        if not steer and run is not None and run.status in {"failed", "cancelled"}:
+            run_id = thread.head_run_id if thread is not None else None
         await authorize_agent(
             session,
             actor=actor,

@@ -147,7 +147,9 @@ class CardReplies:
             )
             if row is None or not self._matches(row, context) or row.account_version != account_version:
                 raise ProgressUnavailable("task_card_unavailable")
-            if row.lease_until is not None and assume_utc(row.lease_until) > now:
+            # Let the control worker acquire the shared lease and interrupt first.
+            # Repeated explicit replies must not starve a pending stop request.
+            if row.stop_requested or (row.lease_until is not None and assume_utc(row.lease_until) > now):
                 return None
             placement = "thread" if row.reply_in_thread else "main"
             if isinstance(arguments, (LarkAutoReplyArguments, SlackAutoReplyArguments)) and arguments.placement not in {

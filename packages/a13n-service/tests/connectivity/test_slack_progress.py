@@ -107,14 +107,39 @@ async def test_block_controls_and_full_answer_fallback(status):
     assert "https://console.example/run" in serialized
 
 
-async def test_long_answer_chunks_preserve_content_and_reject_oversize():
-    answer = "hello " * 1500
+@pytest.mark.parametrize("answer", ["hello " * 1500, "验收用例" * 700, "✅" * 1600])
+async def test_long_answer_chunks_preserve_content_and_reject_oversize(answer):
     card = task_message(status="running", run_id="run_test", token="secret", details_url=None, replies=(answer,))
     sections = [block["text"]["text"] for block in card["blocks"] if block["type"] == "section"]
     assert all(len(part) <= 3000 for part in sections)
     assert "".join(sections) == answer
+    assert "text" not in card  # Slack derives accessible text from supported blocks.
     with pytest.raises(ProviderHttpError):
         task_message(status="running", run_id="run_test", token="secret", details_url=None, replies=("x" * 32_001,))
+
+
+@pytest.mark.parametrize("task", ["slack"], indirect=True)
+async def test_long_reply_update_avoids_slack_fallback_limit(replying):
+    original = replying.service.delivery.http
+
+    def bounded_update(request):
+        payload = json.loads(request.content)
+        if request.url.path == "/api/chat.update" and len(payload.get("text", "").encode("utf-8")) > 4000:
+            return httpx2.Response(200, json={"ok": False, "error": "msg_too_long"})
+        replying.calls.append(request)
+        return httpx2.Response(200, json={"ok": True, "channel": "C123", "ts": "1788422401.000100"})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(bounded_update)) as http:
+        replying.service.delivery.http = http
+        try:
+            assert (await replying.reply("验收用例" * 700))["kind"] == "succeeded"
+        finally:
+            replying.service.delivery.http = original
+    update = json.loads(replying.calls[-1].content)
+    assert "text" not in update
+    assert (
+        "".join(block["text"]["text"] for block in update["blocks"] if block["type"] == "section") == "验收用例" * 700
+    )
 
 
 async def stop(task, **changes):

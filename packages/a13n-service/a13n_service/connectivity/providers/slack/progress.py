@@ -75,9 +75,11 @@ def task_message(
         blocks.append({"type": "actions", "elements": actions})
     if len(blocks) > 48:
         raise ProviderHttpError("invalid_arguments")
-    # Full fallback content is accessible to screen readers, not just the status title.
+    # chat.update rejects long top-level text, including multibyte answers that
+    # postMessage accepts. Let Slack build accessible text from the full blocks
+    # when the explicit fallback exceeds that conservative UTF-8 bound.
     fallback = "\n\n".join((title, *replies, description, *((details_url,) if details_url else ())))
-    return {"text": fallback, "blocks": blocks}
+    return {"text": fallback, "blocks": blocks} if len(fallback.encode("utf-8")) <= 4000 else {"blocks": blocks}
 
 
 class SlackProgressClient:
