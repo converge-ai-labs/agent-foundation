@@ -155,6 +155,7 @@ class LifecycleRetentionReconciler:
             or_(
                 prior.created_at >= event_cutoff,
                 prior.projection_state.not_in(settled_states),
+                prior.hook_dispatch_state != "done",
                 retained_prior_delivery,
             ),
         )
@@ -166,6 +167,7 @@ class LifecycleRetentionReconciler:
                 .where(
                     LifecycleEventRecord.created_at < event_cutoff,
                     LifecycleEventRecord.projection_state.in_(settled_states),
+                    LifecycleEventRecord.hook_dispatch_state == "done",
                     ~retained_delivery,
                     ~blocking_prior,
                 )

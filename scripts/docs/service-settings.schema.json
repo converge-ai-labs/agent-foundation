@@ -753,6 +753,41 @@
           "minimum": 1,
           "title": "History Minimum Retention Days",
           "type": "integer"
+        },
+        "dispatch_poll_interval_seconds": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Dispatch Poll Interval Seconds",
+          "type": "number"
+        },
+        "dispatch_batch_limit": {
+          "default": 16,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Dispatch Batch Limit",
+          "type": "integer"
+        },
+        "dispatch_max_attempts": {
+          "default": 10,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Dispatch Max Attempts",
+          "type": "integer"
+        },
+        "dispatch_retry_base_seconds": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Dispatch Retry Base Seconds",
+          "type": "number"
+        },
+        "dispatch_retry_max_seconds": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Dispatch Retry Max Seconds",
+          "type": "number"
         }
       },
       "title": "HooksSettings",

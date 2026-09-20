@@ -31,6 +31,12 @@ class LifecycleEntityType(StrEnum):
     run_attempt = "run_attempt"
 
 
+class HookDispatchState(StrEnum):
+    pending = "pending"
+    done = "done"
+    failed = "failed"
+
+
 class LifecycleProjectionState(StrEnum):
     pending = "pending"
     projecting = "projecting"
@@ -119,6 +125,12 @@ class LifecycleEvent(_StrictModel):
     occurred_at: UtcDateTime
     created_at: UtcDateTime
 
+    hook_dispatch_state: HookDispatchState
+    hook_dispatch_attempts: int = Field(ge=0)
+    hook_dispatch_next_attempt_at: UtcDateTime | None = None
+    hook_dispatched_at: UtcDateTime | None = None
+    hook_dispatch_error: SafeFailure | None = None
+
     projection_state: LifecycleProjectionState
     projection_attempts: int = Field(ge=0)
     projection_next_attempt_at: UtcDateTime | None = None
@@ -164,6 +176,7 @@ __all__ = [
     "MAX_LIFECYCLE_PAYLOAD_BYTES",
     "RUN_ATTEMPT_EVENT_TYPES",
     "RUN_EVENT_TYPES",
+    "HookDispatchState",
     "LifecycleEntityType",
     "LifecycleEvent",
     "LifecycleEventDraft",

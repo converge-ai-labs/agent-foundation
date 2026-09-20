@@ -11,6 +11,7 @@ from a13n_service.background import Sweep
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord, OutboxRecord
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.interactions.models import RunRecord
+from a13n_service.lifecycle.models import LifecycleEventRecord
 from a13n_service.storage import transaction
 from a13n_service.temporal import assume_utc, utc_now
 
@@ -72,8 +73,13 @@ class HookRetention:
                         cast(IdempotencyEvidenceRecord.receipt_json, String).contains(revision.id),
                     ),
                 )
+                dispatch = exists().where(
+                    LifecycleEventRecord.organization_id == head.organization_id,
+                    LifecycleEventRecord.run_id == head.inline_run_id,
+                    LifecycleEventRecord.hook_dispatch_state != "done",
+                )
                 delivery = exists().where(OutboxRecord.destination_ref == revision.id)
-                if await database.scalar(select(or_(audit, evidence, delivery))):
+                if await database.scalar(select(or_(audit, evidence, dispatch, delivery))):
                     deferred += 1
                     continue
                 if revision.id == head.current_revision_id:

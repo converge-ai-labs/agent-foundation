@@ -301,7 +301,7 @@ The yield reason is `service_drain` for shutdown or deployment drain. The winnin
 2. charges all currently known Attempt usage into the Run;
 3. increments `Run.handoffs_completed`;
 4. clears `Run.current_run_attempt_id`, preserves `Run.status=running`, and sets `Run.available_at=now`; and
-5. appends the `run_attempt.yielded` lifecycle fact and its outbox intent.
+5. appends the `run_attempt.yielded` lifecycle fact with pending [Hook dispatch](26-hook-notifications.md#asynchronous-hook-dispatch) and any other domain-required outbox intent.
 
 Only after this transaction commits does the old executor stop heartbeat and lease renewal and issue a best-effort Redis reconciliation wakeup. The still-running Run becomes eligible for a planned-handoff successor through [ordinary Attempt allocation](#runattempt-allocation-within-a-run) and the [reason-specific build preference](#current-attempt-authority). That later claim creates the successor; the yield transaction itself creates no Attempt. If the transaction loses to outcome or cancellation, the executor abandons yield and observes that authoritative result. If it fails for another reason while the old Attempt remains authoritative, the executor continues renewal, reconciles the latest state, and retries or commits another legal authoritative result.
 

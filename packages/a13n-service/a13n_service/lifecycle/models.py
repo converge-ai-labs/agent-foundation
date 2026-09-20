@@ -15,6 +15,7 @@ from sqlalchemy import (
     Index,
     String,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,7 +23,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from a13n_service.database import Base
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
-from .domain import LifecycleEntityType, LifecycleEvent, LifecycleProjectionState
+from .domain import HookDispatchState, LifecycleEntityType, LifecycleEvent, LifecycleProjectionState
 
 _FAILURE_ADAPTER = TypeAdapter(SafeFailure | None)
 
@@ -95,6 +96,22 @@ class LifecycleEventRecord(Base):
             "AND projected_at IS NULL)",
             name="projection_shape_valid",
         ),
+        CheckConstraint("hook_dispatch_attempts >= 0", name="hook_dispatch_attempts_non_negative"),
+        CheckConstraint(
+            "(hook_dispatch_state = 'pending' AND hook_dispatch_next_attempt_at IS NOT NULL "
+            "AND hook_dispatched_at IS NULL) OR "
+            "(hook_dispatch_state = 'done' AND hook_dispatch_next_attempt_at IS NULL "
+            "AND hook_dispatched_at IS NOT NULL AND hook_dispatch_error_json IS NULL) OR "
+            "(hook_dispatch_state = 'failed' AND hook_dispatch_next_attempt_at IS NULL "
+            "AND hook_dispatched_at IS NULL AND hook_dispatch_error_json IS NOT NULL)",
+            name="hook_dispatch_shape_valid",
+        ),
+        Index(
+            "ix_lifecycle_events_hook_dispatch_due",
+            "hook_dispatch_next_attempt_at",
+            "seq",
+            postgresql_where=text("hook_dispatch_state = 'pending'"),
+        ),
         Index("ix_lifecycle_events_organization_seq", "organization_id", "seq"),
         Index("ix_lifecycle_events_resource", "organization_id", "entity_type", "entity_id", "seq"),
         Index("ix_lifecycle_events_run", "organization_id", "run_id", "seq"),
@@ -135,6 +152,14 @@ class LifecycleEventRecord(Base):
     projected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     projection_error_json: Mapped[dict[str, object] | None] = mapped_column(JSON)
 
+    hook_dispatch_state: Mapped[str] = mapped_column(String(32), nullable=False, server_default="pending")
+    hook_dispatch_attempts: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+    hook_dispatch_next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    hook_dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    hook_dispatch_error_json: Mapped[dict[str, object] | None] = mapped_column(JSON(none_as_null=True))
+
     def to_resource(self) -> LifecycleEvent:
         return LifecycleEvent(
             seq=self.seq,
@@ -156,6 +181,11 @@ class LifecycleEventRecord(Base):
             actor_id=self.actor_id,
             occurred_at=assume_utc(self.occurred_at),
             created_at=assume_utc(self.created_at),
+            hook_dispatch_state=HookDispatchState(self.hook_dispatch_state),
+            hook_dispatch_attempts=self.hook_dispatch_attempts,
+            hook_dispatch_next_attempt_at=optional_assume_utc(self.hook_dispatch_next_attempt_at),
+            hook_dispatched_at=optional_assume_utc(self.hook_dispatched_at),
+            hook_dispatch_error=_FAILURE_ADAPTER.validate_python(self.hook_dispatch_error_json),
             projection_state=LifecycleProjectionState(self.projection_state),
             projection_attempts=self.projection_attempts,
             projection_next_attempt_at=optional_assume_utc(self.projection_next_attempt_at),

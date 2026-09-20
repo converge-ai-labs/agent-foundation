@@ -9,11 +9,12 @@ from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.durable_operations.outbox import complete_outbox, fail_outbox, redrive_outbox
 from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
 from a13n_service.hooks.delivery import DELIVERY_ID_HEADER, SIGNATURE_HEADER, TIMESTAMP_HEADER
+from a13n_service.hooks.dispatcher import HookDispatcher
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.hooks.outbox import (
     claim_webhook_deliveries,
 )
-from a13n_service.hooks.persistence import create_hook_subscription, write_hook_lifecycle
+from a13n_service.hooks.persistence import create_hook_subscription
 from a13n_service.hooks.publisher import WebhookPublisher
 from a13n_service.interactions.models import RunRecord
 from a13n_service.lifecycle.domain import LifecycleEventDraft
@@ -119,7 +120,7 @@ async def _prepare_delivery(
                 actor_id=USER_ID,
             )
         else:
-            event = await append_lifecycle_event(
+            await append_lifecycle_event(
                 database,
                 LifecycleEventDraft(
                     organization_id=ORGANIZATION_ID,
@@ -137,8 +138,8 @@ async def _prepare_delivery(
                     payload={"output_object": output_reference},
                 ),
             )
-            await write_hook_lifecycle(database, event)
         revision_id = subscription.current_revision_id
+    await HookDispatcher(sessions, clock=lambda: NOW).scan()
     async with short_session(sessions) as database:
         delivery_id = await database.scalar(select(OutboxRecord.id))
     assert delivery_id is not None

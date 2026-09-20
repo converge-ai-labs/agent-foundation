@@ -21,7 +21,7 @@ class HookSubscriptionInvariantCode(StrEnum):
 
 
 class HookSubscriptionInvariantError(RuntimeError):
-    """A persisted Hook subscription invariant would make source commits unsafe."""
+    """A persisted Hook subscription invariant would be violated."""
 
     def __init__(self, code: HookSubscriptionInvariantCode, message: str) -> None:
         super().__init__(message)

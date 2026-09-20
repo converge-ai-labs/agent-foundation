@@ -11,6 +11,7 @@ import rfc8785
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.hooks.persistence import expire_inline_hook_subscription
 from a13n_service.lifecycle import (
     LifecycleEntityType,
     LifecycleEventDraft,
@@ -46,7 +47,8 @@ DeliveryIntentWriter = Callable[[AsyncSession, LifecycleEventRecord], Awaitable[
 class LifecycleWriter:
     """Write facts and configured delivery intents in the caller's transaction.
 
-    Writers only perform relational work. A failed writer rolls back the fact
+    Webhook fan-out is asynchronous. Inline expiry and configured writers only
+    perform relational work. A failed writer rolls back the fact
     and authoritative mutation along with every other required delivery intent.
     """
 
@@ -90,7 +92,7 @@ class LifecycleWriter:
 
         resolved_mutation_id = new_mutation_id() if mutation_id is None else mutation_id
         run_event_id = new_lifecycle_event_id()
-        await self._append_lifecycles_with_hooks(
+        await self._append_lifecycles(
             database,
             (
                 attempt,
@@ -142,7 +144,7 @@ class LifecycleWriter:
             actor_id=actor_id,
             final_run_attempt_id=final_run_attempt_id,
         )
-        await self._append_lifecycles_with_hooks(database, (run, draft))
+        await self._append_lifecycles(database, (run, draft))
         return draft.id
 
     async def append_run_attempt_lifecycle(
@@ -164,10 +166,10 @@ class LifecycleWriter:
             occurred_at=occurred_at,
             resulting_run_lifecycle_event_id=resulting_run_lifecycle_event_id,
         )
-        await self._append_lifecycles_with_hooks(database, (attempt, draft))
+        await self._append_lifecycles(database, (attempt, draft))
         return draft.id
 
-    async def _append_lifecycles_with_hooks(
+    async def _append_lifecycles(
         self,
         database: AsyncSession,
         *events: tuple[RunRecord | RunAttemptRecord, LifecycleEventDraft],
@@ -177,6 +179,13 @@ class LifecycleWriter:
         records = [await append_lifecycle_event(database, draft, resource=resource) for resource, draft in events]
         await database.flush()
         for record in records:
+            if record.event_type in {"run.waiting", "run.completed", "run.failed", "run.cancelled"}:
+                await expire_inline_hook_subscription(
+                    database,
+                    organization_id=record.organization_id,
+                    run_id=record.run_id,
+                    sealed_at=record.occurred_at,
+                )
             for writer in self._delivery_writers:
                 await writer(database, record)
 
