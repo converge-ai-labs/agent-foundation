@@ -390,15 +390,13 @@ export function ModelEditor({
         label="Model ID"
         value={effectiveId}
         onChange={setModelId}
-        description="Custom IDs are always supported. Directory metadata does not guarantee account access or runtime capabilities."
+        description="Enter a custom ID if needed. Listed models do not guarantee account access."
       />
-      {api && (
+      {api && (catalog.isPending || catalog.error) && (
         <small role="status">
           {catalog.isPending
-            ? "Loading public directory… Manual IDs remain available."
-            : catalog.error
-              ? "Directory unavailable. Using release recommendations; custom IDs still work."
-              : `Directory: ${catalog.data?.status ?? "unavailable"}. Subscription models are maintained separately.`}
+            ? "Loading model directory…"
+            : "Directory unavailable. Enter a model ID or choose a bundled recommendation."}
         </small>
       )}
       {selected?.supports_base_url && (
@@ -413,8 +411,8 @@ export function ModelEditor({
         <>
           {value && (
             <p>
-              The existing recipe is unchanged until you apply this connection.
-              Applying resets model-specific settings to reviewed defaults.
+              Applying this connection resets model-specific settings to
+              reviewed defaults.
             </p>
           )}
           <Button
@@ -428,9 +426,7 @@ export function ModelEditor({
       )}
       {matches && value && (
         <>
-          <p role="status">
-            {value.route} · Ready to configure. No model request has been sent.
-          </p>
+          <p role="status">{value.route} · Access not tested</p>
           <ChoiceField
             label="Settings preset"
             value=""
@@ -517,8 +513,8 @@ export function ModelEditor({
             }
             description={
               options.data?.known_context_window
-                ? `Bundled limit: ${options.data.known_context_window.toLocaleString()} tokens. Working budget is editable.`
-                : "Leave blank for the native default. This budget is not an account entitlement."
+                ? `Bundled limit: ${options.data.known_context_window.toLocaleString()} tokens.`
+                : "Leave blank for the native default."
             }
           />
           <details className={styles.details}>
@@ -572,10 +568,7 @@ export function ModelEditor({
                 ?.map((tool) => tool.label)
                 .join(", ") || "No guided native tools for this connection."}
             </p>
-            <small>
-              Native tools belong to Agents. Editing this Model does not change
-              any referring Agent.
-            </small>
+            <small>Enable native tools in the Agent editor.</small>
           </div>
         </>
       )}

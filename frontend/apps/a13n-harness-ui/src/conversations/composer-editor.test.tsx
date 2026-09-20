@@ -460,12 +460,20 @@ it("changes draft-lifetime guidance without remounting the editor on Thread crea
     submit() {},
   };
   const view = render(<ComposerEditor {...props} local />);
-  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  const editor = screen.getByRole("textbox", { name: "Message" });
+  expect(editor.hasAttribute("data-composer-editor")).toBe(true);
   expect(editor.getAttribute("aria-description")).toContain(
-    "Private to this tab",
+    "saved in this browser when storage is available",
+  );
+  expect(editor.getAttribute("aria-description")).toContain(
+    "Local files may need reattaching",
+  );
+  expect(editor.getAttribute("aria-description")).toContain(
+    "Enter to send; Shift+Enter",
   );
   view.rerender(<ComposerEditor {...props} local={false} />);
   expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(editor.hasAttribute("data-composer-editor")).toBe(true);
   expect(editor.getAttribute("aria-description")).toContain(
     "Shared with this conversation",
   );

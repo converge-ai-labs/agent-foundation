@@ -24,7 +24,6 @@ import {
   updateDocument,
   type ResourceKind,
 } from "./documents";
-import { AgentFields } from "./agent-fields";
 import { MediaUnderstandingFields } from "./media-understanding";
 import styles from "../shell/workbench.module.css";
 
@@ -125,7 +124,7 @@ export function DraftLinks({
 export function SourcesPage({
   kinds,
   title = "Advanced configuration",
-  description = "Manage configuration files and reusable settings. Running conversations keep their current configuration.",
+  description,
   headingLevel = 1,
 }: {
   kinds?: ResourceKind[];
@@ -203,7 +202,7 @@ export function SourcesPage({
           ))}
       </div>
       {sources.data && !sources.data.sources.length && (
-        <Panel title="No accepted resources">
+        <Panel title="No saved configuration">
           <p>
             Complete guided setup to create the root configuration before adding
             resources.
@@ -215,7 +214,6 @@ export function SourcesPage({
         open={creating}
         onOpenChange={setCreating}
         title="Add configuration"
-        description="Choose what to configure. Changes are checked before saving."
         closeLabel="Close"
         footer={
           <Button
@@ -291,14 +289,12 @@ export function SourceDocument({
   path,
   isNew = false,
   title,
-  capabilitiesOnly = false,
   mediaOnly = false,
   embedded = false,
 }: {
   path: string;
   isNew?: boolean;
   title?: string;
-  capabilitiesOnly?: boolean;
   mediaOnly?: boolean;
   embedded?: boolean;
 }) {
@@ -367,8 +363,7 @@ export function SourceDocument({
           body: { content },
         }),
       ),
-    onSuccess: () =>
-      setNotice("Configuration checked. Your changes are not saved yet."),
+    onSuccess: () => setNotice("Configuration valid · not saved"),
   });
   const save = useMutation({
     mutationFn: (content: string) =>
@@ -386,11 +381,7 @@ export function SourceDocument({
         digest: publication.source_digest,
         replacement: false,
       });
-      setNotice(
-        mediaOnly
-          ? "Saved"
-          : "Changes saved. Running conversations keep their current configuration.",
-      );
+      setNotice("Saved");
       void queries.invalidateQueries();
       if (isNew)
         navigate(`/settings/source?path=${encodeURIComponent(path)}`, {
@@ -415,8 +406,16 @@ export function SourceDocument({
     !!draft &&
     !!writable &&
     (source.data?.content_available || isNew || draft.replacement);
+  const resourceLabel =
+    resourceKinds
+      .find(
+        (item) =>
+          item.value === readDocument(draft?.content ?? "")?.get("kind"),
+      )
+      ?.label.toLowerCase() ??
+    (path.endsWith(".md") ? "subagent" : "configuration");
   return (
-    <>
+    <div className={styles.sourceDocument}>
       {!embedded && (
         <Link className={styles.back} to="/settings">
           <ArrowLeft />
@@ -424,100 +423,44 @@ export function SourceDocument({
         </Link>
       )}
       <PageHeader
-        level={capabilitiesOnly || mediaOnly ? 2 : 1}
+        level={mediaOnly ? 2 : 1}
+        description={
+          mediaOnly ? "Used when native input is unavailable." : undefined
+        }
         title={
           title ||
-          String(
-            readDocument(draft?.content ?? "")?.get("name") ||
-              path ||
-              "Configuration",
-          )
-        }
-        description={
-          mediaOnly
-            ? dirty
-              ? "Unsaved changes"
-              : "Used when native input is unavailable."
-            : dirty
-              ? "Unsaved draft · retained in this tab while you navigate, not after a reload."
-              : "Saved configuration. Changes are checked before saving and apply to future runs."
+          (isNew
+            ? `Add ${resourceLabel}`
+            : String(
+                readDocument(draft?.content ?? "")?.get("name") ||
+                  path ||
+                  "Configuration",
+              ))
         }
         actions={
-          <>
-            {isNew && (
-              <ConfirmAction
-                key={path}
-                trigger={<Button variant="ghost">Discard draft</Button>}
-                title="Discard this unsaved configuration?"
-                description={`Your unsaved configuration for ${path} will be lost.`}
-                confirmLabel="Discard draft"
-                destructive
-                onConfirm={() => {
-                  drafts.delete(path);
-                  navigate("/settings/resources");
-                }}
-              />
-            )}
-            {canEdit && (
-              <>
-                {mediaOnly ? (
-                  <Button
-                    variant="outline"
-                    disabled={!dirty}
-                    onClick={() => setReplacing(true)}
-                  >
-                    Discard
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    loading={validate.isPending}
-                    onClick={() => validate.mutate(draft!.content)}
-                  >
-                    Check configuration
-                  </Button>
-                )}
-                <Button
-                  loading={save.isPending}
-                  disabled={!dirty}
-                  onClick={() => save.mutate(draft!.content)}
+          source.data?.writable &&
+          source.data.resource_kind !== "root" && (
+            <Menu>
+              <MenuTrigger
+                aria-label="More configuration actions"
+                render={<Button variant="ghost" size="icon" />}
+              >
+                <DotsThree />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                <MenuItem
+                  variant="destructive"
+                  onClick={() => setDeleting(true)}
                 >
-                  {mediaOnly ? "Save" : "Save changes"}
-                </Button>
-              </>
-            )}
-            {!capabilitiesOnly &&
-              source.data?.writable &&
-              source.data.resource_kind !== "root" && (
-                <Menu>
-                  <MenuTrigger
-                    aria-label="More configuration actions"
-                    render={<Button variant="ghost" size="icon" />}
-                  >
-                    <DotsThree />
-                  </MenuTrigger>
-                  <MenuPopup align="end">
-                    <MenuItem
-                      variant="destructive"
-                      onClick={() => setDeleting(true)}
-                    >
-                      <Trash />
-                      Delete configuration
-                    </MenuItem>
-                  </MenuPopup>
-                </Menu>
-              )}
-          </>
+                  <Trash />
+                  Delete configuration
+                </MenuItem>
+              </MenuPopup>
+            </Menu>
+          )
         }
       />
-      <ErrorNotice
-        error={source.error || validate.error || save.error || remove.error}
-      />
-      {notice && (
-        <p role="status" className={styles.notice}>
-          {notice}
-        </p>
-      )}
+      <ErrorNotice error={source.error || remove.error} />
       {external && (
         <div className={styles.notice}>
           <p>
@@ -560,12 +503,6 @@ export function SourceDocument({
               source={draft!.content}
               onChange={(content) => update({ ...draft!, content })}
             />
-          ) : capabilitiesOnly ? (
-            <AgentFields
-              source={draft!.content}
-              onChange={(content) => update({ ...draft!, content })}
-              capabilitiesOnly
-            />
           ) : (
             <ResourceFields
               source={draft!.content}
@@ -580,18 +517,107 @@ export function SourceDocument({
                 path.endsWith(".md")
               }
             >
-              <summary>Configuration file</summary>
-              <p>
-                Complete file replacement. Preserve unknown fields and use
-                credential references, not literal keys.
-              </p>
-              <SourceEditor
-                value={draft!.content}
-                onChange={(content) => update({ ...draft!, content })}
-              />
+              <summary>Advanced configuration</summary>
+              <div className={styles.stack}>
+                {readDocument(draft!.content)?.has("kind") && (
+                  <TextField
+                    label="Resource ID"
+                    value={String(
+                      readDocument(draft!.content)?.get("id") ?? "",
+                    )}
+                    description="Changing this ID can break references."
+                    onChange={(id) =>
+                      update({
+                        ...draft!,
+                        content: updateDocument(draft!.content, ["id"], id),
+                      })
+                    }
+                  />
+                )}
+                <h3>Configuration file</h3>
+                <p>
+                  Complete file replacement. Preserve unknown fields and use
+                  credential references, not literal keys.
+                </p>
+                <SourceEditor
+                  value={draft!.content}
+                  onChange={(content) => update({ ...draft!, content })}
+                />
+                <Button
+                  variant="outline"
+                  loading={validate.isPending}
+                  disabled={save.isPending}
+                  onClick={() => validate.mutate(draft!.content)}
+                >
+                  Check configuration
+                </Button>
+              </div>
             </details>
           )}
         </div>
+      )}
+      {canEdit && (
+        <footer
+          className={styles.editorActions}
+          aria-label="Configuration actions"
+        >
+          {(validate.error || save.error) && (
+            <div className={styles.editorError}>
+              <ErrorNotice error={validate.error || save.error} />
+            </div>
+          )}
+          <div className={styles.editorState}>
+            <span>
+              {dirty
+                ? "Unsaved changes · lost on reload"
+                : "No unsaved changes"}
+            </span>
+            {notice ? (
+              <small role="status">{notice}</small>
+            ) : (
+              <small>Saving validates changes for future runs.</small>
+            )}
+          </div>
+          <div className={styles.actions}>
+            {isNew ? (
+              <ConfirmAction
+                key={path}
+                trigger={
+                  <Button variant="ghost" disabled={save.isPending}>
+                    Cancel
+                  </Button>
+                }
+                title="Discard this unsaved configuration?"
+                description={`Your unsaved configuration for ${path} will be lost.`}
+                confirmLabel="Discard draft"
+                destructive
+                onConfirm={() => {
+                  drafts.delete(path);
+                  navigate("/settings/resources");
+                }}
+              />
+            ) : (
+              <Button
+                variant="ghost"
+                disabled={!dirty || save.isPending}
+                onClick={() => setReplacing(true)}
+              >
+                {mediaOnly ? "Discard" : "Cancel"}
+              </Button>
+            )}
+            <Button
+              loading={save.isPending}
+              disabled={!dirty}
+              onClick={() => save.mutate(draft!.content)}
+            >
+              {isNew
+                ? `Create ${resourceLabel}`
+                : mediaOnly
+                  ? "Save"
+                  : "Save changes"}
+            </Button>
+          </div>
+        </footer>
       )}
       {source.data?.content_available && !writable && (
         <Panel>
@@ -641,6 +667,6 @@ export function SourceDocument({
       >
         <p>{path}</p>
       </ModalFrame>
-    </>
+    </div>
   );
 }

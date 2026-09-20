@@ -13,7 +13,7 @@ export function PageHeader({
 }: {
   level?: 1 | 2;
   title: string;
-  description: string;
+  description?: string;
   actions?: ReactNode;
 }) {
   const Heading = level === 1 ? "h1" : "h2";
@@ -21,7 +21,7 @@ export function PageHeader({
     <header className={styles.pageHeader}>
       <div>
         <Heading>{title}</Heading>
-        <p>{description}</p>
+        {description && <p>{description}</p>}
       </div>
       {actions && <div className={styles.actions}>{actions}</div>}
     </header>

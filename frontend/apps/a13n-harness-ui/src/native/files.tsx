@@ -330,16 +330,16 @@ export function Files({
         }}
         title={
           operation?.kind === "delete"
-            ? "Delete native entry"
+            ? "Delete file or folder"
             : operation?.kind === "move"
-              ? "Rename or move native entry"
+              ? "Rename or move file or folder"
               : operation?.kind === "replace"
-                ? "Replace native file from upload"
+                ? "Replace file from upload"
                 : operation?.kind === "upload"
                   ? "Upload to server"
                   : operation?.kind === "new-directory"
-                    ? "Create native folder"
-                    : "Create native file"
+                    ? "Create folder"
+                    : "Create file"
         }
         description="This operates on the server's filesystem, not an Agent Environment."
         closeLabel="Close"

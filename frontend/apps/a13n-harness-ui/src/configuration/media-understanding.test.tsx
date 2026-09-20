@@ -122,7 +122,16 @@ it("selects compatible defaults, preserves root fields, saves and clears", async
   expect(screen.queryByRole("option", { name: "Text" })).toBeNull();
   await user.click(await screen.findByRole("option", { name: "Vision" }));
   expect(state.put).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  expect(
+    screen.getByRole("heading", { name: "Media understanding", level: 2 }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Check configuration" }),
+  ).toBeNull();
+  const actions = screen.getByRole("contentinfo", {
+    name: "Configuration actions",
+  });
+  await user.click(within(actions).getByRole("button", { name: "Save" }));
   await waitFor(() => expect(state.put).toHaveBeenCalledTimes(1));
   expect(parse(state.content)).toEqual({
     schema_version: "1",
@@ -178,10 +187,50 @@ it("does not quick-save an existing root draft and supports confirmed discard", 
   expect(drafts.get("custom.yaml")?.content).toContain("theme: dark");
   await user.click(screen.getByRole("button", { name: "Discard" }));
   const dialog = await screen.findByRole("dialog");
+  expect(state.put).not.toHaveBeenCalled();
+  expect(drafts.get("custom.yaml")?.content).toContain("theme: dark");
   await user.click(
     within(dialog).getByRole("button", { name: "Reload saved version" }),
   );
   await waitFor(() =>
     expect(drafts.get("custom.yaml")?.content).toBe(state.content),
   );
+});
+
+it("retains media edits and shows save failures beside the shared actions", async () => {
+  const { user, drafts } = setup();
+  await user.click(
+    await screen.findByRole("combobox", { name: "Image understanding" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Vision" }));
+  let rejectSave!: (error: Error) => void;
+  state.put.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        rejectSave = reject;
+      }),
+  );
+  const actions = screen.getByRole("contentinfo", {
+    name: "Configuration actions",
+  });
+  await user.click(within(actions).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(state.put).toHaveBeenCalledTimes(1));
+  expect(
+    within(actions)
+      .getByRole("button", { name: "Discard" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  rejectSave(new Error("Model configuration is invalid."));
+  expect(
+    await within(actions).findByText("Model configuration is invalid."),
+  ).toBeTruthy();
+  expect(
+    parse(drafts.get("custom.yaml")!.content).media_understanding.image,
+  ).toBe("model-vision");
+  expect(parse(state.content).media_understanding).toBeUndefined();
+  expect(
+    within(actions)
+      .getByRole("button", { name: "Save" })
+      .hasAttribute("disabled"),
+  ).toBe(false);
 });

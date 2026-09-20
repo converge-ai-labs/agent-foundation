@@ -176,18 +176,7 @@ export function ResourceFields({
   return (
     <div className={styles.stack}>
       <ErrorNotice error={selectors.error || sources.error || catalog.error} />
-      {kind && (
-        <SettingsSection title="Identity">
-          <div className={`${styles.formGrid} ${styles.fieldGroup}`}>
-            {field(
-              "Resource ID",
-              ["id"],
-              "Changing an ID can break references. Validation checks the complete configuration.",
-            )}
-            {field("Name", ["name"])}
-          </div>
-        </SettingsSection>
-      )}
+      {kind && <div>{field("Name", ["name"])}</div>}
       {kind === "model" && (
         <SettingsSection title="Model connection">
           <div className={styles.fieldGroup}>
@@ -198,11 +187,15 @@ export function ResourceFields({
       {kind === "agent" && (
         <>
           <SettingsSection title="Agent behavior">
-            {scalar("Model", ["model"], models, "Not connected")}
-            <div className={styles.fieldGroup}>
+            <div className={`${styles.fieldGroup} ${styles.stack}`}>
+              <ResourceChoice
+                label="Model"
+                value={text(["model"])}
+                loading={selectors.isPending || sources.isPending}
+                onValueChange={(value) => set(["model"], value || undefined)}
+                options={[{ value: "", label: "Not connected" }, ...models]}
+              />
               <AddModelButton onSaved={(id) => set(["model"], id)} />
-            </div>
-            <div className={styles.fieldGroup}>
               <FormField label="Instructions">
                 <Textarea
                   value={text(["instructions"])}
@@ -214,10 +207,7 @@ export function ResourceFields({
               </FormField>
             </div>
           </SettingsSection>
-          <SettingsSection
-            title="Connections"
-            description="Select reusable plugins and MCP servers for this agent."
-          >
+          <SettingsSection title="Connections">
             {referenceLists([])}
           </SettingsSection>
           <AgentFields source={source} onChange={onChange} />

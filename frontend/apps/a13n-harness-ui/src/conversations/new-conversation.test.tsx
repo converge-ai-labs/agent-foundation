@@ -682,7 +682,7 @@ function reload(initial = path) {
 it("uses one composer across project plus actions, Home and settings without creating Threads", async () => {
   mount();
   await fill();
-  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  const editor = screen.getByRole("textbox", { name: "Message" });
   const original = creations.current!;
   act(() => {
     original.composer.modelId = "model-two";
@@ -692,7 +692,7 @@ it("uses one composer across project plus actions, Home and settings without cre
   await screen.findByRole("heading", {
     name: "What would you like to build in Second project?",
   });
-  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   expect(editor.textContent).toBe("Build this");
   expect(creations.current).toBe(original);
   expect(original.defaults.project_id).toBe("project-two");
@@ -702,9 +702,9 @@ it("uses one composer across project plus actions, Home and settings without cre
   await screen.findByRole("heading", {
     name: "What would you like to build in Second project?",
   });
-  expect(
-    screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
-  ).toBe("Build this");
+  expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
+    "Build this",
+  );
   fireEvent.click(screen.getByRole("link", { name: "New without project" }));
   await screen.findByRole("heading", { name: "What would you like to build?" });
   expect(creations.current!.defaults.project_id).toBeNull();
@@ -728,9 +728,9 @@ it("restores text and choices after a full reload and persists deleting the inpu
   await screen.findByRole("heading", {
     name: "What would you like to build in Second project?",
   });
-  expect(
-    screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
-  ).toBe("Build this");
+  expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
+    "Build this",
+  );
   expect(creations.current!.threadId).toBe(id);
   expect(
     screen.getByRole("button", { name: "Model settings" }).textContent,
@@ -740,7 +740,7 @@ it("restores text and choices after a full reload and persists deleting the inpu
     text.delete(0, text.length);
   });
   reload("/");
-  await screen.findByRole("textbox", { name: "Shared prompt" });
+  await screen.findByRole("textbox", { name: "Message" });
   expect(values(creations.current!.composer.doc).prompt).toBe("");
   expect(writes).toHaveLength(0);
 });
@@ -767,7 +767,7 @@ it("creates the selected project only on Send, then starts a fresh singleton aft
   expect((await writes[0].json()).defaults.project_id).toBe("project-two");
   expect(localStorage.getItem("a13n-harness-ui.new-draft")).toBeNull();
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
-  await screen.findByRole("textbox", { name: "Shared prompt" });
+  await screen.findByRole("textbox", { name: "Message" });
   expect(values(creations.current!.composer.doc).prompt).toBe("");
   expect(creations.current!.threadId).not.toBe(id);
   expect(writes).toHaveLength(2);
@@ -787,9 +787,9 @@ it("retains the exact identity and frozen project when creation is uncertain acr
   });
   expect(creations.current!.attempted).toBe(true);
   expect(creations.current!.threadId).toBe(id);
-  expect(
-    screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
-  ).toBe("Build this");
+  expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
+    "Build this",
+  );
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() =>
     expect(screen.getByLabelText("Location").textContent).toBe(
@@ -867,7 +867,7 @@ it("retains accepted input on a saved-page read failure and starts a fresh draft
   );
   reload("/");
   expect(
-    (await screen.findByRole("textbox", { name: "Shared prompt" })).textContent,
+    (await screen.findByRole("textbox", { name: "Message" })).textContent,
   ).toBe("Next task");
   expect(writes).toHaveLength(2);
 });
@@ -875,7 +875,7 @@ it("retains accepted input on a saved-page read failure and starts a fresh draft
 it("preserves native deep-link parameters when restoring or changing Project", async () => {
   const user = (await import("@testing-library/user-event")).default.setup();
   mount("/?native=files&native_path=%2Ftmp%2Fnotes.txt&terminal=terminal-one");
-  await screen.findByRole("textbox", { name: "Shared prompt" });
+  await screen.findByRole("textbox", { name: "Message" });
   await waitFor(() =>
     expect(screen.getByLabelText("Search").textContent).toContain("project="),
   );
@@ -1068,7 +1068,7 @@ it("waits for project, catalog and the selected defaults before exposing the new
   await act(async () => release.get("/api/selectors")!());
   expect(screen.queryByRole("textbox")).toBeNull();
   await act(async () => release.get("/api/threads/configuration-preview")!());
-  const editor = await screen.findByRole("textbox", { name: "Shared prompt" });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
   expect(document.activeElement).toBe(editor);
   expect(screen.getByRole("heading").textContent).toContain("Example project");
   expect(
@@ -1081,7 +1081,7 @@ it("waits for project, catalog and the selected defaults before exposing the new
 it("keeps the new draft sendable during background preview refresh and explains changed defaults", async () => {
   mount();
   await fill();
-  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  const editor = screen.getByRole("textbox", { name: "Message" });
   let release!: () => void;
   const paused = new Promise<void>((resolve) => {
     release = resolve;
@@ -1105,7 +1105,7 @@ it("keeps the new draft sendable during background preview refresh and explains 
   ).toBe(false);
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByText("Updating conversation settings…");
-  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   expect(screen.queryByText("Preparing your conversation…")).toBeNull();
   fireEvent.keyDown(editor, { key: "Enter" });
   expect(writes).toHaveLength(0);
@@ -1129,7 +1129,7 @@ it("reveals setup errors instead of trapping a retained new draft behind loading
       : original(request),
   );
   mount();
-  const editor = await screen.findByRole("textbox", { name: "Shared prompt" });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
   expect(screen.getByText("Choose an available agent")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Continue setup" })).toBeTruthy();
   expect(screen.queryByText("Preparing your conversation…")).toBeNull();

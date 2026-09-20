@@ -113,24 +113,12 @@ export function ModelsPage() {
   });
   return (
     <>
-      <PageHeader
-        title="Models"
-        description="Reusable model connections. Only saved Models appear in conversation choices; editing one does not change active Runs or Agent tools."
-        actions={<NewResourceButton kind="model" />}
-      />
+      <PageHeader title="Models" actions={<NewResourceButton kind="model" />} />
       <ErrorNotice
         error={
           selectors.error || sources.error || clone.error || setDefault.error
         }
       />
-      {root && (
-        <SourceDocument
-          path={root.relative_path}
-          title="Media understanding"
-          mediaOnly
-          embedded
-        />
-      )}
       <TextField
         label="Search models"
         type="search"
@@ -238,6 +226,15 @@ export function ModelsPage() {
           started.
         </p>
       )}
+      {root && (
+        <SourceDocument
+          key={root.relative_path}
+          path={root.relative_path}
+          title="Media understanding"
+          mediaOnly
+          embedded
+        />
+      )}
     </>
   );
 }
@@ -294,7 +291,6 @@ function AddModelDialog({
         if (!open && !save.isPending) onClose();
       }}
       title="Add model"
-      description="Save a reusable Model, then select it for this Agent. No model request will be sent."
       closeLabel="Cancel"
       footer={
         <Button

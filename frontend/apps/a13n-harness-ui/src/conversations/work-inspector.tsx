@@ -229,15 +229,12 @@ export function WorkInspector({
                   <X />
                 </PopoverClose>
               </div>
-              <PopoverDescription className={styles.caption}>
-                {key === "tasks"
-                  ? "Current task state. Expand a task to inspect ownership and dependencies."
-                  : key === "children"
-                    ? "Inspect subordinate executions without leaving this conversation."
-                    : key === "processes"
-                      ? "Last observed background processes from this conversation and its subagents. Not a host process inventory."
-                      : "Working context retained with this conversation."}
-              </PopoverDescription>
+              {key === "processes" && (
+                <PopoverDescription className={styles.caption}>
+                  Last observed processes from this conversation and its
+                  subagents, not all server processes.
+                </PopoverDescription>
+              )}
               {(key === "tasks" || key === "notes") && (
                 <p className={styles.caption}>
                   {workCaption(
@@ -259,9 +256,7 @@ export function WorkInspector({
                   {!page && saved.isPending && (
                     <Loading label="Loading tasks" />
                   )}
-                  {!saved.isPending && !page && (
-                    <p>Task observation unavailable.</p>
-                  )}
+                  {!saved.isPending && !page && <p>Task state unavailable.</p>}
                   <TaskList page={page} />
                 </>
               )}
@@ -280,7 +275,7 @@ export function WorkInspector({
                   />
                   {work.notes.isPending && <Loading label="Loading notes" />}
                   {!work.notes.isPending && !work.notes.data?.notes.page && (
-                    <p>Note observation unavailable.</p>
+                    <p>Notes unavailable.</p>
                   )}
                   <NoteList page={work.notes.data?.notes.page} />
                 </>

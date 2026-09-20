@@ -124,12 +124,11 @@ export function Changes({
       <div className={styles.empty}>
         <h3>Git unavailable</h3>
         <p>
-          Git must be installed on the server and native sharing enabled. Files
-          remains independent; this is not a clean-tree result.
+          Install Git on the server and enable native sharing to view changes.
         </p>
       </div>
     );
-  if (!path) return <p>Choose a native directory to inspect its repository.</p>;
+  if (!path) return <p>Choose a server directory to inspect its repository.</p>;
   const groups = ["staged", "unstaged", "untracked"] as const;
   const matches = entries.filter((entry) =>
     `${entry.path} ${entry.original_path ?? ""}`
@@ -146,7 +145,7 @@ export function Changes({
         }}
       />
       {(discovery.isFetching || status.isFetching) && (
-        <small role="status">Refreshing Git observations…</small>
+        <small role="status">Refreshing Git status…</small>
       )}
       {discovery.data?.state !== "repository" && discovery.data && (
         <div className={styles.empty}>
@@ -166,7 +165,7 @@ export function Changes({
           <div className={styles.repo}>
             <strong>
               {repository.branch ?? "Detached HEAD"}
-              {!repository.head_oid ? " · Unborn HEAD" : ""}
+              {!repository.head_oid ? " · No commits yet" : ""}
             </strong>
             <div className={styles.path}>{repository.root}</div>
             <details>

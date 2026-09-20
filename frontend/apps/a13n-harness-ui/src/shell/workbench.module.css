@@ -645,6 +645,38 @@ a.resourceRow:hover {
   }
 }
 
+.sourceDocument {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 760px;
+  min-width: 0;
+}
+.editorActions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-block: 16px;
+  border-top: 1px solid var(--a13n-border);
+  background: var(--a13n-canvas);
+}
+.editorError {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.editorState {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
 .configurationForm {
   display: flex;
   flex-direction: column;

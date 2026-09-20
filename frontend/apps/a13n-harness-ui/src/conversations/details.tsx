@@ -42,7 +42,7 @@ export function ConversationDetails({
         value={tab}
         onValueChange={setTab}
         options={[
-          { value: "execution", label: "Execution & children" },
+          { value: "execution", label: "Execution & subagents" },
           { value: "configuration", label: "Configuration" },
           { value: "context", label: "Tasks, notes & usage" },
         ]}
@@ -203,7 +203,7 @@ export function Children({
   const children = useChildExecutions(threadId);
   return (
     <section className={styles.children}>
-      {!display && <h3>Child executions</h3>}
+      {!display && <h3>Subagents</h3>}
       {children.isPending && <p role="status">Loading subagents…</p>}
       <ErrorNotice
         error={children.error}
@@ -219,7 +219,7 @@ export function Children({
             live={display?.childOutput(child)}
           />
         ))}
-      {children.data?.pages[0].total === 0 && <p>No child executions.</p>}
+      {children.data?.pages[0].total === 0 && <p>No subagent executions.</p>}
       {children.hasNextPage && (
         <Button
           variant="ghost"
@@ -339,7 +339,7 @@ export function Child({
                 disabled={!instruction.trim() || pending || unknown}
                 onClick={() => control.mutate("steer")}
               >
-                Send child instruction
+                Guide subagent
               </Button>
             </div>
           )}
@@ -349,14 +349,15 @@ export function Child({
               disabled={pending || unknown}
               onClick={() => control.mutate("cancel")}
             >
-              Stop child
+              Stop subagent
             </Button>
           )}
           {unknown && (
             <div className={styles.warning}>
               <p>
-                Acknowledgement unavailable. The child may already have received
-                this control. Your instruction is retained; no retry was sent.
+                Acknowledgement unavailable. The subagent may already have
+                received this control. Your instruction is retained; no retry
+                was sent.
               </p>
               <Button
                 variant="outline"

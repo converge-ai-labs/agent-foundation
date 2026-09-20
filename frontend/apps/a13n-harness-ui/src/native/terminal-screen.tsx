@@ -401,7 +401,7 @@ export default function TerminalScreen({
           disabled={!selection || !threadId}
           onClick={addSelection}
         >
-          Add selection to prompt
+          Add selection to message
         </Button>
       </div>
       {finding && (

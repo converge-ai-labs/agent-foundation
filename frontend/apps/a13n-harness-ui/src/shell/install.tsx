@@ -115,12 +115,15 @@ export function InstallSettings() {
               </Button>
             </div>
           )}
-          <p>
-            You can also use your browser's Install app or Add to Home Screen
-            option, when available. On iPhone or iPad, open this page in Safari
-            and choose Share, then Add to Home Screen. On Mac, Safari offers
-            File → Add to Dock.
-          </p>
+          <details>
+            <summary>Manual installation</summary>
+            <p>
+              Use your browser's Install app or Add to Home Screen option, when
+              available. On iPhone or iPad, open this page in Safari and choose
+              Share, then Add to Home Screen. On Mac, Safari offers File → Add
+              to Dock.
+            </p>
+          </details>
         </>
       )}
       {install?.error && <p role="alert">{install.error}</p>}

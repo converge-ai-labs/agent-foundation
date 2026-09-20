@@ -136,7 +136,9 @@ it("requires explicit background opt-in for granted permission and suppresses pa
   fireEvent.click(
     screen.getByRole("button", { name: "Send test notification" }),
   );
-  await screen.findByText(/push service accepted the test/);
+  await screen.findByText(
+    /Test accepted by the push service; delivery is not confirmed/,
+  );
   expect(test).toHaveBeenCalledWith(transport);
   fireEvent.click(
     screen.getByRole("switch", { name: "Enable browser notifications" }),
@@ -290,7 +292,7 @@ it.each([
     mount("/settings/notifications");
     expect(screen.getByText("Open from Home Screen")).toBeTruthy();
     expect(
-      screen.getAllByText(/Use Share → Add to Home Screen/).length,
+      screen.getAllByText(/Add Harness UI to your Home Screen/).length,
     ).toBeGreaterThan(0);
     expect(
       screen.queryByRole("button", { name: "Allow notifications" }),
@@ -345,7 +347,15 @@ it("keeps installation guidance inline without duplicating a persistent toast in
   });
   vi.stubGlobal("Notification", undefined);
   mount("/settings/notifications");
-  expect(screen.getAllByText(/Use Share → Add to Home Screen/)).toHaveLength(1);
+  expect(
+    screen.getAllByText(/Add Harness UI to your Home Screen/),
+  ).toHaveLength(1);
+  const help = screen.getByText("Delivery help").closest("details")!;
+  expect(help.open).toBe(false);
+  fireEvent.click(screen.getByText("Delivery help"));
+  expect(help.open).toBe(true);
+  expect(help.textContent).toContain("Share → Add to Home Screen");
+  expect(help.textContent).toContain("six-hour delivery window");
   expect(screen.queryByLabelText("Notification permission")).toBeNull();
   expect(
     screen.queryByText(/Without background delivery, keep WebUI open/),

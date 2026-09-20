@@ -31,8 +31,8 @@ export function DevicesSection() {
         <ConnectDevice />
       </div>
       <p>
-        Connect envd once, then select its working directories in Project
-        defaults or a conversation. Each envd process connects to one Host.
+        Connect another computer with envd to use its directories. Local
+        execution profiles do not change its permissions.
       </p>
       <ErrorNotice error={devices.error || pairings.error} />
       {!!pairings.data?.length && (

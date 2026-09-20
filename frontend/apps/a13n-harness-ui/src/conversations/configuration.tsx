@@ -130,8 +130,8 @@ export function ConversationConfiguration({
           <section>
             <h3>
               {data.capture_source === "active_operation"
-                ? "Current Run capture"
-                : "Last selected continuation capture"}
+                ? "Current run configuration"
+                : "Selected continuation configuration"}
             </h3>
             {data.captured ? (
               <>
@@ -172,7 +172,7 @@ export function ConversationConfiguration({
                   </div>
                 </dl>
                 <details className={styles.activity}>
-                  <summary>Inspect bounded captured configuration</summary>
+                  <summary>Captured configuration details</summary>
                   <pre className={styles.code}>
                     {JSON.stringify(data.captured, null, 2)}
                   </pre>
@@ -219,8 +219,8 @@ export function ConversationConfiguration({
             <section>
               <h3>Apply Project defaults</h3>
               <p>
-                Only explicitly configured Project axes are replaced.
-                Unspecified selections stay unchanged.
+                Only settings specified by the Project are replaced. Unspecified
+                selections stay unchanged.
               </p>
               <Button
                 variant="outline"
@@ -244,7 +244,7 @@ export function ConversationConfiguration({
                   preview.mutate(true);
                 }}
               >
-                Apply Project environments
+                Preview Project environments
               </Button>
               <p>
                 Applying environments replaces local folders, local mode, remote

@@ -11,10 +11,8 @@ import styles from "../shell/workbench.module.css";
 export function AgentFields({
   source,
   onChange,
-  capabilitiesOnly = false,
 }: {
   source: string;
-  capabilitiesOnly?: boolean;
   onChange: (source: string) => void;
 }) {
   const { client } = useTransport();
@@ -50,7 +48,7 @@ export function AgentFields({
   );
   const proxy = useQuery({
     queryKey: ["agent-tool-proxy", raw.id],
-    enabled: !!accepted && !capabilitiesOnly,
+    enabled: !!accepted,
     queryFn: ({ signal }) =>
       result(
         client.GET("/api/agents/{agent_id}/tool-proxy", {
@@ -86,8 +84,8 @@ export function AgentFields({
   )
     return (
       <p>
-        Repair the capability, child or tool list in advanced YAML before using
-        these fields.
+        Repair the capability, subagent or tool list in advanced YAML before
+        using these fields.
       </p>
     );
   return (
@@ -130,139 +128,132 @@ export function AgentFields({
                 .map((item) => ({ value: item.key, label: item.key })),
             ]}
           />
-          <small>
-            Selected capabilities are enabled for this agent when you save. Edit
-            plugin-specific options in the configuration file below.
-          </small>
+          <small>Edit capability options in Advanced configuration.</small>
         </div>
       </SettingsSection>
-      {!capabilitiesOnly && (
-        <>
-          <SettingsSection title="Child agents">
-            <div className={`${styles.stack} ${styles.fieldGroup}`}>
-              {children.map((item, index) => (
-                <div className={styles.actions} key={index}>
-                  <span>{item.agent ?? item.markdown}</span>
-                  <small>
-                    {item.agent
-                      ? "Independent Agent model"
-                      : "Inherits parent model"}
-                  </small>
-                  <Button
-                    variant="ghost"
-                    aria-label={`Remove child ${item.agent ?? item.markdown}`}
-                    onClick={() => remove("subagents", index)}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ))}
-              <ResourceChoice
-                loading={sources.isPending}
-                label="Add child agent"
-                value=""
-                onValueChange={(child) => {
-                  if (child) {
-                    const [kind, id] = child.split(":");
-                    add("subagents", { [kind]: id });
-                  }
-                }}
-                options={[
-                  {
-                    value: "",
-                    label: "Choose a configured Agent or Markdown subagent",
-                  },
-                  ...(sources.data?.sources ?? [])
+      <SettingsSection title="Subagents">
+        <div className={`${styles.stack} ${styles.fieldGroup}`}>
+          {children.map((item, index) => (
+            <div className={styles.actions} key={index}>
+              <span>{item.agent ?? item.markdown}</span>
+              <small>
+                {item.agent
+                  ? "Independent Agent model"
+                  : "Inherits parent model"}
+              </small>
+              <Button
+                variant="ghost"
+                aria-label={`Remove subagent ${item.agent ?? item.markdown}`}
+                onClick={() => remove("subagents", index)}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          <ResourceChoice
+            loading={sources.isPending}
+            label="Add subagent"
+            value=""
+            onValueChange={(child) => {
+              if (child) {
+                const [kind, id] = child.split(":");
+                add("subagents", { [kind]: id });
+              }
+            }}
+            options={[
+              {
+                value: "",
+                label: "Choose a configured Agent or Markdown subagent",
+              },
+              ...(sources.data?.sources ?? [])
+                .filter(
+                  (item) =>
+                    item.resource_kind === "agent" ||
+                    item.resource_kind === "subagent",
+                )
+                .flatMap((item) =>
+                  item.resource_ids
                     .filter(
-                      (item) =>
-                        item.resource_kind === "agent" ||
-                        item.resource_kind === "subagent",
-                    )
-                    .flatMap((item) =>
-                      item.resource_ids
-                        .filter(
-                          (id) =>
-                            id !== raw.id &&
-                            !children.some(
-                              (child) => (child.agent ?? child.markdown) === id,
-                            ),
-                        )
-                        .map((id) => ({
-                          value: `${item.resource_kind === "agent" ? "agent" : "markdown"}:${id}`,
-                          label: id,
-                        })),
-                    ),
-                ]}
-              />
-            </div>
-          </SettingsSection>
-          <details className={styles.details}>
-            <summary>Tool restrictions</summary>
-            <div className={styles.stack}>
-              <label className={styles.check}>
-                <input
-                  type="checkbox"
-                  checked={Array.isArray(raw.tools)}
-                  onChange={(event) =>
-                    onChange(
-                      updateDocument(
-                        source,
-                        ["tools"],
-                        event.target.checked ? [] : undefined,
-                      ),
-                    )
-                  }
-                />
-                Restrict tool names
-              </label>
-              {Array.isArray(raw.tools) && (
-                <FormField
-                  label="Allowed tool names"
-                  description="One exact name per line. An empty list allows no tools; disabling this restriction inherits the available tools."
-                >
-                  <Textarea
-                    rows={3}
-                    value={raw.tools.join("\n")}
-                    onChange={(event) =>
-                      onChange(
-                        updateDocument(
-                          source,
-                          ["tools"],
-                          event.target.value.split("\n").filter(Boolean),
+                      (id) =>
+                        id !== raw.id &&
+                        !children.some(
+                          (child) => (child.agent ?? child.markdown) === id,
                         ),
-                      )
-                    }
-                  />
-                </FormField>
-              )}
-            </div>
-          </details>
-          <details className={styles.details}>
-            <summary>Saved tool groups</summary>
-            <p>
-              Uses the saved agent, not your unsaved edits. No servers are
-              contacted. Edit tool groups in the configuration file.
-            </p>
-            {!accepted ? (
-              <p>Save this agent to inspect its tool groups.</p>
-            ) : proxy.isPending ? (
-              <p>Loading composition…</p>
-            ) : (
-              <>
-                {!proxy.data?.sources.length && (
-                  <p>No configured plugin or MCP sources.</p>
-                )}
-                {proxy.data?.sources.map((item) => (
-                  <p key={item.resource_id}>
-                    <span>{item.resource_id}</span> · {item.presentation}
-                    {item.group ? ` · ${item.group}` : ""}
-                  </p>
-                ))}
-              </>
+                    )
+                    .map((id) => ({
+                      value: `${item.resource_kind === "agent" ? "agent" : "markdown"}:${id}`,
+                      label: id,
+                    })),
+                ),
+            ]}
+          />
+        </div>
+      </SettingsSection>
+      <details className={styles.details}>
+        <summary>Tool restrictions</summary>
+        <div className={styles.stack}>
+          <label className={styles.check}>
+            <input
+              type="checkbox"
+              checked={Array.isArray(raw.tools)}
+              onChange={(event) =>
+                onChange(
+                  updateDocument(
+                    source,
+                    ["tools"],
+                    event.target.checked ? [] : undefined,
+                  ),
+                )
+              }
+            />
+            Restrict tool names
+          </label>
+          {Array.isArray(raw.tools) && (
+            <FormField
+              label="Allowed tool names"
+              description="One exact name per line. An empty list allows no tools; disabling this restriction inherits the available tools."
+            >
+              <Textarea
+                rows={3}
+                value={raw.tools.join("\n")}
+                onChange={(event) =>
+                  onChange(
+                    updateDocument(
+                      source,
+                      ["tools"],
+                      event.target.value.split("\n").filter(Boolean),
+                    ),
+                  )
+                }
+              />
+            </FormField>
+          )}
+        </div>
+      </details>
+      <details className={styles.details}>
+        <summary>Saved tool groups</summary>
+        <p>
+          Saved configuration, not unsaved edits. Edit groups in Advanced
+          configuration.
+        </p>
+        {!accepted ? (
+          <p>Save this agent to inspect its tool groups.</p>
+        ) : proxy.isPending ? (
+          <p>Loading composition…</p>
+        ) : (
+          <>
+            {!proxy.data?.sources.length && (
+              <p>No configured plugin or MCP sources.</p>
             )}
-          </details>
-        </>
-      )}
+            {proxy.data?.sources.map((item) => (
+              <p key={item.resource_id}>
+                <span>{item.resource_id}</span> · {item.presentation}
+                {item.group ? ` · ${item.group}` : ""}
+              </p>
+            ))}
+          </>
+        )}
+      </details>
     </>
   );
 }

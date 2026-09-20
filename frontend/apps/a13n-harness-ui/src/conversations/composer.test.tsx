@@ -360,7 +360,7 @@ it("keeps Goal intent and authored input while toggling options, and disables Go
     </QueryClientProvider>
   );
   const view = render(renderComposer());
-  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  const editor = screen.getByRole("textbox", { name: "Message" });
   const goal = screen.getByRole("button", { name: "Goal" });
   fireEvent.click(goal);
   expect(goal.getAttribute("aria-pressed")).toBe("true");
@@ -387,7 +387,7 @@ it("keeps Goal intent and authored input while toggling options, and disables Go
   );
   view.rerender(renderComposer(true));
   expect((goal as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   view.unmount();
   query.clear();
 });

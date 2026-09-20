@@ -512,7 +512,7 @@ it("searches retained output and appends selection only to the currently selecte
   });
   component.rerender(content("two"));
   fireEvent.click(
-    screen.getByRole("button", { name: "Add selection to prompt" }),
+    screen.getByRole("button", { name: "Add selection to message" }),
   );
   expect(one.doc.getText("text").toString()).toBe("Draft one");
   expect(two.doc.getText("text").toString()).toContain(

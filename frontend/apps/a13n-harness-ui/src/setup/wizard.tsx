@@ -274,11 +274,9 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
         }}
       >
         <DialogHeader>
-          <p className={styles.eyebrow}>YOUR FIRST CONVERSATION STARTS HERE</p>
           <DialogTitle>Make this workbench yours</DialogTitle>
           <DialogDescription>
-            Connect a model and choose where it can work. No model requests
-            until you send a message.
+            Connect a model and choose where it can work.
           </DialogDescription>
           <ol className={styles.steps} aria-label="Setup progress">
             {steps.map((step, index) => (

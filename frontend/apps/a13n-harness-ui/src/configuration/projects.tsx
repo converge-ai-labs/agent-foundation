@@ -23,7 +23,6 @@ export function ProjectsPage() {
     <>
       <PageHeader
         title="Projects"
-        description="Organize server folders and choose defaults for new conversations. Existing conversations keep their own selections."
         actions={<NewResourceButton kind="project" label="Add project" />}
       />
       <ErrorNotice

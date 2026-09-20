@@ -48,7 +48,7 @@ it("retains unsaved configuration on cancel and navigates only after confirmed d
       </TransportContext>
     </QueryClientProvider>,
   );
-  await user.click(screen.getByRole("button", { name: "Discard draft" }));
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
   let dialog = await screen.findByRole("dialog", {
     name: "Discard this unsaved configuration?",
   });
@@ -57,7 +57,7 @@ it("retains unsaved configuration on cancel and navigates only after confirmed d
   expect(drafts.get(path)).toBe(draft);
   expect(screen.queryByRole("heading", { name: "Resources" })).toBeNull();
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await user.click(screen.getByRole("button", { name: "Discard draft" }));
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
   dialog = await screen.findByRole("dialog", {
     name: "Discard this unsaved configuration?",
   });
@@ -66,4 +66,119 @@ it("retains unsaved configuration on cancel and navigates only after confirmed d
   );
   await screen.findByRole("heading", { name: "Resources" });
   expect(drafts.has(path)).toBe(false);
+});
+
+function mountEditor(kind: string, isNew = true) {
+  const path = `${kind}s/${kind}-one.yaml`;
+  const content = `kind: ${kind}\nid: ${kind}-one\nname: Example\ncustom: keep\n`;
+  const drafts = new Map<string, SourceDraft>([
+    [
+      path,
+      {
+        content,
+        base: isNew ? null : content,
+        digest: isNew ? null : "original",
+        replacement: isNew,
+      },
+    ],
+  ]);
+  const client = {
+    GET: vi.fn(async () => ({
+      data: {
+        content,
+        writable: true,
+        content_available: true,
+        source_digest: "original",
+        resource_kind: kind,
+      },
+    })),
+    POST: vi.fn(async () => ({ data: {} })),
+    PUT: vi.fn(async () => ({ data: { source_digest: "saved" } })),
+  };
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <TransportContext value={{ client } as unknown as Transport}>
+        <DraftContext value={drafts}>
+          <MemoryRouter>
+            <SourceDocument path={path} isNew={isNew} />
+          </MemoryRouter>
+        </DraftContext>
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  return { client, drafts, path, content, user: userEvent.setup() };
+}
+
+it.each(["model", "agent"])(
+  "creates a %s directly without requiring a separate validation step",
+  async (kind) => {
+    const { client, drafts, path, content, user } = mountEditor(kind);
+    expect(screen.getByRole("heading", { name: `Add ${kind}` })).toBeTruthy();
+    expect(
+      screen.getByText("Advanced configuration").closest("details")?.open,
+    ).toBe(false);
+    await user.click(screen.getByRole("button", { name: `Create ${kind}` }));
+    await waitFor(() => expect(drafts.get(path)?.base).toBe(content));
+    expect(client.PUT).toHaveBeenCalledWith(
+      "/api/configuration/sources/{relative_path}",
+      {
+        params: { path: { relative_path: path } },
+        body: { content },
+      },
+    );
+    expect(client.POST).not.toHaveBeenCalled();
+    expect(drafts.get(path)?.digest).toBe("saved");
+    expect(screen.getByRole("status").textContent).toBe("Saved");
+  },
+);
+
+it("checks without saving and keeps a rejected draft available for repair", async () => {
+  const { client, drafts, path, content, user } = mountEditor("model");
+  await user.click(screen.getByText("Advanced configuration"));
+  await user.click(screen.getByRole("button", { name: "Check configuration" }));
+  await screen.findByText("Configuration valid · not saved");
+  expect(client.POST).toHaveBeenCalledWith("/api/configuration/validate", {
+    params: { query: { path } },
+    body: { content },
+  });
+  expect(client.PUT).not.toHaveBeenCalled();
+  expect(drafts.get(path)?.base).toBeNull();
+  client.PUT.mockRejectedValueOnce(new Error("Invalid configuration"));
+  await user.click(screen.getByRole("button", { name: "Create model" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Invalid configuration",
+  );
+  expect(drafts.get(path)?.content).toBe(content);
+  expect(drafts.get(path)?.base).toBeNull();
+});
+
+it("confirms cancelling an existing edit and restores the saved content without publishing", async () => {
+  const { client, drafts, path, content, user } = mountEditor("agent", false);
+  await screen.findByRole("button", { name: "Save changes" });
+  await user.click(screen.getByText("Advanced configuration"));
+  const id = screen.getByRole("textbox", { name: "Resource ID" });
+  await user.clear(id);
+  await user.type(id, "agent-edited");
+  expect(drafts.get(path)?.content).toContain("custom: keep");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  let dialog = await screen.findByRole("dialog", {
+    name: "Discard this local draft?",
+  });
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(drafts.get(path)?.content).toContain("agent-edited");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  dialog = await screen.findByRole("dialog", {
+    name: "Discard this local draft?",
+  });
+  await user.click(
+    within(dialog).getByRole("button", { name: "Reload saved version" }),
+  );
+  expect(drafts.get(path)?.content).toBe(content);
+  expect(client.PUT).not.toHaveBeenCalled();
+  expect(client.POST).not.toHaveBeenCalled();
 });

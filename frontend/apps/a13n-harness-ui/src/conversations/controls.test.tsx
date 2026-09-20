@@ -247,9 +247,7 @@ it("keeps child instructions after unknown control and addresses the exact paren
     await screen.findByRole("textbox", { name: "Instruction for Explorer" }),
     { target: { value: "Inspect this" } },
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Send child instruction" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
   await screen.findByText(/Acknowledgement unavailable/);
   expect(POST.mock.calls[0]).toEqual([
     "/api/threads/{thread_id}/children/{execution_id}/steer",
@@ -265,9 +263,7 @@ it("keeps child instructions after unknown control and addresses the exact paren
       }) as HTMLInputElement
     ).value,
   ).toBe("Inspect this");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Send child instruction" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
   expect(POST).toHaveBeenCalledOnce();
 });
 

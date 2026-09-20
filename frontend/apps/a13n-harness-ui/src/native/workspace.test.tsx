@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { useEffect, type ReactNode } from "react";
+import { useContext, useEffect, type ReactNode } from "react";
+import { ReturnToChat } from "./capture";
 import { ToolCall } from "../conversations/tool-call";
 import {
   cleanup,
@@ -811,5 +812,35 @@ it.each([
     await screen.findByText("Repository /native · Diff");
     fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
     await screen.findByText("Terminal context project-one · /native");
+  },
+);
+
+it.each(["Message", "Shared prompt"])(
+  "returns focus to the composer independently of its accessible name (%s)",
+  async (label) => {
+    function Content() {
+      const returnToChat = useContext(ReturnToChat);
+      return (
+        <>
+          <input aria-label={label} data-composer-editor="" />
+          <button onClick={returnToChat}>Return to message</button>
+        </>
+      );
+    }
+    setup(
+      "/threads/current?native=files",
+      true,
+      undefined,
+      "project-one",
+      "project-one",
+      ["/native"],
+      <Content />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Return to message" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("textbox", { name: label }),
+      ),
+    );
   },
 );

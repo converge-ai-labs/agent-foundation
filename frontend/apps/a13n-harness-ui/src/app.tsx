@@ -198,16 +198,14 @@ export function BrowserApp() {
                         <span className={styles.brandMark}>a13n</span>
                         <h1>Log in to Harness UI</h1>
                         <p>
-                          Use the instance API key printed by your server.
-                          Provider accounts and model keys are configured after
-                          connecting.
+                          Use the instance API key printed by your server, not a
+                          model provider key.
                         </p>
-                        <p role="status">
-                          {error ||
-                            (connecting
-                              ? "Connecting to server…"
-                              : "Enter your instance key.")}
-                        </p>
+                        {(error || connecting) && (
+                          <p role="status">
+                            {error || "Connecting to server…"}
+                          </p>
+                        )}
                         {pushWarning && <p role="alert">{pushWarning}</p>}
                         <form
                           className={styles.stack}
@@ -218,7 +216,7 @@ export function BrowserApp() {
                           }}
                         >
                           <TextField
-                            label="API key"
+                            label="Instance API key"
                             type="password"
                             value={input}
                             onChange={setInput}
