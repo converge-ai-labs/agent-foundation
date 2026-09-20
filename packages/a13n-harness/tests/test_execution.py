@@ -739,10 +739,47 @@ async def test_prestart_cancellation_never_calls_the_model_and_preserves_supplie
 
     assert isinstance(terminal, HarnessRunResultEvent)
     assert terminal.result.status == "cancelled"
-    assert terminal.result.state is None
+    assert terminal.result.state is not None
+    assert terminal.result.state.message_history == ()
+    assert await stream.export_state() == terminal.result.state
     assert terminal.result.usage.requests == 7
     assert terminal.result.usage.details == {"cached": 2}
     assert calls == []
+
+
+@pytest.mark.parametrize("cancel_before_entry", [False, True])
+async def test_prestart_cancellation_preserves_imported_history_and_shutdown_checkpoint(
+    cancel_before_entry: bool,
+) -> None:
+    calls: list[tuple[ModelMessage, ...]] = []
+    executable = _build(_turn_model(calls))
+    first = await executable.run("first turn")
+    assert first.state is not None
+    original_state = first.state.model_copy(deep=True)
+    calls.clear()
+    stream = executable.stream("cancelled turn", previous_state=first.state)
+    if cancel_before_entry:
+        stream.cancel()
+    async with stream:
+        if not cancel_before_entry:
+            stream.cancel()
+        items = [item async for item in stream]
+
+    terminal = items[-1]
+    assert isinstance(terminal, HarnessRunResultEvent)
+    result = terminal.result
+    assert result.status == "cancelled"
+    assert result.state is not None
+    assert result.state.thread_id == original_state.thread_id
+    assert result.all_messages() == original_state.message_history
+    assert result.new_messages() == ()
+    assert result.state.message_history == original_state.message_history
+    assert await stream.export_state() == result.state
+    assert first.state == original_state
+    assert calls == []
+
+    resumed = await executable.run("next turn", previous_state=result.state)
+    assert resumed.output_or_raise() == "turn-2"
 
 
 async def test_started_stream_closes_the_model_when_the_caller_stops_early() -> None:

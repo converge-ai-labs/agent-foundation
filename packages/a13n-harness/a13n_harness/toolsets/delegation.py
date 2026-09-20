@@ -22,7 +22,7 @@ from a13n_harness._json import dump_json_bytes
 from a13n_harness.context import AgentContext, BuiltSubagent, RunBindings
 from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime, EnvironmentRuntimeMount
 from a13n_harness.environment.sources import EnvironmentEntry
-from a13n_harness.errors import DefinitionError, HarnessError, RunError, StateError
+from a13n_harness.errors import DefinitionError, HarnessError, RunCleanupError, RunError, StateError
 from a13n_harness.events import (
     HarnessEvent,
     HarnessRunResultEvent,
@@ -226,6 +226,30 @@ class DelegationToolset:
                     )
             except asyncio.CancelledError:
                 raise
+            except RunCleanupError as exc:
+                # Cleanup failure withholds terminal delivery, not an already
+                # validated checkpoint. Retain it without reporting tool success.
+                outcome = exc.outcome
+                if outcome is not None and outcome.state is not None:
+                    await self._store_child_or_fail(
+                        ctx,
+                        reserved_id,
+                        child,
+                        outcome.state,
+                        subagent=subagent,
+                        invocation_id=invocation_id,
+                        child_run_id=outcome.run_id,
+                    )
+                await _emit_delegation_event_best_effort(
+                    ctx,
+                    "failed",
+                    reserved_id,
+                    subagent,
+                    "cleanup_failed",
+                    invocation_id=invocation_id,
+                    child_run_id=outcome.run_id if outcome is not None else None,
+                )
+                raise ToolFailed(f"Inline child {reserved_id} cleanup failed.") from exc
             except ToolFailed as exc:
                 await _emit_delegation_event(
                     ctx,
@@ -766,6 +790,7 @@ async def _emit_delegation_event_best_effort(
     status: str,
     *,
     invocation_id: str,
+    child_run_id: str | None = None,
 ) -> None:
     try:
         await _emit_delegation_event(
@@ -775,6 +800,7 @@ async def _emit_delegation_event_best_effort(
             subagent,
             status,
             invocation_id=invocation_id,
+            child_run_id=child_run_id,
         )
     except (HarnessError, ValueError):
         pass

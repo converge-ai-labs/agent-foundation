@@ -19,6 +19,7 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
+    HarnessRunResult,
     HarnessRunResultEvent,
     PluginError,
     RunBindings,
@@ -955,6 +956,120 @@ async def test_inline_delegation_inherits_parent_pricing_without_double_counting
     assert child_usage[0][0]["pricing_status"] == "applied"
     assert len(result.usage_records) == 2
     assert all(record.run_id == parent_run_id for record in result.usage_records)
+
+
+@pytest.mark.parametrize("continuation", [False, True])
+@pytest.mark.parametrize("retain_state", [False, True])
+async def test_inline_cleanup_failure_retains_child_state_without_reporting_success(
+    continuation: bool,
+    retain_state: bool,
+) -> None:
+    fail_cleanup = False
+    retained: list[HarnessRunResult[Any]] = []
+    execution_id: str | None = None
+
+    class CleanupFailurePlugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self) -> str:
+            return "child-cleanup"
+
+        def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> PluginRunResponse[Any]:
+            async def iterate():
+                try:
+                    async for item in call_next(exchange):
+                        if isinstance(item, HarnessRunResult):
+                            if fail_cleanup and not retain_state:
+                                item = item.replace(status="cancelled", output=None, state=None)
+                            retained.append(item)
+                        yield item
+                finally:
+                    if fail_cleanup:
+                        raise RuntimeError("private cleanup detail")
+
+            return PluginRunResponse(iterate())
+
+    async def parent_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        if not _returns_after_latest_user(messages):
+            arguments = (
+                {"execution_id": execution_id, "prompt": "continue"}
+                if execution_id is not None
+                else {"subagent": "reviewer", "prompt": "start"}
+            )
+            yield {
+                0: DeltaToolCall(
+                    name="resume_subagent" if execution_id is not None else "delegate",
+                    json_args=json.dumps(arguments),
+                    tool_call_id="child-call",
+                )
+            }
+            return
+        yield "parent-done"
+
+    child = replace(_child_definition(), plugins=(CleanupFailurePlugin(),))
+    executable = HarnessBuilder().build(_parent_definition(child, FunctionModel(stream_function=parent_stream)))
+    previous_state = None
+    if continuation:
+        first = await executable.run("first", bindings=_bindings_factory())
+        assert first.state is not None
+        previous_state = first.state
+        children = InlineSubagentCollectionState.model_validate(
+            first.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+        ).children
+        execution_id = next(iter(children))
+
+    fail_cleanup = True
+    events: list[HarnessEvent] = []
+    async with executable.stream("fail cleanup", previous_state=previous_state, bindings=_bindings_factory()) as stream:
+        async for item in stream:
+            if isinstance(item, HarnessEvent):
+                events.append(item)
+        result = stream.result
+
+    assert result is not None and result.state is not None
+    assert result.output_or_raise() == "parent-done"
+    assert retained[-1].output == (("child-turn-2" if continuation else "child-turn-1") if retain_state else None)
+    failures = _returns_after_latest_user(list(result.all_messages()))
+    assert len(failures) == 1
+    assert "cleanup failed" in str(failures[0].content)
+    assert "private cleanup detail" not in str(failures[0].content)
+    actions = [
+        event.event.payload["action"]
+        for event in events
+        if event.run_id == result.run_id
+        and isinstance(event.event, HarnessExtensionEvent)
+        and event.event.kind == "delegation"
+    ]
+    assert "failed" in actions
+    assert "completed" not in actions
+
+    if not retain_state:
+        assert retained[-1].state is None
+        if previous_state is None:
+            assert SUBAGENT_CAPABILITY_ID not in result.state.agent_context_state.entries
+        else:
+            assert (
+                result.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+                == previous_state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+            )
+        return
+
+    retained_state = retained[-1].state
+    assert retained_state is not None
+    restored = InlineSubagentCollectionState.model_validate(
+        result.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+    )
+    assert len(restored.children) == 1
+    stored_id, record = next(iter(restored.children.items()))
+    if continuation:
+        assert stored_id == execution_id
+    assert record.state.model_dump(mode="json") == retained_state.model_dump(mode="json")
+
+    fail_cleanup = False
+    execution_id = stored_id
+    resumed = await executable.run("resume retained child", previous_state=result.state, bindings=_bindings_factory())
+    assert resumed.output_or_raise() == "parent-done"
+    assert retained[-1].output == ("child-turn-3" if continuation else "child-turn-2")
 
 
 async def test_inline_delegation_cancellation_before_state_commit_leaves_no_child(
