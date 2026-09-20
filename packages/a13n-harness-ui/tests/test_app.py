@@ -2476,3 +2476,82 @@ async def test_old_inspection_counts_rebuild_from_saved_metadata_across_history_
         directory = await reopened.get_thread_inputs(thread_id=thread.thread_id)
         assert directory.turns == page.turns
         assert await reopened._store.inspections.header(thread.thread_id, replacement.logical_digest) is not None
+
+
+async def test_preparation_failure_after_handoff_saves_intact_display_and_reopens(tmp_path, monkeypatch):
+    from pydantic_ai.capabilities import AbstractCapability
+
+    fail_instructions = False
+    calls = 0
+
+    class Instructions(AbstractCapability):
+        def get_instructions(self):
+            async def instructions(ctx):
+                if fail_instructions:
+                    raise RuntimeError("instruction backend unavailable")
+                return "Continue the task."
+
+            return instructions
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield {0: DeltaToolCall(name="summarize", json_args='{"content":"Keep this decision"}', tool_call_id="s")}
+        else:
+            yield "Saved answer"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    settings = _settings(tmp_path / "state")
+    root = _write_configuration(tmp_path)
+    agent = tmp_path / "agents/assistant.yaml"
+    agent.write_text(agent.read_text() + "capabilities:\n  - capability: handoff\n")
+    reconstruct = AgentReconstructor.reconstruct
+
+    def with_instructions(self, composition, *, root_capabilities=(), **kwargs):
+        return reconstruct(self, composition, root_capabilities=(*root_capabilities, Instructions()), **kwargs)
+
+    monkeypatch.setattr(AgentReconstructor, "reconstruct", with_instructions)
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Original input")
+        with fail_after(10):
+            completed = await app.wait_root_operation(receipt.receipt_id)
+        assert completed.status is RootOperationStatus.completed
+        before = await app.get_thread(thread.thread_id)
+        before_history = await app.get_thread_transcript(thread_id=thread.thread_id)
+        before_turns = await app.get_thread_inputs(thread_id=thread.thread_id)
+        assert before_turns.turns[0].final_position is not None
+
+        fail_instructions = True
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="New input")
+        with fail_after(10):
+            failed = await app.wait_root_operation(receipt.receipt_id)
+        assert failed.status is RootOperationStatus.failed
+        assert failed.outcome is not None and failed.outcome.continuation.status == "selected"
+        selected = await app.get_thread(thread.thread_id)
+        assert selected.continuation_id != before.continuation_id
+        history = await app.get_thread_transcript(thread_id=thread.thread_id)
+
+        # Output targets pin the newly selected continuation; saved content does not change.
+        def saved_content(entry):
+            return entry.model_dump(exclude={"parts": {"__all__": {"comment_target"}}})
+
+        assert [saved_content(entry) for entry in history.entries[: len(before_history.entries)]] == [
+            saved_content(entry) for entry in before_history.entries
+        ]
+        texts = [part.text for entry in history.entries for part in entry.parts if part.metadata.display and part.text]
+        assert texts.count("Saved answer") == 1
+        assert texts.count("New input") == 1
+        turns = await app.get_thread_inputs(thread_id=thread.thread_id)
+        assert turns.turns[0].final_position == before_turns.turns[0].final_position
+        assert turns.turns[-1].final_position is None
+        assert calls == 2
+
+    async with open_harness_ui_app(settings, configuration_path=root) as reopened:
+        assert (await reopened.get_thread(thread.thread_id)).continuation_id == selected.continuation_id
+        assert await reopened.get_thread_transcript(thread_id=thread.thread_id) == history

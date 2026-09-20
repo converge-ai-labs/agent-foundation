@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 import secrets
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Annotated, Any, Literal
@@ -14,11 +14,12 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ToolFailed
-from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter, ModelRequest, UserPromptPart
+from pydantic_ai.messages import ModelMessagesTypeAdapter
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import UsageLimits
 
 from a13n_harness._json import dump_json_bytes
+from a13n_harness.capabilities.context import restored_history_summary
 from a13n_harness.context import AgentContext, BuiltSubagent, RunBindings
 from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime, EnvironmentRuntimeMount
 from a13n_harness.environment.sources import EnvironmentEntry
@@ -621,30 +622,12 @@ def _build_child_input(
     if policy.include_task and isinstance(ctx.prompt, str) and ctx.prompt:
         payload["parent_task"] = ctx.prompt
     if policy.history == "summary":
-        summary = _restored_summary_projection(ctx.messages)
+        summary = restored_history_summary(ctx.messages)
         if summary:
             payload["parent_history_summary"] = summary
     elif policy.history == "selected":
         payload["parent_history"] = ModelMessagesTypeAdapter.dump_json(ctx.messages).decode("utf-8")
     return dump_json_bytes(payload, sort_keys=True).decode("utf-8")
-
-
-def _restored_summary_projection(messages: Sequence[ModelMessage]) -> str | None:
-    for message in reversed(messages):
-        if not isinstance(message, ModelRequest) or not message.metadata:
-            continue
-        if message.metadata.get("a13n.restored-boundary") != "1":
-            continue
-        values = [
-            part.content
-            for part in message.parts
-            if isinstance(part, UserPromptPart)
-            and isinstance(part.content, str)
-            and not part.content.startswith("<context-restored>")
-            and not part.content.startswith("<system-reminder>")
-        ]
-        return "\n\n".join(values) if values else None
-    return None
 
 
 async def _finalize_child_bindings(

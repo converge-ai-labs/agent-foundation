@@ -1541,3 +1541,29 @@ async def test_compaction_preserves_the_effective_request_model() -> None:
     result = await executable.run("continue", previous_state=previous)
     assert result.output_or_raise() == "done"
     assert calls == [("selected", True), ("selected", False)]
+
+
+@pytest.mark.parametrize("kind", ["handoff", "compaction"])
+@pytest.mark.parametrize("retain_input", [False, True])
+def test_restored_summary_is_read_from_content_not_the_input_boundary(kind: str, retain_input: bool) -> None:
+    from a13n_harness.capabilities.context import (
+        _build_compacted_history,
+        _build_restored_history,
+        _HandoffState,
+        restored_history_summary,
+    )
+
+    original = [ModelRequest(parts=[UserPromptPart("Original input")])]
+    retained = (ModelRequest(parts=[UserPromptPart("Retained input")]),) if retain_input else ()
+    summary = "Accepted history summary"
+    restored = (
+        _build_restored_history(
+            original, _HandoffState(operation_id="handoff-1", summary=summary), retained_requests=retained
+        )
+        if kind == "handoff"
+        else _build_compacted_history(original, summary, retained_requests=retained)
+    )
+    saved = HarnessState.new(message_history=restored)
+    reloaded = HarnessState.model_validate_json(saved.model_dump_json())
+    assert restored_history_summary(reloaded.message_history) == summary
+    assert restored_history_summary(original) is None
