@@ -3,17 +3,18 @@
 import asyncio
 import json
 from dataclasses import dataclass, field
-from typing import Literal
 
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder
-from a13n_harness.capabilities.memory import MemoryCapability
+from a13n_harness.capabilities.memory import MemoryCapability, MemoryEntry
 from a13n_harness.memory_documents import (
     MemoryDocumentContent,
     MemoryDocumentIndex,
     MemoryDocumentReference,
     MemoryDocumentStore,
 )
+from a13n_harness.providers.memory.documents import DocumentKind
+from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 pytestmark = pytest.mark.anyio
@@ -40,9 +41,7 @@ class Store(MemoryDocumentStore):
     async def search(self, query, *, limit):
         return (MemoryDocumentReference("mdoc_release", "Release", "Deployment checklist"),)
 
-    async def create(
-        self, text, *, title, description, kind: Literal["daily", "long_term"], correction_of, request_key
-    ):
+    async def create(self, text, *, title, description, kind: DocumentKind, correction_of, request_key):
         raise AssertionError("No write was requested")
 
     async def delete(self, document_id):
@@ -105,7 +104,7 @@ async def test_document_tool_rejects_host_paths_and_urls(reference):
                 0: DeltaToolCall(name="memory_read", json_args=json.dumps({"reference": reference}), tool_call_id="bad")
             }
         else:
-            assert '"ok":false' in str(messages).replace(" ", "") or "memory_unavailable" in repr(messages)
+            assert "memory_reference_invalid" in repr(messages)
             yield "done"
 
     harness = HarnessBuilder().build(
@@ -351,3 +350,70 @@ async def test_index_cancellation_does_not_become_unavailable(caplog):
     with pytest.raises(asyncio.CancelledError):
         await task
     assert not [r for r in caplog.records if r.msg == "memory_index_projection_failed"]
+
+
+@pytest.mark.parametrize("kind", ["semantic", "procedural", "episodic"])
+async def test_named_document_references_round_trip_through_corrections(kind):
+
+    writes = []
+    deleted = []
+
+    class WritableStore(Store):
+        async def create(self, text, *, title, description, kind, correction_of, request_key):
+            writes.append((kind, correction_of))
+            return MemoryDocumentReference("mdoc_release", title, description)
+
+        async def delete(self, document_id):
+            deleted.append(document_id)
+
+    store = WritableStore()
+    reference = "memory://project/mdoc_release"
+    steps = [
+        ("memory_add", {"kind": kind, "text": "Evidence", "title": "Release"}),
+        ("memory_read", {"reference": reference}),
+        ("memory_search", {"query": "Release"}),
+        ("memory_add", {"kind": kind, "text": "Correction", "title": "Release", "correction_of": reference}),
+        (
+            "memory_add",
+            {"kind": kind, "text": "Denied", "title": "Release", "correction_of": "memory://other/mdoc_release"},
+        ),
+        ("memory_forget", {"reference": reference}),
+    ]
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        if calls:
+            returns = [
+                part.content for message in messages for part in message.parts if isinstance(part, ToolReturnPart)
+            ]
+            previous = returns[-1]
+            if calls in {1, 2, 4}:
+                assert previous["reference"] == reference
+            elif calls == 3:
+                assert previous["items"][0]["reference"] == reference
+            elif calls == 5:
+                assert "memory_entry_invalid" in str(previous)
+        if calls == len(steps):
+            yield "done"
+            return
+        name, arguments = steps[calls]
+        calls += 1
+        yield {0: DeltaToolCall(name=f"project_{name}", json_args=json.dumps(arguments), tool_call_id=f"step-{calls}")}
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=model),
+        output_type=str,
+        capabilities=(
+            MemoryCapability(
+                entries=(
+                    MemoryEntry("project", "documents", "Project evidence", MemoryCapability(document_store=store)),
+                )
+            ),
+        ),
+    )
+    assert (await executable.run("Remember and correct this evidence")).output_or_raise() == "done"
+    assert writes == [(kind, None), (kind, "mdoc_release")]
+    assert store.reads == ["mdoc_release"]
+    assert deleted == ["mdoc_release"]

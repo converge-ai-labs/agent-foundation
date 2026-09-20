@@ -43,3 +43,7 @@ Reception does not generate an Agent answer automatically. Bot-owned task progre
 Closing Account or target reception blocks new admission; already acknowledged batches continue processing while accepted replies retain their bounded context. Account disablement or lost execution authority blocks subsequent dispatch.
 
 Feishu/Lark and Slack Bot task messages combine status projection with explicitly authorized native replies. `lark.reply` and `slack.reply` may update the existing task card through the Bot contribution; it must preserve fresh Attempt/source authority and provider-confirmed reply observations. Raw model completion is never a reply trigger.
+
+For a single bound inbound conversation with a reply tool, nonempty final text without a successful or uncertain native reply/file-send outcome receives model retry feedback. The model must explicitly invoke the native action or finish silently with empty text. This guard never publishes raw completion or retries an uncertain external effect. Runs with multiple inbound conversations do not infer a reply destination from final text.
+
+Within one task card, consecutive identical reply text reuses the retained reply instead of appending another copy. Different updates remain separate. A rejected status update must not discard a previously retained reply.

@@ -10,6 +10,7 @@ import { BotMemory } from "./memory";
 const state = vi.hoisted(() => ({
   admin: true,
   pending: false,
+  legacy: false,
   http: { GET: vi.fn(), POST: vi.fn(), PATCH: vi.fn(), DELETE: vi.fn() },
 }));
 vi.mock("../../auth/context", () => ({
@@ -45,6 +46,8 @@ const entry = {
   id: "mdoc_test",
   title: "Release checklist",
   description: "Deployment steps",
+  kind: "procedural",
+  legacy_kind: null,
   activity_date: "2026-09-16",
   state: "active",
   version: 1,
@@ -77,7 +80,11 @@ beforeEach(() => {
   vi.resetAllMocks();
   state.admin = true;
   state.pending = false;
+  state.legacy = false;
   state.http.GET.mockImplementation(async (path: string) => {
+    const document = state.legacy
+      ? { ...entry, kind: null, legacy_kind: "long_term" }
+      : entry;
     if (path.endsWith("/operations"))
       return response({
         items: state.pending ? [{ ...entry, state: "unconfirmed" }] : [],
@@ -88,13 +95,13 @@ beforeEach(() => {
     if (path.endsWith("/index"))
       return response({
         text: "MEMORY.md",
-        entries: [entry],
+        entries: [document],
         next_cursor: null,
       });
     if (path.endsWith("/documents"))
-      return response({ items: [entry], next_cursor: null });
+      return response({ items: [document], next_cursor: null });
     if (path.endsWith("/{document_id}"))
-      return response({ ...entry, text: "Sensitive full document body" });
+      return response({ ...document, text: "Sensitive full document body" });
     throw new Error(`Unexpected request ${path}`);
   });
 });
@@ -210,3 +217,36 @@ it("guides a configured bot without scopes to group setup", async () => {
   expect(screen.getByRole("button", { name: "Configure group" })).toBeTruthy();
   expect(state.http.POST).not.toHaveBeenCalled();
 });
+
+it.each([false, true])(
+  "shows document classification without guessing legacy kinds (legacy=%s)",
+  async (legacy) => {
+    state.legacy = legacy;
+    setup();
+    await userEvent.click(
+      await within(
+        screen.getByRole("region", { name: "Memory details" }),
+      ).findByRole("button", { name: "Release checklist" }),
+    );
+    expect(
+      await screen.findByText("Sensitive full document body"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(legacy ? "Unclassified · long_term" : "Procedures"),
+    ).toBeTruthy();
+  },
+);
+
+it.each(["semantic", "procedural", "episodic"])(
+  "uses the current %s kind filter",
+  async (kind) => {
+    setup(account, `/?tab=memory&memory_scope=mscope_test&memory_kind=${kind}`);
+    await screen.findByText("Deployment steps");
+    expect(
+      state.http.GET.mock.calls.some(
+        ([path, options]) =>
+          path.endsWith("/documents") && options.params.query.kind === kind,
+      ),
+    ).toBe(true);
+  },
+);

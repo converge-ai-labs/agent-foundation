@@ -733,6 +733,11 @@
   "None available in this workspace.": "此工作空间暂无可用资源。",
   "Not archived": "未归档",
   "Not configured": "未配置",
+  "Media understanding": "媒体理解",
+  "Workspace defaults": "工作空间默认设置",
+  "Image understanding": "图像理解",
+  "Video understanding": "视频理解",
+  "Audio understanding": "音频理解",
   "Not found": "未找到",
   "Nothing here": "此处暂无内容",
   "Observations": "观测记录",
@@ -3251,5 +3256,7 @@
   "No environments yet. Use the current run environment.": "暂无环境，可使用当前运行环境。",
   "Let the agent search, read, and modify memory documents. Turning this off keeps the memory index available; automatic organization is controlled separately.": "允许 Agent 主动搜索、读取和修改记忆文档。关闭后仍会提供记忆索引；自动整理由单独的开关控制。",
   "Let the agent search and manage saved memories. Automatic recall is controlled separately.": "允许 Agent 主动搜索和管理已保存的记忆。自动召回由单独的开关控制。",
-  "When enabled, memory loading or recall failures stop the run. When disabled, the run continues without the unavailable memory. Having no saved memories is not an error.": "开启后，加载或召回记忆失败会中止运行；关闭时会跳过不可用的记忆并继续。没有已保存的记忆不算错误。"
+  "When enabled, memory loading or recall failures stop the run. When disabled, the run continues without the unavailable memory. Having no saved memories is not an error.": "开启后，加载或召回记忆失败会中止运行；关闭时会跳过不可用的记忆并继续。没有已保存的记忆不算错误。",
+  "Procedures": "流程",
+  "Unclassified": "未分类"
 }

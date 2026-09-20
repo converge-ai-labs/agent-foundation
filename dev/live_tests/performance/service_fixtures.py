@@ -10,7 +10,6 @@ from uuid import uuid4
 from a13n_service.agents.domain import PreparedAgentPlugins
 from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
-from a13n_service.hooks.persistence import write_hook_lifecycle
 from a13n_service.interactions.attempts import AttemptContext, AttemptExecutionService, AttemptLease
 from a13n_service.interactions.control_domain import ThreadRunSubmissionIntent
 from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, ThreadInboxStore
@@ -72,7 +71,7 @@ class ServiceFixture:
         self.http_connections = 0
         self.organization = lab.config["organization_id"]
         self.states = RunStateStore(objects)
-        lifecycle = LifecycleWriter((write_hook_lifecycle, append_matching_a2a_push_outbox))
+        lifecycle = LifecycleWriter((append_matching_a2a_push_outbox,))
         self.scheduler = AttemptScheduler(sessions, lifecycle=lifecycle)
         self.execution = AttemptExecutionService(sessions, lifecycle=lifecycle)
         self.outcomes = RunOutcomeService(sessions, RunPayloadStore(objects), lifecycle=lifecycle)

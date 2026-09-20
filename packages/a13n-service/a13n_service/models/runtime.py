@@ -10,6 +10,7 @@ from a13n_harness import AgentContext
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.model.definition import ModelProviderDefinition
+from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic_ai.models import Model as PydanticModel
 from pydantic_ai.models import ModelResolutionContext
 from sqlalchemy import select
@@ -21,6 +22,7 @@ from a13n_service.storage import short_session
 
 from .domain import Model as ModelResource
 from .domain import ModelExecutionSnapshot
+from .media_defaults import read_media_defaults, require_media_capability
 from .model_factory import NativeModelFactory
 from .models import ModelProviderRecord, ModelRecord
 from .provider_runtime import LiveProviderResolver
@@ -90,6 +92,20 @@ class AcceptedModelSelector:
                 settings_layers=settings_layers,
             )
 
+    async def prepare_media_defaults(
+        self, *, organization_id: str, workspace_id: str
+    ) -> dict[NativeInputMediaKind, PreparedModelExecution]:
+        async with short_session(self._sessions) as session:
+            defaults = await read_media_defaults(session, workspace_id)
+        models: dict[NativeInputMediaKind, PreparedModelExecution] = {}
+        for kind, key in defaults.selections().items():
+            prepared = await self.prepare(
+                organization_id=organization_id, workspace_id=workspace_id, model_key=key, settings={}
+            )
+            require_media_capability(prepared.resource, kind)
+            models[kind] = prepared
+        return models
+
     async def freeze_in_transaction(
         self,
         session: AsyncSession,
@@ -146,6 +162,9 @@ class SnapshotRunModelResolver:
         context: ModelResolutionContext[AgentContext],
         model_id: str,
     ) -> PydanticModel[Any]:
+        return await self.resolve(model_id, thread_id=context.deps.thread_id)
+
+    async def resolve(self, model_id: str, *, thread_id: str) -> PydanticModel[Any]:
         snapshot = self._snapshots.get(model_id)
         if snapshot is None:
             raise ModelResolutionError(
@@ -159,7 +178,7 @@ class SnapshotRunModelResolver:
             workspace_id=self._workspace_id,
             provider_resolver=self._provider_resolver,
             model_factory=self._model_factory,
-            harness_thread_id=context.deps.thread_id,
+            harness_thread_id=thread_id,
         )
 
 

@@ -76,7 +76,7 @@ Every authoritative Run and RunAttempt transition writes the bounded typed lifec
 
 Each lifecycle resource has one contiguous `resource_seq`; the Workspace feed has a separate database-assigned cursor that is monotonic but not a causal order. Duplicate publication preserves one event identity. Event content references owning resources and retained Items rather than copying differently retained payloads. Redis presence, subscriber receipt, and telemetry never manufacture a lifecycle fact.
 
-External Webhook delivery specializes the shared Outbox. One lifecycle source creates one Outbox row for each matching HookSubscription version because each delivery completes independently from source commitment and from other subscriptions. A bounded destination policy can exhaust retries and dead-letter its own row without changing the source lifecycle event, Run Stream, retained snapshot, or Run outcome.
+External Webhook delivery specializes the shared Outbox. Background [Hook dispatch](26-hook-notifications.md#asynchronous-hook-dispatch) matches current subscriptions and atomically creates one Outbox row per selected HookSubscription Revision with dispatch completion. Each delivery completes independently from source commitment and from other subscriptions. A bounded destination policy can exhaust retries and dead-letter its own row without changing the source lifecycle event, Run Stream, retained snapshot, or Run outcome.
 
 Durable Hook subscription delivery is limited to committed lifecycle events. Live-only Run Stream entries and Items use authorized Run SSE and never create Outbox rows merely because a subscriber selected their Hook names. Native notification WebSocket frames remain coarse, best-effort wake-ups rather than Hook payload delivery.
 

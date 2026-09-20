@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from a13n_harness.providers.memory.documents import DocumentKind
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from a13n_service.ids import ObjectId
@@ -68,7 +69,7 @@ class CreateDocument(StrictModel):
     text: MemoryText
     title: str = Field(min_length=1, max_length=160, pattern=r"\S")
     description: str = Field(default="", max_length=320)
-    kind: Literal["daily", "long_term"] = "long_term"
+    kind: DocumentKind
     activity_date: date | None = None
     correction_of: ObjectId | None = None
 
@@ -80,7 +81,8 @@ class DocumentEntry(StrictModel):
     path: str
     title: str
     description: str
-    kind: Literal["daily", "long_term"]
+    kind: DocumentKind | None
+    legacy_kind: Literal["daily", "long_term"] | None = None
     activity_date: date
     timezone: str
     saved_at: datetime | None

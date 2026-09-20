@@ -3729,6 +3729,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/media-understanding-defaults": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Media Understanding Defaults */
+    get: operations["get_workspaces_workspace_media_understanding_defaults"];
+    /** Replace Media Understanding Defaults */
+    put: operations["put_workspaces_workspace_media_understanding_defaults"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/members": {
     parameters: {
       query?: never;
@@ -6673,10 +6691,9 @@ export interface components {
       description?: string;
       /**
        * Kind
-       * @default long_term
        * @enum {string}
        */
-      kind?: "daily" | "long_term";
+      kind: "semantic" | "procedural" | "episodic";
       /** Text */
       text: string;
       /** Title */
@@ -7085,11 +7102,10 @@ export interface components {
       description: string;
       /** Id */
       id: string;
-      /**
-       * Kind
-       * @enum {string}
-       */
-      kind: "daily" | "long_term";
+      /** Kind */
+      kind: ("semantic" | "procedural" | "episodic") | null;
+      /** Legacy Kind */
+      legacy_kind?: ("daily" | "long_term") | null;
       /** Owner Name */
       owner_name?: string | null;
       /** Path */
@@ -7150,11 +7166,10 @@ export interface components {
       description: string;
       /** Id */
       id: string;
-      /**
-       * Kind
-       * @enum {string}
-       */
-      kind: "daily" | "long_term";
+      /** Kind */
+      kind: ("semantic" | "procedural" | "episodic") | null;
+      /** Legacy Kind */
+      legacy_kind?: ("daily" | "long_term") | null;
       /** Path */
       path: string;
       /** Publication Source Id */
@@ -7771,6 +7786,11 @@ export interface components {
       /** Detail */
       detail?: components["schemas"]["ValidationError"][];
     };
+    /**
+     * HookDispatchState
+     * @enum {string}
+     */
+    HookDispatchState: "pending" | "done" | "failed";
     /** HookSubscription */
     HookSubscription: {
       /**
@@ -8189,6 +8209,14 @@ export interface components {
       entity_version: number;
       /** Event Type */
       event_type: string;
+      /** Hook Dispatch Attempts */
+      hook_dispatch_attempts: number;
+      hook_dispatch_error?: components["schemas"]["SafeFailure"] | null;
+      /** Hook Dispatch Next Attempt At */
+      hook_dispatch_next_attempt_at?: string | null;
+      hook_dispatch_state: components["schemas"]["HookDispatchState"];
+      /** Hook Dispatched At */
+      hook_dispatched_at?: string | null;
       /** Id */
       id: string;
       /** Mutation Id */
@@ -8509,6 +8537,28 @@ export interface components {
       title: string;
       /** Version */
       version: number;
+    };
+    /** MediaUnderstandingDefaults */
+    MediaUnderstandingDefaults: {
+      /** Audio */
+      audio?: string | null;
+      /** Image */
+      image?: string | null;
+      /** Version */
+      version: number;
+      /** Video */
+      video?: string | null;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** MediaUnderstandingSelection */
+    MediaUnderstandingSelection: {
+      /** Audio */
+      audio?: string | null;
+      /** Image */
+      image?: string | null;
+      /** Video */
+      video?: string | null;
     };
     /** Memory */
     Memory: {
@@ -13229,7 +13279,7 @@ export interface operations {
         limit?: number;
         cursor?: string | null;
         activity_date?: string | null;
-        kind?: ("daily" | "long_term") | null;
+        kind?: ("semantic" | "procedural" | "episodic") | null;
         include_shared?: boolean;
       };
       header?: never;
@@ -25651,6 +25701,100 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["InvitationDelivery"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_media_understanding_defaults: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MediaUnderstandingDefaults"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  put_workspaces_workspace_media_understanding_defaults: {
+    parameters: {
+      query?: never;
+      header: {
+        "If-Match": string;
+      };
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MediaUnderstandingSelection"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MediaUnderstandingDefaults"];
         };
       };
       /** @description Invalid request. */

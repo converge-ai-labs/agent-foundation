@@ -271,36 +271,61 @@ export function useHistory(
   };
 }
 
-// Explicit gap loading extends one turn without paging through earlier turns.
+// Complete each visible turn in one load. Transport pages stay bounded, but
+// intermediate pages never become user-facing pagination or partial segments.
 export function useTurnHistory(
   threadId: string,
   continuation: string | null | undefined,
   turn: Schema<"TranscriptTurn">,
+  enabled: boolean,
 ) {
   const { client } = useTransport();
-  return useInfiniteQuery({
+  return useQuery({
     queryKey: ["thread", threadId, "turn-history", continuation, turn.turn_id],
-    enabled: false,
+    enabled,
     staleTime: Infinity,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam, signal }) =>
-      result(
-        client.GET("/api/threads/{thread_id}/transcript", {
-          params: {
-            path: { thread_id: threadId },
-            query: {
-              expected_continuation_id: continuation ?? undefined,
-              turn_id: turn.turn_id,
-              cursor: pageParam,
-              limit: 30,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const entries = new Map<number, Schema<"TranscriptEntry">>();
+      let cursor: string | undefined;
+      let earliest = turn.end_position;
+      do {
+        const page = await result(
+          client.GET("/api/threads/{thread_id}/transcript", {
+            params: {
+              path: { thread_id: threadId },
+              query: {
+                expected_continuation_id: continuation ?? undefined,
+                turn_id: turn.turn_id,
+                cursor,
+                limit: 100,
+              },
             },
-          },
-          signal,
-        }),
-      ),
-    getNextPageParam: (last) =>
-      last.entries.length && last.entries[0].position > turn.input_position
-        ? (last.next_cursor ?? undefined)
-        : undefined,
+            signal,
+          }),
+        );
+        for (const entry of [
+          ...(page.boundary_entries ?? []),
+          ...page.entries,
+        ]) {
+          if (
+            entry.position >= turn.input_position &&
+            entry.position < turn.end_position
+          )
+            entries.set(entry.position, entry);
+        }
+        const first = page.entries[0]?.position;
+        if (first === undefined || first >= earliest)
+          throw new Error("Turn history is incomplete.");
+        earliest = first;
+        cursor =
+          earliest > turn.input_position
+            ? (page.next_cursor ?? undefined)
+            : undefined;
+      } while (cursor);
+      if (entries.size !== turn.end_position - turn.input_position)
+        throw new Error("Turn history is incomplete.");
+      return [...entries.values()].sort((a, b) => a.position - b.position);
+    },
   });
 }

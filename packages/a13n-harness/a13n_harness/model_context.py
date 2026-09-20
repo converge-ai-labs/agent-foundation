@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from copy import copy
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from hashlib import sha256
 from typing import Protocol
 
 from pydantic_ai import RunContext
@@ -30,8 +29,6 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 
 MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID = "a13n.model-context-coordinator"
-_MODEL_CONTEXT_METADATA_KEY = "a13n.model-context-overlay"
-_MODEL_CONTEXT_METADATA_VERSION = "1"
 _MAX_BLOCKS = 128
 _MAX_SOURCE_ID_LENGTH = 256
 _MAX_BLOCK_BYTES = 2 * 1024 * 1024
@@ -325,24 +322,8 @@ def _commit_projection(
         UserPromptPart([TextContent(block.content, metadata={"display": False, "source_id": block.source_id})])
         for block in epilogue
     )
-    inserted_indexes = [*range(input_index, input_index + len(preamble))]
-    inserted_indexes.extend(range(len(parts) - len(epilogue), len(parts)))
-    inserted_blocks = [*preamble, *epilogue]
-
-    metadata = dict(final.metadata or {})
-    metadata[_MODEL_CONTEXT_METADATA_KEY] = {
-        "version": _MODEL_CONTEXT_METADATA_VERSION,
-        "parts": [
-            {
-                "index": index,
-                "source_id": block.source_id,
-                "sha256": sha256(block.content.encode("utf-8")).hexdigest(),
-            }
-            for index, block in zip(inserted_indexes, inserted_blocks, strict=True)
-        ],
-    }
     updated = list(messages)
-    updated[-1] = replace(final, parts=tuple(parts), metadata=metadata)
+    updated[-1] = replace(final, parts=tuple(parts))
     return updated
 
 
@@ -363,51 +344,6 @@ def _persist_projection(
             active_messages[index] = committed_request
             return
     active_messages[:] = _commit_projection(active_messages, request, projection)
-
-
-def _remove_owned_overlays(messages: Sequence[ModelMessage]) -> list[ModelMessage]:
-    updated = list(messages)
-    for message_index, message in enumerate(updated):
-        if not isinstance(message, ModelRequest) or not message.metadata:
-            continue
-        ownership = message.metadata.get(_MODEL_CONTEXT_METADATA_KEY)
-        if ownership is None:
-            continue
-        if not isinstance(ownership, dict) or ownership.get("version") != _MODEL_CONTEXT_METADATA_VERSION:
-            raise DefinitionError("Model context ownership metadata is invalid.", code="model_context_overlay_invalid")
-        owned_parts = ownership.get("parts")
-        if not isinstance(owned_parts, list):
-            raise DefinitionError("Model context ownership metadata is invalid.", code="model_context_overlay_invalid")
-        parts = list(message.parts)
-        indexes: list[int] = []
-        for owned in owned_parts:
-            if not isinstance(owned, dict):
-                raise DefinitionError(
-                    "Model context ownership metadata is invalid.", code="model_context_overlay_invalid"
-                )
-            index = owned.get("index")
-            digest = owned.get("sha256")
-            if not isinstance(index, int) or not isinstance(digest, str) or index < 0 or index >= len(parts):
-                raise DefinitionError(
-                    "Model context ownership metadata is stale.", code="model_context_overlay_invalid"
-                )
-            part = parts[index]
-            content = part.content if isinstance(part, UserPromptPart) else None
-            if isinstance(content, (list, tuple)) and len(content) == 1 and isinstance(content[0], TextContent):
-                content = content[0].content
-            if not isinstance(content, str) or sha256(content.encode("utf-8")).hexdigest() != digest:
-                raise DefinitionError(
-                    "Model context ownership metadata is stale.", code="model_context_overlay_invalid"
-                )
-            indexes.append(index)
-        if len(indexes) != len(set(indexes)):
-            raise DefinitionError("Model context ownership metadata is invalid.", code="model_context_overlay_invalid")
-        for index in sorted(indexes, reverse=True):
-            parts.pop(index)
-        metadata = dict(message.metadata)
-        metadata.pop(_MODEL_CONTEXT_METADATA_KEY, None)
-        updated[message_index] = replace(message, parts=tuple(parts), metadata=metadata or None)
-    return updated
 
 
 def _requires_exact_boundary(ctx: RunContext[AgentContext], messages: list[ModelMessage]) -> bool:

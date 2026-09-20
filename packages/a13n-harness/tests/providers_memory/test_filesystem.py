@@ -709,3 +709,48 @@ async def test_organization_revision_preserves_sources_and_conflict_is_deferred(
     assert revised.sources == ("run://original", "run://refinement") and revised.version == 2
     conflict = await apply_organization(memory, plan, work_id="stale-revision", source="run://refinement")
     assert conflict.deferred == 1
+
+
+@pytest.mark.parametrize("kind", ["semantic", "procedural", "episodic"])
+async def test_document_store_create_bridge_and_correction_validation(store, kind):
+    memory, _ = store
+    original = await memory.create(
+        "Original evidence",
+        title="Original",
+        description="Evidence",
+        kind=kind,
+        correction_of=None,
+        request_key="original",
+    )
+    correction = await memory.create(
+        "Corrected evidence",
+        title="Correction",
+        description="Evidence",
+        kind=kind,
+        correction_of=original.id,
+        request_key="correction",
+    )
+    document = await memory.document(correction.id)
+    assert document.kind == kind and document.correction_of == original.id
+    assert (await memory.read(correction.id)).text == "Corrected evidence"
+    for predecessor, code in [("mdoc_" + "x" * 16, "memory_not_found"), ("invalid", "memory_reference_invalid")]:
+        with pytest.raises(MemoryDocumentError) as error:
+            await memory.create(
+                "Invalid correction",
+                title="Invalid",
+                description="",
+                kind=kind,
+                correction_of=predecessor,
+                request_key=predecessor,
+            )
+        assert error.value.code == code
+    await memory.delete(original.id)
+    with pytest.raises(MemoryDocumentError):
+        await memory.create(
+            "Deleted predecessor",
+            title="Deleted",
+            description="",
+            kind=kind,
+            correction_of=original.id,
+            request_key="deleted",
+        )

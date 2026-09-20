@@ -2129,17 +2129,19 @@ async def test_cross_mount_copy_uses_plain_stream_completion(source_fails: bool)
     current_incarnation = 1
     prepared_mount_ids: list[str] = []
 
-    def resolve(path: str) -> EnvironmentPath:
+    def resolve(path: str) -> FileScopeSelection:
         source = path == "source"
         kind = "source" if source else "destination"
-        return EnvironmentPath(
-            mount_id=f"mount-{kind}-{current_incarnation}",
-            path=f"/{path}",
+        return FileScopeSelection(
+            logical_path=path,
+            resolved_path=EnvironmentPath(mount_id=f"mount-{kind}-{current_incarnation}", path=f"/{path}"),
+            observed_generation=f"generation-{kind}",
         )
 
     @asynccontextmanager
-    async def prepare(selected: EnvironmentPath, action: EnvironmentAction) -> AsyncGenerator[Any]:
+    async def prepare(selection: FileScopeSelection, action: EnvironmentAction) -> AsyncGenerator[Any]:
         nonlocal current_incarnation
+        selected = selection.resolved_path
         source = action is EnvironmentAction.FILE_COPY_SOURCE
         prepared_mount_ids.append(selected.mount_id)
         if source:

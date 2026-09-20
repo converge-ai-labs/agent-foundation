@@ -4,8 +4,10 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.durable_operations.models import OutboxRecord
+from a13n_service.hooks.dispatch import claim_hook_events, dispatch_hook_event
+from a13n_service.hooks.dispatcher import HookDispatcher
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
-from a13n_service.hooks.persistence import create_hook_subscription, lock_hook_workspace, write_hook_lifecycle
+from a13n_service.hooks.persistence import create_hook_subscription, lock_hook_workspace
 from a13n_service.hooks.retention import HookRetention
 from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.interactions.models import RunRecord
@@ -49,16 +51,20 @@ async def test_matching_observation_does_not_block_management_or_change_before_c
     events = []
     replacement_id = "hsubr_8282828282828282"
 
-    async def emit():
-        async with transaction(sessions) as database:
-            run = await database.get(RunRecord, RUN_ID, with_for_update=True)
-            events.append(
-                await LifecycleWriter((write_hook_lifecycle,)).append_run_lifecycle(
-                    database, run, "run.accepted", occurred_at=NOW, actor_type="system", actor_id=None
-                )
+    async with transaction(sessions) as database:
+        run = await database.get(RunRecord, RUN_ID, with_for_update=True)
+        events.append(
+            await LifecycleWriter().append_run_lifecycle(
+                database, run, "run.accepted", occurred_at=NOW, actor_type="system", actor_id=None
             )
+        )
+
+    async def dispatch():
+        async with transaction(sessions) as database:
+            (event,) = await claim_hook_events(database, now=NOW, limit=1)
+            await dispatch_hook_event(database, event, now=NOW)
             matched.set()
-            # This deliberate test-only wait exposes management/commit overlap.
+            # Test-only barrier exposes matching/management/commit overlap.
             await changed.wait()
 
     async def manage():
@@ -106,16 +112,17 @@ async def test_matching_observation_does_not_block_management_or_change_before_c
 
     with fail_after(10):
         async with create_task_group() as tasks:
-            tasks.start_soon(emit)
+            tasks.start_soon(dispatch)
             tasks.start_soon(manage)
 
     async with transaction(sessions) as database:
         run = await database.get(RunRecord, RUN_ID, with_for_update=True)
         events.append(
-            await LifecycleWriter((write_hook_lifecycle,)).append_run_lifecycle(
+            await LifecycleWriter().append_run_lifecycle(
                 database, run, "run.accepted", occurred_at=NOW, actor_type="system", actor_id=None
             )
         )
+    await HookDispatcher(sessions, clock=lambda: NOW).scan()
     async with short_session(sessions) as database:
         deliveries = (await database.scalars(select(OutboxRecord))).all()
         first = [row.destination_ref for row in deliveries if row.source_id == events[0]]

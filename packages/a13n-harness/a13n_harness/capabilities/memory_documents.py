@@ -7,7 +7,7 @@ import re
 from collections.abc import Awaitable
 from dataclasses import asdict
 from time import monotonic
-from typing import Annotated, Literal, cast
+from typing import Annotated, cast
 
 from a13n_logging import get_logger
 from pydantic import Field, JsonValue
@@ -26,6 +26,7 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
     ModelContextRequestKind,
 )
+from a13n_harness.providers.memory.documents import DocumentKind
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_harness.toolsets._instructions import InstructionFunctionToolset
 from a13n_harness.toolsets._results import tool_failure
@@ -217,7 +218,9 @@ class _DocumentTools:
                 return await operation
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
+            if isinstance(error, RunError) and error.code in {"memory_reference_invalid", "memory_request_invalid"}:
+                return cast(dict[str, JsonValue], tool_failure(error.code, str(error)))
             return cast(
                 dict[str, JsonValue],
                 tool_failure(
@@ -251,6 +254,7 @@ class _DocumentTools:
             return {
                 "ok": True,
                 "id": document.id,
+                "reference": f"memory://{document.id}",
                 "title": document.title,
                 "text": document.text[start:end],
                 "start": start,
@@ -267,7 +271,13 @@ class _DocumentTools:
         """Find authorized document references, then read relevant bodies with memory_read."""
 
         async def execute() -> dict[str, JsonValue]:
-            return {"ok": True, "items": [asdict(item) for item in await self.store.search(query, limit=limit)]}
+            return {
+                "ok": True,
+                "items": [
+                    {**asdict(item), "reference": f"memory://{item.id}"}
+                    for item in await self.store.search(query, limit=limit)
+                ],
+            }
 
         return await self._result(execute())
 
@@ -276,8 +286,8 @@ class _DocumentTools:
         ctx: RunContext[AgentContext],
         text: Annotated[str, Field(min_length=1, max_length=8000)],
         title: Annotated[str, Field(min_length=1, max_length=160)],
+        kind: DocumentKind,
         description: Annotated[str, Field(max_length=320)] = "",
-        kind: Literal["daily", "long_term"] = "long_term",
         correction_of: Annotated[str | None, Field(max_length=160)] = None,
     ) -> dict[str, JsonValue]:
         """Save exactly the requested immutable document. Corrections create new IDs."""
@@ -293,7 +303,7 @@ class _DocumentTools:
                 correction_of=_document_id(correction_of) if correction_of else None,
                 request_key=ctx.tool_call_id,
             )
-            return {"ok": True, **asdict(item)}
+            return {"ok": True, **asdict(item), "reference": f"memory://{item.id}"}
 
         return await self._result(execute(), write=True)
 

@@ -1,18 +1,14 @@
-"""Transactional HookSubscription creation, validation, and lifecycle matching."""
+"""Transactional HookSubscription creation, validation, and inline expiry."""
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import and_, cast, func, or_, select, update
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.ids import new_object_id
-from a13n_service.interactions.models import SessionRecord
-from a13n_service.lifecycle.models import LifecycleEventRecord
 
 from .domain import CreateHookSubscriptionRequest, InlineHookSubscriptionInput
 from .invariants import (
@@ -205,107 +201,29 @@ async def read_hook_subscriptions(
     return tuple((head, revision) for head, revision in rows)
 
 
-async def write_hook_lifecycle(
+async def expire_inline_hook_subscription(
     database: AsyncSession,
-    event: LifecycleEventRecord,
-) -> tuple[OutboxRecord, ...]:
-    """Append matching delivery intents, then expire inline Hooks on sealed Runs."""
+    *,
+    organization_id: str,
+    run_id: str,
+    sealed_at: datetime,
+) -> None:
+    """Release inline capacity atomically with the owning Run seal."""
 
-    # Observe subscription heads once. Only immutable Revisions are pinned until
-    # their Outbox references commit; management does not lock those Revisions.
-    statement = (
-        select(HookSubscriptionRecord, HookSubscriptionRevisionRecord)
-        .join(
-            HookSubscriptionRevisionRecord,
-            HookSubscriptionRevisionRecord.id == HookSubscriptionRecord.current_revision_id,
-        )
-        .join(
-            SessionRecord,
-            and_(
-                SessionRecord.organization_id == HookSubscriptionRecord.organization_id,
-                SessionRecord.workspace_id == HookSubscriptionRecord.workspace_id,
-                SessionRecord.id == event.session_id,
-            ),
-        )
-        .join(
-            WorkspaceRecord,
-            and_(
-                WorkspaceRecord.organization_id == SessionRecord.organization_id,
-                WorkspaceRecord.id == SessionRecord.workspace_id,
-                WorkspaceRecord.deleted_at.is_(None),
-            ),
-        )
+    await database.scalar(
+        update(HookSubscriptionRecord)
         .where(
-            HookSubscriptionRecord.organization_id == event.organization_id,
-            HookSubscriptionRecord.enabled.is_(True),
+            HookSubscriptionRecord.organization_id == organization_id,
+            HookSubscriptionRecord.inline_run_id == run_id,
             HookSubscriptionRecord.expired_at.is_(None),
-            HookSubscriptionRecord.deleted_at.is_(None),
-            or_(
-                HookSubscriptionRevisionRecord.session_id.is_(None),
-                HookSubscriptionRevisionRecord.session_id == event.session_id,
-            ),
-            or_(
-                HookSubscriptionRevisionRecord.thread_id.is_(None),
-                HookSubscriptionRevisionRecord.thread_id == event.thread_id,
-            ),
-            or_(
-                HookSubscriptionRevisionRecord.run_id.is_(None),
-                HookSubscriptionRevisionRecord.run_id == event.run_id,
-            ),
         )
-        .order_by(HookSubscriptionRecord.id)
-        .limit(MAX_ACTIVE_HOOK_SUBSCRIPTIONS + 1)
-        .with_for_update(of=HookSubscriptionRevisionRecord, read=True, key_share=True)
+        .values(
+            expired_at=sealed_at,
+            updated_at=func.greatest(sealed_at, HookSubscriptionRecord.updated_at + timedelta(microseconds=1)),
+        )
+        .returning(HookSubscriptionRecord)
+        .execution_options(populate_existing=True)
     )
-    statement = statement.where(HookSubscriptionRevisionRecord.hook_names.op("@>")(cast([event.event_type], JSONB)))
-    candidates = (await database.execute(statement)).all()
-    if len(candidates) > MAX_ACTIVE_HOOK_SUBSCRIPTIONS:
-        raise HookSubscriptionInvariantError(
-            HookSubscriptionInvariantCode.destination_limit,
-            "active Hook destination limit exceeded",
-        )
-
-    now = event.created_at
-    records = tuple(
-        OutboxRecord(
-            id=new_object_id("dlv"),
-            source_kind="lifecycle_event",
-            source_id=event.id,
-            destination_kind="webhook",
-            destination_ref=revision.id,
-            status="pending",
-            available_at=now,
-            claim_generation=0,
-            lease_expires_at=None,
-            attempt_count=0,
-            created_at=now,
-            updated_at=now,
-            published_at=None,
-            dead_lettered_at=None,
-            last_error_code=None,
-        )
-        for _, revision in candidates
-    )
-    database.add_all(records)
-    await database.flush()
-    if event.event_type in {"run.waiting", "run.completed", "run.failed", "run.cancelled"}:
-        await database.scalar(
-            update(HookSubscriptionRecord)
-            .where(
-                HookSubscriptionRecord.organization_id == event.organization_id,
-                HookSubscriptionRecord.inline_run_id == event.run_id,
-                HookSubscriptionRecord.expired_at.is_(None),
-            )
-            .values(
-                expired_at=event.occurred_at,
-                updated_at=func.greatest(
-                    event.occurred_at, HookSubscriptionRecord.updated_at + timedelta(microseconds=1)
-                ),
-            )
-            .returning(HookSubscriptionRecord)
-            .execution_options(populate_existing=True)
-        )
-    return records
 
 
 async def load_inline_hook_subscription(
@@ -362,10 +280,10 @@ __all__ = [
     "HookSubscriptionInvariantError",
     "create_hook_subscription",
     "create_inline_hook_subscription",
+    "expire_inline_hook_subscription",
     "load_inline_hook_subscription",
     "lock_hook_workspace",
     "read_hook_subscriptions",
     "require_active_workspace_secret",
     "require_hook_capacity",
-    "write_hook_lifecycle",
 ]

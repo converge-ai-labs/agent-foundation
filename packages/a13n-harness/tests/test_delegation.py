@@ -19,6 +19,7 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
+    HarnessRunResult,
     HarnessRunResultEvent,
     PluginError,
     RunBindings,
@@ -78,25 +79,12 @@ async def _allow(*args: Any, **kwargs: Any) -> InvocationPolicyDecision:
     return InvocationPolicyDecision.allow()
 
 
-def _owned_context_part_indexes(message: ModelRequest) -> set[int]:
-    metadata = message.metadata or {}
-    ownership = metadata.get("a13n.model-context-overlay")
-    if not isinstance(ownership, dict):
-        return set()
-    parts = ownership.get("parts")
-    if not isinstance(parts, list):
-        return set()
-    return {index for item in parts if isinstance(item, dict) and isinstance(index := item.get("index"), int)}
-
-
 def _latest_user_text(messages: list[ModelMessage]) -> str | None:
     for message in reversed(messages):
         if not isinstance(message, ModelRequest):
             continue
-        owned = _owned_context_part_indexes(message)
-        for index in range(len(message.parts) - 1, -1, -1):
-            part = message.parts[index]
-            if index not in owned and isinstance(part, UserPromptPart) and isinstance(part.content, str):
+        for part in reversed(message.parts):
+            if isinstance(part, UserPromptPart) and isinstance(part.content, str):
                 return part.content
     return None
 
@@ -107,10 +95,7 @@ def _returns_after_latest_user(messages: list[ModelMessage]) -> list[ToolReturnP
             index
             for index, message in enumerate(messages)
             if isinstance(message, ModelRequest)
-            and any(
-                isinstance(part, UserPromptPart) and part_index not in _owned_context_part_indexes(message)
-                for part_index, part in enumerate(message.parts)
-            )
+            and any(isinstance(part, UserPromptPart) and isinstance(part.content, str) for part in message.parts)
         ),
         default=-1,
     )
@@ -957,6 +942,120 @@ async def test_inline_delegation_inherits_parent_pricing_without_double_counting
     assert all(record.run_id == parent_run_id for record in result.usage_records)
 
 
+@pytest.mark.parametrize("continuation", [False, True])
+@pytest.mark.parametrize("retain_state", [False, True])
+async def test_inline_cleanup_failure_retains_child_state_without_reporting_success(
+    continuation: bool,
+    retain_state: bool,
+) -> None:
+    fail_cleanup = False
+    retained: list[HarnessRunResult[Any]] = []
+    execution_id: str | None = None
+
+    class CleanupFailurePlugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self) -> str:
+            return "child-cleanup"
+
+        def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> PluginRunResponse[Any]:
+            async def iterate():
+                try:
+                    async for item in call_next(exchange):
+                        if isinstance(item, HarnessRunResult):
+                            if fail_cleanup and not retain_state:
+                                item = item.replace(status="cancelled", output=None, state=None)
+                            retained.append(item)
+                        yield item
+                finally:
+                    if fail_cleanup:
+                        raise RuntimeError("private cleanup detail")
+
+            return PluginRunResponse(iterate())
+
+    async def parent_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        if not _returns_after_latest_user(messages):
+            arguments = (
+                {"execution_id": execution_id, "prompt": "continue"}
+                if execution_id is not None
+                else {"subagent": "reviewer", "prompt": "start"}
+            )
+            yield {
+                0: DeltaToolCall(
+                    name="resume_subagent" if execution_id is not None else "delegate",
+                    json_args=json.dumps(arguments),
+                    tool_call_id="child-call",
+                )
+            }
+            return
+        yield "parent-done"
+
+    child = replace(_child_definition(), plugins=(CleanupFailurePlugin(),))
+    executable = HarnessBuilder().build(_parent_definition(child, FunctionModel(stream_function=parent_stream)))
+    previous_state = None
+    if continuation:
+        first = await executable.run("first", bindings=_bindings_factory())
+        assert first.state is not None
+        previous_state = first.state
+        children = InlineSubagentCollectionState.model_validate(
+            first.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+        ).children
+        execution_id = next(iter(children))
+
+    fail_cleanup = True
+    events: list[HarnessEvent] = []
+    async with executable.stream("fail cleanup", previous_state=previous_state, bindings=_bindings_factory()) as stream:
+        async for item in stream:
+            if isinstance(item, HarnessEvent):
+                events.append(item)
+        result = stream.result
+
+    assert result is not None and result.state is not None
+    assert result.output_or_raise() == "parent-done"
+    assert retained[-1].output == (("child-turn-2" if continuation else "child-turn-1") if retain_state else None)
+    failures = _returns_after_latest_user(list(result.all_messages()))
+    assert len(failures) == 1
+    assert "cleanup failed" in str(failures[0].content)
+    assert "private cleanup detail" not in str(failures[0].content)
+    actions = [
+        event.event.payload["action"]
+        for event in events
+        if event.run_id == result.run_id
+        and isinstance(event.event, HarnessExtensionEvent)
+        and event.event.kind == "delegation"
+    ]
+    assert "failed" in actions
+    assert "completed" not in actions
+
+    if not retain_state:
+        assert retained[-1].state is None
+        if previous_state is None:
+            assert SUBAGENT_CAPABILITY_ID not in result.state.agent_context_state.entries
+        else:
+            assert (
+                result.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+                == previous_state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+            )
+        return
+
+    retained_state = retained[-1].state
+    assert retained_state is not None
+    restored = InlineSubagentCollectionState.model_validate(
+        result.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+    )
+    assert len(restored.children) == 1
+    stored_id, record = next(iter(restored.children.items()))
+    if continuation:
+        assert stored_id == execution_id
+    assert record.state.model_dump(mode="json") == retained_state.model_dump(mode="json")
+
+    fail_cleanup = False
+    execution_id = stored_id
+    resumed = await executable.run("resume retained child", previous_state=result.state, bindings=_bindings_factory())
+    assert resumed.output_or_raise() == "parent-done"
+    assert retained[-1].output == ("child-turn-3" if continuation else "child-turn-2")
+
+
 async def test_inline_delegation_cancellation_before_state_commit_leaves_no_child(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1284,3 +1383,118 @@ async def test_inline_child_binding_factory_preserves_owned_boundaries(change: s
     assert not child_calls
     assert len(returns) == 1 and returns[0].outcome == "failed"
     assert returns[0].content == "Inline delegation failed before a complete child result."
+
+
+@pytest.mark.parametrize(
+    ("kind", "select_parent_model"),
+    [("none", False), ("handoff", False), ("compaction", False), ("compaction", True)],
+)
+async def test_summary_delegation_reads_the_context_summary_not_replayed_input(
+    kind: str, select_parent_model: bool
+) -> None:
+    from dataclasses import replace
+
+    from a13n_harness import DelegationContextPolicy, HarnessState
+    from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
+    from a13n_harness.capabilities.context import _COMPACTION_PROMPT
+    from a13n_harness.model_context import user_prompt_content
+    from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+    from pydantic_ai.messages import TextPart
+    from pydantic_ai.usage import RequestUsage
+
+    child_inputs: list[dict[str, Any]] = []
+    summary = "Accepted decision: preserve the original timeline."
+
+    async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        text = _latest_user_text(messages)
+        assert text is not None
+        child_inputs.append(json.loads(text))
+        yield "reviewed"
+
+    calls = 0
+
+    async def parent_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal calls
+        if any(
+            _COMPACTION_PROMPT in str(item.content)
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, UserPromptPart)
+            for item in user_prompt_content(part)
+        ):
+            yield summary
+            return
+        calls += 1
+        if kind == "handoff" and calls == 1:
+            yield {0: DeltaToolCall(name="summarize", json_args=json.dumps({"content": summary}), tool_call_id="s")}
+        elif calls == (2 if kind == "handoff" else 1):
+            yield {
+                0: DeltaToolCall(
+                    name="delegate",
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "Inspect the prior decision"}),
+                    tool_call_id="d",
+                )
+            }
+        else:
+            yield "done"
+
+    selected_model = FunctionModel(stream_function=parent_stream)
+
+    async def unselected_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        pytest.fail("Both compaction and parent execution must use the effective Model")
+        yield "unreachable"
+
+    class SelectParentModel(AbstractCapability):
+        outer_run_id: str | None = None
+
+        def get_ordering(self) -> CapabilityOrdering:
+            return CapabilityOrdering(wraps=(CompactionCapability,))
+
+        async def before_model_request(self, ctx, request_context):
+            if self.outer_run_id is None:
+                self.outer_run_id = ctx.run_id
+            return (
+                replace(request_context, model=selected_model) if ctx.run_id == self.outer_run_id else request_context
+            )
+
+    child = AgentDefinition(agent=AgentSpec(), output_type=str, model=FunctionModel(stream_function=child_stream))
+    parent = AgentDefinition(
+        agent=AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=unselected_stream) if select_parent_model else selected_model,
+        capabilities=(
+            HandoffCapability(),
+            SubagentCapability(),
+            *((SelectParentModel(),) if select_parent_model else ()),
+            *((CompactionCapability(CompactionPolicy(trigger_tokens=100)),) if kind == "compaction" else ()),
+        ),
+        subagents=(
+            SubagentDefinition(
+                name="reviewer",
+                description="Review the decision",
+                agent=child,
+                context=DelegationContextPolicy(history="summary"),
+            ),
+        ),
+    )
+    previous = HarnessState.new(
+        message_history=[
+            ModelRequest(parts=[UserPromptPart("Earlier input")]),
+            ModelResponse(parts=[TextPart("Earlier answer")], usage=RequestUsage(input_tokens=1000)),
+        ]
+    )
+    result = (
+        await HarnessBuilder()
+        .build(parent)
+        .run("Original user request", bindings=RunBindings.embedded(), previous_state=previous)
+    )
+    assert result.output_or_raise() == "done"
+    assert len(child_inputs) == 1
+    payload = child_inputs[0]
+    assert payload["delegated_task"] == "Inspect the prior decision"
+    if kind == "none":
+        assert "parent_history_summary" not in payload
+    else:
+        assert summary in payload["parent_history_summary"]
+        assert "Original user request" not in payload["parent_history_summary"]

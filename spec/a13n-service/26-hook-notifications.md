@@ -34,6 +34,7 @@ flowchart LR
             RunSSE[Run SSE gateway]
             NativeWS[Native notification WebSocket]
             EventAPI[Lifecycle event API]
+            HookDispatcher[Hook dispatcher]
             WebhookPublisher[Webhook publisher]
         end
 
@@ -51,12 +52,14 @@ flowchart LR
     API -->|accept and control mutations| Domain
     API -->|subscription mutations| HookAdmin
     WorkerOps -->|claim, fence, and outcome mutations| Domain
-    Domain -->|one transaction: state, lifecycle event,<br/>and matching webhook outbox rows| PostgreSQL
+    Domain -->|one transaction: state and lifecycle event<br/>with pending Hook dispatch| PostgreSQL
     HookAdmin -->|versioned subscription transaction| PostgreSQL
     Domain -.->|best-effort wake-up| NativeWS --> Caller
     LivePublisher --> Redis
     Redis --> RunSSE -->|live Run events| Caller
     Caller -->|on-demand reconciliation| EventAPI --> PostgreSQL
+    PostgreSQL -->|lock pending lifecycle events| HookDispatcher
+    HookDispatcher -->|one transaction: matching outbox rows<br/>and dispatch completion| PostgreSQL
     PostgreSQL -->|claim pending outbox rows| WebhookPublisher
     WebhookPublisher -->|signed HTTP POST| Webhook --> Caller
 ```
@@ -65,9 +68,9 @@ The shared-domain box is a logical code layer, not an independently deployed ser
 
 The Attempt executor invokes Harness through its public process-local API rather than a a13n SDK or network hop. The Hook source adapter assigns Service correlation and routing names without changing the meaning of an AG-UI event. The [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) contract owns PostgreSQL lifecycle facts and the Run-scoped Redis Stream. [Events, Interaction Projection, Usage, and Delivery](25-events-usage-and-delivery.md) owns the common delivery envelope and source-authority separation. [Durable Operations and Outbox](06-durable-operations-and-outbox.md) owns reliable external publication. [Native Streaming and Notifications](21-native-streaming-and-notifications.md) owns Run SSE, Workspace lifecycle event reads, and the best-effort Native notification WebSocket. Those three surfaces keep their own envelopes, filters, cursors, and delivery guarantees.
 
-The diagram contains no database-to-caller push path. Control reads `lifecycle_events` only when a caller invokes the event API. It does not poll the lifecycle table for new hooks. The only PostgreSQL polling loop shown is the Webhook publisher claiming `pending` Outbox rows. Ordinary resource or large-content retrieval is outside this Hook contract.
+Control polls pending lifecycle events for Hook dispatch and due Outbox rows for Webhook publication. Caller reconciliation remains an on-demand event API. Ordinary resource or large-content retrieval is outside this Hook contract.
 
-An Outbox is the PostgreSQL `outbox_records` table, not another middleware service. When active Webhook subscriptions match a Run or RunAttempt transition, the owning short transaction writes the state change, immutable lifecycle event, and one Outbox row per destination together. Data is not copied from PostgreSQL into a later Outbox process; the Outbox row is part of the original atomic commit. A Webhook publisher is a bounded background task in a `control` or `all-in-one` process. It claims due Outbox rows, loads their immutable lifecycle source and destination configuration, performs the signed HTTP POST outside the database transaction, and then records success, retry, or dead-letter state in another short transaction.
+The owning Run or RunAttempt transaction commits the state change and immutable lifecycle event with pending Hook dispatch. A bounded background dispatcher in `control` or `all` matches subscriptions and creates rows in the shared PostgreSQL `outbox_records` table under [Asynchronous Hook Dispatch](#asynchronous-hook-dispatch). A separate Webhook publisher claims due Outbox rows, loads their immutable source and destination configuration, performs the signed HTTP POST outside the database transaction, and records success, retry, or dead-letter state in another short transaction.
 
 ## Boundaries and Hook Model
 
@@ -146,15 +149,15 @@ The inline form does not accept caller-supplied scope IDs. Service assigns the a
 
 Both forms accept exact `hook_names`, `endpoint_url`, `signing_secret_id`, and `signature_profile`. The signing value itself is never inline. Explicit configuration requires the caller's current authority to create the subscription and bind the referenced managed Secret; inherited configuration follows the authority rules below. The Service retry policy and delivery limits are service policy rather than caller-supplied destination parameters.
 
-Service validates the selected inline Hook names, destination, Secret authority, and request bounds before immediate acceptance or queue admission. Queue admission stores the exact explicit inline input as part of the queued Run intent but creates no HookSubscription or Outbox row. Queue editing revalidates the replacement input. At immediate or delayed Run acceptance, Service repeats current authorization and validation; in the final short acceptance transaction it inserts the HookSubscription head and Revision v1 before appending `run.accepted` and its matching Outbox row. Failure rolls back the subscription and Run together; no Webhook HTTP request runs in that transaction. Hook selection participates in the submitting command's idempotency under the successor rules below.
+Service validates the selected inline Hook names, destination, Secret authority, and request bounds before immediate acceptance or queue admission. Queue admission stores the exact explicit inline input as part of the queued Run intent but creates no HookSubscription or Outbox row. Queue editing revalidates the replacement input. At immediate or delayed Run acceptance, Service repeats current authorization and validation; in the final short acceptance transaction it inserts the HookSubscription head and Revision v1 together with `run.accepted` and its pending Hook dispatch. Failure rolls back the subscription and Run together; no Webhook HTTP request runs in that transaction. Hook selection participates in the submitting command's idempotency under the successor rules below.
 
-To receive `run.accepted`, a managed subscription must match the source transaction's subscription observation, or the command must select an explicit or inherited inline configuration before that observation. A known-Run subscription created through the management API after acceptance receives only later matching events because subscription changes are not retroactive.
+Subscriptions take effect at background dispatch time. A managed subscription created after Run acceptance can receive `run.accepted` if that event is still pending when matching observes the subscription. Events already marked dispatch-complete are never rescanned for newly created or changed subscriptions.
 
 Creating a subscription atomically creates its head and Revision v1. Only a management-created subscription supports configuration updates: a change appends an immutable `hook_subscription_revisions` row and advances the head only when canonical content changes.
 
 An inline subscription has exactly one Revision, v1, and its configuration is immutable after Run acceptance. Configuration-update requests targeting an inline subscription are rejected without changing the head or appending a Revision; no role bypasses this constraint. Changing Hook names, scope, callback URL, signing-Secret reference, or signature profile for later work requires explicit configuration on a new Run command.
 
-Enablement, automatic expiry, and deletion are independent head lifecycle axes; they do not advance `version`, and each representation change updates the strong ETag. Caller mutations require `If-Match`; automatic expiry belongs to the fenced Run-sealing transaction. Workspace limits count only active matching subscriptions. For each lifecycle event, one read observes the active subscription heads and their exact Revisions; that observation determines which Outbox rows are created. Matching does not serialize against Workspace or subscription configuration changes. A subscription created or enabled after that read does not receive the event, and a later disablement, deletion, or Revision change does not retract its selected delivery, even if the management change commits before the source transaction. Immutable selected Revisions remain protected from collection until the Outbox references commit or the source transaction rolls back. A later change does not alter an already committed Outbox row or retroactively deliver older sources. Authorized redrive reuses the original delivery identity and exact subscription Revision.
+Enablement, automatic expiry, and deletion are independent head lifecycle axes; they do not advance `version`, and each representation change updates the strong ETag. Caller mutations require `If-Match`; automatic expiry belongs to the fenced Run-sealing transaction. Workspace limits count only active subscriptions. For each lifecycle event, one read in the background dispatch transaction observes eligible subscription heads and their exact Revisions; that observation determines which Outbox rows are created. Matching does not serialize against Workspace or subscription configuration changes. A subscription created or enabled after that read does not receive the event, and a later disablement, deletion, or Revision change does not retract its selected delivery, even if the management change commits before the dispatch transaction. Immutable selected Revisions remain protected from collection until the Outbox references commit or the dispatch transaction rolls back. A later change does not alter an already committed Outbox row or rematch a completed event. Authorized redrive reuses the original delivery identity and exact subscription Revision.
 
 Subscription List and Get authorize `hook_subscription.read`; creation authorizes `hook_subscription.create`; managed configuration or enablement changes authorize `hook_subscription.update`; deletion authorizes `hook_subscription.delete`; and redrive authorizes `hook_subscription.redrive`. Exact Run-inline creation is the only Runner-level create grant and still requires current authority for the signing Secret. Long-lived creation and every later caller mutation require Builder or Admin; automatic expiry requires no separate caller delete grant. The IAM [stable action registry](33-identity-and-access-management.md#stable-action-registry) owns these grants; subscription scope, Secret, destination, Revision, and source eligibility remain additional checks owned here.
 
@@ -164,11 +167,11 @@ Only committed lifecycle events are eligible for durable Webhook subscription de
 
 An inline subscription expires when its owning Run seals as `waiting`, `completed`, `failed`, or `cancelled`, including failure or cancellation before any Attempt starts. Waiting seals the old Run; it does not keep the subscription active until feedback. Attempt replacement, recovery backoff, and planned handoff within the same unsealed Run keep the existing subscription and never create another one.
 
-The sealing transaction appends all final Run and RunAttempt lifecycle events and their matching Outbox intents before setting the inline head's `expired_at` to the Run's `sealed_at`. It sets expiry even if that head is already paused or deleted. The state transition, final event matching, and expiry commit atomically or all roll back. Source sealing releases the source subscription's active capacity before a later independent transaction admits the queued successor's subscription.
+The sealing transaction appends all final Run and RunAttempt lifecycle events with pending Hook dispatch and sets the inline head's `expired_at` to the Run's `sealed_at`. It sets expiry even if that head is already paused or deleted. The state transition, final lifecycle facts, and expiry commit atomically or all roll back. Source sealing releases the source subscription's active capacity before a later independent transaction admits the queued successor's subscription.
 
-A subscription matches new events and consumes active capacity only when `enabled=true`, `deleted_at=null`, and `expired_at=null`. Automatic expiry preserves `enabled` and `deleted_at`, is irreversible, and never applies to management-created subscriptions. Caller updates cannot clear expiry, rebind an inline subscription to another scope, or make an expired subscription match again. Authorized management reads can still inspect expired, non-deleted heads; callers can pause or delete them to suppress default successor inheritance.
+A subscription consumes active capacity only when `enabled=true`, `deleted_at=null`, and `expired_at=null`. Matching uses the same conditions, except that automatic expiry does not exclude pending events already emitted by the inline subscription's owning Run or its RunAttempts. Manual pause and deletion still apply at dispatch time. Automatic expiry preserves `enabled` and `deleted_at`, is irreversible, and never applies to management-created subscriptions. Caller updates cannot clear expiry, rebind an inline subscription to another scope, or reactivate an expired subscription. Authorized management reads can still inspect expired, non-deleted heads; callers can pause or delete them to suppress default successor inheritance.
 
-Expiry stops new matching rather than cancelling committed delivery. Existing Outbox intents continue publication, retry, and authorized redrive against their exact Revisions even after the head expires, pauses, or is deleted. Current signing-Secret availability and delivery policy still apply. No publisher waits for feedback, and Run sealing never waits for a destination acknowledgement.
+Automatic expiry releases active capacity without losing the owning Run's pending notifications. Existing Outbox intents continue publication, retry, and authorized redrive against their exact Revisions even after the head expires, pauses, or is deleted. Current signing-Secret availability and delivery policy still apply. No publisher waits for feedback, and Run sealing never waits for a destination acknowledgement.
 
 ### Successor Inline Subscriptions
 
@@ -192,13 +195,13 @@ For a new command, omission, explicit `null`, and a supplied configuration retai
 
 ## Storage Model
 
-Hook delivery introduces `hook_subscriptions` and `hook_subscription_revisions`, and uses the shared `outbox_records` table. It reuses the existing `lifecycle_events` source without redefining that schema. It adds no Hook-specific Redis key, object-storage object, notification table, or caller-owned persistence schema.
+Hook delivery introduces `hook_subscriptions` and `hook_subscription_revisions`, and uses the shared `outbox_records` table. It stores independent Hook dispatch bookkeeping on the existing `lifecycle_events` source under [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md). It adds no Hook-specific Redis key, object-storage object, notification table, or caller-owned persistence schema.
 
 Both tables participate in the service's explicitly assembled [schema and migration graph](04-relational-schema.md). Runtime code never creates them opportunistically, and a Worker-only process verifies but never applies their migrations.
 
 ### `hook_subscriptions` and `hook_subscription_revisions`
 
-The head stores stable identity, `version`, `current_revision_id`, `inline_run_id`, `enabled`, expiry and deletion times, actors, and timestamps. The immutable Revision stores the exact Hook-name set, scope filters, and Webhook configuration so an Outbox row can keep using the destination selected when its source event committed.
+The head stores stable identity, `version`, `current_revision_id`, `inline_run_id`, `enabled`, expiry and deletion times, actors, and timestamps. The immutable Revision stores the exact Hook-name set, scope filters, and Webhook configuration so an Outbox row can keep using the destination selected when background dispatch matched its source event.
 
 ```python
 class HookSubscriptionRecord:
@@ -228,11 +231,11 @@ class HookSubscriptionRevisionRecord:
 
 `HookSubscriptionRevision.id` is the immutable destination reference stored by Outbox. `(hook_subscription_id, version)` is unique and versions are positive and contiguous. Non-null `(organization_id, inline_run_id)` is unique, preserving at most one inline subscription per Run even after expiry or deletion. `inline_run_id` references a Run in the same Organization and Workspace. An inline head keeps `version=1` and its original `current_revision_id` for its entire retained lifetime; persistence rejects additional Revisions and changes to its fixed configuration or scope. Enablement, expiry, and deletion can change only the owning head lifecycle fields and their mutation evidence. `expired_at` is null for managed subscriptions and unsealed inline owners, and equals the owning Run's seal time for sealed inline owners.
 
-`hook_names` is stored as one bounded, duplicate-free JSON array. A GIN index on that field plus partial B-tree indexes over the current active Workspace and non-null Session, Thread, and Run filters support source-transaction matching. All filters are conjunctive and organization-consistent.
+`hook_names` is stored as one bounded, duplicate-free JSON array. A GIN index on that field plus partial B-tree indexes over the current active Workspace and non-null Session, Thread, and Run filters support background matching, including lookup of expired inline subscriptions for their owning Run's pending events. All filters are conjunctive and organization-consistent.
 
 Each Revision contains the callback URL but no URL user information or plaintext signing value. `signing_secret_id` is resolved through the managed Secret authorization boundary at delivery time. Ordinary reads return the head and may embed its current Revision. Historical Revisions remain immutable and retained while an Outbox row can still reference them.
 
-Inline head identity and Revision v1 also remain retained while the owning Run is eligible as a Feedback, waiting-Continue, or Retry source or while required audit retention applies. These dependencies survive expiry and manual deletion; successful delivery alone does not release them. Retention must not make a previously configured eligible source appear to have never had an inline subscription. Physical cleanup releases records only after all applicable inheritance, delivery/redrive, audit, and relational-reference dependencies end. Accepted Hook configuration stays in these revisions; neither Run input nor Run state duplicates callback configuration.
+Inline head identity and Revision v1 also remain retained while the owning Run is eligible as a Feedback, waiting-Continue, or Retry source, while the owning Run or its RunAttempts have unfinished Hook dispatch, or while required audit retention applies. These dependencies survive expiry and manual deletion; successful delivery alone does not release them. Retention must not make a previously configured eligible source appear to have never had an inline subscription. Physical cleanup releases records only after all applicable inheritance, dispatch, delivery/redrive, audit, and relational-reference dependencies end. Accepted Hook configuration stays in these revisions; neither Run input nor Run state duplicates callback configuration.
 
 Control periodically discovers and physically collects eligible heads and Revisions under [Control Background Tasks](07-control-background-tasks.md#hooksubscription-collection). This execution obligation begins only after the retention conditions above permit deletion; automatic expiry at Run seal remains synchronous and does not await a collection scan.
 
@@ -261,9 +264,15 @@ class HookOutboxRecord:
 
 `source_id` references the immutable lifecycle event and `destination_ref` references the exact `hook_subscription_revisions.id` selected by matching. The Outbox row copies neither lifecycle payload nor callback configuration. The publisher derives the envelope from the lifecycle event and resolves the URL, Secret reference, and signature profile from that immutable subscription Revision.
 
-`id` is the stable `delivery_id`. The tuple `(source_kind, source_id, destination_kind, destination_ref)` is unique, so a source-transaction retry cannot create a duplicate delivery. An index on `(status, available_at, id)` supports bounded claims. Claim generation, lease, retry, publication, dead-letter, retention, and redrive follow the shared Outbox contract.
+`id` is the stable `delivery_id`. The tuple `(source_kind, source_id, destination_kind, destination_ref)` is unique, so a dispatch retry cannot create a duplicate delivery. An index on `(status, available_at, id)` supports bounded claims. Claim generation, lease, retry, publication, dead-letter, retention, and redrive follow the shared Outbox contract.
 
-The owning Run or RunAttempt mutation, lifecycle event, and one Outbox row per subscription active and matching at the event's observation commit in one short transaction. A managed subscription Revision exists before that observation; an inline Revision is inserted earlier in the same transaction before `run.accepted` matching. A later subscription Revision does not alter an existing Outbox row. Neither the lifecycle event nor referenced subscription Revision is removed while a retained Outbox row can still be delivered or redriven.
+### Asynchronous Hook Dispatch
+
+Each lifecycle event starts with `hook_dispatch_state=pending`, committed atomically with its owning state mutation. Dispatch progress lives on that event independently of Redis projection; there is no separate dispatch table. Run acceptance, continuation, and sealing do not match Webhook subscriptions or write Webhook Outbox rows.
+
+A `control` or `all` background task selects a bounded batch of due pending events using PostgreSQL `FOR UPDATE SKIP LOCKED`. Within the same short database transaction, it observes current eligible subscriptions, inserts one Outbox row per matching exact Revision, and marks each event `done`, including events with no matches. Locks remain held until this commit; dispatch needs no separate processing state or lease and performs no external I/O. Multiple processes skip each other's locked events. Scans use pending state rather than a global high-watermark cursor, and dispatch does not require event order.
+
+Failure or process loss rolls back both Outbox writes and completion, leaving events retryable without changing the source Run. Recoverable failures record bounded attempts, backoff, and safe errors; persistent failures become observable `failed` events requiring explicit retry and must not prevent independent events from progressing. A retry observes subscriptions again; a committed `done` event is never rematched. Pending and failed events remain retained, as do their inline subscription dependencies. Once Outbox rows exist, source events and selected Revisions remain pinned under ordinary delivery/redrive retention.
 
 ## Notification Methods
 
@@ -341,7 +350,7 @@ Workspace replay ordering follows the global lifecycle cursor. Resource recovery
 
 ### Webhook Delivery
 
-Webhook delivery applies only to a matching active durable subscription. A lifecycle event and one Outbox row per destination commit atomically with the owning state transition. The HTTP request occurs later outside every source transaction and Agent execution scope.
+Webhook delivery uses the Outbox rows created by [asynchronous Hook dispatch](#asynchronous-hook-dispatch). Matching Outbox rows and dispatch completion commit atomically after the source transition. HTTP publication runs independently after that commit.
 
 The publisher resolves the endpoint and signing configuration from the exact immutable HookSubscription version referenced by the Outbox row. This is identical for subscriptions created through the management API and subscriptions created inline with a Run command; inline creation never performs delivery on the request path.
 
@@ -353,11 +362,15 @@ The resulting envelope includes `hook_subscription_id`, `delivery_id`, `resource
 sequenceDiagram
     participant Domain as Service domain
     participant DB as PostgreSQL
+    participant Dispatcher as Hook dispatcher
     participant Publisher as Outbox publisher
     participant Caller as Caller webhook
 
-    Domain->>DB: one transaction: optional subscription + state + lifecycle event + Outbox rows
+    Domain->>DB: one transaction: optional inline subscription + state + pending lifecycle event
     DB-->>Domain: commit succeeds or all changes roll back
+    Dispatcher->>DB: lock due events with FOR UPDATE SKIP LOCKED
+    Dispatcher->>DB: same transaction: match subscriptions + insert Outbox rows + mark done
+    DB-->>Dispatcher: commit succeeds or dispatch rolls back
     loop bounded polling
         Publisher->>DB: claim due pending Outbox rows
         DB-->>Publisher: source IDs and subscription Revision references
@@ -492,14 +505,15 @@ These are live Run SSE observations, not lifecycle authority. The Environment do
 
 ## Execution, Backpressure, and Blocking
 
-| Processing boundary                               | Effect on Agent progress                                                                                                         |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Harness callback adaptation                       | Performs only bounded in-process conversion and enqueue; never invokes a caller                                                  |
-| Redis publication and live client delivery        | Uses bounded decoupling; failure or overflow affects observation availability, not Run authority                                 |
-| Lifecycle event and matching Outbox intent commit | Blocks only the owning short state transaction; the transition is not visible as committed until both exist                      |
-| Webhook network delivery                          | Runs asynchronously after commit and never blocks Harness, tool, Run, or API acceptance                                          |
-| SDK callback execution                            | Runs in the caller process and cannot block Service execution                                                                    |
-| Human, client-tool, or external approval          | Seals the Run as `waiting`, releases run resources, and resumes through a newly accepted Run rather than holding a callback open |
+| Processing boundary                        | Effect on Agent progress                                                                                                         |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Harness callback adaptation                | Performs only bounded in-process conversion and enqueue; never invokes a caller                                                  |
+| Redis publication and live client delivery | Uses bounded decoupling; failure or overflow affects observation availability, not Run authority                                 |
+| Lifecycle event commit                     | Blocks only the owning short state transaction; state and fact commit together                                                   |
+| Hook matching and Outbox generation        | Runs in a background transaction; failure delays notifications without rolling back the source                                   |
+| Webhook network delivery                   | Runs asynchronously after commit and never blocks Harness, tool, Run, or API acceptance                                          |
+| SDK callback execution                     | Runs in the caller process and cannot block Service execution                                                                    |
+| Human, client-tool, or external approval   | Seals the Run as `waiting`, releases run resources, and resumes through a newly accepted Run rather than holding a callback open |
 
 A Hook subscription cannot modify input, output, tool arguments, tool results, Run state, or retry policy. A failed subscriber, publisher, or Webhook never changes the already committed source outcome. Service does not hold a database session or transaction across Harness execution, Redis subscription, Webhook delivery, or an external wait.
 
@@ -546,20 +560,21 @@ The following table is the public Service hook routing registry. Subscription co
 
 ## Failure Semantics
 
-| Failure                                                              | Observable outcome                                                                                           | Source authority                                                                            |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| Harness callback conversion or visibility processing fails           | Affected live observation is unavailable and the Worker emits a safe diagnostic when possible                | Does not invent or roll back a Harness or Run outcome                                       |
-| Redis append outcome is unknown                                      | Publisher reconciles by stable event identity or reports a replay gap                                        | PostgreSQL and Harness state remain unchanged                                               |
-| Live client is slow or disconnects                                   | Attachment closes; caller reconnects with its cursor when retained                                           | Agent and Run continue                                                                      |
-| Inline Hook configuration is invalid or unauthorized                 | The entire Run-acceptance transaction rejects or rolls back                                                  | No Run, HookSubscription, lifecycle event, or Outbox record partially commits               |
-| Lifecycle mutation cannot append its required event or Outbox intent | Entire short transaction rolls back                                                                          | No lifecycle hook exists                                                                    |
-| Webhook delivery is duplicated                                       | Receiver deduplicates by stable delivery or source identity                                                  | Source fact remains single and immutable                                                    |
-| Webhook delivery arrives out of resource order                       | Receiver durably accepts it and fills the gap through the resource lifecycle API                             | Source sequence remains ordered and immutable                                               |
-| Receiver returns `2xx` before durable inbox commit                   | Service may legitimately stop retrying an event the receiver later loses                                     | Receiver violates the acknowledgement contract and must reconcile through the lifecycle API |
-| Webhook retries exhaust                                              | Outbox row becomes dead-lettered and is eligible for authorized redrive                                      | Source lifecycle event remains unchanged                                                    |
-| Subscription changes race with source commitment                     | Locked transaction order selects whether an intent exists                                                    | No partial or retroactive match is inferred                                                 |
-| Replay cursor precedes retention                                     | API returns explicit `replay_gap` and retained boundary                                                      | Caller reads current authorized resources                                                   |
-| Planned handoff closes a local Harness Run                           | `run_attempt.yielded` may deliver; no `agui.run_finished`, `agui.run_error`, or fake cancellation is emitted | The Attempt lifecycle fact is durable while the Run and its stream remain running           |
+| Failure                                                    | Observable outcome                                                                                           | Source authority                                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Harness callback conversion or visibility processing fails | Affected live observation is unavailable and the Worker emits a safe diagnostic when possible                | Does not invent or roll back a Harness or Run outcome                                       |
+| Redis append outcome is unknown                            | Publisher reconciles by stable event identity or reports a replay gap                                        | PostgreSQL and Harness state remain unchanged                                               |
+| Live client is slow or disconnects                         | Attachment closes; caller reconnects with its cursor when retained                                           | Agent and Run continue                                                                      |
+| Inline Hook configuration is invalid or unauthorized       | The entire Run-acceptance transaction rejects or rolls back                                                  | No Run, HookSubscription, lifecycle event, or Outbox record partially commits               |
+| Lifecycle mutation cannot append its required event        | Entire short transaction rolls back                                                                          | No lifecycle hook exists                                                                    |
+| Hook matching or Outbox generation fails                   | Dispatch rolls back and retries with bounded backoff or records failure                                      | Committed source state and lifecycle fact remain unchanged                                  |
+| Webhook delivery is duplicated                             | Receiver deduplicates by stable delivery or source identity                                                  | Source fact remains single and immutable                                                    |
+| Webhook delivery arrives out of resource order             | Receiver durably accepts it and fills the gap through the resource lifecycle API                             | Source sequence remains ordered and immutable                                               |
+| Receiver returns `2xx` before durable inbox commit         | Service may legitimately stop retrying an event the receiver later loses                                     | Receiver violates the acknowledgement contract and must reconcile through the lifecycle API |
+| Webhook retries exhaust                                    | Outbox row becomes dead-lettered and is eligible for authorized redrive                                      | Source lifecycle event remains unchanged                                                    |
+| Subscription changes race with background dispatch         | The dispatch matching read selects current eligible heads and exact Revisions                                | Completed dispatch is never rematched                                                       |
+| Replay cursor precedes retention                           | API returns explicit `replay_gap` and retained boundary                                                      | Caller reads current authorized resources                                                   |
+| Planned handoff closes a local Harness Run                 | `run_attempt.yielded` may deliver; no `agui.run_finished`, `agui.run_error`, or fake cancellation is emitted | The Attempt lifecycle fact is durable while the Run and its stream remain running           |
 
 ## Compatibility
 
@@ -585,9 +600,9 @@ AG-UI payload compatibility follows the selected Agent Stream Protocol release. 
 12. A caller returns `2xx` only after durable receipt. Gap-free business application depends on caller-side sequence progress and lifecycle API recovery within the retained event horizon.
 13. Run and RunAttempt domain services are shared in-process application code, not an independently deployed network service and not a Worker-private authority.
 14. Hook delivery adds no Hook-specific Redis stream or object-storage object; durable Webhook source and progress remain in PostgreSQL.
-15. Inline creation produces the same versioned HookSubscription record as management-API creation, commits before matching `run.accepted` in the same transaction, and never performs Webhook delivery on the acceptance path.
+15. Inline creation produces the same versioned HookSubscription record as management-API creation, commits with `run.accepted` and pending dispatch in the same transaction, and never performs Webhook delivery on the acceptance path.
 16. Expected planned handoff emits `run_attempt.yielded` only; it does not fabricate an AG-UI terminal Run hook, close the Run Stream, or repeat a Run lifecycle transition.
-17. An inline subscription has immutable ownership and configuration, exactly one Revision v1, and scope exact to one Run; sealing expires the head atomically after final event matching, while committed deliveries retain that Revision.
+17. An inline subscription has immutable ownership and configuration, exactly one Revision v1, and scope exact to one Run; sealing expires the head atomically with final lifecycle facts, while pending dispatch and committed deliveries retain that Revision.
 18. Feedback, waiting Continue, and terminal Retry inherit only the direct source's accepted inline Revision v1 by default; explicit null opts out and a complete object replaces it. Manual pause or deletion suppresses default inheritance, while automatic expiry does not.
 19. Each new Run receives at most one fresh inline subscription; same-Run recovery and successful idempotent replay create none. Replay derives its result from the accepted Run and retained subscription relationship.
-20. Inline expiry releases active capacity without releasing the separate inheritance, Outbox, or audit retention dependencies.
+20. Inline expiry releases active capacity without releasing the separate dispatch, inheritance, Outbox, or audit retention dependencies.

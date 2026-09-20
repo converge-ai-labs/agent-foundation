@@ -256,6 +256,7 @@ async def build_control_runtime(
     )
     background_tasks = [
         assets.cleanup_task,
+        hooks.dispatch_task,
         hooks.delivery_task,
         hooks.retention_task,
         BackgroundTask(

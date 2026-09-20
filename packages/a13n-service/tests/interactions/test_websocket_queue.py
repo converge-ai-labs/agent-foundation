@@ -6,7 +6,7 @@ from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.control_domain import QueuedSubmissionState, ThreadRunSubmissionIntent
-from a13n_service.interactions.initialization import RunStateSeed, initialize_empty_thread_state
+from a13n_service.interactions.initialization import RunStateSeed, initialize_start_state
 from a13n_service.interactions.input import AcceptedAgentInput, AgentInput, TextContent
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
@@ -48,7 +48,7 @@ async def test_queue_admission_waits_for_online_at_consumption_and_retains_origi
     await _fail_current_run(interaction_sessions, run_id=source.id, thread_id=source.thread_id)
     accepted_input = AcceptedAgentInput(schema_version="1", content=(TextContent(text="queued"),))
     config = effective_agent_config()
-    state = initialize_empty_thread_state(
+    state = initialize_start_state(
         RunStateSeed(
             run_id="run_6666666666666666",
             agent_id=AGENT_ID,

@@ -4,15 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.invocation_resolution.skills import validate_retained_skills
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets import Asset
 from a13n_service.iam import (
     AuthenticatedActor,
-    AuthorizationError,
     WorkspaceAction,
 )
 from a13n_service.iam.operation import authorization_operation
@@ -42,7 +40,7 @@ from a13n_service.interactions.initialization import (
     initialize_retry_state,
     initialize_waiting_continuation_state,
 )
-from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
+from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore, StoredRunState
 from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.protocol_context import ProtocolInputContext
@@ -50,7 +48,7 @@ from a13n_service.interactions.state import RunPayloadEnvelope
 from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
-from .access import authorize_interaction, authorize_retained_execution
+from .access import authorize_inherited_run, authorize_run_actions
 from .command_evidence import (
     RunRequest,
     require_idempotency_key,
@@ -64,6 +62,7 @@ from .errors import InteractionCommandError, command_not_found
 from .feedback import map_waiting_feedback
 from .input import input_text
 from .session_scope import SessionScope
+from .sources import RunSource, load_run_source
 
 _USER_INPUT_ORIGIN = SubmissionOrigin()
 
@@ -174,27 +173,13 @@ class ContinuationCommands:
         )
 
         async def validate_final(database: AsyncSession) -> None:
-            try:
-                await authorize_interaction(
-                    database,
-                    actor=actor,
-                    workspace_id=actor.workspace_id,
-                    session_id=source.session_id,
-                    session_scope=session_scope,
-                    agent_id=source.agent_id,
-                    action=WorkspaceAction.run_retry,
-                )
-                await authorize_retained_execution(
-                    database, source=source, workspace_id=actor.workspace_id, session_scope=session_scope
-                )
-            except AuthorizationError as error:
-                raise command_not_found() from error
-
-            await validate_retained_skills(
+            await authorize_inherited_run(
                 database,
-                organization_id=source.organization_id,
-                workspace_id=actor.workspace_id,
-                locks=source_state.envelope.effective_agent_config.skills,
+                actor=actor,
+                source=source,
+                state=source_state.envelope,
+                session_scope=session_scope,
+                actions=(WorkspaceAction.run_retry,),
             )
 
         try:
@@ -241,14 +226,8 @@ class ContinuationCommands:
         replay = await evidence.replay()
         if replay is not None:
             return replay
-        source, thread, session_scope = await self._load_feedback_source(actor=actor, run_id=run_id)
-        source_state = await self._states.read_run(source)
-        if source.sealed_state is None or source.pending is None:
-            raise InteractionCommandError(
-                "run_waiting_state_invalid",
-                "The selected waiting Run has no complete pending state.",
-                category=ErrorCategory.conflict,
-            )
+        source, thread, source_state, session_scope = await self._prepare_waiting_source(actor=actor, run_id=run_id)
+        assert source.pending is not None
         try:
             normalized = normalize_feedback(
                 waiting_run_id=source.id,
@@ -327,6 +306,7 @@ class ContinuationCommands:
         self,
         *,
         actor: AuthenticatedActor,
+        observed_source: RunSource | None = None,
         run_id: str,
         request_key: str,
         request: WaitingContinueRunCommand,
@@ -335,7 +315,11 @@ class ContinuationCommands:
     ) -> RunAcceptanceReceipt:
         """Accept waiting intent under the calling entry point's command identity."""
         source, thread, source_state, normalized, session_scope = await self._prepare_waiting_continue(
-            actor=actor, run_id=run_id, request=request, prepared_assets=prepared_assets
+            actor=actor,
+            run_id=run_id,
+            request=request,
+            prepared_assets=prepared_assets,
+            observed_source=observed_source,
         )
         return await self._accept_waiting_successor(
             actor=actor,
@@ -354,22 +338,18 @@ class ContinuationCommands:
         self,
         *,
         actor: AuthenticatedActor,
+        observed_source: RunSource | None = None,
         run_id: str,
         request: WaitingContinueRunCommand,
         prepared_assets: Mapping[str, Asset] | None,
     ) -> tuple[Run, Thread, StoredRunState, WaitingRunContinueInput, SessionScope]:
-        source, thread, session_scope = await self._load_feedback_source(
+        source, thread, source_state, session_scope = await self._prepare_waiting_source(
             actor=actor,
             run_id=run_id,
-            actions=frozenset({WorkspaceAction.run_continue, WorkspaceAction.run_feedback}),
+            actions=(WorkspaceAction.run_continue, WorkspaceAction.run_feedback),
+            observed_source=observed_source,
         )
-        source_state = await self._states.read_run(source)
-        if source.sealed_state is None or source.pending is None:
-            raise InteractionCommandError(
-                "run_waiting_state_invalid",
-                "The selected waiting Run has no complete pending state.",
-                category=ErrorCategory.conflict,
-            )
+        assert source.pending is not None
         accepted_input = await self._inputs.accept_effective(
             actor=actor,
             workspace_id=actor.workspace_id,
@@ -462,28 +442,13 @@ class ContinuationCommands:
         )
 
         async def validate_final(database: AsyncSession) -> None:
-            try:
-                for action in actions:
-                    await authorize_interaction(
-                        database,
-                        actor=actor,
-                        workspace_id=actor.workspace_id,
-                        session_id=source.session_id,
-                        session_scope=session_scope,
-                        agent_id=source.agent_id,
-                        action=action,
-                    )
-                await authorize_retained_execution(
-                    database, source=source, workspace_id=actor.workspace_id, session_scope=session_scope
-                )
-            except AuthorizationError as error:
-                raise command_not_found() from error
-
-            await validate_retained_skills(
+            await authorize_inherited_run(
                 database,
-                organization_id=source.organization_id,
-                workspace_id=actor.workspace_id,
-                locks=source_state.envelope.effective_agent_config.skills,
+                actor=actor,
+                source=source,
+                state=source_state.envelope,
+                session_scope=session_scope,
+                actions=actions,
             )
 
         return await self._acceptance.advance_thread(
@@ -507,120 +472,66 @@ class ContinuationCommands:
         self, *, actor: AuthenticatedActor, run_id: str
     ) -> tuple[Run, Thread, Run | None, SessionScope]:
         async with short_session(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(RunRecord, ThreadRecord, SessionRecord)
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.organization_id == RunRecord.organization_id,
-                            SessionRecord.id == RunRecord.session_id,
-                        ),
-                    )
-                    .join(
-                        ThreadRecord,
-                        and_(
-                            ThreadRecord.organization_id == RunRecord.organization_id,
-                            ThreadRecord.id == RunRecord.thread_id,
-                        ),
-                    )
-                    .where(
-                        RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise command_not_found()
-            source_record, thread_record, conversation = row
-            session_scope = SessionScope.from_record(conversation)
-            try:
-                await authorize_interaction(
-                    database,
-                    actor=actor,
-                    workspace_id=actor.workspace_id,
-                    session_id=source_record.session_id,
-                    session_scope=session_scope,
-                    agent_id=source_record.agent_id,
-                    action=WorkspaceAction.run_retry,
-                )
-            except AuthorizationError as error:
-                raise command_not_found() from error
-            if thread_record.current_run_id != source_record.id or source_record.status not in {
-                RunStatus.failed.value,
-                RunStatus.cancelled.value,
-            }:
+            observed = await load_run_source(database, workspace_id=actor.workspace_id, run_id=run_id)
+            source, thread = observed.run, observed.thread
+            await authorize_run_actions(
+                database,
+                actor=actor,
+                source=source,
+                session_scope=observed.session_scope,
+                actions=(WorkspaceAction.run_retry,),
+            )
+            if thread.current_run_id != source.id or source.status not in {RunStatus.failed, RunStatus.cancelled}:
                 raise InteractionCommandError(
                     "run_not_retryable",
                     "The selected Run is not the Thread's current failed or cancelled Run.",
                     category=ErrorCategory.conflict,
                 )
             parent = None
-            if source_record.parent_run_id is not None:
+            if source.parent_run_id is not None:
                 parent_record = await database.scalar(
                     select(RunRecord).where(
-                        RunRecord.organization_id == source_record.organization_id,
-                        RunRecord.id == source_record.parent_run_id,
+                        RunRecord.organization_id == source.organization_id,
+                        RunRecord.id == source.parent_run_id,
                     )
                 )
                 if parent_record is None:
                     raise command_not_found()
                 parent = parent_record.to_resource()
-            return source_record.to_resource(), thread_record.to_resource(), parent, session_scope
+            return source, thread, parent, observed.session_scope
 
-    async def _load_feedback_source(
+    async def _prepare_waiting_source(
         self,
         *,
         actor: AuthenticatedActor,
         run_id: str,
-        actions: frozenset[WorkspaceAction] = frozenset({WorkspaceAction.run_feedback}),
-    ) -> tuple[Run, Thread, SessionScope]:
+        actions: tuple[WorkspaceAction, ...] = (WorkspaceAction.run_feedback,),
+        observed_source: RunSource | None = None,
+    ) -> tuple[Run, Thread, StoredRunState, SessionScope]:
         async with short_session(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(RunRecord, ThreadRecord, SessionRecord)
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.organization_id == RunRecord.organization_id,
-                            SessionRecord.id == RunRecord.session_id,
-                        ),
-                    )
-                    .join(
-                        ThreadRecord,
-                        and_(
-                            ThreadRecord.organization_id == RunRecord.organization_id,
-                            ThreadRecord.id == RunRecord.thread_id,
-                        ),
-                    )
-                    .where(
-                        RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise command_not_found()
-            source_record, thread_record, conversation = row
-            session_scope = SessionScope.from_record(conversation)
-            try:
-                for action in actions:
-                    await authorize_interaction(
-                        database,
-                        actor=actor,
-                        workspace_id=actor.workspace_id,
-                        session_id=source_record.session_id,
-                        session_scope=session_scope,
-                        agent_id=source_record.agent_id,
-                        action=action,
-                    )
-            except AuthorizationError as error:
-                raise command_not_found() from error
-            source = source_record.to_resource()
+            observed = observed_source or await load_run_source(
+                database, workspace_id=actor.workspace_id, run_id=run_id
+            )
+            observed.require_scope(workspace_id=actor.workspace_id, run_id=run_id)
+            source = observed.run
+            await authorize_run_actions(
+                database,
+                actor=actor,
+                source=source,
+                session_scope=observed.session_scope,
+                actions=actions,
+            )
             if source.status is not RunStatus.waiting:
                 raise InteractionCommandError(
                     "run_not_feedback_eligible",
                     "The selected Run is not waiting for feedback.",
                     category=ErrorCategory.conflict,
                 )
-            return source, thread_record.to_resource(), session_scope
+        state = await self._states.read_run(source)
+        if source.sealed_state is None or source.pending is None:
+            raise InteractionCommandError(
+                "run_waiting_state_invalid",
+                "The selected waiting Run has no complete pending state.",
+                category=ErrorCategory.conflict,
+            )
+        return source, observed.thread, state, observed.session_scope

@@ -31,7 +31,7 @@ from a13n_service.connectivity.providers.slack.client import (
 )
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.attempts import AttemptContext, read_attempt_authority
-from a13n_service.storage import transaction
+from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
 from .models import BotReplyRecord, BotTestRecord
@@ -225,6 +225,23 @@ class ReplyObservations:
     def __init__(self, sessions: async_sessionmaker[AsyncSession], *, cards: CardReplies | None = None) -> None:
         self.sessions = sessions
         self.cards = cards
+
+    async def has_reply(self, *, attempt: AttemptContext, context: InboundRunContext) -> bool:
+        async with short_session(self.sessions) as session:
+            await read_attempt_authority(session, attempt, utc_now())
+            return (
+                await session.scalar(
+                    select(BotReplyRecord.id)
+                    .where(
+                        BotReplyRecord.run_id == attempt.run_id,
+                        BotReplyRecord.binding_id == context.binding_id,
+                        BotReplyRecord.account_id == context.account_id,
+                        BotReplyRecord.status != "rejected",
+                    )
+                    .limit(1)
+                )
+                is not None
+            )
 
     def __call__(
         self,

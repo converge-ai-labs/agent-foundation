@@ -43,11 +43,10 @@ from a13n_service.interactions.environment_selection import (
 from a13n_service.interactions.initialization import (
     RunStateSeed,
     initialize_completed_continuation_state,
-    initialize_empty_thread_state,
     initialize_fork_state,
     initialize_start_state,
 )
-from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
+from a13n_service.interactions.models import SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import RunStateStore
 from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.storage import short_session
@@ -57,7 +56,7 @@ from .command_evidence import (
     RunRequest,
     require_idempotency_key,
 )
-from .command_preparation import CommandInput, PreparedCommandInput
+from .command_preparation import CommandInput
 from .command_values import (
     ContinueRunCommand,
     ForkRunCommand,
@@ -66,6 +65,7 @@ from .command_values import (
 from .errors import InteractionCommandError, command_not_found
 from .initialization import NewRunPolicy
 from .session_scope import SessionScope
+from .sources import RunSource, ThreadSource, load_run_source, load_thread_source
 
 _USER_INPUT_ORIGIN = SubmissionOrigin()
 
@@ -136,93 +136,90 @@ class RunCommands:
             prepared_assets=prepared_assets,
         )
 
-        async def accept(prepared_input: PreparedCommandInput) -> RunAcceptanceReceipt:
-            run_id = new_run_id()
-            session_id = request.session_id or new_session_id()
-            session = None
-            session_scope = None
-            if request.session_id is None:
-                now = self._clock()
-                session = Session(
-                    purpose=request.session_purpose,
-                    id=session_id,
-                    organization_id=prepared_input.invocation.organization_id,
-                    workspace_id=workspace_id,
-                    labels=request.session_labels,
-                    created_at=now,
-                    updated_at=now,
-                )
-            else:
-                session_scope = await self._require_session(
-                    organization_id=prepared_input.invocation.organization_id,
-                    workspace_id=workspace_id,
-                    session_id=session_id,
-                )
-                if "session_labels" in request.model_fields_set:
-                    raise InteractionCommandError(
-                        "creation_labels_not_allowed",
-                        "Session labels can only be supplied when creating a Session.",
-                        category=ErrorCategory.invalid_request,
-                    )
-
-            thread_id = new_thread_id()
+        run_id = new_run_id()
+        session_id = request.session_id or new_session_id()
+        session = None
+        session_scope = None
+        if request.session_id is None:
             now = self._clock()
-            state = initialize_start_state(
-                RunStateSeed.from_invocation(
-                    run_id=run_id,
-                    invocation=prepared_input.frozen,
-                    input=prepared_input.input,
-                    protocol_context=request.protocol_context,
-                ),
-                thread_id=thread_id,
-            )
-            run = self._policy.create(
-                now=now,
-                id=run_id,
+            session = Session(
+                purpose=request.session_purpose,
+                id=session_id,
                 organization_id=prepared_input.invocation.organization_id,
-                authority_principal=actor.principal,
-                session_id=session_id,
-                thread_id=thread_id,
-                parent_run_id=None,
-                lineage_kind=RunLineageKind.root,
-                request_key=evidence.key,
-                invocation=prepared_input.frozen,
-                input=prepared_input.input,
-                origin=origin,
-            )
-            thread = Thread(
-                id=thread_id,
-                version=1,
-                queue_version=0,
-                organization_id=prepared_input.invocation.organization_id,
-                session_id=session_id,
-                role=ThreadRole.root,
-                origin_kind=ThreadOriginKind.new,
-                origin_thread_id=None,
-                origin_run_id=None,
-                head_run_id=None,
-                current_run_id=run_id,
+                workspace_id=workspace_id,
+                labels=request.session_labels,
                 created_at=now,
                 updated_at=now,
             )
-
-            try:
-                return await self._acceptance.accept_new_thread(
-                    session=session,
-                    session_scope=session_scope,
-                    thread=thread,
-                    run=run,
-                    state=state,
-                    hook_subscription=request.hook_subscription,
-                    environment=requested_environment(environment, default=EnvironmentDefault.agent),
-                    transaction_hook=evidence.commit,
-                    thread_label_overrides=request.thread_labels,
-                    run_label_overrides=request.labels,
+        else:
+            session_scope = await self._require_session(
+                organization_id=prepared_input.invocation.organization_id,
+                workspace_id=workspace_id,
+                session_id=session_id,
+            )
+            if "session_labels" in request.model_fields_set:
+                raise InteractionCommandError(
+                    "creation_labels_not_allowed",
+                    "Session labels can only be supplied when creating a Session.",
+                    category=ErrorCategory.invalid_request,
                 )
-            except RunAcceptanceError as error:
-                return await evidence.reconcile(error)
 
-        return await accept(prepared_input)
+        thread_id = new_thread_id()
+        now = self._clock()
+        state = initialize_start_state(
+            RunStateSeed.from_invocation(
+                run_id=run_id,
+                invocation=prepared_input.frozen,
+                input=prepared_input.input,
+                protocol_context=request.protocol_context,
+            ),
+            thread_id=thread_id,
+        )
+        run = self._policy.create(
+            now=now,
+            id=run_id,
+            organization_id=prepared_input.invocation.organization_id,
+            authority_principal=actor.principal,
+            session_id=session_id,
+            thread_id=thread_id,
+            parent_run_id=None,
+            lineage_kind=RunLineageKind.root,
+            request_key=evidence.key,
+            invocation=prepared_input.frozen,
+            input=prepared_input.input,
+            origin=origin,
+        )
+        thread = Thread(
+            id=thread_id,
+            version=1,
+            queue_version=0,
+            organization_id=prepared_input.invocation.organization_id,
+            session_id=session_id,
+            role=ThreadRole.root,
+            origin_kind=ThreadOriginKind.new,
+            origin_thread_id=None,
+            origin_run_id=None,
+            head_run_id=None,
+            current_run_id=run_id,
+            created_at=now,
+            updated_at=now,
+        )
+
+        try:
+            return await self._acceptance.accept_new_thread(
+                session=session,
+                session_scope=session_scope,
+                thread=thread,
+                run=run,
+                state=state,
+                hook_subscription=request.hook_subscription,
+                environment=requested_environment(environment, default=EnvironmentDefault.agent),
+                transaction_hook=evidence.commit,
+                thread_label_overrides=request.thread_labels,
+                run_label_overrides=request.labels,
+            )
+        except RunAcceptanceError as error:
+            return await evidence.reconcile(error)
 
     @authorization_operation
     async def continue_from(
@@ -269,6 +266,7 @@ class RunCommands:
         self,
         *,
         actor: AuthenticatedActor,
+        observed_source: RunSource | None = None,
         source_run_id: str,
         request_key: str,
         request: ContinueRunCommand,
@@ -279,7 +277,9 @@ class RunCommands:
     ) -> RunAcceptanceReceipt:
         """Accept prepared command intent; the calling entry point owns replay evidence."""
         environment = request.environment
-        source, thread, session_scope = await self._load_continue_source(actor=actor, source_run_id=source_run_id)
+        source, thread, session_scope = await self._load_continue_source(
+            actor=actor, source_run_id=source_run_id, observed_source=observed_source
+        )
         source_state = await self._states.read_run(source)
         prepared_input = await self._inputs.prepare(
             self._invocations,
@@ -299,66 +299,63 @@ class RunCommands:
             prepared_assets=prepared_assets,
         )
 
-        async def accept(prepared_input: PreparedCommandInput) -> RunAcceptanceReceipt:
-            run_id = new_run_id()
-            now = self._clock()
-            state = initialize_completed_continuation_state(
-                RunStateSeed.from_invocation(
-                    run_id=run_id,
-                    invocation=prepared_input.frozen,
-                    input=prepared_input.input,
-                    protocol_context=request.protocol_context,
-                ),
-                source_state.envelope,
-            )
-            run = self._policy.create(
-                now=now,
-                id=run_id,
-                organization_id=source.organization_id,
-                authority_principal=actor.principal,
-                session_id=source.session_id,
-                thread_id=source.thread_id,
-                parent_run_id=source.id,
-                lineage_kind=RunLineageKind.continue_,
-                request_key=request_key,
+        run_id = new_run_id()
+        now = self._clock()
+        state = initialize_completed_continuation_state(
+            RunStateSeed.from_invocation(
+                run_id=run_id,
                 invocation=prepared_input.frozen,
                 input=prepared_input.input,
-                origin=origin,
-            )
+                protocol_context=request.protocol_context,
+            ),
+            source_state.envelope,
+        )
+        run = self._policy.create(
+            now=now,
+            id=run_id,
+            organization_id=source.organization_id,
+            authority_principal=actor.principal,
+            session_id=source.session_id,
+            thread_id=source.thread_id,
+            parent_run_id=source.id,
+            lineage_kind=RunLineageKind.continue_,
+            request_key=request_key,
+            invocation=prepared_input.frozen,
+            input=prepared_input.input,
+            origin=origin,
+        )
 
-            async def validate_final(database: AsyncSession) -> None:
-                try:
-                    await authorize_agent(
-                        database,
-                        actor=actor,
-                        workspace_id=actor.workspace_id,
-                        agent_id=source.agent_id,
-                        action=WorkspaceAction.run_continue,
-                    )
-                except AuthorizationError as error:
-                    raise command_not_found() from error
+        async def validate_final(database: AsyncSession) -> None:
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.workspace_id,
+                    agent_id=source.agent_id,
+                    action=WorkspaceAction.run_continue,
+                )
+            except AuthorizationError as error:
+                raise command_not_found() from error
 
-            return await self._acceptance.advance_thread(
-                label_overrides=request.labels,
-                session_scope=session_scope,
-                run=run,
-                state=state,
-                expected_thread_version=request.expected_thread_version,
-                expected_current_run_id=thread.current_run_id,
-                expected_head_run_id=thread.head_run_id,
-                next_head_run_id=source.id,
-                hook_subscription=request.hook_subscription,
-                environment=requested_environment(
-                    environment,
-                    default=RetainedRunEnvironment(source.id, source.thread_id)
-                    if inherit_parent_environment
-                    else EnvironmentDefault.thread,
-                ),
-                final_validator=validate_final,
-                transaction_hook=transaction_hook,
-            )
-
-        return await accept(prepared_input)
+        return await self._acceptance.advance_thread(
+            label_overrides=request.labels,
+            session_scope=session_scope,
+            run=run,
+            state=state,
+            expected_thread_version=request.expected_thread_version,
+            expected_current_run_id=thread.current_run_id,
+            expected_head_run_id=thread.head_run_id,
+            next_head_run_id=source.id,
+            hook_subscription=request.hook_subscription,
+            environment=requested_environment(
+                environment,
+                default=RetainedRunEnvironment(source.id, source.thread_id)
+                if inherit_parent_environment
+                else EnvironmentDefault.thread,
+            ),
+            final_validator=validate_final,
+            transaction_hook=transaction_hook,
+        )
 
     @authorization_operation
     async def continue_empty_thread(
@@ -403,6 +400,7 @@ class RunCommands:
         self,
         *,
         actor: AuthenticatedActor,
+        observed_source: ThreadSource | None = None,
         thread_id: str,
         request_key: str,
         request: ContinueRunCommand,
@@ -413,7 +411,7 @@ class RunCommands:
         """Accept prepared command intent; the calling entry point owns replay evidence."""
         environment = request.environment
         source, thread, session_scope = await self._load_empty_thread_source(
-            actor=actor, thread_id=thread_id, agent_id=request.agent_id
+            actor=actor, thread_id=thread_id, agent_id=request.agent_id, observed_source=observed_source
         )
         target_agent_id = request.agent_id or (source.agent_id if source else None)
         assert target_agent_id is not None
@@ -431,61 +429,58 @@ class RunCommands:
             prepared_assets=prepared_assets,
         )
 
-        async def accept(prepared_input: PreparedCommandInput) -> RunAcceptanceReceipt:
-            run_id = new_run_id()
-            state = initialize_empty_thread_state(
-                RunStateSeed.from_invocation(
-                    run_id=run_id,
-                    invocation=prepared_input.frozen,
-                    input=prepared_input.input,
-                    protocol_context=request.protocol_context,
-                ),
-                thread_id=thread.id,
-            )
-            now = self._clock()
-            run = self._policy.create(
-                now=now,
-                id=run_id,
-                organization_id=thread.organization_id,
-                authority_principal=actor.principal,
-                session_id=thread.session_id,
-                thread_id=thread.id,
-                parent_run_id=None,
-                lineage_kind=RunLineageKind.root,
-                request_key=request_key,
+        run_id = new_run_id()
+        state = initialize_start_state(
+            RunStateSeed.from_invocation(
+                run_id=run_id,
                 invocation=prepared_input.frozen,
                 input=prepared_input.input,
-                origin=origin,
-            )
+                protocol_context=request.protocol_context,
+            ),
+            thread_id=thread.id,
+        )
+        now = self._clock()
+        run = self._policy.create(
+            now=now,
+            id=run_id,
+            organization_id=thread.organization_id,
+            authority_principal=actor.principal,
+            session_id=thread.session_id,
+            thread_id=thread.id,
+            parent_run_id=None,
+            lineage_kind=RunLineageKind.root,
+            request_key=request_key,
+            invocation=prepared_input.frozen,
+            input=prepared_input.input,
+            origin=origin,
+        )
 
-            async def validate_final(database: AsyncSession) -> None:
-                try:
-                    await authorize_agent(
-                        database,
-                        actor=actor,
-                        workspace_id=actor.workspace_id,
-                        agent_id=source.agent_id if source else target_agent_id,
-                        action=WorkspaceAction.run_continue,
-                    )
-                except AuthorizationError as error:
-                    raise command_not_found() from error
+        async def validate_final(database: AsyncSession) -> None:
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.workspace_id,
+                    agent_id=source.agent_id if source else target_agent_id,
+                    action=WorkspaceAction.run_continue,
+                )
+            except AuthorizationError as error:
+                raise command_not_found() from error
 
-            return await self._acceptance.advance_thread(
-                label_overrides=request.labels,
-                session_scope=session_scope,
-                run=run,
-                state=state,
-                expected_thread_version=request.expected_thread_version,
-                expected_current_run_id=thread.current_run_id,
-                expected_head_run_id=None,
-                next_head_run_id=None,
-                hook_subscription=request.hook_subscription,
-                environment=requested_environment(environment, default=EnvironmentDefault.thread),
-                final_validator=validate_final,
-                transaction_hook=transaction_hook,
-            )
-
-        return await accept(prepared_input)
+        return await self._acceptance.advance_thread(
+            label_overrides=request.labels,
+            session_scope=session_scope,
+            run=run,
+            state=state,
+            expected_thread_version=request.expected_thread_version,
+            expected_current_run_id=thread.current_run_id,
+            expected_head_run_id=None,
+            next_head_run_id=None,
+            hook_subscription=request.hook_subscription,
+            environment=requested_environment(environment, default=EnvironmentDefault.thread),
+            final_validator=validate_final,
+            transaction_hook=transaction_hook,
+        )
 
     @authorization_operation
     async def fork(
@@ -519,10 +514,8 @@ class RunCommands:
             and request.expected_default_revision_id is None
             and request.config_override is None
         )
-        frozen = None
-        accepted_input = None
         if reuse_exact_source:
-            frozen = FrozenAgentInvocation(
+            invocation = FrozenAgentInvocation(
                 agent_id=source.agent_id,
                 agent_revision_id=source.agent_revision_id,
                 selector_kind=AgentSelectorKind.exact,
@@ -531,16 +524,15 @@ class RunCommands:
                     ConnectionRunSelection.model_validate(item) for item in source.connection_selections
                 ),
             )
-            accepted_input = await self._inputs.accept(
+            run_input = await self._inputs.accept(
                 actor=actor,
                 workspace_id=actor.workspace_id,
                 submitted=request.input,
-                frozen=frozen,
+                frozen=invocation,
                 environment=environment,
                 inherited_environment_id=source.environment_id,
                 inherited_environment_working_directory=source.environment_working_directory,
             )
-            prepared_input = None
         else:
             prepared_input = await self._inputs.prepare(
                 self._invocations,
@@ -557,145 +549,117 @@ class RunCommands:
                 inherited_environment_working_directory=source.environment_working_directory,
             )
 
-        async def accept(selected: PreparedCommandInput | None) -> RunAcceptanceReceipt:
-            new_run_id_value = new_run_id()
-            new_thread_id_value = new_thread_id()
-            if selected is None:
-                assert frozen is not None and accepted_input is not None
-                invocation, run_input = frozen, accepted_input
-            else:
-                invocation, run_input = selected.frozen, selected.input
-            state = initialize_fork_state(
-                RunStateSeed.from_invocation(
-                    run_id=new_run_id_value,
-                    invocation=invocation,
-                    input=run_input,
-                    protocol_context=request.protocol_context,
-                ),
-                source_state.envelope,
-                thread_id=new_thread_id_value,
-            )
-            now = self._clock()
-            forked_run = self._policy.create(
-                now=now,
-                id=new_run_id_value,
-                organization_id=source.organization_id,
-                authority_principal=actor.principal,
-                session_id=source.session_id,
-                thread_id=new_thread_id_value,
-                parent_run_id=source.id,
-                lineage_kind=RunLineageKind.fork,
-                request_key=evidence.key,
+            invocation, run_input = prepared_input.frozen, prepared_input.input
+
+        new_run_id_value = new_run_id()
+        new_thread_id_value = new_thread_id()
+        state = initialize_fork_state(
+            RunStateSeed.from_invocation(
+                run_id=new_run_id_value,
                 invocation=invocation,
                 input=run_input,
-                origin=_USER_INPUT_ORIGIN,
-            )
-            thread = Thread(
-                id=new_thread_id_value,
-                version=1,
-                queue_version=0,
-                organization_id=source.organization_id,
-                session_id=source.session_id,
-                role=ThreadRole.child,
-                origin_kind=ThreadOriginKind.fork,
-                origin_thread_id=source.thread_id,
-                origin_run_id=source.id,
-                head_run_id=None,
-                current_run_id=new_run_id_value,
-                created_at=now,
-                updated_at=now,
-            )
+                protocol_context=request.protocol_context,
+            ),
+            source_state.envelope,
+            thread_id=new_thread_id_value,
+        )
+        now = self._clock()
+        forked_run = self._policy.create(
+            now=now,
+            id=new_run_id_value,
+            organization_id=source.organization_id,
+            authority_principal=actor.principal,
+            session_id=source.session_id,
+            thread_id=new_thread_id_value,
+            parent_run_id=source.id,
+            lineage_kind=RunLineageKind.fork,
+            request_key=evidence.key,
+            invocation=invocation,
+            input=run_input,
+            origin=_USER_INPUT_ORIGIN,
+        )
+        thread = Thread(
+            id=new_thread_id_value,
+            version=1,
+            queue_version=0,
+            organization_id=source.organization_id,
+            session_id=source.session_id,
+            role=ThreadRole.child,
+            origin_kind=ThreadOriginKind.fork,
+            origin_thread_id=source.thread_id,
+            origin_run_id=source.id,
+            head_run_id=None,
+            current_run_id=new_run_id_value,
+            created_at=now,
+            updated_at=now,
+        )
 
-            async def validate_final(database: AsyncSession) -> None:
-                try:
-                    await authorize_agent(
-                        database,
-                        actor=actor,
-                        workspace_id=actor.workspace_id,
-                        agent_id=source.agent_id,
-                        action=WorkspaceAction.run_fork,
-                    )
-                    if selected is None:
-                        await authorize_agent(
-                            database,
-                            actor=actor,
-                            workspace_id=actor.workspace_id,
-                            agent_id=source.agent_id,
-                            action=WorkspaceAction.agent_invoke,
-                        )
-                        return
-                except AuthorizationError as error:
-                    raise command_not_found() from error
-
-            try:
-                return await self._acceptance.accept_new_thread(
-                    session=None,
-                    session_scope=session_scope,
-                    thread=thread,
-                    run=forked_run,
-                    state=state,
-                    hook_subscription=request.hook_subscription,
-                    environment=requested_environment(
-                        environment, default=RetainedRunEnvironment(source.id, source.thread_id)
-                    ),
-                    final_validator=validate_final,
-                    transaction_hook=evidence.commit,
-                    thread_label_overrides=request.thread_labels,
-                    run_label_overrides=request.labels,
-                )
-            except RunAcceptanceError as error:
-                return await evidence.reconcile(error)
-
-        if prepared_input is None:
-            return await accept(None)
-        return await accept(prepared_input)
-
-    async def _load_continue_source(self, *, actor: AuthenticatedActor, source_run_id: str):
-        async with short_session(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(RunRecord, ThreadRecord, SessionRecord)
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.organization_id == RunRecord.organization_id,
-                            SessionRecord.id == RunRecord.session_id,
-                        ),
-                    )
-                    .join(
-                        ThreadRecord,
-                        and_(
-                            ThreadRecord.organization_id == RunRecord.organization_id,
-                            ThreadRecord.id == RunRecord.thread_id,
-                        ),
-                    )
-                    .where(
-                        RunRecord.id == source_run_id,
-                        SessionRecord.workspace_id == actor.workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise command_not_found()
-            source_record, thread_record, conversation = row
+        async def validate_final(database: AsyncSession) -> None:
             try:
                 await authorize_agent(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
-                    agent_id=source_record.agent_id,
+                    agent_id=source.agent_id,
+                    action=WorkspaceAction.run_fork,
+                )
+                if reuse_exact_source:
+                    await authorize_agent(
+                        database,
+                        actor=actor,
+                        workspace_id=actor.workspace_id,
+                        agent_id=source.agent_id,
+                        action=WorkspaceAction.agent_invoke,
+                    )
+                    return
+            except AuthorizationError as error:
+                raise command_not_found() from error
+
+        try:
+            return await self._acceptance.accept_new_thread(
+                session=None,
+                session_scope=session_scope,
+                thread=thread,
+                run=forked_run,
+                state=state,
+                hook_subscription=request.hook_subscription,
+                environment=requested_environment(
+                    environment, default=RetainedRunEnvironment(source.id, source.thread_id)
+                ),
+                final_validator=validate_final,
+                transaction_hook=evidence.commit,
+                thread_label_overrides=request.thread_labels,
+                run_label_overrides=request.labels,
+            )
+        except RunAcceptanceError as error:
+            return await evidence.reconcile(error)
+
+    async def _load_continue_source(
+        self, *, actor: AuthenticatedActor, source_run_id: str, observed_source: RunSource | None = None
+    ) -> tuple[Run, Thread, SessionScope]:
+        async with short_session(self._sessions) as database:
+            observed = observed_source or await load_run_source(
+                database, workspace_id=actor.workspace_id, run_id=source_run_id
+            )
+            observed.require_scope(workspace_id=actor.workspace_id, run_id=source_run_id)
+            source = observed.run
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.workspace_id,
+                    agent_id=source.agent_id,
                     action=WorkspaceAction.run_continue,
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
-            source = source_record.to_resource()
             if source.status is not RunStatus.completed:
                 raise InteractionCommandError(
                     "run_not_continuable",
                     "The selected Run is not a completed continuation source.",
                     category=ErrorCategory.conflict,
                 )
-            return source, thread_record.to_resource(), SessionScope.from_record(conversation)
+            return source, observed.thread, observed.session_scope
 
     async def _load_empty_thread_source(
         self,
@@ -703,36 +667,15 @@ class RunCommands:
         actor: AuthenticatedActor,
         thread_id: str,
         agent_id: str | None,
+        observed_source: ThreadSource | None = None,
     ) -> tuple[Run | None, Thread, SessionScope]:
         async with short_session(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(RunRecord, ThreadRecord, SessionRecord)
-                    .select_from(ThreadRecord)
-                    .outerjoin(
-                        RunRecord,
-                        and_(
-                            ThreadRecord.organization_id == RunRecord.organization_id,
-                            ThreadRecord.current_run_id == RunRecord.id,
-                        ),
-                    )
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.organization_id == ThreadRecord.organization_id,
-                            SessionRecord.id == ThreadRecord.session_id,
-                        ),
-                    )
-                    .where(
-                        ThreadRecord.id == thread_id,
-                        SessionRecord.workspace_id == actor.workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise command_not_found()
-            source_record, thread_record, conversation = row
-            target_agent_id = agent_id or (source_record.agent_id if source_record else None)
+            observed = observed_source or await load_thread_source(
+                database, workspace_id=actor.workspace_id, thread_id=thread_id
+            )
+            observed.require_scope(workspace_id=actor.workspace_id, thread_id=thread_id)
+            source, thread = observed.current, observed.thread
+            target_agent_id = agent_id or (source.agent_id if source else None)
             if target_agent_id is None:
                 raise InteractionCommandError(
                     "agent_required", "First input requires an Agent selection.", category=ErrorCategory.invalid_request
@@ -742,69 +685,42 @@ class RunCommands:
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
-                    agent_id=source_record.agent_id if source_record else target_agent_id,
+                    agent_id=source.agent_id if source else target_agent_id,
                     action=WorkspaceAction.run_continue,
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
-            if thread_record.head_run_id is not None or (
-                source_record is not None
-                and source_record.status
-                not in {
-                    RunStatus.failed.value,
-                    RunStatus.cancelled.value,
-                }
+            if thread.head_run_id is not None or (
+                source is not None and source.status not in {RunStatus.failed, RunStatus.cancelled}
             ):
                 raise InteractionCommandError(
                     "thread_not_root_continuable",
                     "The Thread does not have an empty continuation head.",
                     category=ErrorCategory.conflict,
                 )
-            return (
-                source_record.to_resource() if source_record else None,
-                thread_record.to_resource(),
-                SessionScope.from_record(conversation),
-            )
+            return source, thread, observed.session_scope
 
     async def _load_fork_source(self, *, actor: AuthenticatedActor, run_id: str) -> tuple[Run, SessionScope]:
         async with short_session(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(RunRecord, SessionRecord)
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.organization_id == RunRecord.organization_id,
-                            SessionRecord.id == RunRecord.session_id,
-                        ),
-                    )
-                    .where(
-                        RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise command_not_found()
-            source_record, conversation = row
+            observed = await load_run_source(database, workspace_id=actor.workspace_id, run_id=run_id)
+            source = observed.run
             try:
                 await authorize_agent(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
-                    agent_id=source_record.agent_id,
+                    agent_id=source.agent_id,
                     action=WorkspaceAction.run_fork,
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
-            source = source_record.to_resource()
             if source.status is not RunStatus.completed:
                 raise InteractionCommandError(
                     "run_not_forkable",
                     "The selected Run is not a completed fork source.",
                     category=ErrorCategory.conflict,
                 )
-            return source, SessionScope.from_record(conversation)
+            return source, observed.session_scope
 
     async def _require_session(self, *, organization_id: str, workspace_id: str, session_id: str) -> SessionScope:
         async with short_session(self._sessions) as database:

@@ -258,10 +258,11 @@ class Environment(ABC):
         except BaseException:
             self._lifecycle = "failed"
             raise
+        else:
+            self._known_state = None
+            self._lifecycle = "destroyed"
         finally:
             await self._release_runtime()
-        self._known_state = None
-        self._lifecycle = "destroyed"
 
     @property
     def is_entered(self) -> bool:

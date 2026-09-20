@@ -6836,10 +6836,10 @@
             "type": "string"
           },
           "kind": {
-            "default": "long_term",
             "enum": [
-              "daily",
-              "long_term"
+              "semantic",
+              "procedural",
+              "episodic"
             ],
             "title": "Kind",
             "type": "string"
@@ -6861,7 +6861,8 @@
         },
         "required": [
           "text",
-          "title"
+          "title",
+          "kind"
         ],
         "title": "CreateDocument",
         "type": "object"
@@ -8057,12 +8058,35 @@
             "type": "string"
           },
           "kind": {
-            "enum": [
-              "daily",
-              "long_term"
+            "anyOf": [
+              {
+                "enum": [
+                  "semantic",
+                  "procedural",
+                  "episodic"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Kind",
-            "type": "string"
+            "title": "Kind"
+          },
+          "legacy_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "daily",
+                  "long_term"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legacy Kind"
           },
           "owner_name": {
             "anyOf": [
@@ -8238,12 +8262,35 @@
             "type": "string"
           },
           "kind": {
-            "enum": [
-              "daily",
-              "long_term"
+            "anyOf": [
+              {
+                "enum": [
+                  "semantic",
+                  "procedural",
+                  "episodic"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Kind",
-            "type": "string"
+            "title": "Kind"
+          },
+          "legacy_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "daily",
+                  "long_term"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legacy Kind"
           },
           "path": {
             "title": "Path",
@@ -9989,6 +10036,15 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HookDispatchState": {
+        "enum": [
+          "pending",
+          "done",
+          "failed"
+        ],
+        "title": "HookDispatchState",
+        "type": "string"
+      },
       "HookSubscription": {
         "additionalProperties": false,
         "properties": {
@@ -11178,6 +11234,48 @@
             "title": "Event Type",
             "type": "string"
           },
+          "hook_dispatch_attempts": {
+            "minimum": 0.0,
+            "title": "Hook Dispatch Attempts",
+            "type": "integer"
+          },
+          "hook_dispatch_error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafeFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hook_dispatch_next_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hook Dispatch Next Attempt At"
+          },
+          "hook_dispatch_state": {
+            "$ref": "#/components/schemas/HookDispatchState"
+          },
+          "hook_dispatched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hook Dispatched At"
+          },
           "id": {
             "pattern": "^lev_[a-z0-9]{16,64}$",
             "title": "Id",
@@ -11337,6 +11435,8 @@
           "actor_type",
           "occurred_at",
           "created_at",
+          "hook_dispatch_state",
+          "hook_dispatch_attempts",
           "projection_state",
           "projection_attempts"
         ],
@@ -12142,6 +12242,99 @@
           "saved_at"
         ],
         "title": "ManagedMemoryDocument",
+        "type": "object"
+      },
+      "MediaUnderstandingDefaults": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "version": {
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          },
+          "video": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "version"
+        ],
+        "title": "MediaUnderstandingDefaults",
+        "type": "object"
+      },
+      "MediaUnderstandingSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "video": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video"
+          }
+        },
+        "title": "MediaUnderstandingSelection",
         "type": "object"
       },
       "Memory": {
@@ -25600,8 +25793,9 @@
               "anyOf": [
                 {
                   "enum": [
-                    "daily",
-                    "long_term"
+                    "semantic",
+                    "procedural",
+                    "episodic"
                   ],
                   "type": "string"
                 },
@@ -52459,6 +52653,196 @@
         "summary": "Invite To Workspace",
         "tags": [
           "identity-management"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/media-understanding-defaults": {
+      "get": {
+        "operationId": "get_workspaces_workspace_media_understanding_defaults",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaUnderstandingDefaults"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Media Understanding Defaults",
+        "tags": [
+          "model-management"
+        ]
+      },
+      "put": {
+        "operationId": "put_workspaces_workspace_media_understanding_defaults",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaUnderstandingSelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaUnderstandingDefaults"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Replace Media Understanding Defaults",
+        "tags": [
+          "model-management"
         ]
       }
     },

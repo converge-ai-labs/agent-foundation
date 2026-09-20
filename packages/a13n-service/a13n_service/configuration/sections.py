@@ -231,6 +231,17 @@ class AssetsSettings(Section):
 
 class HooksSettings(Section):
     history_minimum_retention_days: int = Field(default=30, ge=1, le=3650)
+    dispatch_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
+    dispatch_batch_limit: int = Field(default=16, ge=1, le=100)
+    dispatch_max_attempts: int = Field(default=10, ge=1, le=1000)
+    dispatch_retry_base_seconds: float = Field(default=2, gt=0, le=3600)
+    dispatch_retry_max_seconds: float = Field(default=300, gt=0, le=86_400)
+
+    @model_validator(mode="after")
+    def dispatch_retry_policy_is_coherent(self) -> Self:
+        if self.dispatch_retry_max_seconds < self.dispatch_retry_base_seconds:
+            raise ValueError("Hook dispatch maximum retry delay must cover the base delay")
+        return self
 
 
 class ObjectsSettings(Section):

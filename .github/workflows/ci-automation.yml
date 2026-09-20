@@ -27,10 +27,15 @@ on:
       - "scripts/run_python_tests.py"
       - "conftest.py"
       - "scripts/tests/test_local_validation.py"
+      - "scripts/verify.py"
+      - "scripts/verify_dependencies.py"
+      - "scripts/tests/test_verify.py"
+      - "scripts/tests/test_impact.py"
       - "scripts/tests/test_check_release_version.py"
       - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_release_notes.py"
       - "scripts/tests/test_pr_labels.py"
+      - "scripts/tests/test_pr_change_breakdown.py"
   push:
     branches: [main]
     paths:
@@ -57,10 +62,15 @@ on:
       - "scripts/run_python_tests.py"
       - "conftest.py"
       - "scripts/tests/test_local_validation.py"
+      - "scripts/verify.py"
+      - "scripts/verify_dependencies.py"
+      - "scripts/tests/test_verify.py"
+      - "scripts/tests/test_impact.py"
       - "scripts/tests/test_check_release_version.py"
       - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_release_notes.py"
       - "scripts/tests/test_pr_labels.py"
+      - "scripts/tests/test_pr_change_breakdown.py"
   workflow_dispatch:
 
 env:
@@ -139,7 +149,10 @@ jobs:
           scripts/tests/test_prepare_release_version.py
           scripts/tests/test_release_notes.py
           scripts/tests/test_pr_labels.py
+          scripts/tests/test_pr_change_breakdown.py
           scripts/tests/test_local_validation.py
+          scripts/tests/test_verify.py
+          scripts/tests/test_impact.py
           scripts/tests/test_image_workflows.py
           scripts/tests/test_prepare_harness_ui_image.py
           scripts/tests/test_k8s_local.py

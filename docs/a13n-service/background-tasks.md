@@ -4,11 +4,11 @@ Background work is owned by process roles, not by HTTP request traffic. The `all
 
 ## Who runs what?
 
-| Role                   | Work                                                                                                                                                                    |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `control` / `all`      | Delivery, Run recovery/collection, hosted-child result and successor reconciliation, Asset cleanup, Hook history/retention, Connector setup and OAuth-state maintenance |
-| `worker` / `all`       | Run execution, Environment lifecycle maintenance, lifecycle projection, optional model-price updates                                                                    |
-| `connectivity` / `all` | Provider event admission, bounded pending input, deduplication and retry                                                                                                |
+| Role                   | Work                                                                                                                                                                                      |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `control` / `all`      | Hook dispatch and delivery, Run recovery/collection, hosted-child result and successor reconciliation, Asset cleanup, Hook history/retention, Connector setup and OAuth-state maintenance |
+| `worker` / `all`       | Run execution, Environment lifecycle maintenance, lifecycle projection, optional model-price updates                                                                                      |
+| `connectivity` / `all` | Provider event admission, bounded pending input, deduplication and retry                                                                                                                  |
 
 A2A's publisher is conditional on that gateway being enabled. There is no `runner` process profile or Plugin Runtime artifact/command subsystem in this executable. Installed Harness Plugin code is selected through the artifact's plugin catalog and settings, not a background wheel-installation API.
 
@@ -51,6 +51,20 @@ Webhook delivery, Asset cleanup, lifecycle projection/retention, Connectivity, E
 
 Increasing a scan interval delays attempts; it does not extend credentials, revive deleted resources, or make work retry-safe. A backlog can require many bounded passes. Observe actual lag and throughput before changing batch size or concurrency.
 
+## Hook dispatch and recovery
+
+Run transitions commit their lifecycle events before Webhook subscriptions are matched. The `hook_dispatch` task claims pending events with PostgreSQL `SKIP LOCKED`, then commits all matching Outbox rows and event completion together. Replicas can process different events concurrently; dispatch and HTTP delivery are unordered. An Outbox failure delays notifications without undoing the Run transition.
+
+Matching observes subscriptions at dispatch time. A new subscription can receive an older pending event; a paused or deleted subscription is excluded. Completed events are never rematched. Automatic inline expiry at Run sealing still permits the owning Run's pending notifications.
+
+The `hooks.dispatch_*` settings control polling, batch size, and bounded exponential retries independently of the `webhooks.*` HTTP delivery settings. Lifecycle reads expose `hook_dispatch_state`, attempt count, timing, and safe failure diagnostics. `failed` dispatch remains retained and requires an explicit operator retry after the cause is resolved:
+
+```bash
+a13n-service --config service.toml hooks retry-dispatch lev_EVENT_ID --organization-id org_ORGANIZATION_ID
+```
+
+Run this command from a protected terminal with the deployment's database configuration. It resets the failed event's attempt budget and makes it immediately eligible; pending or completed events are unchanged. Outbox delivery redrive remains a separate operation for destinations already selected by completed dispatch.
+
 ## Environment capacity
 
 Logical Environment allocation does not start a target or consume target capacity. First use reserves capacity atomically before Provider I/O. Exhaustion returns `environment_capacity_exceeded`; limits do not evict existing targets.
@@ -67,7 +81,7 @@ Worker maintenance defaults to batches of 64, concurrency 4, a 5-second interval
 
 - Expired Skill upload receipts can disappear while published packages remain referenced. Retained Skill revisions protect their content.
 - Asset deletion tombstones immediately; asynchronous object cleanup does not restore logical access if deletion fails. Dead letters and replay/audit evidence have separate retention requirements.
-- Hook collection preserves configuration required by waiting continuation, delivery/redrive, command replay, and audit. Audit dependencies can keep old history/tombstones beyond a minimum age.
+- Hook collection preserves configuration required by unfinished inline dispatch, waiting continuation, delivery/redrive, command replay, and audit. Pending or failed Hook dispatch also pins its lifecycle event. Audit dependencies can keep old history/tombstones beyond a minimum age.
 - Retained Runs protect state, replay, and payload objects. A collection interval does not impose a new Run TTL.
 - Unknown object namespaces are preserved. Workspace deletion continues its owned Secret erasure, Service Account tombstoning, grant removal, and Asset deletion. Reversible User disable is not equivalent to erasure.
 

@@ -10,6 +10,7 @@ import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
 from a13n_service.hooks import InlineHookValidator
+from a13n_service.hooks.dispatcher import HookDispatcher
 from a13n_service.hooks.management import HookSubscriptionService
 from a13n_service.hooks.publisher import WebhookPublisher
 from a13n_service.lifecycle.retention import LifecycleRetentionReconciler
@@ -24,6 +25,7 @@ class _HookBundle:
     inline_validator: InlineHookValidator
     subscriptions: HookSubscriptionService
     lifecycle_events: LifecycleEventService
+    dispatch_task: BackgroundTask
     delivery_task: BackgroundTask
     retention_task: BackgroundTask
 
@@ -33,7 +35,7 @@ async def build_hook_bundle(
     shared: SharedRuntime,
     stack: AsyncExitStack,
 ) -> _HookBundle:
-    """Construct Hook APIs and the bounded publisher owned by Control roles."""
+    """Construct Hook APIs, dispatch, and publication owned by Control roles."""
 
     endpoint_policy = EndpointPolicy.from_operator_allowlist(
         private_domains=settings.webhooks.private_endpoint_domains,
@@ -54,6 +56,14 @@ async def build_hook_bundle(
             timeout=settings.webhooks.request_timeout_seconds,
             event_hooks={"request": [validate_request]},
         )
+    )
+    dispatcher = HookDispatcher(
+        shared.storage.sessions,
+        poll_interval_seconds=settings.hooks.dispatch_poll_interval_seconds,
+        batch_limit=settings.hooks.dispatch_batch_limit,
+        max_attempts=settings.hooks.dispatch_max_attempts,
+        retry_base_seconds=settings.hooks.dispatch_retry_base_seconds,
+        retry_max_seconds=settings.hooks.dispatch_retry_max_seconds,
     )
     publisher = WebhookPublisher(
         shared.storage.sessions,
@@ -81,6 +91,7 @@ async def build_hook_bundle(
         inline_validator=InlineHookValidator(endpoint_policy),
         subscriptions=subscriptions,
         lifecycle_events=LifecycleEventService(shared.storage.sessions),
+        dispatch_task=BackgroundTask("hook dispatcher", dispatcher.run),
         delivery_task=BackgroundTask("webhook publisher", publisher.run),
         retention_task=BackgroundTask("lifecycle retention reconciler", retention.run),
     )

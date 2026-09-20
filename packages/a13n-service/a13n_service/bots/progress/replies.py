@@ -62,20 +62,21 @@ class CardReplies:
                 return None
         request_id = new_object_id("reply")
         unknown = SlackReplyOutcomeUnknown if context.provider_key == "slack" else LarkReplyOutcomeUnknown
-        lease = None
+        claim = None
         deadline = anyio.current_time() + 45
-        while lease is None:
+        while claim is None:
             if anyio.current_time() >= deadline:
                 raise ProviderHttpError("rate_limited", retry_after_seconds=2)
-            lease = await self._claim(attempt, context, arguments, account_version, credential_generation)
-            if lease is None:
+            claim = await self._claim(attempt, context, arguments, account_version, credential_generation)
+            if claim is None:
                 await anyio.sleep(0.25)
+        lease, appended = claim
         try:
             message_id = await self.delivery.publish(attempt.run_id, lease)
         except ProviderHttpError as error:
             if error.code in {"provider_rejected", "rate_limited", "invalid_arguments", "endpoint_denied"}:
                 # A definite rejection must not become a later successful background reply.
-                await self._discard(attempt.run_id, lease)
+                await self._discard(attempt.run_id, lease, appended=appended)
                 raise
             await self._retry(attempt.run_id, lease)
             return unknown(request_id=request_id)
@@ -126,7 +127,7 @@ class CardReplies:
         arguments: LarkReplyArguments | SlackReplyArguments,
         account_version: int,
         credential_generation: int,
-    ) -> str | None:
+    ) -> tuple[str, bool] | None:
         now = utc_now()
         attempt.lease.require_current(now)
         async with transaction(self.delivery.sessions) as session:
@@ -167,7 +168,10 @@ class CardReplies:
                     if isinstance(content, LarkPostContent)
                     else content.text
                 )
-            replies = (*tuple(row.replies_json or ()), text)
+            replies = tuple(row.replies_json or ())
+            appended = not replies or replies[-1] != text
+            if appended:
+                replies = (*replies, text)
             # Reserve room for the longest translated status, controls, and details URL.
             if context.provider_key == "slack":
                 task_message(
@@ -187,7 +191,7 @@ class CardReplies:
             row.done = False
             row.attempts = 0
             row.available_at = now
-            return lease
+            return lease, appended
 
     async def _retry(self, run_id: str, lease: str) -> None:
         with anyio.move_on_after(2, shield=True):
@@ -196,11 +200,12 @@ class CardReplies:
             except DBAPIError:
                 pass  # Expiry allows the control worker to recover the persisted intent.
 
-    async def _discard(self, run_id: str, lease: str) -> None:
+    async def _discard(self, run_id: str, lease: str, *, appended: bool) -> None:
         async with transaction(self.delivery.sessions) as session:
             row = await session.scalar(select(ProgressRecord).where(ProgressRecord.run_id == run_id).with_for_update())
             if row is not None and row.lease_token == lease:
-                row.replies_json = (row.replies_json or [])[:-1]
+                if appended:
+                    row.replies_json = (row.replies_json or [])[:-1]
                 row.lease_token = None
                 row.lease_until = None
                 row.available_at = utc_now() + timedelta(seconds=5)

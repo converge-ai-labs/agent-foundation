@@ -6,8 +6,11 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
-import type { Schema } from "../transport/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { Schema, Transport } from "../transport/client";
+import { TransportContext } from "../transport/context";
 import {
   ConversationTranscript,
   LiveOutput,
@@ -534,9 +537,7 @@ it("marks missing conversation history outside details without inventing an exec
     screen.queryByRole("button", { name: /Execution details/ }),
   ).toBeNull();
   expect(
-    screen
-      .getByText("Earlier messages in this turn are not loaded.")
-      .closest("[hidden]"),
+    screen.getByText("Turn history is incomplete.").closest("[hidden]"),
   ).toBeNull();
   for (const text of ["Original", "Final"])
     expect(screen.getAllByText(text)).toHaveLength(1);
@@ -720,12 +721,10 @@ it.each([false, true])(
         localInputs={[]}
       />,
     );
-    const gap = screen.getByText(
-      "Earlier messages in this turn are not loaded.",
-    );
+    const gap = screen.getByText("Turn history is incomplete.");
     expect(gap.closest("[hidden]")).toBeNull();
     if (live)
-      expect(view.container.textContent).toMatch(/not loaded.*Live progress/s);
+      expect(view.container.textContent).toMatch(/incomplete.*Live progress/s);
   },
 );
 
@@ -826,3 +825,108 @@ it("preserves an open execution reader when live rows become saved history", () 
     reader,
   );
 });
+
+it.each(["desktop", "mobile"])(
+  "keeps %s inspection open while a saved long turn completes loading",
+  async (layout) => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: layout === "mobile" && query === "(max-width: 700px)",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    const input = saved(
+      previewInput("round", ["Prompt"]) as Schema<"TranscriptPart">[],
+      0,
+    );
+    const steering = saved(
+      previewInput("steer", ["Change direction"]) as Schema<"TranscriptPart">[],
+      100,
+    );
+    const activity = saved([{ kind: "thinking", text: "Latest plan" }], 101);
+    const output = saved([{ kind: "assistant", text: "Done" }], 102);
+    let finish!: (value: unknown) => void;
+    const GET = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const transport = { client: { GET } } as unknown as Transport;
+    const queries = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const turn = {
+      turn_id: "round",
+      input_position: 0,
+      end_position: 1,
+      preview: "Prompt",
+    };
+    const transcript = (checkpoint: boolean) => (
+      <QueryClientProvider client={queries}>
+        <TransportContext value={transport}>
+          <ConversationTranscript
+            threadId="one"
+            loadDetails
+            continuation={checkpoint ? "saved" : "initial"}
+            entries={checkpoint ? [input, steering, activity, output] : [input]}
+            turns={[
+              checkpoint
+                ? { ...turn, end_position: 103, final_position: 102 }
+                : turn,
+            ]}
+            localInputs={[]}
+            blocks={
+              checkpoint
+                ? []
+                : [
+                    {
+                      id: "run:input:0",
+                      kind: "user",
+                      text: "Change direction",
+                      metadata: steering.parts[0].metadata!,
+                    },
+                    { id: "live-plan", kind: "thinking", text: "Latest plan" },
+                  ]
+            }
+          />
+        </TransportContext>
+      </QueryClientProvider>
+    );
+    const view = render(transcript(false));
+    fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+    const reader = await screen.findByRole("region", {
+      name: "Execution details",
+    });
+    const dialog = screen.queryByRole("dialog");
+    view.rerender(transcript(true));
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("region", { name: "Execution details" })).toBe(
+      reader,
+    );
+    if (layout === "mobile") expect(screen.getByRole("dialog")).toBe(dialog);
+    await act(async () =>
+      finish({
+        data: {
+          entries: [
+            input,
+            ...Array.from({ length: 99 }, (_, index) => saved([], index + 1)),
+            steering,
+            activity,
+            output,
+          ],
+          next_cursor: null,
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(view.container.textContent).not.toContain("Loading turn…"),
+    );
+    expect(screen.getByRole("region", { name: "Execution details" })).toBe(
+      reader,
+    );
+    if (layout === "mobile") expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(GET).toHaveBeenCalledTimes(1);
+    view.unmount();
+    queries.clear();
+  },
+);

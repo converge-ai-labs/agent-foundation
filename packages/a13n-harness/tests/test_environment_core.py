@@ -1751,7 +1751,7 @@ async def test_resolved_file_routes_cannot_acquire_a_new_lease_after_unmount() -
 
     async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
         await runtime._activate()
-        selected = environment.resolve_path("/workspace/file.txt")
+        selected = environment.select_files("/workspace/file.txt")
         scoped = environment.select_files("/workspace")
         assert (await runtime.unmount("workspace")).kind == "unmounted"
 
@@ -1991,3 +1991,88 @@ async def test_command_cwd_resource_prepares_shell_without_file_facet() -> None:
         assert provider.bound.ready_calls == [frozenset({"shell"})]
         assert resources[0].approval_revision == "/work"
         assert resources[0].kind == "file"
+
+
+@pytest.mark.parametrize("rebuild", [False, True])
+@pytest.mark.parametrize("scoped_access", [False, True])
+async def test_copy_keeps_destination_generation_while_source_prepares(rebuild: bool, scoped_access: bool) -> None:
+    from a13n_harness.toolsets._scoped_files import ScopedFileAccess
+
+    source_started = asyncio.Event()
+    release_source = asyncio.Event()
+    writes: list[bytes] = []
+
+    class CopyFiles(_Files):
+        async def copy(self, source: str, destination: str, *, replace: bool):
+            raise AssertionError("Cross-mount copy must stream")
+
+    class SourceFiles(CopyFiles):
+        async def read_bytes_stream(self, path: str):
+            yield b"payload"
+
+    class DestinationFiles(CopyFiles):
+        async def write_bytes_stream(self, path: str, stream, *, mode: str) -> FileWriteResult:
+            writes.append(b"".join([chunk async for chunk in stream]))
+            assert destination.mount_id is not None
+            return FileWriteResult(
+                path=path,
+                bytes_written=len(writes[-1]),
+                receipt=EnvironmentOperationReceipt(
+                    mount_id=destination.mount_id,
+                    observed_generation=destination.bound.descriptor.generation,
+                    operation_id="copy-1",
+                    stage="completed",
+                    outcome="succeeded",
+                ),
+            )
+
+    source_actions = frozenset({EnvironmentAction.FILE_COPY_SOURCE})
+    destination_actions = frozenset({EnvironmentAction.FILE_COPY_DESTINATION})
+    source = _Binding(
+        "source", operations=EnvironmentProviderOperations(files=SourceFiles()), permissions=source_actions
+    )
+    destination = _Binding(
+        "destination",
+        operations=EnvironmentProviderOperations(files=DestinationFiles()),
+        permissions=destination_actions,
+    )
+    source_ready = source.bound.ensure_ready
+    destination_ready = destination.bound.ensure_ready
+
+    async def prepare_source(operations):
+        source_started.set()
+        await release_source.wait()
+        await source_ready(operations)
+
+    async def prepare_destination(operations):
+        if rebuild:
+            destination.bound.descriptor = destination.bound.descriptor.model_copy(update={"generation": "replacement"})
+        await destination_ready(operations)
+
+    source.bound.ensure_ready = prepare_source
+    destination.bound.ensure_ready = prepare_destination
+    runtime = create_environment_runtime(
+        mounts={
+            "source": _runtime_mount(source, permissions=source_actions, mount_path="/source"),
+            "destination": _runtime_mount(destination, permissions=destination_actions, mount_path="/destination"),
+        },
+        default_mount="source",
+    )
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        files = ScopedFileAccess(environment.files, environment) if scoped_access else environment.files
+        copying = asyncio.create_task(files.copy("/source/input", "/destination/output", replace=False))
+        try:
+            await asyncio.wait_for(source_started.wait(), timeout=2)
+            await environment.ensure_ready(
+                EnvironmentReadinessRequirement(mounts=("destination",), operations=frozenset({"files"}))
+            )
+        finally:
+            release_source.set()
+        if rebuild:
+            with pytest.raises(EnvironmentError) as caught:
+                await copying
+            assert caught.value.code == "environment_stale_mount"
+            assert writes == []
+        else:
+            assert (await copying).bytes_copied == 7
+            assert writes == [b"payload"]

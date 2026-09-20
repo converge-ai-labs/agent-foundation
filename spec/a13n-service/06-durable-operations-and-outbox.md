@@ -65,6 +65,8 @@ flowchart LR
     Transaction --> Outbox[Publication intent when required]
 ```
 
+The owning domain defines which publication intents belong to the source transaction. [Webhook Hook dispatch](26-hook-notifications.md#asynchronous-hook-dispatch) instead commits a lifecycle event with pending dispatch, then atomically creates its Outbox rows and marks dispatch complete in a background transaction. Other producers retain their owning atomicity rules.
+
 If the transaction rolls back, none of its state, evidence, event, Item, or outbox records exists. A domain does not publish an authoritative event or retained Item before this commit. Authentication failures and denied attempts that have no resource mutation use the separate bounded security-audit path owned by IAM; audit failure never converts a denial into an allow.
 
 Object upload, Redis publication, webhook delivery, provider calls, and other external I/O never occur inside the relational transaction. The domain stages external data when needed, commits only verified references, and owns cleanup or reconciliation if an external effect and relational selection diverge.

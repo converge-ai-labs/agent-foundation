@@ -6,6 +6,7 @@ import pytest
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.etags import resource_etag
 from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
+from a13n_service.hooks.dispatcher import HookDispatcher
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.command_values import RetryRunCommand, WaitingContinueRunCommand
@@ -95,6 +96,7 @@ async def test_successor_hook_selection_expiry_and_replay(
         values["hook_subscription"] = None if selection == "null" else replacement
     request = request_type.model_validate(values)
     receipt = await command(actor=_actor(), run_id=source.run_id, idempotency_key="successor", request=request)
+    await HookDispatcher(sessions).scan()
     async with short_session(sessions) as database:
         old = await database.get(HookSubscriptionRecord, source.hook_subscription_id)
         source_run = await database.get(RunRecord, source.run_id)

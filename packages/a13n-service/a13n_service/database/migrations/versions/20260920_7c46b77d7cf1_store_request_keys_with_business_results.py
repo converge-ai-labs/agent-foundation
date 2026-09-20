@@ -1,7 +1,7 @@
 """Store request keys with business results.
 
 Revision ID: 7c46b77d7cf1
-Revises: ec56e4426fb7
+Revises: ba435c2961da
 Create Date: 2026-09-20 09:56:05.629601+00:00
 """
 
@@ -14,7 +14,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "7c46b77d7cf1"
-down_revision: str | Sequence[str] | None = "ec56e4426fb7"
+down_revision: str | Sequence[str] | None = "ba435c2961da"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -8,6 +8,7 @@ from a13n_harness import SafeFailure
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.hooks import InlineHookSubscriptionInput, InlineHookValidator, WebhookDestinationConfig
+from a13n_service.hooks.dispatcher import HookDispatcher
 from a13n_service.hooks.models import HookSubscriptionRecord
 from a13n_service.hooks.validation import EndpointValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
@@ -21,7 +22,7 @@ from a13n_service.interactions.control_domain import (
 from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.initialization import (
     RunStateSeed,
-    initialize_empty_thread_state,
+    initialize_start_state,
 )
 from a13n_service.interactions.input import AcceptedAgentInput, AgentInput, TextContent
 from a13n_service.interactions.models import RunRecord, ThreadRecord
@@ -418,7 +419,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config=config,
     )
-    state = initialize_empty_thread_state(seed, thread_id=source.thread_id)
+    state = initialize_start_state(seed, thread_id=source.thread_id)
     run = _accepted_run(
         run_id=seed.run_id,
         thread_id=source.thread_id,
@@ -502,8 +503,12 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         delivery = await database.scalar(select(OutboxRecord))
         assert thread is not None and accepted is not None and binding is not None
         assert hook_head is not None and hook_head.inline_run_id == run.id
-        assert delivery is not None and delivery.destination_ref == hook_head.current_revision_id
+        assert delivery is None
         assert (thread.version, thread.queue_version, thread.current_run_id) == (3, 4, run.id)
+    await HookDispatcher(interaction_sessions).scan()
+    async with short_session(interaction_sessions) as database:
+        delivery = await database.scalar(select(OutboxRecord))
+        assert delivery is not None and delivery.destination_ref == hook_head.current_revision_id
     assert endpoint.calls == [
         "https://hooks.example.com/queued",
         "https://hooks.example.com/updated",

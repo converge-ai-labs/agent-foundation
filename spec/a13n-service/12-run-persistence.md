@@ -537,7 +537,7 @@ Run acceptance creates or advances the Thread row together with the Run row and 
 
 1. determine the operation's exact `authority_principal`, validate that Principal's current status and authorization together with Thread version, current/head selection, lineage, exact Revision, typed override, and any parent state; resolve and authorize the independent Environment choice or template revision without external I/O; then build the complete Run-owned initial state containing `EffectiveAgentConfig`;
 2. publish object-backed input, and `state.json` create-only;
-3. in one short transaction, insert or advance the Thread, allocate or revalidate the selected Environment record, insert the `accepted` Run with its fixed Environment ID/access, update the Thread default without acquiring target use, and commit required lifecycle facts, idempotency evidence, and outbox intents.
+3. in one short transaction, insert or advance the Thread, allocate or revalidate the selected Environment record, insert the `accepted` Run with its fixed Environment ID/access, update the Thread default without acquiring target use, and commit required lifecycle facts with pending Hook dispatch, idempotency evidence, and any other domain-required outbox intents.
 
 ```mermaid
 sequenceDiagram
@@ -639,7 +639,7 @@ Checkpoint writes do not create a Run row, attempt row, lifecycle transition, or
 
 #### Common Transaction Requirements
 
-Every Run-sealing path, including waiting, completion, failure before execution, and cancellation, includes [inline Hook expiry](26-hook-notifications.md#inline-subscription-lifetime) in the same relational commit after final lifecycle-event matching. Hook configuration and its inheritance retention remain owned by the subscription head and Revisions, not by Run input or state. Attempt recovery and handoff that leave the Run unsealed preserve its subscription.
+Every Run-sealing path, including waiting, completion, failure before execution, and cancellation, includes [inline Hook expiry](26-hook-notifications.md#inline-subscription-lifetime) in the same relational commit as final lifecycle facts; background Hook dispatch preserves the expired inline subscription's eligibility for its owning Run's pending events. Hook configuration and its inheritance retention remain owned by the subscription head and Revisions, not by Run input or state. Attempt recovery and handoff that leave the Run unsealed preserve its subscription.
 
 A Run outcome commit applies the [active-control outcome precondition and pending-delivery disposition](19-agent-control-active-execution.md#completion-and-control-races). This contract selects receipts already present in the complete state and seals the matching Run candidate; the active-control contract owns completed-outcome blocking, waiting rollover, suppression, and supersession of Thread inbox entries.
 

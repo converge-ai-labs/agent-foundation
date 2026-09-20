@@ -193,9 +193,14 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `hooks`
 
-| Setting                                | Environment variable                               | Type / choices | Constraints and default             |
-| -------------------------------------- | -------------------------------------------------- | -------------- | ----------------------------------- |
-| `hooks.history_minimum_retention_days` | `A13N_SERVICE_HOOK_HISTORY_MINIMUM_RETENTION_DAYS` | integer        | minimum=1; maximum=3650; default=30 |
+| Setting                                | Environment variable                               | Type / choices | Constraints and default                        |
+| -------------------------------------- | -------------------------------------------------- | -------------- | ---------------------------------------------- |
+| `hooks.history_minimum_retention_days` | `A13N_SERVICE_HOOK_HISTORY_MINIMUM_RETENTION_DAYS` | integer        | minimum=1; maximum=3650; default=30            |
+| `hooks.dispatch_poll_interval_seconds` | `A13N_SERVICE_HOOK_DISPATCH_POLL_INTERVAL_SECONDS` | number         | maximum=60; exclusiveMinimum=0; default=1      |
+| `hooks.dispatch_batch_limit`           | `A13N_SERVICE_HOOK_DISPATCH_BATCH_LIMIT`           | integer        | minimum=1; maximum=100; default=16             |
+| `hooks.dispatch_max_attempts`          | `A13N_SERVICE_HOOK_DISPATCH_MAX_ATTEMPTS`          | integer        | minimum=1; maximum=1000; default=10            |
+| `hooks.dispatch_retry_base_seconds`    | `A13N_SERVICE_HOOK_DISPATCH_RETRY_BASE_SECONDS`    | number         | maximum=3600; exclusiveMinimum=0; default=2    |
+| `hooks.dispatch_retry_max_seconds`     | `A13N_SERVICE_HOOK_DISPATCH_RETRY_MAX_SECONDS`     | number         | maximum=86400; exclusiveMinimum=0; default=300 |
 
 ## `objects`
 

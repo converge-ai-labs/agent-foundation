@@ -27,6 +27,7 @@ from .domain import (
     UpdateModelProviderRequest,
     UpdateModelRequest,
 )
+from .media_defaults import MediaUnderstandingDefaults, MediaUnderstandingSelection
 from .provider_service import ModelProviderService
 from .providers import ModelProviderMetadata
 from .service import ModelService
@@ -57,6 +58,31 @@ def _provider_service(request: Request) -> ModelProviderService:
 
 def _set_etag(response: Response, resource: Model | ModelProvider) -> None:
     response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
+
+
+@router.get("/workspaces/{workspace}/media-understanding-defaults")
+async def get_media_understanding_defaults(
+    request: Request, response: Response, actor: Actor, workspace_id: WorkspaceId
+) -> MediaUnderstandingDefaults:
+    defaults = await _model_service(request).media_defaults(actor=actor, workspace_id=workspace_id)
+    response.headers["ETag"] = defaults.etag()
+    return defaults
+
+
+@router.put("/workspaces/{workspace}/media-understanding-defaults")
+async def replace_media_understanding_defaults(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    workspace_id: WorkspaceId,
+    body: MediaUnderstandingSelection,
+    if_match: IfMatch,
+) -> MediaUnderstandingDefaults:
+    defaults = await _model_service(request).replace_media_defaults(
+        actor=actor, workspace_id=workspace_id, request=body, if_match=if_match
+    )
+    response.headers["ETag"] = defaults.etag()
+    return defaults
 
 
 @router.get("/model-provider-types")
