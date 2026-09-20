@@ -79,25 +79,12 @@ async def _allow(*args: Any, **kwargs: Any) -> InvocationPolicyDecision:
     return InvocationPolicyDecision.allow()
 
 
-def _owned_context_part_indexes(message: ModelRequest) -> set[int]:
-    metadata = message.metadata or {}
-    ownership = metadata.get("a13n.model-context-overlay")
-    if not isinstance(ownership, dict):
-        return set()
-    parts = ownership.get("parts")
-    if not isinstance(parts, list):
-        return set()
-    return {index for item in parts if isinstance(item, dict) and isinstance(index := item.get("index"), int)}
-
-
 def _latest_user_text(messages: list[ModelMessage]) -> str | None:
     for message in reversed(messages):
         if not isinstance(message, ModelRequest):
             continue
-        owned = _owned_context_part_indexes(message)
-        for index in range(len(message.parts) - 1, -1, -1):
-            part = message.parts[index]
-            if index not in owned and isinstance(part, UserPromptPart) and isinstance(part.content, str):
+        for part in reversed(message.parts):
+            if isinstance(part, UserPromptPart) and isinstance(part.content, str):
                 return part.content
     return None
 
@@ -108,10 +95,7 @@ def _returns_after_latest_user(messages: list[ModelMessage]) -> list[ToolReturnP
             index
             for index, message in enumerate(messages)
             if isinstance(message, ModelRequest)
-            and any(
-                isinstance(part, UserPromptPart) and part_index not in _owned_context_part_indexes(message)
-                for part_index, part in enumerate(message.parts)
-            )
+            and any(isinstance(part, UserPromptPart) and isinstance(part.content, str) for part in message.parts)
         ),
         default=-1,
     )

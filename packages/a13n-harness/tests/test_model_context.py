@@ -25,7 +25,6 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
     ModelContextRequestKind,
     _commit_projection,
-    _remove_owned_overlays,
     _validate_projection,
     user_prompt_content,
 )
@@ -428,7 +427,7 @@ async def test_enqueued_input_projection_preserves_contiguous_tool_results(monke
             assert user_prompt_content(ctx.messages[-1].parts[0])[0].content == "fresh context"
             assert ctx.messages[-1].parts[1] is native
             assert user_prompt_content(ctx.messages[-1].parts[2])[0].content == "epilogue"
-            assert _remove_owned_overlays(ctx.messages)[-1].parts == (native,)
+            assert len(ctx.messages[-1].parts) == 3
         else:
             assert ctx.messages[-1] is final
         assert deps.projection_calls == 1
@@ -678,8 +677,9 @@ async def test_ordinary_preparation_preserves_prior_owned_overlays_for_prompt_ca
     assert user_prompt_content(ctx.messages[-1].parts[-1])[0].content == "current overlay"
 
 
-def test_overlay_cleanup_uses_ownership_metadata_not_matching_text() -> None:
-    original = ModelRequest(parts=(UserPromptPart("same text"),))
+@pytest.mark.parametrize("metadata", [None, {"caller": "preserved"}])
+def test_overlay_commit_preserves_user_content_and_request_metadata(metadata: dict[str, str] | None) -> None:
+    original = ModelRequest(parts=(UserPromptPart("same text"),), metadata=metadata)
     request = ModelContextProjectionRequest(
         kind=ModelContextRequestKind.INPUT,
         input_origin=ModelContextInputOrigin.USER,
@@ -695,15 +695,14 @@ def test_overlay_cleanup_uses_ownership_metadata_not_matching_text() -> None:
     )
 
     committed = _commit_projection([original], request, projection)
-    cleaned = _remove_owned_overlays(committed)
 
-    final = cleaned[-1]
+    final = committed[-1]
     assert isinstance(final, ModelRequest)
-    assert final.metadata is None
-    assert final.parts == original.parts
-    assert _remove_owned_overlays([original]) == [original]
+    assert final.metadata == metadata
+    assert final.parts[0] is original.parts[0]
+    assert len(final.parts) == 2
     restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(committed))
-    assert _remove_owned_overlays(restored) == cleaned
+    assert restored[-1].metadata == metadata
     injected = restored[-1].parts[-1].content[0]
     assert isinstance(injected, TextContent)
     assert injected.metadata == {"display": False, "source_id": "test.same-text"}

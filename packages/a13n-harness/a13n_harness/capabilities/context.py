@@ -50,7 +50,6 @@ from a13n_harness.model_context import (
     ModelContextProjection,
     ModelContextProjectionRequest,
     ModelContextRequestKind,
-    _remove_owned_overlays,
     _requires_exact_boundary,
     _requires_exact_history,
 )
@@ -637,7 +636,7 @@ class HandoffCapability(AbstractModelContextCapability):
         await ctx.deps._steering.resolve_delivered(request_context.messages)
         try:
             messages = _build_restored_history(
-                _remove_owned_overlays(request_context.messages),
+                request_context.messages,
                 state,
                 retained_requests=ctx.deps._steering.replay_requests(ctx.run_id),
             )
@@ -885,6 +884,8 @@ def _build_compacted_history(
         )
     system_parts = _first_system_parts(messages)
     metadata = deepcopy(template.metadata) if template.metadata is not None else {}
+    # The replacement contains no old parts; legacy overlay indexes do not apply.
+    metadata.pop("a13n.model-context-overlay", None)
     metadata[_HANDOFF_METADATA_KEY] = "compaction"
     synthetic = replace(
         deepcopy(template),
@@ -1048,6 +1049,8 @@ def _build_restored_history(
         )
     )
     metadata = deepcopy(template.metadata) if template.metadata is not None else {}
+    # The replacement contains no old parts; legacy overlay indexes do not apply.
+    metadata.pop("a13n.model-context-overlay", None)
     metadata[_HANDOFF_METADATA_KEY] = "handoff"
     metadata[_RESTORED_BOUNDARY_METADATA_KEY] = _RESTORED_BOUNDARY_VERSION
     restored = replace(
