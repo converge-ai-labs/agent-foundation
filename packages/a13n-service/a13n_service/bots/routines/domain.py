@@ -65,7 +65,7 @@ class RoutineDefinition(BaseModel):
 
 
 class ProposeRoutine(BaseModel):
-    """Propose a task or change; the requester must confirm its Slack card before it takes effect."""
+    """Propose a task or change; the requester must confirm its confirmation card before it takes effect."""
 
     model_config = ConfigDict(extra="forbid")
     request_key: str = Field(min_length=1, max_length=64, description="Reuse for retries of this proposal.")

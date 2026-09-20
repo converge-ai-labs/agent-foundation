@@ -27,7 +27,7 @@ from sqlalchemy import func, select
 from .test_bot_progress import ACCOUNT, EXECUTOR, task  # noqa: F401
 from .test_slack import _config
 
-pytestmark = [pytest.mark.anyio, pytest.mark.parametrize("task", ["slack"], indirect=True)]
+pytestmark = [pytest.mark.anyio, pytest.mark.parametrize("task", ["slack", "lark"], indirect=True)]
 
 
 @pytest.fixture
@@ -43,25 +43,33 @@ async def routines(task, credential_protector, monkeypatch):  # noqa: F811
         "_bindings",
         MemoryBehaviors(task.sessions, default=ordinary, behaviors=(ConversationMemory(ordinary.service, None),)),
     )
+    provider = task.batch.configuration.provider_key
+    coordinates = dict(task.batch.configuration.provider_context)
+    if provider == "lark":
+        coordinates["chat_type"] = "group"
     context = InboundRunContext(
         account_id=ACCOUNT,
         binding_id="binding_routine",
-        provider_key="slack",
+        provider_key=provider,
         execution_principal_ref=PrincipalRef(principal_type="service_account", principal_id=EXECUTOR),
-        provider_context_version=CONTEXT_VERSION,
-        provider_context=task.batch.configuration.provider_context,
+        provider_context_version=CONTEXT_VERSION if provider == "slack" else "lark_message_v1",
+        provider_context=coordinates,
         action_policy={"reply_mode": "thread"},
-        allowed_actions=("slack.reply", "slack.read_messages"),
+        allowed_actions=(f"{provider}.reply",),
     )
     async with transaction(task.sessions) as db:
         run = await db.get(RunRecord, task.receipt.run_id)
         run.trigger_type = "inbound"
         run.native_tool_contexts_json = [context.model_dump(mode="json")]
     service = RoutineService(task.sessions)
-    cards = RoutineCards(task.sessions, task.service.delivery.http, credential_protector)
+    cards = RoutineCards(
+        task.sessions, task.service.delivery.http, credential_protector, task.service.delivery.endpoints
+    )
     return SimpleNamespace(
         task=task,
         context=context,
+        owner="U123" if provider == "slack" else "ou_owner",
+        conversation="C123" if provider == "slack" else "oc_chat",
         service=service,
         cards=cards,
         scheduler=RoutineScheduler(task.sessions, task.service.commands, cards),
@@ -98,8 +106,8 @@ async def click(routines, identifier, operation="confirm", **overrides):
                 "action": f"routine_{operation}",
                 "reference": row.id,
                 "token": row.action_token,
-                "actor_id": "U123",
-                "conversation_id": "C123",
+                "actor_id": routines.owner,
+                "conversation_id": routines.conversation,
                 "message_id": row.message_id,
                 **overrides,
             }
@@ -197,7 +205,7 @@ async def test_acceptance_is_atomic_and_survives_restart(routines):
         assert run.trigger_type == "bot_schedule"
         assert run.native_tool_contexts_json[0]["action_policy"]["reply_mode"] == "main"
         progress = await db.get(ProgressRecord, run.id)
-        assert progress.conversation_id == "C123" and not progress.reply_in_thread
+        assert progress.conversation_id == routines.conversation and not progress.reply_in_thread
         assert assume_utc(row.next_run_at) > utc_now()
         assert (
             await db.scalar(select(func.count()).select_from(RunRecord).where(RunRecord.trigger_type == "bot_schedule"))
@@ -258,7 +266,9 @@ async def test_uncertain_initial_card_is_not_duplicated(routines, credential_pro
         raise httpx2.ReadTimeout("fixture")
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(fail)) as http:
-        cards = RoutineCards(routines.task.sessions, http, credential_protector)
+        cards = RoutineCards(
+            routines.task.sessions, http, credential_protector, routines.task.service.delivery.endpoints
+        )
         await cards.publish_one()
         async with transaction(routines.task.sessions) as db:
             row = await db.get(RoutineRecord, identifier)
@@ -273,7 +283,7 @@ async def test_uncertain_initial_card_is_not_duplicated(routines, credential_pro
 
 async def test_other_channel_cannot_list_or_change(routines):
     identifier = await activate(routines)
-    other = routines.context.model_copy(update={"provider_context": {"channel_id": "C_other"}})
+    other = routines.context.model_copy(update={"provider_context": {"channel_id": "C_other", "chat_id": "oc_other"}})
     async with short_session(routines.task.sessions) as db:
         assert (await routines.service.list(db, context=other, cursor=None))["items"] == []
     async with transaction(routines.task.sessions) as db:
@@ -289,6 +299,8 @@ async def test_other_channel_cannot_list_or_change(routines):
 
 
 async def test_card_and_slack_callback(routines):
+    if routines.context.provider_key != "slack":
+        pytest.skip("Slack-specific wire shape")
     identifier = await propose(routines)
     await routines.cards.publish_one()
     async with short_session(routines.task.sessions) as db:
@@ -417,3 +429,80 @@ async def test_authority_refreshes_account_loaded_before_lock(routines):
         assert cached.version == old_version
         with pytest.raises(ProgressUnavailable):
             await authorize_routine(db, row)
+
+
+async def test_lark_card_authenticated_callback_and_result_delivery(routines):
+    if routines.context.provider_key != "lark":
+        pytest.skip("Lark-specific wire shape")
+    from a13n_service.bots.routines.lark_cards import render as render_lark
+    from a13n_service.connectivity.providers.lark.wire import LarkIdentity, authenticate_and_normalize
+
+    from tests.gateway.test_commands import _complete_run
+
+    from .test_lark import _ENCRYPT_KEY, _VERIFICATION_TOKEN, NOW, _encrypted_request, _payload
+
+    identifier = await propose(routines)
+    await routines.cards.publish_one()
+    async with short_session(routines.task.sessions) as db:
+        row = await db.get(RoutineRecord, identifier)
+        card = render_lark(row, language="zh_cn")
+        button = card["elements"][-2]["actions"][0]
+        payload = _payload()
+        payload["header"]["event_type"] = "card.action.trigger"
+        payload["event"] = {
+            "host": "im_message",
+            "operator": {"open_id": routines.owner},
+            "context": {"open_chat_id": routines.conversation, "open_message_id": row.message_id},
+            "action": {"value": button["value"]},
+        }
+    decision = authenticate_and_normalize(
+        _encrypted_request(payload),
+        identity=LarkIdentity("cli_app", "tenant-1", "ou_bot"),
+        encrypt_key=_ENCRYPT_KEY,
+        verification_token=_VERIFICATION_TOKEN,
+        received_at=NOW,
+    )
+    assert decision.action == "routine_confirm"
+    async with transaction(routines.task.sessions) as db:
+        await ProgressActions().handle(db, await db.get(AccountRecord, ACCOUNT), decision)
+    await make_due(routines, identifier)
+    await routines.scheduler.execute(await routines.scheduler.claim())
+    async with transaction(routines.task.sessions) as db:
+        row = await db.get(RoutineRecord, identifier)
+        run_id = row.last_run_id
+        progress = await db.get(ProgressRecord, run_id)
+        assert progress.provider_key == "lark" and progress.source_message_id == "om_source"
+        assert progress.requester_ids == [routines.owner]
+        # Only an explicit native reply is eligible for result delivery.
+        progress.replies_json = ["Scheduled result fixture"]
+    await _complete_run(routines.task.sessions, routines.task.objects, run_id=run_id)
+    await routines.task.service.scan()
+    async with short_session(routines.task.sessions) as db:
+        progress = await db.get(ProgressRecord, run_id)
+        assert progress.done and progress.rendered_status == "completed"
+        assert progress.rendered_reply_count == 1
+    calls = routines.task.calls
+    creates = [
+        json.loads(call.content)
+        for call in calls
+        if call.method == "POST" and call.url.path == "/open-apis/im/v1/messages"
+    ]
+    assert creates and all(body["receive_id"] == routines.conversation for body in creates)
+    assert any("Scheduled result fixture" in call.content.decode() for call in calls if call.method == "PATCH")
+    assert any("a13n.routine.v1" in body["content"] for body in creates)
+
+
+async def test_direct_messages_do_not_expose_scheduling(routines):
+    from unittest.mock import AsyncMock
+
+    from a13n_service.bots.routines.runtime import RoutineTools
+
+    context = routines.context.model_copy(update={"provider_context": {"chat_type": "p2p", "conversation_kind": "im"}})
+    assert (
+        await RoutineTools(routines.service)(
+            SimpleNamespace(native_tool_contexts=(context,)),
+            AsyncMock(),
+            SimpleNamespace(run_id=routines.task.receipt.run_id),
+        )
+        is None
+    )

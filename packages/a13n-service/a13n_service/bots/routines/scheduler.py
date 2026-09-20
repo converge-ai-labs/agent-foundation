@@ -29,6 +29,7 @@ from a13n_service.temporal import assume_utc, utc_now
 
 from .authority import authorize_routine
 from .cards import RoutineCards
+from .context import source_message_id
 from .domain import RoutineDefinition
 from .models import RoutineRecord
 from .service import changed
@@ -134,9 +135,9 @@ class RoutineScheduler:
                     run_id=receipt.run_id,
                     account_id=account.id,
                     account_version=account.version,
-                    provider_key="slack",
+                    provider_key=context.provider_key,
                     conversation_id=current.conversation_id,
-                    source_message_id=str(context.provider_context["root_thread_ts"]),
+                    source_message_id=source_message_id(context),
                     reply_in_thread=False,
                     requester_ids=[current.owner_id],
                     action_token=secrets.token_urlsafe(32),
@@ -171,7 +172,8 @@ class RoutineScheduler:
                                 f"Execute the confirmed scheduled task: {definition.title}\n"
                                 f"Scheduled for {claim.due.isoformat()} ({definition.schedule.timezone}).\n"
                                 f"{definition.prompt}\n"
-                                "Deliver the result to this channel using slack.reply. Do not create another schedule."
+                                f"Deliver the result to this group using {context.provider_key}.reply. "
+                                "Do not create another schedule."
                             )
                         ),
                     ),

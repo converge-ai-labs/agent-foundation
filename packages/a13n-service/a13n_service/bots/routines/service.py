@@ -18,6 +18,7 @@ from a13n_service.interactions.models import RunRecord
 from a13n_service.temporal import assume_utc, utc_now
 
 from .authority import authorize_routine
+from .context import conversation_id, is_group
 from .domain import ProposeRoutine, RoutineDefinition
 from .models import RoutineRecord
 
@@ -49,8 +50,9 @@ class RoutineService:
             or run.trigger_type != "inbound"
             or len(progress.requester_ids) != 1
             or progress.account_id != context.account_id
-            or progress.provider_key != "slack"
-            or context.provider_context.get("conversation_kind") not in {"channel", "group"}
+            or progress.provider_key != context.provider_key
+            or progress.conversation_id != conversation_id(context)
+            or not is_group(context)
         ):
             raise RoutineInputError("routine_requester_unavailable")
         now = utc_now()
@@ -107,13 +109,13 @@ class RoutineService:
             "routine_id": row.id,
             "state": row.state,
             "confirmation_required": True,
-            "message": "Awaiting the requester's Slack card confirmation. No change is active yet.",
+            "message": "Awaiting the requester's card confirmation. No change is active yet.",
         }
 
     async def list(self, session: AsyncSession, *, context: InboundRunContext, cursor: str | None) -> JsonObject:
         query = select(RoutineRecord).where(
             RoutineRecord.account_id == context.account_id,
-            RoutineRecord.conversation_id == context.provider_context.get("channel_id"),
+            RoutineRecord.conversation_id == conversation_id(context),
             RoutineRecord.state != "deleted",
         )
         if cursor:
@@ -141,7 +143,7 @@ async def handle_action(session: AsyncSession, account: AccountRecord, action: P
     row = await session.get(RoutineRecord, action.reference, with_for_update=True)
     if (
         row is None
-        or account.provider_key != "slack"
+        or account.provider_key not in {"slack", "lark"}
         or row.account_id != account.id
         or row.conversation_id != action.conversation_id
         or row.message_id != action.message_id

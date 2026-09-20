@@ -383,15 +383,26 @@ def _normalize_action(payload: JsonObject) -> ProviderRequestDecision:
     context = _object(event.get("context")) or {}
     action = _object(event.get("action")) or {}
     value = _object(action.get("value")) or {}
-    if value.get("kind") != "a13n.task_control.v1":
+    kind = value.get("kind")
+    if kind not in {"a13n.task_control.v1", "a13n.routine.v1"}:
         return ProviderCompleteDecision(response=lark_acknowledgement())
     try:
         if event.get("host") != "im_message":
             raise ValueError("unsupported card host")
+        operation = value.get("action")
+        if kind == "a13n.routine.v1":
+            if operation not in {"confirm", "cancel", "pause", "resume", "delete"}:
+                raise ValueError("unsupported routine action")
+            operation = f"routine_{operation}"
+            reference = value.get("routine_id")
+        else:
+            if operation != "stop":
+                raise ValueError("unsupported task action")
+            reference = value.get("run_id")
         return ProviderActionDecision.model_validate(
             {
-                "action": value.get("action"),
-                "reference": value.get("run_id"),
+                "action": operation,
+                "reference": reference,
                 "token": value.get("token"),
                 "actor_id": operator.get("open_id"),
                 "conversation_id": context.get("open_chat_id"),

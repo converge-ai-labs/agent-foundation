@@ -345,7 +345,7 @@ async def open_process_runtime(
                 routines = RoutineScheduler(
                     storage.sessions,
                     control.gateway.commands,
-                    RoutineCards(storage.sessions, memory_http, protector),
+                    RoutineCards(storage.sessions, memory_http, protector, settings.connectivity_endpoint_policy()),
                 )
                 routine_loop = PeriodicTask("bot_routines", routines.scan, interval_seconds=5, timeout_seconds=650)
 

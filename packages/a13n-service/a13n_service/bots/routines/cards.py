@@ -1,4 +1,4 @@
-"""Slack confirmation and management cards with fenced, bounded delivery."""
+"""Messaging confirmation and management cards with fenced, bounded delivery."""
 
 import json
 import secrets
@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import anyio
 import httpx2
-from a13n_harness.http import ProviderHttpError
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 from pydantic import JsonValue
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,12 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.connectors.management import decode_credentials
 from a13n_service.connectivity.domain import JsonObject
+from a13n_service.connectivity.providers.lark.progress import LarkProgressClient
 from a13n_service.connectivity.providers.slack.client import SlackNativeClient
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import assume_utc, utc_now
 
 from .domain import ProposeRoutine, RoutineDefinition
+from .lark_cards import render as render_lark
 from .models import RoutineRecord
 
 ACTION_PREFIX = "a13n.routine.v1."
@@ -114,9 +116,14 @@ def render(row: RoutineRecord) -> JsonObject:
 
 class RoutineCards:
     def __init__(
-        self, sessions: async_sessionmaker[AsyncSession], http: httpx2.AsyncClient, protector: SecretProtector
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        http: httpx2.AsyncClient,
+        protector: SecretProtector,
+        endpoints: EndpointValidator,
     ) -> None:
         self.sessions, self.http, self.protector = sessions, http, protector
+        self.endpoints = endpoints
 
     async def publish_one(self) -> bool:
         now = utc_now()
@@ -140,12 +147,13 @@ class RoutineCards:
                 or account.status != "active"
                 or account.deleted_at is not None
                 or account.version != row.account_version
+                or account.provider_key not in {"slack", "lark"}
             ):
                 row.card_error = "account_unavailable"
                 row.card_available_at = None
                 return True
             if row.message_id is None and row.card_started_at is not None:
-                # Slack has no durable postMessage deduplication guarantee. Do not duplicate an uncertain write.
+                # Do not repeat an uncertain initial write after a crash or lost response.
                 row.card_error = "delivery_outcome_unknown"
                 row.card_available_at = None
                 return True
@@ -153,12 +161,19 @@ class RoutineCards:
             row.card_lease_until = now + timedelta(seconds=60)
             row.card_started_at = now
             identifier, version, message_id = row.id, row.version, row.message_id
-            payload = {**render(row), "channel": row.conversation_id, "unfurl_links": False, "unfurl_media": False}
-            if message_id:
+            provider = account.provider_key
+            configuration = dict(account.provider_config_json)
+            conversation = row.conversation_id
+            payload = (
+                {**render(row), "channel": conversation, "unfurl_links": False, "unfurl_media": False}
+                if provider == "slack"
+                else render_lark(row, language="zh_cn" if configuration.get("brand") == "feishu" else "en_us")
+            )
+            if provider == "slack" and message_id:
                 payload["ts"] = message_id
             credentials = decode_credentials(account.credential_snapshot().decrypt(self.protector))
-            token = credentials.get("bot_token")
-            if not isinstance(token, str):
+            credential = credentials.get("bot_token" if provider == "slack" else "app_secret")
+            if not isinstance(credential, str):
                 row.card_error = "credentials_unavailable"
                 row.card_available_at = None
                 return True
@@ -166,9 +181,25 @@ class RoutineCards:
         definite_rejection = False
         try:
             with anyio.fail_after(20):
-                message_id = await SlackNativeClient(self.http).publish_progress(
-                    payload, bot_token=token, message_id=message_id
-                )
+                if provider == "slack":
+                    message_id = await SlackNativeClient(self.http).publish_progress(
+                        payload, bot_token=credential, message_id=message_id
+                    )
+                else:
+                    message_id = await LarkProgressClient(
+                        self.http,
+                        self.endpoints,
+                        origin=str(configuration["open_api_origin"]),
+                        app_id=str(configuration["app_id"]),
+                        secret=credential,
+                    ).publish(
+                        source_message_id="",
+                        conversation_id=conversation,
+                        reply_in_thread=False,
+                        message_id=message_id,
+                        run_id=identifier,
+                        card=payload,
+                    )
         except (ProviderHttpError, httpx2.HTTPError, TimeoutError) as failure:
             error = "delivery_failed"
             definite_rejection = isinstance(failure, ProviderHttpError) and failure.code in {

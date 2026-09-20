@@ -1,0 +1,86 @@
+"""Feishu/Lark confirmation cards with requester-bound action values."""
+
+import json
+from functools import cache
+from importlib.resources import files
+from zoneinfo import ZoneInfo
+
+from pydantic import JsonValue
+
+from a13n_service.connectivity.domain import JsonObject
+from a13n_service.temporal import assume_utc, utc_now
+
+from .domain import ProposeRoutine, RoutineDefinition
+from .models import RoutineRecord
+
+
+@cache
+def _labels(language: str) -> dict[str, str]:
+    data = json.loads(files(__package__).joinpath("card_labels.json").read_text(encoding="utf-8"))
+    return data[language if language in data else "en_us"]
+
+
+def render(row: RoutineRecord, *, language: str = "en_us") -> JsonObject:
+    labels = _labels(language)
+    proposal = ProposeRoutine.model_validate(row.proposal_json) if row.proposal_json else None
+    definition = (
+        proposal.definition
+        if proposal and proposal.definition
+        else (RoutineDefinition.model_validate(row.definition_json) if row.definition_json else None)
+    )
+    state = labels[f"confirm_{proposal.operation}" if proposal else row.state]
+    title = definition.title if definition else labels["title"]
+    details = [state]
+    if definition:
+        details += [definition.schedule.describe(), definition.prompt]
+    details.append(labels["destination"].format(owner=row.owner_id))
+    next_at = definition.schedule.next_after(utc_now()) if proposal and definition else row.next_run_at
+    if next_at and definition:
+        zone = ZoneInfo(definition.schedule.timezone)
+        details.append(
+            labels["next"].format(time=f"{assume_utc(next_at).astimezone(zone):%Y-%m-%d %H:%M} ({zone.key})")
+        )
+    elif proposal and definition:
+        details.append(labels["expired"])
+    if proposal:
+        details.append(labels["confirmation"])
+    if row.last_error:
+        details.append(labels["error"].format(error=row.last_error))
+    # Plain text prevents a task prompt from injecting links, mentions, or card formatting.
+    elements: list[JsonValue] = [{"tag": "div", "text": {"tag": "plain_text", "content": detail}} for detail in details]
+    operations = (
+        ("confirm", "cancel")
+        if proposal
+        else ("pause", "delete")
+        if row.state == "active"
+        else ("resume", "delete")
+        if row.state == "paused"
+        else ()
+    )
+    actions: list[JsonValue] = []
+    for operation in operations:
+        button: JsonObject = {
+            "tag": "button",
+            "type": "primary" if operation == "confirm" else "default",
+            "text": {"tag": "plain_text", "content": labels[operation]},
+            "value": {
+                "kind": "a13n.routine.v1",
+                "action": operation,
+                "routine_id": row.id,
+                "token": row.action_token,
+            },
+        }
+        if operation == "delete":
+            button["confirm"] = {
+                "title": {"tag": "plain_text", "content": labels["confirm_delete"]},
+                "text": {"tag": "plain_text", "content": labels["delete_details"]},
+            }
+        actions.append(button)
+    if actions:
+        elements.append({"tag": "action", "actions": actions})
+    elements.append({"tag": "note", "elements": [{"tag": "plain_text", "content": labels["help"].format(id=row.id)}]})
+    return {
+        "config": {"wide_screen_mode": True, "update_multi": True, "enable_forward": False},
+        "header": {"title": {"tag": "plain_text", "content": title}, "template": "blue"},
+        "elements": elements,
+    }

@@ -14,6 +14,7 @@ from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import short_session, transaction
 
+from .context import is_group
 from .domain import ListRoutines, ProposeRoutine
 from .service import RoutineInputError, RoutineService
 
@@ -28,9 +29,7 @@ class RoutineTools:
         contexts = [
             context
             for context in scope.native_tool_contexts
-            if isinstance(context, InboundRunContext)
-            and context.provider_key == "slack"
-            and context.provider_context.get("conversation_kind") in {"channel", "group"}
+            if isinstance(context, InboundRunContext) and is_group(context)
         ]
         if len(contexts) != 1:
             return None
@@ -74,14 +73,14 @@ class RoutineTools:
             for item in (action("propose", ProposeRoutine, propose), action("list", ListRoutines, list_routines))
         }
         actions["propose"].definition.description = (
-            "Create or edit a scheduled task in this Slack channel, or propose pause/resume/delete. "
+            "Create or edit a scheduled task in this group, or propose pause/resume/delete. "
             "Only use for an explicit human scheduling request. Ask about ambiguous times/timezones. "
-            "Use an explicit IANA timezone and a self-contained prompt. The creator must confirm the Slack card; "
+            "Use an explicit IANA timezone and a self-contained prompt. The creator must confirm the confirmation card; "
             "never claim the task is active before confirmation. Times are absolute at (ISO8601 with offset), "
             "or recurring time_of_day (HH:MM) plus weekdays (0=Monday..6=Sunday). "
             "List tasks first to obtain the routine_id for changes."
         )
-        actions["list"].definition.description = "List this Slack channel's scheduled tasks and pending changes/status."
+        actions["list"].definition.description = "List this group's scheduled tasks and pending changes/status."
 
         async def call(name: str, arguments: JsonObject) -> JsonValue:
             try:
