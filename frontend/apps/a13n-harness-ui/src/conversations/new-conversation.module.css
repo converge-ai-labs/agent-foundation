@@ -144,10 +144,10 @@
   min-width: 0;
 }
 .runChoice {
-  grid-area: agent;
+  flex: 1;
 }
 .modelChoice {
-  grid-area: model;
+  flex: 1.4;
 }
 .choiceLabel {
   flex-shrink: 0;
@@ -169,46 +169,6 @@
 .location > button:hover,
 .runChoice > button:hover {
   background: var(--a13n-hover);
-}
-@container composer (max-width: 720px) {
-  .secondaryChoices {
-    grid-area: secondary;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    padding: 6px 8px;
-    margin-top: 8px;
-    border-radius: 10px;
-    background: var(--a13n-surface);
-  }
-  .secondaryChoices[data-expanded="false"] {
-    display: none;
-  }
-  .runChoice {
-    flex: 1;
-  }
-  .modelChoice {
-    justify-self: start;
-    width: 100%;
-    max-width: 360px;
-  }
-}
-@container composer (max-width: 480px) {
-  .modelChoice > .choiceLabel {
-    display: none;
-  }
-  .modelChoice > button {
-    height: 48px;
-    padding: 4px 8px;
-    border-radius: 12px;
-  }
-  .runChoice > button {
-    min-height: 44px;
-  }
-  .mode > button {
-    width: 100%;
-  }
 }
 
 .choicePopup {

@@ -80,10 +80,20 @@ class _FailOnceCloseRunStream(RedisRunStream):
 
 class _FailingAppendRunStream(RedisRunStream):
     async def initialize(
-        self, organization_id: str, accepted: RunStreamEvent, *, allow_create: bool, expected_server_id: str
+        self,
+        organization_id: str,
+        accepted: RunStreamEvent,
+        *,
+        allow_create: bool,
+        expected_server_id: str,
+        recovery_deadline: datetime | None = None,
     ) -> str:
         await super().initialize(
-            organization_id, accepted, allow_create=allow_create, expected_server_id=expected_server_id
+            organization_id,
+            accepted,
+            allow_create=allow_create,
+            expected_server_id=expected_server_id,
+            recovery_deadline=recovery_deadline,
         )
         raise RuntimeError("persistent append failure")
 

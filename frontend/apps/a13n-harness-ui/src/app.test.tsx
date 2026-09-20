@@ -99,6 +99,14 @@ beforeEach(() => {
     },
   );
   vi.stubGlobal("indexedDB", new IDBFactory());
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addListener() {},
@@ -106,7 +114,11 @@ beforeEach(() => {
     addEventListener() {},
     removeEventListener() {},
   }));
-  // jsdom has no layout; real CodeMirror geometry is covered by browser QA.
+  // jsdom has no layout or Web Animations API.
+  Object.defineProperty(Element.prototype, "getAnimations", {
+    configurable: true,
+    value: () => [],
+  });
   Object.defineProperty(Range.prototype, "getClientRects", {
     configurable: true,
     value: () => [],

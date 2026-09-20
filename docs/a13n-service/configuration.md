@@ -247,3 +247,9 @@ scrape_configs:
 ```
 
 The endpoint is unauthenticated. Keep it out of public ingress and proxies before enabling it. Setting `observability.metrics=false` returns 404 without changing tracing. Only HTTP and existing Harness metrics are included; there is no database sampler or additional business instrumentation. HTTP labels use method, route template, status and outcome, never request/Run IDs. Request durations include streaming time; exclude `/healthz`, `/readyz` and cancellation when constructing a user-facing HTTP SLI, and evaluate stream latency separately from ordinary API latency.
+
+## Display history recovery
+
+Display archival retries for up to 24 hours after a Run is sealed, including waiting, completed, failed, and cancelled Runs. This fixed window is independent of the configured raw replay TTL; retries and restarts do not extend it. Outages beyond the window can lose the unarchived suffix. Saved snapshots remain available, and the Items API reports `recovery_exhausted` for unconfirmed final coverage so clients can stop reconnecting. Unarchived Redis data expires at the recovery deadline. After confirmed final archival, raw replay instead follows the independent `runs.stream_closed_ttl_seconds` retention setting; repeated acknowledgements do not extend that replay deadline. Active Run streams do not expire.
+
+The migration adds nullable scheduling columns without a data backfill, builds two partial indexes, and validates a check constraint on `runs`. Index creation and constraint validation scan existing rows under the migration transaction and can block Run writes; plan the migration for the size and load of the database. Replace or drain older Workers before relying on bounded recovery. Existing sealed Runs pass through bounded recovery or cleanup once. Migration rollback removes scheduling metadata and indexes, but cannot restore expired Redis history.

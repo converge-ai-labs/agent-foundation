@@ -8,7 +8,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router";
+import { Link, MemoryRouter, useLocation } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   NotificationSettings,
@@ -96,6 +96,8 @@ function Controls() {
     <>
       <button onClick={() => notifications.receive(event)}>Emit</button>
       <output>{location.pathname}</output>
+      <Link to="/threads/thread-other">Other thread</Link>
+      <Link to="/threads/thread-1">Current thread</Link>
       <NotificationSettings />
     </>
   );
@@ -224,7 +226,7 @@ it("retains a failed subscription as reconnect intent, not enabled delivery, and
   const enable = vi
     .spyOn(push, "enablePush")
     .mockRejectedValue(new Error("offline"));
-  mount("/threads/thread-1", transport);
+  mount("/threads/thread-other", transport);
   expect(screen.getByText("Checking subscription…")).toBeTruthy();
   expect(screen.queryByLabelText("Notification permission")).toBeNull();
   expect(screen.queryByText("Enabled on this device")).toBeNull();
@@ -363,19 +365,26 @@ it("keeps installation guidance inline without duplicating a persistent toast in
 });
 
 it.each(["completed", "failed", "suspended"] as const)(
-  "shows %s on current and never-visited conversations regardless of focus, permission or opt-in",
+  "suppresses only current-thread completion, retaining %s notices for other threads regardless of opt-in",
   async (status) => {
     writePreference("notifications.enabled", "false");
     vi.mocked(document.hasFocus).mockReturnValue(true);
     event = notice("current", status);
     mount();
     fireEvent.click(screen.getByText("Emit"));
-    expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
+    const currentCount = status === "completed" ? 0 : 1;
+    expect(screen.queryAllByText(event.notice!.brief)).toHaveLength(
+      currentCount,
+    );
     fireEvent.click(screen.getByText("Emit"));
-    expect(screen.getAllByText(event.notice!.brief)).toHaveLength(1);
+    expect(screen.queryAllByText(event.notice!.brief)).toHaveLength(
+      currentCount,
+    );
     event = { ...notice("unvisited", status), root_thread_id: "never-visited" };
     fireEvent.click(screen.getByText("Emit"));
-    expect(screen.getAllByText(event.notice!.brief)).toHaveLength(2);
+    expect(screen.getAllByText(event.notice!.brief)).toHaveLength(
+      currentCount + 1,
+    );
     fireEvent.click(
       screen.getAllByRole("button", { name: "Open conversation" })[0],
     );
@@ -398,7 +407,7 @@ it("does not synthesize history and deduplicates receipts only within an epoch",
 it("has no permission-only setup or local test fallback without Push support", () => {
   vi.spyOn(push, "supportsPush").mockReturnValue(false);
   permission = "granted";
-  mount();
+  mount("/threads/thread-other");
   expect(screen.getByText("Unavailable here")).toBeTruthy();
   expect(
     screen
@@ -453,4 +462,20 @@ it("pulses visible pages immediately and every minute, coalesces waits, and stop
   await act(async () => vi.advanceTimersByTime(120000));
   expect(activity).toHaveBeenCalledOnce();
   transport.close();
+});
+
+it("uses the current route without replaying suppressed completion after navigation", () => {
+  mount("/threads/thread-1?compose=1");
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.queryByText(event.notice!.brief)).toBeNull();
+  fireEvent.click(screen.getByRole("link", { name: "Other thread" }));
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.queryByText(event.notice!.brief)).toBeNull();
+  event = notice("new-receipt");
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.getAllByText(event.notice!.brief)).toHaveLength(1);
+  fireEvent.click(screen.getByRole("link", { name: "Current thread" }));
+  event = notice("another-receipt");
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.getAllByText(event.notice!.brief)).toHaveLength(1);
 });

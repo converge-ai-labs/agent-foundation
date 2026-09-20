@@ -8132,6 +8132,11 @@ export interface components {
       next_cursor: string | null;
       /** Projection Cursor */
       projection_cursor: string | null;
+      /**
+       * Recovery Exhausted
+       * @default false
+       */
+      recovery_exhausted?: boolean;
       /** Snapshot Version */
       snapshot_version: number;
     };

@@ -306,6 +306,7 @@ async def test_inline_json_null_result_survives_inbox_and_materialization(
     assert "<async-subagent-result-data>\nnull\n</async-subagent-result-data>" in projected
 
 
+@pytest.mark.usefixtures("live_subagent_clock")
 async def test_object_backed_result_requires_and_uses_authorized_terminal_item(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
@@ -339,7 +340,7 @@ async def test_object_backed_result_requires_and_uses_authorized_terminal_item(
         assert rows == ()
 
     await _project_all_lifecycle(projector)
-    await consumer.consume_once()
+    await consumer.consume_once(lane="recovery")
     async with short_session(interaction_sessions) as database:
         child = await database.get(RunRecord, child_run_id)
         assert child is not None
@@ -606,7 +607,12 @@ async def _complete_object_backed_child(
         worker_id="subagent-result-test-projector",
         clock=lambda: NOW + timedelta(seconds=5),
     )
-    return replays, projector, RunDisplayConsumer(DisplayCandidates(sessions), stream, replays), output
+    return (
+        replays,
+        projector,
+        RunDisplayConsumer(DisplayCandidates(sessions), stream, replays, clock=lambda: NOW + timedelta(seconds=5)),
+        output,
+    )
 
 
 async def _project_all_lifecycle(projector: LifecycleRunStreamProjector) -> None:

@@ -37,6 +37,19 @@ function MessageStream() {
 }
 
 beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   Object.defineProperty(Range.prototype, "getClientRects", {
     configurable: true,
     value: () => [],
@@ -56,6 +69,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 it("reserves an upload before joining and resolves it after the initial draft identity arrives", async () => {
@@ -364,9 +378,7 @@ it("keeps Goal intent and authored input while toggling options, and disables Go
   const goal = screen.getByRole("button", { name: "Goal" });
   fireEvent.click(goal);
   expect(goal.getAttribute("aria-pressed")).toBe("true");
-  expect(
-    screen.getByText("Describe the goal and how to verify completion…"),
-  ).toBeTruthy();
+  expect(editor.textContent).toBe("");
   act(() => draft.doc.getText("text").insert(0, "Verify the full objective"));
   expect(
     goal.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -430,8 +442,9 @@ it.each([false, true])(
       </QueryClientProvider>,
     );
     try {
-      const options = screen.getByText("Full Control").parentElement!;
-      const slot = options.nextElementSibling;
+      const slot = screen.getByRole("button", {
+        name: "Composer options",
+      }).previousElementSibling!;
       act(() => draft.doc.getText("text").insert(0, "Pending edit"));
       await act(() => vi.advanceTimersByTimeAsync(699));
       expect(screen.queryByRole("status")).toBeNull();
@@ -447,7 +460,10 @@ it.each([false, true])(
       }
       act(acknowledge);
       expect(screen.queryByRole("status")).toBeNull();
-      expect(options.nextElementSibling).toBe(slot);
+      expect(
+        screen.getByRole("button", { name: "Composer options" })
+          .previousElementSibling,
+      ).toBe(slot);
       act(() => {
         draft.status = "Disconnected";
         draft.notify();

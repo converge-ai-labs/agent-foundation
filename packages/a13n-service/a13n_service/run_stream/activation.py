@@ -20,6 +20,7 @@ from a13n_service.temporal import assume_utc, utc_now
 
 from .domain import PublicationContinuityLost, PublicationRejected, PublicationUnavailable, RecoveryReason
 from .events import lifecycle_stream_event
+from .recovery import display_recovery_deadline
 from .redis import RedisRunStream
 
 logger = get_logger(__name__)
@@ -73,11 +74,20 @@ class PublicationActivator:
         server_id = await self._stream.server_incarnation()
         async with short_session(self._sessions) as database:
             accepted = await _fact(database, accepted.organization_id, accepted.run_id, "run.accepted")
+            sealed_at = await database.scalar(
+                select(RunRecord.sealed_at).where(
+                    RunRecord.organization_id == accepted.organization_id, RunRecord.id == accepted.run_id
+                )
+            )
+        deadline = display_recovery_deadline(sealed_at)
+        if deadline is not None and self._clock() >= deadline:
+            raise PublicationContinuityLost("Run display recovery deadline has passed")
         await self._stream.initialize(
             accepted.organization_id,
             lifecycle_stream_event(accepted),
             allow_create=_may_create(accepted),
             expected_server_id=server_id,
+            recovery_deadline=deadline,
         )
         await self._settle(accepted)
 

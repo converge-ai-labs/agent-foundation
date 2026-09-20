@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from a13n_service.run_stream import (
@@ -376,6 +376,105 @@ async def test_close_waits_for_final_display_before_expiry(any_redis_client: Red
     assert all([await any_redis_client.ttl(key) == -1 for key in keys])
     await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=opening.leased_stream_id, finalized=True)
     assert all([0 < await any_redis_client.ttl(key) <= 60 for key in keys])
+
+
+async def test_terminal_recovery_expiry_is_absolute_and_survives_late_mutations(any_redis_client: Redis) -> None:
+    from a13n_service.run_stream.redis import _keys
+
+    stream = RedisRunStream(any_redis_client)
+    await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    keys = _keys(ORGANIZATION_ID, RUN_ID)
+    deadline = datetime.now(UTC) + timedelta(minutes=1)
+    await stream.schedule_expiry(ORGANIZATION_ID, RUN_ID, deadline=deadline)
+    # Delayed observations cannot PERSIST a stream after its SQL-owned deadline
+    # has been installed; cleanup retries cannot renew that deadline either.
+    await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
+    await stream.schedule_expiry(ORGANIZATION_ID, RUN_ID, deadline=deadline + timedelta(days=1))
+    await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
+    assert all([await any_redis_client.expiretime(key) == int(deadline.timestamp()) for key in keys])
+    await stream.schedule_expiry(ORGANIZATION_ID, RUN_ID, deadline=datetime.now(UTC) - timedelta(seconds=1))
+    assert all([not await any_redis_client.exists(key) for key in keys])
+    await stream.schedule_expiry(ORGANIZATION_ID, RUN_ID, deadline=deadline)
+    assert all([not await any_redis_client.exists(key) for key in keys])
+
+
+async def test_expired_initialization_cannot_recreate_a_source(any_redis_client: Redis) -> None:
+    from a13n_service.run_stream.domain import PublicationContinuityLost
+    from a13n_service.run_stream.redis import _keys
+
+    stream = RedisRunStream(any_redis_client)
+    with pytest.raises(PublicationContinuityLost):
+        await stream.initialize(
+            ORGANIZATION_ID,
+            opening_event(RUN_ID, THREAD_ID),
+            allow_create=True,
+            expected_server_id=await stream.server_incarnation(),
+            recovery_deadline=datetime.now(UTC) - timedelta(seconds=1),
+        )
+    assert all([not await any_redis_client.exists(key) for key in _keys(ORGANIZATION_ID, RUN_ID)])
+
+
+async def test_late_retirement_and_projection_preserve_shorter_replay_expiry(any_redis_client: Redis) -> None:
+    from a13n_service.run_stream.redis import _keys
+
+    stream = RedisRunStream(any_redis_client, closed_ttl_seconds=60)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    deadline = datetime.now(UTC) + timedelta(days=1)
+    await stream.schedule_expiry(ORGANIZATION_ID, RUN_ID, deadline=deadline)
+    await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
+    await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=opening.leased_stream_id, finalized=True)
+    keys = _keys(ORGANIZATION_ID, RUN_ID)
+    expiries = [await any_redis_client.expiretime(key) for key in keys]
+    await stream.mark_lifecycle_incomplete(ORGANIZATION_ID, RUN_ID)
+    assert [await any_redis_client.expiretime(key) for key in keys] == expiries
+    await stream.retire(ORGANIZATION_ID, RUN_ID, closed_at=NOW, recovery_deadline=deadline)
+    assert [await any_redis_client.expiretime(key) for key in keys] == expiries
+
+
+async def test_confirmed_archival_keeps_raw_replay_retention_independent(any_redis_client: Redis) -> None:
+    from a13n_service.run_stream.redis import _keys
+
+    stream = RedisRunStream(any_redis_client, closed_ttl_seconds=120)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    deadline = datetime.now(UTC) + timedelta(seconds=30)
+    await stream.schedule_expiry(ORGANIZATION_ID, RUN_ID, deadline=deadline)
+    await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
+    await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=opening.leased_stream_id, finalized=True)
+    keys = _keys(ORGANIZATION_ID, RUN_ID)
+    expiries = [await any_redis_client.expiretime(key) for key in keys]
+    assert all(expiry > int(deadline.timestamp()) for expiry in expiries)
+    # A lost SQL settlement acknowledgement leaves cleanup discoverable, but
+    # replay already covered by the finalized object keeps its original expiry.
+    await stream.schedule_expiry(ORGANIZATION_ID, RUN_ID, deadline=deadline)
+    assert [await any_redis_client.expiretime(key) for key in keys] == expiries
+    await stream.retire(ORGANIZATION_ID, RUN_ID, closed_at=NOW, recovery_deadline=deadline)
+    assert [await any_redis_client.expiretime(key) for key in keys] == expiries
+
+
+async def test_partial_expiry_setup_is_repairable_without_extending_the_deadline(any_redis_client: Redis) -> None:
+    from a13n_service.run_stream.redis import _RETIREMENT_SCRIPT, _keys
+
+    stream = RedisRunStream(any_redis_client)
+    await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    events, metadata = _keys(ORGANIZATION_ID, RUN_ID)
+    deadline = datetime.now(UTC) + timedelta(minutes=1)
+    healthy = stream._retirement_script
+    marker = "        local expiry = redis.call('EXPIRETIME', key)"
+    assert _RETIREMENT_SCRIPT.count(marker) == 1
+    stream._retirement_script = any_redis_client.register_script(
+        _RETIREMENT_SCRIPT.replace(marker, "        if key == metadata then error('expiry interrupted') end\n" + marker)
+    )
+    with pytest.raises(PublicationUnavailable):
+        await stream.schedule_expiry(ORGANIZATION_ID, RUN_ID, deadline=deadline)
+    assert await any_redis_client.expiretime(events) == int(deadline.timestamp())
+    assert await any_redis_client.ttl(metadata) == -1
+    stream._retirement_script = healthy
+    await stream.schedule_expiry(ORGANIZATION_ID, RUN_ID, deadline=deadline + timedelta(days=1))
+    assert (
+        await any_redis_client.expiretime(events)
+        == await any_redis_client.expiretime(metadata)
+        == int(deadline.timestamp())
+    )
 
 
 @pytest.mark.parametrize("max_events", [3, 4], ids=["at_limit", "below_limit"])

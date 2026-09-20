@@ -137,6 +137,7 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
         assert (thread.next_delivery_sequence, thread.pending_count, thread.pending_bytes) == (2, 0, 0)
 
 
+@pytest.mark.usefixtures("live_subagent_clock")
 async def test_object_backed_result_item_is_revalidated_for_automatic_successor(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
@@ -162,7 +163,7 @@ async def test_object_backed_result_item_is_revalidated_for_automatic_successor(
         child_run_id,
     )
     await _project_all_lifecycle(projector)
-    await consumer.consume_once()
+    await consumer.consume_once(lane="recovery")
     async with short_session(interaction_sessions) as database:
         child = await database.get(RunRecord, child_run_id)
         assert child is not None

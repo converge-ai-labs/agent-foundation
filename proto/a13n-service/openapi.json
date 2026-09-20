@@ -11008,6 +11008,11 @@
             ],
             "title": "Projection Cursor"
           },
+          "recovery_exhausted": {
+            "default": false,
+            "title": "Recovery Exhausted",
+            "type": "boolean"
+          },
           "snapshot_version": {
             "title": "Snapshot Version",
             "type": "integer"

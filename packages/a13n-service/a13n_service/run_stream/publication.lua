@@ -27,6 +27,8 @@ if server_id == '' then
 end
 if not server_id then refuse('CONTINUITY') end
 if operation == 'initialize' and request.expected_server_id ~= server_id then refuse('CONTINUITY') end
+if operation == 'initialize' and type(request.recovery_deadline) == 'number' and
+   tonumber(redis.call('TIME')[1]) >= request.recovery_deadline then refuse('CONTINUITY') end
 
 local pending = field('pending')
 if metadata_type ~= 'none' then
@@ -96,7 +98,7 @@ local function compare_ids(left, right)
     return millis == 0 and compare_fences(ls, rs) or millis
 end
 
--- A verified object checkpoint is the only authority for retention. Repeating
+-- A verified object checkpoint is the only authority for prefix trimming. Repeating
 -- this operation after a lost response or a partial trim is idempotent.
 if operation == 'acknowledge_display' then
     if pending and pending ~= request.digest then refuse('PENDING') end
@@ -278,6 +280,9 @@ if operation == 'activate' then
     update(receipt_key, cjson.encode({digest = request.digest, leased_id = ids[1], recovery_id = ids[2] or ''}))
 elseif operation == 'initialize' then
     update('initialization', cjson.encode({digest = request.digest, id = ids[1]}))
+    if type(request.recovery_deadline) == 'number' then
+        update('recovery_deadline', request.recovery_deadline)
+    end
 elseif operation == 'complete' then
     update('attempt_projection:' .. request.attempt_id, request.harness_run_id)
 elseif operation == 'incomplete' then
@@ -293,7 +298,13 @@ update('length', redis.call('XLEN', stream))
 update('pending_events', pending_events)
 update('pending_bytes', pending_bytes)
 redis.call('HSET', metadata, unpack(updates))
-if not closed then
+local recovery = tonumber(field('recovery_deadline'))
+if recovery then
+    local retained = tonumber(field('retention_deadline'))
+    if retained then recovery = retained end
+    redis.call('EXPIREAT', stream, recovery)
+    redis.call('EXPIREAT', metadata, recovery)
+elseif not closed then
     redis.call('PERSIST', stream)
     redis.call('PERSIST', metadata)
 end

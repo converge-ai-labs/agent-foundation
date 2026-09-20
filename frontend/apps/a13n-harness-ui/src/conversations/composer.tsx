@@ -15,7 +15,6 @@ import {
   ArrowUp,
   Stop,
   X,
-  SlidersHorizontal,
   Target,
   CircleNotch,
 } from "@phosphor-icons/react";
@@ -38,6 +37,11 @@ import type { Profile } from "../shell/presence";
 import { ConfirmAction } from "../shell/confirm-action";
 import { ThreadDraft, values, type DraftCapture } from "./draft";
 import { ComposerEditor } from "./composer-editor";
+import {
+  ComposerSettings,
+  SettingsHome,
+  useCompactComposer,
+} from "./composer-settings";
 import { useStopOperation } from "./stop-operation";
 import { skillReferences, type LoadSkills } from "./skill-references";
 import styles from "./conversation.module.css";
@@ -357,7 +361,8 @@ export function Composer({
     )
       editor.current?.focus();
   }, [preparing]);
-  const [optionsExpanded, setOptionsExpanded] = useState(false);
+  const composerHost = useRef<HTMLElement>(null);
+  const compact = useCompactComposer(composerHost);
   useEffect(() => {
     if (!referenceAdded) return;
     const frame = requestAnimationFrame(() => {
@@ -753,10 +758,29 @@ export function Composer({
       );
     }
   }
+  const goalToggle = (
+    <Button
+      variant={draft.mode === "goal" ? "secondary" : "ghost"}
+      size="sm"
+      className={styles.goalButton}
+      aria-pressed={draft.mode === "goal"}
+      title="Keep working and checking the full objective until the Agent verifies completion or reaches the continuation limit. Applies to your next submission, not steering."
+      disabled={!canRun || busy || preparing || pending || unknown}
+      onClick={() => {
+        draft.mode = draft.mode === "goal" ? "normal" : "goal";
+        draft.notify();
+      }}
+    >
+      <Target aria-hidden weight={draft.mode === "goal" ? "fill" : "regular"} />
+      Goal
+    </Button>
+  );
   const comment = commentReference(preview);
   return (
     <section
       className={styles.composer}
+      ref={composerHost}
+      data-compact={compact}
       aria-label={busy ? "Next message" : "Message composer"}
     >
       {attachments.some((attachment) => commentReference(attachment.data)) && (
@@ -792,52 +816,14 @@ export function Composer({
         </div>
       )}
       <div className={styles.composerBody}>
-        <div className={styles.composerHeader}>
-          <Button
-            variant={draft.mode === "goal" ? "secondary" : "ghost"}
-            size="sm"
-            className={styles.goalButton}
-            aria-pressed={draft.mode === "goal"}
-            title="Keep working and checking the full objective until the Agent verifies completion or reaches the continuation limit. Applies to your next submission, not steering."
-            disabled={!canRun || busy || preparing || pending || unknown}
-            onClick={() => {
-              draft.mode = draft.mode === "goal" ? "normal" : "goal";
-              draft.notify();
-            }}
-          >
-            <Target
-              aria-hidden
-              weight={draft.mode === "goal" ? "fill" : "regular"}
-            />
-            Goal
-          </Button>
+        <div className={styles.composerHeader} hidden={compact}>
+          {goalToggle}
           <div className={styles.composerEnvironment}>{leadingControls}</div>
-          <span className={styles.composerSync}>
-            {showSyncStatus && draft.status === "Connected" && (
-              <span
-                role="status"
-                aria-label="Syncing edits…"
-                title="Syncing edits…"
-              >
-                <CircleNotch
-                  className={styles.threadRunning}
-                  aria-hidden="true"
-                />
-              </span>
-            )}
-          </span>
         </div>
         <div inert={preparing} className={styles.composerEditor}>
           <ComposerEditor
             autoFocus={autoFocus}
             local={local}
-            placeholderText={
-              busy
-                ? "Guide the current operation…"
-                : draft.mode === "goal"
-                  ? "Describe the goal and how to verify completion…"
-                  : "Describe a task…"
-            }
             skillContext={skillContext}
             loadSkills={async () => {
               try {
@@ -1020,17 +1006,45 @@ export function Composer({
           >
             <Plus />
           </Button>
-          {controls?.(optionsExpanded)}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className={styles.optionsButton}
-            aria-label="Composer options"
-            aria-expanded={optionsExpanded}
-            onClick={() => setOptionsExpanded(!optionsExpanded)}
-          >
-            <SlidersHorizontal />
-          </Button>
+          <div className={styles.composerChoices} hidden={compact}>
+            {controls?.(false)}
+          </div>
+          <div className={styles.composerTrailing}>
+            {compact && draft.mode === "goal" && (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!canRun || busy || preparing || pending || unknown}
+                aria-label="Turn off Goal"
+                title="Turn off Goal"
+                onClick={() => {
+                  draft.mode = "normal";
+                  draft.notify();
+                }}
+              >
+                Goal <X aria-hidden />
+              </Button>
+            )}
+            <span className={styles.composerSync}>
+              {showSyncStatus && draft.status === "Connected" && (
+                <span
+                  role="status"
+                  aria-label="Syncing edits…"
+                  title="Syncing edits…"
+                >
+                  <CircleNotch
+                    className={styles.threadRunning}
+                    aria-hidden="true"
+                  />
+                </span>
+              )}
+            </span>
+          </div>
+          <ComposerSettings className={styles.optionsButton}>
+            {controls?.(true)}
+            {leadingControls}
+            <SettingsHome>{goalToggle}</SettingsHome>
+          </ComposerSettings>
           <Button
             ref={sendButton}
             size="icon"

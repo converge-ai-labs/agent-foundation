@@ -6,6 +6,7 @@ import pytest
 from a13n_service.bots.routines.authority import authorize_routine
 from a13n_service.bots.routines.cards import render
 from a13n_service.bots.routines.domain import ProposeRoutine, RoutineDefinition
+from a13n_service.bots.routines.lark_cards import render as render_lark
 from a13n_service.bots.routines.models import EventOccurrenceRecord, RoutineRecord
 from a13n_service.bots.routines.observations import BotObservations
 from a13n_service.bots.routines.scheduler import RoutineScheduler, _LostClaim
@@ -24,7 +25,7 @@ from .test_bot_progress import ACCOUNT, EXECUTOR, task  # noqa: F401
 from .test_bot_routines import click, routines  # noqa: F401
 from .test_github_ingress import _config, _credentials, _payload, _request
 
-pytestmark = [pytest.mark.anyio, pytest.mark.parametrize("task", ["slack"], indirect=True)]
+pytestmark = [pytest.mark.anyio, pytest.mark.parametrize("task", ["slack", "lark"], indirect=True)]
 GITHUB = "acct_event_source"
 TARGET = "target_event_repository"
 
@@ -251,8 +252,9 @@ async def test_proposal_displays_source_and_rejects_changed_confirmation(events)
         row = await db.get(RoutineRecord, identifier)
         import json
 
-        card = json.dumps(render(row))
-        assert "GitHub events" in card and "42" in card and "notify once" in card
+        card = json.dumps(render(row) if events.context.provider_key == "slack" else render_lark(row))
+        assert "GitHub events" in card and "42" in card
+        assert ("notify once" if events.context.provider_key == "slack" else "Run once") in card
         (await db.get(AccountTargetRecord, TARGET)).version += 1
     await click(events, identifier)
     async with short_session(events.task.sessions) as db:

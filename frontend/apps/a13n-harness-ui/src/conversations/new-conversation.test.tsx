@@ -120,6 +120,14 @@ beforeEach(() => {
       mutations: { retry: false },
     },
   });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addEventListener() {},

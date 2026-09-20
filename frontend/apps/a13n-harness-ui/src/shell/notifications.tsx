@@ -10,7 +10,7 @@ import {
 import { Link, useMatch, useNavigate } from "react-router";
 import { fitVisualViewport } from "./visual-viewport";
 import { useQueryClient } from "@tanstack/react-query";
-import { Bell } from "@phosphor-icons/react";
+import { Bell, X } from "@phosphor-icons/react";
 import { Button, Switch, ToastProvider, useToast } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import { readPreference, writePreference } from "./preferences";
@@ -85,12 +85,19 @@ function NotificationState({ children }: { children: ReactNode }) {
   const transport = useContext(TransportContext);
   const navigate = useNavigate();
   const settings = useMatch("/settings/notifications");
+  const viewedThread = useMatch("/threads/:threadId/*")?.params.threadId;
   const queries = useQueryClient();
   const toast = useToast();
   const seen = useRef(new Set<string>());
   const alive = useRef(false);
-  const current = useRef({ enabled, navigate, toast, background });
-  current.current = { enabled, navigate, toast, background };
+  const current = useRef({
+    enabled,
+    navigate,
+    toast,
+    background,
+    viewedThread,
+  });
+  current.current = { enabled, navigate, toast, background, viewedThread };
   useEffect(() => {
     alive.current = true;
     const refresh = () => {
@@ -236,6 +243,13 @@ function NotificationState({ children }: { children: ReactNode }) {
       seen.current.add(id);
       if (seen.current.size > 256)
         seen.current.delete(seen.current.values().next().value!);
+      // The transcript already shows completion. Keep receipt deduplication,
+      // attention/failure notices and server Push delivery independent.
+      if (
+        notice.status === "completed" &&
+        current.current.viewedThread === threadId
+      )
+        return;
       const detail = queries.getQueryData<Schema<"ThreadDetail">>([
         "thread",
         threadId,
@@ -265,7 +279,13 @@ function NotificationState({ children }: { children: ReactNode }) {
               : "success",
         timeout: notice.status === "suspended" ? 0 : 8000,
         actionProps: {
-          children: "Open conversation",
+          children: (
+            <>
+              <span className={styles.desktopLabel}>Open conversation</span>
+              <span className={styles.mobileLabel}>Open</span>
+            </>
+          ),
+          "aria-label": "Open conversation",
           onClick: () => current.current.navigate(path),
         },
       });
@@ -398,8 +418,11 @@ function PermissionToast() {
             variant="ghost"
             size="sm"
             onClick={() => notifications.setEnabled(false)}
+            aria-label="Turn off reminders"
+            className={styles.dismissReminder}
           >
-            Turn off reminders
+            <span className={styles.desktopLabel}>Turn off reminders</span>
+            <X className={styles.mobileLabel} aria-hidden />
           </Button>
           <Link to="/settings/notifications">Settings</Link>
         </div>

@@ -65,7 +65,7 @@ export function useRunStream(
   const earlier = useEarlierMessages(runId, (page) => {
     fold.current.items = mergeRetainedItems(fold.current.items, page.items);
     setItems(sorted(fold.current.items));
-    if (!page.complete) {
+    if (!page.complete || page.recovery_exhausted) {
       setIncomplete(true);
       setGap(true);
     }
@@ -162,8 +162,10 @@ export function useRunStream(
           if (mode === "restart" || cursor.current === undefined)
             cursor.current = retained.projection_cursor ?? undefined;
         }
-        setIncomplete(!retained.complete);
-        if (!retained.complete) {
+        setIncomplete(
+          !retained.complete || retained.recovery_exhausted === true,
+        );
+        if (!retained.complete || retained.recovery_exhausted) {
           setGap(true);
           lost = true;
         }
@@ -183,6 +185,21 @@ export function useRunStream(
       retained: Awaited<ReturnType<typeof reconcile>>["retained"],
       awaitingReplay = false,
     ) {
+      // Terminal display recovery has expired: no stream can fill the gap,
+      // so the consumer closes on whatever the snapshot kept.
+      if (retained.recovery_exhausted) {
+        setIncomplete(true);
+        setGap(true);
+        lost = true;
+        if (cursor.current !== undefined)
+          fold.current.items = interruptOpenItems(
+            fold.current.items,
+            cursor.current,
+          );
+        publish();
+        setState("closed");
+        return true;
+      }
       if (!retained.available) return false;
       const caughtUp =
         retained.projection_cursor === null ||
