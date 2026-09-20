@@ -43,41 +43,28 @@ export function ModelPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [choosingModel, setChoosingModel] = useState(false);
-  const [query, setQuery] = useState("");
   const modelButton = useRef<HTMLButtonElement>(null);
-  const searchInput = useRef<HTMLInputElement>(null);
-  const defaultModel = models.find((item) => item.model_id === defaultModelId);
   const model = models.find(
     (item) => item.model_id === (value ?? defaultModelId),
   );
   const modelName =
     model?.name ?? `${value ?? defaultModelId ?? "Model"} (unavailable)`;
   const summary = thinkingSummary(model, thinking);
-  const names = new Map<string, number>();
-  for (const item of models)
-    names.set(item.name, (names.get(item.name) ?? 0) + 1);
-  const filtered = models.filter((item) =>
-    `${item.name} ${item.model_id} ${item.route}`
-      .toLocaleLowerCase()
-      .includes(query.trim().toLocaleLowerCase()),
-  );
 
   useEffect(() => {
-    if (open) (choosingModel ? searchInput : modelButton).current?.focus();
+    if (open && !choosingModel) modelButton.current?.focus();
   }, [open, choosingModel]);
 
   useEffect(() => {
     if (disabled) {
       setOpen(false);
       setChoosingModel(false);
-      setQuery("");
     }
   }, [disabled]);
 
   function selectModel(next: string | undefined) {
     onChange(next);
     setChoosingModel(false);
-    setQuery("");
   }
 
   return (
@@ -87,7 +74,6 @@ export function ModelPicker({
         setOpen(next);
         if (!next) {
           setChoosingModel(false);
-          setQuery("");
         }
       }}
     >
@@ -112,68 +98,21 @@ export function ModelPicker({
                 aria-label="Back to model settings"
                 onClick={() => {
                   setChoosingModel(false);
-                  setQuery("");
                 }}
               >
                 <CaretLeftIcon />
               </Button>
               <PopoverTitle className={styles.title}>Select model</PopoverTitle>
             </div>
-            <Input
-              ref={searchInput}
-              className={styles.search}
-              aria-label="Search models"
-              placeholder="Search models…"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+            <ModelOptions
+              autoFocus
+              models={models}
+              defaultModelId={defaultModelId}
+              defaultSource={defaultSource}
+              value={value}
+              disabled={disabled}
+              onChange={selectModel}
             />
-            <div className={styles.modelList} aria-label="Models">
-              <Button
-                variant="ghost"
-                className={styles.modelOption}
-                aria-pressed={value === undefined}
-                onClick={() => selectModel(undefined)}
-              >
-                <span>
-                  {defaultSource === "thread"
-                    ? "Thread default"
-                    : "Agent default"}
-                  <small>
-                    {defaultModel
-                      ? `Currently ${defaultModel.name}`
-                      : "No default model available"}
-                  </small>
-                </span>
-                {value === undefined && <CheckIcon aria-hidden />}
-              </Button>
-              <div className={styles.divider} />
-              {filtered.map((item) => (
-                <Button
-                  key={item.model_id}
-                  variant="ghost"
-                  className={styles.modelOption}
-                  aria-pressed={value === item.model_id}
-                  title={`${item.model_id} · ${item.route}`}
-                  onClick={() => selectModel(item.model_id)}
-                >
-                  <span>
-                    {item.name}
-                    {(names.get(item.name) ?? 0) > 1 && (
-                      <small>
-                        {item.model_id} · {item.route}
-                      </small>
-                    )}
-                  </span>
-                  {value === item.model_id && <CheckIcon aria-hidden />}
-                </Button>
-              ))}
-              {filtered.length === 0 && (
-                <p className={styles.hint}>No models found.</p>
-              )}
-              {value && !model && (
-                <p className={styles.hint}>{value} (unavailable)</p>
-              )}
-            </div>
           </>
         ) : (
           <>
@@ -211,5 +150,98 @@ export function ModelPicker({
         )}
       </PopoverPopup>
     </Popover>
+  );
+}
+
+/** The desktop picker and compact settings use one searchable model list. */
+export function ModelOptions({
+  models,
+  defaultModelId,
+  defaultSource = "agent",
+  value,
+  disabled,
+  onChange,
+  autoFocus = false,
+}: {
+  autoFocus?: boolean;
+  models: Schema<"ModelSummary">[];
+  defaultModelId?: string;
+  defaultSource?: "agent" | "thread";
+  value?: string;
+  disabled?: boolean;
+  onChange: (value: string | undefined) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const defaultModel = models.find((item) => item.model_id === defaultModelId);
+  const model = models.find(
+    (item) => item.model_id === (value ?? defaultModelId),
+  );
+  const names = new Map<string, number>();
+  for (const item of models)
+    names.set(item.name, (names.get(item.name) ?? 0) + 1);
+  const filtered = models.filter((item) =>
+    `${item.name} ${item.model_id} ${item.route}`
+      .toLocaleLowerCase()
+      .includes(query.trim().toLocaleLowerCase()),
+  );
+
+  return (
+    <>
+      <Input
+        autoFocus={autoFocus}
+        className={styles.search}
+        aria-label="Search models"
+        placeholder="Search models…"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <div className={styles.modelList} aria-label="Models">
+        <Button
+          variant="ghost"
+          disabled={disabled}
+          className={styles.modelOption}
+          aria-pressed={value === undefined}
+          onClick={() => onChange(undefined)}
+        >
+          <span>
+            {defaultSource === "thread" ? "Thread default" : "Agent default"}
+            <small>
+              {defaultModel
+                ? `Currently ${defaultModel.name}`
+                : "No default model available"}
+            </small>
+          </span>
+          {value === undefined && <CheckIcon aria-hidden />}
+        </Button>
+        <div className={styles.divider} />
+        {filtered.map((item) => (
+          <Button
+            key={item.model_id}
+            variant="ghost"
+            disabled={disabled}
+            className={styles.modelOption}
+            aria-pressed={value === item.model_id}
+            title={`${item.model_id} · ${item.route}`}
+            onClick={() => onChange(item.model_id)}
+          >
+            <span>
+              {item.name}
+              {(names.get(item.name) ?? 0) > 1 && (
+                <small>
+                  {item.model_id} · {item.route}
+                </small>
+              )}
+            </span>
+            {value === item.model_id && <CheckIcon aria-hidden />}
+          </Button>
+        ))}
+        {filtered.length === 0 && (
+          <p className={styles.hint}>No models found.</p>
+        )}
+        {value && !model && (
+          <p className={styles.hint}>{value} (unavailable)</p>
+        )}
+      </div>
+    </>
   );
 }

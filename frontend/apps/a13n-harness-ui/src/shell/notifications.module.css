@@ -67,14 +67,64 @@
   margin: 6px 0 0;
   color: var(--a13n-secondary);
 }
-@media (max-width: 640px) {
+.mobileLabel {
+  display: none;
+}
+@media (max-width: 639px) {
+  .desktopLabel {
+    display: none;
+  }
+  .mobileLabel {
+    display: inline;
+  }
   .permissionToast {
     position: static;
     flex-shrink: 0;
+    align-items: center;
     width: auto;
-    margin: 8px 12px max(12px, env(safe-area-inset-bottom));
-    padding: 12px;
+    gap: 8px;
+    margin: 4px 8px max(8px, env(safe-area-inset-bottom));
+    padding: 6px 8px;
+    border: 0;
+    background: var(--a13n-surface);
     box-shadow: none;
+  }
+  .permissionToast > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    gap: 8px;
+  }
+  .permissionToast h2 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .permissionToast p:not([role="alert"]),
+  .permissionToast .actions > button:not(.dismissReminder) {
+    display: none;
+  }
+  .permissionToast p[role="alert"] {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  .permissionToast .actions {
+    grid-column: 2;
+    grid-row: 1;
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  .permissionToast .actions a {
+    order: -1;
+    padding: 8px 4px;
+  }
+  .dismissReminder {
+    width: 36px;
+    height: 36px;
+    padding: 8px;
   }
 }
 

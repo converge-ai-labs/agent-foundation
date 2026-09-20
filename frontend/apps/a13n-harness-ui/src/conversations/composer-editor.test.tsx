@@ -82,7 +82,7 @@ it("does not submit Enter while an IME is composing", () => {
   fireEvent.compositionEnd(textbox);
 });
 it.each(["", "Shared"])(
-  "renders relative collaborator positions in %j without putting guidance in the CRDT",
+  "renders relative collaborator positions in %j without changing authored text",
   async (text) => {
     const draft = new ThreadDraft();
     draft.doc.getText("text").insert(0, text);
@@ -95,7 +95,7 @@ it.each(["", "Shared"])(
       />,
     );
     const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
-    expect(textbox.textContent).toBe(text || "Describe a task…");
+    expect(textbox.textContent).toBe(text);
     expect(draft.doc.getText("text").toString()).toBe(text);
     act(() => {
       draft.participants = {
@@ -123,9 +123,7 @@ it.each(["", "Shared"])(
       draft.notify();
     });
     await screen.findByText("Bob");
-    expect(textbox.querySelector(".cm-placeholder")?.textContent ?? "").toBe(
-      text ? "" : "Describe a task…",
-    );
+    expect(textbox.querySelector(".cm-placeholder")).toBeNull();
     expect(draft.doc.getText("text").toString()).toBe(text);
     expect([...draft.doc.share.keys()].sort()).toEqual(["attachments", "text"]);
   },
@@ -479,7 +477,7 @@ it("changes draft-lifetime guidance without remounting the editor on Thread crea
   );
 });
 
-it("changes prompt guidance without replacing the editor or authoring placeholder text", () => {
+it("keeps an empty editor blank and preserves input when its accessible context changes", () => {
   const draft = new ThreadDraft();
   const editor = { current: null as EditorView | null };
   const props = {
@@ -491,19 +489,17 @@ it("changes prompt guidance without replacing the editor or authoring placeholde
   };
   const view = render(<ComposerEditor {...props} />);
   const initial = editor.current;
-  expect(screen.getByText("Describe a task…")).toBeTruthy();
-  view.rerender(
-    <ComposerEditor {...props} placeholderText="Describe a goal…" />,
-  );
+  expect(screen.getByRole("textbox").textContent).toBe("");
+  view.rerender(<ComposerEditor {...props} local />);
   expect(editor.current).toBe(initial);
-  expect(screen.getByText("Describe a goal…")).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe("");
   expect(draft.doc.getText("text").toString()).toBe("");
   act(() => draft.doc.getText("text").insert(0, "Keep this objective"));
-  view.rerender(
-    <ComposerEditor {...props} placeholderText="Guide the operation…" />,
-  );
+  view.rerender(<ComposerEditor {...props} />);
   expect(editor.current).toBe(initial);
-  expect(screen.queryByText("Guide the operation…")).toBeNull();
+  expect(
+    screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
+  ).toBe("Keep this objective");
   expect(draft.doc.getText("text").toString()).toBe("Keep this objective");
 });
 
