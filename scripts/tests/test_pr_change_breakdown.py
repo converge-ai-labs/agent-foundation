@@ -30,15 +30,15 @@ def node(script, data):
 @pytest.mark.parametrize(
     ("path", "category"),
     [
-        ("packages/a13n-harness/a13n_harness/agent.py", "Product code"),
+        ("packages/a13n-harness/a13n_harness/agent.py", "Core libraries & services"),
         ("packages/a13n-harness/tests/fixtures/compatibility/agent.json", "Tests & fixtures"),
         ("packages/a13n-service/tests/database/core_migrations/env.py", "Tests & fixtures"),
         ("packages/a13n-service/a13n_service/database/migrations/env.py", "Protocols & migrations"),
         ("frontend/apps/a13n-harness-ui/src/app.test.tsx", "Tests & fixtures"),
-        ("frontend/apps/a13n-console/src/app.tsx", "Product code"),
+        ("frontend/apps/a13n-console/src/app.tsx", "UI & presentation"),
         ("frontend/apps/a13n-console/src/service-client/schema.ts", "Generated files"),
         ("packages/a13n-envd-client/a13n_envd_client/eip/v1/models.py", "Generated files"),
-        ("crates/a13n-envd/src/process.rs", "Product code"),
+        ("crates/a13n-envd/src/process.rs", "Core libraries & services"),
         ("crates/a13n-envd/protocol/eip/v1/testdata/golden.json", "Tests & fixtures"),
         ("proto/a13n-envd/eip/v1/common.proto", "Protocols & migrations"),
         ("proto/a13n-service/README.md", "Documentation"),
@@ -55,6 +55,11 @@ def node(script, data):
         ("frontend/apps/a13n-console/tsconfig.json", "Build, CI & deployment"),
         ("frontend/packages/a13n-ui/dev/showcase.tsx", "Developer tools & examples"),
         ("frontend/packages/a13n-ui/LICENSE.coss", "Documentation"),
+        ("packages/a13n-harness-ui/a13n_harness_ui/interactive/rendering.py", "UI & presentation"),
+        ("packages/a13n-harness-ui/a13n_harness_ui/terminal.py", "UI & presentation"),
+        ("packages/a13n-harness-ui/a13n_harness_ui/thread_service.py", "Core libraries & services"),
+        ("packages/a13n-harness-ui/tests/interactive/test_rendering.py", "Tests & fixtures"),
+        ("frontend/apps/a13n-harness-ui/src/api.generated.ts", "Generated files"),
         ("some-new-surface/file.xyz", "Unclassified"),
     ],
 )
@@ -90,11 +95,17 @@ def test_totals_components_renames_deletions_and_nontext_changes():
         ]
     )
     assert "5 files · +20 / -8" in body
-    assert "| Product code | 2 | +20 | -4 |" in body
+    assert "> [!IMPORTANT]" in body
+    assert "**Core libraries & services · 1 file · +10 / -2**" in body
+    assert "**43% of all changed lines**" in body
+    assert "UI & presentation: **1 file · +10 / -2**" in body
+    assert "| **Total** | **5** | **+20** | **-8** |" in body
+    assert "| **🟣 Core libraries &#38; services** | **1** | **+10** | **-2** |" in body
+    assert "| 🔷 UI &#38; presentation | 1 | +10 | -2 |" in body
     assert "| a13n-harness | 1 | +10 | -2 |" in body
     assert "| a13n-harness-ui | 1 | +10 | -2 |" in body
     assert "old.md &#8594; docs/new.md" in body
-    assert "removed · +0 / -4" in body
+    assert "| removed | +0 | -4 |" in body
     assert "no textual delta" in body
     assert "/files#diff-" in body
 
@@ -159,7 +170,7 @@ def test_publish_updates_one_bot_comment_and_leaves_human_content_alone():
     updated = publish([file("README.md", additions=20)], [human, bot])[0]
     assert updated["action"] == "update"
     assert updated["comment_id"] == 2
-    assert "1 files · +20 / -2" in updated["body"]
+    assert "1 file · +20 / -2" in updated["body"]
     assert "0 files · +0 / -0" in publish([], [bot])[0]["body"]
 
 
@@ -189,3 +200,37 @@ def test_workflow_loads_only_base_code_and_ci_runs_tests():
     for event in ("push", "pull_request"):
         assert "scripts/tests/test_pr_change_breakdown.py" in ci["on"][event]["paths"]
     assert "scripts/tests/test_pr_change_breakdown.py" in ci["jobs"]["release-tooling"]["steps"][-1]["run"]
+
+
+def test_no_core_and_zero_text_delta_do_not_imply_runtime_changes():
+    docs = render([file("README.md")])
+    assert "> [!NOTE]" in docs
+    assert "No core library or service files changed" in docs
+    assert "Review focus:" not in docs
+    assert "### Changes by component" not in docs
+    ui = render([file("frontend/apps/a13n-console/src/app.tsx", additions=0, deletions=0)])
+    assert "No textual delta" in ui
+    assert "%" not in ui
+    empty = render([])
+    assert "NaN" not in empty and "Infinity" not in empty
+    assert "| **Total** | **0** | **+0** | **-0** |" in empty
+
+
+def test_incomplete_report_scopes_percentages_and_absence_to_returned_files():
+    body = render([file("README.md")], changed_files=3001)
+    assert "> [!WARNING]" in body
+    assert "No core library or service files in the returned files" in body
+    assert "0% of returned changed lines" in body
+    assert "**Returned changes:" in body
+    assert "| **Total**" not in body
+
+
+def test_many_components_and_hostile_names_keep_report_bounded():
+    files = [file(f"packages/a13n-{'x' * 100}-{i}/src/main.py") for i in range(3000)]
+    body = render(files)
+    assert len(body) < 60000
+    assert "component rows omitted" in body
+    assert "**3000** | **+30000** | **-6000**" in body
+    assert body.count("<details>") == body.count("</details>")
+    hostile = render([file("packages/a13n-<script>@everyone/src/main.py")])
+    assert "<script>" not in hostile and "@everyone" not in hostile

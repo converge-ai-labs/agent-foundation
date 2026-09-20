@@ -1,4 +1,4 @@
-name: PR Change Breakdown
+name: PR Change Overview
 
 on:
   pull_request_target:
@@ -31,7 +31,7 @@ jobs:
             proto/a13n-envd/eip/v1/artifacts/generated-files.json
           sparse-checkout-cone-mode: false
 
-      - name: Update change breakdown comment
+      - name: Update styled change overview comment
         uses: actions/github-script@v8
         with:
           script: |

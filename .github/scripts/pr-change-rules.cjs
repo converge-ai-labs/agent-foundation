@@ -10,8 +10,10 @@ const generated = new Set([
   'frontend/packages/a13n-ui/src/brand/lobe-brands.generated.ts',
 ]);
 
+const CORE = 'Core libraries & services';
+const UI = 'UI & presentation';
 const categories = [
-  'Product code', 'Tests & fixtures', 'Protocols & migrations', 'Specifications',
+  CORE, UI, 'Tests & fixtures', 'Protocols & migrations', 'Specifications',
   'Documentation', 'Build, CI & deployment', 'Developer tools & examples',
   'Dependencies & lockfiles', 'Generated files', 'Unclassified',
 ];
@@ -25,7 +27,8 @@ const rules = [
   ['Protocols & migrations', /^proto\/|\/database\/migrations\//],
   ['Build, CI & deployment', /^\.github\/|^deploy\/|^crates\/[^/]+\/build_support\/|^frontend\/(?:.*\/)?(?:tsconfig[^/]*\.json|\.prettierignore|coss-source\.json)$|(?:^|\/)(?:Makefile|Dockerfile|build\.rs|hatch_build\.py|build_skills\.py|[^/]+\.config\.[^/]+)$|^(?:\.[^/]+|mkdocs\.yml)$/],
   ['Developer tools & examples', /^(?:scripts|dev|examples|\.vscode|\.claude|\.agents)\/|^frontend\/.*\/(?:showcase|scripts|dev)\/|^frontend\/.*\/generate-[^/]+$/],
-  ['Product code', /^packages\/[^/]+\/(?:src|a13n_[^/]+)\/|^crates\/[^/]+\/src\/|^frontend\/(?:apps|packages)\/[^/]+\/(?:src\/|public\/|index\.html$)/],
+  [UI, /^frontend\/(?:apps|packages)\/[^/]+\/(?:src\/|public\/|index\.html$)|^packages\/a13n-harness-ui\/a13n_harness_ui\/(?:interactive\/|(?:terminal|terminal_projection|display_history)\.py$)/],
+  [CORE, /^packages\/[^/]+\/(?:src|a13n_[^/]+)\/|^crates\/[^/]+\/src\//],
 ];
 
 function classify(path) {
@@ -39,4 +42,11 @@ function component(path) {
   return match?.[1] || 'Repository';
 }
 
-module.exports = {categories, classify, component};
+const icons = {
+  [CORE]: '🟣', [UI]: '🔷', 'Tests & fixtures': '🟢',
+  'Protocols & migrations': '🧩', Specifications: '🟡', Documentation: '🔵',
+  'Build, CI & deployment': '⚙️', 'Developer tools & examples': '🛠️',
+  'Dependencies & lockfiles': '📦', 'Generated files': '🤖', Unclassified: '❔',
+};
+
+module.exports = {CORE, UI, categories, icons, classify, component};
