@@ -520,6 +520,55 @@ def test_closed_sessions_keep_bounded_correlation_ownership_until_late_reply():
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("completion", ["ack", "immediate-ack", "session-close", "device-loss"])
+def test_reader_retirement_waits_for_evidence_without_blocking_siblings(completion):
+    async def scenario():
+        transport = FakeTransport()
+        device = RequestCoordinator(transport)
+        owner = device.session("ses-a", limits=limits().model_copy(update={"max_concurrent_file_transfers": 1}))
+        sibling = device.session("ses-b", limits=limits())
+        channel = owner.register_transfer("reader")
+        reset = DataFrame(
+            kind=DataFrameKind.RESET, session_id="ses-a", handle="reader", reset_status=DataResetStatus.CANCELLED
+        )
+        if completion == "immediate-ack":
+            original_send = transport.send
+
+            async def immediate_send(frame):
+                await original_send(frame)
+                if isinstance(frame, DataFrame):
+                    owner.deliver(frame)
+
+            transport.send = immediate_send
+        await owner.reset_transfer(channel, reset)
+        assert await transport.sent.get() == reset
+        waiter = asyncio.create_task(owner.wait_transfer_retired(channel))
+        ready = asyncio.create_task(sibling.request(ENVIRONMENT_READINESS, params()))
+        request = await transport.request()
+        transport.reply(request, readiness())
+        await ready  # A deterministic checkpoint after the retirement waiter ran.
+        if completion != "immediate-ack":
+            assert not waiter.done()
+            with pytest.raises(EIPSessionStateError, match="capacity"):
+                owner.register_transfer("replacement")
+        if completion == "ack":
+            owner.deliver(reset)
+        elif completion == "session-close":
+            owner.finish(EIPSessionStateError("closed during reset"))
+        elif completion == "device-loss":
+            await device.close()
+        if completion in {"ack", "immediate-ack"}:
+            await waiter
+            owner.register_transfer("replacement")
+        else:
+            with pytest.raises((EIPSessionStateError, EIPTransportClosedError)):
+                await waiter
+        assert not owner._retired
+        await device.close()
+
+    asyncio.run(scenario())
+
+
 def test_stalled_reset_ack_closes_affected_session_not_shared_carrier(monkeypatch):
     import a13n_envd_client.requester as runtime
 

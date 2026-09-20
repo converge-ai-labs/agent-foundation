@@ -42,7 +42,7 @@ from a13n_envd_client.eip.v1 import (
     decode_model,
     encode_model,
 )
-from a13n_envd_client.errors import EIPProtocolError, EIPSessionStateError
+from a13n_envd_client.errors import EIPProtocolError, EIPSessionStateError, EIPTransportClosedError
 from pydantic import BaseModel
 
 
@@ -491,6 +491,92 @@ def test_repeated_writer_abandonment_consumes_reset_acknowledgements() -> None:
                 pass
         await peer_task
         assert not session._requester._retired
+        await session.abort()
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("exit_mode", ["normal", "cancel", "closed-session", "closed-device"])
+def test_reader_abandonment_joins_retirement_or_reports_closed_owner(exit_mode: str) -> None:
+    async def scenario() -> None:
+        transport = FakeTypedTransport()
+        device = RequestCoordinator(transport, request_timeout=1)
+        connection = EIPDeviceConnection(
+            device,
+            DeviceDescriptor(
+                device_id="device-transfer",
+                generation=1,
+                path_style="posix",
+                default_working_directory="/",
+                directory_discovery=True,
+                limits=descriptor().limits,
+                lifecycle=descriptor().lifecycle,
+            ),
+            max_in_flight=4,
+        )
+        session = connection._bind(descriptor())
+        session._ready = True
+        session._requester._max_transfers = 1
+        path = EIPPath(path="/abandoned.bin")
+        for index in range(3):
+            reader = session.open_reader(path)
+            entered = asyncio.create_task(reader.__aenter__())
+            opened = await next_control(transport, "file.open_reader")
+            handle = f"reader-{index}"
+            await respond(
+                transport,
+                opened,
+                FileReaderOpenResult(
+                    reader=FileReaderHandle(handle),
+                    info=info(path, 0),
+                    expires_at="2026-08-21T01:00:00Z",
+                ),
+            )
+            attach = await transport.outbound.get()
+            assert isinstance(attach, DataFrame) and attach.kind is DataFrameKind.ATTACH
+            await transport.inbound.put(
+                DataFrame(
+                    session_id="ses-transfer",
+                    kind=DataFrameKind.ATTACHED,
+                    handle=handle,
+                )
+            )
+            await entered
+            if exit_mode.startswith("closed-"):
+                if exit_mode == "closed-session":
+                    await session.close()
+                else:
+                    await device.close()
+                cleanup = asyncio.create_task(reader.__aexit__(None, None, None))
+                # Do not use wait_for: cancellation deliberately shields shared cleanup.
+                done, _ = await asyncio.wait({cleanup}, timeout=2)
+                assert done, "reader teardown must fail promptly after its owner finished"
+                with pytest.raises((EIPSessionStateError, EIPTransportClosedError)):
+                    await cleanup
+                assert not session._requester._retired
+                assert transport.outbound.empty()
+                break
+            cleanup = asyncio.create_task(reader.__aexit__(None, None, None))
+            reset = await transport.outbound.get()
+            assert isinstance(reset, DataFrame) and reset.kind is DataFrameKind.RESET
+            if exit_mode == "cancel":
+                cleanup.cancel()
+                await asyncio.sleep(0)
+                cleanup.cancel()
+            await asyncio.sleep(0)  # Let teardown reach its retirement wait, not a timed grace period.
+            assert not cleanup.done()
+            assert handle in session._requester._retired
+            assert transport.outbound.empty()
+            await transport.inbound.put(reset)
+            if exit_mode == "cancel":
+                with pytest.raises(asyncio.CancelledError):
+                    await cleanup
+            else:
+                await cleanup
+            assert not session._requester._retired
+            with pytest.raises(EIPSessionStateError, match="not completed"):
+                _ = reader.completion
         await session.abort()
         await device.close()
 

@@ -210,6 +210,7 @@ class EIPFileReader:
                         reset_status=DataResetStatus.CANCELLED,
                     ),
                 )
+                await self._requester.wait_transfer_retired(channel)
                 channel_retired = True
             except BaseException as error:
                 channel_retired = self._requester.transfer_is_retired(channel)
