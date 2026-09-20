@@ -50,6 +50,60 @@ async def test_subagent_operator_owns_bounded_lifecycle_and_parent_scoped_querie
         await operator.close(timeout_seconds=1)
 
 
+async def test_saved_children_with_retired_composition_fields_remain_inspectable(tmp_path: Path) -> None:
+    from a13n_harness_ui.composition import AgentCompositionResolver, ResolvedRunComposition
+    from a13n_harness_ui.configuration import load_harness_ui_configuration
+
+    from .test_composition import _catalog, _selection, _write_source
+    from .test_thread_repository import _configuration, _initial
+
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    payload = composition.model_dump(mode="json")
+    # Before Provider consolidation, every captured environment carried this field.
+    payload["environment_profile"]["provider_schema_version"] = "1"
+    payload["retired_capture_field"] = {"opaque": True}
+    async with open_local_store(StorageSettings(data_root=tmp_path / "state")) as store:
+        envelope = await store.objects.publish(
+            object_kind=ObjectKind.run_composition, object_schema_version="1", payload=payload
+        )
+        await store.threads.create(thread_id="thread-parent", configuration=_configuration(), initial_state=_initial())
+        await store.threads.create(
+            thread_id=composition.thread_id,
+            parent_thread_id="thread-parent",
+            configuration=_configuration(),
+            initial_state=_initial(),
+        )
+        await store.child_executions.create(
+            execution_id="execution-legacy",
+            parent_thread_id="thread-parent",
+            child_thread_id=composition.thread_id,
+            child_run_id="run-legacy",
+            run_composition=envelope.ref,
+        )
+        unavailable = cast(Any, object())
+        operator = HarnessUiSubagentOperator(
+            store=store,
+            configurations=unavailable,
+            compositions=unavailable,
+            agent_reconstructor=unavailable,
+            environment_service=unavailable,
+        )
+        page = await operator.query_child_executions(parent_thread_id="thread-parent")
+        assert len(page.executions) == 1
+        child = page.executions[0]
+        assert child.subagent_name == composition.root.roster_name
+        assert child.child_thread_id == composition.thread_id
+        detail = await operator.query_child_executions(
+            parent_thread_id="thread-parent", execution_id=child.execution_id
+        )
+        assert detail.executions[0].activity is not None
+        restored = await store.objects.read_model(envelope.ref, ResolvedRunComposition)
+        assert restored.environment_profile.provider_key == composition.environment_profile.provider_key
+        assert restored.model_dump(mode="json") == composition.model_dump(mode="json")
+        assert await store.objects.read(envelope.ref) == envelope
+
+
 @pytest.mark.parametrize(
     ("requested", "expected"),
     [(None, 30.0), (0.0, 0.0), (60.0, 60.0), (90.0, 90.0), (180.0, 180.0), (181.0, 180.0), (1000.0, 180.0)],

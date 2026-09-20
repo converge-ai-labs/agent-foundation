@@ -346,8 +346,9 @@ function NewConversation({
                 }}
               />
             }
-            controls={() => (
+            controls={(expanded) => (
               <ThreadRunChoices
+                expanded={expanded}
                 catalog={selectors.data}
                 agentId={defaults.agent_id ?? ""}
                 defaultAgentId={effectiveAgent?.agent_id}

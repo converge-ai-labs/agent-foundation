@@ -534,12 +534,9 @@
   cursor: default;
   opacity: 0.6;
 }
-.composerRunChoices {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
+.optionsButton {
+  display: none;
+  grid-area: options;
 }
 .composerHeader {
   display: flex;
@@ -551,8 +548,17 @@
   flex-shrink: 0;
 }
 .composerEnvironment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
   min-width: 0;
   margin-left: auto;
+}
+.composerEnvironment > * {
+  min-width: 0;
+  max-width: 100%;
 }
 .composerEditor {
   min-width: 0;
@@ -576,23 +582,56 @@
 }
 .composerActions {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-template-areas: "attach . send";
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  grid-template-areas: "attach agent model send";
   align-items: center;
   gap: 8px;
   margin-top: 8px;
+}
+@container composer (max-width: 720px) {
+  .composerActions {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "attach model options send"
+      "secondary secondary secondary secondary";
+    row-gap: 0;
+  }
+  .optionsButton {
+    display: inline-flex;
+  }
 }
 @container composer (max-width: 480px) {
   .composerBody {
     --composer-font-size: 16px;
     --composer-content-height: 56px;
   }
+  .composerHeader {
+    align-items: flex-start;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+  .composerHeader button {
+    min-height: 44px;
+    padding-inline: 8px;
+  }
+  .composerSync {
+    margin-top: 14px;
+  }
   .composerActions {
+    grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
     column-gap: 4px;
+    margin-top: 6px;
   }
   .composerActions > button {
-    min-width: 40px;
-    min-height: 40px;
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+}
+@media (max-width: 600px) {
+  .composer {
+    padding: 8px;
+    border-radius: 16px;
   }
 }
 @media (pointer: coarse) {

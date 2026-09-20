@@ -325,7 +325,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
   query.clear();
 });
 
-it("keeps run settings above the editor and retains Goal intent during active work", () => {
+it("keeps Goal intent and authored input while toggling options, and disables Goal during active work", () => {
   const draft = new ThreadDraft();
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -346,7 +346,11 @@ it("keeps run settings above the editor and retains Goal intent during active wo
             }
             canRun
             leadingControls={<span>Full Control</span>}
-            controls={() => <span>Run settings</span>}
+            controls={(expanded) => (
+              <span>
+                {expanded ? "Expanded settings" : "Collapsed settings"}
+              </span>
+            )}
             profile={{ display_name: "Test", color: "#2563eb" }}
             unauthorized={() => {}}
             reconcile={() => {}}
@@ -364,11 +368,19 @@ it("keeps run settings above the editor and retains Goal intent during active wo
     screen.getByText("Describe the goal and how to verify completion…"),
   ).toBeTruthy();
   act(() => draft.doc.getText("text").insert(0, "Verify the full objective"));
-  expect(screen.queryByRole("button", { name: "Composer options" })).toBeNull();
   expect(
-    screen.getByText("Run settings").compareDocumentPosition(editor) &
+    goal.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    editor.compareDocumentPosition(screen.getByText("Collapsed settings")) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  const options = screen.getByRole("button", { name: "Composer options" });
+  fireEvent.click(options);
+  expect(options.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("Expanded settings")).toBeTruthy();
+  fireEvent.click(options);
+  expect(screen.getByText("Collapsed settings")).toBeTruthy();
   expect(draft.mode).toBe("goal");
   expect(draft.doc.getText("text").toString()).toBe(
     "Verify the full objective",

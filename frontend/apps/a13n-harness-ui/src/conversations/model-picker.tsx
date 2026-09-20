@@ -15,6 +15,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { Schema } from "../transport/client";
 import { ThinkingPicker, thinkingSummary } from "./thinking-picker";
+import { FastToggle } from "./fast-toggle";
 import styles from "./model-picker.module.css";
 
 export function ModelPicker({
@@ -23,6 +24,8 @@ export function ModelPicker({
   value,
   defaultSource = "agent",
   thinking,
+  fast,
+  onFastChange,
   disabled,
   onChange,
   onThinkingChange,
@@ -32,6 +35,8 @@ export function ModelPicker({
   defaultSource?: "agent" | "thread";
   value?: string;
   thinking?: Schema<"SubmitRequest">["thinking"];
+  fast?: Schema<"SubmitRequest">["fast"];
+  onFastChange: (value: boolean) => void;
   disabled?: boolean;
   onChange: (value: string | undefined) => void;
   onThinkingChange: (value: Schema<"SubmitRequest">["thinking"]) => void;
@@ -90,11 +95,11 @@ export function ModelPicker({
         render={<Button variant="outline" size="sm" />}
         className={styles.trigger}
         disabled={disabled}
-        aria-label="Model and thinking"
+        aria-label="Model settings"
         title={[modelName, summary].filter(Boolean).join(" · ")}
       >
         <span className={styles.modelName}>{modelName}</span>
-        {summary && <span className={styles.summary}>· {summary}</span>}
+        {summary && <span className={styles.summary}>{summary}</span>}
         <CaretDownIcon aria-hidden />
       </PopoverTrigger>
       <PopoverPopup side="top" align="start" className={styles.popup}>
@@ -173,16 +178,24 @@ export function ModelPicker({
         ) : (
           <>
             <PopoverTitle className={styles.title}>Model</PopoverTitle>
-            <Button
-              ref={modelButton}
-              variant="ghost"
-              className={styles.modelOption}
-              aria-label="Change model"
-              onClick={() => setChoosingModel(true)}
-            >
-              <span>{modelName}</span>
-              <CaretRightIcon aria-hidden />
-            </Button>
+            <div className={styles.modelSettings}>
+              <FastToggle
+                model={model}
+                value={fast}
+                disabled={disabled}
+                onChange={onFastChange}
+              />
+              <Button
+                ref={modelButton}
+                variant="ghost"
+                className={styles.modelOption}
+                aria-label="Change model"
+                onClick={() => setChoosingModel(true)}
+              >
+                <span>{modelName}</span>
+                <CaretRightIcon aria-hidden />
+              </Button>
+            </div>
             <p className={styles.hint}>
               {value === undefined
                 ? `Following ${defaultSource} default`

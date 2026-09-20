@@ -584,7 +584,7 @@ it("distinguishes inherited choices and sends an independent model without chang
   ).toBeTruthy();
   await user.click(screen.getByRole("option", { name: /Reviewer.*agent-two/ }));
   await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
-  await user.click(screen.getByRole("button", { name: "Model and thinking" }));
+  await user.click(screen.getByRole("button", { name: "Model settings" }));
   await user.click(screen.getByRole("button", { name: "Change model" }));
   expect(
     (await screen.findByRole("button", { name: /Agent default/ })).textContent,
@@ -595,7 +595,7 @@ it("distinguishes inherited choices and sends an independent model without chang
   await user.click(screen.getByRole("link", { name: "Settings" }));
   await user.click(screen.getByRole("link", { name: "Return to draft" }));
   expect(
-    screen.getByRole("button", { name: "Model and thinking" }).textContent,
+    screen.getByRole("button", { name: "Model settings" }).textContent,
   ).toContain("Primary model");
   await waitFor(() =>
     expect(
@@ -733,7 +733,7 @@ it("restores text and choices after a full reload and persists deleting the inpu
   ).toBe("Build this");
   expect(creations.current!.threadId).toBe(id);
   expect(
-    screen.getByRole("button", { name: "Model and thinking" }).textContent,
+    screen.getByRole("button", { name: "Model settings" }).textContent,
   ).toContain("Other model");
   act(() => {
     const text = creations.current!.composer.doc.getText("text");

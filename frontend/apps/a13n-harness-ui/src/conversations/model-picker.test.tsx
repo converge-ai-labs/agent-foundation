@@ -13,6 +13,7 @@ const model: Schema<"ModelSummary"> = {
   model_id: "model-one",
   name: "Reasoning model",
   route: "custom:one",
+  fast: { supported: true, state: "on" },
   thinking: {
     status: "supported",
     default_summary: "High",
@@ -31,6 +32,7 @@ const other: Schema<"ModelSummary"> = {
   model_id: "model-two",
   name: "Other model",
   route: "custom:two",
+  fast: { supported: false, state: "default", reason: "No Fast support" },
   thinking: {
     status: "unknown",
     default_summary: "Custom settings",
@@ -86,8 +88,9 @@ function Choices({ defaultModelId }: { defaultModelId?: string } = {}) {
 it("shows two compact choices and keeps default thinking distinct from explicit effort", async () => {
   const user = userEvent.setup();
   render(<Choices />);
-  const trigger = screen.getByRole("button", { name: "Model and thinking" });
-  expect(trigger.textContent).toBe("Reasoning model· High");
+  const trigger = screen.getByRole("button", { name: "Model settings" });
+  expect(trigger.textContent).toBe("Reasoning modelHigh");
+  expect(trigger.title).toBe("Reasoning model · High");
   expect(screen.getByRole("combobox", { name: "Agent" }).textContent).toBe(
     "Writer",
   );
@@ -102,14 +105,14 @@ it("shows two compact choices and keeps default thinking distinct from explicit 
       .getAttribute("aria-pressed"),
   ).toBe("true");
   await user.click(screen.getByRole("button", { name: "Low" }));
-  expect(trigger.textContent).toBe("Reasoning model· Low");
+  expect(trigger.textContent).toBe("Reasoning modelLow");
   // Clicking the selected segment must not turn an explicit selection into default.
   await user.click(screen.getByRole("button", { name: "Low" }));
   expect(
     screen.getByRole("button", { name: "Low" }).getAttribute("aria-pressed"),
   ).toBe("true");
   await user.click(screen.getByRole("button", { name: "Use default" }));
-  expect(trigger.textContent).toBe("Reasoning model· High");
+  expect(trigger.textContent).toBe("Reasoning modelHigh");
   await user.keyboard("[Escape]");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.activeElement).toBe(trigger);
@@ -118,7 +121,7 @@ it("shows two compact choices and keeps default thinking distinct from explicit 
 it("searches models in the same popup, returns focus, and resets thinking on model change", async () => {
   const user = userEvent.setup();
   render(<Choices />);
-  await user.click(screen.getByRole("button", { name: "Model and thinking" }));
+  await user.click(screen.getByRole("button", { name: "Model settings" }));
   await user.click(screen.getByRole("button", { name: "Low" }));
   await user.click(screen.getByRole("button", { name: "Change model" }));
   const search = screen.getByRole("textbox", { name: "Search models" });
@@ -131,7 +134,7 @@ it("searches models in the same popup, returns focus, and resets thinking on mod
     screen.getByRole("button", { name: "Change model" }),
   );
   expect(
-    screen.getByRole("button", { name: "Model and thinking" }).textContent,
+    screen.getByRole("button", { name: "Model settings" }).textContent,
   ).toBe("Other model");
   expect(screen.getByText("No reviewed controls")).toBeTruthy();
   expect(screen.queryByRole("group", { name: "Thinking level" })).toBeNull();
@@ -143,20 +146,20 @@ it("searches models in the same popup, returns focus, and resets thinking on mod
   await user.click(screen.getByRole("button", { name: /Agent default/ }));
   expect(screen.getByText("Following agent default")).toBeTruthy();
   expect(
-    screen.getByRole("button", { name: "Model and thinking" }).textContent,
-  ).toBe("Reasoning model· High");
+    screen.getByRole("button", { name: "Model settings" }).textContent,
+  ).toBe("Reasoning modelHigh");
 });
 
 it("follows the saved Thread default and restores it after an explicit Run choice", async () => {
   const user = userEvent.setup();
   render(<Choices defaultModelId="model-two" />);
-  const trigger = screen.getByRole("button", { name: "Model and thinking" });
+  const trigger = screen.getByRole("button", { name: "Model settings" });
   expect(trigger.textContent).toBe("Other model");
   await user.click(trigger);
   expect(screen.getByText("Following thread default")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Change model" }));
   await user.click(screen.getByRole("button", { name: "Reasoning model" }));
-  expect(trigger.textContent).toBe("Reasoning model· High");
+  expect(trigger.textContent).toBe("Reasoning modelHigh");
   await user.click(screen.getByRole("button", { name: "Change model" }));
   await user.click(screen.getByRole("button", { name: /Thread default/ }));
   expect(trigger.textContent).toBe("Other model");
@@ -175,9 +178,10 @@ it("keeps unavailable selections visible and disambiguates duplicate model names
       thinking="max"
       onChange={onChange}
       onThinkingChange={onThinkingChange}
+      onFastChange={vi.fn()}
     />,
   );
-  const trigger = screen.getByRole("button", { name: "Model and thinking" });
+  const trigger = screen.getByRole("button", { name: "Model settings" });
   expect(trigger.textContent).toContain("removed-model (unavailable)");
   expect(trigger.textContent).toContain("Unavailable thinking");
   expect(onChange).not.toHaveBeenCalled();
@@ -207,6 +211,42 @@ it("keeps unavailable selections visible and disambiguates duplicate model names
   );
 });
 
+it("keeps Fast inside model settings and resets it when the model changes", async () => {
+  const user = userEvent.setup();
+  render(<Choices />);
+  expect(screen.queryByRole("button", { name: "Fast mode" })).toBeNull();
+  const trigger = screen.getByRole("button", { name: "Model settings" });
+  await user.click(trigger);
+  const fast = screen.getByRole("button", { name: "Fast mode" });
+  expect(fast.closest('[role="dialog"]')).toBeTruthy();
+  expect(fast.getAttribute("aria-pressed")).toBe("true");
+  await user.click(fast);
+  expect(fast.getAttribute("aria-pressed")).toBe("false");
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  await user.keyboard("[Escape]");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(trigger);
+  expect(
+    screen
+      .getByRole("button", { name: "Fast mode" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+  await user.click(screen.getByRole("button", { name: "Change model" }));
+  await user.click(screen.getByRole("button", { name: "Other model" }));
+  const unsupported = screen.getByRole("button", {
+    name: "Fast mode",
+  }) as HTMLButtonElement;
+  expect(unsupported.disabled).toBe(true);
+  expect(unsupported.title).toBe("No Fast support");
+  await user.click(screen.getByRole("button", { name: "Change model" }));
+  await user.click(screen.getByRole("button", { name: /Agent default/ }));
+  expect(
+    screen
+      .getByRole("button", { name: "Fast mode" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+});
+
 it("cannot change selections while active work disables the controls", async () => {
   const user = userEvent.setup();
   const onChange = vi.fn();
@@ -217,9 +257,10 @@ it("cannot change selections while active work disables the controls", async () 
       disabled
       onChange={onChange}
       onThinkingChange={vi.fn()}
+      onFastChange={vi.fn()}
     />,
   );
-  await user.click(screen.getByRole("button", { name: "Model and thinking" }));
+  await user.click(screen.getByRole("button", { name: "Model settings" }));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(onChange).not.toHaveBeenCalled();
 });

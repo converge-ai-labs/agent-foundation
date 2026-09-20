@@ -137,6 +137,9 @@ async def test_additive_configuration_fields_survive_nested_snapshot_round_trip(
     loaded = await load_harness_ui_configuration(root)
     restored = LoadedHarnessUiConfiguration.model_validate_json(loaded.model_dump_json())
     assert restored == loaded
+    store, _ = _object_store(tmp_path / "state")
+    envelope = await store.publish_model(object_kind=ObjectKind.configuration_generation, value=loaded)
+    assert await store.read_model(envelope.ref, LoadedHarnessUiConfiguration) == loaded
     payload = restored.model_dump(mode="json")
     assert payload["document"]["future_root"] == extra
     assert payload["document"]["display"]["future_display"] == extra
