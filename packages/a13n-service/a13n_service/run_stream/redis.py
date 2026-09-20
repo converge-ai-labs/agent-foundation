@@ -93,6 +93,7 @@ class RedisRunStream:
         *,
         allow_create: bool,
         expected_server_id: str,
+        recovery_deadline: datetime | None = None,
     ) -> str:
         """Project the committed accepted fact before any publisher can activate."""
         if accepted.event_type != "run.accepted" or accepted.lifecycle_event_id is None:
@@ -104,6 +105,7 @@ class RedisRunStream:
             events=(accepted,),
             allow_create=allow_create,
             expected_server_id=expected_server_id,
+            recovery_deadline=None if recovery_deadline is None else int(_utc(recovery_deadline).timestamp()),
         )
         return _required_text(result[0], field="Redis Stream entry ID")
 
@@ -184,13 +186,25 @@ class RedisRunStream:
         _parse_stream_id(cursor)
         await self._mutate(organization_id, run_id, "acknowledge_display", cursor=cursor, finalized=finalized)
 
-    async def retire(self, organization_id: str, run_id: str, *, closed_at: datetime) -> None:
+    async def retire(
+        self, organization_id: str, run_id: str, *, closed_at: datetime, recovery_deadline: datetime | None = None
+    ) -> None:
         """A trusted terminal fact retires unavailable history without reopening it."""
-        await self._mutate(organization_id, run_id, "retire", closed_at=_utc(closed_at).isoformat())
+        await self._mutate(
+            organization_id,
+            run_id,
+            "retire",
+            closed_at=_utc(closed_at).isoformat(),
+            recovery_deadline=None if recovery_deadline is None else int(_utc(recovery_deadline).timestamp()),
+        )
 
     async def release_retired(self, organization_id: str, run_id: str, *, closed_at: datetime) -> None:
         """Expire an incomplete source only after its finalized display is durable."""
         await self._mutate(organization_id, run_id, "release_retired", closed_at=_utc(closed_at).isoformat())
+
+    async def schedule_expiry(self, organization_id: str, run_id: str, *, deadline: datetime) -> None:
+        """Apply the trusted sealed Run deadline without depending on object storage."""
+        await self._mutate(organization_id, run_id, "schedule_expiry", deadline=int(_utc(deadline).timestamp()))
 
     async def mark_incomplete(
         self,
@@ -256,7 +270,11 @@ class RedisRunStream:
             **fields,
         }
         # Read-only inspection and retries have the identical activation identity.
-        identity = {key: value for key, value in values.items() if key not in {"allow_create", "expected_server_id"}}
+        identity = {
+            key: value
+            for key, value in values.items()
+            if key not in {"allow_create", "expected_server_id", "recovery_deadline"}
+        }
         digest = hashlib.sha256(rfc8785.dumps(identity)).hexdigest()
         request = {
             **values,
@@ -270,7 +288,11 @@ class RedisRunStream:
             "closed_ttl_seconds": self._closed_ttl_seconds,
         }
         try:
-            script = self._retirement_script if operation in {"retire", "release_retired"} else self._script
+            script = (
+                self._retirement_script
+                if operation in {"retire", "release_retired", "schedule_expiry"}
+                else self._script
+            )
             deadline = monotonic() + self._backpressure_timeout_seconds
             while True:
                 try:

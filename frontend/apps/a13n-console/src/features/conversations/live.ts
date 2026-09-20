@@ -39,7 +39,7 @@ export function useLiveRun(runId: string) {
         compareCursors(a.firstCursor, b.firstCursor),
       ),
     );
-    if (!page.complete) {
+    if (!page.complete || page.recovery_exhausted) {
       setIncomplete(true);
       setGap(true);
     }
@@ -114,8 +114,10 @@ export function useLiveRun(runId: string) {
         );
         if (reset || cursor.current === undefined)
           cursor.current = retained.projection_cursor ?? undefined;
-        setIncomplete(!retained.complete);
-        if (!retained.complete) setGap(true);
+        setIncomplete(
+          !retained.complete || retained.recovery_exhausted === true,
+        );
+        if (!retained.complete || retained.recovery_exhausted) setGap(true);
       }
       publish();
       void cache.invalidateQueries({
@@ -126,6 +128,19 @@ export function useLiveRun(runId: string) {
     function settled(
       retained: Awaited<ReturnType<typeof reconcile>>["retained"],
     ) {
+      if (retained.recovery_exhausted) {
+        setIncomplete(true);
+        setGap(true);
+        if (cursor.current !== undefined) {
+          projection.current = interruptOpenItems(
+            projection.current,
+            cursor.current,
+          );
+          publish();
+        }
+        setState("closed");
+        return true;
+      }
       if (!retained.available) return false;
       const caughtUp =
         retained.projection_cursor === null ||

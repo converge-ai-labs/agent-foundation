@@ -401,6 +401,49 @@ it("shows incomplete finalized history without opening a raw stream", async () =
   expect(client.streamRun).not.toHaveBeenCalled();
 });
 
+it.each(["partial", "missing"])(
+  "stops reconnecting after recovery expires with %s history",
+  async (history) => {
+    status = "failed";
+    read = async (request) => {
+      if (new URL(request.url).pathname.endsWith("/items")) {
+        if (history === "missing")
+          return Response.json(
+            {
+              error: {
+                code: "items_unavailable",
+                message: "Unavailable",
+                details: { recovery_exhausted: true },
+              },
+            },
+            { status: 409 },
+          );
+        return Response.json({
+          ...(await displayPage(
+            [displayItem("saved", "Saved prefix", "1-0")],
+            null,
+          ).json()),
+          recovery_exhausted: true,
+        });
+      }
+      return response(request);
+    };
+    render(<View />);
+    await waitFor(() =>
+      expect(screen.getByTestId("live").textContent).toBe("closed"),
+    );
+    expect(screen.getByTestId("gap").textContent).toBe("true");
+    if (history === "partial")
+      await waitFor(() =>
+        expect(screen.getByTestId("items").textContent).toBe("Saved prefix"),
+      );
+    expect(client.streamRun).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Reconnect"));
+    await waitFor(() => expect(pathRequests("/items").length).toBe(2));
+    expect(client.streamRun).not.toHaveBeenCalled();
+  },
+);
+
 it("waits for display finalization after a terminal Run observation", async () => {
   let snapshots = 0;
   read = async (request) => {

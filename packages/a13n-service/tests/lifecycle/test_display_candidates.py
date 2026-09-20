@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from a13n_harness import SafeFailure
 from a13n_service.interactions.models import RunRecord
@@ -43,10 +45,10 @@ async def test_keyset_discovery_includes_terminal_runs_and_waits_for_all_lifecyc
                 actor_id="worker-1",
             )
     discovery = DisplayCandidates(sessions)
-    first = await discovery.page(after_run_id=None, limit=1)
-    second = await discovery.page(after_run_id=first[0].run_id, limit=1)
+    first = await discovery.page(lane="active", after=None, limit=1, now=NOW)
+    second = await discovery.page(lane="recovery", after=None, limit=1, now=NOW)
     assert {first[0].run_id, second[0].run_id} == {RUN_ID, terminal_id}
-    assert await discovery.page(after_run_id=second[0].run_id, limit=1) == ()
+    assert await discovery.page(lane="recovery", after=second[0], limit=1, now=NOW) == ()
     candidate = next(item for item in (*first, *second) if item.run_id == terminal_id)
     assert (await discovery.settlement(candidate)).closed_at is None
     async with transaction(sessions) as database:
@@ -72,3 +74,18 @@ async def test_keyset_discovery_includes_terminal_runs_and_waits_for_all_lifecyc
         await database.execute(delete(LifecycleEventRecord))
     expired = await discovery.settlement(candidate)
     assert expired.closed_at == NOW and expired.lifecycle_missing
+
+    # Retry scheduling survives consumer restarts; an expired Run remains
+    # discoverable for cleanup even after the archival window has closed.
+    await discovery.retry_after(candidate, when=NOW + timedelta(seconds=5))
+    restarted = DisplayCandidates(sessions)
+    assert await restarted.page(lane="recovery", after=None, limit=10, now=NOW) == ()
+    assert await restarted.page(lane="recovery", after=None, limit=10, now=NOW + timedelta(seconds=5)) == (candidate,)
+    later = NOW + timedelta(days=2)
+    assert await restarted.page(lane="recovery", after=None, limit=10, now=later) == ()
+    assert await restarted.page(lane="cleanup", after=None, limit=10, now=later) == (candidate,)
+    await restarted.settle(candidate, now=later)
+    assert await DisplayCandidates(sessions).page(lane="cleanup", after=None, limit=10, now=later) == ()
+    async with transaction(sessions) as database:
+        run = await database.get(RunRecord, terminal_id)
+        assert run.status == "failed" and run.sealed_at == NOW

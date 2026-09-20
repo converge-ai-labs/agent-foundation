@@ -143,7 +143,7 @@ function RunBody({
         <p role="status" className={styles.notice}>
           {live.incomplete
             ? t(
-                "Saved message history is incomplete. Some output is unavailable.",
+                "Saved message history is incomplete or unconfirmed. Some output may be unavailable.",
               )
             : t(
                 "Live replay resumed from saved messages. Earlier raw events may be unavailable.",

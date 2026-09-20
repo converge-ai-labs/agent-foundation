@@ -255,6 +255,8 @@ Every Run can own zero or more immutable `RunAttempt` values over its lifetime, 
 
 `sealed_state` is absent while the Run is active. A `waiting` or `completed` sealing transaction records the compressed body's SHA-256, size, content type, schema versions, and checkpoint sequence. A Worker-originated `failed` Run can record a complete state prepared under its fence or leave `sealed_state` null. An interrupt-driven `cancelled` Run always leaves it null because interrupt performs no object I/O. After any seal, no later object value is authoritative; only a recorded `sealed_state` selects bytes as part of the Run outcome. Sealed bytes are immutable: waiting feedback matches their recorded digest, and parent initialization verifies the seal before deriving a new Run-owned checkpoint. `committed_by_run_attempt_id` is null only when a relational fail-closed decision seals a Run without an attempt-originated state change.
 
+The Run row also retains nullable internal `display_settled_at` and `display_next_attempt_at` timestamps for [bounded display recovery](24-lifecycle-and-stream-persistence.md#bounded-terminal-recovery). These fields are scheduling bookkeeping, excluded from public Run resources, execution version changes, and sealed-state authority.
+
 ### Run Lifecycle
 
 ```mermaid
@@ -278,7 +280,7 @@ stateDiagram-v2
 
 `running` means execution of this Run has begun and the Run remains active. It normally selects one non-terminal `RunAttempt`; during retryable backoff, after a planned handoff, or while awaiting pending-input continuation it can temporarily have no current Attempt. An expired selected lease grants no worker authority while awaiting transactional takeover. `started_at` records the first Harness Run entry and never changes during recovery or planned handoff.
 
-`waiting`, `completed`, `failed`, and `cancelled` are sealed outcomes. `sealed_at` and any available `sealed_state` are selected in the same relational transaction. A sealed Run never changes any column and its state key is never overwritten.
+`waiting`, `completed`, `failed`, and `cancelled` are sealed outcomes. `sealed_at` and any available `sealed_state` are selected in the same relational transaction. A sealed Run never changes execution fields and its state key is never overwritten. Classification labels, their update timestamp, the monotonic lifecycle counter, and internal display scheduling metadata remain independently mutable under their owning contracts.
 
 The Run remains the budget and lifecycle authority after attempt failure or lease expiry. The [Run Attempt recovery contract](13-run-attempt-scheduling-and-recovery.md#recovery-and-budget-enforcement) keeps structurally resumable, in-budget work `running` across replacement attempts and seals invalid, incompatible, non-retryable, or exhausted work as `failed`.
 

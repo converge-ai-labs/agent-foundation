@@ -9,8 +9,10 @@ from datetime import datetime, timedelta
 import anyio
 from a13n_harness import SafeFailure
 from anyio import create_task_group
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.interactions.models import RunRecord
 from a13n_service.lifecycle import (
     LifecycleEvent,
     LifecycleProjectionClaim,
@@ -30,6 +32,7 @@ from .domain import (
     RunStreamEvent,
 )
 from .events import lifecycle_stream_event
+from .recovery import display_recovery_deadline
 from .redis import RedisRunStream
 
 logger = logging.getLogger("a13n_service.run_stream.projector")
@@ -103,31 +106,65 @@ class LifecycleRunStreamProjector:
                 lease_duration=self._lease_duration,
                 limit=limit,
             )
+            deadlines = (
+                {
+                    (organization_id, run_id): display_recovery_deadline(sealed_at)
+                    for organization_id, run_id, sealed_at in (
+                        await database.execute(
+                            select(RunRecord.organization_id, RunRecord.id, RunRecord.sealed_at).where(
+                                RunRecord.id.in_({claim.event.run_id for claim in claims})
+                            )
+                        )
+                    ).all()
+                }
+                if claims
+                else {}
+            )
         async with create_task_group() as tasks:
             for claim in claims:
-                tasks.start_soon(self._project_claim, claim)
+                tasks.start_soon(
+                    self._project_claim, claim, deadlines.get((claim.event.organization_id, claim.event.run_id))
+                )
         return len(claims)
 
-    async def _project_claim(self, claim: LifecycleProjectionClaim) -> None:
+    async def _project_claim(self, claim: LifecycleProjectionClaim, deadline: datetime | None) -> None:
+        try:
+            if deadline is not None:
+                await self._stream.schedule_expiry(claim.event.organization_id, claim.event.run_id, deadline=deadline)
+                if self._clock() >= deadline:
+                    async with transaction(self._sessions) as database:
+                        await fail_lifecycle_projection(
+                            database,
+                            claim,
+                            failed_at=_utc(self._clock()),
+                            retry_after=self._retry_after,
+                            abandon=True,
+                            failure=_PROJECTION_FAILURE,
+                        )
+                    return
+        except Exception:
+            logger.exception("Run Stream expiry reconciliation failed", extra={"run_id": claim.event.run_id})
+            await self._settle_failure(claim, deadline=deadline)
+            return
         if claim.event.event_type in _TERMINAL_RUN_EVENTS and claim.event.projection_attempts > self._max_attempts:
             # Publication retries are exhausted. The same durable claim now owns
             # only retirement, which must finish before this fact can be abandoned.
-            await self._settle_failure(claim)
+            await self._settle_failure(claim, deadline=deadline)
             return
         try:
-            await self._project_event(claim.event)
+            await self._project_event(claim.event, deadline=deadline)
         except Exception:
             logger.exception("Run Stream lifecycle projection failed", extra={"lifecycle_event_id": claim.event.id})
-            await self._settle_failure(claim)
+            await self._settle_failure(claim, deadline=deadline)
             return
         async with transaction(self._sessions) as database:
             await complete_lifecycle_projection(database, claim, projected_at=_utc(self._clock()))
         await self._archive_terminal(claim.event)
 
-    async def _settle_failure(self, claim: LifecycleProjectionClaim) -> None:
+    async def _settle_failure(self, claim: LifecycleProjectionClaim, *, deadline: datetime | None) -> None:
         abandon = claim.event.projection_attempts >= self._max_attempts
         if abandon:
-            abandon = await self._prepare_abandonment(claim.event)
+            abandon = await self._prepare_abandonment(claim.event, deadline=deadline)
         async with transaction(self._sessions) as database:
             await fail_lifecycle_projection(
                 database,
@@ -138,11 +175,13 @@ class LifecycleRunStreamProjector:
                 failure=_PROJECTION_FAILURE,
             )
 
-    async def _prepare_abandonment(self, event: LifecycleEvent) -> bool:
+    async def _prepare_abandonment(self, event: LifecycleEvent, *, deadline: datetime | None) -> bool:
         terminal = event.event_type in _TERMINAL_RUN_EVENTS
         try:
             if terminal:
-                await self._stream.retire(event.organization_id, event.run_id, closed_at=event.occurred_at)
+                await self._stream.retire(
+                    event.organization_id, event.run_id, closed_at=event.occurred_at, recovery_deadline=deadline
+                )
             else:
                 await self._stream.mark_lifecycle_incomplete(event.organization_id, event.run_id)
         except Exception:
@@ -155,7 +194,7 @@ class LifecycleRunStreamProjector:
             return not terminal
         return True
 
-    async def _project_event(self, event: LifecycleEvent) -> None:
+    async def _project_event(self, event: LifecycleEvent, *, deadline: datetime | None) -> None:
         if event.thread_id is None:
             raise ValueError("Run lifecycle projection requires Thread correlation")
         if event.event_type == "run.accepted":
@@ -170,7 +209,9 @@ class LifecycleRunStreamProjector:
         async with short_session(self._sessions) as database:
             abandoned = await has_abandoned_run_projection(database, event.organization_id, event.run_id)
         if abandoned:
-            await self._stream.retire(event.organization_id, event.run_id, closed_at=event.occurred_at)
+            await self._stream.retire(
+                event.organization_id, event.run_id, closed_at=event.occurred_at, recovery_deadline=deadline
+            )
             return
         await self._stream.close(event.organization_id, event.run_id, closed_at=event.occurred_at)
 
