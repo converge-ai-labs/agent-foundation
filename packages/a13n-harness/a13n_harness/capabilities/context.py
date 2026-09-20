@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections import deque
+from collections.abc import Sequence
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -1060,6 +1061,23 @@ def _build_restored_history(
         state="complete",
     )
     return _mark_current_restored_boundary([restored, *deepcopy(retained_requests)])
+
+
+def restored_history_summary(messages: Sequence[ModelMessage]) -> str | None:
+    """Read the accepted context summary, not the retained-input boundary."""
+    for message in reversed(messages):
+        if isinstance(message, ModelResponse) and (message.metadata or {}).get("keep") == "compact":
+            return "\n\n".join(part.content for part in message.parts if isinstance(part, TextPart)) or None
+        if isinstance(message, ModelRequest):
+            for part in message.parts:
+                if isinstance(part, UserPromptPart) and not isinstance(part.content, str):
+                    for item in part.content:
+                        if (
+                            isinstance(item, TextContent)
+                            and (item.metadata or {}).get(_HANDOFF_METADATA_KEY) == "handoff"
+                        ):
+                            return item.content
+    return None
 
 
 def _context_protocol_part(content: str) -> UserPromptPart:

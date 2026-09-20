@@ -479,3 +479,95 @@ async def test_environment_approval_ignores_connection_identity(kind, change):
     # Mount resources do not bind a cwd. File resources still bind the selected path.
     allowed = change == "connection" or (kind == "mount" and change == "path")
     assert executed == ([1] if allowed else [])
+
+
+async def test_consumed_approval_does_not_freeze_later_tool_surfaces() -> None:
+    executed: list[int] = []
+
+    def change(value: int) -> int:
+        executed.append(value)
+        return value
+
+    async def prepare(ctx, definition):
+        return None if executed else definition
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_model(),
+        capabilities=(
+            Capability(
+                tools=[HarnessTool(change, harness_metadata=_metadata(), requires_approval=True, prepare=prepare)],
+                id="test-tools",
+            ),
+        ),
+    )
+    first = await executable.run("go")
+    assert first.status == "suspended" and first.deferred is not None
+    second = await executable.run(
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(first.deferred, first.deferred.build_results(approve_all=True)),
+    )
+    assert second.output_or_raise() == "done:1"
+    assert executed == [1]
+
+
+async def test_deferred_call_ids_can_be_reused_in_later_responses() -> None:
+    from pydantic_ai.messages import UserPromptPart
+
+    executed: list[int] = []
+
+    def change(value: int) -> int:
+        executed.append(value)
+        return value
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        if isinstance(messages[-1], ModelRequest) and any(
+            isinstance(part, UserPromptPart) for part in messages[-1].parts
+        ):
+            yield {0: DeltaToolCall(name="change", json_args='{"value":1}', tool_call_id="reused-call")}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            Capability(
+                tools=[HarnessTool(change, harness_metadata=_metadata(), requires_approval=True)], id="test-tools"
+            ),
+        ),
+    )
+    previous = None
+    for prompt in ("first", "again"):
+        suspended = await executable.run(prompt, previous_state=previous)
+        assert suspended.status == "suspended" and suspended.deferred is not None
+        completed = await executable.run(
+            previous_state=suspended.state,
+            deferred_resume=DeferredToolResume(suspended.deferred, suspended.deferred.build_results(approve_all=True)),
+        )
+        assert completed.output_or_raise() == "done"
+        previous = completed.state
+    assert executed == [1, 1]
+
+
+@pytest.mark.parametrize("retry", [False, True])
+async def test_deferred_resume_still_rejects_results_integrated_after_the_pending_response(retry: bool) -> None:
+    from a13n_harness import HarnessState
+    from pydantic_ai.messages import RetryPromptPart
+
+    executable = _build([])
+    suspended = await executable.run("go")
+    assert suspended.state is not None and suspended.deferred is not None
+    call = suspended.deferred.approvals[0]
+    result_part = (RetryPromptPart if retry else ToolReturnPart)(
+        content="already handled", tool_name=call.tool_name, tool_call_id=call.tool_call_id
+    )
+    integrated = HarnessState.new(message_history=[*suspended.state.message_history, ModelRequest(parts=[result_part])])
+    with pytest.raises(RunError) as error:
+        await executable.run(
+            previous_state=integrated,
+            deferred_resume=DeferredToolResume(suspended.deferred, suspended.deferred.build_results(approve_all=True)),
+        )
+    assert error.value.code == "deferred_request_completed"

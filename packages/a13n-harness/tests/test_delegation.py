@@ -1383,3 +1383,90 @@ async def test_inline_child_binding_factory_preserves_owned_boundaries(change: s
     assert not child_calls
     assert len(returns) == 1 and returns[0].outcome == "failed"
     assert returns[0].content == "Inline delegation failed before a complete child result."
+
+
+@pytest.mark.parametrize("kind", ["none", "handoff", "compaction"])
+async def test_summary_delegation_reads_the_context_summary_not_replayed_input(kind: str) -> None:
+    from a13n_harness import DelegationContextPolicy, HarnessState
+    from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
+    from a13n_harness.capabilities.context import _COMPACTION_PROMPT
+    from a13n_harness.model_context import user_prompt_content
+    from pydantic_ai.messages import TextPart
+    from pydantic_ai.usage import RequestUsage
+
+    child_inputs: list[dict[str, Any]] = []
+    summary = "Accepted decision: preserve the original timeline."
+
+    async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        text = _latest_user_text(messages)
+        assert text is not None
+        child_inputs.append(json.loads(text))
+        yield "reviewed"
+
+    calls = 0
+
+    async def parent_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal calls
+        if any(
+            _COMPACTION_PROMPT in str(item.content)
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, UserPromptPart)
+            for item in user_prompt_content(part)
+        ):
+            yield summary
+            return
+        calls += 1
+        if kind == "handoff" and calls == 1:
+            yield {0: DeltaToolCall(name="summarize", json_args=json.dumps({"content": summary}), tool_call_id="s")}
+        elif calls == (2 if kind == "handoff" else 1):
+            yield {
+                0: DeltaToolCall(
+                    name="delegate",
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "Inspect the prior decision"}),
+                    tool_call_id="d",
+                )
+            }
+        else:
+            yield "done"
+
+    child = AgentDefinition(agent=AgentSpec(), output_type=str, model=FunctionModel(stream_function=child_stream))
+    parent = AgentDefinition(
+        agent=AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=parent_stream),
+        capabilities=(
+            HandoffCapability(),
+            SubagentCapability(),
+            *((CompactionCapability(CompactionPolicy(trigger_tokens=100)),) if kind == "compaction" else ()),
+        ),
+        subagents=(
+            SubagentDefinition(
+                name="reviewer",
+                description="Review the decision",
+                agent=child,
+                context=DelegationContextPolicy(history="summary"),
+            ),
+        ),
+    )
+    previous = HarnessState.new(
+        message_history=[
+            ModelRequest(parts=[UserPromptPart("Earlier input")]),
+            ModelResponse(parts=[TextPart("Earlier answer")], usage=RequestUsage(input_tokens=1000)),
+        ]
+    )
+    result = (
+        await HarnessBuilder()
+        .build(parent)
+        .run("Original user request", bindings=RunBindings.embedded(), previous_state=previous)
+    )
+    assert result.output_or_raise() == "done"
+    assert len(child_inputs) == 1
+    payload = child_inputs[0]
+    assert payload["delegated_task"] == "Inspect the prior decision"
+    if kind == "none":
+        assert "parent_history_summary" not in payload
+    else:
+        assert summary in payload["parent_history_summary"]
+        assert "Original user request" not in payload["parent_history_summary"]

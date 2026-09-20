@@ -272,7 +272,7 @@ class DelegationContextPolicy:
     task_state: Literal["shared", "isolated"] = "shared"
 ```
 
-Harness applies the exact edge policy to child input. Selected history uses canonical message encoding. Summary history uses only the accepted restored summary boundary when available. Working-State sharing follows [Context and Memory](09-context-and-memory.md). Inline execution can isolate an embedded child task scope or borrow the active embedded parent task scope under a fresh child owner; provider-mode child tasks require Host-owned async execution because Harness has no generic provider attachment factory. All non-task Capability state remains isolated unless another owning contract explicitly defines inheritance.
+Harness applies the exact edge policy to child input. Selected history uses canonical message encoding. Summary history reads the accepted handoff or compaction summary from canonical history when available; retained user inputs and restoration protocol text are not summaries. Working-State sharing follows [Context and Memory](09-context-and-memory.md). Inline execution can isolate an embedded child task scope or borrow the active embedded parent task scope under a fresh child owner; provider-mode child tasks require Host-owned async execution because Harness has no generic provider attachment factory. All non-task Capability state remains isolated unless another owning contract explicitly defines inheritance.
 
 Parent `AgentContextState` is authoritative only for inline continuation. Async status, bounded closed activity, and resumability are queried from the Host operator and are not mirrored into parent Harness state. Async child `HarnessState` belongs to the Host's child Thread checkpoint.
 

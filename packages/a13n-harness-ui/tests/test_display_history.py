@@ -215,3 +215,75 @@ async def test_context_summary_projection_keeps_complete_markdown(kind: str) -> 
     entry = _message_entry(0, message)
     assert entry.parts[0].text == content
     assert type(entry).model_validate_json(entry.model_dump_json()) == entry
+
+
+@pytest.mark.parametrize("history_kind", ["handoff", "two_requests", "three_requests"])
+async def test_preparation_failure_preserves_saved_display_after_native_request_merging(history_kind: str) -> None:
+    from pydantic_ai.capabilities import AbstractCapability
+
+    collector = DisplayHistoryCollector([])
+    calls = 0
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="summarize", json_args=json.dumps({"content": "Keep the decision"}), tool_call_id="s"
+                )
+            }
+        else:
+            yield "Saved answer"
+
+    async def save(state: HarnessState) -> str:
+        collector.capture(state.message_history)
+        return "saved"
+
+    if history_kind == "handoff":
+        executable = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=model),
+            capabilities=[collector, RootCheckpointCapability(save), HandoffCapability()],
+        )
+        result = await executable.run("Original input", bindings=RunBindings.embedded())
+        assert result.output_or_raise() == "Saved answer" and result.state is not None
+        state = result.state
+    else:
+        count = 2 if history_kind == "two_requests" else 3
+        state = HarnessState.new(
+            message_history=[
+                *[ModelRequest(parts=[UserPromptPart(f"Old input {number}")]) for number in range(count)],
+                ModelResponse(parts=[TextPart("Saved answer")]),
+            ]
+        )
+    display = collector.capture(state.message_history, completed=True)
+    previous = HarnessState.model_validate_json(with_display_history(state, display).model_dump_json())
+    reopened = DisplayHistoryCollector(previous.message_history, saved_display_history(previous))
+
+    class FailInstructions(AbstractCapability):
+        def get_instructions(self):
+            async def instructions(ctx):
+                raise RuntimeError("instruction backend unavailable")
+
+            return instructions
+
+    async def unexpected_model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        pytest.fail("Preparation must fail before model dispatch")
+        yield "unreachable"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=unexpected_model),
+        capabilities=[reopened, FailInstructions()],
+    )
+    failed = await executable.run("New input", bindings=RunBindings.embedded(), previous_state=previous)
+    assert failed.status == "failed" and failed.state is not None
+    updated = reopened.capture(failed.state.message_history)
+    assert visible(updated) == [*visible(display), "New input"]
+    assert updated.completed_responses == display.completed_responses
+    assert all(isinstance(updated.messages[position], ModelResponse) for position in updated.completed_responses)
+    saved = HarnessState.model_validate_json(with_display_history(failed.state, updated).model_dump_json())
+    assert saved_display_history(saved) == updated

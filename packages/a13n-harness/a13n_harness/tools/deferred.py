@@ -104,6 +104,7 @@ def preflight_deferred_resume(
     for message in previous_state.message_history:
         if isinstance(message, ModelResponse):
             last_response = message
+            completed.clear()
         elif isinstance(message, ModelRequest):
             for part in message.parts:
                 if isinstance(part, ToolReturnPart | RetryPromptPart):
