@@ -19,7 +19,8 @@ from redis.crc import key_slot
 pytestmark = pytest.mark.anyio
 
 
-async def test_coordination_wait_is_bounded_by_lease_horizon(coordination, monkeypatch):
+async def test_coordination_wait_is_bounded_by_lease_horizon(redis_client, monkeypatch):
+    coordination = ConnectionCoordination(redis_client, limits=replace(LIMITS, lease_ms=150))
     cancelled = asyncio.Event()
 
     async def stalled(**kwargs):
@@ -37,7 +38,7 @@ async def test_coordination_wait_is_bounded_by_lease_horizon(coordination, monke
 
 
 LIMITS = CoordinationLimits(
-    lease_ms=150, ticket_ms=1_000, candidate_ms=1_000, retention_ms=5_000, safety_margin_seconds=0.005
+    lease_ms=10_000, ticket_ms=30_000, candidate_ms=30_000, retention_ms=60_000, safety_margin_seconds=0.005
 )
 
 
@@ -56,10 +57,13 @@ async def candidate(coordination: ConnectionCoordination, owner: str = "control_
     return identity
 
 
-async def online(coordination: ConnectionCoordination) -> ConnectionIdentity:
+async def online(coordination: ConnectionCoordination, redis_client: Redis) -> ConnectionIdentity:
     identity = await candidate(coordination)
-    # A new or lost coordination key cannot prove the absence of old cached leases.
-    await asyncio.sleep(LIMITS.lease_ms / 1000 + 0.02)
+    # Establish completed initial quarantine; real expiry is covered separately.
+    key = environment_key("org_test", "env_test")
+    state = json.loads(await redis_client.get(key))
+    state["barrier_ms"] = 0
+    await redis_client.set(key, json.dumps(state), keepttl=True)
     await coordination.promote(identity)
     await coordination.online(identity)
     return identity
@@ -105,8 +109,9 @@ async def test_concurrent_candidates_do_not_displace_or_extend_the_winner(
 
 async def test_takeover_freezes_grants_then_promotes_only_after_exact_fenced_ack(
     coordination: ConnectionCoordination,
+    redis_client: Redis,
 ) -> None:
-    first = await online(coordination)
+    first = await online(coordination, redis_client)
     active = await coordination.observe("org_test", "env_test")
     use = UseIdentity(
         first,
@@ -152,8 +157,9 @@ async def test_takeover_freezes_grants_then_promotes_only_after_exact_fenced_ack
 
 async def test_candidate_failure_keeps_retirement_barrier_and_never_restores_old_owner(
     coordination: ConnectionCoordination,
+    redis_client: Redis,
 ) -> None:
-    old = await online(coordination)
+    old = await online(coordination, redis_client)
     second = await candidate(coordination, "control_second")
     barrier = (await coordination.observe("org_test", "env_test")).value.barrier_ms
     await coordination.abandon(second)
@@ -171,12 +177,12 @@ async def test_candidate_failure_keeps_retirement_barrier_and_never_restores_old
     await coordination.promote(third)
 
 
-async def test_dead_owner_can_be_replaced_after_the_complete_grant_horizon(
-    coordination: ConnectionCoordination,
-) -> None:
-    old = await online(coordination)
+async def test_dead_owner_can_be_replaced_after_the_complete_grant_horizon(relay_redis: Redis) -> None:
+    redis_client = relay_redis
+    coordination = ConnectionCoordination(redis_client, limits=replace(LIMITS, lease_ms=1_000))
+    old = await online(coordination, redis_client)
     second = await candidate(coordination, "control_second")
-    await asyncio.sleep(LIMITS.lease_ms / 1000 + 0.02)
+    await asyncio.sleep(coordination.limits.lease_ms / 1000 + 0.02)
     await coordination.promote(second)
     await coordination.online(second)
     with pytest.raises(CoordinationError):
@@ -185,8 +191,9 @@ async def test_dead_owner_can_be_replaced_after_the_complete_grant_horizon(
 
 async def test_use_is_bounded_by_attempt_authority_and_cannot_revive(
     coordination: ConnectionCoordination,
+    redis_client: Redis,
 ) -> None:
-    connection = await online(coordination)
+    connection = await online(coordination, redis_client)
     observed = await coordination.observe("org_test", "env_test")
     use = UseIdentity(
         connection,
@@ -198,7 +205,7 @@ async def test_use_is_bounded_by_attempt_authority_and_cannot_revive(
         "workspace",
         admission_deadline_ms=observed.value.expires_at_ms,
     )
-    attempt_expiry = observed.value.now_ms + 75
+    attempt_expiry = observed.value.now_ms + 5_000
     grant = await coordination.acquire_use(use, attempt_expires_at_ms=attempt_expiry)
     assert grant.value.use_grant(use).expires_at_ms <= attempt_expiry
     with pytest.raises(CoordinationError) as busy:
@@ -206,7 +213,10 @@ async def test_use_is_bounded_by_attempt_authority_and_cannot_revive(
     assert busy.value.code == "authority_lost"
     with pytest.raises(CoordinationError):
         await coordination.renew_use(replace(use, attempt_fence=2), attempt_expires_at_ms=attempt_expiry)
-    await asyncio.sleep(0.09)
+    key = environment_key("org_test", "env_test")
+    state = json.loads(await redis_client.get(key))
+    state["uses"][use.use_id]["expires_at_ms"] = 0
+    await redis_client.set(key, json.dumps(state), keepttl=True)
     await coordination.renew(connection)
     with pytest.raises(CoordinationError) as expired:
         await coordination.renew_use(use, attempt_expires_at_ms=attempt_expiry + 1_000)
@@ -217,10 +227,10 @@ async def test_use_is_bounded_by_attempt_authority_and_cannot_revive(
     await coordination.acquire_use(fresh, attempt_expires_at_ms=attempt_expiry + 1_000)
 
 
-async def test_lost_redis_history_never_recreates_an_old_lease_or_bypasses_quarantine(
-    coordination: ConnectionCoordination, redis_client: Redis
-) -> None:
-    old = await online(coordination)
+async def test_lost_redis_history_never_recreates_an_old_lease_or_bypasses_quarantine(relay_redis: Redis) -> None:
+    redis_client = relay_redis
+    coordination = ConnectionCoordination(redis_client, limits=replace(LIMITS, lease_ms=1_000))
+    old = await online(coordination, redis_client)
     await redis_client.delete(environment_key("org_test", "env_test"))
     with pytest.raises(CoordinationError):
         await coordination.renew(old)
@@ -231,7 +241,7 @@ async def test_lost_redis_history_never_recreates_an_old_lease_or_bypasses_quara
     assert pending.value.code == "handover_pending"
     with pytest.raises(CoordinationError):
         await coordination.acknowledge(old)
-    await asyncio.sleep(LIMITS.lease_ms / 1000 + 0.02)
+    await asyncio.sleep(coordination.limits.lease_ms / 1000 + 0.02)
     await coordination.promote(new)
 
 
@@ -266,15 +276,21 @@ async def test_competing_admissions_have_exactly_one_winner(coordination: Connec
     assert sum(isinstance(result, CoordinationError) and result.code == "candidate_busy" for result in results) == 3
 
 
-async def test_ticket_and_candidate_expiry_cannot_be_renewed(redis_client: Redis) -> None:
-    coordination = ConnectionCoordination(redis_client, limits=replace(LIMITS, ticket_ms=30, candidate_ms=30))
+async def test_ticket_and_candidate_expiry_cannot_be_renewed(relay_redis: Redis) -> None:
+    redis_client = relay_redis
+    coordination = ConnectionCoordination(redis_client, limits=LIMITS)
     ticket = await coordination.issue("org_test", "env_test")
+    # Start the short real Redis TTL only after issuance has completed.
+    await redis_client.pexpire(ticket_key(ticket.secret), 30)
     await asyncio.sleep(0.05)
     with pytest.raises(CoordinationError) as expired:
         await coordination.admit("org_test", "env_test", ticket=ticket.secret, owner_instance_id="control")
     assert expired.value.code == "ticket_invalid"
     admitted = await candidate(coordination)
-    await asyncio.sleep(0.05)
+    key = environment_key("org_test", "env_test")
+    state = json.loads(await redis_client.get(key))
+    state["candidate"]["expires_at_ms"] = 0
+    await redis_client.set(key, json.dumps(state), keepttl=True)
     with pytest.raises(CoordinationError) as expired_candidate:
         await coordination.promote(admitted)
     assert expired_candidate.value.code == "candidate_expired"
@@ -284,7 +300,7 @@ async def test_ticket_and_candidate_expiry_cannot_be_renewed(redis_client: Redis
 async def test_server_incarnation_change_invalidates_restored_authority(
     coordination: ConnectionCoordination, redis_client: Redis
 ) -> None:
-    old = await online(coordination)
+    old = await online(coordination, redis_client)
     key = environment_key("org_test", "env_test")
     raw = await redis_client.get(key)
     assert raw is not None
@@ -300,8 +316,10 @@ async def test_server_incarnation_change_invalidates_restored_authority(
     assert pending.value.code == "handover_pending"
 
 
-async def test_use_replay_keeps_deadline_and_bigint_fences_do_not_round(coordination: ConnectionCoordination) -> None:
-    connection = await online(coordination)
+async def test_use_replay_keeps_deadline_and_bigint_fences_do_not_round(
+    coordination: ConnectionCoordination, redis_client: Redis
+) -> None:
+    connection = await online(coordination, redis_client)
     observed = await coordination.observe("org_test", "env_test")
     use = UseIdentity(
         connection,
@@ -321,8 +339,8 @@ async def test_use_replay_keeps_deadline_and_bigint_fences_do_not_round(coordina
         await coordination.renew_use(replace(use, attempt_fence=2**53 + 1), attempt_expires_at_ms=expiry)
 
 
-async def test_worker_release_requires_exact_use_and_never_acknowledges_socket(coordination):
-    connection = await online(coordination)
+async def test_worker_release_requires_exact_use_and_never_acknowledges_socket(coordination, redis_client):
+    connection = await online(coordination, redis_client)
     observed = await coordination.observe("org_test", "env_test")
     use = UseIdentity(
         connection,
@@ -361,8 +379,8 @@ async def test_worker_release_requires_exact_use_and_never_acknowledges_socket(c
     assert (await coordination.observe("org_test", "env_test")).value.connection == replacement
 
 
-async def test_binding_uses_have_independent_grants_and_release(coordination):
-    connection = await online(coordination)
+async def test_binding_uses_have_independent_grants_and_release(coordination, redis_client):
+    connection = await online(coordination, redis_client)
     observed = await coordination.observe("org_test", "env_test")
     first = UseIdentity(
         connection,
@@ -375,7 +393,7 @@ async def test_binding_uses_have_independent_grants_and_release(coordination):
         admission_deadline_ms=observed.value.expires_at_ms,
     )
     second = replace(first, use_id="second", mount_name="data")
-    expiry = observed.value.now_ms + 5000
+    expiry = observed.value.now_ms + 20_000
     await coordination.acquire_use(first, attempt_expires_at_ms=expiry)
     both = await coordination.acquire_use(second, attempt_expires_at_ms=expiry)
     first_expiry = both.value.use_grant(first).expires_at_ms
@@ -397,7 +415,7 @@ async def test_binding_uses_have_independent_grants_and_release(coordination):
 
 async def test_use_capacity_is_reclaimed_without_reviving_pruned_acquisition(redis_client):
     coordination = ConnectionCoordination(redis_client, limits=replace(LIMITS, max_uses=2))
-    connection = await online(coordination)
+    connection = await online(coordination, redis_client)
     observed = await coordination.observe("org_test", "env_test")
     first = UseIdentity(
         connection,
@@ -407,16 +425,22 @@ async def test_use_capacity_is_reclaimed_without_reviving_pruned_acquisition(red
         1,
         "worker",
         "workspace",
-        admission_deadline_ms=observed.value.now_ms + 50,
+        admission_deadline_ms=observed.value.now_ms + 5_000,
     )
     second = replace(first, use_id="second", mount_name="data")
     third = replace(first, use_id="third", mount_name="third")
     for use in (first, second):
-        await coordination.acquire_use(use, attempt_expires_at_ms=observed.value.now_ms + 50)
+        await coordination.acquire_use(use, attempt_expires_at_ms=observed.value.now_ms + 5_000)
     with pytest.raises(CoordinationError) as full:
         await coordination.acquire_use(third, attempt_expires_at_ms=observed.value.now_ms + 5000)
     assert full.value.code == "environment_overloaded"
-    await asyncio.sleep(0.075)
+    key = environment_key("org_test", "env_test")
+    state = json.loads(await redis_client.get(key))
+    for grant in state["uses"].values():
+        grant["expires_at_ms"] = 0
+        grant["identity"]["admission_deadline_ms"] = 0
+    await redis_client.set(key, json.dumps(state), keepttl=True)
+    first = replace(first, admission_deadline_ms=0)
     renewed = await coordination.renew(connection)
     assert not renewed.value.uses
     with pytest.raises(CoordinationError) as expired:
@@ -427,8 +451,8 @@ async def test_use_capacity_is_reclaimed_without_reviving_pruned_acquisition(red
     assert admitted.value.use_grant(fresh) is not None
 
 
-async def test_takeover_barrier_covers_every_binding_grant(coordination):
-    connection = await online(coordination)
+async def test_takeover_barrier_covers_every_binding_grant(coordination, redis_client):
+    connection = await online(coordination, redis_client)
     observed = await coordination.observe("org_test", "env_test")
     first = UseIdentity(
         connection,
@@ -441,7 +465,7 @@ async def test_takeover_barrier_covers_every_binding_grant(coordination):
         admission_deadline_ms=observed.value.expires_at_ms,
     )
     second = replace(first, use_id="second", mount_name="data")
-    await coordination.acquire_use(first, attempt_expires_at_ms=observed.value.now_ms + 50)
+    await coordination.acquire_use(first, attempt_expires_at_ms=observed.value.now_ms + 2_000)
     both = await coordination.acquire_use(second, attempt_expires_at_ms=observed.value.now_ms + 5000)
     replacement = await candidate(coordination, "replacement")
     waiting = await coordination.observe("org_test", "env_test")
@@ -454,7 +478,9 @@ async def test_takeover_barrier_covers_every_binding_grant(coordination):
     assert not promoted.value.uses
 
 
-async def test_direct_device_admission_persists_lost_history_quarantine(coordination, redis_client):
+async def test_direct_device_admission_persists_lost_history_quarantine(relay_redis):
+    redis_client = relay_redis
+    coordination = ConnectionCoordination(redis_client, limits=replace(LIMITS, lease_ms=1_000))
     admitted = await coordination.admit_device("org_test", "env_test", owner_instance_id="control")
     identity = admitted.value.connection
     assert identity is not None and identity.connection_id
@@ -464,7 +490,7 @@ async def test_direct_device_admission_persists_lost_history_quarantine(coordina
     with pytest.raises(CoordinationError) as waiting:
         await coordination.promote(identity)
     assert waiting.value.code == "handover_pending"
-    await asyncio.sleep(LIMITS.lease_ms / 1000 + 0.02)
+    await asyncio.sleep(coordination.limits.lease_ms / 1000 + 0.02)
     await coordination.promote(identity)
     await coordination.online(identity)
     await redis_client.delete(environment_key("org_test", "env_test"))
@@ -477,8 +503,8 @@ async def test_direct_device_admission_persists_lost_history_quarantine(coordina
     assert quarantined.value.code == "handover_pending"
 
 
-async def test_device_revoke_atomically_fences_owner_and_candidate(coordination):
-    owner = await online(coordination)
+async def test_device_revoke_atomically_fences_owner_and_candidate(coordination, redis_client):
+    owner = await online(coordination, redis_client)
     replacement = await coordination.admit_device("org_test", "env_test", owner_instance_id="replacement")
     before = await coordination.observe("org_test", "env_test")
     await coordination.revoke("org_test", "env_test")

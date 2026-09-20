@@ -29,8 +29,16 @@ export async function startApp(...args: string[]) {
       const exited = once(server, "exit");
       server.stdin.end("stop\n");
       const kill = setTimeout(() => server.kill("SIGKILL"), 15000);
-      await exited;
-      clearTimeout(kill);
+      try {
+        await exited;
+      } finally {
+        clearTimeout(kill);
+      }
+    }
+    if (server.exitCode !== 0) {
+      throw new Error(
+        `Test App shutdown failed (code=${server.exitCode}, signal=${server.signalCode}): ${stderr}`,
+      );
     }
   };
   try {
@@ -60,7 +68,14 @@ export async function startApp(...args: string[]) {
     });
     return { ...address, close };
   } catch (error) {
-    await close();
+    try {
+      await close();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        "Test App startup and cleanup failed",
+      );
+    }
     throw error;
   }
 }
