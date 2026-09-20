@@ -16,6 +16,7 @@ import {
   useWorkspaceMemoryProviderDefinitions,
 } from "./availability";
 import styles from "./memory.module.css";
+import { MemoryEnvironmentField } from "./environment";
 
 type Entry = Schema["MemoryEntrySelection"];
 
@@ -168,24 +169,15 @@ export function MemoryEntryFields({
               onChange={(event) => setStorage("root", event.target.value)}
             />
           </FormField>
-          <FormField
-            label={t("Environment ID")}
+          <MemoryEnvironmentField
             readOnly={readOnly}
-            description={t(
-              "Leave empty to use the current run environment. An explicit environment must be attached to the run.",
-            )}
-          >
-            <Input
-              value={
-                typeof storage.environment_id === "string"
-                  ? storage.environment_id
-                  : ""
-              }
-              onChange={(event) =>
-                setStorage("environment_id", event.target.value)
-              }
-            />
-          </FormField>
+            value={
+              typeof storage.environment_id === "string"
+                ? storage.environment_id
+                : ""
+            }
+            onChange={(value) => setStorage("environment_id", value)}
+          />
         </>
       )}
       {!preset && (
@@ -230,7 +222,23 @@ export function MemoryEntryFields({
             {t((entry[option] ?? option !== "recall_required") ? "On" : "Off")}
           </ReadOnlyField>
         ) : (
-          <SettingsRow key={option} label={label}>
+          <SettingsRow
+            key={option}
+            label={label}
+            description={
+              option === "toolset"
+                ? t(
+                    entry.mode === "documents"
+                      ? "Let the agent search, read, and modify memory documents. Turning this off keeps the memory index available; automatic organization is controlled separately."
+                      : "Let the agent search and manage saved memories. Automatic recall is controlled separately.",
+                  )
+                : option === "recall_required"
+                  ? t(
+                      "When enabled, memory loading or recall failures stop the run. When disabled, the run continues without the unavailable memory. Having no saved memories is not an error.",
+                    )
+                  : undefined
+            }
+          >
             <Switch
               aria-label={label}
               checked={entry[option] ?? option !== "recall_required"}

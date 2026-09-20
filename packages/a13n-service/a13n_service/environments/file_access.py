@@ -51,7 +51,6 @@ class ExistingEnvironmentFiles:
             provider = await session.get(EnvironmentProviderRecord, row.provider_id)
             if (
                 row.status != "running"
-                or row.state is None
                 or row.operation_id is not None
                 or f"{row.id}:{row.generation}" != backing_identity
                 or provider is None
@@ -65,7 +64,8 @@ class ExistingEnvironmentFiles:
                 provider_configuration=provider.configuration,
                 credential=provider.credential_snapshot(),
                 configuration=configuration,
-                state=EnvironmentState.model_validate(row.state),
+                # Stateless Providers reconstruct the retained target from its configuration.
+                state=EnvironmentState.model_validate(row.state) if row.state is not None else None,
                 operation_id=lease_id,
                 fence=row.operation_generation,
                 owner=lease_id,
@@ -82,8 +82,9 @@ class ExistingEnvironmentFiles:
         environment = None
         try:
             with fail_after(30):
-                environment = await self.lifecycle.construct(operation)
+                environment = await self.lifecycle.construct(operation, allow_create=False)
                 await environment.enter(mount_id=lease_id)
+                await environment.prepare()
                 await environment.check_ready(frozenset({"files"}))
                 if environment.dump_state() != operation.state or environment.operations.files is None:
                     raise ValueError("Memory Environment identity changed")

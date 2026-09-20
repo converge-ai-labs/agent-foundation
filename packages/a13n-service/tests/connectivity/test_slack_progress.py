@@ -371,3 +371,14 @@ async def test_ingress_stop_commits_before_ack_and_cancels_without_new_input(tas
         assert await db.scalar(select(func.count()).select_from(IngressAdmissionRecord)) == 0
     assert [r.url.path for r in task.calls] == ["/api/chat.postMessage", "/api/chat.update"]
     assert STOP_ACTION_ID not in task.calls[-1].content.decode()
+
+
+@pytest.mark.parametrize(
+    "replies", [("I am creating the file.",), ("I am creating the file.", "File delivery failed: no Environment.")]
+)
+def test_completed_message_does_not_infer_task_success_from_replies(replies):
+    message = task_message(status="completed", run_id="run_test", token="test", details_url=None, replies=replies)
+    assert message["blocks"][0]["text"]["text"] == "Execution completed"
+    rendered = json.dumps(message)
+    assert all(reply in rendered for reply in replies)
+    assert "does not confirm task success" in rendered

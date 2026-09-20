@@ -611,6 +611,21 @@ async def test_explicit_native_reply_updates_single_card_and_survives_completion
     assert cards(task)[-1][1]["header"]["template"] == "green"
 
 
+@pytest.mark.parametrize("language", ["en_us", "zh_cn"])
+@pytest.mark.parametrize(
+    "replies", [("I am creating the file.",), ("I am creating the file.", "File delivery failed: no Environment.")]
+)
+def test_completed_card_does_not_infer_task_success_from_replies(language, replies):
+    card = task_card(
+        status="completed", run_id="run_test", token="test", details_url=None, language=language, replies=replies
+    )
+    title = card["header"]["title"]["content"]
+    assert title == ("执行完成" if language == "zh_cn" else "Execution completed")
+    rendered = json.dumps(card, ensure_ascii=False)
+    assert all(reply in rendered for reply in replies)
+    assert ("不代表任务目标已达成" if language == "zh_cn" else "does not confirm task success") in rendered
+
+
 async def test_answer_waits_for_progress_lease_without_losing_content(replying):
     import anyio
 

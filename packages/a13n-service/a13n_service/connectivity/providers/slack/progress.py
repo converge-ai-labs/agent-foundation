@@ -18,7 +18,7 @@ _LABELS = {
     "waiting": ("Action required", "The task needs input, approval, or an external result. Open details to continue."),
     "completed": (
         "Execution completed",
-        "Execution has completed. This does not confirm that the result was delivered.",
+        "Execution has ended. This does not confirm task success or file delivery; check the replies and attachments.",
     ),
     "failed": ("Execution failed", "The task could not finish. Open details for more information."),
     "cancelled": ("Stopped", "The task was cancelled. Completed external actions are not undone."),
@@ -29,8 +29,6 @@ def task_message(
     *, status: str, run_id: str, token: str, details_url: str | None, replies: tuple[str, ...] = ()
 ) -> JsonObject:
     title, description = _LABELS[status]
-    if replies and status == "completed":
-        title, description = "Completed", "The task has completed."
     # Reject excessive content before dispatch; do not silently truncate an explicit answer.
     if sum(map(len, replies)) > 32_000:
         raise ProviderHttpError("invalid_arguments")

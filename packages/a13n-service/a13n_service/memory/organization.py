@@ -21,8 +21,10 @@ from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.background import PeriodicLoop
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
+from a13n_service.interactions.domain import Run, RunInputKind
+from a13n_service.interactions.input import AcceptedAgentInput
 from a13n_service.interactions.models import RunRecord, SessionRecord
-from a13n_service.interactions.objects import RunStateStore
+from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.lifecycle.models import LifecycleEventRecord
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
@@ -68,6 +70,24 @@ class MemoryOrganizer(PeriodicLoop):
     ) -> None:
         super().__init__(self.run_once, interval_seconds=10)
         self.memory, self.states, self.models, self.providers = memory, RunStateStore(objects), models, providers
+        self.payloads = RunPayloadStore(objects)
+
+    async def evidence(self, run: Run) -> str:
+        evidence: dict[str, object] = {"input": run.input_text, "result": run.output_text}
+        if run.input_kind == RunInputKind.agent_input:
+            payload = run.input
+            if run.input_object is not None:
+                payload = (
+                    await self.payloads.verify_reference(run.organization_id, run.id, "input", run.input_object)
+                ).payload
+            accepted = AcceptedAgentInput.model_validate(payload)
+            # The preview omits structured/multipart inputs, including Bot messages.
+            # Do not resolve secret bindings or fetch binary sources for extraction.
+            evidence["input"] = {
+                "text": [block.text for block in accepted.content if block.type == "text"],
+                "structured_content": accepted.structured_content,
+            }
+        return json.dumps(evidence, ensure_ascii=False)
 
     async def run_once(self) -> None:
         now = utc_now()
@@ -192,7 +212,7 @@ class MemoryOrganizer(PeriodicLoop):
             boundary_workspace_id=workspace_id,
         )
         state = await self.states.read_run(run)
-        evidence = json.dumps({"input": run.input_text, "result": run.output_text}, ensure_ascii=False)
+        evidence = await self.evidence(run)
         if not run.output_text:
             return {"ignored": 1, "deferred": 0, "committed": []}
         source_ref = f"run://{run.id}"

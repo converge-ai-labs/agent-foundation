@@ -223,7 +223,7 @@ class EnvironmentLifecycle:
                     action=WorkspaceAction.environment_manage,
                 )
 
-    async def construct(self, operation: LifecycleOperation) -> OperationEnvironment:
+    async def construct(self, operation: LifecycleOperation, *, allow_create: bool = True) -> OperationEnvironment:
         provider = self.catalog.require(operation.provider_type)
         raw = operation.credential.decrypt(self.protector) if operation.credential.ciphertext is not None else None
         connection = provider.configuration_model.model_validate(operation.provider_configuration)
@@ -236,7 +236,7 @@ class EnvironmentLifecycle:
             credential=credential,
             environment_id=operation.environment_id,
             operation_id=operation.operation_id,
-            allow_create=managed,
+            allow_create=managed and allow_create,
             state=operation.state,
         )
 

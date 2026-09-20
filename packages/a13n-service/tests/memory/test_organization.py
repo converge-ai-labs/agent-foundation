@@ -209,3 +209,53 @@ async def test_completed_work_is_admitted_once_and_rechecks_organization_policy(
         assert work.attempts == 1
     assert len((await store.list_documents())[0]) == (0 if disable else 1)
     assert models.build.await_count == (0 if disable else 1)
+
+
+@pytest.mark.parametrize("external", [False, True])
+async def test_organization_reads_structured_input_without_fetching_attachments(
+    interaction_sessions, interaction_object_store, external
+):
+    import json
+
+    from a13n_service.interactions.state import RunPayloadEnvelope
+
+    await seed_hook_actor_access(interaction_sessions)
+    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    payload = {
+        "schema_version": "2",
+        "content": [
+            {"type": "text", "text": "Project decision"},
+            {
+                "type": "binary",
+                "source": {"type": "url", "url": "https://example.com/private-attachment"},
+                "delivery": "model_content",
+            },
+        ],
+        "structured_content": {"events": [{"text": "Rollback above 2.3%; require two reviewers."}]},
+    }
+    worker = MemoryOrganizer(Mock(), interaction_object_store, Mock(), Mock())
+    reference = (
+        await worker.payloads.create(
+            run.organization_id,
+            RunPayloadEnvelope(run_id=run.id, payload_kind="input", payload_schema_version="2", payload=payload),
+        )
+        if external
+        else None
+    )
+    source = run.model_copy(
+        update={
+            "input_text": None,
+            "input": None if external else payload,
+            "input_object": reference,
+            "output_text": "Replied.",
+        }
+    )
+    evidence = json.loads(await worker.evidence(source))
+    assert evidence["input"] == {"text": ["Project decision"], "structured_content": payload["structured_content"]}
+    assert evidence["result"] == "Replied."
+    assert "private-attachment" not in json.dumps(evidence)
+    if external:
+        from a13n_service.interactions.objects import RunObjectIntegrityError
+
+        with pytest.raises(RunObjectIntegrityError):
+            await worker.evidence(source.model_copy(update={"id": "run_another1234567890"}))
