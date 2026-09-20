@@ -36,6 +36,7 @@ async def test_http_contract_safe_credentials_preconditions_and_catalog(
                 "perplexity",
                 "serpapi",
                 "tavily",
+                "tinyfish",
             ]
             for definition in catalog.json()["items"]:
                 credential_schema = definition["credential_schema"]

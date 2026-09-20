@@ -149,7 +149,7 @@ it("switches between mobile inspection and the existing desktop disclosure", asy
     screen
       .getByRole("button", { name: "Execution details" })
       .getAttribute("aria-expanded"),
-  ).toBe("true");
+  ).toBe("false");
   resize(true);
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(

@@ -4,7 +4,7 @@ from functools import partial
 
 from a13n_service.ids import new_object_id
 
-from ...native_actions import NativeAction, action, credential
+from ...native_actions import CONVERSATION_REPLY_DESCRIPTION, NativeAction, action, credential
 from ..definition import InboundActionContext
 from ..lark.actions import (
     LarkActionBinding,
@@ -44,9 +44,13 @@ def inbound_actions(inbound: InboundActionContext) -> dict[str, NativeAction]:
         )
 
     actions = (
-        action("lark.reply", LarkAutoReplyArguments, reply, hide_receipt=True)
+        action(
+            "lark.reply", LarkAutoReplyArguments, reply, hide_receipt=True, description=CONVERSATION_REPLY_DESCRIPTION
+        )
         if binding.reply_mode == "auto"
-        else action("lark.reply", LarkForcedReplyArguments, reply, hide_receipt=True),
+        else action(
+            "lark.reply", LarkForcedReplyArguments, reply, hide_receipt=True, description=CONVERSATION_REPLY_DESCRIPTION
+        ),
         action("lark.list_members", LarkListMembersArguments, partial(client.list_members, binding)),
         action("lark.read_messages", LarkReadMessagesArguments, partial(client.read_messages, binding)),
     )

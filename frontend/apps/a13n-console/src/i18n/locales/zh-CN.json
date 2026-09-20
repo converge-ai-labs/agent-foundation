@@ -3239,5 +3239,17 @@
   "Write the first memory yourself, or let the agent save one.": "手动写下第一条记忆，或让 Agent 自行保存。",
   "No memory stores yet": "暂无记忆存储",
   "Each environment keeps its own documents. Nothing is combined across stores.": "每个环境保留各自的文档，不同存储之间不会合并。",
-  "Storage and recall": "存储与召回"
+  "Storage and recall": "存储与召回",
+  "Memory environment": "记忆存储环境",
+  "Current run environment": "当前运行环境",
+  "You do not have permission to browse environments. The saved selection is preserved.": "你没有查看环境的权限，已保存的选择会保留。",
+  "Loading environments…": "正在加载环境…",
+  "Use the current run environment, or choose one that will be attached to the conversation. Selecting it here does not attach it automatically.": "默认使用当前运行环境，也可选择其他环境。指定的环境需要在会话中挂载；此处选择不会自动挂载。",
+  "Choose an environment…": "选择环境…",
+  "No matching environments": "没有匹配的环境",
+  "Saved environment": "已保存的环境",
+  "No environments yet. Use the current run environment.": "暂无环境，可使用当前运行环境。",
+  "Let the agent search, read, and modify memory documents. Turning this off keeps the memory index available; automatic organization is controlled separately.": "允许 Agent 主动搜索、读取和修改记忆文档。关闭后仍会提供记忆索引；自动整理由单独的开关控制。",
+  "Let the agent search and manage saved memories. Automatic recall is controlled separately.": "允许 Agent 主动搜索和管理已保存的记忆。自动召回由单独的开关控制。",
+  "When enabled, memory loading or recall failures stop the run. When disabled, the run continues without the unavailable memory. Having no saved memories is not an error.": "开启后，加载或召回记忆失败会中止运行；关闭时会跳过不可用的记忆并继续。没有已保存的记忆不算错误。"
 }

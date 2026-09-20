@@ -1032,6 +1032,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             environment=environment.runtime,
             tool_result_directory=environment.tool_result_directory,
             model_resolver=reconstructed.model_resolver.fresh(),
+            file_media_understanding=reconstructed.file_media_understanding(state.thread_id),
         )
         bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)
         return reconstructed.executable.stream(

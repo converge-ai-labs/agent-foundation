@@ -195,7 +195,9 @@ class IngressAdmissionReconciler:
             batch.claim_expires_at = None
             batch.updated_at = now
             if outcome.kind in {"retryable", "lost_race"}:
-                batch.available_at = outcome.available_at if outcome.kind == "retryable" else now
+                batch.available_at = (
+                    outcome.available_at if outcome.kind == "retryable" else self._retry_at(claim.attempt_count)
+                )
                 return
             assert outcome.kind == "rejected"
             batch.status = "rejected"

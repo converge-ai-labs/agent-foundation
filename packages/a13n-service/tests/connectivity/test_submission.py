@@ -37,6 +37,8 @@ async def _exercise(
     before_accept=None,
     setup_tests=False,
     native_slack=False,
+    terminal_status=None,
+    completed_head=False,
 ):
     await _seed_interaction_database(sessions)
     async with transaction(sessions) as session:
@@ -201,6 +203,53 @@ async def _exercise(
             probe = await session.get(BotTestRecord, "btest_first")
             assert probe.run_id == run.id and probe.steer_id is None and probe.accepted_at == NOW
         thread_id = run.thread_id
+    if terminal_status is not None:
+        from a13n_harness import SafeFailure
+        from a13n_service.interactions.attempts import AttemptExecutionService
+        from a13n_service.interactions.control_domain import InterruptRequest
+        from a13n_service.interactions.models import ThreadRecord
+        from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
+
+        from tests.interactions.test_attempt_execution import _authority, _worker
+        from tests.lifecycle_support import test_lifecycle_writer
+
+        parent_id = None
+        if completed_head:
+            await _complete_run(sessions, objects, run_id=run_id)
+            parent_id = run_id
+            now[0] += timedelta(seconds=10)
+            await delivery.receive(account_id=ACCOUNT, request=_request("next-task"))
+            assert await worker.run_once()
+            async with sessions() as session:
+                run_id = (await session.get(ThreadRecord, thread_id)).current_run_id
+        if terminal_status == "failed":
+            claim = await AttemptScheduler(sessions, clock=lambda: now[0], lifecycle=test_lifecycle_writer()).claim(
+                run_id, _worker()
+            )
+            assert isinstance(claim, ClaimedAttempt)
+            await AttemptExecutionService(sessions, clock=lambda: now[0], lifecycle=test_lifecycle_writer()).fail(
+                _authority(claim), SafeFailure(code="test_failure", message="Test task failed."), retryable=False
+            )
+        else:
+            async with sessions() as session:
+                actor = (await acceptor._selection(session, prepared)).actor
+                run = await session.get(RunRecord, run_id)
+                thread = await session.get(ThreadRecord, thread_id)
+                request = InterruptRequest(expected_run_version=run.version, expected_thread_version=thread.version)
+            await commands.active.interrupt(actor=actor, run_id=run_id, idempotency_key="stop", request=request)
+        now[0] += timedelta(seconds=10)
+        await delivery.receive(account_id=ACCOUNT, request=_request("after-terminal", text="A new instruction"))
+        assert await worker.run_once()
+        async with sessions() as session:
+            latest = await session.scalar(select(IngressBatchRecord).order_by(IngressBatchRecord.sequence.desc()))
+            assert latest.status == "accepted"
+            successor = await session.get(RunRecord, latest.result_id)
+            assert successor.id != run_id and successor.thread_id == thread_id
+            assert successor.parent_run_id == parent_id
+            assert successor.input_json["structured_content"]["events"][0]["text"] == "A new instruction"
+            assert (await session.get(RunRecord, run_id)).status == terminal_status
+        assert await acceptor.accept_ingress_batch(prepared) == outcome
+        return
     async with transaction(sessions) as session:
         account = await session.get(AccountRecord, ACCOUNT)
         account.default_agent_id = next_agent
@@ -413,4 +462,18 @@ async def test_bot_settings_change_between_selection_and_commit_rolls_back_accep
 
     await _exercise(
         sessions, connectivity_objects, credential_protector, before_accept=check_admitted, native_slack=True
+    )
+
+
+@pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
+@pytest.mark.parametrize("completed_head", [False, True])
+async def test_new_message_after_terminal_task_retains_thread_and_completed_history(
+    connectivity_sessions, connectivity_objects, credential_protector, terminal_status, completed_head
+):
+    await _exercise(
+        connectivity_sessions,
+        connectivity_objects,
+        credential_protector,
+        terminal_status=terminal_status,
+        completed_head=completed_head,
     )

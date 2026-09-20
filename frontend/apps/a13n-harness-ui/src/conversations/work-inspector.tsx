@@ -304,13 +304,6 @@ export function WorkInspector({
           </Popover>
         );
       })}
-      {(work.stale || !connected || summary?.source === "unavailable") && (
-        <span className={styles.caption} role="status">
-          {summary
-            ? "Work observation stale or unavailable"
-            : "Work observation unavailable"}
-        </span>
-      )}
       {active && (
         <span
           className={styles.active}

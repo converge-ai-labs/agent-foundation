@@ -109,7 +109,7 @@ export function TableHead({
   return (
     <th
       className={cn(
-        "h-9 whitespace-nowrap px-3 text-left align-middle font-medium text-[11px] text-muted-foreground uppercase leading-none tracking-[0.04em] not-in-data-[variant=card]:first:ps-4 not-in-data-[variant=card]:last:pe-4 has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
+        "h-9 whitespace-nowrap px-3 text-left align-middle font-medium text-[11px] text-muted-foreground leading-none not-in-data-[variant=card]:first:ps-4 not-in-data-[variant=card]:last:pe-4 has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
         className,
       )}
       data-slot="table-head"

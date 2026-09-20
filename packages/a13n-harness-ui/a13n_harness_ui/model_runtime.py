@@ -76,6 +76,10 @@ class HarnessUiModelResolver:
         context: ModelResolutionContext[AgentContext],
         model_id: str,
     ) -> Model:
+        return await self.resolve(model_id, thread_id=context.deps.thread_id)
+
+    async def resolve(self, model_id: str, *, thread_id: str) -> Model:
+        """Construct a captured Model for either primary or auxiliary inference."""
         recipe = self._recipes.get(model_id)
         if recipe is None:
             raise ModelResolutionError(
@@ -88,9 +92,7 @@ class HarnessUiModelResolver:
             model = await self._api_key_model(recipe, authentication)
             header = recipe.model_configuration.get("session_affinity_header")
             if isinstance(header, str):
-                return RequestHeadersModel(
-                    model, common_headers={header: derive_model_affinity_id(context.deps.thread_id)}
-                )
+                return RequestHeadersModel(model, common_headers={header: derive_model_affinity_id(thread_id)})
             return model
         if isinstance(authentication, CodexSubscriptionAuthentication):
             from a13n_harness.models.codex import CodexRequestModel
@@ -104,7 +106,7 @@ class HarnessUiModelResolver:
             return CodexRequestModel(
                 _model_name(recipe),
                 credential_source=BoundCodexCredentialSource(source.source),
-                thread_id=context.deps.thread_id,
+                thread_id=thread_id,
             )
         if isinstance(authentication, GrokSubscriptionAuthentication):
             from a13n_harness.providers.model.oauth import build_grok_model
@@ -180,8 +182,12 @@ def _model_name(recipe: ResolvedModelRecipe) -> str:
 def model_recipe_id(recipe: ResolvedModelRecipe) -> str:
     """Return a concise deterministic logical ID for one complete credential-free recipe."""
 
+    payload = recipe.model_dump(mode="json")
+    # Sets can iterate differently after a deep copy or process restart.
+    if recipe.model_characteristics is not None:
+        payload["model_characteristics"]["capabilities"] = sorted(recipe.model_characteristics.capabilities)
     encoded = json.dumps(
-        recipe.model_dump(mode="json"),
+        payload,
         ensure_ascii=False,
         allow_nan=False,
         sort_keys=True,

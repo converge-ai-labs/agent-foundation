@@ -161,3 +161,13 @@ The initial migrations create the current schema directly, without persisted too
 Use an `Idempotency-Key` containing 1–512 visible ASCII bytes for retryable management commands. If a response is lost, repeat the same key and request. For 24 hours from the original successful commit, an authorized replay returns the original accepted result, even if the resource has since advanced. Changing the request while reusing that key returns a conflict. Replay does not renew the window.
 
 Read the Connection after a mutation to observe current discovery status; the mutation receipt records its accepted state. Supply credentials through the owning Account, Provider, or MCP connection. Run configuration selects those managed resources and does not accept direct credential overrides.
+
+## Scheduled tasks in Slack
+
+In an enabled Slack channel, mention the Bot with a scheduling request, for example: “Every weekday at 09:00 Asia/Shanghai, summarize decisions and open questions in this channel.” One-time reminders are also supported. Include a timezone; if the time is ambiguous, clarify it before confirming.
+
+The Bot posts a confirmation card showing the task, schedule, timezone, and destination. Click **Confirm** to activate it. Only the original requester can confirm or manage the task. To inspect tasks, ask “What scheduled tasks are set up in this channel?” To change one, mention the Bot with its task ID and the new instructions or time, then confirm the updated card. The existing schedule remains active until the edit is confirmed. Cards also provide **Pause**, **Resume**, and **Delete**. Pausing or deleting does not cancel an already running occurrence; use that occurrence's **Stop task** button instead.
+
+The service must be running. After downtime, missed intervals coalesce into one late execution rather than replaying a backlog. Resuming starts with the next future occurrence. Each occurrence posts a normal task card and its explicit result in the same channel. Execution status does not by itself prove delivery. Account, channel, or execution permission changes can pause the schedule; inspect the reported error and recreate the task under the new configuration. Confirmation expires after 24 hours. An uncertain initial card delivery is reported by task listing and is not automatically posted again.
+
+This workflow currently supports Slack channels. Calendar schedules include one-time, daily, weekly, and selected-weekday tasks; event-triggered monitoring such as “notify me when CI finishes” is a separate capability.

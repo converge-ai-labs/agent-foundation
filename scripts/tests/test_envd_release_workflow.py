@@ -139,3 +139,29 @@ def test_rc_image_never_advances_latest(
     lines = output.read_text(encoding="utf-8").splitlines()
     assert f"{image}:{version}" in lines
     assert (f"{image}:latest" in lines) == ("-rc." not in version)
+
+
+@pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])
+@pytest.mark.parametrize("binary_version", ["1.2.3", "1.2.3-rc.1", "0.0.0"])
+def test_native_release_checks_binary_version_without_inner_isolation(
+    jobs: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str, binary_version: str
+) -> None:
+    steps = jobs["build-binaries"]["steps"]
+    step = next(step for step in steps if step["name"] == "Verify native Linux release version")
+    assert step["if"] == "matrix.target == 'x86_64-unknown-linux-gnu'"
+    assert step["env"] == {
+        "TARGET": "${{ matrix.target }}",
+        "VERSION": "${{ needs.prepare.outputs.version }}",
+    }
+    assert all("isolation probe" not in step.get("run", "") for step in steps)
+    target = "x86_64-unknown-linux-gnu"
+    binary = tmp_path / "target" / target / "release/a13n-envd"
+    binary.parent.mkdir(parents=True)
+    binary.write_text(f'#!/bin/sh\n[ "$*" = "--version" ] || exit 1\necho "a13n-envd {binary_version}"\n')
+    binary.chmod(0o755)
+    monkeypatch.setenv("TARGET", target)
+    monkeypatch.setenv("VERSION", version)
+
+    result = run_step(step["run"], tmp_path)
+
+    assert (result.returncode == 0) == (version == binary_version)

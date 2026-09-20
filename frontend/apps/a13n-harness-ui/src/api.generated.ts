@@ -3157,6 +3157,11 @@ export interface components {
             route: string;
             thinking?: components["schemas"]["ThinkingControl"] | null;
             fast?: components["schemas"]["FastControl"] | null;
+            /**
+             * Media Capabilities
+             * @default []
+             */
+            media_capabilities?: components["schemas"]["NativeInputMediaKind"][];
         };
         /** ModelToolChoice */
         ModelToolChoice: {
@@ -3175,6 +3180,8 @@ export interface components {
             /** Replaces Host Operation */
             replaces_host_operation?: ("search" | "scrape") | null;
         };
+        /** @enum {string} */
+        NativeInputMediaKind: "image" | "video" | "audio";
         /** NotePage */
         NotePage: {
             /** Continuation Id */
@@ -4418,6 +4425,15 @@ export interface components {
         };
         /** ThreadSelectorCatalog */
         ThreadSelectorCatalog: {
+            /** Media Understanding */
+            media_understanding?: {
+                [key: string]: string;
+            };
+            /**
+             * Media Understanding Environment
+             * @default []
+             */
+            media_understanding_environment?: components["schemas"]["NativeInputMediaKind"][];
             /** Agents */
             agents: components["schemas"]["AgentSummary"][];
             /**

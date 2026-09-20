@@ -65,6 +65,16 @@ from .environment_helpers import (
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture
+def scan_files(tmp_path: Path) -> LocalFileOperator:
+    return LocalFileOperator(
+        root=tmp_path,
+        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        mount_id="skill-scan",
+        generation="test",
+    )
+
+
 class _Allow:
     async def __call__(self, invocation, metadata, *, context):
         del invocation, metadata, context
@@ -702,7 +712,9 @@ def test_skill_manager_rejects_invalid_custom_source_root(root: str) -> None:
         SkillManager((source,))
 
 
-async def test_skill_catalog_uses_ordered_later_source_precedence(tmp_path: Path) -> None:
+async def test_skill_catalog_uses_ordered_later_source_precedence(
+    tmp_path: Path, scan_files: LocalFileOperator
+) -> None:
     for root, description in (("global", "Global version"), ("project", "Project version")):
         path = tmp_path / root / "same"
         path.mkdir(parents=True)
@@ -710,30 +722,16 @@ async def test_skill_catalog_uses_ordered_later_source_precedence(tmp_path: Path
             f"---\nname: same\ndescription: {description}\n---\n\n# Same\n",
             encoding="utf-8",
         )
-    captured: list[AgentInfo] = []
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del messages
-        captured.append(info)
-        yield "done"
-
     manager = SkillManager(
         (
-            FileSkillSource("global", ("/workspace/global",)),
-            FileSkillSource("project", ("/workspace/project",)),
+            FileSkillSource("global", ("/global",)),
+            FileSkillSource("project", ("/project",)),
         )
     )
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(SkillsCapability(manager),),
-    )
-    await executable.run("Use a skill", bindings=RunBindings.embedded(environment=_binding(tmp_path)))
-
-    instructions = str(captured[0].instructions)
-    assert "Project version" in instructions
-    assert "Global version" not in instructions
+    catalog = await manager.scan(files=scan_files)
+    assert [(item.name, item.description, item.source_id) for item in catalog] == [
+        ("same", "Project version", "project")
+    ]
 
 
 async def test_host_skill_selection_injects_only_exact_selected_names(tmp_path: Path) -> None:
@@ -1239,7 +1237,7 @@ async def test_large_selected_skill_markdown_continues_without_skipping_lines(tm
     assert all(str(page["content"]).endswith("\n") for page in pages[:-1])
 
 
-async def test_skill_source_cannot_escape_its_declared_roots(tmp_path: Path) -> None:
+async def test_skill_source_cannot_escape_its_declared_roots(tmp_path: Path, scan_files: LocalFileOperator) -> None:
     for directory in ("allowed", "outside"):
         skill = tmp_path / directory / "escape"
         skill.mkdir(parents=True)
@@ -1249,31 +1247,21 @@ async def test_skill_source_cannot_escape_its_declared_roots(tmp_path: Path) -> 
         )
     source = _StaticSource(
         "static",
-        ("/workspace/allowed",),
+        ("/allowed",),
         (
             SkillCatalogItem(
                 name="escape",
                 description="Escape root.",
-                path="/workspace/outside/escape",
+                path="/outside/escape",
             ),
         ),
     )
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=lambda messages, info: _text("done")),
-        capabilities=(SkillsCapability(SkillManager((source,))),),
-    )
-
     with pytest.raises(DefinitionError) as exc_info:
-        await executable.run(
-            "Use a skill",
-            bindings=RunBindings.embedded(environment=_binding(tmp_path)),
-        )
+        await SkillManager((source,)).scan(files=scan_files)
     assert exc_info.value.code == "skill_path_outside_source"
 
 
-async def test_skill_catalog_rejects_truncated_frontmatter_lines(tmp_path: Path) -> None:
+async def test_skill_catalog_rejects_truncated_frontmatter_lines(tmp_path: Path, scan_files: LocalFileOperator) -> None:
     skill = tmp_path / "skills" / "long"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text(
@@ -1284,27 +1272,17 @@ async def test_skill_catalog_rejects_truncated_frontmatter_lines(tmp_path: Path)
         (
             FileSkillSource(
                 "workspace",
-                ("/workspace/skills",),
+                ("/skills",),
                 max_line_length=16,
             ),
         )
     )
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=lambda messages, info: _text("done")),
-        capabilities=(SkillsCapability(manager),),
-    )
-
     with pytest.raises(DefinitionError) as exc_info:
-        await executable.run(
-            "Use a skill",
-            bindings=RunBindings.embedded(environment=_binding(tmp_path)),
-        )
+        await manager.scan(files=scan_files)
     assert exc_info.value.code == "skill_catalog_invalid"
 
 
-async def test_skill_catalog_stops_reading_after_frontmatter(tmp_path: Path) -> None:
+async def test_skill_catalog_stops_reading_after_frontmatter(tmp_path: Path, scan_files: LocalFileOperator) -> None:
     skill = tmp_path / "skills" / "valid"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text(
@@ -1315,50 +1293,32 @@ async def test_skill_catalog_stops_reading_after_frontmatter(tmp_path: Path) -> 
         (
             FileSkillSource(
                 "workspace",
-                ("/workspace/skills",),
+                ("/skills",),
                 max_line_length=64,
             ),
         )
     )
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=lambda messages, info: _text("done")),
-        capabilities=(SkillsCapability(manager),),
-    )
-
-    result = await executable.run(
-        "Use a skill",
-        bindings=RunBindings.embedded(environment=_binding(tmp_path)),
-    )
-    assert result.output_or_raise() == "done"
+    catalog = await manager.scan(files=scan_files)
+    assert [(item.name, item.description) for item in catalog] == [("valid", "Valid metadata.")]
 
 
-async def test_custom_skill_source_requires_existing_regular_document(tmp_path: Path) -> None:
+async def test_custom_skill_source_requires_existing_regular_document(
+    tmp_path: Path, scan_files: LocalFileOperator
+) -> None:
     (tmp_path / "skills" / "missing").mkdir(parents=True)
     source = _StaticSource(
         "static",
-        ("/workspace/skills",),
+        ("/skills",),
         (
             SkillCatalogItem(
                 name="missing",
                 description="Missing document.",
-                path="/workspace/skills/missing",
+                path="/skills/missing",
             ),
         ),
     )
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=lambda messages, info: _text("done")),
-        capabilities=(SkillsCapability(SkillManager((source,))),),
-    )
-
     with pytest.raises(DefinitionError) as exc_info:
-        await executable.run(
-            "Use a skill",
-            bindings=RunBindings.embedded(environment=_binding(tmp_path)),
-        )
+        await SkillManager((source,)).scan(files=scan_files)
     assert exc_info.value.code == "skill_path_unavailable"
 
 

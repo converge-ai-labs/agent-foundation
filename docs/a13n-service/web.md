@@ -28,8 +28,9 @@ Built-in capabilities:
 | Jina       | Yes    | Yes    | API key    |
 | Perplexity | Yes    | No     | API key    |
 | SerpApi    | Yes    | No     | API key    |
+| TinyFish   | Yes    | Yes    | API key    |
 
-DuckDuckGo uses HTML search results; its public Instant Answer JSON API does not return ordinary web search results. Jina search requires an API key, and this integration uses that key for Reader as well. Every built-in remote scraper rejects restricted scrape because it cannot guarantee domain enforcement throughout the upstream operation. Search-only Providers cannot be selected for scrape.
+DuckDuckGo uses HTML search results; its public Instant Answer JSON API does not return ordinary web search results. Jina search requires an API key, and this integration uses that key for Reader as well. TinyFish Fetch appears as Provider-backed `scrape`; it does not replace the credential-free `fetch` tool. Every built-in remote scraper rejects restricted scrape because it cannot guarantee domain enforcement throughout the upstream operation. Search-only Providers cannot be selected for scrape.
 
 ## Configure an Agent
 

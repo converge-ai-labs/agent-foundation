@@ -1,7 +1,7 @@
 """add resource lifecycle counters.
 
 Revision ID: ec56e4426fb7
-Revises: 5fd38c1c77ba
+Revises: 639db32da93a
 Create Date: 2026-09-20 06:26:41.549364+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "ec56e4426fb7"
-down_revision: str | Sequence[str] | None = "5fd38c1c77ba"
+down_revision: str | Sequence[str] | None = "639db32da93a"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

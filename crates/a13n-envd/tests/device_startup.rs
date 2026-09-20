@@ -3,7 +3,6 @@ use std::{
     io::Write,
     path::PathBuf,
     process::{Command, Output, Stdio},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde_json::{Value, json};
@@ -12,14 +11,19 @@ struct Fixture(PathBuf);
 
 impl Fixture {
     fn new() -> Self {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let directory =
-            std::env::temp_dir().join(format!("a13n-envd-startup-{}-{unique}", std::process::id()));
-        fs::create_dir(&directory).unwrap();
-        Self(fs::canonicalize(directory).unwrap())
+        loop {
+            let mut random = [0_u8; 16];
+            getrandom::fill(&mut random).expect("generates fixture directory name");
+            let directory = std::env::temp_dir().join(format!(
+                "a13n-envd-startup-{:032x}",
+                u128::from_ne_bytes(random)
+            ));
+            match fs::create_dir(&directory) {
+                Ok(()) => return Self(fs::canonicalize(directory).unwrap()),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!("cannot allocate startup fixture: {error}"),
+            }
+        }
     }
 
     fn command(&self) -> Command {

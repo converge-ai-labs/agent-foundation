@@ -750,8 +750,6 @@
   color: var(--a13n-secondary);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .previewInstructions p {
   max-height: 16rem;

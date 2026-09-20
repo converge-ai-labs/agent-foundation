@@ -1,11 +1,24 @@
 import { useContext, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
-import { Button, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  ModalFrame,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+} from "a13n-ui";
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, TextField } from "../shell/ui";
-import { DraftContext, DraftLinks, NewResourceButton } from "./sources";
+import {
+  DraftContext,
+  DraftLinks,
+  NewResourceButton,
+  SourceDocument,
+} from "./sources";
+import { mediaKinds, mediaLabels } from "./media-understanding";
 import { ModelEditor } from "./model-editor";
 import { template, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
@@ -17,6 +30,60 @@ export function ModelsPage() {
   const drafts = useContext(DraftContext);
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const queries = useQueryClient();
+  const root = sources.data?.sources.find(
+    (source) => source.resource_kind === "root",
+  );
+  const setDefault = useMutation({
+    mutationFn: async ({
+      kind,
+      modelId,
+    }: {
+      kind: (typeof mediaKinds)[number];
+      modelId: string;
+    }) => {
+      if (!root?.writable) throw new Error("Root configuration is read only.");
+      const path = root.relative_path;
+      const draft = drafts.get(path);
+      if (draft && draft.content !== draft.base)
+        throw new Error("Save or discard the root configuration draft first.");
+      const saved = await result(
+        client.GET("/api/configuration/sources/{relative_path}", {
+          params: { path: { relative_path: path } },
+        }),
+      );
+      if (!saved.content) throw new Error("Root configuration is unavailable.");
+      const current = drafts.get(path);
+      if (current && current.content !== current.base)
+        throw new Error("Save or discard the root configuration draft first.");
+      const value =
+        selectors.data?.media_understanding?.[kind] === modelId
+          ? null
+          : modelId;
+      const content = updateDocument(
+        saved.content,
+        ["media_understanding", kind],
+        value,
+      );
+      const publication = await result(
+        client.PUT("/api/configuration/sources/{relative_path}", {
+          params: { path: { relative_path: path } },
+          body: { content },
+        }),
+      );
+      const latest = drafts.get(path);
+      drafts.set(path, {
+        content:
+          latest && latest.content !== latest.base ? latest.content : content,
+        base: content,
+        digest: publication.source_digest,
+        replacement: false,
+      });
+    },
+    onSuccess: () => {
+      void queries.invalidateQueries();
+    },
+  });
   const clone = useMutation({
     mutationFn: async ({ path, name }: { path: string; name: string }) => {
       const saved = await result(
@@ -51,7 +118,19 @@ export function ModelsPage() {
         description="Reusable model connections. Only saved Models appear in conversation choices; editing one does not change active Runs or Agent tools."
         actions={<NewResourceButton kind="model" />}
       />
-      <ErrorNotice error={selectors.error || sources.error || clone.error} />
+      <ErrorNotice
+        error={
+          selectors.error || sources.error || clone.error || setDefault.error
+        }
+      />
+      {root && (
+        <SourceDocument
+          path={root.relative_path}
+          title="Media understanding"
+          mediaOnly
+          embedded
+        />
+      )}
       <TextField
         label="Search models"
         type="search"
@@ -86,8 +165,54 @@ export function ModelsPage() {
                   )}
                   <small>{model.route}</small>
                   <small>{source?.relative_path ?? model.model_id}</small>
+                  {mediaKinds.some(
+                    (kind) =>
+                      selectors.data?.media_understanding?.[kind] ===
+                      model.model_id,
+                  ) && (
+                    <small>
+                      Default:{" "}
+                      {mediaKinds
+                        .filter(
+                          (kind) =>
+                            selectors.data?.media_understanding?.[kind] ===
+                            model.model_id,
+                        )
+                        .map((kind) => mediaLabels[kind])
+                        .join(", ")}
+                    </small>
+                  )}
                 </div>
                 <span>{source?.writable ? "Editable" : "Read only"}</span>
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        disabled={!root?.writable || setDefault.isPending}
+                      />
+                    }
+                  >
+                    Set as…
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    {mediaKinds.map((kind) => (
+                      <MenuItem
+                        key={kind}
+                        disabled={!model.media_capabilities?.includes(kind)}
+                        onClick={() =>
+                          setDefault.mutate({ kind, modelId: model.model_id })
+                        }
+                      >
+                        {selectors.data?.media_understanding?.[kind] ===
+                        model.model_id
+                          ? "Clear"
+                          : "Default"}{" "}
+                        {mediaLabels[kind].toLowerCase()} understanding
+                      </MenuItem>
+                    ))}
+                  </MenuPopup>
+                </Menu>
                 {source?.content_available &&
                   source.resource_ids.length === 1 && (
                     <Button

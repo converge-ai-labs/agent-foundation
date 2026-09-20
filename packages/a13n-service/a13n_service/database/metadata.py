@@ -88,6 +88,7 @@ def service_metadata() -> MetaData:
     from a13n_service.bots.connectivity import models as bot_models
     from a13n_service.bots.memory import bindings, models, settings
     from a13n_service.bots.progress import models as progress_models
+    from a13n_service.bots.routines import models as routine_models
 
-    del bot_models, bindings, models, settings, progress_models
+    del bot_models, bindings, models, settings, progress_models, routine_models
     return core_metadata()

@@ -58,8 +58,8 @@ def changed_files(base: str) -> list[str]:
     """Committed changes since the merge base plus everything in the working tree."""
     files: set[str] = set()
     commands = (
-        ["git", "diff", "--name-only", "--merge-base", base],
-        ["git", "diff", "--name-only", "HEAD"],
+        ["git", "diff", "--name-only", "--no-renames", "--merge-base", base],
+        ["git", "diff", "--name-only", "--no-renames", "HEAD"],
         ["git", "ls-files", "--others", "--exclude-standard"],
     )
     for command in commands:
@@ -67,7 +67,7 @@ def changed_files(base: str) -> list[str]:
         if result.returncode:
             raise SystemExit(f"{' '.join(command)} failed: {result.stderr.strip()}")
         files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
-    return sorted(path for path in files if (REPOSITORY_ROOT / path).exists())
+    return sorted(files)
 
 
 # --------------------------------------------------------------------------- python import graph
@@ -229,24 +229,36 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
     for relative in files:
         path = REPOSITORY_ROOT / relative
         posix = Path(relative).as_posix()
-        if posix.endswith(".md"):
+        if posix.endswith(".md") and path.is_file():
             result.markdown_files.add(posix)
         if posix in GLOBAL_PYTHON_INPUTS:
             python_full = True
             result.notes.append(f"{posix} changes every Python suite")
         elif posix.startswith("scripts/"):
-            if posix.endswith(".py"):
+            if posix.endswith(".py") and path.is_file():
                 result.python_files.add(posix)
                 python_sources.append(path)
             result.python_tests.add("scripts/tests")
         elif posix.startswith("packages/"):
             tests_dir = _distribution_tests(path)
-            if posix.endswith(".py"):
+            if posix.endswith(".py") and path.is_file():
                 result.python_files.add(posix)
+            if (
+                tests_dir
+                and posix.startswith(tests_dir + "/")
+                and path.suffix == ".py"
+                and path.name.startswith("test_")
+                and path.is_file()
+            ):
+                # Recorded node IDs cannot cover newly added, renamed or reparametrized tests.
+                result.python_tests.add(posix)
             if path.suffix == ".py" and tests_dir and path.name != "conftest.py" and "/migrations/" not in posix:
                 package_python.append(path)
             elif tests_dir and posix.startswith(tests_dir + "/"):
-                result.python_tests.add(path.parent.relative_to(REPOSITORY_ROOT).as_posix())
+                scope = path.parent
+                while not scope.is_dir():
+                    scope = scope.parent
+                result.python_tests.add(scope.relative_to(REPOSITORY_ROOT).as_posix())
             elif path.suffix == ".py":
                 python_sources.append(path)
                 if "/migrations/" in posix and tests_dir:
@@ -266,6 +278,9 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
             if inside in FRONTEND_PROJECT_INPUTS:
                 result.frontend_full.add(project)
             elif path.suffix in FRONTEND_SUFFIXES and inside.startswith(("src/", "tests/")):
+                if not path.is_file():
+                    result.frontend_full.update(FRONTEND_PROJECTS if project.startswith("packages/") else (project,))
+                    continue
                 result.frontend_files.add(posix)
                 # Shared packages are imported by the applications, so every project checks relatedness.
                 for candidate in FRONTEND_PROJECTS:
@@ -276,7 +291,7 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
         posix = path.relative_to(REPOSITORY_ROOT).as_posix()
         if path in mapped:
             continue
-        if path.name.startswith("test_") and posix.startswith(f"{_distribution_tests(path)}/"):
+        if path.name.startswith("test_") and posix.startswith(f"{_distribution_tests(path)}/") and path.is_file():
             result.python_tests.add(posix)
         else:
             python_sources.append(path)
@@ -285,6 +300,12 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
         graph = graph or PythonGraph()
         for source in python_sources:
             if source not in graph.modules:
+                tests_dir = _distribution_tests(source)
+                if tests_dir:
+                    result.python_tests.add(tests_dir)
+                    result.notes.append(
+                        f"no impact map for deleted source {source.relative_to(REPOSITORY_ROOT)}; running {tests_dir}"
+                    )
                 continue
             owner = graph.modules[source].distribution
             affected = graph.affected_tests([source])

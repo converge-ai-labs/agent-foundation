@@ -786,7 +786,7 @@ async def test_model_selection_is_remembered_for_project_and_preserves_agent(
         thread_id = await backend.ensure_session()
         original = (await app.get_thread(thread_id)).thread.configuration
         choices = await backend.choices("model")
-        assert {item.value for item in choices} == {"default", "model-codex", "model-alternate"}
+        assert {item.value for item in choices} == {"default", "defaults", "model-codex", "model-alternate"}
         await backend.thinking("low")
         assert (await backend.models("model-alternate")).endswith(" · remembered for this project")
         assert backend.overrides.model_id == "model-alternate"

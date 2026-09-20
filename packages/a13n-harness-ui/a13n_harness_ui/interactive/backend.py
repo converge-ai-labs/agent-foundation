@@ -19,6 +19,7 @@ from a13n_harness_ui.configuration import (
     LoadedHarnessUiConfiguration,
     ResourceMutationRequest,
 )
+from a13n_harness_ui.configuration.models import MEDIA_KINDS
 from a13n_harness_ui.environment_profiles import (
     environment_profile_id_for_mode,
     local_sandbox_supported,
@@ -27,6 +28,7 @@ from a13n_harness_ui.environment_profiles import (
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.goal import GoalMode
 from a13n_harness_ui.live import LiveEvent, root_context_samples, root_model_usage
+from a13n_harness_ui.media_understanding import environment_media_kinds
 from a13n_harness_ui.model_adapters import service_tier_setting
 from a13n_harness_ui.model_fast import FastControl, apply_fast, describe_fast, fast_state
 from a13n_harness_ui.model_thinking import ThinkingControl, apply_thinking, describe_thinking, summarize_thinking
@@ -299,6 +301,52 @@ class SessionBackend:
             else ("project preference cleared" if model_id is None else "remembered for this project")
         )
         return f"Model · {self.status.model} · {scope}"
+
+    async def media_default_choices(self, kind: str | None = None) -> tuple[Choice, ...]:
+        configuration = await self.app.current_configuration()
+        if configuration is None:
+            raise ValueError("Run a13n-harness-ui setup first.")
+        environment = environment_media_kinds()
+        if kind is None:
+            selected = configuration.document.media_understanding.selections()
+            return tuple(
+                Choice(
+                    media,
+                    media.capitalize(),
+                    configuration.models[selected[media]].name
+                    if media in selected
+                    else ("Environment" if media in environment else "Not configured"),
+                )
+                for media in MEDIA_KINDS
+            )
+        if kind not in MEDIA_KINDS:
+            raise ValueError("Unknown media kind.")
+        return (
+            Choice("default", "Environment" if kind in environment else "Not configured", "Clear configured default"),
+            *(
+                Choice(model.id, model.name, model.route)
+                for model in configuration.models.values()
+                if kind in model.media_capabilities()
+            ),
+        )
+
+    async def set_media_default(self, kind: str, selected: str) -> str:
+        if kind not in MEDIA_KINDS:
+            raise ValueError("Unknown media kind.")
+        catalog = await self.app.configuration_sources()
+        root = next(source for source in catalog.sources if source.resource_kind == "root")
+        source = await self.app.configuration_source(relative_path=root.relative_path)
+        if not source.writable or source.content is None:
+            raise ValueError("Root configuration is read only.")
+        document = yaml.safe_load(source.content)
+        media = document.get("media_understanding") or {}
+        media[kind] = None if selected == "default" else selected
+        document["media_understanding"] = media
+        await self.app.mutate_configuration(
+            relative_path=root.relative_path,
+            request=ResourceMutationRequest(content=yaml.safe_dump(document, sort_keys=False, allow_unicode=True)),
+        )
+        return f"{kind.capitalize()} understanding default saved · future Runs"
 
     async def thinking(self, selected: str | None) -> str:
         await self.refresh()
@@ -614,6 +662,7 @@ class SessionBackend:
                 return ()
             return (
                 Choice("default", "Agent default", "Clear this project's remembered model"),
+                Choice("defaults", "Media understanding defaults…", "Global configuration"),
                 *(Choice(item.id, item.name, item.route) for item in configuration.models.values()),
             )
         if kind == "agent":

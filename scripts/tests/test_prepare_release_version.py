@@ -156,7 +156,7 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
     assert 'version = "9.8.7rc2"' in harness_manifest
     assert '"a13n-harness==9.8.7rc2"' in protocol_manifest
     assert 'version = "9.8.7rc2"' in ui_manifest
-    assert '"a13n-harness>=3.2.1rc4,<4.0.0"' in ui_manifest
+    assert '"a13n-harness[docker,e2b,modal]>=3.2.1rc4,<4.0.0"' in ui_manifest
     assert '"a13n-stream-protocol>=3.2.1rc4,<4.0.0"' in ui_manifest
     assert 'version = "9.8.7rc2"' in (tmp_path / "packages/a13n-logging/pyproject.toml").read_text()
     assert 'version = "9.8.7rc2"' in (tmp_path / "pyproject.toml").read_text()
@@ -420,4 +420,52 @@ def test_range_order_is_normalized_without_changing_policy(tmp_path: Path) -> No
     result = run_script(PREPARER, tmp_path, "a13n-harness-ui", "9.8.7")
     assert result.returncode == 0, result.stderr
     content = (tmp_path / "packages/a13n-harness-ui/pyproject.toml").read_text()
-    assert '"a13n-harness>=3.2.1,<4.0.0"' in content
+    assert '"a13n-harness[docker,e2b,modal]>=3.2.1,<4.0.0"' in content
+
+
+@pytest.mark.parametrize("version", ["9.8.7", "9.8.7-rc.2"])
+def test_prepared_ui_release_exports_locked_provider_dependencies(tmp_path: Path, version: str) -> None:
+    copy_release_files(tmp_path)
+    result = run_script(PREPARER, tmp_path, "a13n-harness-ui", version)
+    assert result.returncode == 0, result.stderr
+    before = snapshot(tmp_path)
+
+    exported = subprocess.run(
+        [
+            "uv",
+            "export",
+            "--locked",
+            "--offline",
+            "--package",
+            "a13n-harness-ui",
+            "--no-dev",
+            "--no-emit-workspace",
+            "--no-hashes",
+            "--no-header",
+            "--no-annotate",
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert exported.returncode == 0, exported.stderr
+    assert snapshot(tmp_path) == before
+    for package in ("docker", "e2b", "modal"):
+        assert re.search(rf"^{package}==", exported.stdout, re.MULTILINE)
+
+
+@pytest.mark.parametrize("version", ["9.8.7", "9.8.7-rc.2"])
+def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
+    copy_release_files(tmp_path)
+    manifest = tmp_path / "packages/a13n-stream-protocol/pyproject.toml"
+    manifest.write_text(manifest.read_text().replace('"a13n-harness",', '"a13n-harness[docker]",'))
+
+    result = run_script(PREPARER, tmp_path, "a13n-harness", version)
+
+    assert result.returncode == 0, result.stderr
+    python_version = version.replace("-rc.", "rc")
+    assert f'"a13n-harness[docker]=={python_version}"' in manifest.read_text()
+    checked = run_script(CHECKER, tmp_path, "a13n-harness", version)
+    assert checked.returncode == 0, checked.stderr

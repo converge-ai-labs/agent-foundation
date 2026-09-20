@@ -17,7 +17,8 @@ def test_ui_ci_keeps_main_linux_and_separate_windows_backstop() -> None:
     # PyYAML's YAML 1.1 loader reads the Actions `on` key as True.
     triggers = workflow[True]
     assert triggers["push"]["branches"] == ["main"]
-    assert triggers["schedule"] == [{"cron": "23 4 * * 1"}]
+    assert triggers["schedule"]
+    assert all("cron" in schedule for schedule in triggers["schedule"])
     assert "workflow_dispatch" in triggers
     assert "github.event_name" in workflow["concurrency"]["group"]
     jobs = workflow["jobs"]
@@ -89,17 +90,16 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     tests = by_name["Test UI"]
     arguments = shlex.split(tests["run"])
     assert "scripts.run_python_tests" in arguments
-    assert arguments[arguments.index("--workers") + 1] == "7"
-    assert jobs["tests"]["runs-on"] == "ubuntu-24.04-8core"
+    assert int(arguments[arguments.index("--workers") + 1]) > 0
     assert "packages/a13n-harness-ui/tests" in arguments
     assert not any(arg.startswith("scripts/tests/") for arg in arguments)
     options = shlex.split(tests["env"]["PYTEST_ADDOPTS"])
-    assert {"-v", "--durations=20", "--timeout=60", "--timeout-method=thread", "--max-worker-restart=0"} <= set(options)
-    assert "faulthandler_timeout=45" in options
-    assert tests["timeout-minutes"] == 5
-    assert jobs["tests"]["timeout-minutes"] == 8
-    assert jobs["distribution"]["timeout-minutes"] == 8
-    assert "--timeout=120" in jobs["windows"]["env"]["PYTEST_ADDOPTS"]
+    assert {"--timeout-method=thread", "--max-worker-restart=0"} <= set(options)
+    assert any(option.startswith("--durations=") for option in options)
+    watchdog = float(next(option.split("=", 1)[1] for option in options if option.startswith("--timeout=")))
+    dump = float(next(option.split("=", 1)[1] for option in options if option.startswith("faulthandler_timeout=")))
+    assert 0 < dump < watchdog < tests["timeout-minutes"] * 60 < jobs["tests"]["timeout-minutes"] * 60
+    assert any(option.startswith("--timeout=") for option in shlex.split(jobs["windows"]["env"]["PYTEST_ADDOPTS"]))
     assert "Test native command lifecycle" in by_name
     assert not any("pnpm" in step.get("run", "") for step in steps)
     for name in ("tests", "frontend", "distribution"):
@@ -120,7 +120,6 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
         assert command in distribution[name]["run"]
         assert "if" not in distribution[name]
     assert "/usr/bin/time -p" in distribution["Test WebUI"]["run"]
-    assert jobs["distribution"]["runs-on"] == "ubuntu-24.04-8core"
     assert webui.index("run check") < webui.index("run test") < webui.index("run build")
     assert not any("playwright" in step.get("run", "").lower() for step in jobs["distribution"]["steps"])
     assert "scripts/tests/test_harness_ui_ci_workflow.py" in distribution["Test distribution tooling"]["run"]

@@ -5,7 +5,6 @@ import type { Schema } from "../transport/client";
 import { ModelPicker } from "./model-picker";
 import { EnvironmentBindings } from "../configuration/environment-bindings";
 import { ProjectFolders } from "../configuration/project-folders";
-import { FastToggle } from "./fast-toggle";
 import styles from "./new-conversation.module.css";
 
 export function RunEnvironments({
@@ -337,16 +336,6 @@ export function ThreadRunChoices({
             ]}
           />
         </div>
-        <div className={styles.fastChoice}>
-          <FastToggle
-            model={catalog?.models?.find(
-              (item) => item.model_id === (modelId ?? inheritedModelId),
-            )}
-            value={fast}
-            disabled={disabled || !catalog}
-            onChange={onFastChange}
-          />
-        </div>
       </div>
       <div className={styles.modelChoice}>
         <span className={styles.choiceLabel}>Model</span>
@@ -359,6 +348,8 @@ export function ThreadRunChoices({
           onChange={onModelChange}
           thinking={thinking}
           onThinkingChange={onThinkingChange}
+          fast={fast}
+          onFastChange={onFastChange}
         />
       </div>
     </div>

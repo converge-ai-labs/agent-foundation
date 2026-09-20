@@ -11,6 +11,8 @@ on:
       - "packages/a13n-logging/**"
       - "packages/a13n-stream-protocol/**"
       - "pyproject.toml"
+      - "conftest.py"
+      - "scripts/tests/test_ci_inputs.py"
       - "scripts/check-a13n-distributions.py"
       - "scripts/tests/test_check_a13n_distributions.py"
       - "uv.lock"
@@ -24,6 +26,8 @@ on:
       - "packages/a13n-logging/**"
       - "packages/a13n-stream-protocol/**"
       - "pyproject.toml"
+      - "conftest.py"
+      - "scripts/tests/test_ci_inputs.py"
       - "scripts/check-a13n-distributions.py"
       - "scripts/tests/test_check_a13n_distributions.py"
       - "uv.lock"
@@ -75,6 +79,15 @@ jobs:
           uv run --locked python -m pytest
           packages/a13n-stream-protocol/tests
           scripts/tests/test_check_a13n_distributions.py
+          --junitxml=test-results/stream.xml --durations=30 -r a
+
+      - name: Retain Stream Protocol test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stream-protocol-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
 
       - name: Build Harness libraries and local distribution dependencies
         run: |

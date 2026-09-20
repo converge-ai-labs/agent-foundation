@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Literal, Self, get_args, get_origin
 
+from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
@@ -160,6 +161,9 @@ class ResolvedRunComposition(CompositionModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     project_roots: tuple[str, ...] = Field(default=(), max_length=64)
     webui_sidekick: SidekickConfiguration | None = None
+    media_understanding: dict[NativeInputMediaKind, ResolvedModelRecipe] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
     content_plugins: tuple[ResolvedContentPlugin, ...] = Field(default=(), max_length=256)
     root: ResolvedAgentNode
     environment_profile: ResolvedEnvironmentProfile

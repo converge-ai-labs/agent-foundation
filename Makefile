@@ -362,8 +362,9 @@ eip-verify: sync ## Verify checked EIP artifacts without modifying the repositor
 .PHONY: eip-integration-test
 eip-integration-test: sync ## Run EIP generation, runtime, cross-language, and wire-model integration tests
 	@cargo build --locked --package a13n-envd
-	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" A13N_ENVD_EXECUTABLE="$(CURDIR)/target/debug/a13n-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/a13n-envd-client/tests/eip packages/a13n-harness/tests/providers_environment/test_local_envd.py packages/a13n-harness/tests/providers_environment/test_local_envd_e2e.py packages/a13n-harness/tests/providers_environment/test_remote_envd.py packages/a13n-harness/tests/providers_environment/test_remote_envd_e2e.py
-	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" uv run --project examples/environment-provider --locked python -m pytest examples/environment-provider/tests
+	@test -x "$(CURDIR)/target/debug/a13n-envd"
+	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" A13N_ENVD_EXECUTABLE="$(CURDIR)/target/debug/a13n-envd" uv run --locked python -m pytest $(if $(EIP_TEST_REPORT_DIR),--junitxml=$(EIP_TEST_REPORT_DIR)/eip.xml) scripts/tests/test_eip_codegen.py packages/a13n-envd-client/tests/eip packages/a13n-harness/tests/providers_environment/test_local_envd.py packages/a13n-harness/tests/providers_environment/test_local_envd_e2e.py packages/a13n-harness/tests/providers_environment/test_remote_envd.py packages/a13n-harness/tests/providers_environment/test_remote_envd_e2e.py
+	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" uv run --project examples/environment-provider --locked python -m pytest $(if $(EIP_TEST_REPORT_DIR),--junitxml=$(EIP_TEST_REPORT_DIR)/eip-example.xml) examples/environment-provider/tests
 	@uv run --locked pyright packages/a13n-envd-client/a13n_envd_client packages/a13n-harness/a13n_harness/providers/environment
 
 .PHONY: eip-test

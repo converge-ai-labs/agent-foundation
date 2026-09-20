@@ -38,7 +38,7 @@ from . import worker_helpers
 from .conftest import NOW, ORGANIZATION_ID, WORKSPACE_ID
 from .test_environment_runtime import template_config
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.timeout(180)]
 
 
 @pytest.mark.parametrize("preparation", ["on_run", "on_use"])
@@ -163,7 +163,13 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
 
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=respond)
-    settings = Settings(worker={"concurrency": 2, "poll_interval_seconds": 0.01})
+    settings = Settings(
+        worker={
+            "concurrency": 2,
+            "poll_interval_seconds": 0.05,
+            "lease_seconds": worker_helpers.INTEGRATION_LEASE_SECONDS,
+        }
+    )
     async with worker_helpers.worker_runtime(
         interaction_sessions,
         interaction_object_store,
@@ -174,7 +180,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
         environment_catalog=ProviderCatalog(select_builtin_environment_providers(("direct_local",))),
     ) as (runtime, _shared):
         loop = runtime.execution_loop
-        with fail_after(60):
+        with fail_after(worker_helpers.INTEGRATION_COMPLETION_SECONDS):
             async with create_task_group() as tasks:
                 tasks.start_soon(loop.run)
                 while True:
@@ -190,7 +196,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
                         )
                         if all(run.status == "completed" for run in runs):
                             break
-                    await sleep(0.01)
+                    await sleep(0.05)
                 await loop.drain()
                 await loop.wait_stopped()
 

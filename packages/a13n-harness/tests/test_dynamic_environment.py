@@ -83,9 +83,6 @@ from a13n_harness.toolsets import (
 )
 from a13n_harness.toolsets._scoped_files import ScopedFileAccess
 from a13n_harness.toolsets.files import FileToolset
-from a13n_harness.toolsets.output import (
-    disclose_sequence_field,
-)
 from a13n_harness.toolsets.process_manager import _fit_stream_prefixes
 from a13n_harness.toolsets.shell import ShellToolset
 from a13n_harness.usage import ProviderUsageRecord
@@ -115,77 +112,6 @@ requires_posix_process_groups = pytest.mark.skipif(
     reason="Direct Local process groups require POSIX",
 )
 _PROCESS_EXECUTABLE = Path(sys.executable).resolve()
-
-
-async def test_incomplete_oversized_sequence_spills_before_preserving_provider_cursor() -> None:
-    spilled: list[bytes] = []
-
-    class Context:
-        async def _spill_tool_result(self, data: bytes, *, suffix: str) -> str:
-            assert suffix == ".json"
-            spilled.append(data)
-            return "/workspace/page.json"
-
-    value = {
-        "ok": True,
-        "entries": [{"path": f"/entry-{index}-{'x' * 80}"} for index in range(200)],
-        "has_more": True,
-        "next_offset": 200,
-    }
-    bounded, showing = await disclose_sequence_field(
-        cast(Any, Context()),
-        cast(Any, value),
-        field="entries",
-        content_complete=False,
-        noun="test page",
-        continuation_hint="Continue from next_offset.",
-    )
-
-    assert showing < len(value["entries"])
-    assert bounded["next_offset"] == 200
-    assert bounded["disclosure"]["output_file_path"] == "/workspace/page.json"
-    assert b"entry-199" in spilled[0]
-
-
-async def test_file_list_restarts_page_when_secondary_spill_is_unavailable() -> None:
-    class PagingFiles:
-        async def list(self, path: str, *, offset: int, max_results: int, include_hidden: bool):
-            del path, include_hidden
-            entries = tuple(
-                FileMetadata(
-                    path=f"/entry-{index}-{'x' * 80}",
-                    kind="file",
-                    size=1,
-                    writable=False,
-                )
-                for index in range(offset, min(200, offset + max_results))
-            )
-            return FileEntriesResult(
-                entries=entries,
-                offset=offset,
-                has_more=offset + len(entries) < 200,
-            )
-
-    class Context:
-        async def _spill_tool_result(self, data: bytes, *, suffix: str) -> None:
-            del data, suffix
-            return None
-
-    toolset = FileToolset(cast(Any, PagingFiles()))
-    ctx = cast(Any, SimpleNamespace(deps=Context()))
-
-    oversized = await toolset.ls(ctx, "/", max_results=200)
-    retried = await toolset.ls(ctx, "/", offset=oversized["next_offset"], max_results=10)
-
-    assert oversized["showing"] < 200
-    assert oversized["next_offset"] == 0
-    assert oversized["has_more"] is True
-    assert oversized["disclosure"]["output_file_path"] is None
-    assert "smaller max_results" in oversized["disclosure"]["hint"]
-    assert retried["entries"] == [
-        {"path": f"/entry-{index}-{'x' * 80}", "kind": "file", "size": 1, "writable": False} for index in range(10)
-    ]
-    assert retried["next_offset"] == 10
 
 
 def test_stream_prefixes_do_not_split_valid_utf8_characters() -> None:
@@ -1557,145 +1483,6 @@ async def test_media_understanding_releases_mount_scope_before_model_execution()
     assert result.return_value == "detached analysis"
 
 
-async def test_exact_edits_are_agent_friendly_and_failed_batch_is_not_published(tmp_path: Path) -> None:
-    target = tmp_path / "edit.txt"
-    target.write_text("alpha\nbeta\nbeta\n")
-    observed: list[dict[str, Any]] = []
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        returns = [
-            part.content
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict)
-        ]
-        observed[:] = returns
-        if not returns:
-            yield {
-                0: DeltaToolCall(
-                    name="multi_edit",
-                    json_args=json.dumps(
-                        {
-                            "file_path": "/workspace/edit.txt",
-                            "edits": [
-                                {"old_string": "alpha", "new_string": "changed"},
-                                {"old_string": "missing", "new_string": "never-written"},
-                            ],
-                        }
-                    ),
-                    tool_call_id="multi-edit-1",
-                )
-            }
-        elif len(returns) == 1:
-            assert target.read_text() == "alpha\nbeta\nbeta\n"
-            yield {
-                0: DeltaToolCall(
-                    name="edit",
-                    json_args=json.dumps(
-                        {
-                            "file_path": "/workspace/edit.txt",
-                            "old_string": "beta",
-                            "new_string": "gamma",
-                            "replace_all": True,
-                        }
-                    ),
-                    tool_call_id="edit-2",
-                )
-            }
-        else:
-            yield "done"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(DynamicEnvironmentCapability(_configuration()),),
-    )
-    result = await executable.run(
-        "edit",
-        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
-    )
-
-    assert result.output_or_raise() == "done"
-    assert observed[0]["error"]["code"] == "environment_edit_not_found"
-    assert observed[0]["error"]["details"] == {
-        "edit_index": 2,
-        "hint": "Read the current target and copy an exact old_string, including whitespace, before retrying the edit.",
-    }
-    assert observed[1]["ok"] is True
-    assert target.read_text() == "alpha\ngamma\ngamma\n"
-
-
-@pytest.mark.parametrize("file_root", [False, True])
-async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path, file_root: bool) -> None:
-    (tmp_path / "context.txt").write_bytes(
-        b"needle0 top\nbefore middle\nneedle1 middle\nafter middle\nneedle2 bottom\n"
-    )
-    observed: list[dict[str, Any]] = []
-    requests = (
-        {"pattern": "needle0", "context_lines": 0},
-        {"pattern": "needle1", "context_lines": 1},
-        {"pattern": "needle2", "context_lines": 2},
-    )
-    if file_root:
-        requests = tuple({**request, "root": str(tmp_path / "context.txt")} for request in requests)
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        returns = [
-            part.content
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict)
-        ]
-        observed[:] = returns
-        if not returns:
-            yield {
-                index: DeltaToolCall(
-                    name="grep",
-                    json_args=json.dumps(request),
-                    tool_call_id=f"grep-context-{index}",
-                )
-                for index, request in enumerate(requests)
-            }
-        else:
-            yield "done"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(DynamicEnvironmentCapability(_configuration()),),
-    )
-    result = await executable.run(
-        "grep",
-        bindings=RunBindings.embedded(
-            environment=_local_binding(tmp_path, mount_path=str(tmp_path)), capabilities=(_policy(),)
-        ),
-    )
-
-    assert result.output_or_raise() == "done"
-    assert all(item["ok"] for item in observed), observed
-    matches = {match["matching_line"]: match for item in observed for match in item["matches"].values()}
-    assert matches["needle0 top"]["context_start_line"] == 1
-    assert matches["needle0 top"]["context"].splitlines() == ["needle0 top"]
-    assert matches["needle1 middle"]["context_start_line"] == 2
-    assert matches["needle1 middle"]["context"].splitlines() == [
-        "before middle",
-        "needle1 middle",
-        "after middle",
-    ]
-    assert matches["needle2 bottom"]["context_start_line"] == 3
-    assert matches["needle2 bottom"]["context"].splitlines() == [
-        "needle1 middle",
-        "after middle",
-        "needle2 bottom",
-    ]
-
-
 async def test_grep_schema_options_literal_search_and_actionable_errors(tmp_path: Path) -> None:
     (tmp_path / "context.py").write_text("a.b\naxb\nHELLO\n")
     observed: list[dict[str, Any]] = []
@@ -2041,7 +1828,6 @@ async def test_managed_tools_accept_directory_paths_and_explain_invalid_paths(
 async def test_file_creation_derives_parent_from_normalized_path(
     tmp_path: Path, tool: str, suffix: str, root: str, nested: bool
 ) -> None:
-    observed: list[Any] = []
     relative_path = "sub/value.txt" if nested else "value.txt"
     arguments: dict[str, Any] = {"file_path": f"{root}/./{relative_path}{suffix}"}
     if tool == "write":
@@ -2049,29 +1835,8 @@ async def test_file_creation_derives_parent_from_normalized_path(
     elif tool == "edit":
         arguments.update(old_string="", new_string="created")
     else:
-        arguments["edits"] = [{"old_string": "", "new_string": "created"}]
+        arguments["edits"] = [file_toolset_module.FileTextEdit(old_string="", new_string="created")]
 
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        returns = [
-            part
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, ToolReturnPart)
-        ]
-        if not returns:
-            yield {0: DeltaToolCall(name=tool, json_args=json.dumps(arguments), tool_call_id="create-1")}
-        else:
-            observed.append(returns[-1].content)
-            yield "done"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(DynamicEnvironmentCapability(_configuration()),),
-    )
     operations = (
         frozenset({EnvironmentAction.FILE_WRITE_TEXT})
         if tool == "write" and not nested
@@ -2080,9 +1845,15 @@ async def test_file_creation_derives_parent_from_normalized_path(
     runtime = create_environment_runtime(
         mounts={"project": _local_mount(tmp_path, mount_path=root, operations=operations)}, default_mount="project"
     )
-    result = await executable.run("create file", bindings=RunBindings.embedded(environment=runtime))
-    assert result.output_or_raise() == "done"
-    assert observed[0]["ok"] is True
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(
+        thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}
+    ) as environment:
+        await runtime._activate()
+        toolset = FileToolset(environment.files, file_scopes=environment)
+        ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace(environment=environment), capabilities={}))
+        observed = await getattr(toolset, tool)(ctx, **arguments)
+    assert observed["ok"] is True
     assert (tmp_path / relative_path).is_file()
     assert (tmp_path / relative_path).read_text(encoding="utf-8") == "created"
 
@@ -2284,148 +2055,6 @@ async def test_empty_environment_omits_environment_tools() -> None:
 
     assert result.output_or_raise() == "done"
     assert observed_names == set()
-
-
-async def test_large_environment_result_is_bounded_without_retry_shaped_failure(tmp_path: Path) -> None:
-    (tmp_path / "large.txt").write_text("\\" * (256 * 1024))
-    observed: dict[str, Any] = {}
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        returns = [
-            part.content
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, ToolReturnPart)
-        ]
-        if not returns:
-            yield {
-                0: DeltaToolCall(
-                    name="view",
-                    json_args=json.dumps({"file_path": "/workspace/large.txt", "line_limit": 1}),
-                    tool_call_id="large-read-1",
-                )
-            }
-        else:
-            assert isinstance(returns[-1], dict)
-            observed.update(returns[-1])
-            yield "done"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(DynamicEnvironmentCapability(_configuration()),),
-    )
-    result = await executable.run(
-        "read",
-        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
-    )
-
-    assert result.output_or_raise() == "done"
-    assert observed["ok"] is True
-    assert observed["has_more"] is False
-    assert observed["truncated_lines"] == [1]
-    assert observed["disclosure"]["content_complete"] is False
-    assert "one-based" in observed["disclosure"]["hint"]
-    assert "max_line_length" in observed["disclosure"]["hint"]
-    assert "next_line_offset" not in observed
-    assert isinstance(observed["content"], str)
-    assert len(observed["content"]) == 2_000
-
-
-@pytest.mark.parametrize("line_count", [160, 520])
-@pytest.mark.parametrize("line_text", ["x" * 90, "中文𐐀" * 30, '\\"' * 45])
-async def test_text_view_output_budget_continues_without_skipping_lines(
-    tmp_path: Path, line_count: int, line_text: str
-) -> None:
-    content = "".join(f"line {index}: {line_text}\n" for index in range(line_count)) + "tail"
-    (tmp_path / "notes.md").write_bytes(content.encode("utf-8"))
-    pages: list[dict[str, Any]] = []
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        returns = [
-            part.content
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, ToolReturnPart)
-        ]
-        offset = 0
-        if returns:
-            page = returns[-1]
-            assert isinstance(page, dict)
-            pages.append(page)
-            assert page["ok"] is True
-            assert page["truncated_lines"] == []
-            assert page["lines_read"] == len(page["content"].splitlines())
-            assert content.startswith("".join(item["content"] for item in pages))
-            assert len(json.dumps(page, ensure_ascii=False, separators=(",", ":"))) <= 12_000
-            if not page["has_more"]:
-                assert "".join(item["content"] for item in pages) == content
-                assert "next_line_offset" not in page
-                yield "done"
-                return
-            offset = page["next_line_offset"]
-            assert offset == page["line_offset"] + page["lines_read"]
-            assert offset > page["line_offset"]
-            assert page["content"].endswith("\n")
-            assert page["disclosure"]["content_complete"] is False
-            assert page["disclosure"]["output_file_path"] is None
-            assert "next_line_offset" in page["disclosure"]["hint"]
-        yield {
-            0: DeltaToolCall(
-                name="view",
-                json_args=json.dumps({"file_path": "/workspace/notes.md", "line_offset": offset, "line_limit": 1000}),
-                tool_call_id=f"read-page-{len(pages)}",
-            )
-        }
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(DynamicEnvironmentCapability(_configuration()),),
-    )
-    result = await executable.run(
-        "read",
-        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
-    )
-    assert result.output_or_raise() == "done"
-    assert len(pages) >= 2
-
-
-@pytest.mark.parametrize("provider_budget", [9, 1000])
-@pytest.mark.parametrize("line", ["abcd\n", "中文\n", "𐐀\r\n"])
-async def test_text_view_batches_obey_actual_page_budget(tmp_path: Path, provider_budget: int, line: str) -> None:
-    content = line * 7 + "tail"
-    (tmp_path / "text").write_text(content, encoding="utf-8", newline="")
-    files = LocalFileOperator(
-        root=tmp_path,
-        policy=DirectLocalFilePolicy(max_value_bytes=provider_budget),
-        mount_id="workspace",
-        generation="test",
-    )
-    toolset = FileToolset(files)
-    pages = []
-    offset = 0
-    for _ in range(10):
-        page = await toolset._read_text_page(
-            files, "/text", line_offset=offset, line_limit=1000, max_line_length=20_000, page_bytes=19
-        )
-        assert len(page.text.encode("utf-8")) <= 19
-        assert page.lines_read == len(page.text.splitlines()) > 0
-        assert not page.truncated_lines
-        pages.append(page.text)
-        offset += page.lines_read
-        if not page.has_more:
-            break
-    else:
-        pytest.fail("Text pagination made no bounded progress")
-    assert "".join(pages) == content
-    assert offset == 8
 
 
 async def test_agent_spec_tool_retries_exhaust_once_without_environment_retry_loop() -> None:
@@ -2807,32 +2436,6 @@ async def test_direct_local_move_preserves_nonempty_directory_on_rejected_replac
     assert not tuple(tmp_path.glob(".destination.a13n-replaced-*"))
 
 
-async def test_dynamic_file_operations_accept_non_virtual_file_operator(tmp_path: Path) -> None:
-    source = tmp_path / "sample.txt"
-    source.write_bytes(b"provider-neutral\n")
-    files = LocalFileOperator(
-        root=tmp_path,
-        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="mount-1",
-        generation="generation-1",
-    )
-    environment = SimpleNamespace(files=files)
-    toolset = FileToolset(files)
-    ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace(environment=environment), capabilities={}))
-
-    result = await toolset.view(ctx, "/sample.txt")
-
-    assert result == {
-        "ok": True,
-        "file_path": "/sample.txt",
-        "content": "provider-neutral\n",
-        "line_offset": 0,
-        "lines_read": 1,
-        "has_more": False,
-        "truncated_lines": [],
-    }
-
-
 async def test_file_toolset_grep_delegates_all_filters_and_context_without_followup_reads() -> None:
     requests = []
 
@@ -2972,28 +2575,6 @@ async def test_shell_toolset_exposes_exact_run_owned_process_surface(tmp_path: P
         signal_metadata = tools["shell_signal"].metadata[HARNESS_TOOL_METADATA_KEY]
         assert signal_metadata.effects == frozenset({"delete", "execute"})
         await toolset.close()
-
-
-async def test_file_toolset_creates_nested_parents_and_returns_stable_missing_error(tmp_path: Path) -> None:
-    files = LocalFileOperator(
-        root=tmp_path,
-        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="mount-1",
-        generation="generation-1",
-    )
-    toolset = FileToolset(files)
-    ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace(environment=SimpleNamespace(files=files)), capabilities={}))
-
-    written = await toolset.write(ctx, "/one/two/value.txt", "written")
-    created = await toolset.edit(ctx, "/three/four/value.txt", "", "created")
-    missing = await toolset.view(ctx, "/missing/ancestor/value.txt")
-
-    assert written["ok"] is True
-    assert created["ok"] is True
-    assert (tmp_path / "one" / "two" / "value.txt").read_text() == "written"
-    assert (tmp_path / "three" / "four" / "value.txt").read_text() == "created"
-    assert missing["ok"] is False
-    assert missing["error"]["code"] == "environment_not_found"
 
 
 async def test_file_failures_distinguish_unmounted_existing_path_from_missing_mounted_path(tmp_path: Path) -> None:

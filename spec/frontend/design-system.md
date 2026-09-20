@@ -53,17 +53,17 @@ Radii: 12px for grouping surfaces, dialogs, and empty states; 10px for rows, til
 
 Interface text uses the system sans-serif family at 13px; prose and message content use 14px with 1.6 line height. Weights are 500 for titles, labels, and names, and 400 for everything else. Bold (600+) is not used in interface chrome.
 
-| Element                 | Size / weight   | Color     |
-| ----------------------- | --------------- | --------- |
-| Page title              | 22px / 500      | text      |
-| Dialog title            | 18px / 500      | text      |
-| Section title           | 15px / 500      | text      |
-| Row name, field label   | 13.5px / 500    | text      |
-| Body, table cells       | 13px / 400      | text      |
-| Descriptions, help text | 12.5px / 400    | secondary |
-| Metadata, timestamps    | 12px / 400      | secondary |
-| Rail and group headings | 11px / 500 caps | secondary |
-| Identifiers, keys, URLs | 12px / 400      | secondary |
+| Element                 | Size / weight | Color     |
+| ----------------------- | ------------- | --------- |
+| Page title              | 22px / 500    | text      |
+| Dialog title            | 18px / 500    | text      |
+| Section title           | 15px / 500    | text      |
+| Row name, field label   | 13.5px / 500  | text      |
+| Body, table cells       | 13px / 400    | text      |
+| Descriptions, help text | 12.5px / 400  | secondary |
+| Metadata, timestamps    | 12px / 400    | secondary |
+| Rail and group headings | 11px / 500    | secondary |
+| Identifiers, keys, URLs | 12px / 400    | secondary |
 
 Monospace is reserved for code, JSON, commands, and Markdown code. Identifiers use the sans family; a copy affordance appears beside them. Numbers that are compared use tabular figures.
 
@@ -93,7 +93,7 @@ Status is a pill: a 6px dot, 12px medium text, and a 10% tinted background of th
 
 ## Collections
 
-One `ResourceTable` serves every resource list. The list is part of the page: the page scrolls, the table never scrolls inside a fixed-height box. Header cells are 11px medium uppercase secondary text without a fill. Rows are 52–60px with a hairline divider, a 3–4% hover fill, and a pointer cursor when the row opens something. The first column is the identity: a 32px icon tile or avatar, the name at 13.5px medium, and one line of secondary text (key, source, or summary). Supporting columns use 13px text; timestamps and identifiers use 12px secondary text; status uses a pill. Columns that are compared as numbers align right with tabular figures; timestamps stay left with their own inset. A search field carries its accessible name, and a placeholder when the field accepts something more specific than the name says. Row actions live in an overflow menu at the right that stays visible on touch devices. Long lists load in pages with a footer count and Previous/Next; search and filters query the server, never only the current page.
+One `ResourceTable` serves every resource list. The list is part of the page: the page scrolls, the table never scrolls inside a fixed-height box. Header cells are 11px medium sentence-case secondary text without a fill. Rows are 52–60px with a hairline divider, a 3–4% hover fill, and a pointer cursor when the row opens something. The first column is the identity: a 32px icon tile or avatar, the name at 13.5px medium, and one line of secondary text (key, source, or summary). Supporting columns use 13px text; timestamps and identifiers use 12px secondary text; status uses a pill. Columns that are compared as numbers align right with tabular figures; timestamps stay left with their own inset. A search field carries its accessible name, and a placeholder when the field accepts something more specific than the name says. Row actions live in an overflow menu at the right that stays visible on touch devices. Long lists load in pages with a footer count and Previous/Next; search and filters query the server, never only the current page.
 
 Selection lists inside pickers use the same row anatomy with a checkbox in place of the tile, sorted with selected items first.
 
@@ -111,7 +111,7 @@ The session view keeps a compact header (title, agent chip, status pill, actions
 
 ## Navigation
 
-The sidebar is a tinted column without a border: workspace switcher at the top, navigation rows at 32px with an 8px radius, active rows on the selected fill with a duotone icon, 11px uppercase group labels, and the account menu at the bottom. Hover is lighter than the active fill, so pointing at a row never reads as being on it. It collapses to an icon rail with tooltips. Settings open in the contextual layout with a clear way back. Internal links never open new tabs. Every route names itself in the document title, settings sections included.
+The sidebar is a tinted column without a border: workspace switcher at the top, navigation rows at 32px with an 8px radius, active rows on the selected fill with a duotone icon, 11px medium sentence-case group labels, and the account menu at the bottom. Hover is lighter than the active fill, so pointing at a row never reads as being on it. It collapses to an icon rail with tooltips. Settings open in the contextual layout with a clear way back. Internal links never open new tabs. Every route names itself in the document title, settings sections included.
 
 ## Overlays and Feedback
 

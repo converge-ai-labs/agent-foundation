@@ -13,6 +13,7 @@ on:
       - "deploy/containers/sandbox/Dockerfile"
       - "deploy/containers/docker-environment/Dockerfile"
       - "LICENSE"
+      - "Makefile"
       - "crates/a13n-envd/**"
       - "packages/a13n-envd-client/pyproject.toml"
       - "packages/a13n-harness/pyproject.toml"
@@ -59,6 +60,7 @@ jobs:
           filters: |
             service:
               - '.dockerignore'
+              - 'Makefile'
               - '.github/workflows/ci-containers.yml'
               - 'deploy/containers/a13n-service/Dockerfile'
               - 'deploy/containers/a13n-service/service.toml'
@@ -79,6 +81,7 @@ jobs:
               - "Makefile"
             sandbox:
               - '.dockerignore'
+              - 'Makefile'
               - '.github/workflows/ci-containers.yml'
               - 'Cargo.lock'
               - 'Cargo.toml'

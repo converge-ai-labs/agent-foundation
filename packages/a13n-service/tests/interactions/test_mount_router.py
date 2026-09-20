@@ -22,7 +22,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-async def mount_api(mount_run, process_runtime_factory, interaction_sessions):
+async def mount_api(mount_run, process_runtime_factory, interaction_sessions, request):
     service, coordination, run, _, environment = mount_run
     app = FastAPI()
     install_api_conventions(app)
@@ -36,6 +36,9 @@ async def mount_api(mount_run, process_runtime_factory, interaction_sessions):
     )
     app.state.runtime = runtime
     async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://test") as client:
+        if getattr(request, "param", "online") == "offline":
+            yield client, app, runtime, f"/api/v1/runs/{run.id}/environment-mounts", environment.id
+            return
         # Construct the HTTP app before starting the short-lived online lease.
         connection = await _connect(coordination, environment.id)
 
@@ -134,6 +137,7 @@ async def test_mount_http_conceals_resources_from_unauthorized_principal(mount_a
     assert response.status_code == 404, response.text
 
 
+@pytest.mark.parametrize("mount_api", ["offline"], indirect=True)
 async def test_mount_http_drain_keeps_history_readable(mount_api):
     client, _, runtime, path, environment_id = mount_api
     runtime.status.draining = True

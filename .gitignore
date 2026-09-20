@@ -54,6 +54,7 @@ venv/
 .tox/
 coverage.xml
 htmlcov/
+test-results/
 
 # Documentation output
 site/

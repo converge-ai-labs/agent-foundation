@@ -390,10 +390,12 @@ it("keeps history and an expanded summary through saved cutover and later contin
   expect(screen.getByText("Earlier answer")).toBe(earlier);
 });
 
-it("collapses the whole completed process including steering, preserving all final text parts", () => {
-  const input = local("round", "Original input");
+it("keeps every input and text part visible between independent execution segments", () => {
   const entries = [
-    saved(input.parts as Schema<"TranscriptPart">[], 0),
+    saved(
+      previewInput("round", ["Original input"]) as Schema<"TranscriptPart">[],
+      0,
+    ),
     saved(
       [
         { kind: "thinking", text: "Internal plan" },
@@ -422,47 +424,58 @@ it("collapses the whole completed process including steering, preserving all fin
     preview: "Original input",
     steering_count: 1,
   };
-  const view = render(
-    <ConversationTranscript
-      entries={entries}
-      turns={[turn]}
-      blocks={[]}
-      localInputs={[]}
-      threadId="one"
-    />,
-  );
-  const toggle = screen.getByRole("button", { name: /Execution details/ });
-  expect(toggle.textContent).toContain("1 additional input");
-  expect(toggle.textContent).not.toContain("steering");
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  expect(screen.getByText("Change direction").closest("[hidden]")).toBeTruthy();
-  expect(screen.getByText("Progress update").closest("[hidden]")).toBeTruthy();
-  expect(screen.getByText("Final reasoning").closest("[hidden]")).toBeTruthy();
-  for (const text of ["Original input", "Final part one", "Final part two"])
-    expect(screen.getByText(text).closest("[hidden]")).toBeNull();
-  fireEvent.click(toggle);
-  expect(screen.getByText("Change direction").closest("[hidden]")).toBeNull();
-  view.rerender(
+  const transcript = (continuation?: string) => (
     <ConversationTranscript
       entries={[...entries]}
       turns={[{ ...turn }]}
       blocks={[]}
       localInputs={[]}
       threadId="one"
-      continuation="new-head"
-    />,
+      continuation={continuation}
+    />
   );
+  const view = render(transcript());
+  const toggles = screen.getAllByRole("button", { name: /Execution details/ });
+  expect(toggles).toHaveLength(2);
+  expect(toggles.map((toggle) => toggle.getAttribute("aria-expanded"))).toEqual(
+    ["false", "false"],
+  );
+  for (const text of [
+    "Original input",
+    "Progress update",
+    "Change direction",
+    "Final part one",
+    "Final part two",
+  ]) {
+    expect(
+      screen.getByText(text).closest("[data-execution-reader]"),
+    ).toBeNull();
+    expect(screen.getByText(text).closest("[hidden]")).toBeNull();
+  }
+  expect(screen.getByText("Internal plan").closest("[hidden]")).toBeTruthy();
+  expect(screen.getByText("Final reasoning").closest("[hidden]")).toBeTruthy();
+  expect(view.container.textContent).toMatch(
+    /Original input.*Internal plan.*Progress update.*Change direction.*Final reasoning.*Final part one.*Final part two/s,
+  );
+  fireEvent.click(toggles[0]);
+  view.rerender(transcript("new-head"));
   expect(
     screen
-      .getByRole("button", { name: /Execution details/ })
-      .getAttribute("aria-expanded"),
-  ).toBe("true");
+      .getAllByRole("button", { name: /Execution details/ })
+      .map((toggle) => toggle.getAttribute("aria-expanded")),
+  ).toEqual(["true", "false"]);
 });
 
-it("keeps unfinished work open and only auto-collapses after a saved final boundary", () => {
+it("defaults unfinished details closed without treating prose as successful completion", () => {
   const entries = [
     saved(previewInput("round", ["Input"]) as Schema<"TranscriptPart">[], 0),
-    saved([{ kind: "assistant", text: "Working" }], 1),
+    saved(
+      [
+        { kind: "thinking", text: "Plan" },
+        { kind: "assistant", text: "Working" },
+      ],
+      1,
+    ),
   ];
   const turn = {
     turn_id: "round",
@@ -479,11 +492,10 @@ it("keeps unfinished work open and only auto-collapses after a saved final bound
       threadId="one"
     />,
   );
-  expect(
-    screen
-      .getByRole("button", { name: /Execution details/ })
-      .getAttribute("aria-expanded"),
-  ).toBe("true");
+  const toggle = screen.getByRole("button", { name: /Execution details/ });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByText("Working").closest("[hidden]")).toBeNull();
+  fireEvent.click(toggle);
   view.rerender(
     <ConversationTranscript
       entries={[...entries, saved([{ kind: "assistant", text: "Done" }], 2)]}
@@ -493,22 +505,15 @@ it("keeps unfinished work open and only auto-collapses after a saved final bound
       threadId="one"
     />,
   );
-  expect(
-    screen
-      .getByRole("button", { name: /Execution details/ })
-      .getAttribute("aria-expanded"),
-  ).toBe("false");
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByText("Done").closest("[hidden]")).toBeNull();
 });
 
-it("keeps boundary input and final outside the execution reader", () => {
+it("marks missing conversation history outside details without inventing an execution segment", () => {
   render(
     <ConversationTranscript
       entries={[
-        saved(
-          previewInput("round", ["Original"]) as Schema<"TranscriptPart">[],
-          0,
-        ),
+        saved([{ kind: "user", text: "Original" }], 0),
         saved([{ kind: "assistant", text: "Final" }], 80),
       ]}
       turns={[
@@ -525,32 +530,34 @@ it("keeps boundary input and final outside the execution reader", () => {
       threadId="one"
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Execution details" }));
   expect(
-    screen.getByRole("region", { name: "Execution details" }),
-  ).toBeTruthy();
-  expect(
-    screen.getByText("Original").closest("[data-execution-reader]"),
+    screen.queryByRole("button", { name: /Execution details/ }),
   ).toBeNull();
   expect(
-    screen.getByText("Final").closest("[data-execution-reader]"),
+    screen
+      .getByText("Earlier messages in this turn are not loaded.")
+      .closest("[hidden]"),
   ).toBeNull();
-  expect(screen.getAllByText("Original")).toHaveLength(1);
-  expect(screen.getAllByText("Final")).toHaveLength(1);
+  for (const text of ["Original", "Final"])
+    expect(screen.getAllByText(text)).toHaveLength(1);
 });
 
-it("keeps legacy closing output outside manually collapsed execution details", () => {
-  render(
+it("keeps legacy output and a resumed live suffix in chronological order", () => {
+  const entries = [
+    saved([{ kind: "user", text: "Question" }], 0),
+    saved(
+      [
+        { kind: "thinking", text: "Plan" },
+        { kind: "assistant", text: "Progress" },
+      ],
+      1,
+    ),
+    saved([{ kind: "assistant", text: "Saved closing answer" }], 2),
+  ];
+  const view = render(
     <ConversationTranscript
       threadId="one"
-      entries={[
-        saved(
-          previewInput("round", ["Question"]) as Schema<"TranscriptPart">[],
-          0,
-        ),
-        saved([{ kind: "assistant", text: "Progress" }], 1),
-        saved([{ kind: "assistant", text: "Saved closing answer" }], 2),
-      ]}
+      entries={entries}
       turns={[
         {
           turn_id: "round",
@@ -560,54 +567,17 @@ it("keeps legacy closing output outside manually collapsed execution details", (
           preview: "Question",
         },
       ]}
-      blocks={[]}
-      localInputs={[]}
-    />,
-  );
-  const toggle = screen.getByRole("button", { name: "Execution details" });
-  expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  fireEvent.click(toggle);
-  expect(screen.getByText("Progress").closest("[hidden]")).toBeTruthy();
-  expect(
-    screen.getByText("Saved closing answer").closest("[hidden]"),
-  ).toBeNull();
-});
-
-it("retains the saved final outside details when live rows arrive before history refresh", () => {
-  render(
-    <ConversationTranscript
-      threadId="one"
-      entries={[
-        saved(
-          previewInput("round", ["Question"]) as Schema<"TranscriptPart">[],
-          0,
-        ),
-        saved([{ kind: "assistant", text: "Earlier process" }], 1),
-        saved([{ kind: "assistant", text: "Saved final" }], 2),
-      ]}
-      turns={[
-        {
-          turn_id: "round",
-          input_position: 0,
-          end_position: 3,
-          final_position: 2,
-          preview: "Question",
-        },
-      ]}
       blocks={[{ id: "live", kind: "assistant", text: "New progress" }]}
       localInputs={[]}
     />,
   );
+  for (const text of ["Progress", "Saved closing answer", "New progress"])
+    expect(screen.getByText(text).closest("[hidden]")).toBeNull();
+  expect(view.container.textContent).toMatch(
+    /Progress.*Saved closing answer.*New progress/s,
+  );
   fireEvent.click(screen.getByRole("button", { name: "Execution details" }));
-  expect(screen.getByText("Saved final").closest("[hidden]")).toBeNull();
-  expect(screen.getByText("Earlier process").closest("[hidden]")).toBeTruthy();
-  expect(screen.getByText("New progress").closest("[hidden]")).toBeNull();
-  expect(
-    screen
-      .getByText("Saved final")
-      .compareDocumentPosition(screen.getByText("New progress")) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+  expect(screen.getByText("Plan").closest("[hidden]")).toBeNull();
 });
 
 it("groups only adjacent notifications in order across saved/live cutover", () => {
@@ -681,34 +651,178 @@ it("groups only adjacent notifications in order across saved/live cutover", () =
   check();
 });
 
-it.each([0, 2])(
-  "keeps whole-turn counts with unloaded history (%s additional inputs)",
-  (count) => {
-    render(
+it("counts only the tool calls in each execution segment", () => {
+  render(
+    <ConversationTranscript
+      threadId="one"
+      localInputs={[]}
+      entries={[saved([{ kind: "user", text: "Question" }], 0)]}
+      turns={[
+        {
+          turn_id: "round",
+          input_position: 0,
+          end_position: 1,
+          preview: "Question",
+          tool_count: 128,
+          steering_count: 2,
+        },
+      ]}
+      blocks={[
+        {
+          id: "tool-one",
+          kind: "tool",
+          name: "shell_exec",
+          text: "{}",
+          done: true,
+        },
+        { id: "progress", kind: "assistant", text: "Progress" },
+        { id: "tool-two", kind: "tool", name: "view", text: "{}", done: true },
+        {
+          id: "tool-three",
+          kind: "tool",
+          name: "view",
+          text: "{}",
+          done: true,
+        },
+      ]}
+    />,
+  );
+  expect(
+    screen
+      .getAllByRole("button", { name: /Execution details/ })
+      .map((toggle) => toggle.textContent),
+  ).toEqual([
+    "Execution details · 1 tool call",
+    "Execution details · 2 tool calls",
+  ]);
+});
+
+it.each([false, true])(
+  "keeps trailing saved-history gaps reachable before live output (%s)",
+  (live) => {
+    const view = render(
       <ConversationTranscript
-        entries={[
-          saved([{ kind: "user", text: "Question" }]),
-          saved([{ kind: "assistant", text: "Answer" }], 80),
-        ]}
+        threadId="one"
+        entries={[saved([{ kind: "user", text: "Prompt" }], 0), saved([], 1)]}
         turns={[
           {
             turn_id: "round",
             input_position: 0,
-            end_position: 81,
-            final_position: 80,
-            preview: "Question",
-            tool_count: 128,
-            steering_count: count,
+            end_position: 4,
+            preview: "Prompt",
           },
         ]}
-        blocks={[]}
+        blocks={
+          live
+            ? [{ id: "progress", kind: "assistant", text: "Live progress" }]
+            : []
+        }
         localInputs={[]}
-        threadId="one"
       />,
     );
-    const toggle = screen.getByRole("button", { name: /Execution details/ });
-    expect(toggle.textContent).toBe(
-      `Execution details · 128 tool calls${count ? " · 2 additional inputs" : ""}`,
+    const gap = screen.getByText(
+      "Earlier messages in this turn are not loaded.",
     );
+    expect(gap.closest("[hidden]")).toBeNull();
+    if (live)
+      expect(view.container.textContent).toMatch(/not loaded.*Live progress/s);
   },
 );
+
+it("leaves applied live steering and agent text outside folded execution", () => {
+  render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[
+        saved(
+          previewInput("round", ["Prompt"]) as Schema<"TranscriptPart">[],
+          0,
+        ),
+      ]}
+      turns={[
+        {
+          turn_id: "round",
+          input_position: 0,
+          end_position: 1,
+          preview: "Prompt",
+        },
+      ]}
+      blocks={[
+        { id: "plan", kind: "thinking", text: "Plan" },
+        { id: "progress", kind: "assistant", text: "Checking" },
+        {
+          id: "steer",
+          kind: "user",
+          text: "Change focus",
+          metadata: { "a13n.input-source": "steer" },
+        },
+        { id: "next-plan", kind: "thinking", text: "New plan" },
+        { id: "reply", kind: "assistant", text: "Changed focus" },
+      ]}
+      localInputs={[]}
+    />,
+  );
+  for (const text of ["Checking", "Change focus", "Changed focus"])
+    expect(
+      screen.getByText(text).closest("[data-execution-reader]"),
+    ).toBeNull();
+  expect(
+    screen
+      .getAllByRole("button", { name: /Execution details/ })
+      .map((button) => button.getAttribute("aria-expanded")),
+  ).toEqual(["false", "false"]);
+});
+
+it("preserves an open execution reader when live rows become saved history", () => {
+  const input = saved(
+    previewInput("round", ["Prompt"]) as Schema<"TranscriptPart">[],
+    0,
+  );
+  const turn = {
+    turn_id: "round",
+    input_position: 0,
+    end_position: 1,
+    preview: "Prompt",
+  };
+  const view = render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[input]}
+      turns={[turn]}
+      localInputs={[]}
+      blocks={[
+        { id: "live-progress", kind: "assistant", text: "Checking" },
+        { id: "live-plan", kind: "thinking", text: "Plan" },
+      ]}
+    />,
+  );
+  const toggle = screen.getByRole("button", { name: /Execution details/ });
+  fireEvent.click(toggle);
+  const reader = screen.getByRole("region", { name: "Execution details" });
+  view.rerender(
+    <ConversationTranscript
+      threadId="one"
+      localInputs={[]}
+      blocks={[]}
+      entries={[
+        input,
+        saved(
+          [
+            { kind: "assistant", text: "Checking" },
+            { kind: "thinking", text: "Plan" },
+            { kind: "assistant", text: "Done" },
+          ],
+          1,
+        ),
+      ]}
+      turns={[{ ...turn, end_position: 2, final_position: 1 }]}
+    />,
+  );
+  expect(screen.getByRole("button", { name: /Execution details/ })).toBe(
+    toggle,
+  );
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("region", { name: "Execution details" })).toBe(
+    reader,
+  );
+});

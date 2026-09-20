@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from a13n_harness import AgentContext
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition.models import ResolvedModelRecipe
 from a13n_harness_ui.configuration import ApiKeyAuthentication
@@ -16,7 +15,6 @@ from a13n_harness_ui.model_adapters import PydanticAiModelAdapter
 from a13n_harness_ui.model_presets import API_PROVIDERS, settings_presets
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
-from pydantic_ai.models import ModelResolutionContext
 
 
 @pytest.mark.anyio
@@ -40,9 +38,7 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
     )
     adapter = PydanticAiModelAdapter().validate(route=recipe.route, settings={}, model_cfg=recipe.model_configuration)
     assert adapter.model_cfg == model_cfg
-    model = await HarnessUiModelResolver({recipe.model_id: recipe})(
-        cast(ModelResolutionContext[AgentContext], None), recipe.model_id
-    )
+    model = await HarnessUiModelResolver({recipe.model_id: recipe}).resolve(recipe.model_id, thread_id="thread-test")
     assert model.model_name == model_name
     if provider.transport == "xai":
         from pydantic_ai.models.xai import XaiModel
@@ -335,8 +331,8 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
             settings=normalized.settings,
             model_configuration={"base_url": "https://provider.invalid/api"},
         )
-        model = await HarnessUiModelResolver({recipe.model_id: recipe})(
-            cast(ModelResolutionContext[AgentContext], None), recipe.model_id
+        model = await HarnessUiModelResolver({recipe.model_id: recipe}).resolve(
+            recipe.model_id, thread_id="thread-test"
         )
         result = await Agent(model, model_settings=cast(ModelSettings, recipe.settings)).run("Hello")
     assert result.output == "Done"
@@ -471,8 +467,8 @@ async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(pr
         )
         # Exercise the same durable recipe representation as frozen reconstruction.
         recipe = ResolvedModelRecipe.model_validate_json(recipe.model_dump_json())
-        model = await HarnessUiModelResolver({recipe.model_id: recipe})(
-            cast(ModelResolutionContext[AgentContext], None), recipe.model_id
+        model = await HarnessUiModelResolver({recipe.model_id: recipe}).resolve(
+            recipe.model_id, thread_id="thread-test"
         )
         assert isinstance(model, ZaiModel) is (provider == "zai")
         agent = Agent(model, model_settings=cast(ModelSettings, recipe.settings))

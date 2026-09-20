@@ -19,6 +19,7 @@ from a13n_service.agents.reconstruction import AgentReconstructor
 from a13n_service.assets.models import AssetRecord
 from a13n_service.digests import digest_request
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
+from a13n_service.interactions import worker as worker_module
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
 from a13n_service.interactions.attempts import AttemptExecutionService
 from a13n_service.interactions.control_models import ThreadInboxRecord
@@ -48,9 +49,9 @@ from tests.observability.test_runtime import runtime as observation_runtime
 from . import test_attempt_execution as acceptance
 from .conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
 from .test_agent_secrets import TEST_VALUE, _binding, _secret, _SecretTool
-from .worker_helpers import worker_runtime
+from .worker_helpers import INTEGRATION_COMPLETION_SECONDS, INTEGRATION_LEASE_SECONDS, worker_runtime
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.timeout(180)]
 
 
 @pytest.mark.parametrize("recover_candidate", [False, True])
@@ -66,12 +67,16 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
 ):
     # Worker recovery must not hide an unexpected executor failure in this success-path test.
     execute = RunAttemptExecutor.run
+    failures = []
 
     async def checked_execute(*args, **kwargs):
         try:
             return await execute(*args, **kwargs)
         except Exception as error:
-            pytest.fail(f"Unexpected attempt failure: {error!r}")
+            # Report in the test task; pytest.fail is a BaseException that can
+            # terminate AnyIO's fixture runner when raised in a child task.
+            failures.append(error)
+            raise
 
     monkeypatch.setattr(RunAttemptExecutor, "run", checked_execute)
     config = acceptance.effective_agent_config()
@@ -283,8 +288,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     model_factory.build.return_value = FunctionModel(stream_function=model)
     settings = Settings(
         service={"build_version": "test"},
-        # A shorter lease expires under CI load before the attempt renews it, which reclaims the run.
-        worker={"concurrency": 1, "poll_interval_seconds": 0.02, "lease_seconds": 30},
+        worker={"concurrency": 1, "poll_interval_seconds": 0.05, "lease_seconds": INTEGRATION_LEASE_SECONDS},
     )
     exporter = InMemorySpanExporter()
     observation = observation_runtime(exporter)
@@ -302,16 +306,22 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     ):
         loop = runtime.execution_loop
         assert loop is not None
-        # Keep the normal lease and its renewal/reconciliation timeouts under CI load.
-        # Same-build handoff deliberately waits one lease before reclaiming.
-        # Budget each execution phase separately from that mandatory delay.
-        completion_budget = 30 * (2 if handoff else 1) + (settings.worker.lease_seconds if handoff else 0)
+        if handoff:
+            # Scheduler tests cover the affinity window. This test exercises
+            # checkpoint handoff, without waiting a full integration lease.
+            def handoff_claim(**kwargs):
+                return WorkerClaim(**{**kwargs, "handoff_preference_window": timedelta(milliseconds=1)})
+
+            monkeypatch.setattr(worker_module, "WorkerClaim", handoff_claim)
+        completion_budget = INTEGRATION_COMPLETION_SECONDS
         last_progress = None
         try:
             with fail_after(completion_budget):
                 async with create_task_group() as tasks:
                     tasks.start_soon(loop.run)
                     while True:
+                        if failures:
+                            raise AssertionError("Unexpected attempt failure") from failures[0]
                         async with short_session(interaction_sessions) as session:
                             row = await session.get(RunRecord, run.id)
                             assert row is not None
@@ -322,7 +332,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                                     {"answer": 42} if recover_candidate and not late_input else "worker completed"
                                 )
                                 break
-                        await sleep(0.02)
+                        await sleep(0.05)
                     await loop.drain()
                     await loop.wait_stopped()
         except TimeoutError:
@@ -330,6 +340,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                 f"Run did not complete within {completion_budget}s: status/attempt={last_progress}, "
                 f"handoff_requested={handed_off}, late_input_injected={injected}, model_requests={len(requests)}"
             )
+        assert not failures, failures
         async with short_session(interaction_sessions) as session:
             attempt = await session.scalar(
                 select(RunAttemptRecord)

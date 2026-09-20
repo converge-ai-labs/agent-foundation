@@ -60,10 +60,11 @@ services:
       - "127.0.0.1:${LANGFUSE_LOCAL_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "Promise.all(['/api/public/health?failIfDatabaseUnavailable=true','/api/public/ready'].map(p=>fetch('http://'+require('os').hostname()+':3000'+p).then(r=>{if(!r.ok)throw Error(r.status)}))).then(()=>process.exit(0),()=>process.exit(1))"]
-      interval: 3s
+      interval: 30s
+      start_interval: 3s
       timeout: 5s
-      start_period: 30s
-      retries: 50
+      start_period: 150s
+      retries: 3
 
   langfuse-worker:
     image: docker.langfuse.com/langfuse/langfuse-worker:4
@@ -77,13 +78,18 @@ services:
         condition: service_healthy
       langfuse-minio:
         condition: service_healthy
-    environment: *langfuse-environment
+    environment:
+      <<: *langfuse-environment
+      # BullMQ owns blocking-command deadlines and reconnects. A socket watchdog
+      # can disconnect healthy idle queue connections (Langfuse #12944).
+      REDIS_SOCKET_TIMEOUT_MS: "0"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://'+require('os').hostname()+':3030/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
-      interval: 3s
+      interval: 30s
+      start_interval: 3s
       timeout: 5s
-      start_period: 30s
-      retries: 50
+      start_period: 150s
+      retries: 3
 
   langfuse-postgres:
     image: postgres:17-alpine
@@ -96,9 +102,11 @@ services:
       PGTZ: UTC
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
-      interval: 3s
+      interval: 30s
+      start_interval: 3s
       timeout: 3s
-      retries: 30
+      start_period: 30s
+      retries: 3
     volumes:
       - langfuse-postgres:/var/lib/postgresql/data
 
@@ -112,9 +120,14 @@ services:
       CLICKHOUSE_PASSWORD: clickhouse
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
-      interval: 5s
+      interval: 30s
+      start_interval: 5s
       timeout: 5s
-      retries: 20
+      start_period: 30s
+      retries: 3
+    configs:
+      - source: clickhouse-local
+        target: /etc/clickhouse-server/config.d/local.xml
     volumes:
       - langfuse-clickhouse:/var/lib/clickhouse
       - langfuse-clickhouse-logs:/var/log/clickhouse-server
@@ -125,9 +138,11 @@ services:
     command: ["redis-server", "--requirepass", "langfuse", "--maxmemory-policy", "noeviction"]
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "langfuse", "ping"]
-      interval: 3s
+      interval: 30s
+      start_interval: 3s
       timeout: 3s
-      retries: 30
+      start_period: 30s
+      retries: 3
     volumes:
       - langfuse-redis:/data
 
@@ -143,9 +158,11 @@ services:
       - "127.0.0.1:${LANGFUSE_LOCAL_MINIO_PORT:-3001}:9000"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
-      interval: 2s
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
-      retries: 20
+      start_period: 30s
+      retries: 3
     volumes:
       - langfuse-minio:/data
 
@@ -155,3 +172,21 @@ volumes:
   langfuse-clickhouse-logs:
   langfuse-redis:
   langfuse-minio:
+
+# Inline content travels with the machine-owned Compose copy.
+configs:
+  clickhouse-local:
+    content: |
+      <clickhouse>
+          <logger><level>warning</level></logger>
+          <global_profiler_real_time_period_ns>0</global_profiler_real_time_period_ns>
+          <global_profiler_cpu_time_period_ns>0</global_profiler_cpu_time_period_ns>
+          <total_memory_profiler_step>0</total_memory_profiler_step>
+          <trace_log remove="1"/>
+          <metric_log remove="1"/>
+          <asynchronous_metric_log remove="1"/>
+          <processors_profile_log remove="1"/>
+          <opentelemetry_span_log remove="1"/>
+          <background_schedule_pool_log remove="1"/>
+          <text_log><level>warning</level></text_log>
+      </clickhouse>

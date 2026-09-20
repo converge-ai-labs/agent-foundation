@@ -1857,6 +1857,30 @@ class CliShell:
             self.offer_import()
         elif name == "agent":
             self.launch(self.backend.agents(argument), failure_input=invocation.source)
+        elif name == "model" and argument == "defaults":
+            backend = self.backend
+
+            async def purpose_selected(kind: str | tuple[str, ...]) -> None:
+                assert isinstance(kind, str)
+                choices = await backend.media_default_choices(kind)
+
+                async def model_selected(value: str | tuple[str, ...]) -> None:
+                    assert isinstance(value, str)
+                    label = next(choice.label for choice in choices if choice.value == value)
+
+                    async def confirmed(action: str | tuple[str, ...]) -> None:
+                        if action == "save":
+                            self.launch(backend.set_media_default(kind, value), failure_input=invocation.source)
+
+                    self.open_menu(
+                        f"{kind.capitalize()} understanding · {label} · save globally?",
+                        (Choice("save", "Save", "Future Runs"), Choice("cancel", "Cancel")),
+                        confirmed,
+                    )
+
+                self.open_menu(f"{kind.capitalize()} understanding", choices, model_selected)
+
+            self.open_menu("Media understanding defaults", await backend.media_default_choices(), purpose_selected)
         elif name == "model":
             assert argument is not None
             self.launch(self.backend.models(argument), failure_input=invocation.source)

@@ -42,8 +42,8 @@ async def test_real_pty_resize_interrupt_exit_and_detached_output(
         await session.command(first, TerminalCommand(kind="resize", control_epoch=1, rows=37, columns=111))
         await write(session, first, "stty size\n")
         await output_until(session, b"37 111")
-        await write(session, first, "sleep 30\n")
-        await sleep(0.1)
+        await write(session, first, "bash -c 'printf \"__%s__\" SLEEPING; exec sleep 30'\n")
+        await output_until(session, b"__SLEEPING__")
         await write(session, first, "\x03")
         await write(session, first, "printf '__%s__\\n' INTERRUPTED\n")
         await output_until(session, b"__INTERRUPTED__")
@@ -100,10 +100,8 @@ async def test_close_interrupts_foreground_job(tmp_path: Path, monkeypatch: pyte
     try:
         participant = session.attach()
         await session.command(participant, TerminalCommand(kind="control", control_epoch=0))
-        await write(session, participant, "sleep 60 & echo $! > job.pid; wait\n")
-        with fail_after(5):
-            while not (tmp_path / "job.pid").exists():
-                await sleep(0.01)
+        await write(session, participant, "stty -echo; sleep 60 & echo $! > job.pid; printf '__%s__' JOB_READY; wait\n")
+        await output_until(session, b"__JOB_READY__")
         job = int((tmp_path / "job.pid").read_text())
         closed = await terminals.remove(session.id)
         assert closed.state == "closed" and session.process.returncode is not None
@@ -129,17 +127,33 @@ async def test_takeover_unregisters_blocked_writer_before_new_input(
         session = terminals.get((await terminals.create(TerminalCreate(cwd=str(tmp_path)))).terminal_id)
         first, second = session.attach(), session.attach()
         await session.command(first, TerminalCommand(kind="control", control_epoch=0))
-        await write(session, first, "stty raw -echo; printf '__%s__' RAW; sleep 0.5; cat\n")
+        await write(
+            session,
+            first,
+            "stty raw -echo; printf '__%s__' RAW; while [ ! -e release-input ]; do sleep 0.01; done; cat\n",
+        )
         await output_until(session, b"__RAW__")
+        blocked = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        add_writer = loop.add_writer
+
+        def registered_writer(fd, callback, *args):
+            add_writer(fd, callback, *args)
+            if fd == session.master:
+                blocked.set()
+
+        monkeypatch.setattr(loop, "add_writer", registered_writer)
 
         async def paste() -> None:
             for _ in range(8):
                 await session.command(first, TerminalCommand(kind="input", control_epoch=1, text="x" * 16384))
 
         pending = asyncio.create_task(paste())
-        await sleep(0.05)
+        with fail_after(10):
+            await blocked.wait()
         assert not pending.done()
         await session.command(second, TerminalCommand(kind="control", control_epoch=1))
+        (tmp_path / "release-input").touch()
         # Without coordination, anyio raises BusyResourceError here because the
         # old controller still owns the master FD's writable registration.
         await session.command(second, TerminalCommand(kind="input", control_epoch=2, text="new controller\n"))
@@ -164,10 +178,9 @@ async def test_close_sweeps_jobs_spawned_by_term_handler(tmp_path: Path, monkeyp
         await write(
             session,
             participant,
-            "bash -c 'trap : TERM; trap \"\" HUP; while :; do sleep 30; done' & printf '__%s__' STARTED\n",
+            'bash -c \'trap : TERM; trap "" HUP; printf "__%s__" STARTED; while :; do sleep 30; done\' &\n',
         )
         await output_until(session, b"__STARTED__")
-        await sleep(0.1)
         await terminals.remove(session.id)
         remaining = []
         for process in psutil.process_iter():

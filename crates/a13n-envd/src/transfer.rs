@@ -66,9 +66,8 @@ struct ProducerGuard {
 impl Drop for ProducerGuard {
     fn drop(&mut self) {
         self.producing.store(false, Ordering::Release);
-        if self.inner.active_producers.fetch_sub(1, Ordering::AcqRel) == 1 {
-            self.inner.producers_idle.notify_waiters();
-        }
+        self.inner.active_producers.fetch_sub(1, Ordering::AcqRel);
+        self.inner.producers_idle.notify_waiters();
     }
 }
 
@@ -705,10 +704,14 @@ impl TransferRegistry {
                 .await?;
                 let registry = self.clone();
                 tokio::spawn(async move {
-                    let _producer = producer;
-                    registry
-                        .produce_reader(record, file, handle, &mut cancellation)
+                    let result = registry
+                        .produce_reader(record.clone(), file, handle.clone(), &mut cancellation)
                         .await;
+                    // Native I/O ownership ends before any terminal RESET is published.
+                    drop(producer);
+                    if let Err(status) = result {
+                        registry.reset_reader(&record, &handle, status).await;
+                    }
                 });
                 Ok(())
             }
@@ -732,15 +735,20 @@ impl TransferRegistry {
             DataFrameKind::EndAck => Err(TransferError::Protocol),
             DataFrameKind::Reset => {
                 let mut reader = record.lock().await;
-                if matches!(reader.phase, ReaderPhase::Reset | ReaderPhase::Closed) {
-                    return Ok(());
-                }
+                let acknowledge = !matches!(reader.phase, ReaderPhase::Reset | ReaderPhase::Closed);
                 reader.cancellation.send_replace(true);
-                reader.phase = ReaderPhase::Reset;
+                if acknowledge {
+                    reader.phase = ReaderPhase::Reset;
+                }
                 let handle = reader.handle.clone();
                 let offset = reader.produced;
+                let producing = reader.producing.clone();
                 drop(reader);
-                self.mark_terminal(&handle);
+                self.wait_for_reader(&producing).await;
+                self.finalize_reader(&record).await;
+                if !acknowledge || self.session_closed() {
+                    return Ok(());
+                }
                 self.send(DataFrame {
                     session_id: self.inner.session_id.clone(),
                     kind: DataFrameKind::Reset,
@@ -761,16 +769,14 @@ impl TransferRegistry {
         file: std::fs::File,
         handle: String,
         cancellation: &mut watch::Receiver<bool>,
-    ) {
+    ) -> Result<(), DataResetStatus> {
         let (start_offset, max_bytes) = {
             let reader = record.lock().await;
             (reader.start_offset, reader.max_bytes)
         };
         let mut file = tokio::fs::File::from_std(file);
         if file.seek(SeekFrom::Start(start_offset)).await.is_err() {
-            self.reset_reader(&record, &handle, DataResetStatus::Source)
-                .await;
-            return;
+            return Err(DataResetStatus::Source);
         }
         let payload_limit = self
             .inner
@@ -786,20 +792,14 @@ impl TransferRegistry {
         let mut hasher = Sha256::new();
         while offset < max_bytes {
             if let Err(error) = self.wait_reader_credit(&record, cancellation, false).await {
-                if !self.session_closed() {
-                    self.reset_reader(&record, &handle, reset_status(error))
-                        .await;
-                }
-                return;
+                return Err(reset_status(error));
             }
             let remaining = usize::try_from((max_bytes - offset).min(buffer.len() as u64))
                 .unwrap_or(buffer.len());
             let read = match file.read(&mut buffer[..remaining]).await {
                 Ok(0) => break,
                 Err(_) => {
-                    self.reset_reader(&record, &handle, DataResetStatus::Source)
-                        .await;
-                    return;
+                    return Err(DataResetStatus::Source);
                 }
                 Ok(read) => read,
             };
@@ -820,15 +820,11 @@ impl TransferRegistry {
                 biased;
                 changed = cancellation.changed() => {
                     let _ = changed;
-                    if !self.session_closed() {
-                        self.reset_reader(&record, &handle, DataResetStatus::Cancelled).await;
-                    }
-                    return;
+                    return Err(DataResetStatus::Cancelled);
                 }
                 result = self.send(frame) => {
                     if result.is_err() {
-                        self.reset_reader(&record, &handle, DataResetStatus::Internal).await;
-                        return;
+                        return Err(DataResetStatus::Internal);
                     }
                 }
             }
@@ -839,14 +835,13 @@ impl TransferRegistry {
             reader.last_progress = Instant::now();
         }
         if let Err(error) = self.wait_reader_credit(&record, cancellation, true).await {
-            if !self.session_closed() {
-                self.reset_reader(&record, &handle, reset_status(error))
-                    .await;
-            }
-            return;
+            return Err(reset_status(error));
         }
         {
             let mut reader = record.lock().await;
+            if *cancellation.borrow() || reader.phase != ReaderPhase::Streaming {
+                return Err(DataResetStatus::Cancelled);
+            }
             reader.digest = Some(ContentDigest {
                 algorithm: "sha256".to_owned(),
                 value: format!("{:x}", hasher.finalize()),
@@ -866,15 +861,9 @@ impl TransferRegistry {
             biased;
             changed = cancellation.changed() => {
                 let _ = changed;
-                if !self.session_closed() {
-                    self.reset_reader(&record, &handle, DataResetStatus::Cancelled).await;
-                }
+                Err(DataResetStatus::Cancelled)
             }
-            result = self.send(end) => {
-                if result.is_err() {
-                    record.lock().await.phase = ReaderPhase::Reset;
-                }
-            }
+            result = self.send(end) => result.map_err(|_| DataResetStatus::Internal),
         }
     }
 
@@ -936,6 +925,10 @@ impl TransferRegistry {
             reader.phase = ReaderPhase::Reset;
             reader.produced
         };
+        self.finalize_reader(record).await;
+        if self.session_closed() {
+            return;
+        }
         let _ = self
             .send(DataFrame {
                 session_id: self.inner.session_id.clone(),
@@ -946,7 +939,6 @@ impl TransferRegistry {
                 reset_status: Some(status),
             })
             .await;
-        self.mark_terminal(handle);
     }
 
     async fn handle_writer_frame(
@@ -1083,6 +1075,44 @@ impl TransferRegistry {
         }
     }
 
+    async fn wait_for_reader(&self, producing: &AtomicBool) {
+        while producing.load(Ordering::Acquire) {
+            let notified = self.inner.producers_idle.notified();
+            if !producing.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    async fn finalize_reader(&self, record: &Mutex<ReaderRecord>) {
+        let mut reader = record.lock().await;
+        if !matches!(reader.phase, ReaderPhase::Reset | ReaderPhase::Closed)
+            || reader.producing.load(Ordering::Acquire)
+        {
+            return;
+        }
+        reader.file.take();
+        if let Some(capacity) = &mut reader.capacity {
+            capacity.active.take();
+        }
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if state.records.contains_key(&reader.handle)
+            && !state
+                .terminal_order
+                .iter()
+                .any(|(handle, _)| handle == &reader.handle)
+        {
+            state
+                .terminal_order
+                .push_back((reader.handle.clone(), Instant::now()));
+        }
+    }
+
     async fn wait_for_producers(&self) {
         while self.inner.active_producers.load(Ordering::Acquire) != 0 {
             let notified = self.inner.producers_idle.notified();
@@ -1118,15 +1148,17 @@ impl TransferRegistry {
     async fn reset_record(&self, record: &TransferRecord) {
         match record {
             TransferRecord::Reader(reader) => {
-                let handle = {
+                let producing = {
                     let mut reader = reader.lock().await;
                     if reader.phase != ReaderPhase::Closed {
                         reader.cancellation.send_replace(true);
                         reader.phase = ReaderPhase::Reset;
                     }
-                    reader.handle.clone()
+                    reader.producing.clone()
                 };
-                self.mark_terminal(&handle);
+                // The dispatcher publishes the error RESET only after cleanup settles.
+                self.wait_for_reader(&producing).await;
+                self.finalize_reader(reader).await;
             }
             TransferRecord::Writer(writer) => {
                 let handle = {
@@ -1783,8 +1815,8 @@ mod tests {
     use crate::{eip::FileWriterCommitParams, operation::OperationLedger};
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    use super::{ContentDigest, FileWriterAbortStatus, TransferRecord, WriterPhase};
-    use super::{TransferError, TransferRegistry};
+    use super::{ContentDigest, FileWriterAbortStatus, WriterPhase};
+    use super::{TransferError, TransferRecord, TransferRegistry};
 
     struct TempTree(PathBuf);
 
@@ -1884,6 +1916,107 @@ mod tests {
             .expect("released reservation admits later work");
         drop(replacement);
         assert_eq!(transfers.inner.state.lock().unwrap().reservations, 0);
+    }
+
+    #[tokio::test]
+    async fn reader_reset_joins_only_its_producer_and_releases_capacity_before_ack() {
+        assert_reader_reset_barrier(false).await;
+    }
+
+    #[tokio::test]
+    async fn reader_protocol_error_joins_cleanup_before_returning_to_terminal_publisher() {
+        assert_reader_reset_barrier(true).await;
+    }
+
+    async fn assert_reader_reset_barrier(protocol_error: bool) {
+        use std::{
+            future::Future,
+            sync::{Arc, atomic::AtomicBool},
+            task::Poll,
+        };
+
+        let (tree, _config, filesystem, transfers, mut outbound) = setup(60_000);
+        fs::write(tree.child("native/source.bin"), b"reader").unwrap();
+        let initial_capacity = transfers.inner.capacity.available().0;
+        let opened = transfers
+            .open_reader(
+                &filesystem,
+                &FileReaderOpenParams {
+                    context: context("reset-reader"),
+                    path: path(&tree, "/source.bin"),
+                    byte_range: None,
+                    transfer_timeout_ms: None,
+                },
+            )
+            .await
+            .unwrap();
+        let TransferRecord::Reader(record) = transfers.record(&opened.reader.0).unwrap() else {
+            panic!("expected reader");
+        };
+        let (file, producer) = {
+            let mut reader = record.lock().await;
+            (
+                reader.file.take().unwrap(),
+                transfers.track_producer(reader.producing.clone()),
+            )
+        };
+        // A sibling producer remains blocked: target cleanup must not join the Session.
+        let sibling = transfers.track_producer(Arc::new(AtomicBool::new(false)));
+        let frame = DataFrame {
+            session_id: "session-test".to_owned(),
+            kind: DataFrameKind::Reset,
+            handle: opened.reader.0,
+            offset: 0,
+            payload: Vec::new(),
+            reset_status: Some(DataResetStatus::Cancelled),
+        };
+        let mut incoming = frame.clone();
+        if protocol_error {
+            incoming.kind = DataFrameKind::EndAck;
+        }
+        let mut reset = Box::pin(transfers.handle_frame(incoming));
+        let mut duplicate = Box::pin(transfers.handle_frame(frame));
+        std::future::poll_fn(|cx| {
+            assert!(reset.as_mut().poll(cx).is_pending());
+            assert!(duplicate.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        assert!(outbound.try_recv().is_err());
+        assert!(matches!(
+            transfers.reserve_record(),
+            Err(TransferError::Busy)
+        ));
+        assert_eq!(transfers.inner.capacity.available().0, initial_capacity - 1);
+        drop(file);
+        drop(producer);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let result = reset.await;
+            assert_eq!(
+                result,
+                if protocol_error {
+                    Err(TransferError::Protocol)
+                } else {
+                    Ok(())
+                }
+            );
+            duplicate.await.unwrap();
+        })
+        .await
+        .unwrap();
+        if !protocol_error {
+            assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::Reset);
+        }
+        assert!(outbound.try_recv().is_err());
+        assert_eq!(transfers.inner.active_producers.load(Ordering::Acquire), 1);
+        assert_eq!(transfers.inner.capacity.available().0, initial_capacity);
+        drop(
+            transfers
+                .reserve_record()
+                .expect("reopen needs no collection sweep"),
+        );
+        drop(sibling);
+        transfers.close_session().await;
     }
 
     #[tokio::test]
@@ -2012,6 +2145,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reader_full_window_reset_releases_capacity_without_collection() {
+        let (tree, _config, filesystem, transfers, mut outbound) = setup(60_000);
+        fs::write(tree.child("native/window.bin"), vec![b'x'; 1024 * 1024]).unwrap();
+        let opened = transfers
+            .open_reader(
+                &filesystem,
+                &FileReaderOpenParams {
+                    context: context("window-reset"),
+                    path: path(&tree, "/window.bin"),
+                    byte_range: None,
+                    transfer_timeout_ms: None,
+                },
+            )
+            .await
+            .unwrap();
+        let mut frame = DataFrame {
+            session_id: "session-test".to_owned(),
+            kind: DataFrameKind::Attach,
+            handle: opened.reader.0,
+            offset: 0,
+            payload: Vec::new(),
+            reset_status: None,
+        };
+        transfers.handle_frame(frame.clone()).await.unwrap();
+        assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::Attached);
+        for _ in 0..crate::eip::EIP_TRANSFER_WINDOW_CHUNKS {
+            assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::Chunk);
+        }
+        frame.kind = DataFrameKind::Reset;
+        frame.reset_status = Some(DataResetStatus::Cancelled);
+        tokio::time::timeout(Duration::from_secs(2), transfers.handle_frame(frame))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::Reset);
+        assert_eq!(transfers.inner.active_producers.load(Ordering::Acquire), 0);
+        drop(
+            transfers
+                .reserve_record()
+                .expect("RESET returns reusable active capacity"),
+        );
+        assert!(outbound.try_recv().is_err());
+        transfers.close_session().await;
+    }
+
+    #[tokio::test]
     async fn reader_waiting_for_credit_expires_without_collection() {
         let (tree, _config, filesystem, transfers, mut outbound) = setup(50);
         fs::write(tree.child("native/window.bin"), vec![b'x'; 1024 * 1024]).unwrap();
@@ -2051,6 +2230,12 @@ mod tests {
             .unwrap();
         assert_eq!(reset.kind, DataFrameKind::Reset);
         assert_eq!(reset.reset_status, Some(DataResetStatus::Expired));
+        assert_eq!(transfers.inner.active_producers.load(Ordering::Acquire), 0);
+        drop(
+            transfers
+                .reserve_record()
+                .expect("producer RESET releases capacity before publication"),
+        );
         // A delayed cumulative credit cannot revive the producer or emit another RESET.
         transfers
             .handle_frame(DataFrame {

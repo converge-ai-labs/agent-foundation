@@ -18,6 +18,7 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
 )
 from a13n_harness.spec import HarnessModelCharacteristics
 from a13n_harness.tools.tool_proxy import validate_group
+from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import (
     AliasChoices,
     BaseModel,
@@ -38,6 +39,8 @@ from a13n_harness_ui.environment_bindings import (
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
 from a13n_harness_ui.settings import DEFAULT_MAX_OBJECT_BYTES, ObjectSizeLimit
 from a13n_harness_ui.subagents import BuiltinSubagentName
+
+MEDIA_KINDS: tuple[NativeInputMediaKind, ...] = ("image", "video", "audio")
 
 _RESOURCE_ID = r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$"
 _NAME = r"^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$"
@@ -202,6 +205,29 @@ class WebUiConfiguration(ConfigurationModel):
     sidekick: SidekickConfiguration | None = None
 
 
+class MediaUnderstandingConfiguration(ConfigurationModel):
+    """Application defaults for native-first file-media understanding."""
+
+    image: ResourceId | None = None
+    video: ResourceId | None = None
+    audio: ResourceId | None = None
+
+    @field_validator("image", "video", "audio")
+    @classmethod
+    def _model_id(cls, value: str | None) -> str | None:
+        if value is not None:
+            _require_id_prefix(value, "model-")
+        return value
+
+    def selections(self) -> dict[NativeInputMediaKind, str]:
+        values: dict[NativeInputMediaKind, str | None] = {
+            "image": self.image,
+            "video": self.video,
+            "audio": self.audio,
+        }
+        return {kind: value for kind, value in values.items() if value is not None}
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
@@ -214,6 +240,9 @@ class HarnessUiDocument(ConfigurationModel):
     security: SecurityConfiguration = Field(default_factory=SecurityConfiguration)
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
     webui: WebUiConfiguration = Field(default_factory=WebUiConfiguration)
+    media_understanding: MediaUnderstandingConfiguration = Field(
+        default_factory=MediaUnderstandingConfiguration, exclude_if=lambda value: not value.selections()
+    )
     max_goal_iterations: int = 10
 
 
@@ -282,6 +311,10 @@ class ModelResource(ConfigurationModel):
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
     model_characteristics: ModelCharacteristics | None = None
+
+    def media_capabilities(self) -> tuple[NativeInputMediaKind, ...]:
+        capabilities = self.model_characteristics.capabilities if self.model_characteristics is not None else None
+        return tuple(kind for kind in MEDIA_KINDS if f"{kind}_understanding" in (capabilities or ()))
 
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
@@ -720,6 +753,11 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         defaults = self.document.defaults
         _require_reference(defaults.project, self.projects, "defaults.project")
         _require_reference(defaults.agent, self.agents, "defaults.agent")
+        for kind, model_id in self.document.media_understanding.selections().items():
+            field = f"media_understanding.{kind}"
+            _require_reference(model_id, self.models, field)
+            if kind not in self.models[model_id].media_capabilities():
+                raise ValueError(f"{field} requires a Model declaring {kind}_understanding: {model_id}")
         sidekick = self.document.webui.sidekick
         if sidekick is not None:
             _require_reference(sidekick.agent, self.agents, "webui.sidekick.agent")

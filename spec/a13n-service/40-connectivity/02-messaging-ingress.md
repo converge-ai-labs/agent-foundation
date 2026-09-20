@@ -28,6 +28,8 @@ Authenticated App mentions are activation controls. The safe input text excludes
 
 The provider policy selects an exact Discussion or Conversation reference. The [Binding](01-ingress-and-routing.md#binding-event-and-batch-authority) preserves its Service Thread. A new ordinary Run uses the current target Agent or Account default and the target's narrow canonical override. An active or selected waiting Run receives Steer with its existing configuration. Content cannot select an Agent, and configuration changes never move existing history to another Thread.
 
+After a failed or cancelled Run, new input continues from the Thread's completed head, or starts a fresh root in the same Thread when no completed head exists. It does not replay the failed input or use an uncommitted failed state as history.
+
 A top-level mention can establish correlation to its future provider thread root before the Bot replies. In `discussion`, a reservation with no accepted Thread does not authorize mention-free continuation. In `chat`, complete listening does not require the Agent to reply; it may remain silent.
 
 The shared [batching contract](01-ingress-and-routing.md#input-batching-and-frequency) preserves bounded ordered bursts and limits Run/Steer frequency. Messaging has no extra attention gate, command grammar, Agent handoff protocol, or parallel input queue.

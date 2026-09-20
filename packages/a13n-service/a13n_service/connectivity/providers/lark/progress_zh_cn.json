@@ -6,7 +6,7 @@
   },
   "running": {
     "title": "正在处理",
-    "description": "任务正在执行，完成后会在此会话回复。",
+    "description": "任务正在执行。",
     "color": "blue"
   },
   "waiting": {
@@ -21,7 +21,7 @@
   },
   "completed": {
     "title": "执行完成",
-    "description": "执行已完成。此状态不代表结果消息已成功送达。",
+    "description": "本轮执行已结束；不代表任务目标已达成或文件已交付，请以实际回复和附件为准。",
     "color": "green"
   },
   "failed": {
@@ -46,7 +46,5 @@
     "Stop requested. Checking execution status.": "已收到停止请求，正在确认执行状态。",
     "This task needs input. Open details to continue.": "任务需要补充信息或处理待办，请查看详情。",
     "Unable to stop this task. Open details to try again.": "暂时无法停止此任务，请打开详情重试。"
-  },
-  "answered_title": "已完成",
-  "answered_description": "任务已完成。"
+  }
 }

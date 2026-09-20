@@ -25,6 +25,7 @@ import {
   type ResourceKind,
 } from "./documents";
 import { AgentFields } from "./agent-fields";
+import { MediaUnderstandingFields } from "./media-understanding";
 import styles from "../shell/workbench.module.css";
 
 export type SourceDraft = {
@@ -291,12 +292,14 @@ export function SourceDocument({
   isNew = false,
   title,
   capabilitiesOnly = false,
+  mediaOnly = false,
   embedded = false,
 }: {
   path: string;
   isNew?: boolean;
   title?: string;
   capabilitiesOnly?: boolean;
+  mediaOnly?: boolean;
   embedded?: boolean;
 }) {
   const { client } = useTransport();
@@ -384,7 +387,9 @@ export function SourceDocument({
         replacement: false,
       });
       setNotice(
-        "Changes saved. Running conversations keep their current configuration.",
+        mediaOnly
+          ? "Saved"
+          : "Changes saved. Running conversations keep their current configuration.",
       );
       void queries.invalidateQueries();
       if (isNew)
@@ -419,7 +424,7 @@ export function SourceDocument({
         </Link>
       )}
       <PageHeader
-        level={capabilitiesOnly ? 2 : 1}
+        level={capabilitiesOnly || mediaOnly ? 2 : 1}
         title={
           title ||
           String(
@@ -429,9 +434,13 @@ export function SourceDocument({
           )
         }
         description={
-          dirty
-            ? "Unsaved draft · retained in this tab while you navigate, not after a reload."
-            : "Saved configuration. Changes are checked before saving and apply to future runs."
+          mediaOnly
+            ? dirty
+              ? "Unsaved changes"
+              : "Used when native input is unavailable."
+            : dirty
+              ? "Unsaved draft · retained in this tab while you navigate, not after a reload."
+              : "Saved configuration. Changes are checked before saving and apply to future runs."
         }
         actions={
           <>
@@ -451,19 +460,29 @@ export function SourceDocument({
             )}
             {canEdit && (
               <>
-                <Button
-                  variant="outline"
-                  loading={validate.isPending}
-                  onClick={() => validate.mutate(draft!.content)}
-                >
-                  Check configuration
-                </Button>
+                {mediaOnly ? (
+                  <Button
+                    variant="outline"
+                    disabled={!dirty}
+                    onClick={() => setReplacing(true)}
+                  >
+                    Discard
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    loading={validate.isPending}
+                    onClick={() => validate.mutate(draft!.content)}
+                  >
+                    Check configuration
+                  </Button>
+                )}
                 <Button
                   loading={save.isPending}
                   disabled={!dirty}
                   onClick={() => save.mutate(draft!.content)}
                 >
-                  Save changes
+                  {mediaOnly ? "Save" : "Save changes"}
                 </Button>
               </>
             )}
@@ -536,7 +555,12 @@ export function SourceDocument({
       )}
       {canEdit && (
         <div className={styles.configurationForm}>
-          {capabilitiesOnly ? (
+          {mediaOnly ? (
+            <MediaUnderstandingFields
+              source={draft!.content}
+              onChange={(content) => update({ ...draft!, content })}
+            />
+          ) : capabilitiesOnly ? (
             <AgentFields
               source={draft!.content}
               onChange={(content) => update({ ...draft!, content })}
@@ -548,23 +572,25 @@ export function SourceDocument({
               onChange={(content) => update({ ...draft!, content })}
             />
           )}
-          <details
-            className={styles.details}
-            open={
-              (!readDocument(draft!.content) && draft!.replacement) ||
-              path.endsWith(".md")
-            }
-          >
-            <summary>Configuration file</summary>
-            <p>
-              Complete file replacement. Preserve unknown fields and use
-              credential references, not literal keys.
-            </p>
-            <SourceEditor
-              value={draft!.content}
-              onChange={(content) => update({ ...draft!, content })}
-            />
-          </details>
+          {!mediaOnly && (
+            <details
+              className={styles.details}
+              open={
+                (!readDocument(draft!.content) && draft!.replacement) ||
+                path.endsWith(".md")
+              }
+            >
+              <summary>Configuration file</summary>
+              <p>
+                Complete file replacement. Preserve unknown fields and use
+                credential references, not literal keys.
+              </p>
+              <SourceEditor
+                value={draft!.content}
+                onChange={(content) => update({ ...draft!, content })}
+              />
+            </details>
+          )}
         </div>
       )}
       {source.data?.content_available && !writable && (

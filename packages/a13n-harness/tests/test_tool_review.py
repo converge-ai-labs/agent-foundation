@@ -743,13 +743,29 @@ async def test_review_cancellation_propagates_without_dispatch() -> None:
     assert executed == []
 
 
-async def test_default_reviewer_timeout_preserves_proven_usage() -> None:
+async def test_default_reviewer_timeout_preserves_proven_usage(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_timeout = asyncio.timeout
+    deadline = None
+
+    def capture_timeout(seconds):
+        nonlocal deadline
+        scope = original_timeout(seconds)
+        if deadline is None:
+            deadline = scope
+        return scope
+
+    monkeypatch.setattr(asyncio, "timeout", capture_timeout)
+
     async def slow_review(messages, info):
         yield '{"risk":'
+        # Expire the real reviewer deadline after the provider request has been
+        # observed, rather than racing agent initialization against 10 ms.
+        assert deadline is not None
+        deadline.reschedule(asyncio.get_running_loop().time())
         await asyncio.Event().wait()
 
     reviewer = AgentToolReviewer(
-        FunctionModel(stream_function=slow_review), config=ToolReviewConfig(model="test:review", timeout_seconds=0.01)
+        FunctionModel(stream_function=slow_review), config=ToolReviewConfig(model="test:review", timeout_seconds=30)
     )
     with pytest.raises(ToolReviewError) as error:
         await reviewer.review(

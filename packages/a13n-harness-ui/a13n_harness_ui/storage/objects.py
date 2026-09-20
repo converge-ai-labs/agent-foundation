@@ -207,7 +207,9 @@ class ImmutableObjectStore:
                 allow_nan=False,
                 separators=(",", ":"),
             )
-            return model_type.model_validate_json(serialized, strict=True)
+            # Snapshots outlive their writer's schema. Retain unknown fields as
+            # opaque data, including configuration extras used in content digests.
+            return model_type.model_validate_json(serialized, strict=True, extra="allow")
         except (TypeError, ValueError) as exc:
             details: dict[str, object] = {
                 "object_kind": reference.object_kind.value,

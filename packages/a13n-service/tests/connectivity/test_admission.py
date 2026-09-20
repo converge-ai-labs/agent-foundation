@@ -262,3 +262,24 @@ async def test_reception_scope_change_preserves_acknowledged_batch(ingress_event
     assert len(acceptor.batches) == 1
     async with connectivity_sessions() as session:
         assert await session.scalar(select(func.count()).select_from(IngressBatchRecord)) == 1
+
+
+async def test_lost_race_backs_off_without_starving_other_conversations(ingress_event_service, connectivity_sessions):
+    from a13n_service.connectivity.ingress.admission_domain import LostRaceInputOutcome
+
+    class ContendedAcceptor:
+        async def accept_ingress_batch(self, batch):
+            return LostRaceInputOutcome()
+
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("contended", channel="first"))
+    worker = reconciler(connectivity_sessions, ContendedAcceptor())
+    assert await worker.run_once()
+    assert not await worker.run_once()
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("other", channel="second"))
+    assert await worker.run_once()
+    async with connectivity_sessions() as session:
+        batches = (await session.scalars(select(IngressBatchRecord))).all()
+        assert len(batches) == 2
+        assert all(batch.attempt_count == 1 and batch.available_at > NOW for batch in batches)
+    later = reconciler(connectivity_sessions, ContendedAcceptor(), clock=lambda: NOW + timedelta(seconds=1))
+    assert await later.run_once()

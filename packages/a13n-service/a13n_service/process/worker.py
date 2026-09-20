@@ -22,7 +22,7 @@ from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.publication import AssetPublisher
 from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.assets.staging import AssetStaging
-from a13n_service.connectivity.execution import ExternalToolRuntime
+from a13n_service.connectivity.execution import BoundToolContribution, ExternalToolRuntime
 from a13n_service.connectivity.file_delivery import FileDelivery
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.native_actions import NativeObservationFactory
@@ -70,6 +70,7 @@ async def build_worker_runtime(
     observability: ObservabilityRuntime | None = None,
     configuration_resolver: AgentResolver | None = None,
     observations: NativeObservationFactory | None = None,
+    tool_contributions: tuple[BoundToolContribution, ...] = (),
 ) -> tuple[WorkerRuntime, tuple[BackgroundTask, ...]]:
     """Construct the components owned by a Worker-capable role."""
 
@@ -179,6 +180,7 @@ async def build_worker_runtime(
         clients.credentials,
         observations=observations,
         files=FileDelivery(AssetCatalog(shared.storage.sessions, assets)),
+        contributions=tool_contributions,
     )
 
     skills = SkillRuntimePreparer(shared.storage.sessions, execution.skill_package_store)

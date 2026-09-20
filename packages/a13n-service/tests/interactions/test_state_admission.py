@@ -44,7 +44,7 @@ async def admission(interaction_sessions, interaction_object_store, monkeypatch)
     )
     claimed = await scheduler.claim(run.id, acceptance._worker(worker_id="replacement"))
     assert isinstance(claimed, ClaimedAttempt)
-    context = replace(acceptance._authority(claimed), renewal_interval=timedelta(milliseconds=5))
+    context = replace(acceptance._authority(claimed), renewal_interval=timedelta(milliseconds=50))
     materialize = AsyncMock(side_effect=AssertionError("Preparation must not materialize new inbox input"))
     inbox = DatabaseThreadInboxReconciler(interaction_sessions, materialize)
     confirm = AsyncMock(wraps=inbox.confirm_inbox_receipts)
@@ -156,7 +156,9 @@ async def test_slow_initial_read_renews_without_confirming_provisional_inbox(adm
 
     monkeypatch.setattr(execution, "heartbeat", renew)
     monkeypatch.setattr(states, "read_run", blocked_read)
-    with fail_after(2):
+    # Admission reserves one second of its enclosing budget for fencing.
+    # The event orders renewal before read completion; no tiny deadline is needed.
+    with fail_after(30):
         async with create_task_group() as tasks:
             control.bind_executor(driver, tasks.cancel_scope.cancel)
             await tasks.start(LeaseMonitor(control.current_context, control).run)

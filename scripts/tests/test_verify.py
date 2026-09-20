@@ -102,3 +102,27 @@ def test_python_steps_lint_changed_files_and_run_the_selection(workspace: Path) 
     assert [step.name for step in steps] == ["ruff check", "ruff format", "pyright", "python tests"]
     assert steps[-1].command[:2] == ["make", "test"]
     assert "-q --tb=short" in steps[-1].env["PYTEST_ADDOPTS"]
+
+
+def test_deleted_source_without_maps_runs_own_suite(workspace: Path) -> None:
+    path = "packages/a13n-core/a13n_core/models.py"
+    (workspace / path).unlink()
+    result = verify.plan([path], graph=verify.PythonGraph(workspace))
+    assert result.python_tests == {"packages/a13n-core/tests"}
+    assert not result.python_files
+
+
+def test_deleted_frontend_source_runs_project_without_formatting_missing_file(workspace: Path) -> None:
+    result = verify.plan(["frontend/apps/a13n-console/src/deleted.tsx"])
+    assert result.frontend_full == {"apps/a13n-console"}
+    assert not result.frontend_files
+
+
+def test_deleted_shared_frontend_source_runs_consumers(workspace: Path) -> None:
+    result = verify.plan(["frontend/packages/a13n-ui/src/deleted.tsx"])
+    assert result.frontend_full == set(verify.FRONTEND_PROJECTS)
+
+
+def test_deleted_documentation_does_not_select_tests_or_format_missing_files(workspace: Path) -> None:
+    result = verify.plan(["frontend/apps/a13n-console/README.md", "CONTRIBUTING.md"])
+    assert not verify.steps_for(result)

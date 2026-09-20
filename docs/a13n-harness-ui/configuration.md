@@ -71,6 +71,10 @@ process:
   max_object_bytes: 268435456
 input:
   long_text_threshold_chars: 8000
+media_understanding:
+  image: null
+  video: null
+  audio: null
 defaults:
   project: null
   agent: null
@@ -100,6 +104,10 @@ subagents:
 webui:
   sidekick: null
 ```
+
+### Media understanding
+
+`media_understanding.image`, `.video`, and `.audio` select saved Model IDs for file `view` fallback when the active Model cannot accept that media natively. Each defaults to `null`, preserving the corresponding Harness environment fallback. Configure these in **Settings → Models** or `/model defaults`. See [media understanding defaults](models-and-authentication.md#media-understanding-defaults) for precedence, capability requirements, and Run capture behavior.
 
 ### WebUI Sidekick
 

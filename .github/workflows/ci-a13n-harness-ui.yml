@@ -222,7 +222,7 @@ jobs:
       - name: Test UI
         timeout-minutes: 5
         env:
-          PYTEST_ADDOPTS: -v --durations=20 -o faulthandler_timeout=45 --timeout=60 --timeout-method=thread --max-worker-restart=0
+          PYTEST_ADDOPTS: -v --durations=20 -o faulthandler_timeout=45 --timeout=60 --timeout-method=thread --max-worker-restart=0 --junitxml=test-results/ui.xml -r a
         run: >-
           /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 7
           packages/a13n-harness-ui/tests
@@ -230,9 +230,17 @@ jobs:
       - name: Test native command lifecycle
         timeout-minutes: 2
         run: >-
-          uv run --locked --no-sync python -m pytest
+          uv run --locked --no-sync python -m pytest --junitxml=test-results/native-lifecycle.xml
           packages/a13n-harness/tests/providers_environment/test_direct_local.py
           packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py
+
+      - name: Retain UI test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-python-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
 
   frontend:
     name: Console and shared frontend
@@ -258,14 +266,30 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Install and check frontend workspace
+      - name: Install frontend workspace
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Check frontend workspace
         run: |
-          pnpm --dir frontend install --frozen-lockfile
           pnpm --dir frontend run format:check
           pnpm --dir frontend --filter a13n-console run generate:check
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run check
+
+      - name: Test Console and shared frontend
+        run: >-
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run test
-          pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run build
+          --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
+
+      - name: Retain frontend test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: console-shared-${{ github.run_attempt }}
+          path: frontend/**/test-results/*.xml
+          retention-days: 7
+
+      - name: Build frontend workspace
+        run: pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run build
 
   distribution:
     name: UI distribution
@@ -319,7 +343,17 @@ jobs:
 
       - name: Test WebUI
         timeout-minutes: 4
-        run: /usr/bin/time -p pnpm --dir frontend --filter a13n-harness-ui-webui run test
+        run: >-
+          /usr/bin/time -p pnpm --dir frontend --filter a13n-harness-ui-webui run test
+          --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
+
+      - name: Retain WebUI test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webui-${{ github.run_attempt }}
+          path: frontend/apps/a13n-harness-ui/test-results/*.xml
+          retention-days: 7
 
       - name: Build WebUI assets
         run: pnpm --dir frontend --filter a13n-harness-ui-webui run build
@@ -328,6 +362,8 @@ jobs:
         run: uv run --locked --no-sync python scripts/prepare-a13n-harness-ui-assets.py
 
       - name: Test distribution tooling
+        env:
+          PYTEST_ADDOPTS: --junitxml=test-results/distribution.xml --durations=20 -r a
         run: >-
           uv run --locked --no-sync python -m scripts.run_python_tests --workers 2
           scripts/tests/test_check_a13n_harness_ui_distribution.py
@@ -342,6 +378,14 @@ jobs:
         run: >-
           uv run --locked --no-sync python scripts/check-a13n-harness-ui-distribution.py
           dist/a13n-harness-ui --rebuild-wheel
+
+      - name: Retain distribution test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-distribution-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
 
   linux:
     name: UI (Linux)
@@ -412,7 +456,7 @@ jobs:
         # Keep real subprocess, filesystem, shell, and input-backend coverage.
         # Mocked platform-policy tests still run in the full Linux suite.
         run: >-
-          uv run --locked --no-sync python -m pytest --durations=20
+          uv run --locked --no-sync python -m pytest --durations=20 --junitxml=test-results/ui-native.xml
           packages/a13n-harness-ui/tests/test_entrypoint.py
           packages/a13n-harness-ui/tests/test_thread_files.py
           packages/a13n-harness-ui/tests/test_host_files.py
@@ -426,11 +470,19 @@ jobs:
 
       - name: Test full UI suite on Windows
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: uv run --locked --no-sync python -m pytest --durations=20 packages/a13n-harness-ui/tests
+        run: uv run --locked --no-sync python -m pytest --durations=20 --junitxml=test-results/ui-full.xml packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle
         timeout-minutes: 2
         run: >-
-          uv run --locked --no-sync python -m pytest --durations=20
+          uv run --locked --no-sync python -m pytest --durations=20 --junitxml=test-results/native-lifecycle.xml
           packages/a13n-harness/tests/providers_environment/test_direct_local.py
           packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py
+
+      - name: Retain Windows test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-windows-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7

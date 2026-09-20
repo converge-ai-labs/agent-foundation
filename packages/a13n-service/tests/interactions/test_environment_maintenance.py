@@ -214,7 +214,8 @@ async def test_existing_file_lease_prevents_retention_until_release(due_environm
                 generation="same", operation_families=frozenset({"files"}), permissions=EnvironmentPermissionSet()
             )
 
-    async def construct(operation):
+    async def construct(operation, *, allow_create=True):
+        assert not allow_create
         return FileTarget(operation.state, [])
 
     monkeypatch.setattr(lifecycle, "construct", construct)

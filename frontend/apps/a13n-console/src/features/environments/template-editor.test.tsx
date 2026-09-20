@@ -95,10 +95,7 @@ it("keeps settings drafts across tabs and saves against the original version", a
       .disabled,
   ).toBe(true);
   await user.clear(screen.getByRole("textbox", { name: "Name" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Name" }),
-    "Unsaved draft",
-  );
+  await user.paste("Unsaved draft");
   await user.click(screen.getByRole("tab", { name: "Configuration" }));
   await waitFor(() =>
     expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull(),

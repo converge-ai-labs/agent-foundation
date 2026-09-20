@@ -4,7 +4,7 @@ from functools import partial
 
 from a13n_service.ids import new_object_id
 
-from ...native_actions import NativeAction, action, credential
+from ...native_actions import CONVERSATION_REPLY_DESCRIPTION, NativeAction, action, credential
 from ..definition import InboundActionContext
 from ..slack.client import (
     SlackActionBinding,
@@ -34,9 +34,17 @@ def inbound_actions(inbound: InboundActionContext) -> dict[str, NativeAction]:
         return await client.reply(binding, arguments, bot_token=token, request_id=new_object_id("reply"))
 
     actions = (
-        action("slack.reply", SlackAutoReplyArguments, reply, hide_receipt=True)
+        action(
+            "slack.reply", SlackAutoReplyArguments, reply, hide_receipt=True, description=CONVERSATION_REPLY_DESCRIPTION
+        )
         if binding.reply_mode == "auto"
-        else action("slack.reply", SlackForcedReplyArguments, reply, hide_receipt=True),
+        else action(
+            "slack.reply",
+            SlackForcedReplyArguments,
+            reply,
+            hide_receipt=True,
+            description=CONVERSATION_REPLY_DESCRIPTION,
+        ),
         action("slack.list_members", SlackListMembersArguments, partial(client.list_members, binding, bot_token=token)),
         action(
             "slack.read_messages", SlackReadMessagesArguments, partial(client.read_messages, binding, bot_token=token)

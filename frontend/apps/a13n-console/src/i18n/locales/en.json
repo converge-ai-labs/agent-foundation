@@ -3239,5 +3239,17 @@
   "Write the first memory yourself, or let the agent save one.": "Write the first memory yourself, or let the agent save one.",
   "No memory stores yet": "No memory stores yet",
   "Each environment keeps its own documents. Nothing is combined across stores.": "Each environment keeps its own documents. Nothing is combined across stores.",
-  "Storage and recall": "Storage and recall"
+  "Storage and recall": "Storage and recall",
+  "Memory environment": "Memory environment",
+  "Current run environment": "Current run environment",
+  "You do not have permission to browse environments. The saved selection is preserved.": "You do not have permission to browse environments. The saved selection is preserved.",
+  "Loading environments…": "Loading environments…",
+  "Use the current run environment, or choose one that will be attached to the conversation. Selecting it here does not attach it automatically.": "Use the current run environment, or choose one that will be attached to the conversation. Selecting it here does not attach it automatically.",
+  "Choose an environment…": "Choose an environment…",
+  "No matching environments": "No matching environments",
+  "Saved environment": "Saved environment",
+  "No environments yet. Use the current run environment.": "No environments yet. Use the current run environment.",
+  "Let the agent search, read, and modify memory documents. Turning this off keeps the memory index available; automatic organization is controlled separately.": "Let the agent search, read, and modify memory documents. Turning this off keeps the memory index available; automatic organization is controlled separately.",
+  "Let the agent search and manage saved memories. Automatic recall is controlled separately.": "Let the agent search and manage saved memories. Automatic recall is controlled separately.",
+  "When enabled, memory loading or recall failures stop the run. When disabled, the run continues without the unavailable memory. Having no saved memories is not an error.": "When enabled, memory loading or recall failures stop the run. When disabled, the run continues without the unavailable memory. Having no saved memories is not an error."
 }

@@ -284,7 +284,7 @@ export function SidebarGroupLabel({
 }: useRender.ComponentProps<"div">): React.ReactElement {
   const defaultProps = {
     className: cn(
-      "flex h-7 shrink-0 items-center rounded-lg px-2 font-medium text-[11px] text-sidebar-foreground uppercase tracking-[0.05em] outline-hidden ring-sidebar-ring transition-[margin,opacity] duration-200 ease-linear focus-visible:ring-1 [&>svg]:size-4 [&>svg]:shrink-0",
+      "flex h-7 shrink-0 items-center rounded-lg px-2 font-medium text-[11px] text-sidebar-foreground outline-hidden ring-sidebar-ring transition-[margin,opacity] duration-200 ease-linear focus-visible:ring-1 [&>svg]:size-4 [&>svg]:shrink-0",
       className,
     ),
     "data-sidebar": "group-label",

@@ -65,7 +65,8 @@ it("searches the server by name or key from the first page and links by key", as
   await user.click(screen.getByRole("button", { name: "Next" }));
   await screen.findByRole("link", { name: /Second skill/ });
   const search = screen.getByRole("searchbox", { name: "Search skills" });
-  await user.type(search, "REVIEW");
+  await user.click(search);
+  await user.paste("REVIEW");
   await user.click(screen.getByRole("combobox", { name: "Source" }));
   await user.click(await screen.findByRole("option", { name: "GitHub" }));
   await waitFor(() =>
@@ -92,11 +93,11 @@ it("searches the server by name or key from the first page and links by key", as
     matching.every(([, options]) => options.params.query.cursor === undefined),
   ).toBe(true);
   await user.clear(search);
-  await user.type(search, "missing");
+  await user.paste("missing");
   await screen.findByText("No matching skills");
   await user.clear(search);
   await screen.findByRole("link", { name: /First skill/ });
-  await user.type(search, "review");
+  await user.paste("review");
   await user.click(
     await screen.findByRole("link", { name: /Document helper/ }),
   );

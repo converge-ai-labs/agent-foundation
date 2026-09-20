@@ -181,6 +181,39 @@ async def test_object_read_rejects_corruption_truncation_and_trailing_data(tmp_p
     assert missing_error.value.code == "object_unreadable"
 
 
+async def test_payload_reader_tolerates_nested_unknown_fields_without_rewriting_bytes(tmp_path):
+    from pydantic import ConfigDict, create_model
+
+    entry = create_model("StoredEntry", __config__=ConfigDict(extra="forbid"), count=(int, ...))
+    payload_type = create_model("StoredPayload", __config__=ConfigDict(extra="forbid"), entries=(list[entry], ...))
+    payload = {"retired": True, "entries": [{"count": 3, "future": {"value": [1, None]}}]}
+    store, layout = _object_store(tmp_path)
+    envelope = await store.publish(object_kind=ObjectKind.child_checkpoint, object_schema_version="1", payload=payload)
+    path = next(layout.objects.rglob("*.json.zst"))
+    original = path.read_bytes()
+    restored = await store.read_model(envelope.ref, payload_type)
+    assert restored.entries[0].count == 3
+    assert restored.model_extra == {"retired": True}
+    assert restored.entries[0].model_extra == {"future": {"value": [1, None]}}
+    assert await store.read(envelope.ref) == envelope
+    assert path.read_bytes() == original
+    # Source/request validation is independent of historical object decoding.
+    with pytest.raises(ValidationError):
+        payload_type.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize("entry", [{"future": True}, {"count": "3", "future": True}])
+async def test_tolerant_payload_reader_still_rejects_missing_or_invalid_known_fields(tmp_path, entry):
+    from pydantic import ConfigDict, create_model
+
+    payload_type = create_model("StoredCount", __config__=ConfigDict(extra="forbid"), count=(int, ...))
+    store, _ = _object_store(tmp_path)
+    envelope = await store.publish(object_kind=ObjectKind.child_checkpoint, object_schema_version="1", payload=entry)
+    with pytest.raises(ObjectIntegrityError) as error:
+        await store.read_model(envelope.ref, payload_type)
+    assert error.value.code == "object_payload_incompatible"
+
+
 async def test_payload_validation_logs_identity_and_bounded_fields_without_private_values(tmp_path, caplog):
     from pydantic import ConfigDict, create_model
 

@@ -149,9 +149,6 @@
 .modelChoice {
   grid-area: model;
 }
-.fastChoice {
-  grid-area: fast;
-}
 .choiceLabel {
   flex-shrink: 0;
   color: var(--a13n-secondary);
@@ -178,11 +175,12 @@
     grid-area: secondary;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     min-width: 0;
-    padding-top: 10px;
-    margin-top: 10px;
-    border-top: 1px solid var(--a13n-border);
+    padding: 6px 8px;
+    margin-top: 8px;
+    border-radius: 10px;
+    background: var(--a13n-surface);
   }
   .secondaryChoices[data-expanded="false"] {
     display: none;
@@ -199,6 +197,17 @@
 @container composer (max-width: 480px) {
   .modelChoice > .choiceLabel {
     display: none;
+  }
+  .modelChoice > button {
+    height: 48px;
+    padding: 4px 8px;
+    border-radius: 12px;
+  }
+  .runChoice > button {
+    min-height: 44px;
+  }
+  .mode > button {
+    width: 100%;
   }
 }
 

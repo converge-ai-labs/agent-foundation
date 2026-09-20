@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { TooltipProvider } from "a13n-ui";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AgentConfig } from "./configuration";
@@ -72,7 +73,10 @@ function renderDraft(starting: NonNullable<AgentConfig["toolsets"]>) {
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
     >
-      <Draft />
+      {/* These assertions cover help content, not the hover delay. */}
+      <TooltipProvider delay={0}>
+        <Draft />
+      </TooltipProvider>
     </QueryClientProvider>,
   );
   return {

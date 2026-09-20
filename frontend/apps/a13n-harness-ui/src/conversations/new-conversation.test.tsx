@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router";
@@ -583,7 +584,7 @@ it("distinguishes inherited choices and sends an independent model without chang
   ).toBeTruthy();
   await user.click(screen.getByRole("option", { name: /Reviewer.*agent-two/ }));
   await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
-  await user.click(screen.getByRole("button", { name: "Model and thinking" }));
+  await user.click(screen.getByRole("button", { name: "Model settings" }));
   await user.click(screen.getByRole("button", { name: "Change model" }));
   expect(
     (await screen.findByRole("button", { name: /Agent default/ })).textContent,
@@ -594,7 +595,7 @@ it("distinguishes inherited choices and sends an independent model without chang
   await user.click(screen.getByRole("link", { name: "Settings" }));
   await user.click(screen.getByRole("link", { name: "Return to draft" }));
   expect(
-    screen.getByRole("button", { name: "Model and thinking" }).textContent,
+    screen.getByRole("button", { name: "Model settings" }).textContent,
   ).toContain("Primary model");
   await waitFor(() =>
     expect(
@@ -732,7 +733,7 @@ it("restores text and choices after a full reload and persists deleting the inpu
   ).toBe("Build this");
   expect(creations.current!.threadId).toBe(id);
   expect(
-    screen.getByRole("button", { name: "Model and thinking" }).textContent,
+    screen.getByRole("button", { name: "Model settings" }).textContent,
   ).toContain("Other model");
   act(() => {
     const text = creations.current!.composer.doc.getText("text");
@@ -1373,8 +1374,14 @@ it.each([
       : ["latest", "previous-turn"];
     expect(requests).toEqual(expectedRequests);
     expect(top).toBe(short ? 600 : 940);
-    const toggle = screen.getByRole("button", { name: /Execution details/ });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.getByRole("button", {
+        name: "Load earlier messages in this turn",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /Execution details/ }),
+    ).toBeNull();
     expect(screen.queryByText("Folded intermediate work")).toBeNull();
     fireEvent.scroll(reader);
     await act(async () => {});
@@ -1392,6 +1399,14 @@ it("loads missing turn details on request when away from the top", async () => {
     return json({
       continuation_id: "initial:one",
       entries: [
+        ...(url.searchParams.has("cursor")
+          ? Array.from({ length: 100 }, (_, position) => ({
+              position,
+              message_kind: "request",
+              parts:
+                position === 0 ? [{ kind: "user", text: "Long task" }] : [],
+            }))
+          : []),
         {
           position: 100,
           message_kind: "response",
@@ -1429,22 +1444,26 @@ it("loads missing turn details on request when away from the top", async () => {
     scrollTop: { get: () => 800, set: () => {} },
   });
   const toggle = await screen.findByRole("button", {
-    name: /Execution details/,
+    name: "Load earlier messages in this turn",
   });
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.scroll(reader);
   await act(async () => {});
   expect(requests).toHaveLength(1);
   fireEvent.click(toggle);
+  await waitFor(() => expect(requests).toHaveLength(2));
   fireEvent.click(
-    await screen.findByRole("button", { name: "Load earlier steps" }),
+    await screen.findByRole("button", {
+      name: "Load earlier messages in this turn",
+    }),
   );
   await waitFor(() => expect(requests).toHaveLength(3));
   expect(requests[1]).toContain("turn_id=long");
   expect(requests[2]).toContain("turn_id=long");
   expect(requests[2]).toContain("cursor=older");
   expect(
-    screen.queryByRole("button", { name: "Load earlier steps" }),
+    screen.queryByRole("button", {
+      name: "Load earlier messages in this turn",
+    }),
   ).toBeNull();
 });
 
@@ -1569,7 +1588,7 @@ it.each(["new", "existing"])(
 );
 
 it.each(["desktop", "mobile"])(
-  "keeps %s execution pagination, local echoes and retries independent of earlier prompts",
+  "loads hidden %s messages outside collapsed details, reconciling steering and retrying gaps",
   async (layout) => {
     if (layout === "mobile")
       vi.stubGlobal("matchMedia", (query: string) => ({
@@ -1627,6 +1646,14 @@ it.each(["desktop", "mobile"])(
                   parts: [{ kind: "thinking", text: "Earlier execution work" }],
                 },
                 { position: 4, message_kind: "request", parts: steeringParts },
+                ...Array.from({ length: 75 }, (_, index) => ({
+                  position: index + 5,
+                  message_kind: "response",
+                  parts:
+                    index === 0
+                      ? [{ kind: "assistant", text: "Earlier progress text" }]
+                      : [],
+                })),
               ]
             : [
                 {
@@ -1639,6 +1666,11 @@ it.each(["desktop", "mobile"])(
                   message_kind: "response",
                   parts: [{ kind: "assistant", text: "Current answer" }],
                 },
+                ...Array.from({ length: 21 }, (_, index) => ({
+                  position: index + 81,
+                  message_kind: "request",
+                  parts: [],
+                })),
               ],
         boundary_entries: earlier
           ? []
@@ -1688,9 +1720,13 @@ it.each(["desktop", "mobile"])(
       name: /Execution details/,
     });
     expect(requests).toEqual(["conversation:latest"]);
+    expect(
+      screen.getByText("Current answer").closest("[data-execution-reader]"),
+    ).toBeNull();
+    // Opening a segment never fetches hidden conversation messages.
     fireEvent.click(toggle);
-    await screen.findByRole("button", { name: "Load earlier steps" });
-    expect(requests).toEqual(["conversation:latest", "execution:latest"]);
+    await screen.findByRole("region", { name: "Execution details" });
+    expect(requests).toEqual(["conversation:latest"]);
     if (layout === "mobile") {
       const inspectionTop = reader.scrollTop;
       liveGrowth = 100;
@@ -1707,9 +1743,20 @@ it.each(["desktop", "mobile"])(
             },
         );
       });
-      // Keyboard/programmatic activation also pauses background following.
       expect(reader.scrollTop).toBe(inspectionTop);
-    }
+      fireEvent.click(
+        screen.getByRole("button", { name: "Back to conversation" }),
+      );
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    } else fireEvent.click(toggle);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Load earlier messages in this turn",
+      }),
+    );
+    await waitFor(() =>
+      expect(requests).toEqual(["conversation:latest", "execution:latest"]),
+    );
     await act(async () => {
       const draft = drafts.get(id)!;
       draft.localInputs = [
@@ -1723,13 +1770,6 @@ it.each(["desktop", "mobile"])(
       draft.notify();
     });
     expect(screen.getAllByText("Please use plan B")).toHaveLength(1);
-    // Leave mobile inspection before navigating the background conversation.
-    if (layout === "mobile") {
-      fireEvent.click(
-        screen.getByRole("button", { name: "Back to conversation" }),
-      );
-      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    }
     // The outer gesture loads the previous prompt, not the expanded execution's cursor.
     fireEvent.wheel(reader, { deltaY: -100 });
     reader.scrollTop = 40;
@@ -1737,56 +1777,39 @@ it.each(["desktop", "mobile"])(
     await screen.findByText("Previous answer");
     expect(requests.at(-1)).toBe("conversation:previous-turn");
     expect(screen.queryByText("Earlier execution work")).toBeNull();
-    if (layout === "mobile") fireEvent.click(toggle);
-    const execution = screen.getByRole("region", { name: "Execution details" });
-    let innerTop = 800;
-    Object.defineProperties(execution, {
-      clientHeight: { get: () => 200 },
-      scrollHeight: {
-        get: () =>
-          execution.textContent?.includes("Earlier execution work")
-            ? 1500
-            : 1000,
-      },
-      scrollTop: {
-        get: () => innerTop,
-        set: (value: number) => {
-          innerTop = value;
-        },
-      },
-    });
-    fireEvent.scroll(execution);
-    const outerTop = reader.scrollTop;
-    fireEvent.wheel(execution, { deltaY: -100 });
-    execution.scrollTop = 20;
-    fireEvent.scroll(execution);
+    // Gaps load from the conversation, with every detail segment still closed.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Load earlier messages in this turn",
+      }),
+    );
     const retry = await screen.findByRole("button", {
-      name: "Retry earlier steps",
+      name: "Retry earlier messages",
     });
     expect(requests.at(-1)).toBe("execution:steps");
-    expect(reader.scrollTop).toBe(outerTop);
-    fireEvent.scroll(execution);
-    expect(
-      requests.filter((value) => value === "execution:steps"),
-    ).toHaveLength(1);
     fireEvent.click(retry);
-    await screen.findByText("Earlier execution work");
-    expect(execution.scrollTop).toBe(520);
+    await screen.findByText("Earlier progress text");
     expect(drafts.get(id)!.localInputs).toHaveLength(0);
-    expect(screen.getAllByText("Please use plan B")).toHaveLength(1);
+    for (const text of [
+      "Please use plan B",
+      "Earlier progress text",
+      "Current prompt",
+      "Current answer",
+    ]) {
+      expect(screen.getAllByText(text)).toHaveLength(1);
+      expect(
+        screen.getByText(text).closest("[data-execution-reader]"),
+      ).toBeNull();
+      expect(screen.getByText(text).closest("[hidden]")).toBeNull();
+    }
     expect(
-      screen.getByText("Please use plan B").closest("[data-execution-reader]"),
-    ).toBe(execution);
-    expect(screen.getAllByText("Current prompt")).toHaveLength(1);
-    expect(screen.getAllByText("Current answer")).toHaveLength(1);
-    expect(
-      screen.getByText("Current answer").closest("[data-execution-reader]"),
+      screen.queryByRole("button", {
+        name: "Load earlier messages in this turn",
+      }),
     ).toBeNull();
     expect(
-      screen
-        .getByText("Earlier execution work")
-        .closest("[data-execution-reader]"),
-    ).toBe(execution);
+      screen.queryByRole("region", { name: "Execution details" }),
+    ).toBeNull();
     expect(requests).toEqual([
       "conversation:latest",
       "execution:latest",
@@ -1794,17 +1817,26 @@ it.each(["desktop", "mobile"])(
       "execution:steps",
       "execution:steps",
     ]);
+    const segments = screen.getAllByRole("button", {
+      name: /Execution details/,
+    });
+    expect(segments).toHaveLength(2);
+    fireEvent.click(segments[0]);
+    const execution = await screen.findByRole("region", {
+      name: "Execution details",
+    });
+    expect(within(execution).getByText("Earlier execution work")).toBeTruthy();
+    expect(within(execution).queryByText("Recent execution work")).toBeNull();
     if (layout === "mobile") {
       fireEvent.click(
         screen.getByRole("button", { name: "Back to conversation" }),
       );
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    } else fireEvent.click(toggle);
-    fireEvent.click(toggle);
-    await act(async () => {});
-    expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-      execution,
-    );
+    } else fireEvent.click(segments[0]);
+    fireEvent.click(segments[0]);
+    expect(
+      await screen.findByRole("region", { name: "Execution details" }),
+    ).toBe(execution);
     expect(requests).toHaveLength(5);
   },
 );

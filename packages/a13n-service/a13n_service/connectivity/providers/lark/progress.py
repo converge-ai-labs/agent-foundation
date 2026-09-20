@@ -26,7 +26,7 @@ _LABELS = {
     "stopping": ("Stopping", "A stop request has been received. Checking execution status.", "orange"),
     "completed": (
         "Execution completed",
-        "Execution has completed. This does not confirm that the result was delivered.",
+        "Execution has ended. This does not confirm task success or file delivery; check the replies and attachments.",
         "green",
     ),
     "failed": ("Execution failed", "The task could not finish. Open details for more information.", "red"),
@@ -62,9 +62,6 @@ def task_card(
     localized = texts.get(status)
     if isinstance(localized, dict):
         title, description = str(localized["title"]), str(localized["description"])
-    if replies and status == "completed":
-        title = str(texts.get("answered_title", "Completed"))
-        description = str(texts.get("answered_description", "The task has completed."))
     actions: list[JsonValue] = []
     if status in {"accepted", "running"}:
         actions.append(

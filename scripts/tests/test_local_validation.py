@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -211,6 +212,7 @@ def test_service_ci_owns_export_drift_and_tests() -> None:
         "uv run --locked python scripts/export-a13n-service-openapi.py --check",
         "uv run --locked python -m pytest scripts/tests/test_service_contract.py",
     ):
-        step = next(step for step in steps if step.get("run") == command)
+        required = shlex.split(command)
+        step = next(step for step in steps if shlex.split(step.get("run", ""))[: len(required)] == required)
         assert step["if"] == "matrix.name == 'checks'"
     assert workflow["jobs"]["python"]["needs"] == "validation"

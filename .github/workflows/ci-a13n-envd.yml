@@ -8,12 +8,17 @@ on:
       - ".github/workflows/release-a13n-envd.yml"
       - "Cargo.lock"
       - "Cargo.toml"
+      - "Makefile"
+      - "conftest.py"
+      - "scripts/tests/test_envd_ci_workflow.py"
       - "crates/a13n-envd/**"
       - "deploy/containers/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
-      - "packages/a13n-harness/tests/providers_environment/test_local_envd.py"
+      - "packages/a13n-harness/a13n_harness/providers/environment/remote_envd/**"
+      - "packages/a13n-harness/tests/providers_environment/test_*envd*.py"
+      - "examples/environment-provider/**"
       - "proto/a13n-envd/eip/**"
       - "pyproject.toml"
       - "scripts/eip_codegen/**"
@@ -31,12 +36,17 @@ on:
       - ".github/workflows/release-a13n-envd.yml"
       - "Cargo.lock"
       - "Cargo.toml"
+      - "Makefile"
+      - "conftest.py"
+      - "scripts/tests/test_envd_ci_workflow.py"
       - "crates/a13n-envd/**"
       - "deploy/containers/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
-      - "packages/a13n-harness/tests/providers_environment/test_local_envd.py"
+      - "packages/a13n-harness/a13n_harness/providers/environment/remote_envd/**"
+      - "packages/a13n-harness/tests/providers_environment/test_*envd*.py"
+      - "examples/environment-provider/**"
       - "proto/a13n-envd/eip/**"
       - "pyproject.toml"
       - "scripts/eip_codegen/**"
@@ -83,6 +93,9 @@ jobs:
           filters: |
             daemon:
               - '.github/workflows/ci-a13n-envd.yml'
+              - 'Makefile'
+              - 'conftest.py'
+              - 'scripts/tests/test_envd_ci_workflow.py'
               - '.github/workflows/release-a13n-envd.yml'
               - 'crates/a13n-envd/**'
               - 'deploy/containers/sandbox/Dockerfile'
@@ -96,6 +109,9 @@ jobs:
               - 'uv.lock'
             client:
               - '.github/workflows/ci-a13n-envd.yml'
+              - 'Makefile'
+              - 'conftest.py'
+              - 'scripts/tests/test_envd_ci_workflow.py'
               - '.github/workflows/release-a13n-envd.yml'
               - 'packages/a13n-envd-client/**'
               - 'proto/a13n-envd/eip/**'
@@ -105,22 +121,19 @@ jobs:
               - 'uv.lock'
             protocol:
               - '.github/workflows/ci-a13n-envd.yml'
+              - 'Makefile'
+              - 'conftest.py'
+              - 'scripts/tests/test_envd_ci_workflow.py'
               - '.github/workflows/release-a13n-envd.yml'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'crates/a13n-envd/**'
-              - 'crates/a13n-envd/Cargo.toml'
-              - 'crates/a13n-envd/build.rs'
-              - 'crates/a13n-envd/build_support/**'
-              - 'crates/a13n-envd/protocol/eip/**'
-              - 'crates/a13n-envd/src/eip/**'
-              - 'crates/a13n-envd/src/lib.rs'
-              - 'packages/a13n-envd-client/pyproject.toml'
-              - 'packages/a13n-envd-client/a13n_envd_client/eip/**'
-              - 'packages/a13n-envd-client/tests/eip/**'
+              - 'packages/a13n-envd-client/**'
               - 'packages/a13n-harness/a13n_harness/providers/environment/eip/**'
               - 'packages/a13n-harness/a13n_harness/providers/environment/local_envd/**'
-              - 'packages/a13n-harness/tests/providers_environment/test_local_envd.py'
+              - 'packages/a13n-harness/a13n_harness/providers/environment/remote_envd/**'
+              - 'packages/a13n-harness/tests/providers_environment/test_*envd*.py'
+              - 'examples/environment-provider/**'
               - 'proto/a13n-envd/eip/**'
               - 'scripts/eip_codegen/**'
               - 'scripts/tests/test_eip_codegen.py'
@@ -134,6 +147,7 @@ jobs:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.protocol == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -168,7 +182,18 @@ jobs:
           shared-key: eip-protocol
 
       - name: Verify generated protocol and shared integration
+        env:
+          PYTEST_ADDOPTS: --durations=30 -r a
+          EIP_TEST_REPORT_DIR: ${{ github.workspace }}/test-results
         run: make eip-verify eip-integration-test
+
+      - name: Retain EIP test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eip-protocol-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
 
       - name: Type-check EIP generator
         run: uv run --locked pyright scripts/eip_codegen
@@ -178,6 +203,7 @@ jobs:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -202,7 +228,15 @@ jobs:
         run: uv run --locked pyright packages/a13n-envd-client/a13n_envd_client
 
       - name: Test a13n-envd client
-        run: uv run --locked python -m pytest packages/a13n-envd-client/tests
+        run: uv run --locked python -m pytest packages/a13n-envd-client/tests --junitxml=test-results/client.xml --durations=30 -r a
+
+      - name: Retain client test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: envd-client-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
 
       - name: Build a13n-envd client distribution
         run: uv build --package a13n-envd-client --out-dir dist/a13n-envd-client
@@ -242,6 +276,7 @@ jobs:
             linux: false
             components: ""
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -271,11 +306,19 @@ jobs:
 
       - name: Run complete a13n-envd checks
         if: matrix.complete
-        run: make rust-check-all
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          make rust-check-all 2>&1 | tee test-results/native.log
 
       - name: Run a13n-envd tests
         if: matrix.complete == false
-        run: cargo test --locked --package a13n-envd
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          cargo test --locked --package a13n-envd 2>&1 | tee test-results/native.log
 
       - name: Set up Python for native Windows EIP tests
         if: matrix.runner == 'windows-2025'
@@ -299,13 +342,22 @@ jobs:
           packages/a13n-envd-client/tests/eip/test_windows_process_e2e.py
           packages/a13n-envd-client/tests/eip/test_stdio_e2e.py
           -k "windows_eip_job_lifecycle or configured_daemon_command_process_and_output_plane or required_isolation_default_fails_closed"
-          -q
+          -q --junitxml=test-results/windows-eip.xml
+
+      - name: Retain native test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: envd-${{ matrix.cache-key }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
 
   validation:
     name: a13n-envd checks
     needs: [changes, protocol, client, daemon]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Require all selected checks to pass
         env:

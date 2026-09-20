@@ -14,6 +14,13 @@ from .domain import JsonObject
 if TYPE_CHECKING:
     from .native_context import NativeToolContext
 
+CONVERSATION_REPLY_DESCRIPTION = (
+    "Send a user-visible reply to the current conversation. Plain final model output is not sent to the conversation. "
+    "After an interim update, use this tool again to report the final outcome, including any failure or blocker. "
+    "Only claim a file or other result was delivered after its sending tool confirms success. "
+    "If no reply is needed, remain silent."
+)
+
 
 class NativeActionObserver(Protocol):
     async def __call__(
@@ -29,7 +36,12 @@ class NativeAction:
 
 
 def action[Arguments: BaseModel](
-    name: str, model: type[Arguments], call: Callable[[Arguments], Awaitable[BaseModel]], *, hide_receipt: bool = False
+    name: str,
+    model: type[Arguments],
+    call: Callable[[Arguments], Awaitable[BaseModel]],
+    *,
+    hide_receipt: bool = False,
+    description: str | None = None,
 ) -> NativeAction:
     async def invoke(arguments: JsonObject) -> JsonValue:
         return await invoke_observed(arguments, None)
@@ -45,7 +57,7 @@ def action[Arguments: BaseModel](
         return value
 
     return NativeAction(
-        Tool(name=name, description=name.replace(".", " "), input_schema=model.model_json_schema()),
+        Tool(name=name, description=description or name.replace(".", " "), input_schema=model.model_json_schema()),
         invoke,
         invoke_observed,
     )

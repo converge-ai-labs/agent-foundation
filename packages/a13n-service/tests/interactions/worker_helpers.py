@@ -24,6 +24,10 @@ from fakeredis.aioredis import FakeRedis
 from tests.lifecycle_support import test_lifecycle_writer
 from tests.memory.selection_support import ordinary_memory
 
+# Success-path integrations exercise real I/O, not lease-expiry boundaries.
+INTEGRATION_LEASE_SECONDS = 120
+INTEGRATION_COMPLETION_SECONDS = 90
+
 
 async def prepare_permissions(sessions, run, context, *, agent_ids=frozenset()):
     from a13n_service.interactions.models import RunRecord

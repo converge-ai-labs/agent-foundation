@@ -101,6 +101,8 @@ class TransferChannel:
         self._queue: asyncio.Queue[DataFrame | BaseException] = asyncio.Queue(inbound_frames + 1)
         self._failed = False
         self._discarding = False
+        # The requester settles this result; cancellation of a waiter never owns cleanup.
+        self._retirement: asyncio.Future[BaseException | None] = asyncio.get_running_loop().create_future()
         self.peer_reset_received = False
 
     async def receive(self) -> DataFrame:
@@ -503,7 +505,7 @@ class SessionRequester(EIPRequester):
         }
         self._max_transfers = limits.max_concurrent_file_transfers
         self._transfers: dict[str, TransferChannel] = {}
-        self._retired: dict[str, asyncio.Task[None]] = {}
+        self._retired: dict[str, tuple[TransferChannel, asyncio.Task[None]]] = {}
         self._error: BaseException | None = None
         self._failure_task: asyncio.Task[None] | None = None
         self._closing = False
@@ -562,7 +564,7 @@ class SessionRequester(EIPRequester):
             channel.fail(self._error)
             self.unregister_transfer(channel)
         for handle in tuple(self._retired):
-            self.complete_retired_transfer(handle)
+            self.complete_retired_transfer(handle, error=self._error)
 
     def fail(self, error: BaseException) -> None:
         if self._error is not None:
@@ -641,8 +643,11 @@ class SessionRequester(EIPRequester):
             return
         channel.discard()
         self._transfers.pop(channel.handle, None)
+        if self._finished:
+            channel._retirement.set_result(self._error)
+            return
         if channel.handle not in self._retired:
-            self._retired[channel.handle] = asyncio.create_task(self._retire(channel.handle, reset))
+            self._retired[channel.handle] = (channel, asyncio.create_task(self._retire(channel.handle, reset)))
 
     async def _retire(self, handle: str, reset: DataFrame | None) -> None:
         try:
@@ -660,13 +665,21 @@ class SessionRequester(EIPRequester):
     def transfer_is_retired(self, channel: TransferChannel) -> bool:
         return channel._discarding
 
-    def complete_retired_transfer(self, handle: str) -> None:
-        task = self._retired.pop(handle, None)
+    async def wait_transfer_retired(self, channel: TransferChannel) -> None:
+        error = await asyncio.shield(channel._retirement)
+        if error is not None:
+            raise error
+
+    def complete_retired_transfer(self, handle: str, *, error: BaseException | None = None) -> None:
+        retired = self._retired.pop(handle, None)
         transport = self._device._transport
         if isinstance(transport, HttpTransferLifecycle):
             transport.unregister_transfer(self.session_id, handle)
-        if task is not None and task is not asyncio.current_task():
-            task.cancel()
+        if retired is not None:
+            channel, task = retired
+            channel._retirement.set_result(error)
+            if task is not asyncio.current_task():
+                task.cancel()
 
     async def reset_transfer(self, channel: TransferChannel, frame: DataFrame) -> None:
         self._validate_frame(channel, frame)
@@ -677,8 +690,14 @@ class SessionRequester(EIPRequester):
         # Retire before sending so an immediate peer RESET cannot race its owner.
         # HTTP registration remains until retirement completes.
         self.retire_transfer(channel)
-        async with asyncio.timeout(_TRANSFER_TEARDOWN_TIMEOUT):
-            await self._device._transport.send(frame)
+        if self._finished:
+            return
+        try:
+            async with asyncio.timeout(_TRANSFER_TEARDOWN_TIMEOUT):
+                await self._device._transport.send(frame)
+        except (EIPClientError, TimeoutError) as error:
+            self.fail(error)
+            raise
         if isinstance(self._device._transport, HttpTransferLifecycle):
             self.complete_retired_transfer(channel.handle)
 

@@ -368,6 +368,13 @@ it("keeps Goal intent and authored input while toggling options, and disables Go
     screen.getByText("Describe the goal and how to verify completion…"),
   ).toBeTruthy();
   act(() => draft.doc.getText("text").insert(0, "Verify the full objective"));
+  expect(
+    goal.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    editor.compareDocumentPosition(screen.getByText("Collapsed settings")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   const options = screen.getByRole("button", { name: "Composer options" });
   fireEvent.click(options);
   expect(options.getAttribute("aria-expanded")).toBe("true");

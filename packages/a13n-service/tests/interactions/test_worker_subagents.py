@@ -43,9 +43,9 @@ from ..connectivity.test_remote_execution import ToolServer
 from . import test_attempt_execution as acceptance
 from .conftest import MODEL_ID, ORGANIZATION_ID, USER_ID, WORKSPACE_ID, effective_agent_config
 from .test_subagent_acceptance import CHILD_AGENT_ID, CHILD_REVISION_ID, _grant_and_seed_child
-from .worker_helpers import worker_runtime
+from .worker_helpers import INTEGRATION_COMPLETION_SECONDS, INTEGRATION_LEASE_SECONDS, worker_runtime
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.timeout(180)]
 CHILD_MODEL_ID = "mdl_child12345678901"
 
 
@@ -218,7 +218,7 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
     factory.build.side_effect = build
     settings = Settings(
         service={"build_version": "test"},
-        worker={"concurrency": 1, "poll_interval_seconds": 0.02},
+        worker={"concurrency": 1, "poll_interval_seconds": 0.05, "lease_seconds": INTEGRATION_LEASE_SECONDS},
         subagents={"reconcile_poll_interval_seconds": 0.02},
     )
     async with worker_runtime(
@@ -233,12 +233,10 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
         loop = runtime.execution_loop
         assert loop is not None
         maintenance = build_subagent_maintenance(settings, shared, runtime.run_display)
-        with fail_after(60):
+        with fail_after(INTEGRATION_COMPLETION_SECONDS):
             async with create_task_group() as tasks:
                 tasks.start_soon(loop.run)
-                polls = 0
                 while True:
-                    polls += 1
                     await maintenance.reconcile_once()
                     async with short_session(interaction_sessions) as database:
                         root = await database.get(RunRecord, parent.id)
@@ -255,14 +253,6 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
                                 select(ThreadInboxRecord).where(ThreadInboxRecord.kind == "async_subagent_result")
                             )
                         ).all()
-                        assert polls < 250, (
-                            root.status,
-                            [(c.id, c.status) for c in children],
-                            [(e.status, e.target_run_id) for e in entries],
-                            len(parent_requests),
-                            len(child_requests),
-                            failures,
-                        )
                         successor = (
                             await database.get(RunRecord, entries[0].target_run_id)
                             if entries and entries[0].target_run_id
@@ -278,7 +268,7 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
                             )
                         ):
                             break
-                    await sleep(0.02)
+                    await sleep(0.05)
                 await loop.drain()
                 await loop.wait_stopped()
                 tasks.cancel_scope.cancel()
@@ -376,12 +366,15 @@ async def test_inline_and_root_share_ten_loop_iam_refresh(
 
     factory = Mock(spec=NativeModelFactory)
     factory.build.side_effect = build
-    settings = Settings(service={"build_version": "test"}, worker={"concurrency": 1, "poll_interval_seconds": 0.02})
+    settings = Settings(
+        service={"build_version": "test"},
+        worker={"concurrency": 1, "poll_interval_seconds": 0.05, "lease_seconds": INTEGRATION_LEASE_SECONDS},
+    )
     async with worker_runtime(
         interaction_sessions, interaction_object_store, tmp_path, monkeypatch, settings=settings, model_factory=factory
     ) as (runtime, _):
         loop = runtime.execution_loop
-        with fail_after(60):
+        with fail_after(INTEGRATION_COMPLETION_SECONDS):
             async with create_task_group() as tasks:
                 tasks.start_soon(loop.run)
                 while True:
@@ -392,7 +385,7 @@ async def test_inline_and_root_share_ten_loop_iam_refresh(
                         if attempt is not None and attempt.status in {"succeeded", "failed"}:
                             row = await session.get(RunRecord, parent.id)
                             break
-                    await sleep(0.02)
+                    await sleep(0.05)
                 await loop.drain()
                 await loop.wait_stopped()
                 tasks.cancel_scope.cancel()

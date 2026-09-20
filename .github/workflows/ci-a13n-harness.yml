@@ -7,6 +7,12 @@ on:
       - ".github/workflows/ci-a13n-harness.yml"
       - ".github/workflows/release-a13n-harness.yml"
       - "packages/a13n-harness/**"
+      - "packages/a13n-envd-client/a13n_envd_client/**"
+      - "packages/a13n-envd-client/pyproject.toml"
+      - "packages/a13n-logging/a13n_logging/**"
+      - "packages/a13n-logging/pyproject.toml"
+      - "conftest.py"
+      - "scripts/tests/test_ci_inputs.py"
       - "dev/observation-demo/**"
       - "scripts/check-a13n-distributions.py"
       - "scripts/release_version.py"
@@ -18,6 +24,12 @@ on:
       - ".github/workflows/ci-a13n-harness.yml"
       - ".github/workflows/release-a13n-harness.yml"
       - "packages/a13n-harness/**"
+      - "packages/a13n-envd-client/a13n_envd_client/**"
+      - "packages/a13n-envd-client/pyproject.toml"
+      - "packages/a13n-logging/a13n_logging/**"
+      - "packages/a13n-logging/pyproject.toml"
+      - "conftest.py"
+      - "scripts/tests/test_ci_inputs.py"
       - "dev/observation-demo/**"
       - "scripts/check-a13n-distributions.py"
       - "scripts/release_version.py"
@@ -79,7 +91,15 @@ jobs:
         run: uv run --locked pyright packages/a13n-harness/a13n_harness
 
       - name: Test a13n Harness
-        run: uv run --locked python -m pytest -vv ${{ matrix.test_targets }}
+        run: uv run --locked python -m pytest -vv ${{ matrix.test_targets }} --junitxml=test-results/harness.xml --durations=30 -r a
+
+      - name: Retain Harness test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-${{ matrix.name }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
 
       - name: Build a13n Harness distribution
         if: matrix.name == 'Linux'

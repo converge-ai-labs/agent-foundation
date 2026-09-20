@@ -57,7 +57,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(impact, "REPOSITORY_ROOT", tmp_path)
     monkeypatch.setattr(verify, "REPOSITORY_ROOT", tmp_path)
     monkeypatch.setattr(verify, "PACKAGES", tmp_path / "packages")
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path.parent / f"{tmp_path.name}-cache"))
     document = {
         "version": 5,
         "ref": _git(tmp_path, "rev-parse", "HEAD"),
@@ -143,6 +143,54 @@ def test_large_selections_widen_to_the_package_suite(repo: Path, monkeypatch: py
     (repo / MODELS).write_text(SOURCE.replace("LIMIT = 1", "LIMIT = 2"))
     selection = _select(repo)
     assert selection.widened and selection.tests == {"packages/a13n-core/tests"}
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        TESTS + "\n\ndef test_new():\n    assert False\n",
+        TESTS.replace("test_value", "test_renamed"),
+        TESTS.replace(
+            "def test_value():", "import pytest\n\n@pytest.mark.parametrize('value', [1, 2])\ndef test_value(value):"
+        ),
+    ],
+    ids=["added", "renamed", "parametrized"],
+)
+def test_changed_test_file_runs_current_tests_instead_of_recorded_nodeids(repo: Path, replacement: str) -> None:
+    (repo / TEST_FILE).write_text(replacement)
+    result = verify.plan(verify.changed_files("HEAD"), graph=verify.PythonGraph(repo))
+    assert result.python_tests == {TEST_FILE}
+
+
+def test_deleted_source_uses_recorded_dependents_without_linting_missing_file(repo: Path) -> None:
+    (repo / MODELS).unlink()
+    files = verify.changed_files("HEAD")
+    assert files == [MODELS]
+    result = verify.plan(files, graph=verify.PythonGraph(repo))
+    assert result.python_tests == {f"{TEST_FILE}::test_value", f"{TEST_FILE}::test_other"}
+    assert not result.python_files
+
+
+def test_deleted_unmapped_source_falls_back_to_own_package(repo: Path) -> None:
+    (repo / UNMEASURED).unlink()
+    result = verify.plan(verify.changed_files("HEAD"), graph=verify.PythonGraph(repo))
+    assert result.python_tests == {f"packages/{PACKAGE}/tests"}
+    assert not result.python_files
+
+
+def test_renamed_source_keeps_old_path_for_selecting_dependents(repo: Path) -> None:
+    renamed = MODELS.replace("models.py", "renamed.py")
+    (repo / MODELS).rename(repo / renamed)
+    _git(repo, "add", "-A")
+    assert verify.changed_files("HEAD") == [MODELS, renamed]
+    assert _select(repo, MODELS).tests == {f"{TEST_FILE}::test_value", f"{TEST_FILE}::test_other"}
+
+
+def test_deleted_tests_are_not_selected_from_old_maps(repo: Path) -> None:
+    (repo / MODELS).write_text(SOURCE.replace("return LIMIT", "return LIMIT + 1"))
+    (repo / TEST_FILE).unlink()
+    result = verify.plan(verify.changed_files("HEAD"), graph=verify.PythonGraph(repo))
+    assert not result.python_tests
 
 
 def test_verify_plan_prefers_the_map_and_falls_back_for_unmapped_files(repo: Path) -> None:

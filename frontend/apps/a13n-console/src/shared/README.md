@@ -13,7 +13,7 @@ The frame of a screen.
 - `DetailPage` — detail page: back link, identity `header`, underline `tabs`, and the content column. Pass `rail` to get the two-column layout.
 - `DetailHeader` — identity header: avatar or brand tile, name, status pill, an inline edit affordance, the key chip with copy, the one-line description, and the primary actions at the right.
 - `DetailLayout` — the content column with an optional 256px sticky rail. Use it directly when an editor owns the `<form>` element that must wrap both the content and the rail.
-- `Rail`, `RailSection`, `RailRow`, `RailNote` — the quiet summary groups inside the rail: an 11px uppercase heading, then label and value rows.
+- `Rail`, `RailSection`, `RailRow`, `RailNote` — the quiet summary groups inside the rail: an 11px medium sentence-case heading, then label and value rows.
 - `useTabParam` — reads and writes the active tab through `?tab=`; the first tab is the default and never appears in the URL.
 - `Section` — a titled group on a surface: 15px title, 12.5px description, optional actions at the right, and the section body. The region is labelled by its heading. Sections never draw an outline; the editor separates them with 36px of whitespace.
 - `Panel` — the side panel that inspects one row without leaving the collection: a header with the identity and its actions, an optional tab strip, a scrollable body, and a drag handle at the left edge. `inline` places the same anatomy in a layout slot its owner sizes, so a panel that reads beside a transcript never covers it; pass `width` and `onWidthChange` to own that width.
