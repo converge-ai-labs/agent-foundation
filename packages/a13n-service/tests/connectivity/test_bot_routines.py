@@ -506,3 +506,30 @@ async def test_direct_messages_do_not_expose_scheduling(routines):
         )
         is None
     )
+
+
+@pytest.mark.parametrize("operation", ["pause", "resume"])
+async def test_unconfirmed_draft_preserves_pending_definition(routines, operation):
+    from a13n_service.bots.routines.service import RoutineInputError
+
+    identifier = await propose(routines)
+    await routines.cards.publish_one()
+    async with short_session(routines.task.sessions) as db:
+        row = await db.get(RoutineRecord, identifier)
+        original, version = row.proposal_json, row.version
+    with pytest.raises(RoutineInputError, match="routine_requires_confirmation"):
+        async with transaction(routines.task.sessions) as db:
+            await routines.service.propose(
+                db,
+                run_id=routines.task.receipt.run_id,
+                context=routines.context,
+                arguments=ProposeRoutine(request_key="invalid-transition", routine_id=identifier, operation=operation),
+            )
+    await click(routines, identifier, operation)
+    async with short_session(routines.task.sessions) as db:
+        row = await db.get(RoutineRecord, identifier)
+        assert row.state == "draft" and row.proposal_json == original and row.version == version
+    await click(routines, identifier)
+    async with short_session(routines.task.sessions) as db:
+        row = await db.get(RoutineRecord, identifier)
+        assert row.state == "active" and row.definition_json == original["definition"]

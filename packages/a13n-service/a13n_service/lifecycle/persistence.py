@@ -122,6 +122,11 @@ async def append_lifecycle_event(
         projection_state=(
             LifecycleProjectionState.pending.value if draft.project_live else LifecycleProjectionState.projected.value
         ),
+        hook_dispatch_state="pending",
+        hook_dispatch_attempts=0,
+        hook_dispatch_next_attempt_at=draft.occurred_at,
+        hook_dispatched_at=None,
+        hook_dispatch_error_json=None,
         projection_attempts=0,
         projection_next_attempt_at=next_attempt,
         projection_lease_owner=None,

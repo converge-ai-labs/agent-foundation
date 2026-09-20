@@ -11,6 +11,7 @@ export default defineConfig({
           include: [
             "@base-ui/react/**",
             "@daypicker/react",
+            "@daypicker/react/locale",
             "@phosphor-icons/react",
           ],
         },

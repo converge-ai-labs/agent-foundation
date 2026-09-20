@@ -7785,6 +7785,11 @@ export interface components {
       /** Detail */
       detail?: components["schemas"]["ValidationError"][];
     };
+    /**
+     * HookDispatchState
+     * @enum {string}
+     */
+    HookDispatchState: "pending" | "done" | "failed";
     /** HookSubscription */
     HookSubscription: {
       /**
@@ -8203,6 +8208,14 @@ export interface components {
       entity_version: number;
       /** Event Type */
       event_type: string;
+      /** Hook Dispatch Attempts */
+      hook_dispatch_attempts: number;
+      hook_dispatch_error?: components["schemas"]["SafeFailure"] | null;
+      /** Hook Dispatch Next Attempt At */
+      hook_dispatch_next_attempt_at?: string | null;
+      hook_dispatch_state: components["schemas"]["HookDispatchState"];
+      /** Hook Dispatched At */
+      hook_dispatched_at?: string | null;
       /** Id */
       id: string;
       /** Mutation Id */

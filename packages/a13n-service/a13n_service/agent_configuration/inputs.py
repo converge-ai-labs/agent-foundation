@@ -24,8 +24,8 @@ from a13n_service.interactions.initialization import (
     NewRunPolicy,
     RunStateSeed,
     initialize_completed_continuation_state,
-    initialize_empty_thread_state,
     initialize_fork_state,
+    initialize_start_state,
 )
 from a13n_service.interactions.input import AgentInput
 from a13n_service.interactions.models import RunRecord, ThreadRecord
@@ -178,7 +178,7 @@ class ConfigurationInputs:
         source = selected.source
         is_fork = source is not None and source.thread_id != thread_id
         if source is None:
-            state = initialize_empty_thread_state(seed, thread_id=thread_id)
+            state = initialize_start_state(seed, thread_id=thread_id)
         else:
             parent = (await self._states.read_run(source)).envelope
             state = (

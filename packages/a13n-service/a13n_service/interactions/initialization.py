@@ -68,10 +68,6 @@ def initialize_start_state(seed: RunStateSeed, *, thread_id: ThreadId) -> RunChe
     return _initial_envelope(seed, HarnessState.new(thread_id=thread_id), HostContinuationState())
 
 
-def initialize_empty_thread_state(seed: RunStateSeed, *, thread_id: ThreadId) -> RunCheckpoint:
-    return _initial_envelope(seed, HarnessState.new(thread_id=thread_id), HostContinuationState())
-
-
 def initialize_completed_continuation_state(
     seed: RunStateSeed,
     parent: RunCheckpoint,
@@ -119,7 +115,7 @@ def initialize_retry_state(
     if source_lineage_kind is RunLineageKind.root:
         if parent is not None:
             raise ValueError("root retry cannot have parent state")
-        return initialize_empty_thread_state(seed, thread_id=thread_id)
+        return initialize_start_state(seed, thread_id=thread_id)
     if parent is None:
         raise ValueError("non-root retry requires the original state parent")
     if source_lineage_kind is RunLineageKind.fork:
@@ -276,7 +272,6 @@ __all__ = [
     "RunStateSeed",
     "frozen_run_fields",
     "initialize_completed_continuation_state",
-    "initialize_empty_thread_state",
     "initialize_fork_state",
     "initialize_retry_state",
     "initialize_start_state",

@@ -5,6 +5,7 @@ from datetime import timedelta
 import pytest
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
+from a13n_service.hooks.dispatcher import HookDispatcher
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.hooks.persistence import (
     HookSubscriptionInvariantError,
@@ -12,6 +13,7 @@ from a13n_service.hooks.persistence import (
     create_inline_hook_subscription,
 )
 from a13n_service.interactions.models import RunRecord
+from a13n_service.lifecycle.models import LifecycleEventRecord
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import short_session, transaction
 from sqlalchemy import select
@@ -65,6 +67,7 @@ async def test_managed_revision_change_preserves_matching_and_outbox_keeps_exact
         )
         original_revision_id = subscription.current_revision_id
 
+    await HookDispatcher(hook_interaction_sessions, clock=lambda: NOW).scan()
     async with transaction(hook_interaction_sessions) as database:
         head = await database.get(HookSubscriptionRecord, subscription.id, with_for_update=True)
         assert head is not None
@@ -129,6 +132,7 @@ async def test_scope_name_and_head_state_are_conjunctive(
             actor_id=USER_ID,
         )
 
+    await HookDispatcher(hook_interaction_sessions, clock=lambda: NOW).scan()
     async with short_session(hook_interaction_sessions) as database:
         assert tuple((await database.scalars(select(OutboxRecord))).all()) == ()
 
@@ -161,7 +165,7 @@ async def test_inline_creation_requires_current_workspace_secret(
             )
 
 
-async def test_outbox_rolls_back_with_lifecycle_and_state_transaction(
+async def test_lifecycle_and_inline_subscription_roll_back_with_source_transaction(
     hook_interaction_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await seed_run_and_secret(hook_interaction_sessions)
@@ -194,6 +198,7 @@ async def test_outbox_rolls_back_with_lifecycle_and_state_transaction(
 
     async with short_session(hook_interaction_sessions) as database:
         assert await database.scalar(select(HookSubscriptionRecord.id)) is None
+        assert await database.scalar(select(LifecycleEventRecord.id)) is None
         assert await database.scalar(select(OutboxRecord.id)) is None
 
 
@@ -226,6 +231,7 @@ async def test_postgresql_enforces_current_revision_and_matches_with_jsonb_gin(
             actor_id=USER_ID,
         )
 
+    await HookDispatcher(hook_interaction_sessions, clock=lambda: NOW).scan()
     async with short_session(hook_interaction_sessions) as database:
         delivery = await database.scalar(select(OutboxRecord))
         assert delivery is not None
@@ -262,6 +268,9 @@ async def test_failure_before_first_attempt_expires_even_inactive_inline_heads(h
     ).claim(RUN_ID, _worker())
     assert isinstance(result, SealedClaim)
     async with short_session(sessions) as database:
+        assert await database.scalar(select(OutboxRecord.id)) is None
+    await HookDispatcher(sessions, clock=lambda: NOW + timedelta(seconds=1)).scan()
+    async with short_session(sessions) as database:
         failed = await database.get(RunRecord, RUN_ID)
         expired = await database.get(HookSubscriptionRecord, head.id)
         assert failed.status == "failed" and failed.attempts_started == 0
@@ -273,7 +282,6 @@ async def test_failure_before_first_attempt_expires_even_inactive_inline_heads(h
 
 
 async def test_failed_sealing_transaction_rolls_back_inline_expiry(hook_interaction_sessions):
-    from a13n_service.hooks.persistence import write_hook_lifecycle
     from a13n_service.interactions.lifecycle import LifecycleWriter
     from a13n_service.interactions.scheduling import AttemptScheduler
     from a13n_service.lifecycle.models import LifecycleEventRecord
@@ -306,7 +314,7 @@ async def test_failed_sealing_transaction_rolls_back_inline_expiry(hook_interact
     scheduler = AttemptScheduler(
         sessions,
         clock=lambda: NOW + timedelta(seconds=1),
-        lifecycle=LifecycleWriter((write_hook_lifecycle, abort_after_hooks)),
+        lifecycle=LifecycleWriter((abort_after_hooks,)),
     )
     with pytest.raises(RuntimeError, match="abort sealing"):
         await scheduler.claim(RUN_ID, _worker())

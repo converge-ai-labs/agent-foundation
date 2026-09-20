@@ -78,7 +78,8 @@ class RoutineTools:
             "Use an explicit IANA timezone and a self-contained prompt. The creator must confirm the confirmation card; "
             "never claim the task is active before confirmation. Times are absolute at (ISO8601 with offset), "
             "or recurring time_of_day (HH:MM) plus weekdays (0=Monday..6=Sunday). "
-            "List tasks first to obtain the routine_id for changes."
+            "For daily tasks use time_of_day and all weekdays, omitting at. "
+            "Never pause or resume an unconfirmed draft. List tasks first to obtain the routine_id for changes."
         )
         actions["list"].definition.description = "List this group's scheduled tasks and pending changes/status."
 

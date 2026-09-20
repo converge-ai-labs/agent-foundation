@@ -208,6 +208,8 @@ Workspace Hook subscriptions support create/list/get, supported PATCH/PUT change
 
 A Hook is delivery configuration, not synchronous execution of the callback inside the acceptance transaction. Delivery, retries, retention, and redrive use durable evidence and bounded policies. A consumer should tolerate the owning delivery contract and correlate events; a network timeout is not proof the recipient did not process the request.
 
+Webhook subscriptions are matched by [background Hook dispatch](background-tasks.md#hook-dispatch-and-recovery) after lifecycle commitment. Matching uses the subscription state observed during dispatch, so a newly created subscription can receive older pending events. Changing a subscription does not rematch completed events or change destinations already selected for delivery. Inline expiry at Run sealing preserves that Run's pending notifications; manual pause or deletion still takes effect before matching.
+
 History collection retains configuration required by waiting continuation, outstanding delivery, redrive, replay, and audit. Minimum retention age does not force deletion while those references remain. Endpoint policy and delivery authentication remain deployment/resource concerns; a callback URL is not trusted merely because it was saved.
 
 ## Identity settings and images

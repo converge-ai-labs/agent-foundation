@@ -1,7 +1,7 @@
 """accept typed bot memory document kinds.
 
 Revision ID: ba435c2961da
-Revises: fe344bbb730f
+Revises: 6a336ba34b98
 Create Date: 2026-09-20 09:37:30.654940+00:00
 """
 
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "ba435c2961da"
-down_revision: str | Sequence[str] | None = "fe344bbb730f"
+down_revision: str | Sequence[str] | None = "6a336ba34b98"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

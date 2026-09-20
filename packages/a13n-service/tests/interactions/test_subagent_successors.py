@@ -474,6 +474,7 @@ async def test_completed_inline_hook_collects_only_after_delivery_retention_ends
     interaction_object_store,
 ):
     from a13n_service.durable_operations.outbox import claim_outbox, complete_outbox
+    from a13n_service.hooks.dispatcher import HookDispatcher
     from a13n_service.hooks.domain import InlineHookSubscriptionInput, WebhookDestinationConfig
     from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
     from a13n_service.hooks.persistence import create_inline_hook_subscription
@@ -526,6 +527,7 @@ async def test_completed_inline_hook_collects_only_after_delivery_retention_ends
     assert (
         await HookRetention(interaction_sessions, minimum_age=timedelta(days=1), batch_limit=10).scan()
     ).completed == 0
+    await HookDispatcher(interaction_sessions, clock=lambda: NOW + timedelta(days=1)).scan()
     async with transaction(interaction_sessions) as database:
         claims = await claim_outbox(
             database,

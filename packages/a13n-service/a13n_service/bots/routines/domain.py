@@ -10,8 +10,14 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 class Schedule(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     timezone: str = Field(min_length=1, max_length=64, description="IANA timezone confirmed with the requester.")
-    at: AwareDatetime | None = None
-    time_of_day: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    at: AwareDatetime | None = Field(
+        default=None, description="One-time execution only. Omit for daily or weekly tasks."
+    )
+    time_of_day: str | None = Field(
+        default=None,
+        pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
+        description="Recurring local clock time. For daily tasks set HH:MM and all weekdays; omit at.",
+    )
     weekdays: tuple[int, ...] = Field(default=(0, 1, 2, 3, 4, 5, 6), min_length=1, max_length=7)
 
     @model_validator(mode="after")

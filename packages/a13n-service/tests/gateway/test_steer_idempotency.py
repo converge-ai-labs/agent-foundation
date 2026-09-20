@@ -223,7 +223,7 @@ async def _authenticate(sessions):
     return DatabaseAuthenticator(sessions, configuration), request
 
 
-async def test_session_steer_uses_fifteen_statements(steer_case):
+async def test_session_steer_reuses_precheck_source_in_fourteen_statements(steer_case):
     sessions, _, commands, run = steer_case
     authenticate, request = await _authenticate(sessions)
     with capture_sql(sessions) as statements:
@@ -231,7 +231,7 @@ async def test_session_steer_uses_fifteen_statements(steer_case):
         receipt = await commands.active.steer(
             actor=actor, run_id=run.run_id, idempotency_key="same", input=_request().input
         )
-    assert len(statements) == 15, statements
+    assert len(statements) == 14, statements
     assert not any(
         "pg_advisory" in sql or "run_memory_selections" in sql or "idempotency_evidence" in sql for sql in statements
     )

@@ -10033,6 +10033,15 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HookDispatchState": {
+        "enum": [
+          "pending",
+          "done",
+          "failed"
+        ],
+        "title": "HookDispatchState",
+        "type": "string"
+      },
       "HookSubscription": {
         "additionalProperties": false,
         "properties": {
@@ -11222,6 +11231,48 @@
             "title": "Event Type",
             "type": "string"
           },
+          "hook_dispatch_attempts": {
+            "minimum": 0.0,
+            "title": "Hook Dispatch Attempts",
+            "type": "integer"
+          },
+          "hook_dispatch_error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafeFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hook_dispatch_next_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hook Dispatch Next Attempt At"
+          },
+          "hook_dispatch_state": {
+            "$ref": "#/components/schemas/HookDispatchState"
+          },
+          "hook_dispatched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hook Dispatched At"
+          },
           "id": {
             "pattern": "^lev_[a-z0-9]{16,64}$",
             "title": "Id",
@@ -11381,6 +11432,8 @@
           "actor_type",
           "occurred_at",
           "created_at",
+          "hook_dispatch_state",
+          "hook_dispatch_attempts",
           "projection_state",
           "projection_attempts"
         ],

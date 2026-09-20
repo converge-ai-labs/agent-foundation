@@ -861,3 +861,20 @@ async def test_pending_stop_takes_priority_over_explicit_replies(replying):
         row = await db.get(ProgressRecord, run_id)
         assert row.done and row.rendered_status == "cancelled"
         assert not row.replies_json
+
+
+@pytest.mark.parametrize("task", ["lark", "slack"], indirect=True)
+async def test_repeated_identical_reply_reuses_card_without_duplicate_content(replying):
+    task = replying
+    assert await task.reply("FIX-920-RECOVERED") == {"kind": "succeeded"}
+    call_count = len(task.calls)
+    assert await task.reply("FIX-920-RECOVERED") == {"kind": "succeeded"}
+    assert len(task.calls) == call_count
+    async with short_session(task.sessions) as db:
+        row = await db.get(ProgressRecord, task.receipt.run_id)
+        assert row.replies_json == ["FIX-920-RECOVERED"]
+        assert row.rendered_reply_count == 1
+    assert await task.reply("A different update") == {"kind": "succeeded"}
+    async with short_session(task.sessions) as db:
+        row = await db.get(ProgressRecord, task.receipt.run_id)
+        assert row.replies_json == ["FIX-920-RECOVERED", "A different update"]

@@ -68,6 +68,9 @@ async def _settle_events(
         ).all()
         assert len(records) == len(event_ids)
         for record in records:
+            record.hook_dispatch_state = "done"
+            record.hook_dispatch_next_attempt_at = None
+            record.hook_dispatched_at = record.created_at
             record.projection_state = LifecycleProjectionState.projected.value
             record.projection_next_attempt_at = None
             record.projected_at = record.created_at
@@ -292,6 +295,37 @@ async def test_retention_prefix_query_runs_on_postgresql(
     )
 
     assert (await reconciler.reconcile_once()).lifecycle_events_deleted == 1
+
+
+@pytest.mark.parametrize("dispatch_state", ["pending", "failed"])
+async def test_unfinished_hook_dispatch_pins_later_settled_facts(lifecycle_interaction_sessions, dispatch_state):
+    sessions = lifecycle_interaction_sessions
+    await seed_run_and_secret(sessions)
+    first = await _append_event(sessions, suffix=30, occurred_at=NOW)
+    later = await _append_event(sessions, suffix=31, occurred_at=NOW)
+    await _settle_events(sessions, first, later)
+    async with transaction(sessions) as database:
+        event = await database.scalar(select(LifecycleEventRecord).where(LifecycleEventRecord.id == first))
+        event.hook_dispatch_state = dispatch_state
+        event.hook_dispatched_at = None
+        event.hook_dispatch_next_attempt_at = NOW if dispatch_state == "pending" else None
+        if dispatch_state == "failed":
+            event.hook_dispatch_error_json = SafeFailure(code="test_failure", message="Test").model_dump(mode="json")
+    reconciler = LifecycleRetentionReconciler(
+        sessions,
+        event_horizon=timedelta(days=1),
+        published_delivery_horizon=timedelta(days=1),
+        dead_letter_horizon=timedelta(days=1),
+        poll_interval_seconds=60,
+        batch_limit=100,
+        clock=lambda: NOW + timedelta(days=3),
+    )
+    assert (await reconciler.reconcile_once()).lifecycle_events_deleted == 0
+    async with short_session(sessions) as database:
+        assert tuple(await database.scalars(select(LifecycleEventRecord.id).order_by(LifecycleEventRecord.seq))) == (
+            first,
+            later,
+        )
 
 
 async def test_retention_rejects_invalid_policy(

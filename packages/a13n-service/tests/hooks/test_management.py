@@ -13,6 +13,7 @@ from a13n_service.hooks import (
     UpdateHookSubscriptionStateRequest,
     WebhookDestinationConfig,
 )
+from a13n_service.hooks.dispatcher import HookDispatcher
 from a13n_service.hooks.errors import HookManagementError
 from a13n_service.hooks.management import HookSubscriptionService
 from a13n_service.hooks.models import HookSubscriptionRevisionRecord
@@ -227,6 +228,8 @@ async def test_hook_redrive_reuses_delivery_identity_and_original_revision(
             actor_type="user",
             actor_id=USER_ID,
         )
+    await HookDispatcher(hook_interaction_sessions).scan()
+    async with transaction(hook_interaction_sessions) as database:
         delivery = await database.scalar(select(OutboxRecord))
         assert delivery is not None
         delivery.status = "dead_lettered"

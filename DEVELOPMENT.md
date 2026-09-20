@@ -14,6 +14,16 @@ Good code expresses the problem clearly and makes behavior and change easy to fo
 
 Consider runtime, recovery, operational, and maintenance costs. Support performance trade-offs with measurements or an explicit capacity model. Match explanation and validation to the change; routine fixes do not need a separate design exercise.
 
+## Frontend Tests
+
+Across Console, Harness UI, and shared UI, default to **logic tests plus core UI flows**.
+
+- Test business rules and input combinations through the production functions in Node. Use narrow imports and verify the test environment; file extensions alone do not select it in every package.
+- Keep UI tests for core user journeys and failures that require interaction: request wiring, visible errors, permissions, credential clearing, recovery, navigation, and keyboard behavior.
+- Test shared behavior at its owner. Avoid repeating full UI flows for equivalent variants or adding standalone tests for incidental copy and menu inventories.
+- When simplifying, identify the surviving coverage for each required behavior. Extract cohesive production logic shared by the UI and tests; do not duplicate implementations or add abstractions solely for tests.
+- Wait for observable completion instead of fixed sleeps unless elapsed time is itself under test. Validate with the [required checks](CONTRIBUTING.md#local-validation); measure performance over the same scope, including replacement tests.
+
 ## Service Shape
 
 `a13n-service` ships one package and container image with three independently deployable roles and their all-in-one composition:

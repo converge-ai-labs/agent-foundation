@@ -632,7 +632,7 @@ async def test_kind_migration_retains_unclassified_legacy_documents(
         original_metadata = dict(stored.metadata_json)
     next(iter(lab.records.values()))["metadata"]["kind"] = legacy_kind
     migrator = DatabaseMigrator(service_database)
-    await anyio.to_thread.run_sync(migrator.downgrade, "fe344bbb730f")
+    await anyio.to_thread.run_sync(migrator.downgrade, "6a336ba34b98")
     await anyio.to_thread.run_sync(migrator.upgrade)
     read = await lab.service.get(actor(), ACCOUNT_ID, lab.scope_id, document.id)
     assert read.kind is None and read.legacy_kind == legacy_kind
@@ -656,7 +656,7 @@ async def test_kind_migration_retains_unclassified_legacy_documents(
             kind,
         )
     with pytest.raises(IntegrityError):
-        await anyio.to_thread.run_sync(migrator.downgrade, "fe344bbb730f")
+        await anyio.to_thread.run_sync(migrator.downgrade, "6a336ba34b98")
     async with transaction(connectivity_sessions) as session:
         assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "ba435c2961da"
     assert len((await lab.service.list(actor(), ACCOUNT_ID, lab.scope_id)).items) == 4

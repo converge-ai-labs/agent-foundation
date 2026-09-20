@@ -147,6 +147,40 @@ def config_commands() -> None:
     """Inspect the selected configuration without starting Service."""
 
 
+@main.group()
+def hooks() -> None:
+    """Operate lifecycle Hook dispatch from a protected terminal."""
+
+
+@hooks.command("retry-dispatch")
+@click.argument("event_id")
+@click.option("--organization-id", required=True, help="Organization that owns the failed lifecycle event.")
+def retry_hook_dispatch(event_id: str, organization_id: str) -> None:
+    """Requeue one failed event; completed dispatch is never repeated."""
+    import asyncio
+
+    from a13n_service.hooks.dispatch import retry_failed_hook_dispatch
+    from a13n_service.storage import transaction
+    from a13n_service.storage.relational import create_session_factory, create_sql_engine
+    from a13n_service.temporal import utc_now
+
+    async def retry() -> bool:
+        settings = _settings()
+        configure_logging(settings)
+        engine = create_sql_engine(settings.database_config())
+        try:
+            async with transaction(create_session_factory(engine)) as database:
+                return await retry_failed_hook_dispatch(
+                    database, organization_id=organization_id, event_id=event_id, now=utc_now()
+                )
+        finally:
+            await engine.dispose()
+
+    if not asyncio.run(retry()):
+        raise click.ClickException("No failed Hook dispatch found for that organization and event.")
+    click.echo(f"Hook dispatch requeued: {event_id}")
+
+
 @config_commands.command("check")
 def check_config() -> None:
     _settings()
