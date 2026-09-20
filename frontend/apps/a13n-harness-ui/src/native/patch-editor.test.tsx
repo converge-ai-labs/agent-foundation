@@ -100,7 +100,7 @@ it("keeps editor selection in exact patch coordinates and resets it for a replac
     screen.getByText("Selected patch lines 5–6 (including headers)"),
   ).toBeTruthy();
   fireEvent.click(
-    screen.getByRole("button", { name: "Add selection to prompt" }),
+    screen.getByRole("button", { name: "Add selection to message" }),
   );
   await waitFor(() => expect(post).toHaveBeenCalledOnce());
   expect(post.mock.calls[0]).toEqual([
@@ -119,6 +119,6 @@ it("keeps editor selection in exact patch coordinates and resets it for a replac
   ]);
   view.rerender(tree("replacement"));
   expect(
-    screen.queryByRole("button", { name: "Add selection to prompt" }),
+    screen.queryByRole("button", { name: "Add selection to message" }),
   ).toBeNull();
 });

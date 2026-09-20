@@ -1,7 +1,6 @@
 import {
   memo,
   useEffect,
-  useContext,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -15,10 +14,7 @@ import {
   type ReadingAnchor,
 } from "./reading-anchor";
 import { ArrowClockwise } from "@phosphor-icons/react";
-import {
-  ExecutionDetails,
-  PauseConversationFollowing,
-} from "./execution-details";
+import { ExecutionDetails } from "./execution-details";
 import { ToolActivity } from "./tool-call";
 import {
   activityKind,
@@ -576,20 +572,17 @@ function TurnHistory({
   continuation?: string | null;
   onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
 }) {
-  const history = useTurnHistory(props.threadId, continuation, turn);
-  const pauseFollowing = useContext(PauseConversationFollowing);
+  const history = useTurnHistory(
+    props.threadId,
+    continuation,
+    turn,
+    props.missing,
+  );
   useEffect(() => {
-    if (history.data)
-      onSavedEntries?.(history.data.pages.flatMap((page) => page.entries));
+    if (history.data) onSavedEntries?.(history.data);
   }, [history.data, onSavedEntries]);
   const byPosition = new Map<number, Schema<"TranscriptEntry">>();
-  for (const entry of [
-    ...entries,
-    ...(history.data?.pages.flatMap((page) => [
-      ...(page.boundary_entries ?? []),
-      ...page.entries,
-    ]) ?? []),
-  ]) {
+  for (const entry of [...entries, ...(history.data ?? [])]) {
     if (
       entry.position >= turn.input_position &&
       entry.position < turn.end_position
@@ -609,12 +602,8 @@ function TurnHistory({
       (row) => row.position === undefined && !savedInputs.has(row.id),
     ),
   ];
-  const load = () => {
-    if (history.isFetching) return;
-    pauseFollowing?.();
-    if (history.hasNextPage || history.isFetchNextPageError)
-      void history.fetchNextPage();
-    else void history.refetch();
+  const retry = () => {
+    if (!history.isFetching) void history.refetch();
   };
   return (
     <TurnSegments
@@ -623,7 +612,7 @@ function TurnHistory({
       rows={merged}
       entries={loaded}
       missing={loaded.length < turn.end_position - turn.input_position}
-      loadEarlier={load}
+      retry={retry}
       loading={history.isFetching}
       failed={history.isError}
     />
@@ -637,7 +626,7 @@ function TurnSegments({
   entries,
   threadId,
   missing,
-  loadEarlier,
+  retry,
   loading = false,
   failed = false,
 }: {
@@ -647,10 +636,11 @@ function TurnSegments({
   entries: Schema<"TranscriptEntry">[];
   threadId: string;
   missing: boolean;
-  loadEarlier?: () => void;
+  retry?: () => void;
   loading?: boolean;
   failed?: boolean;
 }) {
+  const mountedExecution = useRef(new Set<string>());
   const complete =
     turn?.final_position != null &&
     rows.every((row) => row.position !== undefined);
@@ -711,9 +701,26 @@ function TurnSegments({
       });
   }
   appendGap(turn?.end_position ?? previousPosition);
+  // Wait for the whole saved turn before introducing execution segments, but
+  // keep mounted readers through live-to-saved cutover so inspection stays open.
+  const visibleSegments = segments.filter(
+    (segment) =>
+      segment.kind !== "execution" ||
+      !missing ||
+      !retry ||
+      mountedExecution.current.has(segment.id) ||
+      segment.rows.some((row) => row.position === undefined),
+  );
+  useLayoutEffect(() => {
+    mountedExecution.current = new Set(
+      visibleSegments
+        .filter((segment) => segment.kind === "execution")
+        .map((segment) => segment.id),
+    );
+  });
   return (
     <section data-turn-id={id} className={styles.turn} tabIndex={-1}>
-      {segments.map((segment) => {
+      {visibleSegments.map((segment) => {
         if (segment.kind === "gap")
           return (
             <div
@@ -721,16 +728,17 @@ function TurnSegments({
               className={styles.executionLoad}
               role="status"
             >
-              {loadEarlier ? (
-                <button type="button" onClick={loadEarlier} disabled={loading}>
-                  {loading
-                    ? "Loading earlier messages…"
-                    : failed
-                      ? "Retry earlier messages"
-                      : "Load earlier messages in this turn"}
-                </button>
+              {loading ? (
+                "Loading turn…"
+              ) : failed && retry ? (
+                <>
+                  Turn could not be fully loaded.{" "}
+                  <button type="button" onClick={retry}>
+                    Retry loading turn
+                  </button>
+                </>
               ) : (
-                "Earlier messages in this turn are not loaded."
+                "Turn history is incomplete."
               )}
             </div>
           );

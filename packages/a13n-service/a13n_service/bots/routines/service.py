@@ -18,6 +18,7 @@ from a13n_service.interactions.models import RunRecord
 from a13n_service.temporal import assume_utc, utc_now
 
 from .authority import authorize_routine
+from .context import conversation_id, is_group
 from .domain import ProposeRoutine, RoutineDefinition
 from .events import activate_source, authorize_source, resolve_source, source_snapshot
 from .models import RoutineRecord
@@ -50,10 +51,13 @@ class RoutineService:
             or run.trigger_type != "inbound"
             or len(progress.requester_ids) != 1
             or progress.account_id != context.account_id
-            or progress.provider_key != "slack"
-            or context.provider_context.get("conversation_kind") not in {"channel", "group"}
+            or progress.provider_key != context.provider_key
+            or progress.conversation_id != conversation_id(context)
+            or not is_group(context)
         ):
             raise RoutineInputError("routine_requester_unavailable")
+        if arguments.definition and arguments.definition.event and context.provider_key != "slack":
+            raise RoutineInputError("event_destination_unsupported")
         now = utc_now()
         owner = progress.requester_ids[0]
         account = await session.get(AccountRecord, context.account_id)
@@ -70,6 +74,8 @@ class RoutineService:
             return {"routine_id": row.id, "state": row.state, "confirmation_required": row.proposal_json is not None}
         if arguments.routine_id is not None and (row is None or row.state == "deleted"):
             raise RoutineInputError("routine_unavailable")
+        if row is not None and arguments.operation in {"pause", "resume"} and row.definition_json is None:
+            raise RoutineInputError("routine_requires_confirmation")
         if (
             arguments.definition is not None
             and arguments.definition.schedule is not None
@@ -116,13 +122,13 @@ class RoutineService:
             "routine_id": row.id,
             "state": row.state,
             "confirmation_required": True,
-            "message": "Awaiting the requester's Slack card confirmation. No change is active yet.",
+            "message": "Awaiting the requester's card confirmation. No change is active yet.",
         }
 
     async def list(self, session: AsyncSession, *, context: InboundRunContext, cursor: str | None) -> JsonObject:
         query = select(RoutineRecord).where(
             RoutineRecord.account_id == context.account_id,
-            RoutineRecord.conversation_id == context.provider_context.get("channel_id"),
+            RoutineRecord.conversation_id == conversation_id(context),
             RoutineRecord.state != "deleted",
         )
         if cursor:
@@ -150,7 +156,7 @@ async def handle_action(session: AsyncSession, account: AccountRecord, action: P
     row = await session.get(RoutineRecord, action.reference, with_for_update=True)
     if (
         row is None
-        or account.provider_key != "slack"
+        or account.provider_key not in {"slack", "lark"}
         or row.account_id != account.id
         or row.conversation_id != action.conversation_id
         or row.message_id != action.message_id
@@ -172,6 +178,8 @@ async def handle_action(session: AsyncSession, account: AccountRecord, action: P
     else:
         proposal = None
         operation = action.action.removeprefix("routine_")
+    if operation in {"pause", "resume"} and row.definition_json is None:
+        return {}
     if operation in {"save", "resume"}:
         await authorize_routine(session, row)
         definition = (

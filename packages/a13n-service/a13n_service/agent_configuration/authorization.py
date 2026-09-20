@@ -17,6 +17,7 @@ from a13n_service.iam.authorization import (
 )
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions.models import SessionRecord, ThreadRecord
+from a13n_service.interactions.session_scope import SessionScope
 
 from .context import ConfigurationRunContext
 from .models import ConfigurationDraftRecord
@@ -132,13 +133,37 @@ async def authorize_session(
         SessionRecord.configuration_owner_user_id == actor.principal.principal_id,
     )
     record = await session.scalar(query.with_for_update() if lock else query)
-    if record is None or actor.principal.principal_type is not PrincipalType.user:
+    if record is None:
         raise AuthorizationError("configuration_not_found", concealed=True)
-    draft = await session.get(ConfigurationDraftRecord, record.configuration_draft_id)
-    if draft is None or draft.session_id != record.id or draft.workspace_id != record.workspace_id:
+    await authorize_session_scope(
+        session, actor=actor, scope=SessionScope.from_record(record), write=write, action=action
+    )
+    return record
+
+
+async def authorize_session_scope(
+    session: AsyncSession,
+    *,
+    actor: AuthenticatedActor,
+    scope: SessionScope,
+    write: bool = True,
+    action: WorkspaceAction | None = None,
+) -> None:
+    if (
+        actor.principal.principal_type is not PrincipalType.user
+        or scope.workspace_id != actor.workspace_id
+        or scope.configuration_owner_user_id != actor.principal.principal_id
+    ):
+        raise AuthorizationError("configuration_not_found", concealed=True)
+    draft = await session.get(ConfigurationDraftRecord, scope.configuration_draft_id)
+    if (
+        draft is None
+        or draft.session_id != scope.id
+        or draft.workspace_id != scope.workspace_id
+        or draft.organization_id != scope.organization_id
+    ):
         raise AuthorizationError("configuration_not_found", concealed=True)
     await authorize_target(session, actor=actor, target_agent_id=draft.target_agent_id, write=write, action=action)
-    return record
 
 
 async def authorize_execution(
@@ -150,15 +175,17 @@ async def authorize_execution(
     agent_id: str,
     context: ConfigurationRunContext,
     snapshot: PrincipalPermissions | None = None,
+    session_scope: SessionScope | None = None,
 ) -> None:
     """Validate one protected binding; never add agent.invoke to the IAM snapshot."""
-    conversation = await session.get(SessionRecord, context.session_id)
+    conversation = session_scope if session_scope is not None else await session.get(SessionRecord, context.session_id)
     thread = await session.get(ThreadRecord, context.thread_id)
     draft = await session.get(ConfigurationDraftRecord, context.draft_id)
     agent = await session.get(AgentRecord, agent_id)
     if (
         principal.principal_type is not PrincipalType.user
         or conversation is None
+        or conversation.id != context.session_id
         or thread is None
         or draft is None
         or agent is None

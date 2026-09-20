@@ -43,11 +43,19 @@ async def refresh_run_retention(database: AsyncSession, *, run: RunRecord, now: 
 
 
 async def lock_run_environments(
-    database: AsyncSession, *, run: RunRecord, additional_environment_ids: tuple[str, ...] = ()
+    database: AsyncSession,
+    *,
+    run: RunRecord,
+    additional_environment_ids: tuple[str, ...] = (),
+    mounted_environment_ids: tuple[str, ...] | None = None,
 ) -> None:
-    mount_ids = tuple(
-        await database.scalars(
-            select(RunEnvironmentMountRecord.environment_id).where(RunEnvironmentMountRecord.run_id == run.id)
+    mount_ids = (
+        mounted_environment_ids
+        if mounted_environment_ids is not None
+        else tuple(
+            await database.scalars(
+                select(RunEnvironmentMountRecord.environment_id).where(RunEnvironmentMountRecord.run_id == run.id)
+            )
         )
     )
     ids = sorted(set(additional_environment_ids + mount_ids + ((run.environment_id,) if run.environment_id else ())))

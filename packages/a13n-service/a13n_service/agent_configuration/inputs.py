@@ -8,7 +8,6 @@ from functools import partial
 from anyio import to_thread
 from pydantic import Field
 from pydantic_ai.usage import UsageLimits
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import StrictModel
@@ -25,13 +24,14 @@ from a13n_service.interactions.initialization import (
     NewRunPolicy,
     RunStateSeed,
     initialize_completed_continuation_state,
-    initialize_empty_thread_state,
     initialize_fork_state,
+    initialize_start_state,
 )
 from a13n_service.interactions.input import AgentInput
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunStateStore
 from a13n_service.interactions.origin import SubmissionOrigin
+from a13n_service.interactions.session_scope import SessionScope
 from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
@@ -56,6 +56,8 @@ class _Selection:
     thread: Thread
     source: Run | None
     draft: ConfigurationDraft
+    session_scope: SessionScope
+    current_status: str | None
 
 
 class ConfigurationInputs:
@@ -120,11 +122,20 @@ class ConfigurationInputs:
             binding=None,
             clock=self._clock,
         )
-        selected = await self._select(actor, thread_id, request, check_version=False)
+        selected = await self._select(actor, thread_id)
         replay = await evidence.replay()
         if replay is not None:
             return replay
-        selected = await self._select(actor, thread_id, request, check_version=True)
+        if selected.thread.version != request.expected_thread_version:
+            raise failure("thread_version_conflict", "The configuration Thread changed; refresh its state.")
+        if selected.current_status in {"accepted", "running", "waiting"}:
+            raise failure(
+                "thread_busy",
+                "Complete the active work or resolve its pending question before submitting new configuration input.",
+            )
+        if selected.source is not None and selected.source.status != "completed":
+            raise failure("run_not_continuable", "Resolve the pending Run through waiting feedback or Continue.")
+        require_open(selected.draft, expected_version=selected.draft.version)
         ready = await self._readiness.read(actor=actor, target_agent_id=selected.draft.target_agent_id)
         if not ready.ready or ready.selected_model is None:
             raise failure(
@@ -167,7 +178,7 @@ class ConfigurationInputs:
         source = selected.source
         is_fork = source is not None and source.thread_id != thread_id
         if source is None:
-            state = initialize_empty_thread_state(seed, thread_id=thread_id)
+            state = initialize_start_state(seed, thread_id=thread_id)
         else:
             parent = (await self._states.read_run(source)).envelope
             state = (
@@ -198,9 +209,7 @@ class ConfigurationInputs:
 
         async def validate_final(session: AsyncSession) -> None:
             await authorize_session(session, actor=actor, session_id=selected.thread.session_id, lock=True)
-            thread = await session.scalar(select(ThreadRecord).where(ThreadRecord.id == thread_id).with_for_update())
-            if thread is None or thread.version != request.expected_thread_version:
-                raise failure("thread_version_conflict", "The configuration Thread changed before input acceptance.")
+            # RunAcceptance owns the following Thread lock and version check.
             draft = await session.get(ConfigurationDraftRecord, selected.draft.id)
             if draft is None:
                 raise not_found()
@@ -208,6 +217,7 @@ class ConfigurationInputs:
 
         try:
             return await self._acceptance.advance_thread(
+                session_scope=selected.session_scope,
                 run=run,
                 state=state,
                 expected_thread_version=request.expected_thread_version,
@@ -221,9 +231,7 @@ class ConfigurationInputs:
         except RunAcceptanceError as error:
             return await evidence.reconcile(error)
 
-    async def _select(
-        self, actor: AuthenticatedActor, thread_id: str, request: ConfigurationInputRequest, *, check_version: bool
-    ) -> _Selection:
+    async def _select(self, actor: AuthenticatedActor, thread_id: str) -> _Selection:
         async with short_session(self._sessions) as session:
             thread = await session.get(ThreadRecord, thread_id)
             if thread is None:
@@ -232,26 +240,19 @@ class ConfigurationInputs:
                 conversation = await authorize_session(session, actor=actor, session_id=thread.session_id)
             except AuthorizationError as error:
                 raise not_found() from error
-            if check_version and thread.version != request.expected_thread_version:
-                raise failure("thread_version_conflict", "The configuration Thread changed; refresh its state.")
             current = None if thread.current_run_id is None else await session.get(RunRecord, thread.current_run_id)
-            if check_version and current is not None and current.status in {"accepted", "running", "waiting"}:
-                raise failure(
-                    "thread_busy",
-                    "Complete the active work or resolve its pending question before submitting new configuration input.",
-                )
             source = None if thread.head_run_id is None else await session.get(RunRecord, thread.head_run_id)
             if source is None and current is None and thread.origin_kind == "fork":
                 source = await session.get(RunRecord, thread.origin_run_id)
                 if source is None or source.session_id != thread.session_id:
                     raise failure("run_not_forkable", "The configuration Thread's fork source is unavailable.")
-            if source is not None and source.status != "completed" and check_version:
-                raise failure("run_not_continuable", "Resolve the pending Run through waiting feedback or Continue.")
             draft = await session.get(ConfigurationDraftRecord, conversation.configuration_draft_id)
             if draft is None:
                 raise not_found()
-            if check_version:
-                require_open(draft, expected_version=draft.version)
             return _Selection(
-                thread.to_resource(), None if source is None else source.to_resource(), draft.to_resource()
+                thread=thread.to_resource(),
+                source=None if source is None else source.to_resource(),
+                draft=draft.to_resource(),
+                session_scope=SessionScope.from_record(conversation),
+                current_status=None if current is None else current.status,
             )

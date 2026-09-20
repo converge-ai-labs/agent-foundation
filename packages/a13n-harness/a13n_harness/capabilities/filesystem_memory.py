@@ -12,6 +12,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.toolsets import AbstractToolset
 
 from a13n_harness.context import AgentContext
+from a13n_harness.errors import RunError
 from a13n_harness.providers.memory.documents import DocumentChange, DocumentInput, DocumentKind, MemoryDocumentError
 from a13n_harness.providers.memory.filesystem.store import FilesystemMemoryStore
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
@@ -77,7 +78,9 @@ class FilesystemMemoryTools:
             return cast(dict[str, JsonValue], tool_failure(error.code, "Memory operation could not be completed."))
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
+            if isinstance(error, RunError) and error.code == "memory_reference_invalid":
+                return cast(dict[str, JsonValue], tool_failure(error.code, str(error)))
             return cast(
                 dict[str, JsonValue],
                 tool_failure(
@@ -185,6 +188,7 @@ class FilesystemMemoryTools:
         description: Annotated[str, Field(max_length=320)],
         text: Annotated[str, Field(min_length=1, max_length=262144)],
         sources: list[str] | None = None,
+        correction_of: Annotated[str | None, Field(max_length=160)] = None,
     ) -> dict[str, JsonValue]:
         """Create one semantic fact, reusable procedure, or immutable episode."""
 
@@ -198,6 +202,7 @@ class FilesystemMemoryTools:
                     text=text,
                     path=f"{kind}/{slug}.md",
                     sources=tuple(sources or ()),
+                    correction_of=_document_id(correction_of) if correction_of is not None else None,
                 ),
                 request_key=self._request(ctx),
             )

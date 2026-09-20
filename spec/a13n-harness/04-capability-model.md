@@ -42,6 +42,12 @@ A type is denied from every unlisted source. Supplying `RunBindings.web`, `media
 
 Bare Pydantic `CapabilityFunc` values are not accepted in `AgentDefinition`, plugin contributions, or `RunBindings`. Pydantic resolves such a function once per native Agent run, while one logical Harness run can contain several native recovery attempts. Support requires a future Harness-bound form that resolves once per logical run, validates the complete result tree, memoizes it, and reuses the exact result across every attempt. Concrete `AbstractCapability` instances are the current contract.
 
+## Application Dependencies
+
+Harness fixes the native dependency type to `AgentContext` and exposes no second application `deps_type` or generic application-service slot on `RunBindings`. Existing typed feature bindings remain the current-run override surface for their owning features; `metadata` and passive context publications are not live-service containers. `RunBindings.capabilities` retains the source restrictions above and is not an arbitrary tool or dependency injection point.
+
+Trusted application code may capture a service in a definition-time tool or Capability when the executable's scope matches that service's lifetime. A reusable executable may instead hold a reentrant custom Capability whose native `for_run()` resolves a service from current-run context and an application-owned factory. This follows the native attempt lifecycle in [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md); it does not guarantee one factory call per logical Run. A selected Harness plugin may bind run-local collaborators through its existing [run binding and Capability contribution](05-plugin-system.md#capability-contribution) contract. Resource ownership and cleanup remain explicit responsibilities of the application or owning extension. Live services are process-local dependencies, not continuation state.
+
 ## Declarative Custom Capability Types
 
 `HarnessBuilder` can receive one exact immutable `CapabilityTypeCatalog` constructed by trusted Host code. The catalog is narrow AgentSpec reconstruction input, not a general class registry or package-discovery service:

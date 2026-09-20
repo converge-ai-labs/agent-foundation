@@ -51,7 +51,10 @@ def test_http_rejects_unsafe_or_invalid_backend(endpoint):
         HttpEnvdConnectionConfiguration(endpoint=endpoint)
 
 
-async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path):
+@pytest.mark.parametrize("directory", [None, "/project"])
+async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path, directory):
+    from a13n_harness.environment.sources import EnvironmentMount
+
     catalog = ProviderCatalog(select_builtin_environment_providers(("http_envd", "websocket_envd")))
     hub = WebSocketEnvdConnections()
     runtimes = (
@@ -62,13 +65,17 @@ async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path):
         WebSocketEnvdProviderRuntime(hub),
     )
     for provider, runtime in zip(catalog.values(), runtimes, strict=True):
-        recipe = provider.validate_environment({})
+        recipe = provider.validate_environment({"working_directory": directory})
         assert not provider.supports_managed
         assert not provider.supports_stop and not provider.supports_destroy and not provider.requires_keepalive
         assert provider.target_identity(configuration=recipe, state=state(provider.type)) == "env-native"
         environment = provider.construct(
             configuration=recipe, environment_id="env-logical", state=state(provider.type), runtime=runtime
         )
+        assert provider.describe_environment(recipe).working_directory == (directory or "/")
+        assert environment.descriptor.working_directory == (directory or "/")
+        assert EnvironmentMount(environment).working_directory == (directory or "/")
+        assert EnvironmentMount(environment, working_directory="/override").working_directory == "/override"
         await environment.enter(mount_id="m")
         assert environment.environment_id == "env-logical"
         assert environment.descriptor.generation == "unprepared"

@@ -99,27 +99,34 @@ Metadata is bounded application context, **not authorization**. Do not put keys,
 
 ## Supply a live application dependency
 
-Harness fixes the native dependency type to `AgentContext`; it does not accept a second application `deps_type`. For a per-request service, construct a fresh run Capability that closes over the authorized service. This sketch assumes your application owns `inventory` and its lifetime:
+Harness fixes the native dependency type to `AgentContext`; it does not accept a second application `deps_type` or a generic application-service argument on `run()`. For built-in features, use the existing typed `RunBindings` fields, such as `web` or `document_converter`.
+
+For an application tool, a closure over an authorized service is enough when the application builds an executable for that request. This sketch assumes your application owns `inventory` and its lifetime, and supplies a native `model`:
 
 ```python
-from a13n_harness import RunBindings
+from a13n_harness import AgentSpec, HarnessBuilder
 from pydantic_ai.capabilities import Capability
 
 
-async def inspect_inventory(inventory, executable):
+async def inspect_inventory(inventory, model):
     async def stock_count(sku: str) -> int:
         """Look up stock for one product in the current authorized inventory."""
         return await inventory.stock_count(sku)
 
-    bindings = RunBindings.embedded(
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model,
         capabilities=(Capability(id="inventory", tools=[stock_count]),),
     )
-    return await executable.run("Check stock for SKU-123", bindings=bindings)
+    return await executable.run("Check stock for SKU-123")
 ```
 
-The service must enforce its own scope; do not let the model choose a tenant or credential. Keep database transactions around individual operations, not around the whole model/tool loop. For reusable feature implementations, a typed run-bound Capability can own the same dependency instead of a closure.
+The Capability belongs to build-time composition, not `RunBindings.capabilities`. The latter accepts only the documented invocation-policy and upstream MCP types; it is not an arbitrary application-service or tool injection point.
 
-Build-time Capabilities describe reusable behavior. Run Capabilities supply fresh collaborators or per-run behavior. Never serialize a client or reuse an authenticated run-bound instance as continuation state.
+If the application reuses one executable across requests, install a custom `AbstractCapability[AgentContext]` at build time and resolve the service in its native `for_run(ctx)` from trusted current-run identity and an application-owned factory. Native run binding executes again for each internal model-recovery attempt. A [Harness plugin](plugins.md#plugin-lifecycle) can instead bind a fresh instance once per logical Run; its contributed tools or Capabilities retrieve that instance with `ctx.deps.plugins.require(plugin_id, ExpectedPluginType)`. Neither approach requires a second dependency container, and concurrent Runs must not mutate a shared prototype to select their service.
+
+The service must enforce its own scope; do not let the model choose a tenant or credential. Keep database transactions around individual operations, not around the whole model/tool loop. The application or owning extension must manage resource acquisition and cleanup explicitly; `for_run()` alone does not close clients. Never put live services in `metadata`, serialize them into `HarnessState`, or reuse an authenticated run-bound instance as continuation state.
 
 ## Native, managed, and provider-native tools
 

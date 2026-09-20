@@ -52,7 +52,7 @@ async def _runtime(
 def _describe(configuration: LocalEnvdEnvironmentConfiguration) -> EnvironmentDescriptor:
     if not isinstance(configuration, LocalEnvdEnvironmentConfiguration):
         raise TypeError("Local Envd requires LocalEnvdEnvironmentConfiguration")
-    return configured_descriptor()
+    return configured_descriptor(working_directory=configuration.working_directory)
 
 
 def _identity(*, configuration: LocalEnvdEnvironmentConfiguration, state: EnvironmentState | None) -> str | None:
@@ -107,7 +107,7 @@ class LocalEnvdEnvironment(Environment):
         self._environment_id = environment_id
         self._configuration = configuration.model_copy(deep=True)
         self._runtime = runtime
-        self._descriptor = configured_descriptor()
+        self._descriptor = configured_descriptor(working_directory=configuration.working_directory)
         self._availability = EnvironmentAvailability(status="preparing")
         self._operations = EnvironmentOperations()
         self._eip_scope: AbstractAsyncContextManager[EIPEnvironmentSession] | None = None

@@ -304,9 +304,8 @@ export function ProviderAccount({
         </section>
       )}
       <p className={accountStyles.help}>
-        Accounts are saved on this server and shared by everyone using this
-        instance. Connecting does not verify model access or make a model
-        request.
+        Shared by everyone on this server. Connecting does not verify model
+        access.
       </p>
       <ModalFrame
         open={switchOpen}
@@ -367,7 +366,7 @@ export function CredentialKeys() {
       result(client.PUT("/api/auth/keys", { body })),
     onSuccess: (_, body) => {
       setSecret("");
-      setSaved(`Saved ${body.credential_ref}. The secret is never returned.`);
+      setSaved(`Saved ${body.credential_ref}.`);
       void queries.invalidateQueries({ queryKey: ["keys"] });
     },
   });
@@ -461,10 +460,7 @@ export function CredentialKeys() {
 export function AccountsPage() {
   return (
     <>
-      <PageHeader
-        title="Accounts & API keys"
-        description="Connect model providers without putting secrets in resource files."
-      />
+      <PageHeader title="Accounts & API keys" />
       <div className={styles.twoColumns}>
         <ProviderAccount provider="codex" />
         <ProviderAccount provider="grok" />

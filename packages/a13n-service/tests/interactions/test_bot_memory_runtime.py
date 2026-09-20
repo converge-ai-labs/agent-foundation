@@ -177,7 +177,12 @@ async def runtime_memory(interaction_sessions, interaction_object_store, monkeyp
         verifier = BotMemoryVerifier(interaction_sessions, client, EndpointPolicy(), memory.protector)
         service = BotMemoryService(memory)
         document = await create(
-            service, hook_actor(), ACCOUNT, SCOPE, CreateDocument(text="Group evidence", title="Release"), "seed"
+            service,
+            hook_actor(),
+            ACCOUNT,
+            SCOPE,
+            CreateDocument(kind="semantic", text="Group evidence", title="Release"),
+            "seed",
         )
         async with transaction(interaction_sessions) as session:
             role = await session.get(RoleBindingRecord, role.id)
@@ -307,7 +312,7 @@ async def test_platform_removal_or_unknown_membership_blocks_all_memory_io(runti
         await store.read(document.id)
     with pytest.raises(ApplicationError):
         await store.create(
-            "New evidence", title="Denied", description="", kind="long_term", correction_of=None, request_key="request1"
+            "New evidence", title="Denied", description="", kind="semantic", correction_of=None, request_key="request1"
         )
     assert len(calls) == before
 
@@ -397,7 +402,7 @@ async def test_shared_source_group_is_verified_before_its_body_or_index_is_retur
         hook_actor(),
         ACCOUNT,
         other_id,
-        CreateDocument(text="Shared source evidence", title="Shared release"),
+        CreateDocument(kind="semantic", text="Shared source evidence", title="Shared release"),
         "shared-seed",
     )
     async with transaction(interaction_sessions) as session:
@@ -595,17 +600,30 @@ async def test_deleted_group_does_not_restore_an_old_binding(runtime_memory, int
         await capability.document_store.read(document.id)
 
 
+@pytest.fixture
+async def legacy_runtime_memory(runtime_memory, interaction_sessions):
+    """Retain the historical document input for migration-boundary tests."""
+    from a13n_service.bots.memory.models import DocumentRecord
+
+    document = runtime_memory[4]
+    async with transaction(interaction_sessions) as session:
+        stored = await session.get(DocumentRecord, document.id)
+        stored.kind = "long_term"
+        stored.metadata_json = {**stored.metadata_json, "kind": "long_term"}
+    return runtime_memory
+
+
 @pytest.mark.parametrize("kind", ["ordinary", "enabled", "disabled"])
 @pytest.mark.parametrize("sealed", [False, True])
 async def test_memory_cutover_preserves_run_and_binding(
-    runtime_memory, interaction_sessions, interaction_object_store, service_database, kind, sealed
+    legacy_runtime_memory, interaction_sessions, interaction_object_store, service_database, kind, sealed
 ):
     import anyio
     from a13n_service.bots.memory.bindings import RunMemoryBindingRecord
     from a13n_service.database.migration import DatabaseMigrator
     from a13n_service.memory.behaviors import RunMemorySelectionRecord
 
-    _, _, run, _, _, _, _, _ = runtime_memory
+    _, _, run, _, _, _, _, _ = legacy_runtime_memory
     if sealed:
         from a13n_harness import SafeFailure
         from a13n_service.interactions.models import ThreadRecord
@@ -650,7 +668,7 @@ async def test_memory_cutover_preserves_run_and_binding(
             assert await session.get(RunMemoryBindingRecord, run.id) is None
 
 
-async def test_invalid_old_binding_aborts_cutover(runtime_memory, interaction_sessions, service_database):
+async def test_invalid_old_binding_aborts_cutover(legacy_runtime_memory, interaction_sessions, service_database):
     import anyio
     from a13n_service.database.migration import DatabaseMigrator
     from sqlalchemy import text
@@ -665,13 +683,15 @@ async def test_invalid_old_binding_aborts_cutover(runtime_memory, interaction_se
         assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0264713d02b1"
 
 
-async def test_cutover_downgrade_preserves_revocation_fences(runtime_memory, interaction_sessions, service_database):
+async def test_cutover_downgrade_preserves_revocation_fences(
+    legacy_runtime_memory, interaction_sessions, service_database
+):
     import anyio
     from a13n_service.bots.memory.lifecycle import invalidate_conversation
     from a13n_service.database.migration import DatabaseMigrator
     from sqlalchemy import text
 
-    _, _, _, _, _, _, binding, _ = runtime_memory
+    _, _, _, _, _, _, binding, _ = legacy_runtime_memory
     async with transaction(interaction_sessions) as session:
         await invalidate_conversation(session, ACCOUNT, binding.external_conversation_id)
     with pytest.raises(RuntimeError, match="revocation fences cannot be downgraded"):
@@ -727,6 +747,8 @@ async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
         filesystem=True,
     )
     assert capability and capability.document_factory
+    # Surface runtime/bootstrap failures instead of hiding them as an optional empty index.
+    capability.recall_required = True
     original = capability.document_factory
     captured = []
 

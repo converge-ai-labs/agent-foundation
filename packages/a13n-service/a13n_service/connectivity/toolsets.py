@@ -10,7 +10,7 @@ from anyio import to_thread
 from jsonschema import Draft202012Validator, ValidationError
 from mcp.types import Tool
 from pydantic import JsonValue
-from pydantic_ai import RunContext
+from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.capabilities import MCP
 from pydantic_ai.tools import Tool as FunctionTool
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset, RenamedToolset, ToolsetTool
@@ -56,7 +56,9 @@ def _bound_tool(definition: Tool, handler: ToolHandler) -> FunctionTool[AgentCon
         try:
             await to_thread.run_sync(Draft202012Validator(definition.input_schema).validate, arguments)
         except ValidationError:
-            raise ValueError("tool_arguments_invalid") from None
+            raise ModelRetry(
+                "Invalid tool arguments. Follow this tool's input schema and retry; nothing was dispatched."
+            ) from None
         result = await handler(definition.name, arguments)
         await to_thread.run_sync(validate_result, result)
         if definition.output_schema is not None:

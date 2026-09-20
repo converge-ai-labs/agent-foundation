@@ -14,6 +14,16 @@ Good code expresses the problem clearly and makes behavior and change easy to fo
 
 Consider runtime, recovery, operational, and maintenance costs. Support performance trade-offs with measurements or an explicit capacity model. Match explanation and validation to the change; routine fixes do not need a separate design exercise.
 
+## Frontend Tests
+
+Across Console, Harness UI, and shared UI, default to **logic tests plus core UI flows**.
+
+- Test business rules and input combinations through the production functions in Node. Use narrow imports and verify the test environment; file extensions alone do not select it in every package.
+- Keep UI tests for core user journeys and failures that require interaction: request wiring, visible errors, permissions, credential clearing, recovery, navigation, and keyboard behavior.
+- Test shared behavior at its owner. Avoid repeating full UI flows for equivalent variants or adding standalone tests for incidental copy and menu inventories.
+- When simplifying, identify the surviving coverage for each required behavior. Extract cohesive production logic shared by the UI and tests; do not duplicate implementations or add abstractions solely for tests.
+- Wait for observable completion instead of fixed sleeps unless elapsed time is itself under test. Validate with the [required checks](CONTRIBUTING.md#local-validation); measure performance over the same scope, including replacement tests.
+
 ## Service Shape
 
 `a13n-service` ships one package and container image with three independently deployable roles and their all-in-one composition:
@@ -86,6 +96,18 @@ Read durable state in one short session, close it, perform external work, then o
 FastAPI yield-dependency cleanup timing has changed across releases. A streaming route must therefore never receive a yielded database session, including indirectly through authentication.
 
 Complete authentication, authorization, and initial reads in a short session that closes before constructing the response. Pass immutable values into the generator. If the stream needs database state, open a fresh short session for each bounded operation. Background tasks also create their own session from the factory. Release subscriptions and tasks in `finally`, and test that an open stream does not retain a pool connection.
+
+## SQL Operation Design
+
+Minimize database work across the complete application operation using the short-read, external-preparation, short-commit flow above. Simple database-only operations can stay in one transaction. Preserve the owning specification's observation and concurrency boundaries.
+
+- **Observe authority once.** Follow the [IAM contract](spec/a13n-service/33-identity-and-access-management.md#authorization-contract): read each Principal/Workspace and credential on first use, then reuse detached facts while still checking each action, target, and credential boundary. Do not use IAM row locks. Later revocation affects the next operation; requests, polls, and independent background items do not share an operation snapshot. Attempt authorization refresh remains separate.
+- **Select configuration once.** For [Run acceptance](spec/a13n-service/18-agent-control-input-and-continuation.md), validate and freeze the complete selection, including descendants, using ordinary reads. Do not reread defaults or rebuild prepared state because of later edits. No shared database timestamp is required. Management serialization and runtime eligibility checks retain their own contracts.
+- **Keep commit-time arbitration.** Recheck required state, versions, source integrity, capacity, leases, generations, and idempotency. Keep command replay preflight read-only; arbitrate evidence with the business mutation and roll back tentative writes before replaying a concurrent winner.
+- **Pass known facts forward.** Reuse existing IDs, selections, and returned values. Prefer existing parameters or small cohesive types; avoid giant Context objects and long forwarding chains. Reuse does not replace authoritative scope or relation checks.
+- **Batch repeated work.** Deduplicate inputs and use bounded set reads and writes. Batch recurring renewals when justified, preserving per-item authority, deadlines, cancellation, conflicts, and accounting.
+- **Combine mutations and narrow locks.** Prefer conditional `UPDATE ... RETURNING` when it expresses the complete invariant. For queue claims that allow skipping contention, use bounded `FOR UPDATE SKIP LOCKED` with an update and returned claims; reuse canonical helpers. Preserve necessary locks, ordering, and fences, and evaluate lease expiry after contention. Commit before external execution or reporting success.
+- **Verify the reduction.** Compare equivalent scenarios with an explicit SQL-counting method under the [existing validation workflow](CONTRIBUTING.md#local-validation). Pair count assertions with relevant concurrency and rollback tests. Fewer statements must preserve correctness and must not introduce unbounded reads, longer transactions, or unnecessary abstractions.
 
 ## Migrations
 

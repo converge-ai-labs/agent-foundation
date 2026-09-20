@@ -11,7 +11,6 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequen
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
 from functools import partial, wraps
 from types import CoroutineType
 from typing import Any, Literal
@@ -52,6 +51,7 @@ from a13n_harness.capabilities import (
 from a13n_harness.execution import derive_child_identity
 from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
+from a13n_harness.usage import intersect_usage_limits
 from a13n_logging import get_logger
 from a13n_stream_protocol import ContentMetadata, HarnessAguiObserver
 from ag_ui.core import Event as AguiEvent
@@ -155,15 +155,6 @@ _SENSITIVE_ASSIGNMENT = re.compile(
     r"(?i)\b(api[-_]?key|access[-_]?token|authorization|bearer[-_]?token|client[-_]?secret|credential|"
     r"password|private[-_]?key|refresh[-_]?token|secret|token)(\s*[:=]\s*)"
     r"(?:\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
-)
-_USAGE_LIMIT_FIELDS = (
-    "cost_limit",
-    "request_limit",
-    "tool_calls_limit",
-    "input_tokens_limit",
-    "output_tokens_limit",
-    "total_tokens_limit",
-    "per_request_input_tokens_limit",
 )
 
 
@@ -449,7 +440,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             reconstructed.executable.definition.definition_id,
             plan.child.declaration.identity,
         )
-        usage_limits = _intersect_usage_limits(
+        usage_limits = intersect_usage_limits(
             plan.usage_limits,
             reconstructed.executable._fresh_definition_usage_limits(),
         )
@@ -856,7 +847,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             reconstructed.executable.definition.definition_id,
             plan.child.declaration.identity,
         )
-        usage_limits = _intersect_usage_limits(
+        usage_limits = intersect_usage_limits(
             plan.usage_limits,
             reconstructed.executable._fresh_definition_usage_limits(),
         )
@@ -1318,6 +1309,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 active.cleanup_succeeded = not finalized.cleanup_errors and all(
                     publication.status != "failed" for publication in finalized.state_publications
                 )
+                if not active.cleanup_succeeded:
+                    finalization_error = RunCoordinationError(
+                        "Child Environment cleanup or state publication failed.",
+                        code="subagent_finalization_failed",
+                    )
             except BaseException as exc:
                 finalization_error = exc
         if run_error is not None:
@@ -2000,18 +1996,6 @@ def _async_view(
         child_run_id=head.child_run_id,
         segment_index=head.segment_index,
     )
-
-
-def _intersect_usage_limits(*values: UsageLimits | None) -> UsageLimits | None:
-    present = tuple(value for value in values if value is not None)
-    if not present:
-        return None
-    fields: dict[str, int | Decimal | bool | None] = {}
-    for name in _USAGE_LIMIT_FIELDS:
-        ceilings = [getattr(value, name) for value in present if getattr(value, name) is not None]
-        fields[name] = min(ceilings) if ceilings else None
-    fields["count_tokens_before_request"] = any(value.count_tokens_before_request for value in present)
-    return UsageLimits(**fields)  # type: ignore[arg-type]
 
 
 def _deny_deferred(requests: DeferredToolRequests) -> DeferredToolResume:

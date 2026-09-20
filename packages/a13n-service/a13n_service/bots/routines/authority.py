@@ -10,6 +10,7 @@ from a13n_service.connectivity.native_context import InboundRunContext
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_agent
 from a13n_service.interactions.models import RunRecord
 
+from .context import conversation_id, is_group
 from .models import RoutineRecord
 
 
@@ -21,14 +22,20 @@ async def authorize_routine(
     if (
         account is None
         or run is None
-        or account.provider_key != "slack"
+        or account.provider_key not in {"slack", "lark"}
         or account.version != row.account_version
         or not account.receive_enabled
     ):
         raise ProgressUnavailable("routine_source_changed")
     actor, _ = await authorize_progress(session, account, run, action=WorkspaceAction.run_read)
     context = InboundRunContext.model_validate(row.native_context_json)
-    if context.execution_principal_ref != actor.principal or context.account_id != account.id:
+    if (
+        context.execution_principal_ref != actor.principal
+        or context.account_id != account.id
+        or context.provider_key != account.provider_key
+        or not is_group(context)
+        or conversation_id(context) != row.conversation_id
+    ):
         raise ProgressUnavailable("routine_source_changed")
     target = await session.scalar(
         select(AccountTargetRecord)

@@ -230,7 +230,7 @@ The ordinary zero value for child topology is the canonical empty collection. Ch
 
 Every invocation creates a fresh `AgentContext`, fresh run-bound plugin replacements, and fresh run bindings. The executable can serve concurrent runs only when its native Model, Agent-bound Capabilities and their owned tools/Toolsets, and Agent-bound plugins satisfy their upstream or documented reentrancy contracts.
 
-`close()` is idempotent and prevents future invocations. Per-run resources belong to each `HarnessRunStream`; construction does not invent another provider lifecycle.
+An `ExecutableAgent` has no `close()` method or async context-manager lifecycle. `run()` manages its own Run scope; callers of `stream()` enter the returned `HarnessRunStream` as an async context manager. Per-run resources belong to that stream, while callers retain ownership of shared clients supplied during construction.
 
 ## Host Reconstruction
 

@@ -69,10 +69,7 @@ export function SetupPage() {
   const status = setup.data;
   return (
     <>
-      <PageHeader
-        title="Setup & readiness"
-        description="Keep your existing configuration. Repair only what needs attention; no resources are reinitialized here."
-      />
+      <PageHeader title="Setup & readiness" />
       {status?.diagnostic && (
         <div role="alert" className={styles.notice}>
           {status.diagnostic}
@@ -82,7 +79,7 @@ export function SetupPage() {
         <p>
           {status?.needed
             ? "Your configuration is incomplete. Choose a default Agent or repair the existing resource files."
-            : "Your default Agent is configured. Account availability and execution readiness are separate checks."}
+            : "Default agent configured."}
         </p>
         <p>
           Default Agent:{" "}
@@ -104,8 +101,8 @@ export function SetupPage() {
       </Panel>
       <Panel title="Model accounts">
         <p>
-          Connected credentials are shared by this server. Checking their status
-          does not send a model request or verify model entitlement.
+          Credentials are shared on this server. Account status does not verify
+          model access.
         </p>
         <Button variant="outline" render={<Link to="/settings/accounts" />}>
           Manage accounts & API keys

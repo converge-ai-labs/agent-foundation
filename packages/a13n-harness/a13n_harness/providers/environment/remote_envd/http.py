@@ -162,6 +162,7 @@ def _construct(
     return RemoteEnvdEnvironment(
         provider_key=HTTP_PROVIDER_KEY,
         environment_id=environment_id,
+        working_directory=configuration.working_directory,
         state=state,
         session_context=runtime.open_session(
             expected_device_id=data.device_id,

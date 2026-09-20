@@ -31,7 +31,7 @@ async def test_uncertain_write_reconciles_without_repeating_add(bot_memory):
 
     lab = bot_memory
     lab.failures["get"] = True
-    body = CreateDocument(text="Saved remotely, response lost", title="Unconfirmed")
+    body = CreateDocument(kind="semantic", text="Saved remotely, response lost", title="Unconfirmed")
     with pytest.raises(ApplicationError) as uncertain:
         await create(lab.service, actor(), ACCOUNT_ID, lab.scope_id, body, "uncertain")
     assert uncertain.value.code == "memory_write_unconfirmed"
@@ -131,7 +131,12 @@ async def test_index_is_navigation_only_and_body_is_read_on_demand(bot_memory):
         actor(),
         ACCOUNT_ID,
         lab.scope_id,
-        CreateDocument(text="# Release\nThe full release procedure.", title="Release", description="Deployment steps"),
+        CreateDocument(
+            kind="semantic",
+            text="# Release\nThe full release procedure.",
+            title="Release",
+            description="Deployment steps",
+        ),
         "doc-one",
     )
     lab.calls.clear()
@@ -151,7 +156,9 @@ async def test_directory_pagination_date_filter_and_request_replay(bot_memory):
 
     lab = bot_memory
     for index in range(3):
-        body = CreateDocument(text=f"Memory {index}", title=f"Topic {index}", activity_date=date(2026, 9, 15))
+        body = CreateDocument(
+            kind="semantic", text=f"Memory {index}", title=f"Topic {index}", activity_date=date(2026, 9, 15)
+        )
         first = await create(lab.service, actor(), ACCOUNT_ID, lab.scope_id, body, str(index))
         again = await create(lab.service, actor(), ACCOUNT_ID, lab.scope_id, body, str(index))
         assert again.id == first.id
@@ -168,14 +175,26 @@ async def test_directory_pagination_date_filter_and_request_replay(bot_memory):
         )
     assert mismatch.value.code == "invalid_cursor"
     with pytest.raises(ApplicationError) as reused:
-        await create(lab.service, actor(), ACCOUNT_ID, lab.scope_id, CreateDocument(text="changed", title="Topic"), "0")
+        await create(
+            lab.service,
+            actor(),
+            ACCOUNT_ID,
+            lab.scope_id,
+            CreateDocument(kind="semantic", text="changed", title="Topic"),
+            "0",
+        )
     assert reused.value.code == "idempotency_conflict"
 
 
 async def test_deleted_document_disappears_and_stale_reference_cannot_read(bot_memory):
     lab = bot_memory
     document = await create(
-        lab.service, actor(), ACCOUNT_ID, lab.scope_id, CreateDocument(text="Old fact", title="Fact"), "old"
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        lab.scope_id,
+        CreateDocument(kind="semantic", text="Old fact", title="Fact"),
+        "old",
     )
     await delete(lab.service, actor(), ACCOUNT_ID, lab.scope_id, document.id)
     assert not lab.records
@@ -189,7 +208,12 @@ async def test_deleted_document_disappears_and_stale_reference_cannot_read(bot_m
 async def test_provider_body_tampering_is_not_returned_as_saved_memory(bot_memory):
     lab = bot_memory
     document = await create(
-        lab.service, actor(), ACCOUNT_ID, lab.scope_id, CreateDocument(text="Original", title="Fact"), "one"
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        lab.scope_id,
+        CreateDocument(kind="semantic", text="Original", title="Fact"),
+        "one",
     )
     next(iter(lab.records.values()))["memory"] = "Rewritten outside Service"
     with pytest.raises(ApplicationError) as changed:
@@ -281,7 +305,7 @@ async def test_audit_records_lifecycle_without_document_content(bot_memory, conn
         actor(),
         ACCOUNT_ID,
         bot_memory.scope_id,
-        CreateDocument(text="Private audit evidence", title="Private title"),
+        CreateDocument(kind="semantic", text="Private audit evidence", title="Private title"),
         "audit",
     )
     await delete(bot_memory.service, actor(), ACCOUNT_ID, bot_memory.scope_id, document.id)
@@ -318,7 +342,7 @@ async def test_group_configuration_uses_verified_metadata_and_target_recreation_
         actor(),
         ACCOUNT_ID,
         lab.scope_id,
-        CreateDocument(text="Retained evidence", title="Retained"),
+        CreateDocument(kind="semantic", text="Retained evidence", title="Retained"),
         "retained",
     )
     async with transaction(connectivity_sessions) as session:
@@ -463,6 +487,7 @@ async def test_index_pages_by_encoded_budget_without_skipping_documents(bot_memo
             ACCOUNT_ID,
             lab.scope_id,
             CreateDocument(
+                kind="semantic",
                 text=f"Body {number}",
                 title="<" * 160,
                 description="&" * 320,
@@ -514,7 +539,7 @@ async def test_unsupported_provider_is_rejected_before_any_document_operation(bo
                 actor(),
                 ACCOUNT_ID,
                 lab.scope_id,
-                CreateDocument(title="Unsupported", text="Never dispatched"),
+                CreateDocument(kind="semantic", title="Unsupported", text="Never dispatched"),
                 "unsupported",
             )
         elif operation == "configure":
@@ -537,3 +562,101 @@ async def test_unsupported_provider_is_rejected_before_any_document_operation(bo
     assert denied.value.code == "memory_documents_unsupported"
     assert len(lab.calls) == opened and not lab.records
     assert not (await list_operations(lab.service, actor(), ACCOUNT_ID, lab.scope_id)).items
+
+
+@pytest.mark.parametrize("kind", ["semantic", "procedural", "episodic"])
+async def test_document_kind_roundtrip_filter_and_correction(bot_memory, kind):
+    lab = bot_memory
+    original = await create(
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        lab.scope_id,
+        CreateDocument(kind=kind, title="Original", text="Original evidence"),
+        "typed-original",
+    )
+    corrected = await create(
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        lab.scope_id,
+        CreateDocument(kind=kind, title="Correction", text="Corrected evidence", correction_of=original.id),
+        "typed-correction",
+    )
+    assert corrected.kind == kind and corrected.legacy_kind is None
+    assert corrected.correction_of == original.id
+    assert (await lab.service.get(actor(), ACCOUNT_ID, lab.scope_id, corrected.id)).kind == kind
+    listing = await lab.service.list(actor(), ACCOUNT_ID, lab.scope_id, kind=kind)
+    assert {entry.id for entry in listing.items} == {original.id, corrected.id}
+    assert {
+        entry.kind
+        for entry in (
+            await lab.service.search(actor(), ACCOUNT_ID, lab.scope_id, SearchDocuments(query="evidence"))
+        ).items
+    } == {kind}
+    assert all(record["metadata"]["kind"] == kind for record in lab.records.values())
+
+
+@pytest.mark.parametrize("payload", [{}, {"kind": "daily"}, {"kind": "long_term"}])
+async def test_new_document_requires_current_kind(payload):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        CreateDocument.model_validate({"title": "New", "text": "Evidence", **payload})
+
+
+@pytest.mark.parametrize("legacy_kind", ["daily", "long_term"])
+async def test_kind_migration_retains_unclassified_legacy_documents(
+    bot_memory, connectivity_sessions, service_database, legacy_kind
+):
+    import anyio
+    from a13n_service.bots.memory.models import DocumentRecord
+    from a13n_service.database.migration import DatabaseMigrator
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    lab = bot_memory
+    document = await create(
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        lab.scope_id,
+        CreateDocument(kind="semantic", title="Historical", text="Original historical evidence"),
+        "historical",
+    )
+    # Reconstruct historical SQL and Provider data together, without using the new-write API.
+    async with transaction(connectivity_sessions) as session:
+        stored = await session.get(DocumentRecord, document.id)
+        stored.kind = legacy_kind
+        stored.metadata_json = {**stored.metadata_json, "kind": legacy_kind}
+        original_metadata = dict(stored.metadata_json)
+    next(iter(lab.records.values()))["metadata"]["kind"] = legacy_kind
+    migrator = DatabaseMigrator(service_database)
+    await anyio.to_thread.run_sync(migrator.downgrade, "6a336ba34b98")
+    await anyio.to_thread.run_sync(migrator.upgrade)
+    read = await lab.service.get(actor(), ACCOUNT_ID, lab.scope_id, document.id)
+    assert read.kind is None and read.legacy_kind == legacy_kind
+    assert read.text == "Original historical evidence"
+    assert (await lab.service.index(actor(), ACCOUNT_ID, lab.scope_id)).entries[0].legacy_kind == legacy_kind
+    assert not (await lab.service.list(actor(), ACCOUNT_ID, lab.scope_id, kind="semantic")).items
+    assert (await lab.service.search(actor(), ACCOUNT_ID, lab.scope_id, SearchDocuments(query="historical"))).items[
+        0
+    ].kind is None
+    async with transaction(connectivity_sessions) as session:
+        stored = await session.get(DocumentRecord, document.id)
+        assert stored.kind == legacy_kind and stored.metadata_json == original_metadata
+    # Current kinds must be accepted by the migrated schema, not just ORM-created tables.
+    for kind in ("semantic", "procedural", "episodic"):
+        await create(
+            lab.service,
+            actor(),
+            ACCOUNT_ID,
+            lab.scope_id,
+            CreateDocument(kind=kind, title=kind, text="New classified evidence"),
+            kind,
+        )
+    with pytest.raises(IntegrityError):
+        await anyio.to_thread.run_sync(migrator.downgrade, "6a336ba34b98")
+    async with transaction(connectivity_sessions) as session:
+        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "ba435c2961da"
+    assert len((await lab.service.list(actor(), ACCOUNT_ID, lab.scope_id)).items) == 4

@@ -39,6 +39,7 @@ from a13n_harness.events import UsageReportPayload
 from a13n_harness.model_context import ModelContextMiddleware
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.providers.environment.management import Environment
+from a13n_harness.toolsets.file_media import MediaUnderstandingProvider
 from a13n_harness.usage import UsageRecord
 from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -138,6 +139,7 @@ class HarnessCollaborators:
 
     instance: AgentInstanceContext
     web: WebBinding | None = None
+    file_media_understanding: MediaUnderstandingProvider | None = None
     model_resolver: RunModelResolver | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
@@ -156,6 +158,7 @@ class HarnessCollaborators:
         return RunBindings(
             instance=self.instance,
             web=self.web,
+            file_media_understanding=self.file_media_understanding,
             model_resolver=self.model_resolver,
             capabilities=self.capabilities,
             metadata=self.metadata,

@@ -18,11 +18,10 @@ class HookSubscriptionInvariantCode(StrEnum):
     destination_limit = "destination_limit"
     secret_unavailable = "secret_unavailable"
     workspace_unavailable = "workspace_unavailable"
-    event_workspace_unavailable = "event_workspace_unavailable"
 
 
 class HookSubscriptionInvariantError(RuntimeError):
-    """A persisted Hook subscription invariant would make source commits unsafe."""
+    """A persisted Hook subscription invariant would be violated."""
 
     def __init__(self, code: HookSubscriptionInvariantCode, message: str) -> None:
         super().__init__(message)

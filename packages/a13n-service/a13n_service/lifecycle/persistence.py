@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any, cast
 
 from a13n_harness import SafeFailure
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import Table, and_, exists, func, insert, inspect, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
+from sqlalchemy.orm.attributes import set_committed_value
+
+from a13n_service.interactions.models import RunAttemptRecord, RunRecord
 
 from .domain import LifecycleEntityType, LifecycleEvent, LifecycleEventDraft, LifecycleProjectionState
 from .models import LifecycleEventRecord
@@ -46,25 +50,62 @@ class LifecycleProjectionClaim:
 async def append_lifecycle_event(
     database: AsyncSession,
     draft: LifecycleEventDraft,
+    *,
+    resource: RunRecord | RunAttemptRecord | None = None,
 ) -> LifecycleEventRecord:
-    """Append a fact while the caller holds the owning resource mutation lock."""
+    """Persist the locked resource mutation, its counter, and its fact together.
 
-    latest = await database.scalar(
-        select(func.max(LifecycleEventRecord.resource_seq)).where(
-            LifecycleEventRecord.organization_id == draft.organization_id,
-            LifecycleEventRecord.entity_type == draft.entity_type.value,
-            LifecycleEventRecord.entity_id == draft.entity_id,
-        )
+    The resource's pending scalar changes belong to this statement, not a later
+    ORM flush. Callers retain their state/lease checks and owning mutation lock.
+    """
+    model = RunRecord if draft.entity_type is LifecycleEntityType.run else RunAttemptRecord
+    table = cast(Table, model.__table__)
+    changes: dict[str, Any] = {}
+    attributes: dict[str, Any] = {}
+    expected_version = None
+    if resource is None:
+        await database.flush()
+    if resource is not None:
+        if (
+            not isinstance(resource, model)
+            or resource.id != draft.entity_id
+            or resource.organization_id != draft.organization_id
+            or resource.version != draft.entity_version
+        ):
+            raise ValueError("Lifecycle fact does not match its resource mutation")
+        state = inspect(resource)
+        if state.session is not database.sync_session:
+            raise ValueError("Lifecycle resource must belong to the current transaction")
+        if not state.persistent:
+            # Creation can have dependent inserts before lifecycle publication.
+            await database.flush()
+        if state.identity != (draft.entity_id,) or state.attrs.organization_id.history.has_changes():
+            raise ValueError("Lifecycle mutation cannot change resource identity or organization")
+        expected_version = resource.version
+        version_history = state.attrs.version.history
+        if version_history.deleted:
+            expected_version = version_history.deleted[0]
+        for attribute in state.mapper.column_attrs:
+            if state.attrs[attribute.key].history.has_changes():
+                value = getattr(resource, attribute.key)
+                changes[attribute.columns[0].name] = value
+                attributes[attribute.key] = value
+    mutation = (
+        update(table)
+        .where(table.c.organization_id == draft.organization_id, table.c.id == draft.entity_id)
+        .values(**(changes | {"lifecycle_seq": table.c.lifecycle_seq + 1}))
+        .returning(table.c.lifecycle_seq)
     )
-    resource_seq = 1 if latest is None else latest + 1
+    if expected_version is not None:
+        mutation = mutation.where(table.c.version == expected_version)
+    changed = mutation.cte("lifecycle_mutation")
     next_attempt = draft.occurred_at if draft.project_live else None
     projected_at = None if draft.project_live else draft.occurred_at
-    record = LifecycleEventRecord(
+    values = dict(
         id=draft.id,
         organization_id=draft.organization_id,
         entity_type=draft.entity_type.value,
         entity_id=draft.entity_id,
-        resource_seq=resource_seq,
         entity_version=draft.entity_version,
         event_type=draft.event_type,
         schema_version=draft.schema_version,
@@ -81,6 +122,11 @@ async def append_lifecycle_event(
         projection_state=(
             LifecycleProjectionState.pending.value if draft.project_live else LifecycleProjectionState.projected.value
         ),
+        hook_dispatch_state="pending",
+        hook_dispatch_attempts=0,
+        hook_dispatch_next_attempt_at=draft.occurred_at,
+        hook_dispatched_at=None,
+        hook_dispatch_error_json=None,
         projection_attempts=0,
         projection_next_attempt_at=next_attempt,
         projection_lease_owner=None,
@@ -88,8 +134,25 @@ async def append_lifecycle_event(
         projected_at=projected_at,
         projection_error_json=None,
     )
-    database.add(record)
-    await database.flush()
+    event_table = LifecycleEventRecord.__table__
+    statement = (
+        insert(LifecycleEventRecord)
+        .from_select(
+            [*values, "resource_seq"],
+            select(
+                *(literal(value, type_=event_table.c[name].type) for name, value in values.items()),
+                changed.c.lifecycle_seq,
+            ),
+        )
+        .returning(LifecycleEventRecord)
+    )
+    record = (await database.scalars(statement)).one_or_none()
+    if record is None:
+        raise RuntimeError("Lifecycle resource is missing or its version changed")
+    if resource is not None:
+        for name, value in attributes.items():
+            set_committed_value(resource, name, value)
+        set_committed_value(resource, "lifecycle_seq", record.resource_seq)
     return record
 
 

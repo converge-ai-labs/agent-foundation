@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import JsonValue
 from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     String,
     text,
 )
@@ -26,6 +29,27 @@ from a13n_service.temporal import assume_utc
 
 from .credentials import ProviderSecrets
 from .domain import CatalogRef, Model, ModelDeclarations, ModelProvider
+
+
+class MediaUnderstandingDefaultsRecord(Base):
+    __tablename__ = "workspace_media_understanding_defaults"
+    __table_args__ = (CheckConstraint("version >= 1", name="version_positive"),)
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(72), ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    image_model_id: Mapped[str | None] = mapped_column(String(72), ForeignKey("models.id", ondelete="RESTRICT"))
+    video_model_id: Mapped[str | None] = mapped_column(String(72), ForeignKey("models.id", ondelete="RESTRICT"))
+    audio_model_id: Mapped[str | None] = mapped_column(String(72), ForeignKey("models.id", ondelete="RESTRICT"))
+
+    def selections(self) -> dict[NativeInputMediaKind, str]:
+        values: dict[NativeInputMediaKind, str | None] = {
+            "image": self.image_model_id,
+            "video": self.video_model_id,
+            "audio": self.audio_model_id,
+        }
+        return {kind: model_id for kind, model_id in values.items() if model_id is not None}
 
 
 class ModelProviderRecord(ResourceCredential[str | None], Base):

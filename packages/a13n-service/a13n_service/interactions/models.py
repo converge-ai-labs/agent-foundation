@@ -295,6 +295,7 @@ class RunRecord(Base):
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("authority_principal_type IN ('user', 'service_account')", name="principal_type_valid"),
+        CheckConstraint("lifecycle_seq >= 0", name="lifecycle_seq_nonnegative"),
         CheckConstraint("lineage_kind IN ('root', 'continue', 'fork')", name="lineage_kind_valid"),
         CheckConstraint(
             "(lineage_kind = 'root' AND parent_run_id IS NULL) "
@@ -462,6 +463,7 @@ class RunRecord(Base):
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    lifecycle_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     authority_principal_type: Mapped[str] = mapped_column(String(32), nullable=False)
     authority_principal_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -666,6 +668,7 @@ class RunAttemptRecord(Base):
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("attempt_number >= 1", name="attempt_number_positive"),
+        CheckConstraint("lifecycle_seq >= 0", name="lifecycle_seq_nonnegative"),
         CheckConstraint(
             "status IN ('leased', 'running', 'succeeded', 'yielded', 'failed', 'cancelled')",
             name="status_valid",
@@ -723,6 +726,7 @@ class RunAttemptRecord(Base):
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    lifecycle_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     run_id: Mapped[str] = mapped_column(String(72), nullable=False)
     attempt_number: Mapped[int] = mapped_column(BigInteger, nullable=False)

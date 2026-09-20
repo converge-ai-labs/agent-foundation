@@ -55,6 +55,7 @@ from a13n_service.interactions.queue import (
     ThreadSubmissionAdmission,
     classify_thread_submission,
 )
+from a13n_service.interactions.sources import RunSource, ThreadSource, load_thread_head, load_thread_source
 from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
@@ -137,9 +138,10 @@ class QueuedSubmissionService:
         identity: IdempotencyIdentity,
         evidence_scope: EvidenceScope,
     ) -> ThreadRunSubmissionReceipt:
-        scope, thread, current, head, admission = await self._submission_admission(
+        scope, observed, head, admission = await self._submission_admission(
             actor=actor, thread_id=thread_id, request=request
         )
+        thread, current = observed.thread, observed.current
         if admission is ThreadSubmissionAdmission.queued:
             return await self._enqueue_thread_submission(
                 actor=actor,
@@ -202,6 +204,7 @@ class QueuedSubmissionService:
             await self._commands.runs.accept_continuation(
                 actor=actor,
                 source_run_id=head.id,
+                observed_source=RunSource(head, thread, observed.session_scope),
                 request_fingerprint=identity.request_digest,
                 request=continuation,
                 inherit_parent_environment=False,
@@ -211,6 +214,7 @@ class QueuedSubmissionService:
             await self._commands.runs.accept_empty_thread(
                 actor=actor,
                 thread_id=thread_id,
+                observed_source=observed,
                 request_fingerprint=identity.request_digest,
                 request=continuation,
                 transaction_hook=commit_run,
@@ -226,6 +230,7 @@ class QueuedSubmissionService:
             await self._commands.continuations.accept_waiting_continue(
                 actor=actor,
                 run_id=current.id,
+                observed_source=RunSource(current, thread, observed.session_scope),
                 request_fingerprint=identity.request_digest,
                 request=WaitingContinueRunCommand(
                     expected_thread_version=request.expected_thread_version,
@@ -580,58 +585,22 @@ class QueuedSubmissionService:
         actor: AuthenticatedActor,
         thread_id: str,
         request: ThreadRunSubmissionRequest,
-    ) -> tuple[_QueueScope, Thread, Run | None, Run | None, ThreadSubmissionAdmission]:
+    ) -> tuple[_QueueScope, ThreadSource, Run | None, ThreadSubmissionAdmission]:
         async with short_session(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(SessionRecord, ThreadRecord, RunRecord)
-                    .join(
-                        ThreadRecord,
-                        and_(
-                            ThreadRecord.organization_id == SessionRecord.organization_id,
-                            ThreadRecord.session_id == SessionRecord.id,
-                        ),
-                    )
-                    .outerjoin(
-                        RunRecord,
-                        and_(
-                            RunRecord.organization_id == ThreadRecord.organization_id,
-                            RunRecord.id == ThreadRecord.current_run_id,
-                        ),
-                    )
-                    .where(
-                        ThreadRecord.id == thread_id,
-                        SessionRecord.workspace_id == actor.workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise _not_found()
-            session_record, thread_record, current_record = row
-            head_record = (
-                None
-                if thread_record.head_run_id is None
-                else await database.scalar(
-                    select(RunRecord).where(
-                        RunRecord.organization_id == thread_record.organization_id,
-                        RunRecord.id == thread_record.head_run_id,
-                    )
-                )
-            )
+            observed = await load_thread_source(database, workspace_id=actor.workspace_id, thread_id=thread_id)
+            thread, current = observed.thread, observed.current
+            head = await load_thread_head(database, observed)
             has_queue = bool(
                 await database.scalar(
                     select(
                         exists().where(
-                            QueuedSubmissionRecord.organization_id == thread_record.organization_id,
-                            QueuedSubmissionRecord.thread_id == thread_record.id,
+                            QueuedSubmissionRecord.organization_id == thread.organization_id,
+                            QueuedSubmissionRecord.thread_id == thread.id,
                             QueuedSubmissionRecord.position.is_not(None),
                         )
                     )
                 )
             )
-            thread = thread_record.to_resource()
-            current = current_record.to_resource() if current_record is not None else None
-            head = None if head_record is None else head_record.to_resource()
             try:
                 admission = classify_thread_submission(
                     thread=thread,
@@ -653,8 +622,8 @@ class QueuedSubmissionService:
                     "agent_required", "First input requires an Agent selection.", category=ErrorCategory.invalid_request
                 )
             scope = _QueueScope(
-                session_record.organization_id,
-                session_record.workspace_id,
+                observed.session_scope.organization_id,
+                observed.session_scope.workspace_id,
                 thread.id,
                 current.agent_id if current else target_agent_id,
             )
@@ -668,7 +637,7 @@ class QueuedSubmissionService:
                 )
             except AuthorizationError as error:
                 raise _not_found() from error
-            return scope, thread, current, head, admission
+            return scope, observed, head, admission
 
     async def _mutate[ReceiptT: BaseModel](
         self,

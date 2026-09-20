@@ -120,3 +120,45 @@ async def test_oversized_result_fails_without_repeating_effect():
     with pytest.raises(Exception, match="tool_result_too_large"):
         await Agent(TestModel(), capabilities=[capability]).run("write")
     assert calls == ["write"]
+
+
+async def test_invalid_arguments_retry_without_dispatching_invalid_effect():
+    calls = []
+    step = 0
+
+    async def call(name, arguments):
+        calls.append(arguments)
+        return {"kind": "succeeded"}
+
+    capability = await local_capability(
+        key="source",
+        model_alias="source",
+        allowed=None,
+        handler=call,
+        tools=[
+            Tool(
+                name="reply",
+                inputSchema={
+                    "type": "object",
+                    "properties": {"placement": {"enum": ["thread", "main"]}},
+                    "additionalProperties": False,
+                },
+            )
+        ],
+    )
+
+    async def model(messages, info):
+        nonlocal step
+        step += 1
+        if step == 1:
+            yield {0: DeltaToolCall(name="source_reply", json_args='{"placement":"dialog"}', tool_call_id="bad")}
+        elif step == 2:
+            assert "nothing was dispatched" in repr(messages)
+            yield {0: DeltaToolCall(name="source_reply", json_args='{"placement":"thread"}', tool_call_id="good")}
+        else:
+            yield "done"
+
+    agent = HarnessBuilder().build(AgentSpec(), model=FunctionModel(stream_function=model), output_type=str)
+    result = await agent.run("reply", bindings=RunBindings.embedded(capabilities=(capability,)))
+    assert result.output_or_raise() == "done"
+    assert calls == [{"placement": "thread"}]

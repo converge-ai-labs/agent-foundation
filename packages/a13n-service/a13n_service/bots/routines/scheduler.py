@@ -31,6 +31,7 @@ from a13n_service.temporal import assume_utc, utc_now
 
 from .authority import authorize_routine
 from .cards import RoutineCards
+from .context import source_message_id
 from .domain import RoutineDefinition
 from .events import authorize_source, pending_occurrence
 from .models import EventOccurrenceRecord, EventSourceRecord, RoutineRecord
@@ -162,7 +163,7 @@ class RoutineScheduler:
                     account_version=account.version,
                     provider_key=context.provider_key,
                     conversation_id=current.conversation_id,
-                    source_message_id=str(context.provider_context["root_thread_ts"]),
+                    source_message_id=source_message_id(context),
                     reply_in_thread=False,
                     requester_ids=[current.owner_id],
                     action_token=secrets.token_urlsafe(32),

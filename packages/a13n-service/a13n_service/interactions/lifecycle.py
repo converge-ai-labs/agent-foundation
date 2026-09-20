@@ -11,6 +11,7 @@ import rfc8785
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.hooks.persistence import expire_inline_hook_subscription
 from a13n_service.lifecycle import (
     LifecycleEntityType,
     LifecycleEventDraft,
@@ -46,7 +47,8 @@ DeliveryIntentWriter = Callable[[AsyncSession, LifecycleEventRecord], Awaitable[
 class LifecycleWriter:
     """Write facts and configured delivery intents in the caller's transaction.
 
-    Writers only perform relational work. A failed writer rolls back the fact
+    Webhook fan-out is asynchronous. Inline expiry and configured writers only
+    perform relational work. A failed writer rolls back the fact
     and authoritative mutation along with every other required delivery intent.
     """
 
@@ -90,26 +92,34 @@ class LifecycleWriter:
 
         resolved_mutation_id = new_mutation_id() if mutation_id is None else mutation_id
         run_event_id = new_lifecycle_event_id()
-        await self.append_run_attempt_lifecycle(
+        await self._append_lifecycles(
             database,
-            run,
-            attempt,
-            attempt_event_type,
-            mutation_id=resolved_mutation_id,
-            occurred_at=occurred_at,
-            resulting_run_lifecycle_event_id=run_event_id,
+            (
+                attempt,
+                _attempt_event(
+                    run,
+                    attempt,
+                    attempt_event_type,
+                    mutation_id=resolved_mutation_id,
+                    occurred_at=occurred_at,
+                    resulting_run_lifecycle_event_id=run_event_id,
+                ),
+            ),
+            (
+                run,
+                _run_event(
+                    run,
+                    run_event_type,
+                    event_id=run_event_id,
+                    mutation_id=resolved_mutation_id,
+                    occurred_at=occurred_at,
+                    actor_type=actor_type,
+                    actor_id=actor_id,
+                    final_run_attempt_id=attempt.id,
+                ),
+            ),
         )
-        return await self.append_run_lifecycle(
-            database,
-            run,
-            run_event_type,
-            event_id=run_event_id,
-            mutation_id=resolved_mutation_id,
-            occurred_at=occurred_at,
-            actor_type=actor_type,
-            actor_id=actor_id,
-            final_run_attempt_id=attempt.id,
-        )
+        return run_event_id
 
     async def append_run_lifecycle(
         self,
@@ -124,26 +134,18 @@ class LifecycleWriter:
         actor_id: str | None,
         final_run_attempt_id: str | None = None,
     ) -> str:
-        record = await self._append_lifecycle_with_hooks(
-            database,
-            LifecycleEventDraft(
-                id=new_lifecycle_event_id() if event_id is None else event_id,
-                organization_id=run.organization_id,
-                entity_type=LifecycleEntityType.run,
-                entity_id=run.id,
-                entity_version=run.version,
-                event_type=event_type,
-                mutation_id=new_mutation_id() if mutation_id is None else mutation_id,
-                session_id=run.session_id,
-                thread_id=run.thread_id,
-                run_id=run.id,
-                payload=_run_payload(run, event_type, final_run_attempt_id=final_run_attempt_id),
-                actor_type=actor_type,
-                actor_id=actor_id,
-                occurred_at=occurred_at,
-            ),
+        draft = _run_event(
+            run,
+            event_type,
+            event_id=event_id,
+            mutation_id=mutation_id,
+            occurred_at=occurred_at,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            final_run_attempt_id=final_run_attempt_id,
         )
-        return record.id
+        await self._append_lifecycles(database, (run, draft))
+        return draft.id
 
     async def append_run_attempt_lifecycle(
         self,
@@ -156,40 +158,96 @@ class LifecycleWriter:
         occurred_at: datetime,
         resulting_run_lifecycle_event_id: str | None = None,
     ) -> str:
-        record = await self._append_lifecycle_with_hooks(
-            database,
-            LifecycleEventDraft(
-                organization_id=run.organization_id,
-                entity_type=LifecycleEntityType.run_attempt,
-                entity_id=attempt.id,
-                entity_version=attempt.version,
-                event_type=event_type,
-                mutation_id=mutation_id,
-                session_id=run.session_id,
-                thread_id=run.thread_id,
-                run_id=run.id,
-                run_attempt_id=attempt.id,
-                payload=_attempt_payload(
-                    attempt,
-                    event_type,
-                    resulting_run_lifecycle_event_id=resulting_run_lifecycle_event_id,
-                ),
-                actor_type="worker",
-                actor_id=attempt.worker_id,
-                occurred_at=occurred_at,
-            ),
+        draft = _attempt_event(
+            run,
+            attempt,
+            event_type,
+            mutation_id=mutation_id,
+            occurred_at=occurred_at,
+            resulting_run_lifecycle_event_id=resulting_run_lifecycle_event_id,
         )
-        return record.id
+        await self._append_lifecycles(database, (attempt, draft))
+        return draft.id
 
-    async def _append_lifecycle_with_hooks(
+    async def _append_lifecycles(
         self,
         database: AsyncSession,
-        draft: LifecycleEventDraft,
-    ) -> LifecycleEventRecord:
-        record = await append_lifecycle_event(database, draft)
-        for writer in self._delivery_writers:
-            await writer(database, record)
-        return record
+        *events: tuple[RunRecord | RunAttemptRecord, LifecycleEventDraft],
+    ) -> None:
+        # Persist both correlated resource changes before a delivery writer can
+        # flush unrelated rows. Each mutation and its fact share one statement.
+        records = [await append_lifecycle_event(database, draft, resource=resource) for resource, draft in events]
+        await database.flush()
+        for record in records:
+            if record.event_type in {"run.waiting", "run.completed", "run.failed", "run.cancelled"}:
+                await expire_inline_hook_subscription(
+                    database,
+                    organization_id=record.organization_id,
+                    run_id=record.run_id,
+                    sealed_at=record.occurred_at,
+                )
+            for writer in self._delivery_writers:
+                await writer(database, record)
+
+
+def _run_event(
+    run: RunRecord,
+    event_type: RunEventType,
+    *,
+    event_id: str | None = None,
+    mutation_id: str | None = None,
+    occurred_at: datetime,
+    actor_type: str,
+    actor_id: str | None,
+    final_run_attempt_id: str | None = None,
+) -> LifecycleEventDraft:
+    return LifecycleEventDraft(
+        id=new_lifecycle_event_id() if event_id is None else event_id,
+        organization_id=run.organization_id,
+        entity_type=LifecycleEntityType.run,
+        entity_id=run.id,
+        entity_version=run.version,
+        event_type=event_type,
+        mutation_id=new_mutation_id() if mutation_id is None else mutation_id,
+        session_id=run.session_id,
+        thread_id=run.thread_id,
+        run_id=run.id,
+        payload=_run_payload(run, event_type, final_run_attempt_id=final_run_attempt_id),
+        actor_type=actor_type,
+        actor_id=actor_id,
+        occurred_at=occurred_at,
+    )
+
+
+def _attempt_event(
+    run: RunRecord,
+    attempt: RunAttemptRecord,
+    event_type: RunAttemptEventType,
+    *,
+    mutation_id: str,
+    occurred_at: datetime,
+    resulting_run_lifecycle_event_id: str | None = None,
+) -> LifecycleEventDraft:
+    return LifecycleEventDraft(
+        organization_id=run.organization_id,
+        entity_type=LifecycleEntityType.run_attempt,
+        entity_id=attempt.id,
+        entity_version=attempt.version,
+        event_type=event_type,
+        mutation_id=mutation_id,
+        session_id=run.session_id,
+        thread_id=run.thread_id,
+        run_id=run.id,
+        run_attempt_id=attempt.id,
+        payload=_attempt_payload(
+            attempt,
+            event_type,
+            resulting_run_lifecycle_event_id=resulting_run_lifecycle_event_id,
+        ),
+        actor_type="worker",
+        actor_id=attempt.worker_id,
+        occurred_at=occurred_at,
+    )
 
 
 def _run_payload(

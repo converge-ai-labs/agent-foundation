@@ -463,7 +463,7 @@ export function NativeWorkspace({
         setFocusedArea("page");
         requestAnimationFrame(() =>
           document
-            .querySelector<HTMLElement>('[aria-label="Shared prompt"]')
+            .querySelector<HTMLElement>("[data-composer-editor]")
             ?.focus(),
         );
       }}

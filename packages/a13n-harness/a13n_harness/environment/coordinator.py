@@ -147,7 +147,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self._retirement_tasks: set[asyncio.Task[None]] = set()
         self._retirement_failures: list[BaseException] = []
         self._files = VirtualFileOperator(
-            self.resolve_path,
+            self.select_files,
             self._prepare_file,
         )
         self._shell = _ShellFacade(self)
@@ -259,8 +259,15 @@ class CompositeBoundEnvironment(BoundEnvironment):
             if entered.operations.files is None:
                 raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
             scoped = VirtualFileOperator(
-                lambda path: self._resolve_scoped_file_path(path, entered, mount_path),
-                lambda path, action: self._prepare_scoped_file(entered, mount_path, path, action),
+                lambda path: FileScopeSelection(
+                    logical_path=path,
+                    resolved_path=self._resolve_scoped_file_path(path, entered, mount_path),
+                    observed_generation=entered.public.descriptor.generation,
+                    mount_path=mount_path,
+                ),
+                lambda selection, action: self._prepare_scoped_file(
+                    entered, mount_path, selection.resolved_path, action
+                ),
             )
             yield scoped
 
@@ -875,11 +882,12 @@ class CompositeBoundEnvironment(BoundEnvironment):
     @asynccontextmanager
     async def _prepare_file(
         self,
-        selected: EnvironmentPath,
+        selection: FileScopeSelection,
         action: EnvironmentAction,
     ) -> AsyncGenerator[_PreparedFile]:
+        selected = selection.resolved_path
         entered = self._entered_by_id.get(selected.mount_id)
-        if entered is None:
+        if entered is None or selection.observed_generation not in {"unprepared", entered.public.descriptor.generation}:
             raise EnvironmentError(
                 "Environment mount incarnation is unavailable.",
                 code="environment_stale_mount",

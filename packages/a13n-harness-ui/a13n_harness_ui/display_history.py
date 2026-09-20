@@ -141,7 +141,7 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
         self._boundary = deepcopy(_context_boundary(model_history))
         self._completed_responses = set(saved.completed_responses if saved is not None else ())
         self._active_run_id: str | None = None
-        self._first_request = False
+        self._unmapped_run_id: str | None = None
         self._operations: set[str] = {
             operation
             for message in self._messages
@@ -155,40 +155,43 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
         if self._active_run_id is not None:
             return await handler()
         self._active_run_id = ctx.run_id
-        self._first_request = True
+        self._unmapped_run_id = ctx.run_id
         try:
             return await handler()
         finally:
             self._active_run_id = None
 
+    def _initialize_positions(self, history: Sequence[ModelMessage]) -> None:
+        if self._unmapped_run_id is None:
+            return
+        # Native preparation may merge inherited adjacent requests, including
+        # before a failed Run's first model hook. Rebase on the captured history,
+        # not wrap_run's initial context, which may still hold the old list.
+        inherited = next(
+            (index for index, message in enumerate(history) if message.run_id == self._unmapped_run_id),
+            len(history),
+        )
+        suspended_position = None
+        if (
+            inherited == len(history)
+            and self._positions
+            and history
+            and isinstance(history[-1], ModelResponse)
+            and history[-1].state == "suspended"
+        ):
+            suspended_position = self._positions[-1]
+        self._positions = [None] * inherited
+        if suspended_position is not None:
+            self._positions[-1] = suspended_position
+        if inherited < len(history):
+            self._pending_response_position = None
+        self._boundary = deepcopy(_context_boundary(history))
+        self._unmapped_run_id = None
+
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         if ctx.run_id == self._active_run_id:
-            if self._first_request:
-                # Native preparation may merge inherited adjacent requests before
-                # the first model boundary. They are already saved display, not
-                # new content, so start a fresh mapping at this Run's first message.
-                inherited = next(
-                    (index for index, message in enumerate(ctx.messages) if message.run_id == ctx.run_id),
-                    len(ctx.messages),
-                )
-                suspended_position = None
-                if (
-                    inherited == len(ctx.messages)
-                    and self._positions
-                    and ctx.messages
-                    and isinstance(ctx.messages[-1], ModelResponse)
-                    and ctx.messages[-1].state == "suspended"
-                ):
-                    suspended_position = self._positions[-1]
-                self._positions = [None] * inherited
-                if suspended_position is not None:
-                    self._positions[-1] = suspended_position
-                if inherited < len(ctx.messages):
-                    self._pending_response_position = None
-                self._boundary = deepcopy(_context_boundary(ctx.messages))
-                self._first_request = False
             self.capture(ctx.messages)
         return request_context
 
@@ -208,6 +211,7 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
         )
 
     def capture(self, history: Sequence[ModelMessage], *, completed: bool = False) -> DisplayHistory:
+        self._initialize_positions(history)
         boundary = _context_boundary(history)
         if boundary != self._boundary:
             # Before-hooks have already captured the original messages. The new

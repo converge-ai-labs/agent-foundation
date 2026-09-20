@@ -135,7 +135,7 @@ export function CaptureContext({
           onClick={() => void capture()}
           loading={pending}
         >
-          {range ? "Add selected lines to prompt" : "Add to prompt"}
+          {range ? "Add selected lines to message" : "Add to message"}
         </Button>
         {rangesSupported && (
           <label className={styles.check}>
@@ -154,7 +154,7 @@ export function CaptureContext({
             disabled={!threadId || disabled || pending}
             onClick={() => void capture(selection)}
           >
-            Add selection to prompt
+            Add selection to message
           </Button>
         )}
       </div>

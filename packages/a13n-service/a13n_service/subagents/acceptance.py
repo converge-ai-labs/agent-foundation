@@ -37,6 +37,7 @@ from a13n_service.interactions.objects import (
 )
 from a13n_service.interactions.ports.memory import ExecutionBindings
 from a13n_service.interactions.records import thread_record
+from a13n_service.interactions.session_scope import SessionScope
 from a13n_service.interactions.state import RunCheckpoint
 from a13n_service.labels import merge_labels
 from a13n_service.storage import short_session
@@ -95,7 +96,7 @@ class ChildRunAcceptanceService:
         _validate_bundle(prepared)
         async with short_session(self._sessions) as database:
             parent, _, thread = await read_attempt_authority(database, authority, assume_utc(self._clock()))
-            session = await _require_session(database, parent)
+            session_scope = SessionScope.from_record(await _require_session(database, parent))
             parent_resource = parent.to_resource()
             thread_resource = thread.to_resource()
             await _reauthorize(
@@ -103,7 +104,7 @@ class ChildRunAcceptanceService:
                 parent=parent_resource,
                 child=prepared.run,
                 child_definition_id=prepared.child_definition_id,
-                workspace_id=session.workspace_id,
+                workspace_id=session_scope.workspace_id,
             )
         parent_state = await self._states.read_run(parent_resource)
         _validate_new_child_parent(
@@ -129,14 +130,13 @@ class ChildRunAcceptanceService:
                 assume_utc(self._clock()),
                 lock_inbox_origins=True,
             )
-            session = await _require_session(database, parent)
             parent_resource = parent.to_resource()
             await _reauthorize(
                 database,
                 parent=parent_resource,
                 child=prepared.run,
                 child_definition_id=prepared.child_definition_id,
-                workspace_id=session.workspace_id,
+                workspace_id=session_scope.workspace_id,
             )
             _validate_new_child_parent(
                 prepared,
@@ -151,7 +151,15 @@ class ChildRunAcceptanceService:
                 if edge.name == prepared.relationship.subagent_name
             )
             choice = await child_environment_choice(database, parent=parent_resource, policy=edge.environment)
-            inherited_labels = merge_labels(session.labels)
+            session_labels = await database.scalar(
+                select(SessionRecord.labels).where(
+                    SessionRecord.id == parent.session_id,
+                    SessionRecord.organization_id == parent.organization_id,
+                )
+            )
+            if session_labels is None:
+                raise ChildRunAcceptanceError("child_run_session_missing", "Parent Session was not found")
+            inherited_labels = merge_labels(session_labels)
             child_run = prepared.run.model_copy(update={"labels": inherited_labels})
             database.add(thread_record(prepared.thread.model_copy(update={"labels": inherited_labels})))
             child_record = await add_run_with_environment(
@@ -159,7 +167,7 @@ class ChildRunAcceptanceService:
                 online=online,
                 run=child_run,
                 state=prepared.state,
-                workspace_id=session.workspace_id,
+                workspace_id=session_scope.workspace_id,
                 intent=ExplicitEnvironment(choice),
             )
             await self._bindings.finalize(database, child_run, source_run_id=parent.id)
@@ -188,14 +196,14 @@ class ChildRunAcceptanceService:
         _validate_resume_bundle(prepared)
         async with short_session(self._sessions) as database:
             parent, _, parent_thread = await read_attempt_authority(database, authority, assume_utc(self._clock()))
-            session = await _require_session(database, parent)
+            session_scope = SessionScope.from_record(await _require_session(database, parent))
             parent_resource = parent.to_resource()
             await _reauthorize(
                 database,
                 parent=parent_resource,
                 child=prepared.run,
                 child_definition_id=prepared.child_definition_id,
-                workspace_id=session.workspace_id,
+                workspace_id=session_scope.workspace_id,
             )
             source_record = await database.scalar(
                 select(RunRecord).where(
@@ -241,14 +249,13 @@ class ChildRunAcceptanceService:
                 assume_utc(self._clock()),
                 lock_inbox_origins=True,
             )
-            session = await _require_session(database, parent)
             parent_resource = parent.to_resource()
             await _reauthorize(
                 database,
                 parent=parent_resource,
                 child=prepared.run,
                 child_definition_id=prepared.child_definition_id,
-                workspace_id=session.workspace_id,
+                workspace_id=session_scope.workspace_id,
             )
             _validate_parent_authority(
                 run=prepared.run,
@@ -283,13 +290,17 @@ class ChildRunAcceptanceService:
                 )
                 .with_for_update()
             )
-            source_parent_run = await database.scalar(
-                select(RunRecord)
-                .where(
-                    RunRecord.organization_id == prepared.run.organization_id,
-                    RunRecord.id == prepared.source_parent_run_id,
+            source_parent_run = (
+                parent
+                if parent.id == prepared.source_parent_run_id
+                else await database.scalar(
+                    select(RunRecord)
+                    .where(
+                        RunRecord.organization_id == prepared.run.organization_id,
+                        RunRecord.id == prepared.source_parent_run_id,
+                    )
+                    .with_for_update()
                 )
-                .with_for_update()
             )
             _validate_locked_resume_source(
                 prepared,
@@ -306,7 +317,7 @@ class ChildRunAcceptanceService:
                 parent=parent_resource,
                 source_parent=source_parent_run.to_resource(),
                 source_child=source_run.to_resource(),
-                workspace_id=session.workspace_id,
+                workspace_id=session_scope.workspace_id,
             )
             assert child_thread is not None
             child_record = await add_run_with_environment(
@@ -314,7 +325,7 @@ class ChildRunAcceptanceService:
                 online=online,
                 run=prepared.run.model_copy(update={"labels": merge_labels(source_run.labels)}),
                 state=prepared.state,
-                workspace_id=session.workspace_id,
+                workspace_id=session_scope.workspace_id,
                 intent=RetainedRunEnvironment(source_run.id, source_run.thread_id),
             )
             await self._bindings.finalize(database, prepared.run, source_run_id=source_run.id)

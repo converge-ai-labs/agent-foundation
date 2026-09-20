@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from a13n_harness import SafeFailure
-from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -22,7 +21,6 @@ from a13n_service.durable_operations.idempotency import (
 from a13n_service.durable_operations.requests import request_scope
 from a13n_service.iam import (
     AuthenticatedActor,
-    AuthorizationError,
     WorkspaceAction,
 )
 from a13n_service.iam.operation import authorization_operation
@@ -39,22 +37,21 @@ from a13n_service.interactions.inbox_persistence import ThreadInboxConflict
 from a13n_service.interactions.input import (
     AgentInput,
 )
-from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import RunObjectError, RunStateStore
 from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
-from a13n_service.storage import ObjectStoreError, short_session, transaction
+from a13n_service.storage import ObjectStoreError, short_session
 from a13n_service.storage.relational import is_unique_conflict
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
-from .acceptance import RunAcceptanceService
-from .access import authorize_interaction
+from .access import authorize_run_actions
 from .command_evidence import (
     command_identity,
 )
 from .command_preparation import CommandInput
 from .control_domain import InterruptReceipt
 from .errors import InteractionCommandError, command_not_found, idempotency_conflict
+from .sources import RunSource, load_run_source
 from .steer_idempotency import SteerIdempotency, find_steer, steer_receipt
 
 _USER_INPUT_ORIGIN = SubmissionOrigin()
@@ -69,10 +66,8 @@ class ActiveRunCommands:
         inbox: ThreadInboxStore,
         inputs: CommandInput,
         *,
-        acceptance: RunAcceptanceService,
         clock: Clock = utc_now,
     ) -> None:
-        self._acceptance = acceptance
         self._sessions = sessions
         self._states = states
         self._outcomes = outcomes
@@ -91,10 +86,14 @@ class ActiveRunCommands:
     ) -> InterruptReceipt:
         identity = command_identity(idempotency_key, request)
         scope = request_scope(actor, workspace_id=actor.workspace_id, operation="run.interrupt", scope_id=run_id)
-        replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
+        observed, replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
         if replay is not None:
             return replay
-        source, thread = await self._load_interrupt_source(actor=actor, run_id=run_id)
+        source, thread, session_scope = observed.run, observed.thread, observed.session_scope
+        if source.status not in {RunStatus.accepted, RunStatus.running}:
+            raise InteractionCommandError(
+                "run_not_interruptible", "The selected Run is not active.", category=ErrorCategory.conflict
+            )
         if source.version != request.expected_run_version or thread.version != request.expected_thread_version:
             raise InteractionCommandError(
                 "run_precondition_changed",
@@ -104,17 +103,13 @@ class ActiveRunCommands:
         now = assume_utc(self._clock())
 
         async def validate_final(database: AsyncSession) -> None:
-            try:
-                await authorize_interaction(
-                    database,
-                    actor=actor,
-                    workspace_id=actor.workspace_id,
-                    session_id=source.session_id,
-                    agent_id=source.agent_id,
-                    action=WorkspaceAction.run_interrupt,
-                )
-            except AuthorizationError as error:
-                raise command_not_found() from error
+            await authorize_run_actions(
+                database,
+                actor=actor,
+                source=source,
+                session_scope=session_scope,
+                actions=(WorkspaceAction.run_interrupt,),
+            )
 
         async def record_evidence(database: AsyncSession) -> None:
             try:
@@ -154,7 +149,7 @@ class ActiveRunCommands:
                     "Run interruption lost a concurrent mutation.",
                     category=ErrorCategory.conflict,
                 ) from error
-            replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
+            observed, replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
             if replay is not None:
                 return replay
             raise InteractionCommandError(
@@ -163,7 +158,7 @@ class ActiveRunCommands:
                 category=ErrorCategory.conflict,
             ) from error
         except RunOutcomeError as error:
-            replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
+            observed, replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
             if replay is not None:
                 return replay
             raise InteractionCommandError(
@@ -185,10 +180,10 @@ class ActiveRunCommands:
         transaction_hook: Callable[[AsyncSession, SteerReceipt], Awaitable[None]] | None = None,
     ) -> SteerReceipt:
         idempotency = SteerIdempotency(actor.principal, command_identity(idempotency_key, input))
-        replay = await self._steer_replay(actor=actor, run_id=run_id, idempotency=idempotency)
+        observed, replay = await self._steer_replay(actor=actor, run_id=run_id, idempotency=idempotency)
         if replay is not None:
             return replay
-        source, _thread = await self._load_steer_source(actor=actor, run_id=run_id)
+        source = observed.run
 
         async def replay_prepared() -> SteerReceipt | None:
             # Preserve this request's authorization when recovering a concurrent acceptance.
@@ -260,7 +255,16 @@ class ActiveRunCommands:
         run_id: str,
         steer_id: str,
     ) -> SteerStatus:
-        source, _thread = await self._load_steer_source(actor=actor, run_id=run_id, read_only=True)
+        async with short_session(self._sessions) as database:
+            observed = await load_run_source(database, workspace_id=actor.workspace_id, run_id=run_id)
+            source = observed.run
+            await authorize_run_actions(
+                database,
+                actor=actor,
+                source=source,
+                session_scope=observed.session_scope,
+                actions=(WorkspaceAction.run_read,),
+            )
         try:
             return await self._inbox.get_steer(organization_id=source.organization_id, run_id=run_id, steer_id=steer_id)
         except ThreadInboxConflict as error:
@@ -272,38 +276,20 @@ class ActiveRunCommands:
         actor: AuthenticatedActor,
         run_id: str,
         idempotency: SteerIdempotency,
-    ) -> SteerReceipt | None:
+    ) -> tuple[RunSource, SteerReceipt | None]:
         now = assume_utc(self._clock())
         async with short_session(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(RunRecord, SessionRecord)
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.organization_id == RunRecord.organization_id,
-                            SessionRecord.id == RunRecord.session_id,
-                        ),
-                    )
-                    .where(
-                        RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise command_not_found()
-            run, _session = row
+            observed = await load_run_source(database, workspace_id=actor.workspace_id, run_id=run_id)
+            run = observed.run
+            await authorize_run_actions(
+                database,
+                actor=actor,
+                source=run,
+                session_scope=observed.session_scope,
+                actions=(WorkspaceAction.run_steer,),
+                reuse_request_authentication=True,
+            )
             try:
-                await authorize_interaction(
-                    database,
-                    actor=actor,
-                    workspace_id=actor.workspace_id,
-                    session_id=run.session_id,
-                    agent_id=run.agent_id,
-                    action=WorkspaceAction.run_steer,
-                    reuse_request_authentication=True,
-                )
                 entry = await find_steer(
                     database,
                     organization_id=run.organization_id,
@@ -311,61 +297,9 @@ class ActiveRunCommands:
                     idempotency=idempotency,
                     now=now,
                 )
-            except AuthorizationError as error:
-                raise command_not_found() from error
             except IdempotencyConflict as error:
                 raise idempotency_conflict() from error
-            return None if entry is None else steer_receipt(entry, session_id=run.session_id)
-
-    async def _load_steer_source(
-        self,
-        *,
-        actor: AuthenticatedActor,
-        run_id: str,
-        read_only: bool = False,
-    ):
-        async with short_session(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(RunRecord, ThreadRecord)
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.organization_id == RunRecord.organization_id,
-                            SessionRecord.id == RunRecord.session_id,
-                        ),
-                    )
-                    .join(
-                        ThreadRecord,
-                        and_(
-                            ThreadRecord.organization_id == RunRecord.organization_id,
-                            ThreadRecord.id == RunRecord.thread_id,
-                        ),
-                    )
-                    .where(
-                        RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise command_not_found()
-            source, thread = row
-            # Steer writes were authorized by _steer_replay before input preparation.
-            # Receipt reads are independent requests and must authorize here.
-            if read_only:
-                try:
-                    await authorize_interaction(
-                        database,
-                        actor=actor,
-                        workspace_id=actor.workspace_id,
-                        session_id=source.session_id,
-                        agent_id=source.agent_id,
-                        action=WorkspaceAction.run_read,
-                    )
-                except AuthorizationError as error:
-                    raise command_not_found() from error
-            return source.to_resource(), thread.to_resource()
+            return observed, None if entry is None else steer_receipt(entry, session_id=run.session_id)
 
     async def _interrupt_replay(
         self,
@@ -374,100 +308,28 @@ class ActiveRunCommands:
         run_id: str,
         scope: EvidenceScope,
         identity: IdempotencyIdentity,
-    ) -> InterruptReceipt | None:
+    ) -> tuple[RunSource, InterruptReceipt | None]:
         now = assume_utc(self._clock())
-        async with transaction(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(RunRecord, SessionRecord)
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.organization_id == RunRecord.organization_id,
-                            SessionRecord.id == RunRecord.session_id,
-                        ),
-                    )
-                    .where(
-                        RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise command_not_found()
-            run, _session = row
+        async with short_session(self._sessions) as database:
+            observed = await load_run_source(database, workspace_id=actor.workspace_id, run_id=run_id)
+            run = observed.run
+            await authorize_run_actions(
+                database,
+                actor=actor,
+                source=run,
+                session_scope=observed.session_scope,
+                actions=(WorkspaceAction.run_interrupt,),
+            )
             try:
-                await authorize_interaction(
-                    database,
-                    actor=actor,
-                    workspace_id=actor.workspace_id,
-                    session_id=run.session_id,
-                    agent_id=run.agent_id,
-                    action=WorkspaceAction.run_interrupt,
-                )
                 evidence = await find_evidence(database, scope=scope, identity=identity, now=now)
-            except AuthorizationError as error:
-                raise command_not_found() from error
             except IdempotencyConflict as error:
                 raise idempotency_conflict() from error
             if evidence is None:
-                return None
+                return observed, None
             if evidence.result_kind != "run_interrupt" or evidence.result_ref != run.id or run.sealed_at is None:
                 raise InteractionCommandError(
                     "idempotency_evidence_invalid",
                     "The Run interruption replay evidence is invalid.",
                     category=ErrorCategory.unavailable,
                 )
-            return InterruptReceipt(run_id=run.id, interrupted_at=assume_utc(run.sealed_at))
-
-    async def _load_interrupt_source(
-        self,
-        *,
-        actor: AuthenticatedActor,
-        run_id: str,
-    ):
-        async with short_session(self._sessions) as database:
-            row = (
-                await database.execute(
-                    select(RunRecord, ThreadRecord)
-                    .join(
-                        SessionRecord,
-                        and_(
-                            SessionRecord.organization_id == RunRecord.organization_id,
-                            SessionRecord.id == RunRecord.session_id,
-                        ),
-                    )
-                    .join(
-                        ThreadRecord,
-                        and_(
-                            ThreadRecord.organization_id == RunRecord.organization_id,
-                            ThreadRecord.id == RunRecord.thread_id,
-                        ),
-                    )
-                    .where(
-                        RunRecord.id == run_id,
-                        SessionRecord.workspace_id == actor.workspace_id,
-                    )
-                )
-            ).one_or_none()
-            if row is None:
-                raise command_not_found()
-            source, thread = row
-            try:
-                await authorize_interaction(
-                    database,
-                    actor=actor,
-                    workspace_id=actor.workspace_id,
-                    session_id=source.session_id,
-                    agent_id=source.agent_id,
-                    action=WorkspaceAction.run_interrupt,
-                )
-            except AuthorizationError as error:
-                raise command_not_found() from error
-            if source.status not in {RunStatus.accepted.value, RunStatus.running.value}:
-                raise InteractionCommandError(
-                    "run_not_interruptible",
-                    "The selected Run is not active.",
-                    category=ErrorCategory.conflict,
-                )
-            return source.to_resource(), thread.to_resource()
+            return observed, InterruptReceipt(run_id=run.id, interrupted_at=assume_utc(run.sealed_at))

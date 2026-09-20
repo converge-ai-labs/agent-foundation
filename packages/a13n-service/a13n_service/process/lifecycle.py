@@ -40,7 +40,6 @@ from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.websocket.device_reads import DeviceReadClient
 from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
-from a13n_service.hooks.persistence import write_hook_lifecycle
 from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.memory.behaviors import MemoryBehaviors
 from a13n_service.memory.composition import build_memory_service
@@ -128,9 +127,9 @@ async def open_process_runtime(
             shared = SharedRuntime(
                 storage=storage,
                 lifecycle=LifecycleWriter(
-                    (write_hook_lifecycle, append_matching_a2a_push_outbox, admit_organization)
+                    (append_matching_a2a_push_outbox, admit_organization)
                     if settings.gateway.a2a_enabled
-                    else (write_hook_lifecycle, admit_organization)
+                    else (admit_organization,)
                 ),
                 secret_protector=protector,
                 memories=build_memory_service(
@@ -345,7 +344,7 @@ async def open_process_runtime(
                 routines = RoutineScheduler(
                     storage.sessions,
                     control.gateway.commands,
-                    RoutineCards(storage.sessions, memory_http, protector),
+                    RoutineCards(storage.sessions, memory_http, protector, settings.connectivity_endpoint_policy()),
                 )
                 routine_loop = PeriodicTask("bot_routines", routines.scan, interval_seconds=5, timeout_seconds=650)
 

@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
-import { seedThreadSnapshot, useHistory } from "./queries";
+import { seedThreadSnapshot, useHistory, useTurnHistory } from "./queries";
 
 afterEach(cleanup);
 it("retains successful history and its identity across replacement loading and error, never across Threads", async () => {
@@ -162,6 +162,184 @@ it("reuses old immutable history pages on remount instead of refetching the load
     ),
   });
   expect(hook.result.current.data?.pages).toHaveLength(2);
+  await act(async () => {});
+  expect(GET).not.toHaveBeenCalled();
+  hook.unmount();
+  queryClient.clear();
+});
+
+const turn: Schema<"TranscriptTurn"> = {
+  turn_id: "turn-one",
+  input_position: 2,
+  end_position: 6,
+  final_position: 5,
+  preview: "Task",
+  tool_count: 0,
+  steering_count: 0,
+};
+const turnEntry = (position: number): Schema<"TranscriptEntry"> => ({
+  position,
+  message_kind: "response",
+  parts: [{ kind: "assistant", text: `Message ${position}` }],
+});
+function turnHistoryHarness(GET: ReturnType<typeof vi.fn>) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const transport = { client: { GET } } as unknown as Transport;
+  return {
+    queryClient,
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportContext value={transport}>{children}</TransportContext>
+      </QueryClientProvider>
+    ),
+  };
+}
+
+it("publishes a whole turn once, clips adjacent turns, and reuses its continuation-bound cache", async () => {
+  let finish!: (value: unknown) => void;
+  const GET = vi
+    .fn()
+    .mockResolvedValueOnce({
+      data: {
+        entries: [turnEntry(4), turnEntry(5)],
+        boundary_entries: [turnEntry(2)],
+        next_cursor: "older",
+      },
+    })
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+  const { queryClient, wrapper } = turnHistoryHarness(GET);
+  const hook = renderHook(() => useTurnHistory("one", "C0", turn, true), {
+    wrapper,
+  });
+  await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+  expect(hook.result.current.data).toBeUndefined();
+  expect(hook.result.current.isFetching).toBe(true);
+  expect(GET.mock.calls[1][1].params.query).toEqual({
+    expected_continuation_id: "C0",
+    turn_id: "turn-one",
+    cursor: "older",
+    limit: 100,
+  });
+  await act(async () =>
+    finish({
+      data: {
+        entries: [0, 1, 2, 3].map(turnEntry),
+        boundary_entries: [turnEntry(5)],
+        next_cursor: "previous-turn",
+      },
+    }),
+  );
+  await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+  expect(hook.result.current.data?.map((entry) => entry.position)).toEqual([
+    2, 3, 4, 5,
+  ]);
+  hook.unmount();
+  const cached = renderHook(() => useTurnHistory("one", "C0", turn, true), {
+    wrapper,
+  });
+  await act(async () => {});
+  expect(cached.result.current.isSuccess).toBe(true);
+  expect(GET).toHaveBeenCalledTimes(2);
+  cached.unmount();
+  queryClient.clear();
+});
+
+it.each(["empty", "stalled", "missing"])(
+  "rejects %s turn pages without publishing partial results or looping",
+  async (kind) => {
+    const GET = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: { entries: [turnEntry(4), turnEntry(5)], next_cursor: "older" },
+      })
+      .mockResolvedValue({
+        data: {
+          entries:
+            kind === "empty"
+              ? []
+              : kind === "stalled"
+                ? [turnEntry(4), turnEntry(5)]
+                : [turnEntry(2)],
+          next_cursor: "older",
+        },
+      });
+    const { queryClient, wrapper } = turnHistoryHarness(GET);
+    const hook = renderHook(() => useTurnHistory("one", "C0", turn, true), {
+      wrapper,
+    });
+    await waitFor(() => expect(hook.result.current.isError).toBe(true));
+    expect(hook.result.current.error?.message).toBe(
+      "Turn history is incomplete.",
+    );
+    expect(hook.result.current.data).toBeUndefined();
+    expect(GET).toHaveBeenCalledTimes(2);
+    hook.unmount();
+    queryClient.clear();
+  },
+);
+
+it("cancels an old continuation's whole-turn load and never mixes its late response into the new turn", async () => {
+  let finishOld!: (value: unknown) => void;
+  let oldSignal!: AbortSignal;
+  const GET = vi
+    .fn()
+    .mockResolvedValueOnce({
+      data: { entries: [turnEntry(4), turnEntry(5)], next_cursor: "older" },
+    })
+    .mockImplementationOnce((_path, options) => {
+      oldSignal = options.signal;
+      return new Promise((resolve) => {
+        finishOld = resolve;
+      });
+    })
+    .mockResolvedValue({
+      data: { entries: [2, 3, 4, 5].map(turnEntry), next_cursor: null },
+    });
+  const { queryClient, wrapper } = turnHistoryHarness(GET);
+  const hook = renderHook(
+    ({ continuation }) => useTurnHistory("one", continuation, turn, true),
+    {
+      wrapper,
+      initialProps: { continuation: "C0" },
+    },
+  );
+  await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+  hook.rerender({ continuation: "C1" });
+  expect(oldSignal.aborted).toBe(true);
+  await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+  const current = hook.result.current.data;
+  await act(async () =>
+    finishOld({
+      data: { entries: [turnEntry(2), turnEntry(3)], next_cursor: null },
+    }),
+  );
+  expect(hook.result.current.data).toBe(current);
+  expect(
+    queryClient.getQueryData([
+      "thread",
+      "one",
+      "turn-history",
+      "C0",
+      turn.turn_id,
+    ]),
+  ).toBeUndefined();
+  hook.unmount();
+  queryClient.clear();
+});
+
+it("does not read a turn already covered by the conversation window", async () => {
+  const GET = vi.fn();
+  const { queryClient, wrapper } = turnHistoryHarness(GET);
+  const hook = renderHook(() => useTurnHistory("one", "C0", turn, false), {
+    wrapper,
+  });
   await act(async () => {});
   expect(GET).not.toHaveBeenCalled();
   hook.unmount();

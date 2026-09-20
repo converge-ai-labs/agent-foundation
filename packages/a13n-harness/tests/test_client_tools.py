@@ -543,3 +543,31 @@ def test_client_declarations_reject_authority_metadata_and_non_object_schema() -
                 "properties": {"value": {"type": "number", "default": float("nan")}},
             },
         )
+
+
+async def test_consumed_external_results_do_not_freeze_later_tool_surfaces() -> None:
+    class PendingSurface(AbstractCapability):
+        def get_wrapper_toolset(self, toolset):
+            def include(ctx, definition):
+                return ctx.run_step == 0 or not any(
+                    isinstance(part, ToolReturnPart) for message in ctx.messages for part in message.parts
+                )
+
+            return toolset.filtered(include)
+
+    executable = _build(
+        ClientToolsSpec(default_toolsets=(_toolset("client_action"),)),
+        tool_name="client_action",
+        extra_capabilities=(PendingSurface(),),
+    )
+    suspended = await executable.run("go", bindings=RunBindings.embedded())
+    assert suspended.state is not None and suspended.deferred is not None
+    request = suspended.deferred.calls[0]
+    completed = await executable.run(
+        previous_state=suspended.state,
+        bindings=RunBindings.embedded(),
+        deferred_resume=DeferredToolResume(
+            suspended.deferred, suspended.deferred.build_results(calls={request.tool_call_id: "received"})
+        ),
+    )
+    assert completed.output_or_raise() == "client-result:received"

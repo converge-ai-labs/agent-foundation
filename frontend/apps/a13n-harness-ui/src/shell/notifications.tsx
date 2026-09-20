@@ -281,7 +281,7 @@ function NotificationState({ children }: { children: ReactNode }) {
         .then(() => {
           if (alive.current)
             setTestStatus(
-              "The push service accepted the test. This does not confirm delivery to your device; check the notification and your system settings.",
+              "Test accepted by the push service; delivery is not confirmed. Check your device for the notification.",
             );
         })
         .catch((failure: unknown) => {
@@ -344,12 +344,12 @@ function PermissionDescription({ permission }: { permission: Permission }) {
   return (
     <>
       {permission === "install-required"
-        ? "On iPhone or iPad, notifications require iOS/iPadOS 16.4 or later and a Home Screen web app, not a regular Chrome or Safari tab. Use Share → Add to Home Screen, then open Harness UI from its Home Screen icon and enable notifications there. If Chrome does not offer this action, open this address in Safari to add it."
+        ? "Add Harness UI to your Home Screen, then open it there to enable notifications. Requires iOS/iPadOS 16.4 or later."
         : permission === "denied"
-          ? "Notifications are blocked. Allow them in this site's browser settings (or the Home Screen app's system notification settings) to receive task alerts."
+          ? "Allow notifications in this site's browser settings or the Home Screen app's system settings."
           : permission === "unavailable"
-            ? "Notifications require a supported browser on HTTPS or localhost. On iPhone or iPad, update iOS/iPadOS and open Harness UI from its Home Screen icon. In-app notices remain available."
-            : "Get notified when an agent finishes, fails, or needs your input, with a preview of the actual result."}
+            ? "Use a supported browser on HTTPS or localhost. In-app notices remain available."
+            : "Get alerts when an agent finishes, fails, or needs your input."}
     </>
   );
 }
@@ -373,7 +373,7 @@ function PermissionToast() {
         </h2>
         <p>
           {notifications.permission === "granted" ? (
-            "Browser permission is already allowed. A push subscription is also required for system alerts, whether WebUI is open or closed."
+            "Connect this device to receive system alerts."
           ) : (
             <PermissionDescription permission={notifications.permission} />
           )}
@@ -413,7 +413,7 @@ export function NotificationSettings() {
     <>
       <PageHeader
         title="Notifications"
-        description="Personal preferences for this browser. Changes apply immediately and do not affect other collaborators."
+        description="Applies to this browser only."
       />
       <Panel title="Browser notifications">
         <div className={styles.settingRow}>
@@ -446,7 +446,7 @@ export function NotificationSettings() {
           <strong>{backgroundLabels[notifications.background]}</strong>
           <br />
           {notifications.background === "enabled"
-            ? "The subscription was synchronized, not delivery-confirmed. System alerts continue for six hours after this device last had a visible WebUI page. The server must stay running and able to reach your browser's push service."
+            ? "Connected; delivery is not confirmed. Alerts remain active for six hours after you last view WebUI on this device."
             : notifications.permission !== "granted"
               ? "Allow notifications in a supported browser or Home Screen app to receive system alerts. In-app notices remain available."
               : "Without working push delivery, only in-app notices are available while WebUI is open."}
@@ -493,20 +493,28 @@ export function NotificationSettings() {
         {notifications.testStatus && (
           <p role="status">{notifications.testStatus}</p>
         )}
-        <p>
-          On Android Chrome, allow this site's notifications and Chrome's system
-          notifications. Force-stopping the browser, battery restrictions, or Do
-          Not Disturb can prevent alerts. On iPhone or iPad, enable
-          notifications inside the Home Screen app, not a Chrome or Safari tab.
-          Permission alone does not confirm delivery.
-        </p>
-        <p>
-          In-app notices remain available without notification permission.
-          Background push uses your browser's push service and can show alerts
-          alongside in-app notices even for the conversation you are viewing.
-          Keeping a WebUI page visible renews the six-hour delivery window.
-          Missed history is not replayed as new alerts.
-        </p>
+        <details className={styles.details}>
+          <summary>Delivery help</summary>
+          <p>
+            The server must stay running and reach your browser's push service.
+            On iPhone or iPad, use Safari's Share → Add to Home Screen, then
+            enable notifications from the Home Screen app.
+          </p>
+          <p>
+            On Android Chrome, allow this site's notifications and Chrome's
+            system notifications. Force-stopping the browser, battery
+            restrictions, or Do Not Disturb can prevent alerts. On iPhone or
+            iPad, enable notifications inside the Home Screen app, not a Chrome
+            or Safari tab. Permission alone does not confirm delivery.
+          </p>
+          <p>
+            In-app notices remain available without notification permission.
+            Background push uses your browser's push service and can show alerts
+            alongside in-app notices even for the conversation you are viewing.
+            Keeping a WebUI page visible renews the six-hour delivery window.
+            Missed history is not replayed as new alerts.
+          </p>
+        </details>
       </Panel>
     </>
   );

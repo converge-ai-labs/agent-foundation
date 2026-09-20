@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections import deque
+from collections.abc import Sequence
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -50,7 +51,6 @@ from a13n_harness.model_context import (
     ModelContextProjection,
     ModelContextProjectionRequest,
     ModelContextRequestKind,
-    _remove_owned_overlays,
     _requires_exact_boundary,
     _requires_exact_history,
 )
@@ -637,7 +637,7 @@ class HandoffCapability(AbstractModelContextCapability):
         await ctx.deps._steering.resolve_delivered(request_context.messages)
         try:
             messages = _build_restored_history(
-                _remove_owned_overlays(request_context.messages),
+                request_context.messages,
                 state,
                 retained_requests=ctx.deps._steering.replay_requests(ctx.run_id),
             )
@@ -851,6 +851,7 @@ async def _compact_with_same_agent(
     with disabled_tool_execution():
         result = await compact_agent.run(
             _COMPACTION_PROMPT,
+            model=request_context.model,
             message_history=deepcopy(request_context.messages),
             deps=ctx.deps,
             # This is another model request in the same logical Harness Run,
@@ -885,6 +886,8 @@ def _build_compacted_history(
         )
     system_parts = _first_system_parts(messages)
     metadata = deepcopy(template.metadata) if template.metadata is not None else {}
+    # The replacement contains no old parts; legacy overlay indexes do not apply.
+    metadata.pop("a13n.model-context-overlay", None)
     metadata[_HANDOFF_METADATA_KEY] = "compaction"
     synthetic = replace(
         deepcopy(template),
@@ -1048,6 +1051,8 @@ def _build_restored_history(
         )
     )
     metadata = deepcopy(template.metadata) if template.metadata is not None else {}
+    # The replacement contains no old parts; legacy overlay indexes do not apply.
+    metadata.pop("a13n.model-context-overlay", None)
     metadata[_HANDOFF_METADATA_KEY] = "handoff"
     metadata[_RESTORED_BOUNDARY_METADATA_KEY] = _RESTORED_BOUNDARY_VERSION
     restored = replace(
@@ -1057,6 +1062,23 @@ def _build_restored_history(
         state="complete",
     )
     return _mark_current_restored_boundary([restored, *deepcopy(retained_requests)])
+
+
+def restored_history_summary(messages: Sequence[ModelMessage]) -> str | None:
+    """Read the accepted context summary, not the retained-input boundary."""
+    for message in reversed(messages):
+        if isinstance(message, ModelResponse) and (message.metadata or {}).get("keep") == "compact":
+            return "\n\n".join(part.content for part in message.parts if isinstance(part, TextPart)) or None
+        if isinstance(message, ModelRequest):
+            for part in message.parts:
+                if isinstance(part, UserPromptPart) and not isinstance(part.content, str):
+                    for item in part.content:
+                        if (
+                            isinstance(item, TextContent)
+                            and (item.metadata or {}).get(_HANDOFF_METADATA_KEY) == "handoff"
+                        ):
+                            return item.content
+    return None
 
 
 def _context_protocol_part(content: str) -> UserPromptPart:

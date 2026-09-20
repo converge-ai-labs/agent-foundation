@@ -68,6 +68,8 @@ async def add_run_with_environment(
         database,
         run=record,
         additional_environment_ids=(previous.environment_id,) if previous and previous.environment_id else (),
+        # This Run has not been inserted or inherited any mounts yet.
+        mounted_environment_ids=(),
     )
     if run.environment_id is not None:
         environment = await database.scalar(

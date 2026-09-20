@@ -225,7 +225,7 @@ it("updates an open child's actual observed output and fetches saved output sepa
       GET.mock.calls.filter(([path]) => path.endsWith("/saved-output")),
     ).toHaveLength(2),
   );
-  expect(screen.queryByRole("button", { name: "Stop child" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Stop subagent" })).toBeNull();
 });
 
 it("retains pending and unknown child controls when inspection unmounts and reopens", async () => {
@@ -255,9 +255,7 @@ it("retains pending and unknown child controls when inspection unmounts and reop
     await screen.findByRole("textbox", { name: "Instruction for Worker" }),
     { target: { value: "Check once" } },
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Send child instruction" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
   await waitFor(() => expect(POST).toHaveBeenCalledOnce());
   view.rerender(<div>Closed</div>);
   view.rerender(<Child child={child} reconcile={vi.fn()} />);
@@ -269,7 +267,7 @@ it("retains pending and unknown child controls when inspection unmounts and reop
   expect(
     (
       screen.getByRole("button", {
-        name: "Send child instruction",
+        name: "Guide subagent",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -286,9 +284,7 @@ it("retains pending and unknown child controls when inspection unmounts and reop
       }) as HTMLInputElement
     ).value,
   ).toBe("Check once");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Send child instruction" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
   expect(POST).toHaveBeenCalledOnce();
 });
 

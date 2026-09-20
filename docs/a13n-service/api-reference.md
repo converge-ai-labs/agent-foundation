@@ -717,15 +717,15 @@ Responses:
 
 Documents.
 
-| Parameter        | Location | Required | Type / schema                | Constraints and default            |
-| ---------------- | -------- | -------- | ---------------------------- | ---------------------------------- |
-| `account_id`     | path     | true     | string                       | —                                  |
-| `scope_id`       | path     | true     | string                       | —                                  |
-| `limit`          | query    | false    | integer                      | minimum=1; maximum=100; default=50 |
-| `cursor`         | query    | false    | string or null               | —                                  |
-| `activity_date`  | query    | false    | string or null               | —                                  |
-| `kind`           | query    | false    | "daily", "long_term" or null | —                                  |
-| `include_shared` | query    | false    | boolean                      | default=true                       |
+| Parameter        | Location | Required | Type / schema                                | Constraints and default            |
+| ---------------- | -------- | -------- | -------------------------------------------- | ---------------------------------- |
+| `account_id`     | path     | true     | string                                       | —                                  |
+| `scope_id`       | path     | true     | string                                       | —                                  |
+| `limit`          | query    | false    | integer                                      | minimum=1; maximum=100; default=50 |
+| `cursor`         | query    | false    | string or null                               | —                                  |
+| `activity_date`  | query    | false    | string or null                               | —                                  |
+| `kind`           | query    | false    | "semantic", "procedural", "episodic" or null | —                                  |
+| `include_shared` | query    | false    | boolean                                      | default=true                       |
 
 Responses:
 
@@ -4524,6 +4524,39 @@ Request body: optional.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelConnectionTestResult`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/media-understanding-defaults`
+
+Get Media Understanding Defaults.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MediaUnderstandingDefaults`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/workspaces/{workspace}/media-understanding-defaults`
+
+Replace Media Understanding Defaults.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default    |
+| ----------- | -------- | -------- | ------------- | -------------------------- |
+| `workspace` | path     | true     | string        | —                          |
+| `If-Match`  | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `MediaUnderstandingSelection`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MediaUnderstandingDefaults`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

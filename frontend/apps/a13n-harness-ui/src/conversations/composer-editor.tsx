@@ -54,19 +54,20 @@ export function ComposerEditor({
   load.current = loadSkills;
   const currentView = useRef<EditorView | null>(null);
   const description = local
-    ? "Private to this tab until you send. Files upload on Send. Reloading discards this draft. Enter to send; Shift+Enter for a new line."
+    ? "Not shared until you send. Text and selections are saved in this browser when storage is available. Local files may need reattaching after reload. Files upload on Send. Enter to send; Shift+Enter for a new line."
     : "Shared with this conversation. Drafts do not survive server restarts. Enter to send; Shift+Enter for a new line.";
   const contentAttributes = useMemo(
     () => [
       placeholder(placeholderText),
       EditorView.contentAttributes.of({
-        "aria-label": "Shared prompt",
+        "aria-label": local ? "Message" : "Shared prompt",
+        "data-composer-editor": "",
         "aria-multiline": "true",
         "aria-description": description,
         role: "textbox",
       }),
     ],
-    [description, placeholderText],
+    [description, local, placeholderText],
   );
   const initialAttributes = useRef(contentAttributes);
   const send = useRef(submit);

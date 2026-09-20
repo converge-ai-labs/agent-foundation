@@ -327,12 +327,6 @@ function BindingEditor({
           .
         </p>
       )}
-      <TextField
-        label="Environment alias"
-        value={alias}
-        onChange={setAlias}
-        description="A unique name such as build or references. Host mount names are reserved."
-      />
       {deviceId && (
         <DeviceDirectory
           key={deviceId}
@@ -352,6 +346,12 @@ function BindingEditor({
           { value: "full", label: "Files and execution" },
           { value: "read_only", label: "Read-only files" },
         ]}
+      />
+      <TextField
+        label="Environment alias"
+        value={alias}
+        onChange={setAlias}
+        description="A unique name such as build or references. Host mount names are reserved."
       />
       <ErrorNotice error={error} />
       <div className="flex justify-end gap-2">

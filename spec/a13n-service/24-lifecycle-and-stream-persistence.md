@@ -20,7 +20,7 @@ The Thread-scoped Redis control signal Stream is a separate business-payload-fre
 
 Only `lifecycle_events` is introduced here, under the service-wide [Relational Schema Lifecycle](04-relational-schema.md). Run waiting state belongs to [Run Persistence](12-run-persistence.md). Tool observations remain presentation or telemetry unless an owning Capability defines its own durable task protocol; this document introduces no generic tool lifecycle authority.
 
-The process composes the required transactional delivery writers explicitly. Each accepted lifecycle mutation, its lifecycle fact, and enabled Webhook/A2A delivery intents commit in the same short transaction; any writer failure rolls back that bundle. Disabled A2A delivery performs no subscription matching. Delivery publication remains outside the transaction.
+Each accepted lifecycle mutation commits its lifecycle fact with pending Hook dispatch in the same short transaction. [Hook dispatch](26-hook-notifications.md#asynchronous-hook-dispatch) matches Webhook subscriptions and creates Outbox rows asynchronously. Enabled A2A delivery retains its separately composed transactional delivery writer; its failure rolls back the source bundle, and disabled A2A delivery performs no subscription matching. Delivery publication remains outside the transaction.
 
 ## Lifecycle Event Model
 
@@ -71,11 +71,17 @@ class LifecycleEvent:
     projection_lease_expires_at: datetime | None
     projected_at: datetime | None
     projection_error: SafeFailure | None
+
+    hook_dispatch_state: Literal["pending", "done", "failed"]
+    hook_dispatch_attempts: int
+    hook_dispatch_next_attempt_at: datetime | None
+    hook_dispatched_at: datetime | None
+    hook_dispatch_error: SafeFailure | None
 ```
 
 `seq` is a database-assigned positive monotonic Workspace cursor. It orders committed facts in one database history but is not contiguous after filtering to one resource and does not invent causal or Run-parent order. It therefore cannot detect a resource-local delivery gap.
 
-`resource_seq` is a positive, contiguous lifecycle sequence beginning at `1` within one `(organization_id, entity_type, entity_id)` resource. The owning state transaction allocates it while holding the resource mutation lock, so committed events for that resource have no internal sequence gap before retention. It is the ordering and gap-detection value shared by lifecycle Webhooks and the resource-scoped lifecycle API. `entity_version` is the resource version after the event's owning mutation; it is monotonic but need not be contiguous and is not a lifecycle cursor.
+`resource_seq` is a positive, contiguous lifecycle sequence beginning at `1` within one `(organization_id, entity_type, entity_id)` resource. The owning Run or RunAttempt row retains its lifecycle sequence independently from the business version. The state mutation increments this counter and appends the fact atomically under the resource mutation fence, so committed events for that resource have no internal sequence gap before retention. A rolled-back mutation consumes no resource sequence. Retention never resets the counter or permits an earlier sequence to be reused, including when no events remain retained. It is the ordering and gap-detection value shared by lifecycle Webhooks and the resource-scoped lifecycle API. `entity_version` is the resource version after the event's owning mutation; it is monotonic but need not be contiguous and is not a lifecycle cursor.
 
 `id` is the stable public event identity. `mutation_id` identifies the owning state mutation; `(organization_id, mutation_id, event_type, entity_type, entity_id)` is unique so transaction retry cannot append the same fact twice.
 
@@ -85,7 +91,7 @@ Public lifecycle reads omit `projection_lease_owner`. Projection state, retry co
 
 Event queries, Native SSE, retained Item reads, and lifecycle Webhook delivery apply the same disclosure boundary to both new and previously retained data. An object-backed Run output exposes only `digest_sha256`, `size_bytes`, `content_type`, and `schema_version` metadata in its output reference; its `object_key` remains internal. These projections do not recursively redact user-authored output fields with matching names. Durable lifecycle facts and display objects keep their original internal references and integrity metadata; public reads do not rewrite them.
 
-Fact columns through `created_at` are immutable. Projection columns may change as the event is mirrored to Redis but cannot change the fact or authorize a state transition.
+Fact columns through `created_at` are immutable. Redis projection and Hook dispatch bookkeeping change independently; neither changes the fact or authorizes a state transition. Hook dispatch starts `pending` with zero attempts and an immediately due retry time; `done` records `hook_dispatched_at`, while `failed` requires explicit retry. [Hook Notifications](26-hook-notifications.md#asynchronous-hook-dispatch) owns dispatch matching, completion, and recovery.
 
 An event that requires live projection starts `pending`. An event with no configured live projection starts `projected` with `projected_at=created_at`; this means “no projection work remains.”
 
@@ -109,10 +115,11 @@ The `lifecycle_events` table contains the conceptual fields above and preserves 
 5. A partial index on `(projection_state, projection_next_attempt_at, seq)` for `pending`, `projecting`, and `retry_wait` supports bounded projectors.
 6. Projection lease fields exist only for `projecting`; `projection_next_attempt_at` exists for `pending` and `retry_wait`; and `projected_at` exists only for `projected`.
 7. A state mutation and its required lifecycle events commit in the same short relational transaction. A missing required event aborts that mutation.
+8. A partial index on `(hook_dispatch_next_attempt_at, seq)` for pending Hook dispatch supports bounded claims; dispatch attempts are non-negative, and dispatch bookkeeping is independent of projection leases.
 
-Retention deletes bounded event ranges older than the configured horizon. The API rejects a cursor below the lowest retained organization sequence and returns that boundary explicitly. A resource-scoped lifecycle read likewise reports its lowest retained `resource_seq`; a caller can claim gap-free event recovery only while its requested predecessor remains within that boundary. A lifecycle event referenced by a retained Outbox record remains pinned until that delivery is no longer deliverable or redriveable under the bounded [Outbox retention contract](06-durable-operations-and-outbox.md#outbox-contract). Lifecycle events have no cold archive.
+Retention deletes bounded event ranges older than the configured horizon. The API rejects a cursor below the lowest retained organization sequence and returns that boundary explicitly. A resource-scoped lifecycle read likewise reports its lowest retained `resource_seq`; a caller can claim gap-free event recovery only while its requested predecessor remains within that boundary. An event with pending or failed Hook dispatch remains pinned. A lifecycle event referenced by a retained Outbox record remains pinned until that delivery is no longer deliverable or redriveable under the bounded [Outbox retention contract](06-durable-operations-and-outbox.md#outbox-contract). Lifecycle events have no cold archive.
 
-[Control Background Tasks](07-control-background-tasks.md#evidence-and-lifecycle-retention) owns periodic execution of this retention policy. Its scans preserve a contiguous retained boundary and wait for unfinished projection or retained delivery dependencies rather than deleting around them.
+[Control Background Tasks](07-control-background-tasks.md#evidence-and-lifecycle-retention) owns periodic execution of this retention policy. Its scans preserve a contiguous retained boundary and wait for unfinished Hook dispatch, projection, or retained delivery dependencies rather than deleting around them.
 
 ## Run Redis Stream
 
@@ -314,7 +321,7 @@ Deployment compatibility covers every publication entry point: mixed versions ca
 
 01. Every required lifecycle fact commits atomically with its owning relational state mutation in the one lifecycle fact table.
 
-02. Lifecycle facts are immutable; projection bookkeeping cannot change entity state.
+02. Lifecycle facts are immutable; projection and Hook dispatch bookkeeping cannot change entity state.
 
 03. One Run uses one stable Redis Stream across all `RunAttempt` values; its entry IDs are transport cursors, not state, lifecycle, Item, or idempotency identities.
 

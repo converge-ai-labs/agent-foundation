@@ -32,6 +32,12 @@ from .domain import (
     normalize_key,
 )
 from .keys import require_available_key
+from .media_defaults import (
+    MediaUnderstandingDefaults,
+    MediaUnderstandingSelection,
+    get_media_defaults,
+    replace_media_defaults,
+)
 from .models import ModelRecord
 from .provider_service import require_provider
 from .providers import validate_model_api
@@ -67,6 +73,21 @@ class ModelService:
         self._connection_tester = connection_tester
         self._connection_test_timeout_seconds = connection_test_timeout_seconds
         self._catalog = catalog
+
+    async def media_defaults(self, *, actor: AuthenticatedActor, workspace_id: str) -> MediaUnderstandingDefaults:
+        return await get_media_defaults(self._sessions, actor=actor, workspace_id=workspace_id)
+
+    async def replace_media_defaults(
+        self, *, actor: AuthenticatedActor, workspace_id: str, request: MediaUnderstandingSelection, if_match: str
+    ) -> MediaUnderstandingDefaults:
+        return await replace_media_defaults(
+            self._sessions,
+            actor=actor,
+            workspace_id=workspace_id,
+            request=request,
+            if_match=if_match,
+            now=self._clock(),
+        )
 
     async def create(
         self,

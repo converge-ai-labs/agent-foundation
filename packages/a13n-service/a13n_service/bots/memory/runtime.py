@@ -1,7 +1,6 @@
 """Bind model document tools to the accepted conversation, never model-selected metadata."""
 
 from collections.abc import Callable
-from typing import Literal
 
 from a13n_harness.capabilities.memory import MemoryCapability
 from a13n_harness.context import AgentContext
@@ -11,6 +10,7 @@ from a13n_harness.memory_documents import (
     MemoryDocumentReference,
     MemoryDocumentStore,
 )
+from a13n_harness.providers.memory.documents import DocumentKind
 
 from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.interactions.domain import Run
@@ -64,7 +64,7 @@ class ConversationDocumentStore(MemoryDocumentStore):
         *,
         title: str,
         description: str,
-        kind: Literal["daily", "long_term"],
+        kind: DocumentKind,
         correction_of: str | None,
         request_key: str,
     ) -> MemoryDocumentReference:

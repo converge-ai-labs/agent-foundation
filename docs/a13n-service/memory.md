@@ -77,6 +77,14 @@ In Console, open **Memory → File-based memory**, choose a saved store, then cr
 
 Automatic organization does not perform corpus-wide rewriting or promote procedures to Skills. Source-linked file imports, public change-query APIs, and a deferred-candidate review editor remain unavailable. See [the Harness implementation and limits](../a13n-harness/context-and-memory.md#embedded-filesystem-documents).
 
+## Native Bot document kinds
+
+Bot document creation requires an explicit `kind`: `semantic` for knowledge, `procedural` for reusable procedures, or `episodic` for events. The same kinds appear in the Bot memory browser and its filters. This document API is separate from the native record API below; it does not add revision support to a Provider that lacks it.
+
+Historical `daily` and `long_term` documents remain readable and appear as **Unclassified**. Responses return `kind: null` and retain the original label in `legacy_kind`; unfiltered browsing includes them. Upgrading preserves both SQL and Provider metadata without guessing a classification. New requests cannot omit `kind` or use the historical labels.
+
+Apply the Service migration and update readers before enabling new-kind writes. Old readers cannot interpret those writes. A database downgrade fails while current-kind rows remain; it never deletes or relabels documents to force a rollback.
+
 ## Existing single-Provider selection
 
 Existing single-Provider configurations remain accepted. New compositions use `entries` above; the legacy form is:

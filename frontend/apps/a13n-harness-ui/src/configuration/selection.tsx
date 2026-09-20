@@ -40,9 +40,7 @@ export function SelectionField({
         description={
           mode === "custom"
             ? `${selected.length} selected · replaces the inherited list`
-            : mode === "none"
-              ? "No resources will be selected."
-              : "Inherit the default selection."
+            : undefined
         }
       >
         <ChoiceField
@@ -50,7 +48,7 @@ export function SelectionField({
           label={label}
           hideLabel
           className={styles.settingControl}
-          aria-describedby={`${id}-description`}
+          aria-describedby={mode === "custom" ? `${id}-description` : undefined}
           value={mode}
           options={[
             { value: "default", label: "Use default" },

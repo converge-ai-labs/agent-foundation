@@ -128,6 +128,8 @@ class AgentInvocationFreezer:
                 action=WorkspaceAction.models_read,
             )
             try:
+                for media_model in prepared.media_models.values():
+                    await self._model_selector.freeze_in_transaction(session, prepared=media_model)
                 execution = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
                 reviewer_execution = (
                     await self._model_selector.freeze_in_transaction(session, prepared=prepared.reviewer_model)
@@ -235,6 +237,14 @@ def _compose_invocation(
                 prepared.merged.model.characteristics,
             ),
         ),
+        "media_understanding": {
+            kind: EffectiveAgentModel(
+                execution=ModelExecutionSnapshot.freeze(model.resource),
+                settings=effective_settings(model.resource.model_api, model.resource.settings),
+                characteristics=compose_model_characteristics(model.resource.declarations),
+            )
+            for kind, model in prepared.media_models.items()
+        },
         "toolsets": prepared.merged.toolsets,
         "reviewer": prepared.merged.reviewer,
         "resolved_reviewer_model": (
@@ -269,6 +279,7 @@ def _compose_invocation(
         **config_payload,
         content_digest="0" * 64,
     )
+    _validate_model_snapshots(effective_without_digest)
     digest_payload = effective_without_digest.model_dump(
         mode="json",
         by_alias=True,
@@ -285,3 +296,19 @@ def _compose_invocation(
         effective_config=effective,
         connection_selections=connection_selections,
     )
+
+
+def _validate_model_snapshots(config: EffectiveAgentConfig) -> None:
+    """Reject conflicting captures before accepting a Run that cannot be reconstructed."""
+    snapshots: dict[str, ModelExecutionSnapshot] = {}
+    pending = [config]
+    while pending:
+        node = pending.pop()
+        models = [node.resolved_model, *node.media_understanding.values()]
+        if node.resolved_reviewer_model is not None:
+            models.append(node.resolved_reviewer_model)
+        for model in models:
+            previous = snapshots.setdefault(model.execution.model_id, model.execution)
+            if previous != model.execution:
+                raise agent_revision_not_executable("model_configuration_changed")
+        pending.extend(child.effective_config for child in node.child_configs.values())

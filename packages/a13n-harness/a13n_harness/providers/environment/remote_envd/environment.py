@@ -31,7 +31,7 @@ def decode_state(key: str, state: EnvironmentState | None) -> RemoteEnvdStateDat
 def describe_environment(configuration: BaseModel) -> EnvironmentDescriptor:
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration):
         raise TypeError("Remote Envd requires its target configuration")
-    return configured_descriptor()
+    return configured_descriptor(working_directory=configuration.working_directory)
 
 
 def target_identity(provider_type: str, *, configuration: BaseModel, state: EnvironmentState | None) -> str:
@@ -47,6 +47,7 @@ class RemoteEnvdEnvironment(Environment):
         environment_id: str,
         state: EnvironmentState,
         session_context: AbstractAsyncContextManager[EIPSession],
+        working_directory: str | None = None,
     ) -> None:
         super().__init__(state)
         self._provider_key = provider_key
@@ -54,7 +55,7 @@ class RemoteEnvdEnvironment(Environment):
         self._session_context = session_context
         self._entered_session = False
         self._bound: EIPEnvironmentSession | None = None
-        self._descriptor = configured_descriptor()
+        self._descriptor = configured_descriptor(working_directory=working_directory)
         self._availability = EnvironmentAvailability(status="preparing")
         self._operations = EnvironmentOperations()
         self._attempted = False

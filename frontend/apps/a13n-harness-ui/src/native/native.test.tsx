@@ -128,7 +128,7 @@ it("adds only acknowledged attachment metadata to the original destination when 
     <CaptureContext source={{ file }} threadId="thread-a" />,
     { wrapper: f.Wrapper },
   );
-  fireEvent.click(screen.getByText("Add to prompt"));
+  fireEvent.click(screen.getByText("Add to message"));
   expect(values(f.a.doc).attachment_ids).toEqual([]);
   view.rerender(<CaptureContext source={{ file }} threadId="thread-b" />);
   acknowledge({
@@ -153,14 +153,14 @@ it("a stale capture or replaced draft never silently selects context", async () 
   render(<CaptureContext source={{ file }} threadId="thread-a" />, {
     wrapper: f.Wrapper,
   });
-  fireEvent.click(screen.getByText("Add to prompt"));
+  fireEvent.click(screen.getByText("Add to message"));
   await screen.findByText("Source changed; refresh.");
   expect(values(f.a.doc).attachment_ids).toEqual([]);
   f.post.mockImplementation(async () => {
     f.a.draftId = "replacement";
     return { data: { attachment } };
   });
-  fireEvent.click(screen.getByText("Add to prompt"));
+  fireEvent.click(screen.getByText("Add to message"));
   await screen.findByText(/shared draft was replaced/);
   expect(values(f.a.doc).attachment_ids).toEqual([]);
 });
@@ -171,19 +171,19 @@ it("range inputs validate before HTTP and preserve exact one-based endpoints", a
     wrapper: f.Wrapper,
   });
   fireEvent.click(screen.getByLabelText("Choose line range"));
-  fireEvent.click(screen.getByText("Add selected lines to prompt"));
+  fireEvent.click(screen.getByText("Add selected lines to message"));
   await screen.findByText(/Choose both one-based/);
   expect(f.post).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("First line"), {
     target: { value: "2" },
   });
-  fireEvent.click(screen.getByText("Add selected lines to prompt"));
+  fireEvent.click(screen.getByText("Add selected lines to message"));
   await screen.findByText(/Choose both one-based/);
   expect(f.post).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("Last line (inclusive)"), {
     target: { value: "3" },
   });
-  fireEvent.click(screen.getByText("Add selected lines to prompt"));
+  fireEvent.click(screen.getByText("Add selected lines to message"));
   await waitFor(() =>
     expect(f.post).toHaveBeenCalledWith(
       expect.anything(),
@@ -324,9 +324,9 @@ it("nonstandard source separators offer only explicit whole-source capture, for 
     { wrapper: f.Wrapper },
   );
   expect(screen.queryByLabelText("Choose line range")).toBeNull();
-  expect(screen.queryByText("Add selection to prompt")).toBeNull();
+  expect(screen.queryByText("Add selection to message")).toBeNull();
   expect(screen.getByText(/nonstandard line separators/)).toBeTruthy();
-  fireEvent.click(screen.getByText("Add to prompt"));
+  fireEvent.click(screen.getByText("Add to message"));
   await waitFor(() => expect(f.post).toHaveBeenCalled());
   expect(f.post.mock.calls[0][1].body.start_line).toBeUndefined();
   const diff: Schema<"GitDiff"> = {
@@ -352,7 +352,7 @@ it("nonstandard source separators offer only explicit whole-source capture, for 
     />,
   );
   expect(screen.queryByLabelText("Choose line range")).toBeNull();
-  expect(screen.queryByText("Add selection to prompt")).toBeNull();
+  expect(screen.queryByText("Add selection to message")).toBeNull();
 });
 
 it("raw replacement uses the inspected revision and does not replay an unknown write", async () => {
@@ -399,7 +399,7 @@ it("adds the exact editor selection in one deliberate action without sending a m
   );
   expect(f.post).not.toHaveBeenCalled();
   fireEvent.click(
-    screen.getByRole("button", { name: "Add selection to prompt" }),
+    screen.getByRole("button", { name: "Add selection to message" }),
   );
   await waitFor(() =>
     expect(values(f.a.doc).attachment_ids).toEqual([attachment.attachment_id]),

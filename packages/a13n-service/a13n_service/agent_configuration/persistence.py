@@ -29,7 +29,9 @@ def not_found() -> ApplicationError:
     )
 
 
-def require_open(record: ConfigurationDraftRecord, *, expected_version: int, if_match: str | None = None) -> None:
+def require_open(
+    record: ConfigurationDraftRecord | ConfigurationDraft, *, expected_version: int, if_match: str | None = None
+) -> None:
     if record.status != "open":
         raise failure("configuration_draft_terminal", "The draft is no longer editable.")
     if record.version != expected_version:

@@ -225,3 +225,103 @@ def test_child_failure_projection_is_bounded() -> None:
     assert display.final_answer == "Earlier output"
     assert CompactChildDisplay.model_validate_json(display.model_dump_json()) == display
     assert failure.message == "y" * (40 * 1024)
+
+
+@pytest.mark.parametrize("finalization_failure", [None, "cleanup", "publication"])
+async def test_child_finalization_failure_preserves_checkpoint_without_success(
+    monkeypatch: pytest.MonkeyPatch, finalization_failure: str | None
+) -> None:
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from a13n_harness import AgentIdentityRef, HarnessBuilder, HarnessState
+    from a13n_harness_ui.environment_runtime import EnvironmentFinalization
+    from opentelemetry.trace import INVALID_SPAN
+    from pydantic_ai.agent.spec import AgentSpec
+    from pydantic_ai.models.test import TestModel
+
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=TestModel(custom_output_text="child answer")
+    )
+    state = HarnessState.new()
+    stream = executable.stream("work", previous_state=state)
+    checkpoint = ObjectRef(object_kind=ObjectKind.child_checkpoint, object_schema_version="1", logical_digest="2" * 64)
+    finish = AsyncMock()
+    store = SimpleNamespace(child_executions=SimpleNamespace(finish=finish), usage=SimpleNamespace(observe=AsyncMock()))
+    unavailable = cast(Any, object())
+    operator = HarnessUiSubagentOperator(
+        store=cast(Any, store),
+        configurations=unavailable,
+        compositions=unavailable,
+        agent_reconstructor=unavailable,
+        environment_service=unavailable,
+    )
+
+    @asynccontextmanager
+    async def bind_parent_run(**kwargs):
+        yield
+
+    publish = AsyncMock(return_value=checkpoint)
+    monkeypatch.setattr(operator, "bind_parent_run", bind_parent_run)
+    monkeypatch.setattr(operator, "_publish_checkpoint_object", publish)
+    monkeypatch.setattr(operator, "_publish_summary", AsyncMock())
+    monkeypatch.setattr(operator, "_publish_summary_by_execution", AsyncMock())
+    now = datetime.now(UTC)
+    head = ChildExecutionHead(
+        execution_id="execution-1",
+        parent_thread_id="thread-parent",
+        child_thread_id=state.thread_id,
+        child_run_id=stream.run_id,
+        segment_index=0,
+        run_composition=ObjectRef(
+            object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="1" * 64
+        ),
+        status="running",
+        selected_checkpoint=None,
+        resumed_from=None,
+        failure=None,
+        created_at=now,
+        updated_at=now,
+        completed_at=None,
+    )
+    finalized = EnvironmentFinalization(
+        cleanup_errors=(RuntimeError("cleanup failed"),) if finalization_failure == "cleanup" else (),
+        state_publications=(cast(Any, SimpleNamespace(status="failed")),)
+        if finalization_failure == "publication"
+        else (),
+    )
+    prepared = subagent_module._PreparedSegment(
+        head=head,
+        scope=cast(Any, SimpleNamespace(agent_instance_id="parent-agent")),
+        composition=unavailable,
+        reconstructed=unavailable,
+        input="work",
+        usage_limits=None,
+        identity=AgentIdentityRef(issuer="test", subject="child"),
+        state=state,
+        environment=cast(Any, SimpleNamespace(finalize=AsyncMock(return_value=finalized))),
+        stream=stream,
+        agent_instance_id="child-agent",
+        display=CompactChildDisplay(),
+    )
+    active = subagent_module._ActiveSegment(
+        execution_id=head.execution_id,
+        parent_thread_id=head.parent_thread_id,
+        stream=stream,
+        done=Event(),
+        display=CompactChildDisplay(),
+    )
+    await operator._execute_segment(prepared, active, INVALID_SPAN)
+    finish.assert_awaited_once()
+    outcome = finish.await_args.kwargs
+    assert outcome["checkpoint"] == checkpoint
+    assert "child answer" in str(publish.await_args.kwargs["state"].message_history)
+    assert active.done.is_set()
+    if finalization_failure is None:
+        assert outcome["status"] == "succeeded"
+        assert active.cleanup_succeeded
+    else:
+        assert outcome["status"] == "failed"
+        assert outcome["failure"].code == "subagent_finalization_failed"
+        assert not active.cleanup_succeeded

@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { parse } from "yaml";
@@ -212,7 +213,7 @@ it("accepts a replacement key after authentication failure without replaying mut
   await screen.findByText(
     "Access expired. Enter the API key printed by this server.",
   );
-  fireEvent.change(screen.getByLabelText("API key"), {
+  fireEvent.change(screen.getByLabelText("Instance API key"), {
     target: { value: "new-key" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Log in" }));
@@ -327,7 +328,7 @@ it("retains dirty source fields through navigation and external invalidation", a
       "My draft",
     ),
   );
-  expect(screen.getByText(/Unsaved draft/)).toBeTruthy();
+  expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
 });
 
 it("does not pretend unavailable MCP source is an editable empty document", async () => {
@@ -385,7 +386,7 @@ it("reopens an unpublished resource draft without treating it as a missing serve
       "Unpublished model",
     ),
   );
-  expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Create model" })).toBeTruthy();
   expect(window.location.search).toContain("new=1");
 });
 
@@ -505,13 +506,16 @@ it("retains source edits across rejected access and reauthentication", async () 
     target: { value: "Before access expired" },
   });
   expire = true;
+  fireEvent.click(
+    screen.getByText("Advanced configuration", { selector: "summary" }),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Check configuration" }));
   await screen.findByText(
     "Access expired. Enter the API key printed by this server.",
   );
   expect(screen.getByText(/unsaved/i)).toBeTruthy();
   expire = false;
-  fireEvent.change(screen.getByLabelText("API key"), {
+  fireEvent.change(screen.getByLabelText("Instance API key"), {
     target: { value: "replacement" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Log in" }));
@@ -614,7 +618,7 @@ it.each([
   ["kind: project\nroots: [null]\n", /Repair the host root list/],
   [
     "kind: agent\ncapabilities: null\n",
-    /Repair the capability, child or tool list/,
+    /Repair the capability, subagent or tool list/,
   ],
 ])(
   "keeps incomplete advanced YAML repairable: %s",
@@ -637,6 +641,9 @@ it.each([
     );
     render(<BrowserApp />);
     await screen.findByText(message);
+    fireEvent.click(
+      screen.getByText("Advanced configuration", { selector: "summary" }),
+    );
     expect(screen.getByText("Configuration file")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Check configuration" }),
@@ -679,6 +686,27 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
+  const catalog = await screen.findByRole("region", {
+    name: "Installed capabilities",
+  });
+  expect(await within(catalog).findByText("available")).toBeTruthy();
+  expect(within(catalog).getByText("Unavailable to configure")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  await user.click(
+    await screen.findByRole("link", { name: "Edit agent capabilities" }),
+  );
+  expect(window.location.search).toBe("?path=agents%2Fassistant.yaml");
+  fireEvent.change(await screen.findByLabelText("Instructions"), {
+    target: { value: "Unfinished instructions" },
+  });
+  await user.click(screen.getByRole("link", { name: "Capabilities" }));
+  await user.click(
+    await screen.findByRole("link", { name: "Edit agent capabilities" }),
+  );
+  expect(
+    ((await screen.findByLabelText("Instructions")) as HTMLTextAreaElement)
+      .value,
+  ).toBe("Unfinished instructions");
   await user.click(
     await screen.findByRole("combobox", { name: "Add capability" }),
   );
@@ -692,10 +720,10 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   await waitFor(() => expect(saved).toContain("capability: available"));
   expect(saved).toContain("keep: true");
   expect(saved).toContain("retain: 42");
-  expect(saved).toContain("instructions: Original");
+  expect(saved).toContain("instructions: Unfinished instructions");
 });
 
-it("keeps malformed capability YAML repairable without crashing its focused settings page", async () => {
+it("opens the owning agent editor to repair malformed capability YAML", async () => {
   window.history.replaceState(null, "", "/settings/capabilities");
   vi.stubGlobal(
     "fetch",
@@ -715,9 +743,110 @@ it("keeps malformed capability YAML repairable without crashing its focused sett
     }),
   );
   render(<BrowserApp />);
-  await screen.findByText(/Fix the YAML syntax/);
+  fireEvent.click(
+    await screen.findByRole("link", { name: "Edit agent capabilities" }),
+  );
+  await screen.findByText(/Structured fields are unavailable/);
+  fireEvent.click(
+    screen.getByText("Advanced configuration", { selector: "summary" }),
+  );
   expect(screen.getByText("Configuration file")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Check configuration" }),
+  ).toBeTruthy();
 });
+
+it.each(["read-only", "missing"])(
+  "keeps the capability catalog available with a %s agent source",
+  async (availability) => {
+    window.history.replaceState(null, "", "/settings/capabilities");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        const path = decodeURIComponent(new URL(request.url).pathname);
+        if (path === "/api/selectors")
+          return json({
+            agents: [{ agent_id: "agent-assistant", name: "Assistant" }],
+          });
+        if (path === "/api/catalog")
+          return json([
+            { kind: "capability", key: "available", configurable: true },
+          ]);
+        if (path === "/api/configuration/sources")
+          return json({
+            sources:
+              availability === "missing"
+                ? []
+                : [{ ...source, writable: false }],
+          });
+        if (path === "/api/configuration/sources/agents/assistant.yaml")
+          return json({ ...source, writable: false });
+        return fixture(request);
+      }),
+    );
+    render(<BrowserApp />);
+    expect(await screen.findByText("Available to agents")).toBeTruthy();
+    if (availability === "missing") {
+      await screen.findByText(
+        "This agent has no configuration file available here.",
+      );
+    } else {
+      fireEvent.click(
+        await screen.findByRole("link", { name: "View agent configuration" }),
+      );
+      expect(
+        (await screen.findByLabelText("YAML source")).getAttribute(
+          "contenteditable",
+        ),
+      ).toBe("false");
+    }
+    expect(
+      screen.queryByRole("link", { name: "Edit agent capabilities" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.every(([request]) => (request as Request).method === "GET"),
+    ).toBe(true);
+  },
+);
+
+it.each([false, true])(
+  "keeps capability discovery independent from agent availability (load failure: %s)",
+  async (failed) => {
+    window.history.replaceState(null, "", "/settings/capabilities");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        const path = new URL(request.url).pathname;
+        if (path === "/api/selectors" && failed)
+          return json(
+            {
+              error: { code: "unavailable", message: "Agent list unavailable" },
+            },
+            503,
+          );
+        if (path === "/api/catalog")
+          return json([
+            { kind: "capability", key: "available", configurable: true },
+          ]);
+        return fixture(request);
+      }),
+    );
+    render(<BrowserApp />);
+    expect(await screen.findByText("Available to agents")).toBeTruthy();
+    if (failed) {
+      await screen.findByText("Agent list unavailable");
+      expect(screen.queryByRole("button", { name: "Add agent" })).toBeNull();
+    } else {
+      expect(
+        await screen.findByRole("button", { name: "Add agent" }),
+      ).toBeTruthy();
+    }
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  },
+);
 
 it("reopens a one-click agent draft from its own settings list without writing or fetching a nonexistent file", async () => {
   window.history.replaceState(null, "", "/settings/agents");
@@ -728,6 +857,12 @@ it("reopens a one-click agent draft from its own settings list without writing o
     target: { value: "Unfinished assistant" },
   });
   const draftPath = new URLSearchParams(window.location.search).get("path")!;
+  expect(
+    screen.getByRole("link", { name: "Agents" }).getAttribute("aria-current"),
+  ).toBe("page");
+  expect(
+    screen.getByRole("link", { name: "Advanced" }).getAttribute("aria-current"),
+  ).toBeNull();
   fireEvent.click(screen.getByRole("link", { name: "Agents" }));
   fireEvent.click(
     await screen.findByRole("link", {
@@ -738,6 +873,9 @@ it("reopens a one-click agent draft from its own settings list without writing o
     ((await screen.findByLabelText("Name")) as HTMLInputElement).value,
   ).toBe("Unfinished assistant");
   expect(window.location.search).toContain("new=1");
+  expect(
+    screen.getByRole("link", { name: "Agents" }).getAttribute("aria-current"),
+  ).toBe("page");
   expect(
     fetcher.mock.calls.some(
       ([request]) => (request as Request).method === "PUT",
@@ -786,6 +924,17 @@ it("shows built-in environments as read-only and does not offer configuration fo
   );
   render(<BrowserApp />);
   await screen.findByText("Built in");
+  const profiles = screen.getByRole("region", {
+    name: "Local execution profiles",
+  });
+  expect(
+    within(profiles).getByRole("button", { name: "Add local profile" }),
+  ).toBeTruthy();
+  const providers = screen.getByText("Installed environment providers", {
+    selector: "summary",
+  });
+  expect(providers.closest("details")?.open).toBe(false);
+  fireEvent.click(providers);
   await screen.findByText("Unavailable to configure");
   expect(screen.queryByRole("link", { name: /Full Control/ })).toBeNull();
   expect(screen.queryByRole("button", { name: "Configure" })).toBeNull();

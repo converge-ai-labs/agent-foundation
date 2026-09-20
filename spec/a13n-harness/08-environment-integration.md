@@ -21,7 +21,7 @@ The public values are:
 class EnvironmentMount:
     environment: Environment
     permission_ceiling: EnvironmentPermissionSet = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
-    working_directory: str | None = "/"
+    working_directory: str | None = None
     mount_path: str | None = None
     provider_root: str = "/"
 ```
@@ -30,7 +30,7 @@ class EnvironmentMount:
 
 `EnvironmentMount.permission_ceiling` is an exact `EnvironmentPermissionSet` action ceiling. It defaults to every `EnvironmentAction`, so a mount offers whatever the Provider descriptor offers unless the Host narrows it. A narrower ceiling can expose any combination, such as text read, text write, and remove without other file operations; `FILE_READ_ACTIONS` is the shared constant for file actions that only observe. The ceiling is intersected with the Provider descriptor and can never grant an operation the Provider does not offer. State dump and local close remain trusted lifecycle operations and are not model-authored permissions.
 
-`working_directory` is `None` or a canonical absolute provider-local path. It contains no NUL, repeated separator, trailing separator other than `/`, or `.`/`..` segment.
+`working_directory` defaults to `None`, selecting the adapter descriptor's default. An explicit override is a canonical absolute provider-local path. It contains no NUL, repeated separator, trailing separator other than `/`, or `.`/`..` segment.
 
 `provider_root` is the canonical absolute Provider path represented by the aggregate route root; it defaults to `/`. Absolute aggregate suffixes append to this path, and returned Provider paths strip it before aggregate projection. Relative paths still start from `working_directory`, independently of this mapping. A Host-path-preserving envd mount sets both `mount_path` and `provider_root` to the captured native root; a whole-Device virtual route retains `provider_root="/"`. This is file routing, not Session configuration or shell confinement.
 
@@ -45,7 +45,6 @@ run(
     environment: Environment | EnvironmentMount | None = None,
     environments: Mapping[str, Environment | EnvironmentMount] | None = None,
     default_environment: str | None = None,
-    environment_run_extensions: Sequence[EnvironmentRunExtension] = (),
     bindings: RunBindings | None = None,
     ...,
 )
@@ -60,14 +59,17 @@ The rules are:
 5. A mapping with several entries has no default unless explicit. Mapping order never selects authority.
 6. An empty mapping, invalid mount name, duplicate Environment instance, invalid policy, equal aggregate route owned by different mounts, or conflict with `RunBindings` fails before `enter()`.
 7. Omitting all Environment input creates an empty bound facade and exposes no Environment tools.
-8. `environment_run_extensions` is the ordered finite set of fresh extension instances for this Run; duplicate extension IDs fail before Environment entry.
-9. Inputs never accept an `EnvironmentProviderDefinition`, Provider configuration, Provider Resource, attachment, state envelope, or Provider type.
+8. Inputs never accept an `EnvironmentProviderDefinition`, Provider configuration, Provider Resource, attachment, state envelope, or Provider type.
 
 A mount without `mount_path` retains the compatibility routes: every such mount is addressable at `/environment/{name}`, and the current default is also addressable at `/workspace`. Without a default, `/workspace` is unavailable. A mount with `mount_path` is addressable only at that explicit root; the Harness does not also expose `/workspace` or `/environment/{name}` for it. Relative paths still select the explicit alias or current default and begin at that mount's provider-local `working_directory`.
 
 A hosted worker constructs Environment instances from Host-authoritative configuration and state, and either prepares them before Harness execution or supplies Host-coordinated lazy preparation. An embedded caller can construct them directly through a trusted Provider.
 
 ### Explicit Host runtime construction
+
+An advanced Host supplies an explicit runtime through `RunBindings.environment`, including through `RunBindings.embedded(environment=runtime)`. This conflicts with simultaneous `environment` or `environments` arguments. Ordinary callers can omit bindings and pass adapters directly.
+
+Environment Run Extensions are supplied through the runtime factory's `extensions` argument, not a separate `run()` or `stream()` keyword. They form an ordered finite set of fresh instances for this Run; duplicate extension IDs fail before Environment entry.
 
 `create_environment_runtime(mounts=..., default_mount=..., extensions=...)` accepts the same `Environment` and `EnvironmentMount` values. A raw Environment selects full access, the Provider descriptor's working directory (default `/`), and the ordinary implicit aggregate routes. The explicit runtime retains its existing default-selection rule: `default_mount` is selected only when supplied. Run-local `mount()` and `replace()` accept these same values. Hosts with already constructed Environment objects do not implement another binding adapter to enter or close them.
 

@@ -16,7 +16,10 @@ from a13n_service.iam.authorization import AuthorizedWorkspace, read_principal_p
 from a13n_service.iam.domain import PrincipalType
 
 from .domain import Run
+from .errors import command_not_found
 from .models import SessionRecord
+from .session_scope import SessionScope
+from .state import RunCheckpoint
 
 
 async def configuration_visibility(
@@ -87,20 +90,25 @@ async def authorize_interaction(
     agent_id: str | None,
     action: WorkspaceAction,
     reuse_request_authentication: bool = False,
+    session_scope: SessionScope | None = None,
 ) -> AuthorizedWorkspace:
-    conversation = await session.get(SessionRecord, session_id)
-    if conversation is None or conversation.workspace_id != workspace_id:
+    conversation = session_scope if session_scope is not None else await session.get(SessionRecord, session_id)
+    if conversation is None or conversation.id != session_id or conversation.workspace_id != workspace_id:
         raise AuthorizationError("run_not_found", concealed=True)
     if conversation.configuration_owner_user_id is not None:
-        from a13n_service.agent_configuration.authorization import authorize_session
+        from a13n_service.agent_configuration.authorization import authorize_session_scope
         from a13n_service.agents.models import AgentRecord
 
         if agent_id is not None:
             agent = await session.get(AgentRecord, agent_id)
             if agent is None or agent.workspace_id != workspace_id or agent.system_purpose != "configuration_assistant":
                 raise AuthorizationError("run_not_found", concealed=True)
-        await authorize_session(
-            session, actor=actor, session_id=session_id, write=action not in _READ_ACTIONS, action=action
+        await authorize_session_scope(
+            session,
+            actor=actor,
+            scope=conversation if isinstance(conversation, SessionScope) else SessionScope.from_record(conversation),
+            write=action not in _READ_ACTIONS,
+            action=action,
         )
         return AuthorizedWorkspace(conversation.organization_id, workspace_id, actor)
     if agent_id is None:
@@ -121,7 +129,9 @@ async def authorize_interaction(
     )
 
 
-async def authorize_retained_execution(session: AsyncSession, *, source: Run, workspace_id: str) -> None:
+async def authorize_retained_execution(
+    session: AsyncSession, *, source: Run, workspace_id: str, session_scope: SessionScope | None = None
+) -> None:
     if source.configuration_context is not None:
         from a13n_service.agent_configuration.authorization import authorize_execution
 
@@ -132,6 +142,7 @@ async def authorize_retained_execution(session: AsyncSession, *, source: Run, wo
             workspace_id=workspace_id,
             agent_id=source.agent_id,
             context=source.configuration_context,
+            session_scope=session_scope,
         )
         return
     from a13n_service.iam.authorization import authorize_persisted_agent_principal_actions
@@ -143,4 +154,57 @@ async def authorize_retained_execution(session: AsyncSession, *, source: Run, wo
         workspace_id=workspace_id,
         agent_id=source.agent_id,
         actions=frozenset({WorkspaceAction.agent_invoke}),
+    )
+
+
+async def authorize_run_actions(
+    database: AsyncSession,
+    *,
+    actor: AuthenticatedActor,
+    source: Run,
+    session_scope: SessionScope,
+    actions: tuple[WorkspaceAction, ...],
+    reuse_request_authentication: bool = False,
+) -> None:
+    """Authorize each command action with the already observed conversation scope."""
+    try:
+        for action in actions:
+            await authorize_interaction(
+                database,
+                actor=actor,
+                workspace_id=actor.workspace_id,
+                session_id=source.session_id,
+                session_scope=session_scope,
+                agent_id=source.agent_id,
+                action=action,
+                reuse_request_authentication=reuse_request_authentication,
+            )
+    except AuthorizationError as error:
+        raise command_not_found() from error
+
+
+async def authorize_inherited_run(
+    database: AsyncSession,
+    *,
+    actor: AuthenticatedActor,
+    source: Run,
+    state: RunCheckpoint,
+    session_scope: SessionScope,
+    actions: tuple[WorkspaceAction, ...],
+) -> None:
+    """Check command authority separately from the retained execution's authority and Skills."""
+    from a13n_service.agents.invocation_resolution.skills import validate_retained_skills
+
+    await authorize_run_actions(database, actor=actor, source=source, session_scope=session_scope, actions=actions)
+    try:
+        await authorize_retained_execution(
+            database, source=source, workspace_id=actor.workspace_id, session_scope=session_scope
+        )
+    except AuthorizationError as error:
+        raise command_not_found() from error
+    await validate_retained_skills(
+        database,
+        organization_id=source.organization_id,
+        workspace_id=actor.workspace_id,
+        locks=state.effective_agent_config.skills,
     )

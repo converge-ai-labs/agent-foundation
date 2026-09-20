@@ -12,7 +12,7 @@ from a13n_service.interactions.attempts import AttemptContext
 from .domain import JsonObject
 
 if TYPE_CHECKING:
-    from .native_context import NativeToolContext
+    from .native_context import InboundRunContext, NativeToolContext
 
 CONVERSATION_REPLY_DESCRIPTION = (
     "Send a user-visible reply to the current conversation. Plain final model output is not sent to the conversation. "
@@ -71,6 +71,8 @@ def credential(credentials: JsonObject, name: str) -> str:
 
 
 class NativeObservationFactory(Protocol):
+    async def has_reply(self, *, attempt: "AttemptContext", context: "InboundRunContext") -> bool: ...
+
     def __call__(
         self,
         *,

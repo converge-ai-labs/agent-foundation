@@ -2353,15 +2353,21 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 return
                             yield self._adapt_event(cast(AgentStreamEvent, event))
                     except RunCancelled as exc:
-                        raw_messages = exc.all_messages()
-                        raw_new_message_count = len(exc.new_messages())
+                        if exc.run_id is None:
+                            # Native execution has not started; its empty history cannot
+                            # replace the complete boundary already held by this Run.
+                            raw_messages = self._latest_messages
+                            raw_new_message_count = max(0, len(raw_messages) - self._new_message_index)
+                        else:
+                            raw_messages = exc.all_messages()
+                            raw_new_message_count = len(exc.new_messages())
                         messages, _ = normalize_interrupted_history(
                             raw_messages,
                             response_tracker=response_tracker,
                         )
                         self._pydantic_events = None
                         self._latest_messages = messages
-                        state = await exchange.context.export_state(messages) if exc.run_id is not None else None
+                        state = await exchange.context.export_state(messages)
                         yield self._record_inner_candidate(
                             HarnessRunResult(
                                 thread_id=self.thread_id,
@@ -2398,7 +2404,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         self._pydantic_events = None
                         self._latest_messages = messages
                         if self._cancel_requested:
-                            state = await exchange.context.export_state(messages) if messages else None
+                            state = await exchange.context.export_state(messages)
                             yield self._record_inner_candidate(
                                 HarnessRunResult(
                                     thread_id=self.thread_id,

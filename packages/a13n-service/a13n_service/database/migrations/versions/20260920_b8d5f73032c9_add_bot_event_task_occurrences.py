@@ -1,7 +1,7 @@
 """add bot event task occurrences.
 
 Revision ID: b8d5f73032c9
-Revises: 639db32da93a
+Revises: ba435c2961da
 Create Date: 2026-09-20 08:02:38.149040+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "b8d5f73032c9"
-down_revision: str | Sequence[str] | None = "639db32da93a"
+down_revision: str | Sequence[str] | None = "ba435c2961da"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

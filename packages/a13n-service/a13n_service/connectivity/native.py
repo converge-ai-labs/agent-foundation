@@ -23,6 +23,7 @@ from .file_delivery import FileDelivery, SendFileArguments
 from .naming import source_key
 from .native_actions import NativeAction, NativeObservationFactory, action
 from .native_context import AccountRunContext, InboundRunContext, NativeToolContext, authorized_account
+from .native_reply import NativeReplyCapability
 from .providers.definition import InboundActionContext
 from .providers.registry import require_native_provider
 from .toolsets import local_capability
@@ -103,6 +104,7 @@ async def native_capability(
         file_action = action(f"{context.provider_key}.send_file", SendFileArguments, send_file)
         actions[file_action.definition.name] = file_action
     definitions = tuple(item.definition for item in actions.values())
+    reply_capability: NativeReplyCapability | None = None
 
     async def call(name: str, arguments: JsonObject) -> JsonValue:
         nonlocal actions, generation, configuration
@@ -140,13 +142,36 @@ async def native_capability(
         # Native providers own this outcome envelope; arbitrary MCP results do not.
         if isinstance(result, dict) and result.get("kind") == "outcome_unknown":
             record_tool_outcome_unknown()
+        if reply_capability is not None and name in {
+            f"{context.provider_key}.reply",
+            f"{context.provider_key}.send_file",
+        }:
+            reply_capability.observe(result)
         return result
 
     identifier = context.binding_id if isinstance(context, InboundRunContext) else context.account_id
     key = source_key(context.kind, identifier)
-    return await local_capability(
+    capability = await local_capability(
         key=key, model_alias=key, tools=definitions, allowed=context.allowed_actions, handler=call
     )
+    if (
+        capability is not None
+        and isinstance(context, InboundRunContext)
+        and context.provider_key in {"lark", "slack"}
+        and f"{context.provider_key}.reply" in context.allowed_actions
+        and sum(isinstance(item, InboundRunContext) for item in scope.native_tool_contexts) == 1
+    ):
+
+        async def recorded_reply() -> bool:
+            # A recovered Attempt must not repeat a durably observed reply.
+            if attempt is None or observations is None:
+                return False
+            await guard()
+            return await observations.has_reply(attempt=attempt, context=context)
+
+        reply_capability = NativeReplyCapability(capability, recorded_reply=recorded_reply)
+        return reply_capability
+    return capability
 
 
 def _actions(

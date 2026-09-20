@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router";
+import { useContext, useState } from "react";
+import { Link, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ChoiceField, Skeleton } from "a13n-ui";
 import {
@@ -15,8 +15,9 @@ import {
   SourcesPage,
   NewResourceButton,
   DraftLinks,
+  DraftContext,
 } from "./sources";
-import type { ResourceKind } from "./documents";
+import { readDocument, type ResourceKind } from "./documents";
 import { InstallSettings } from "../shell/install";
 import { DevicesSection } from "./devices";
 import { ForgetEnvironment } from "./forget-environment";
@@ -37,25 +38,32 @@ const sections = [
 export function SettingsLayout() {
   const location = useLocation();
   const sources = useSources();
+  const drafts = useContext(DraftContext);
+  const path = new URLSearchParams(location.search).get("path") ?? "";
   const source = sources.data?.sources.find(
-    (item) =>
-      item.relative_path === new URLSearchParams(location.search).get("path"),
+    (item) => item.relative_path === path,
   );
+  const sourceKind =
+    source?.resource_kind ??
+    readDocument(drafts.get(path)?.content ?? "")?.get("kind");
   const sourceSection =
-    source?.resource_kind === "root"
+    sourceKind === "root"
       ? "/settings"
-      : source?.resource_kind === "project"
+      : sourceKind === "project"
         ? "/projects"
-        : source?.resource_kind === "model"
+        : sourceKind === "model"
           ? "/settings/models"
-          : source?.resource_kind === "agent"
+          : sourceKind === "agent"
             ? "/settings/agents"
-            : source?.resource_kind === "environment_profile" ||
-                source?.resource_kind === "device"
-              ? "/settings/environments"
-              : source?.resource_kind === "mcp_server"
-                ? "/settings/connections"
-                : "/settings/resources";
+            : sourceKind === "harness_plugin"
+              ? "/settings/capabilities"
+              : sourceKind === "environment_profile" ||
+                  sourceKind === "device" ||
+                  sourceKind === "environment_run_extension"
+                ? "/settings/environments"
+                : sourceKind === "mcp_server"
+                  ? "/settings/connections"
+                  : "/settings/resources";
   return (
     <div className={styles.settings}>
       <nav
@@ -63,22 +71,24 @@ export function SettingsLayout() {
         aria-label="Settings sections"
       >
         <h2>Settings</h2>
-        {sections.map(({ path, label }) => (
-          <NavLink
-            key={path}
-            to={path}
-            end={path === "/settings"}
-            className={({ isActive }) =>
-              isActive ||
-              (location.pathname === "/settings/source" &&
-                sourceSection === path)
-                ? styles.activeNav
-                : styles.navLink
-            }
-          >
-            {label}
-          </NavLink>
-        ))}
+        {sections.map(({ path, label }) => {
+          const active =
+            location.pathname === "/settings/source"
+              ? sourceSection === path
+              : location.pathname === path ||
+                (path !== "/settings" &&
+                  location.pathname.startsWith(`${path}/`));
+          return (
+            <Link
+              key={path}
+              to={path}
+              aria-current={active ? "page" : undefined}
+              className={active ? styles.activeNav : styles.navLink}
+            >
+              {label}
+            </Link>
+          );
+        })}
       </nav>
       <div className={`${styles.settingsContent} a13n-scrollbar`}>
         <Outlet />
@@ -133,9 +143,6 @@ export function CapabilitiesPage() {
   const status = useStatus();
   const [agentId, setAgentId] = useState("");
   const selected = agentId || selectors.data?.agents[0]?.agent_id || "";
-  const agent = selectors.data?.agents.find(
-    (item) => item.agent_id === selected,
-  );
   const source = sources.data?.sources.find(
     (item) =>
       item.resource_kind === "agent" && item.resource_ids.includes(selected),
@@ -144,54 +151,59 @@ export function CapabilitiesPage() {
     <>
       <PageHeader
         title="Capabilities"
-        description="Choose which installed capability plugins an agent uses. Your changes take effect after saving."
+        description="Browse installed capabilities. Choose what each agent uses in its settings."
       />
-      <ErrorNotice error={selectors.error || sources.error} />
-      {selectors.isPending || sources.isPending ? (
-        <Skeleton className="h-64 w-full" />
-      ) : !!selectors.data?.agents.length ? (
-        <>
-          <ChoiceField
-            label="Agent"
-            value={selected}
-            onValueChange={setAgentId}
-            options={selectors.data.agents.map((item) => ({
-              value: item.agent_id,
-              label: item.name,
-            }))}
-          />
-          {source ? (
-            <SourceDocument
-              key={source.relative_path}
-              path={source.relative_path}
-              title={agent?.name}
-              capabilitiesOnly
-              embedded
-            />
-          ) : (
-            <p>This agent has no editable configuration file.</p>
-          )}
-        </>
-      ) : (
-        <Panel title="Create an agent first">
-          <p>Capabilities belong to an agent, not to the workspace globally.</p>
-          <NewResourceButton kind="agent" />
-        </Panel>
-      )}
       {status.data?.app.capability_warnings?.map((warning) => (
         <p role="status" key={warning}>
           {warning}
         </p>
       ))}
-      <details className={styles.details}>
-        <summary>Installed capability plugins</summary>
+      <section
+        className={styles.stack}
+        aria-labelledby="installed-capabilities"
+      >
+        <h2 id="installed-capabilities">Installed capabilities</h2>
         <InstalledCatalog kind="capability" />
-      </details>
+      </section>
+      <section className={styles.stack} aria-labelledby="agent-capabilities">
+        <h2 id="agent-capabilities">Agent capabilities</h2>
+        <ErrorNotice error={selectors.error || sources.error} />
+        {selectors.isPending || sources.isPending ? (
+          <Skeleton className="h-64 w-full" />
+        ) : !!selectors.data?.agents.length ? (
+          <>
+            <ChoiceField
+              label="Agent"
+              value={selected}
+              onValueChange={setAgentId}
+              options={selectors.data.agents.map((item) => ({
+                value: item.agent_id,
+                label: item.name,
+              }))}
+            />
+            {source ? (
+              <Link
+                to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
+              >
+                {source.writable
+                  ? "Edit agent capabilities"
+                  : "View agent configuration"}
+              </Link>
+            ) : (
+              <p>This agent has no configuration file available here.</p>
+            )}
+          </>
+        ) : selectors.data ? (
+          <Panel title="Create an agent to use capabilities">
+            <NewResourceButton kind="agent" />
+          </Panel>
+        ) : null}
+      </section>
       <SourcesPage
         kinds={["harness_plugin"]}
         headingLevel={2}
-        title="Agent plugins"
-        description="Configure reusable agent plugins here, then select them in agent or project defaults."
+        title="Reusable agent plugins"
+        description="Separate from capabilities: configure plugin instances here, then select them in agent or project defaults."
       />
       <details className={styles.details}>
         <summary>Available agent plugins</summary>
@@ -208,78 +220,90 @@ export function EnvironmentsPage() {
     <>
       <PageHeader
         title="Environments"
-        description="Manage Device connections and local execution profiles. Select working directories in Project or conversation settings."
-        actions={
+        description="Manage where agents can work."
+      />
+      <p>
+        Choose working directories and defaults in{" "}
+        <Link to="/projects">Projects</Link>, or select environments for an
+        individual conversation in its settings.
+      </p>
+      <ErrorNotice error={selectors.error || sources.error} />
+      <DevicesSection />
+      <section
+        className={styles.stack}
+        aria-labelledby="local-execution-profiles"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="local-execution-profiles">Local execution profiles</h2>
           <NewResourceButton
             kind="environment_profile"
             label="Add local profile"
             variant="outline"
           />
-        }
-      />
-      <ErrorNotice error={selectors.error || sources.error} />
-      <DevicesSection />
-      <h2>Local execution profiles</h2>
-      <DraftLinks kinds={["environment_profile"]} />
-      {selectors.isPending && <Skeleton className="h-32 w-full" />}
-      <div className={styles.resourceList}>
-        {selectors.data?.environments.map((item) => {
-          const source = sources.data?.sources.find(
-            (source) =>
-              source.resource_kind === "environment_profile" &&
-              source.resource_ids.includes(item.profile_id),
-          );
-          const content = (
-            <>
-              <div>
-                <strong>{item.name}</strong>
-                <small>{item.description}</small>
+        </div>
+        <p>Control how agents run on this server: full control or a sandbox.</p>
+        <DraftLinks kinds={["environment_profile"]} />
+        {selectors.isPending && <Skeleton className="h-32 w-full" />}
+        <div className={styles.resourceList}>
+          {selectors.data?.environments.map((item) => {
+            const source = sources.data?.sources.find(
+              (source) =>
+                source.resource_kind === "environment_profile" &&
+                source.resource_ids.includes(item.profile_id),
+            );
+            const content = (
+              <>
+                <div>
+                  <strong>{item.name}</strong>
+                  <small>{item.description}</small>
+                </div>
+                <span>
+                  {item.mode === "full-control"
+                    ? "Full control"
+                    : item.mode === "sandbox"
+                      ? "Sandbox"
+                      : item.provider_key}
+                </span>
+                <small>{item.release_owned ? "Built in" : "Configured"}</small>
+              </>
+            );
+            return source ? (
+              <div key={item.profile_id} className={styles.resourceRow}>
+                <Link
+                  className="min-w-0 flex-1"
+                  to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
+                >
+                  {content}
+                </Link>
+                {!item.release_owned && source.resource_ids.length === 1 && (
+                  <ForgetEnvironment
+                    path={source.relative_path}
+                    name={item.name}
+                    resourceId={item.profile_id}
+                  />
+                )}
               </div>
-              <span>
-                {item.mode === "full-control"
-                  ? "Full control"
-                  : item.mode === "sandbox"
-                    ? "Sandbox"
-                    : item.provider_key}
-              </span>
-              <small>{item.release_owned ? "Built in" : "Configured"}</small>
-            </>
-          );
-          return source ? (
-            <div key={item.profile_id} className={styles.resourceRow}>
-              <Link
-                className="min-w-0 flex-1"
-                to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
-              >
+            ) : (
+              <div key={item.profile_id} className={styles.resourceRow}>
                 {content}
-              </Link>
-              {!item.release_owned && source.resource_ids.length === 1 && (
-                <ForgetEnvironment
-                  path={source.relative_path}
-                  name={item.name}
-                  resourceId={item.profile_id}
-                />
-              )}
-            </div>
-          ) : (
-            <div key={item.profile_id} className={styles.resourceRow}>
-              {content}
-            </div>
-          );
-        })}
-      </div>
-      <section className={styles.stack}>
-        <h2>Installed environment providers</h2>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+      <details className={styles.details}>
+        <summary>Installed environment providers</summary>
         <p>
-          Providers are installed on the server. Add an environment to configure
-          an available provider and its adapter.
+          Configure an installed provider to create a profile. This does not
+          install packages or verify that the environment is ready.
         </p>
         <InstalledCatalog kind="environment_provider" />
-      </section>
+      </details>
       <details className={styles.details}>
         <summary>Environment extensions</summary>
         <SourcesPage
           kinds={["environment_run_extension"]}
+          headingLevel={2}
           title="Environment extensions"
           description="Optional extensions selected in project or global defaults."
         />
@@ -342,6 +366,7 @@ export function InstalledCatalog({
               <NewResourceButton
                 kind={resource}
                 label="Configure"
+                variant="outline"
                 initial={{
                   [kind === "environment_provider"
                     ? "provider_key"

@@ -7,6 +7,7 @@ from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.hooks import InlineHookSubscriptionInput, InlineHookValidator, WebhookDestinationConfig
+from a13n_service.hooks.dispatcher import HookDispatcher
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceService
@@ -312,6 +313,10 @@ async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
         revision = await database.get(HookSubscriptionRevisionRecord, head.current_revision_id)
         assert revision is not None
         assert (revision.session_id, revision.thread_id, revision.run_id) == (SESSION_ID, THREAD_ID, run.id)
+        deliveries = (await database.scalars(select(OutboxRecord))).all()
+        assert deliveries == []
+    assert (await HookDispatcher(interaction_sessions).scan()).completed == 1
+    async with short_session(interaction_sessions) as database:
         deliveries = (await database.scalars(select(OutboxRecord))).all()
         assert len(deliveries) == 1
         assert deliveries[0].destination_ref == revision.id

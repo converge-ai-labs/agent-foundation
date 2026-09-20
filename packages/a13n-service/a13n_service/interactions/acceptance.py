@@ -68,6 +68,7 @@ from .objects import RunPayloadStore, RunStateStore, StaleStateWriter
 from .ports.memory import ExecutionBindings
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission, fail_first_submission
 from .records import session_record, thread_record
+from .session_scope import SessionScope
 from .state import RunCheckpoint, RunPayloadEnvelope
 
 
@@ -114,6 +115,7 @@ class RunAcceptanceService:
         environment: EnvironmentIntent = EnvironmentDefault.agent,
         thread_label_overrides: Mapping[str, str] | None = None,
         run_label_overrides: Mapping[str, str] | None = None,
+        session_scope: SessionScope | None = None,
     ) -> RunAcceptanceReceipt:
         validate_prepared_run(run, state)
         validate_new_thread(thread, run, session)
@@ -121,6 +123,8 @@ class RunAcceptanceService:
         if replay is not None:
             await self._require_inline_hook_replay(run, hook_subscription)
             return replay
+        if session is None and session_scope is None:
+            session_scope = await self._observe_session(run)
         await self._inline_hooks.validate_destination(hook_subscription)
         await self._verify_input_payload(run)
         await self._publish_initial(run, state)
@@ -129,9 +133,23 @@ class RunAcceptanceService:
             if final_validator is not None:
                 await final_validator(database)
             if session is None:
-                session_record_value = await require_session(database, run)
-                workspace_id = session_record_value.workspace_id
-                session_labels = session_record_value.labels
+                assert session_scope is not None
+                await validate_session_scope(database, run, session_scope)
+                workspace_id = session_scope.workspace_id
+                # New ordinary Threads inherit mutable labels at acceptance.
+                # Forks inherit their locked source Thread's labels instead.
+                session_labels = (
+                    await database.scalar(
+                        select(SessionRecord.labels).where(
+                            SessionRecord.id == session_scope.id,
+                            SessionRecord.organization_id == session_scope.organization_id,
+                        )
+                    )
+                    if thread.origin_kind is not ThreadOriginKind.fork
+                    else {}
+                )
+                if session_labels is None:
+                    raise RunAcceptanceError("session_not_found", "The interaction Session was not found")
             else:
                 database.add(session_record(session))
                 workspace_id = session.workspace_id
@@ -205,6 +223,7 @@ class RunAcceptanceService:
         environment: EnvironmentIntent = EnvironmentDefault.thread,
         label_overrides: Mapping[str, str] | None = None,
         label_source_run_id: str | None = None,
+        session_scope: SessionScope | None = None,
     ) -> RunAcceptanceReceipt:
         validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
@@ -213,6 +232,8 @@ class RunAcceptanceService:
             if hook_source_run_id is None:
                 await self._require_inline_hook_replay(run, hook_subscription)
             return replay
+        if session_scope is None:
+            session_scope = await self._observe_session(run)
         hook_subscription = await self._inline_hooks.prepare(
             run=run,
             subscription=hook_subscription,
@@ -245,9 +266,13 @@ class RunAcceptanceService:
                 candidate_payload=candidate_payload,
                 next_head_run_id=next_head_run_id,
             )
-            session_record_value = await require_session(database, run)
+            await validate_session_scope(database, run, session_scope)
             parent_labels = (
-                (await _load_run(database, run.organization_id, label_source_run_id)).labels
+                (
+                    current
+                    if current is not None and current.id == label_source_run_id
+                    else await _load_run(database, run.organization_id, label_source_run_id)
+                ).labels
                 if label_source_run_id is not None
                 else thread.labels
             )
@@ -255,7 +280,7 @@ class RunAcceptanceService:
             await self._inline_hooks.authorize(
                 database,
                 run=accepted_run,
-                workspace_id=session_record_value.workspace_id,
+                workspace_id=session_scope.workspace_id,
                 subscription=hook_subscription,
                 source_run_id=hook_source_run_id,
                 actor=hook_actor,
@@ -265,7 +290,7 @@ class RunAcceptanceService:
                 online=online,
                 run=accepted_run,
                 state=state,
-                workspace_id=session_record_value.workspace_id,
+                workspace_id=session_scope.workspace_id,
                 intent=environment,
             )
             if run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
@@ -279,7 +304,11 @@ class RunAcceptanceService:
                     now=self._clock(),
                 )
             elif thread.head_run_id is not None and thread.head_run_id != next_head_run_id:
-                prior_head = await _load_run(database, run.organization_id, thread.head_run_id)
+                prior_head = (
+                    current
+                    if current is not None and current.id == thread.head_run_id
+                    else await _load_run(database, run.organization_id, thread.head_run_id)
+                )
                 if prior_head.status == RunStatus.waiting.value:
                     await abandon_waiting_entries(
                         database,
@@ -295,7 +324,7 @@ class RunAcceptanceService:
             hook_subscription_id = await self._inline_hooks.create(
                 database,
                 run=run_record_value,
-                workspace_id=session_record_value.workspace_id,
+                workspace_id=session_scope.workspace_id,
                 subscription=hook_subscription,
                 now=self._clock(),
             )
@@ -339,6 +368,7 @@ class RunAcceptanceService:
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
         transaction_hook: Callable[[AsyncSession, QueuedSubmissionConsumptionReceipt], Awaitable[None]] | None = None,
         label_overrides: Mapping[str, str] | None = None,
+        session_scope: SessionScope | None = None,
     ) -> QueuedSubmissionConsumptionReceipt:
         """Atomically consume the first queue row and accept its prepared Run."""
 
@@ -357,6 +387,8 @@ class RunAcceptanceService:
                 queue_version=expected_queue_version + 1,
                 run=replay,
             )
+        if session_scope is None:
+            session_scope = await self._observe_session(run)
         # Reuse the detached intent; the final locked queue check verifies its digest.
         await self._inline_hooks.validate_destination(queued.submission.hook_subscription)
         candidate_payload = await self._verify_input_payload(run)
@@ -377,7 +409,7 @@ class RunAcceptanceService:
             if thread.queue_version != expected_queue_version:
                 raise RunAcceptanceError("queue_version_conflict", "Thread queue version changed")
             current = await _load_run(database, run.organization_id, thread.current_run_id)
-            await _require_queue_drain_state(database, thread, current)
+            head = await _require_queue_drain_state(database, thread, current)
             await validate_advancement(
                 database,
                 thread,
@@ -385,8 +417,9 @@ class RunAcceptanceService:
                 run,
                 candidate_payload=candidate_payload,
                 next_head_run_id=next_head_run_id,
+                selected_head=head,
             )
-            session_record_value = await require_session(database, run)
+            await validate_session_scope(database, run, session_scope)
             accepted_run = run.model_copy(update={"labels": _accepted_labels(thread.labels, label_overrides)})
             choice = (
                 queued.submission.environment if "environment" in queued.submission.model_fields_set else Omitted.UNSET
@@ -396,7 +429,7 @@ class RunAcceptanceService:
                 online=online,
                 run=accepted_run,
                 state=state,
-                workspace_id=session_record_value.workspace_id,
+                workspace_id=session_scope.workspace_id,
                 intent=requested_environment(choice, default=EnvironmentDefault.thread),
             )
             await database.flush()
@@ -432,13 +465,13 @@ class RunAcceptanceService:
             await self._inline_hooks.authorize(
                 database,
                 run=run,
-                workspace_id=session_record_value.workspace_id,
+                workspace_id=session_scope.workspace_id,
                 subscription=queued_hook,
             )
             hook_subscription_id = await self._inline_hooks.create(
                 database,
                 run=run_record_value,
-                workspace_id=session_record_value.workspace_id,
+                workspace_id=session_scope.workspace_id,
                 subscription=queued_hook,
                 now=now,
             )
@@ -540,6 +573,19 @@ class RunAcceptanceService:
                 queued_submission=failed.to_resource(),
                 queue_version=thread.queue_version,
             )
+
+    async def _observe_session(self, run: Run) -> SessionScope:
+        async with short_session(self._sessions) as database:
+            record = await database.scalar(
+                select(SessionRecord).where(
+                    SessionRecord.id == run.session_id, SessionRecord.organization_id == run.organization_id
+                )
+            )
+            if record is None:
+                raise RunAcceptanceError(
+                    "session_not_found", "The interaction Session was not found", category=ErrorCategory.not_found
+                )
+            return SessionScope.from_record(record)
 
     async def _load_replay(
         self,
@@ -665,17 +711,12 @@ class RunAcceptanceService:
             return queued
 
 
-async def require_session(database: AsyncSession, run: Run) -> SessionRecord:
-    record = await database.scalar(
-        select(SessionRecord).where(
-            SessionRecord.id == run.session_id, SessionRecord.organization_id == run.organization_id
-        )
-    )
-    if record is None:
+async def validate_session_scope(database: AsyncSession, run: Run, scope: SessionScope) -> None:
+    if scope.id != run.session_id or scope.organization_id != run.organization_id:
         raise RunAcceptanceError(
             "session_not_found", "The interaction Session was not found", category=ErrorCategory.not_found
         )
-    if (record.configuration_owner_user_id is not None) != (run.configuration_context is not None):
+    if (scope.configuration_owner_user_id is not None) != (run.configuration_context is not None):
         raise RunAcceptanceError(
             "configuration_scope_required", "Configuration scope cannot be added or removed by ordinary Run admission"
         )
@@ -692,11 +733,11 @@ async def require_session(database: AsyncSession, run: Run) -> SessionRecord:
             database,
             principal=run.authority_principal,
             organization_id=run.organization_id,
-            workspace_id=record.workspace_id,
+            workspace_id=scope.workspace_id,
             agent_id=run.agent_id,
             context=run.configuration_context,
+            session_scope=scope,
         )
-    return record
 
 
 def _accepted_labels(parent: Mapping[str, str], overrides: Mapping[str, str] | None) -> dict[str, str]:
@@ -755,7 +796,7 @@ async def _require_queue_drain_state(
     database: AsyncSession,
     thread: ThreadRecord,
     current: RunRecord,
-) -> None:
+) -> RunRecord | None:
     if current.status not in {
         RunStatus.completed.value,
         RunStatus.failed.value,
@@ -766,9 +807,14 @@ async def _require_queue_drain_state(
         if current.status == RunStatus.completed.value:
             raise RunAcceptanceError("thread_head_invalid", "Completed Thread has no selected head")
         return
-    head = await _load_run(database, current.organization_id, thread.head_run_id)
+    head = (
+        current
+        if current.id == thread.head_run_id
+        else await _load_run(database, current.organization_id, thread.head_run_id)
+    )
     if head.thread_id != thread.id or head.status != RunStatus.completed.value:
         raise RunAcceptanceError("thread_head_invalid", "Queue consumption requires a completed selected head")
+    return head
 
 
 def _require_thread_precondition(
@@ -794,6 +840,7 @@ async def validate_advancement(
     *,
     candidate_payload: RunPayloadEnvelope | None,
     next_head_run_id: str | None,
+    selected_head: RunRecord | None = None,
 ) -> None:
     if current is None:
         if run.lineage_kind is RunLineageKind.fork:
@@ -820,14 +867,26 @@ async def validate_advancement(
     required_head = run.parent_run_id if run.lineage_kind is RunLineageKind.continue_ else thread.head_run_id
     if next_head_run_id != required_head:
         raise RunAcceptanceError("thread_head_invalid", "Thread advancement selected an unrelated continuation head")
+    # These observations belong to this locked Thread advancement only. Distinct
+    # semantic roles can name the same Run without requiring another SQL read.
+    related = {current.id: current}
+    if selected_head is not None:
+        related[selected_head.id] = selected_head
     if run.retry_of_run_id is not None:
         _validate_retry_advancement(current, run)
     elif run.parent_run_id is None:
         _validate_root_advancement(thread, current, run)
     else:
-        await _validate_parent_advancement(database, thread, run, candidate_payload)
+        parent = related.get(run.parent_run_id)
+        if parent is None:
+            parent = await _load_run(database, run.organization_id, run.parent_run_id)
+            related[parent.id] = parent
+        _validate_parent_advancement(thread, parent, run, candidate_payload)
     if next_head_run_id is not None:
-        await _validate_selected_head(database, thread, run.organization_id, next_head_run_id)
+        head = related.get(next_head_run_id)
+        if head is None:
+            head = await _load_run(database, run.organization_id, next_head_run_id)
+        _validate_selected_head(thread, head)
 
 
 def _validate_retry_advancement(current: RunRecord, run: Run) -> None:
@@ -846,14 +905,12 @@ def _validate_root_advancement(thread: ThreadRecord, current: RunRecord, run: Ru
         raise RunAcceptanceError("run_lineage_invalid", "Root-like advancement requires terminal current work")
 
 
-async def _validate_parent_advancement(
-    database: AsyncSession,
+def _validate_parent_advancement(
     thread: ThreadRecord,
+    parent: RunRecord,
     run: Run,
     candidate_payload: RunPayloadEnvelope | None,
 ) -> None:
-    assert run.parent_run_id is not None
-    parent = await _load_run(database, run.organization_id, run.parent_run_id)
     if run.lineage_kind is RunLineageKind.fork:
         raise RunAcceptanceError("run_lineage_invalid", "Fork lineage can only be the first Run of a new Thread")
     expected_status = (
@@ -868,13 +925,7 @@ async def _validate_parent_advancement(
         validate_waiting_input(parent, run, candidate_payload)
 
 
-async def _validate_selected_head(
-    database: AsyncSession,
-    thread: ThreadRecord,
-    organization_id: str,
-    head_run_id: str,
-) -> None:
-    head = await _load_run(database, organization_id, head_run_id)
+def _validate_selected_head(thread: ThreadRecord, head: RunRecord) -> None:
     if head.thread_id != thread.id or head.status not in {RunStatus.waiting.value, RunStatus.completed.value}:
         raise RunAcceptanceError("thread_head_invalid", "Selected Thread head is not a sealed continuation state")
 

@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
 from tests.memory.selection_support import ordinary_memory
+from tests.sql_capture import capture_sql
 
 from .conftest import NOW, ORGANIZATION_ID, effective_agent_config
 from .test_attempt_execution import _completed_state, _waiting_state
@@ -69,15 +70,18 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
     async with transaction(interaction_sessions) as database:
         current_thread = await database.get(ThreadRecord, parent.thread_id)
         current_thread.labels = {"team": "latest"}
-    receipt = await AsyncSubagentSuccessorReconciler(
-        interaction_sessions,
-        states,
-        RunDisplayStore(interaction_object_store),
-        bindings=ordinary_memory(interaction_sessions),
-        run_id_factory=lambda _organization, _entry, _parent: "run_bbbbbbbbbbbbbbbb",
-        clock=lambda: NOW + timedelta(seconds=6),
-        lifecycle=test_lifecycle_writer(),
-    ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
+    with capture_sql(interaction_sessions) as statements:
+        receipt = await AsyncSubagentSuccessorReconciler(
+            interaction_sessions,
+            states,
+            RunDisplayStore(interaction_object_store),
+            bindings=ordinary_memory(interaction_sessions),
+            run_id_factory=lambda _organization, _entry, _parent: "run_bbbbbbbbbbbbbbbb",
+            clock=lambda: NOW + timedelta(seconds=6),
+            lifecycle=test_lifecycle_writer(),
+        ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
+    session_reads = [sql for sql in statements if sql.startswith("SELECT sessions.")]
+    assert len(session_reads) == 1
 
     assert receipt.outcome == "run_accepted"
     assert receipt.successor is not None
@@ -470,6 +474,7 @@ async def test_completed_inline_hook_collects_only_after_delivery_retention_ends
     interaction_object_store,
 ):
     from a13n_service.durable_operations.outbox import claim_outbox, complete_outbox
+    from a13n_service.hooks.dispatcher import HookDispatcher
     from a13n_service.hooks.domain import InlineHookSubscriptionInput, WebhookDestinationConfig
     from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
     from a13n_service.hooks.persistence import create_inline_hook_subscription
@@ -522,6 +527,7 @@ async def test_completed_inline_hook_collects_only_after_delivery_retention_ends
     assert (
         await HookRetention(interaction_sessions, minimum_age=timedelta(days=1), batch_limit=10).scan()
     ).completed == 0
+    await HookDispatcher(interaction_sessions, clock=lambda: NOW + timedelta(days=1)).scan()
     async with transaction(interaction_sessions) as database:
         claims = await claim_outbox(
             database,

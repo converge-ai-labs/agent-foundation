@@ -21,6 +21,7 @@ from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import short_session, transaction
 
+from .context import is_group
 from .domain import ListRoutines, ProposeRoutine
 from .service import RoutineInputError, RoutineService
 
@@ -35,9 +36,7 @@ class RoutineTools:
         contexts = [
             context
             for context in scope.native_tool_contexts
-            if isinstance(context, InboundRunContext)
-            and context.provider_key == "slack"
-            and context.provider_context.get("conversation_kind") in {"channel", "group"}
+            if isinstance(context, InboundRunContext) and is_group(context)
         ]
         if len(contexts) != 1:
             return None
@@ -153,28 +152,32 @@ class RoutineTools:
             for item in (
                 action("propose", ProposeRoutine, propose),
                 action("list", ListRoutines, list_routines),
-                action("event_sources", ListRoutines, event_sources),
+                *([action("event_sources", ListRoutines, event_sources)] if context.provider_key == "slack" else []),
             )
         }
         actions["propose"].definition.description = (
-            "Create or edit a scheduled or event-triggered task in this Slack channel, or propose pause/resume/delete. "
+            "Create or edit a task in this conversation, or propose pause/resume/delete. "
             "Only use for an explicit human request. Ask about ambiguous times/timezones. "
-            "Calendar schedules require an explicit IANA timezone. All tasks need a self-contained prompt. The creator must confirm the Slack card; "
+            "Calendar schedules require an explicit IANA timezone. All tasks need a self-contained prompt. The creator must confirm the card; "
             "never claim the task is active before confirmation. Times are absolute at (ISO8601 with offset), "
             "or recurring time_of_day (HH:MM) plus weekdays (0=Monday..6=Sunday). "
+            "For daily tasks use time_of_day and all weekdays, omitting at. "
+            "Never pause or resume an unconfirmed draft. "
             "List tasks first to obtain the routine_id for changes. "
-            "For events, call event_sources first and use only a returned source_target_id; never infer source identity. "
-            "Choose event instead of schedule. Copy an advertised event_type and provide filters matching its filter_schema. "
-            "Set once=true for one accepted occurrence, or once=false for ongoing monitoring. "
-            "Follow the source's setup requirements. Confirm that sharing source information "
-            "to this channel is intended. Event matching is automatic; the prompt describes what to do after a match."
         )
-        actions[
-            "list"
-        ].definition.description = "List this channel's scheduled and event-triggered tasks and pending changes/status."
-        actions[
-            "event_sources"
-        ].definition.description = "List authorized event sources, supported event types, strict filter schemas, and setup requirements. Call before proposing a subscription."
+        if "event_sources" in actions:
+            actions["propose"].definition.description += (
+                "For events, call event_sources first and use only a returned source_target_id; never infer source identity. "
+                "Choose event instead of schedule. Copy an advertised event_type and provide filters matching its filter_schema. "
+                "Set once=true for one accepted occurrence, or once=false for ongoing monitoring. "
+                "Follow the source's setup requirements. Confirm that sharing source information "
+                "to this channel is intended. Event matching is automatic; the prompt describes what to do after a match."
+            )
+        actions["list"].definition.description = "List this conversation's tasks and pending changes/status."
+        if "event_sources" in actions:
+            actions[
+                "event_sources"
+            ].definition.description = "List authorized event sources, supported event types, strict filter schemas, and setup requirements. Call before proposing a subscription."
 
         async def call(name: str, arguments: JsonObject) -> JsonValue:
             try:

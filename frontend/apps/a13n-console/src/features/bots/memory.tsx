@@ -36,6 +36,12 @@ import { refreshMemory } from "./memory-actions";
 import { MemorySearchField, MemorySearchResults } from "./memory-search";
 import { MemoryProvenance } from "./memory-provenance";
 
+const documentKindLabels = {
+  semantic: "Knowledge",
+  procedural: "Procedures",
+  episodic: "Events",
+} as const;
+
 export function BotMemory({ account }: { account: BotAccount }) {
   const { can } = useWorkspace(),
     { t } = useTranslation();
@@ -307,12 +313,13 @@ function NativeScopeDocuments({
   const page = useCursor(),
     documentId = search.get("memory_doc") ?? "",
     date = search.get("memory_date") ?? "";
+  const requestedKind = search.get("memory_kind");
   const kind =
-    search.get("memory_kind") === "daily"
-      ? "daily"
-      : search.get("memory_kind") === "long_term"
-        ? "long_term"
-        : undefined;
+    requestedKind === "semantic" ||
+    requestedKind === "procedural" ||
+    requestedKind === "episodic"
+      ? requestedKind
+      : undefined;
   const searching = !!search.get("memory_query");
   const path = { account_id: account.id, scope_id: scopeId };
   const listing = useQuery({
@@ -429,8 +436,9 @@ function NativeScopeDocuments({
                   }
                   options={[
                     { value: "all", label: t("All kinds") },
-                    { value: "daily", label: t("Daily") },
-                    { value: "long_term", label: t("Long-term") },
+                    { value: "semantic", label: t("Knowledge") },
+                    { value: "procedural", label: t("Procedures") },
+                    { value: "episodic", label: t("Events") },
                   ]}
                 />
               </div>
@@ -455,7 +463,12 @@ function NativeScopeDocuments({
                   <span>
                     <strong>{item.title}</strong>
                     <small>
-                      {item.activity_date} ·{" "}
+                      {t(
+                        item.kind
+                          ? documentKindLabels[item.kind]
+                          : "Unclassified",
+                      )}{" "}
+                      · {item.activity_date} ·{" "}
                       {t(
                         item.shared ? "Shared with this group" : "Local memory",
                       )}
@@ -535,6 +548,16 @@ function NativeScopeDocuments({
                   {t("Back to index")}
                 </Button>
                 <h3>{current?.title ?? t("Memory document")}</h3>
+                {current && (
+                  <small>
+                    {t(
+                      current.kind
+                        ? documentKindLabels[current.kind]
+                        : "Unclassified",
+                    )}
+                    {current.legacy_kind && ` · ${current.legacy_kind}`}
+                  </small>
+                )}
               </div>
               {current && !current.shared && can("bot_memory.delete") && (
                 <Menu>

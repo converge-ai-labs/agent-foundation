@@ -1497,7 +1497,9 @@ def _validate_resume_surface(
     tools: Mapping[str, ToolsetTool[AgentContext]],
 ) -> None:
     resume = ctx.deps.deferred_resume
-    if resume is None:
+    # Native deferred dispatch precedes the first model step. Later steps have
+    # consumed this batch and may prepare a different dynamic tool surface.
+    if resume is None or ctx.run_step != 0:
         return
     required_names = {call.tool_name for call in resume.requests.calls}
     for name in required_names:

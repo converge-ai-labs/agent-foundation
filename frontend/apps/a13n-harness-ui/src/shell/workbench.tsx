@@ -361,13 +361,7 @@ function WorkbenchContent({
                 <Route path="/settings/models" element={<ModelsPage />} />
                 <Route
                   path="/settings/agents"
-                  element={
-                    <SourcesPage
-                      kinds={["agent"]}
-                      title="Agents"
-                      description="Configure how your agents work and which models they use."
-                    />
-                  }
+                  element={<SourcesPage kinds={["agent"]} title="Agents" />}
                 />
                 <Route
                   path="/settings/capabilities"
@@ -412,7 +406,6 @@ function WorkbenchContent({
         open={peopleOpen}
         onOpenChange={setPeopleOpen}
         title="People in this workspace"
-        description="See who is connected and what they are viewing. Your display name helps others recognize this tab."
         closeLabel="Close"
       >
         <div className={styles.stack}>

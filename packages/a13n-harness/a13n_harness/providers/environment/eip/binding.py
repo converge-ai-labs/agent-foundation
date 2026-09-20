@@ -229,13 +229,14 @@ def _convert_descriptor(descriptor: eip.SessionDescriptor) -> EnvironmentDescrip
     )
 
 
-def configured_descriptor() -> EnvironmentDescriptor:
+def configured_descriptor(*, working_directory: str | None = None) -> EnvironmentDescriptor:
     actions = {action for values in _METHOD_ACTIONS.values() for action in values}
     actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
     from ..models import ENVIRONMENT_ACTION_DISPATCH
 
     return EnvironmentDescriptor(
         generation="unprepared",
+        working_directory=working_directory or "/",
         operation_families=frozenset(ENVIRONMENT_ACTION_DISPATCH[action].family for action in actions),
         permissions=EnvironmentPermissionSet(operations=frozenset(actions)),
         limits={},

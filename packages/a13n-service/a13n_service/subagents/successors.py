@@ -36,6 +36,7 @@ from a13n_service.interactions.objects import (
     StoredRunState,
 )
 from a13n_service.interactions.ports.memory import ExecutionBindings
+from a13n_service.interactions.session_scope import SessionScope
 from a13n_service.labels import merge_labels
 from a13n_service.run_stream import RetainedItem, RunDisplayStore
 from a13n_service.storage import ObjectStoreError, short_session, transaction
@@ -73,6 +74,7 @@ class _PreparedSelection:
     entry: ThreadInboxEntry
     selected_parent: Run
     result_authority: AsyncSubagentResultAuthority
+    session_scope: SessionScope
 
 
 class AsyncSubagentSuccessorReconciler:
@@ -139,6 +141,7 @@ class AsyncSubagentSuccessorReconciler:
         receipt = await self._accept(
             organization_id=organization_id,
             thread_id=thread_id,
+            session_scope=selected.session_scope,
             prepared=prepared,
             parent_state=parent_state,
             initial_state=initial_state,
@@ -241,7 +244,7 @@ class AsyncSubagentSuccessorReconciler:
                 return selected
             entry = selected.entry.to_resource()
             authority = await read_async_subagent_result_authority(database, entry)
-            await _authorize_successor(
+            session_scope = await _authorize_successor(
                 database,
                 selected,
                 child_run_id=authority.child.id,
@@ -250,6 +253,7 @@ class AsyncSubagentSuccessorReconciler:
                 entry=entry,
                 selected_parent=selected.selected_parent.to_resource(),
                 result_authority=authority,
+                session_scope=session_scope,
             )
 
     async def _publish_initial(self, prepared: PreparedAsyncResultSuccessor) -> StoredRunState:
@@ -272,6 +276,7 @@ class AsyncSubagentSuccessorReconciler:
         *,
         organization_id: str,
         thread_id: str,
+        session_scope: SessionScope,
         prepared: PreparedAsyncResultSuccessor,
         parent_state: StoredRunState,
         initial_state: StoredRunState,
@@ -299,6 +304,7 @@ class AsyncSubagentSuccessorReconciler:
                 database,
                 selected,
                 child_run_id=child_run_id,
+                session_scope=session_scope,
             )
             successor_record = await add_run_with_environment(
                 database,
@@ -397,13 +403,17 @@ async def _authorize_successor(
     selected: LockedAsyncResultSelection,
     *,
     child_run_id: str,
-) -> SessionRecord:
-    session = await database.scalar(
-        select(SessionRecord).where(
-            SessionRecord.organization_id == selected.thread.organization_id,
-            SessionRecord.id == selected.thread.session_id,
+    session_scope: SessionScope | None = None,
+) -> SessionScope:
+    if session_scope is None:
+        record = await database.scalar(
+            select(SessionRecord).where(
+                SessionRecord.organization_id == selected.thread.organization_id,
+                SessionRecord.id == selected.thread.session_id,
+            )
         )
-    )
+        session_scope = None if record is None else SessionScope.from_record(record)
+    session = session_scope
     child = await database.scalar(
         select(RunRecord).where(
             RunRecord.organization_id == selected.thread.organization_id,
@@ -413,6 +423,8 @@ async def _authorize_successor(
     if (
         session is None
         or child is None
+        or session.organization_id != selected.thread.organization_id
+        or session.id != selected.thread.session_id
         or selected.selected_parent.session_id != session.id
         or selected.origin.session_id != session.id
         or child.session_id != session.id
