@@ -224,6 +224,10 @@ class GitHubIngressAdapter:
             return ProviderIrrelevantEventRouting(reason_code="sender_not_allowed")
         if policy.event_actions and event.context.get("event_action") not in policy.event_actions:
             return ProviderIrrelevantEventRouting(reason_code="event_not_selected")
+        if event.type == "github.workflow_run" or (
+            isinstance(config, GitHubAccountConfig) and (event.actor or {}).get("id") == config.bot_account_id
+        ):
+            return ProviderIrrelevantEventRouting(reason_code="event_subscription_only")
         target_kind = event.context.get("target_kind")
         native_actions = _PR_NATIVE_ACTIONS if target_kind == "pull_request" else _NATIVE_ACTIONS
         return ProviderEligibleEventRouting(

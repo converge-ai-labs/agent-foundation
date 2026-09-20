@@ -1,10 +1,12 @@
-"""Bounded calendar schedules with explicit timezone and DST semantics."""
+"""Channel tasks with exactly one calendar or event trigger."""
 
 from datetime import UTC, datetime, time, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+
+from a13n_service.connectivity.subscriptions import EventTrigger
 
 
 class Schedule(BaseModel):
@@ -61,7 +63,14 @@ class RoutineDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     title: str = Field(min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=4000, description="Self-contained instructions for each future run.")
-    schedule: Schedule
+    schedule: Schedule | None = None
+    event: EventTrigger | None = None
+
+    @model_validator(mode="after")
+    def one_trigger(self):
+        if (self.schedule is None) == (self.event is None):
+            raise ValueError("Choose exactly one schedule or event trigger")
+        return self
 
 
 class ProposeRoutine(BaseModel):

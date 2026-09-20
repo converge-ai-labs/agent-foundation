@@ -170,4 +170,35 @@ The Bot posts a confirmation card showing the task, schedule, timezone, and dest
 
 The service must be running. After downtime, missed intervals coalesce into one late execution rather than replaying a backlog. Resuming starts with the next future occurrence. Each occurrence posts a normal task card and its explicit result in the same channel. Execution status does not by itself prove delivery. Account, channel, or execution permission changes can pause the schedule; inspect the reported error and recreate the task under the new configuration. Confirmation expires after 24 hours. An uncertain initial card delivery is reported by task listing and is not automatically posted again.
 
-This workflow currently supports Slack channels. Calendar schedules include one-time, daily, weekly, and selected-weekday tasks; event-triggered monitoring such as “notify me when CI finishes” is a separate capability.
+This workflow currently supports Slack channels. Calendar schedules include one-time, daily, weekly, and selected-weekday tasks; GitHub event follow-ups use the same confirmation and management flow described below.
+
+## Event subscriptions
+
+`bot_routines` manages both scheduled and event-triggered channel tasks. The Agent calls `event_sources` to discover authorized targets, each target's supported event types and filter schemas, and its setup requirements. It uses `propose` to create or edit a task, or propose pause, resume, or deletion; `list` returns existing tasks and their status. The requester confirms changes using the channel card. The service binds the destination, creator, and execution identity from the originating conversation; these are not model arguments.
+
+An event definition chooses a discovered `source_target_id`, an advertised `event_type`, exact `filters` conforming to its schema, and `once`. Set `once: true` for one accepted occurrence, or `once: false` for ongoing monitoring. A definition must contain either `schedule` or `event`, never both. For example, the definition inside a `propose` request can be:
+
+```json
+{
+  "title": "Notify when PR 42 merges",
+  "prompt": "Summarize the merge and notify this channel with its link.",
+  "event": {
+    "source_target_id": "<source_target_id returned by event_sources>",
+    "event_type": "github.pull_request.merged",
+    "filters": {"pull_request_number": 42},
+    "once": true
+  }
+}
+```
+
+The service waits for events; the Agent does not remain running. New platform support requires a trusted event-source adapter that handles its event catalog, validation, matching, and safe facts. The same persistence, confirmation, pause/resume, deduplication, and execution machinery is reused. GitHub App webhooks are the currently supported source; this interface does not make other platforms available automatically.
+
+### GitHub event follow-ups in Slack
+
+Mention the Bot with a request such as “When PR #42 merges, notify this channel” or “When GitHub Actions fails on this repository's main branch, post a summary here.” Include a repository or PR link. The Agent discovers configured sources and proposes a confirmation card showing the repository, condition, and destination. Confirm it to begin watching. Use `github.pull_request.merged` with a required `pull_request_number` and `once: true` for a merge notification. Use `github.workflow.failed` with optional `branch` and `workflow_id` filters and `once: false` to monitor CI failures continuously. Either event type supports one-time or ongoing execution. Ordinary PR closure, successful workflows, cancellation, and timeout do not match these conditions.
+
+An administrator must first connect a GitHub App, configure the repository target, and assign the same Agent and execution Service Account used by the Slack channel. Verify the repository in Bot setup so its name is available for discovery. Enable the App's **Pull request** and/or **Workflow run** webhook subscriptions, with the required repository permissions (**Actions: read** for workflow events), and configure its public a13n event URL. Notification polling accounts do not support this workflow. Events are watched by Service, not by a long-running Agent or repeated model queries. When an event matches, a normal Agent Run executes the confirmed instructions and posts through the channel's reply tool.
+
+Ask the Bot to list tasks, change instructions, pause, resume, or delete a subscription. Only its creator can confirm or manage it. Confirmed edits and resumption start watching from that point; paused or historical events are not replayed. Duplicate webhooks do not create duplicate task executions. Distinct CI attempts queue behind an active task. Account, repository, or execution-permission changes can block execution; recreate the subscription under the intended configuration. The notification shares repository information into the original channel, so verify that destination before confirming.
+
+Slack channel interactions are supported in this version. Feishu shares the Service design but its event-task confirmation and delivery interaction is not exposed yet. This feature does not implement arbitrary GitHub checks, polling fallback, or direct-message destinations. Run completion and successful Slack delivery remain separate outcomes.

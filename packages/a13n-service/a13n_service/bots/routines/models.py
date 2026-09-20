@@ -47,3 +47,35 @@ class RoutineRecord(Base):
     card_error: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EventSourceRecord(Base):
+    """Confirmed source configuration and activation boundary for an event task."""
+
+    __tablename__ = "bot_routine_event_sources"
+    __table_args__ = (Index("ix_bot_routine_event_sources_account", "account_id", "routine_id"),)
+    routine_id: Mapped[str] = mapped_column(
+        String(72), ForeignKey("bot_routines.id", ondelete="CASCADE"), primary_key=True
+    )
+    account_id: Mapped[str] = mapped_column(String(72))
+    account_version: Mapped[int] = mapped_column(Integer)
+    target_id: Mapped[str] = mapped_column(String(72))
+    target_version: Mapped[int] = mapped_column(Integer)
+    generation: Mapped[str] = mapped_column(String(64))
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EventOccurrenceRecord(Base):
+    """Durable event acceptance; retained keys prevent webhook redelivery duplicates."""
+
+    __tablename__ = "bot_routine_event_occurrences"
+    __table_args__ = (
+        Index("ix_bot_routine_event_occurrences_pending", "routine_id", "generation", "state", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    routine_id: Mapped[str] = mapped_column(String(72), ForeignKey("bot_routines.id", ondelete="CASCADE"))
+    generation: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(24))
+    event_json: Mapped[JsonObject] = mapped_column(JSON)
+    run_id: Mapped[str | None] = mapped_column(String(72), ForeignKey("runs.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
