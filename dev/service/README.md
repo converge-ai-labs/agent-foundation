@@ -73,6 +73,14 @@ make langfuse-reset    # Explicitly delete all shared local trace data
 
 These commands affect the shared resource, not only the current checkout. A successful `langfuse-reset` deletes the canonical configuration record as well as trace data, so the next start can initialize a changed Compose version; `langfuse-down` preserves both. `down` and `reset` use the recorded canonical Compose file even when the invoking checkout has since changed. They do not adopt, stop, delete, or migrate resources from the former `agent-foundation-local-langfuse` project or legacy checkout-specific stacks. A port or configuration incompatibility fails without resetting shared data. Keep an older project if you need its traces, or stop it explicitly with the matching older checkout/configuration before starting v2.
 
+Local dependency health checks run every 30 seconds after becoming healthy, with 2–5 second checks during startup (30 seconds for stores, 150 seconds for Langfuse migrations and application initialization). This requires Docker Engine 25 or newer and Docker Compose 2.23.1 or newer (also used for inline ClickHouse configuration). Three consecutive failures mark a running dependency unhealthy.
+
+The local ClickHouse profile disables global stack/memory profiling and high-volume internal metric, trace, processor and OpenTelemetry log tables. It retains query, part and error logs, with server/text logging at warning level. These settings affect ClickHouse's own diagnostics, not Langfuse trace ingestion or storage. The XML is embedded in Compose so the machine-owned copy remains self-contained.
+
+The local Langfuse Worker disables the Redis socket inactivity watchdog (`REDIS_SOCKET_TIMEOUT_MS=0`) to avoid repeated idle queue disconnects; BullMQ's blocking-command deadlines and connection retry policy remain enabled. Web connections retain the upstream watchdog. This is a local development workaround, not a production Redis timeout policy.
+
+Existing shared stacks keep their recorded configuration: editing the source does not apply this profile to them. The compatibility check continues to reject a different source; do not reset a stack merely to apply performance settings if its traces must be retained.
+
 The public local account is `dev@agent-foundation.local` / `agent-foundation-local`. All credentials are fictional. Local launchers remove inherited `OTEL_*` settings before applying the selected profile so ambient collectors cannot receive local content. Loopback traffic bypasses inherited proxies; unrelated destinations preserve their proxy policy.
 
 ### Using Logfire
