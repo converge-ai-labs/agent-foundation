@@ -335,6 +335,18 @@ docs-serve: sync ## Serve the documentation site locally
 docs-build: sync docs-check ## Build the documentation site in strict mode
 	@uv run --locked mkdocs build --strict
 
+.PHONY: verify
+verify: ## Run only the checks and tests that local changes can affect (VERIFY_ARGS=--full for every gate)
+	@uv run --locked python -m scripts.verify $(VERIFY_ARGS)
+
+.PHONY: impact-record
+impact-record: ## Record test impact maps for make verify (IMPACT_PACKAGES="a13n-service" limits the packages)
+	@uv run --locked python -m scripts.impact record $(IMPACT_PACKAGES)
+
+.PHONY: impact-status
+impact-status: ## Show which recorded impact map each package would use
+	@uv run --locked python -m scripts.impact status
+
 .PHONY: test
 test: a13n-harness-ui-skills ## Run Python workspace tests
 	@uv run --locked python -m scripts.run_python_tests $(if $(PYTHON_TEST_WORKERS),--workers $(PYTHON_TEST_WORKERS)) $(PYTHON_TEST_DIRS)

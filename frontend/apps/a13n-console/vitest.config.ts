@@ -1,6 +1,8 @@
 import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
+    // Threads share one process; forks re-load every dependency per worker.
+    pool: "threads",
     deps: {
       optimizer: {
         client: {

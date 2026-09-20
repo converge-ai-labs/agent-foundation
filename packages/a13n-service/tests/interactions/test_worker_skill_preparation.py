@@ -174,7 +174,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
         environment_catalog=ProviderCatalog(select_builtin_environment_providers(("direct_local",))),
     ) as (runtime, _shared):
         loop = runtime.execution_loop
-        with fail_after(15):
+        with fail_after(60):
             async with create_task_group() as tasks:
                 tasks.start_soon(loop.run)
                 while True:

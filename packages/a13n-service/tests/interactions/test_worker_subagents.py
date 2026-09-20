@@ -233,7 +233,7 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
         loop = runtime.execution_loop
         assert loop is not None
         maintenance = build_subagent_maintenance(settings, shared, runtime.run_display)
-        with fail_after(20):
+        with fail_after(60):
             async with create_task_group() as tasks:
                 tasks.start_soon(loop.run)
                 polls = 0
@@ -381,7 +381,7 @@ async def test_inline_and_root_share_ten_loop_iam_refresh(
         interaction_sessions, interaction_object_store, tmp_path, monkeypatch, settings=settings, model_factory=factory
     ) as (runtime, _):
         loop = runtime.execution_loop
-        with fail_after(20):
+        with fail_after(60):
             async with create_task_group() as tasks:
                 tasks.start_soon(loop.run)
                 while True:

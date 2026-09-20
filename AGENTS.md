@@ -47,3 +47,5 @@ Retain these constraints and read [DEVELOPMENT.md](DEVELOPMENT.md) for the full 
 ## Validation
 
 Follow [CONTRIBUTING.md](CONTRIBUTING.md#local-validation) for validation scope, required gates, and Make targets. Reuse successful checks whose relevant inputs remain unchanged. Report commands, outcomes, and unavailable checks accurately; do not claim a gate passed when it did not run.
+
+For local iteration, run `make verify` after each change set: it lints and type-checks the changed files and runs only the Python tests and Vitest files they affect, using recorded impact maps where `make impact-status` shows one and the import graph otherwise. `make verify VERIFY_ARGS=--dry-run` prints the plan; add `--consumers` when a shared package changes so downstream suites run too. Record maps with `make impact-record` on a clean checkout when a package has none or `verify` reports its map far behind. Run the complete gates (`make verify VERIFY_ARGS=--full`, or `make test` for one suite) when shared inputs change or `verify` widens to whole suites anyway; CI always runs every suite.

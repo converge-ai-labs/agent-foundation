@@ -1,9 +1,6 @@
 """Migrated terminal guards allow labels while preserving sealed execution."""
 
-import asyncio
-
 import pytest
-from a13n_service.database.migration import DatabaseMigrator
 from a13n_service.gateway.labels import InteractionLabels
 from a13n_service.interactions.models import RunRecord
 from a13n_service.labels import LabelsBody, labels_etag
@@ -16,11 +13,8 @@ from tests.interactions.conftest import NOW, _seed_interaction_database
 
 
 @pytest.mark.anyio
-async def test_terminal_label_edits_do_not_weaken_execution_guards(postgres_database):
-    config = postgres_database
-    migrator = DatabaseMigrator(config)
-    await asyncio.to_thread(migrator.upgrade)
-    engine = create_sql_engine(config)
+async def test_terminal_label_edits_do_not_weaken_execution_guards(service_database):
+    engine = create_sql_engine(service_database)
     sessions = create_session_factory(engine)
     try:
         await _seed_interaction_database(sessions)

@@ -457,13 +457,17 @@ def test_environment_modules_import_independently():
     import subprocess
     import sys
 
-    for module in (
-        "environments.runtime",
-        "environments.selection",
-        "environments.mount_observations",
-        "interactions.attempt_executor",
-    ):
-        subprocess.run([sys.executable, "-c", f"import a13n_service.{module}"], check=True, capture_output=True)
+    processes = [
+        subprocess.Popen([sys.executable, "-c", f"import a13n_service.{module}"], stderr=subprocess.PIPE)
+        for module in (
+            "environments.runtime",
+            "environments.selection",
+            "environments.mount_observations",
+            "interactions.attempt_executor",
+        )
+    ]
+    failures = [(process.args, process.communicate()[1]) for process in processes if process.wait() != 0]
+    assert not failures, failures
 
 
 async def test_postgresql_environment_lease_fences_competing_workers(

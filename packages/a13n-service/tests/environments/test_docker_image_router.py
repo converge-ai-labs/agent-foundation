@@ -30,12 +30,17 @@ from .test_router import (
     environment_api_client as environment_api_client,
 )
 
+DOCKER_IMAGE = os.environ.get("A13N_TEST_DOCKER_IMAGE")
+# Skip before the database clone and app lifespan fixtures are paid for.
+requires_docker_image = pytest.mark.skipif(
+    not DOCKER_IMAGE, reason="Set A13N_TEST_DOCKER_IMAGE to a local compatible image for the real Docker boundary"
+)
 
+
+@requires_docker_image
 @pytest.mark.anyio
 async def test_docker_image_http_reaches_worker_and_real_engine(environment_api_client):
-    image = os.environ.get("A13N_TEST_DOCKER_IMAGE")
-    if not image:
-        pytest.skip("Set A13N_TEST_DOCKER_IMAGE to a local compatible image for the real Docker boundary")
+    image = DOCKER_IMAGE
     provider = await environment_api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/environment-providers",
         json={"type": "docker", "name": "Docker"},
@@ -288,11 +293,10 @@ async def test_docker_image_cancellation_is_scoped_to_owner(environment_api_clie
     assert executions == 1
 
 
+@requires_docker_image
 @pytest.mark.anyio
 async def test_cancelled_docker_image_http_cleans_worker_container(environment_api_client, monkeypatch):
-    image = os.environ.get("A13N_TEST_DOCKER_IMAGE")
-    if not image:
-        pytest.skip("Set A13N_TEST_DOCKER_IMAGE for real cancellation coverage")
+    image = DOCKER_IMAGE
     provider = await environment_api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/environment-providers",
         json={"type": "docker", "name": "Docker"},
@@ -329,11 +333,10 @@ async def test_cancelled_docker_image_http_cleans_worker_container(environment_a
         docker.close()
 
 
+@requires_docker_image
 @pytest.mark.anyio
 async def test_network_disconnect_cleans_real_worker_container(tmp_path, service_database, monkeypatch):
-    image = os.environ.get("A13N_TEST_DOCKER_IMAGE")
-    if not image:
-        pytest.skip("Set A13N_TEST_DOCKER_IMAGE for real network cancellation coverage")
+    image = DOCKER_IMAGE
     config = settings(tmp_path, service_database)
     await seed_database(config)
     app = create_app(
@@ -406,11 +409,10 @@ async def test_network_disconnect_cleans_real_worker_container(tmp_path, service
             await asyncio.wait_for(serving, 5)
 
 
+@requires_docker_image
 @pytest.mark.anyio
 async def test_docker_image_http_timeout_reports_image_and_cleans_container(environment_api_client, monkeypatch):
-    image = os.environ.get("A13N_TEST_DOCKER_IMAGE")
-    if not image:
-        pytest.skip("Set A13N_TEST_DOCKER_IMAGE for real timeout coverage")
+    image = DOCKER_IMAGE
     provider = await environment_api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/environment-providers",
         json={"type": "docker", "name": "Docker"},
@@ -469,11 +471,10 @@ async def test_docker_connectivity_outage_preserves_enabled_provider(environment
     assert retained.json()["enabled"] is True
 
 
+@requires_docker_image
 @pytest.mark.anyio
 async def test_workspace_builder_tests_organization_docker_provider(environment_api_client, service_database):
-    image = os.environ.get("A13N_TEST_DOCKER_IMAGE")
-    if not image:
-        pytest.skip("Set A13N_TEST_DOCKER_IMAGE for the Organization Provider boundary")
+    image = DOCKER_IMAGE
     engine = create_sql_engine(service_database)
     sessions = create_session_factory(engine)
     provider_id = "envp_orgdocker123456"

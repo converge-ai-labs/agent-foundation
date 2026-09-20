@@ -6,16 +6,10 @@ import os
 import subprocess
 import sys
 
-import pytest
+CONFIGURED_VALUES = (None, "0", "1", "")
 
 
-@pytest.mark.parametrize("configured_value", [None, "0", "1", ""])
-def test_pydantic_ai_banner_default_preserves_explicit_values(configured_value: str | None) -> None:
-    env = os.environ.copy()
-    env.pop("PYDANTIC_AI_NO_BANNER", None)
-    if configured_value is not None:
-        env["PYDANTIC_AI_NO_BANNER"] = configured_value
-    expected = "1" if configured_value is None else configured_value
+def test_pydantic_ai_banner_default_preserves_explicit_values() -> None:
     script = """
 import os
 import sys
@@ -38,12 +32,22 @@ from a13n_harness import HarnessBuilder
 assert pydantic_imports, "The check must observe the first Pydantic AI import"
 assert os.environ["PYDANTIC_AI_NO_BANNER"] == expected
 """
-    result = subprocess.run(
-        [sys.executable, "-c", script, expected],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
+    # Each interpreter pays the cold import once; start them together instead of one after another.
+    processes: list[tuple[str | None, subprocess.Popen[str]]] = []
+    for configured_value in CONFIGURED_VALUES:
+        env = os.environ.copy()
+        env.pop("PYDANTIC_AI_NO_BANNER", None)
+        if configured_value is not None:
+            env["PYDANTIC_AI_NO_BANNER"] = configured_value
+        expected = "1" if configured_value is None else configured_value
+        process = subprocess.Popen(
+            [sys.executable, "-c", script, expected],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        processes.append((configured_value, process))
+    for configured_value, process in processes:
+        output, _ = process.communicate(timeout=60)
+        assert process.returncode == 0, (configured_value, output)

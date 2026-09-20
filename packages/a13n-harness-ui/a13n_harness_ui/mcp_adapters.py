@@ -78,6 +78,9 @@ class HarnessUiMCP(MCP[AgentContext]):
                     keep_alive=False,
                 ),
                 id=self._recipe.server_id,
+                # A spawned server imports its runtime before answering; the 5-second default
+                # fails on a busy machine while still leaving a hung process unbounded.
+                init_timeout=30,
             )
         else:
             raise TypeError("unsupported MCP transport")

@@ -90,7 +90,7 @@ class DocumentMemoryRunCapability(MemoryCapability):
         write: bool,
         toolset: bool,
         required: bool = False,
-        timeout: float = _OPERATION_TIMEOUT_SECONDS,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             document_store=store,
@@ -98,7 +98,8 @@ class DocumentMemoryRunCapability(MemoryCapability):
             document_write=write,
             toolset=toolset,
             recall_required=required,
-            recall_timeout=timeout,
+            # Resolved per instance so the module budget stays the single source of truth.
+            recall_timeout=_OPERATION_TIMEOUT_SECONDS if timeout is None else timeout,
         )
         self.store = store
         self.context = context
@@ -150,7 +151,7 @@ class DocumentMemoryRunCapability(MemoryCapability):
                     "stage": stage,
                     "error_type": type(error).__name__,
                     "duration_seconds": monotonic() - started,
-                    "timeout_seconds": _OPERATION_TIMEOUT_SECONDS,
+                    "timeout_seconds": self.recall_timeout,
                 },
             )
             content = f"{self.store.index_name} is unavailable. Do not treat this as an empty memory store."

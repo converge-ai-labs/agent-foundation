@@ -26,6 +26,7 @@ dev = [
     "protobuf>=6.32,<7",
     "pyright>=1.1,<2",
     "pytest>=9,<10",
+    "pytest-tia==1.1.1",
     "pytest-timeout>=2.4,<3",
     "pytest-xdist>=3.8,<4",
     "ruff>=0.16,<0.17",
@@ -76,6 +77,8 @@ include = [
     "scripts/release_notes.py",
     "scripts/release_version.py",
     "scripts/run_python_tests.py",
+    "scripts/impact.py",
+    "scripts/verify.py",
     "scripts/k8s_local.py",
 ]
 exclude = ["**/tests", "**/node_modules", "**/__pycache__", "**/.*", ".venv"]
@@ -87,6 +90,8 @@ reportTypedDictNotRequiredAccess = false
 addopts = ["--import-mode=importlib"]
 junit_logging = "all"
 junit_log_passing_tests = false
+# A hung test fails here instead of stalling the whole run; slow suites override per test.
+timeout = 120
 filterwarnings = [
     "error:The garbage collector is trying to clean up non-checked-in connection:sqlalchemy.exc.SAWarning",
     "error::pytest.PytestUnhandledThreadExceptionWarning",

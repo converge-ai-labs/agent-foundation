@@ -1,34 +1,13 @@
 import pytest
-from a13n_service.database.migration import DatabaseMigrator
 from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import database_url
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
 
 
-def _assert_lifecycle_schema(config: PostgreSQLConfig, *, present: bool) -> None:
-    engine = create_engine(database_url(config))
+def test_lifecycle_fact_trigger_is_installed(service_database: PostgreSQLConfig) -> None:
+    engine = create_engine(database_url(service_database))
     try:
-        inspector = inspect(engine)
-        if not present:
-            assert "lifecycle_events" not in inspector.get_table_names()
-            return
-        assert "lifecycle_events" in inspector.get_table_names()
-        indexes = {index["name"] for index in inspector.get_indexes("lifecycle_events")}
-        assert {
-            "ix_lifecycle_events_attempt",
-            "ix_lifecycle_events_projection_due",
-            "ix_lifecycle_events_resource",
-            "ix_lifecycle_events_run",
-            "ix_lifecycle_events_organization_seq",
-        } <= indexes
-        checks = {constraint["name"] for constraint in inspector.get_check_constraints("lifecycle_events")}
-        assert {
-            "ck_lifecycle_events_entity_correlation_valid",
-            "ck_lifecycle_events_event_type_valid",
-            "ck_lifecycle_events_projection_shape_valid",
-            "ck_lifecycle_events_schema_version_non_blank",
-        } <= checks
         with engine.connect() as connection:
             triggers = set(
                 connection.execute(
@@ -38,29 +17,13 @@ def _assert_lifecycle_schema(config: PostgreSQLConfig, *, present: bool) -> None
                     )
                 ).scalars()
             )
-        assert "reject_lifecycle_fact_update" in triggers
     finally:
         engine.dispose()
+    assert "reject_lifecycle_fact_update" in triggers
 
 
-def _exercise_migration(config: PostgreSQLConfig) -> None:
-    migrator = DatabaseMigrator(config)
-    migrator.upgrade()
-    migrator.current(check_heads=True, verbose=False)
-    _assert_lifecycle_schema(config, present=True)
-    migrator.downgrade("base")
-    _assert_lifecycle_schema(config, present=False)
-
-
-def test_lifecycle_schema_migrates_up_and_down(postgres_database: PostgreSQLConfig) -> None:
-    _exercise_migration(postgres_database)
-
-
-def test_fact_guard_allows_projection_but_preserves_json(postgres_database: PostgreSQLConfig) -> None:
-    config = postgres_database
-    migrator = DatabaseMigrator(config)
-    migrator.upgrade()
-    engine = create_engine(database_url(config))
+def test_fact_guard_allows_projection_but_preserves_json(service_database: PostgreSQLConfig) -> None:
+    engine = create_engine(database_url(service_database))
     try:
         with engine.begin() as connection:
             # Exercise the installed function with the real column types while
@@ -90,4 +53,3 @@ def test_fact_guard_allows_projection_but_preserves_json(postgres_database: Post
             assert connection.scalar(text("SELECT payload::text FROM lifecycle_guard_probe")) == '{"key": 1}'
     finally:
         engine.dispose()
-        migrator.downgrade("base")

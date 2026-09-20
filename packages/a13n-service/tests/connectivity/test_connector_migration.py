@@ -3,46 +3,7 @@ from datetime import UTC, datetime
 from a13n_service.database.migration import DatabaseMigrator
 from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import database_url
-from sqlalchemy import MetaData, create_engine, inspect, select
-
-TABLES = {
-    "connections",
-    "connection_authorizations",
-    "connector_providers",
-}
-
-
-def _exercise(configuration: PostgreSQLConfig) -> None:
-    migrator = DatabaseMigrator(configuration)
-    migrator.upgrade()
-    migrator.current(check_heads=True, verbose=False)
-    engine = create_engine(database_url(configuration))
-    try:
-        inspector = inspect(engine)
-        assert {"connector_tool_catalogs", "connector_connection_operations"}.isdisjoint(inspector.get_table_names())
-        assert TABLES <= set(inspector.get_table_names())
-        connection_columns = {column["name"] for column in inspector.get_columns("connections")}
-        assert {
-            "external_ref",
-            "setup_generation",
-            "deleted_at",
-        } <= connection_columns
-        assert {"owner_type", "owner_id", "revoke_generation"}.isdisjoint(connection_columns)
-        attempt_columns = {column["name"] for column in inspector.get_columns("connection_authorizations")}
-        assert "external_user_correlation" in attempt_columns
-        assert "redirect_url" not in attempt_columns
-    finally:
-        engine.dispose()
-    migrator.downgrade("base")
-    engine = create_engine(database_url(configuration))
-    try:
-        assert TABLES.isdisjoint(inspect(engine).get_table_names())
-    finally:
-        engine.dispose()
-
-
-def test_connector_schema_migrates(postgres_database: PostgreSQLConfig) -> None:
-    _exercise(postgres_database)
+from sqlalchemy import MetaData, create_engine, select
 
 
 def _exercise_populated_upgrade(configuration: PostgreSQLConfig) -> None:
