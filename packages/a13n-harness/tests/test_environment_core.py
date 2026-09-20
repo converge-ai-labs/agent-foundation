@@ -1964,6 +1964,77 @@ async def test_process_start_rechecks_compound_actions_after_readiness() -> None
         assert operations._next == 0
 
 
+@pytest.mark.parametrize("captured_entry", [False, True])
+@pytest.mark.parametrize("retained", [False, True])
+async def test_foreground_entry_points_share_dispatch_and_reject_retained_output(captured_entry, retained):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.providers.environment.commands import ShellExecResult
+    from a13n_harness.providers.environment.retention import BoundOutputReference, OpaqueOutputReference
+
+    async def execute(request):
+        assert request.cwd == "/"
+        empty = EnvironmentOutputCapture(kind="empty", producer_complete=True, content_complete=True, captured_bytes=0)
+        output = EnvironmentOutputCapture(
+            kind="retained" if retained else "inline",
+            producer_complete=True,
+            content_complete=True,
+            captured_bytes=4,
+            inline=None if retained else b"done",
+            reference=BoundOutputReference(
+                mount_id=provider.mount_id,
+                observed_generation=provider.bound.descriptor.generation,
+                reference=OpaqueOutputReference._from_payload("native-output"),
+            )
+            if retained
+            else None,
+        )
+        return ShellExecResult(
+            status=ProcessStatus(phase="exited", exit_code=0, termination_reason="exit", cleanup="complete"),
+            output=ProcessOutputSnapshot(stdout=output, stderr=empty),
+            receipt=EnvironmentOperationReceipt(
+                mount_id=provider.mount_id,
+                observed_generation=provider.bound.descriptor.generation,
+                operation_id="shell-1",
+                stage="completed",
+                outcome="succeeded",
+            ),
+        )
+
+    dispatch = AsyncMock(side_effect=execute)
+    provider = _Binding(
+        "shell-only",
+        families=frozenset({"shell"}),
+        operations=EnvironmentProviderOperations(shell=SimpleNamespace(exec=dispatch)),
+        permissions=frozenset({EnvironmentAction.SHELL_EXEC}),
+    )
+    runtime = create_environment_runtime(
+        mounts={"workspace": _runtime_mount(provider, permissions=frozenset({EnvironmentAction.SHELL_EXEC}))},
+        default_mount="workspace",
+    )
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as env:
+        with pytest.raises(EnvironmentError) as stale:
+            await env.shell.exec_captured(_process_request(), expected_mount_id="stale")
+        assert stale.value.code == "environment_stale_mount"
+        dispatch.assert_not_awaited()
+        operation = (
+            env.shell.exec_captured(_process_request(), expected_mount_id=provider.mount_id)
+            if captured_entry
+            else env.shell.exec(_process_request())
+        )
+        if retained:
+            with pytest.raises(EnvironmentError) as failure:
+                await operation
+            assert failure.value.code == "environment_provider_failure"
+        else:
+            result = await operation
+            assert result.status.exit_code == 0
+            assert result.output.stdout.inline == b"done"
+        dispatch.assert_awaited_once()
+        assert provider.bound.ready_calls == [frozenset({"shell"})]
+
+
 async def test_command_cwd_resource_prepares_shell_without_file_facet() -> None:
     from types import SimpleNamespace
     from unittest.mock import AsyncMock

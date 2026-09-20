@@ -34,34 +34,6 @@ class DocumentsCapability(AbstractCapability[AgentContext]):
     def __init__(self, configuration: DocumentsConfiguration | None = None) -> None:
         self.configuration = (configuration or DocumentsConfiguration()).model_copy(deep=True)
 
-    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        existing = ctx.deps._run_capability(DOCUMENTS_CAPABILITY_ID)
-        if existing is not None:
-            if not isinstance(existing, _DocumentsActiveCapability):
-                raise DefinitionError("Documents has an incompatible run replacement.", code="capability_type_mismatch")
-            return existing
-        if DOCUMENTS_CAPABILITY_ID not in ctx.deps._capability_provenance.definition_ids:
-            raise DefinitionError(
-                "DocumentsCapability must originate from the Agent definition.", code="capability_scope_invalid"
-            )
-        replacement = _DocumentsActiveCapability(self.configuration, context=ctx.deps)
-        ctx.deps._record_run_capability(DOCUMENTS_CAPABILITY_ID, replacement)
-        return replacement
-
-
-@dataclass(init=False)
-class _DocumentsActiveCapability(DocumentsCapability):
-    def __init__(self, configuration: DocumentsConfiguration, *, context: AgentContext) -> None:
-        super().__init__(configuration)
-        self._context = context
-
-    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        if ctx.deps is not self._context:
-            raise DefinitionError(
-                "Documents run replacement cannot cross logical runs.", code="capability_scope_invalid"
-            )
-        return self
-
     def get_toolset(self) -> AbstractToolset[AgentContext]:
         return DynamicToolset(self._toolset_for_run, per_run_step=False, id=_DOCUMENT_TOOLSET_ID)
 
@@ -75,12 +47,12 @@ class _DocumentsActiveCapability(DocumentsCapability):
         ).get_toolset()
 
     def _bind(self, ctx: RunContext[AgentContext]) -> DocumentConverter:
-        if ctx.deps is not self._context:
+        if DOCUMENTS_CAPABILITY_ID not in ctx.deps._capability_provenance.definition_ids:
             raise DefinitionError(
-                "Documents run replacement cannot cross logical runs.", code="capability_scope_invalid"
+                "DocumentsCapability must originate from the Agent definition.", code="capability_scope_invalid"
             )
         owner = ctx.capabilities.get(DOCUMENTS_CAPABILITY_ID)
-        if type(owner) is not _DocumentsActiveCapability or owner is not self:
+        if type(owner) is not DocumentsCapability or owner is not self:
             raise DefinitionError(
                 "The finalized Documents owner has an incompatible identity.", code="capability_scope_invalid"
             )

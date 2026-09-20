@@ -175,6 +175,9 @@ class EIPEnvironmentSession:
                 code="environment_unavailable",
                 retry_hint="new_run",
             )
+        self._availability = EnvironmentAvailability(
+            status="available", ready_families=self._descriptor.operation_families
+        )
 
     async def close(self) -> None:
         first_error: EnvironmentError | None = None

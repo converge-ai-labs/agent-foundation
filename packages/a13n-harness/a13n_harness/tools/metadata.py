@@ -152,7 +152,7 @@ def normalize_harness_tool_metadata(value: object) -> HarnessToolMetadata:
                 effects=value.effects,
                 credential_audiences=value.credential_audiences,
                 idempotency=value.idempotency,
-                output_policy=value.output_policy.model_copy(deep=True),
+                output_policy=value.output_policy,
                 resource_resolver=value.resource_resolver,
                 superseded_by_tool_ids=value.superseded_by_tool_ids,
             )
@@ -172,16 +172,8 @@ def normalize_harness_tool_metadata(value: object) -> HarnessToolMetadata:
         missing = required - set(value)
         if extra or missing:
             raise ValueError("metadata fields do not match the managed contract")
-        fields = _normalize_metadata_fields(
-            tool_id=value["tool_id"],
-            effects=value["effects"],
-            credential_audiences=value["credential_audiences"],
-            idempotency=value["idempotency"],
-            output_policy=value["output_policy"],
-            resource_resolver=value.get("resource_resolver"),
-            superseded_by_tool_ids=value.get("superseded_by_tool_ids", ()),
-        )
-        return HarnessToolMetadata(**fields)
+        # Construction owns normalization and detachment for either input shape.
+        return HarnessToolMetadata(**dict(value))
     except DefinitionError:
         raise
     except (KeyError, TypeError, ValueError) as exc:

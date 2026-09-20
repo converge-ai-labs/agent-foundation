@@ -440,6 +440,8 @@ class FileCopyResult(BaseModel):
     receipt: OperationReceipt
 ```
 
+`replace` permits overwriting an existing destination; it does not require that the destination already exists. With `replace=False`, an existing destination is a conflict and remains unchanged. With `replace=True`, copy creates an absent destination or replaces an existing regular file.
+
 Copy reads and writes in bounded chunks and separately checks source-read and destination-write authority. It copies the bytes observed through one opened source object but makes no portable source-version or immutable-snapshot claim. Every successful copy publishes one complete destination-local candidate; publication strategy is an envd invariant, not a caller option or result flag. Failure before publication removes the candidate and leaves the destination unchanged. The destination never aliases the source through a symlink escape.
 
 Cross-Environment copy is not an EIP method. A trusted client pumps one provider byte stream into one independently authorized destination stream write under backpressure. Its EIP adapter still verifies transport count and digest internally, while the provider-neutral copy contract treats normal source iterator exhaustion as success and commits only then. Within one Device and Session, copying between accessible paths uses one method.

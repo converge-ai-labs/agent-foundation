@@ -6,9 +6,9 @@ from typing import Any, cast
 
 import pytest
 from a13n_harness import RunBindings
-from a13n_harness.context import _ToolResultSpillStore
 from a13n_harness.environment import EnvironmentAction
 from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.tools._output import _ToolResultSpillStore
 
 from .test_dynamic_environment import _local_mount
 

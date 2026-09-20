@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from secrets import token_urlsafe
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from pydantic import Field
 from pydantic_ai import RunContext
@@ -12,6 +12,13 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.toolsets import FunctionToolset
 
+from a13n_harness._handoff import (
+    _HANDOFF_STATE_VERSION,
+    HANDOFF_CAPABILITY_ID,
+    _HandoffState,
+    _render_summary,
+    _safe_context_error_code,
+)
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import (
@@ -26,9 +33,6 @@ from ._instructions import InstructionFunctionToolset, tool_instruction
 from .events import HandoffSummaryEvent
 
 _HANDOFF_INSTRUCTION = tool_instruction("summarize")
-
-if TYPE_CHECKING:
-    from a13n_harness.capabilities.context import _HandoffState
 
 
 class HandoffToolset:
@@ -58,16 +62,11 @@ class HandoffToolset:
         )
 
     async def replace_state(self, state: _HandoffState) -> None:
-        from a13n_harness.capabilities.context import (
-            _CONTEXT_STATE_VERSION,
-            HANDOFF_CAPABILITY_ID,
-        )
-
         state = state.model_copy(deep=True)
         await self._context.state.write(
             HANDOFF_CAPABILITY_ID,
             state,
-            version=_CONTEXT_STATE_VERSION,
+            version=_HANDOFF_STATE_VERSION,
         )
         self._state = state
 
@@ -92,12 +91,6 @@ class HandoffToolset:
             ),
         ] = None,
     ) -> str:
-        from a13n_harness.capabilities.context import (
-            _HandoffState,
-            _render_summary,
-            _safe_context_error_code,
-        )
-
         self._require_context(ctx)
         async with self._state_lock:
             if self._state.summary is not None:
@@ -170,8 +163,6 @@ class HandoffToolset:
             return "Summary accepted. The next model boundary will continue from restored context."
 
     def _require_context(self, ctx: RunContext[AgentContext]) -> None:
-        from a13n_harness.capabilities.context import HANDOFF_CAPABILITY_ID
-
         if ctx.deps is not self._context or ctx.capabilities.get(HANDOFF_CAPABILITY_ID) is not self._owner:
             raise DefinitionError(
                 "Handoff Toolset cannot cross logical runs.",

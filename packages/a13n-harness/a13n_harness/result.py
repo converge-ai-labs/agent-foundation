@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, computed_field, field_validator
@@ -50,13 +51,21 @@ class SafeFailure(BaseModel):
         return _FAILURE_DETAILS_ADAPTER.validate_json(self.details_json)
 
 
+@dataclass(frozen=True, slots=True)
+class _MessageSnapshot:
+    """Validated immutable history shared only between result candidates."""
+
+    data: bytes
+    count: int
+
+
 class HarnessRunResult[OutputT]:
     """One immutable terminal candidate or successfully delivered outcome."""
 
     __slots__ = (
         "_deferred",
         "_failure",
-        "_messages_json",
+        "_messages",
         "_new_message_index",
         "_output",
         "_run_id",
@@ -81,7 +90,7 @@ class HarnessRunResult[OutputT]:
         failure: SafeFailure | None = None,
         suspend_reason: SuspendReason | None = None,
         deferred: DeferredToolRequests | None = None,
-        _messages: tuple[ModelMessage, ...] = (),
+        _messages: tuple[ModelMessage, ...] | _MessageSnapshot = (),
         _new_message_index: int = 0,
     ) -> None:
         if not isinstance(thread_id, str) or not thread_id.strip():
@@ -105,8 +114,12 @@ class HarnessRunResult[OutputT]:
         if deferred is not None and not isinstance(deferred, DeferredToolRequests):
             raise TypeError("deferred must be DeferredToolRequests or None")
 
-        messages_json = encode_messages(_messages)
-        if not isinstance(_new_message_index, int) or not 0 <= _new_message_index <= len(_messages):
+        messages = (
+            _messages
+            if isinstance(_messages, _MessageSnapshot)
+            else _MessageSnapshot(encode_messages(_messages), len(_messages))
+        )
+        if not isinstance(_new_message_index, int) or not 0 <= _new_message_index <= messages.count:
             raise ValueError("new message index is outside the message history")
 
         if status == "completed":
@@ -136,7 +149,7 @@ class HarnessRunResult[OutputT]:
         self._failure = failure.model_copy(deep=True) if failure is not None else None
         self._suspend_reason = suspend_reason
         self._deferred = deepcopy(deferred)
-        self._messages_json = messages_json
+        self._messages = messages
         self._new_message_index = _new_message_index
 
     @property
@@ -182,7 +195,7 @@ class HarnessRunResult[OutputT]:
 
     def all_messages(self) -> tuple[ModelMessage, ...]:
         """Return a fresh complete message view for this run."""
-        return decode_messages(self._messages_json)
+        return decode_messages(self._messages.data)
 
     def new_messages(self) -> tuple[ModelMessage, ...]:
         """Return a fresh view of messages created by this run."""
@@ -212,7 +225,7 @@ class HarnessRunResult[OutputT]:
             failure=self.failure if failure is _UNSET else failure,
             suspend_reason=self.suspend_reason if suspend_reason is _UNSET else suspend_reason,
             deferred=self.deferred if deferred is _UNSET else deferred,
-            _messages=self.all_messages(),
+            _messages=self._messages if type(self) is HarnessRunResult else self.all_messages(),
             _new_message_index=self._new_message_index,
         )
 

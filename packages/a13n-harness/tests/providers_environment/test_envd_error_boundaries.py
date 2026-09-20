@@ -108,6 +108,92 @@ async def test_prepare_failure_stays_primary_when_cleanup_also_fails(adapter, mo
     assert primary.__cause__ is cleanup
 
 
+@pytest.mark.parametrize("failure", ["not_ready", "error"])
+@pytest.mark.parametrize("eager", [False, True])
+async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure, eager):
+    from unittest.mock import AsyncMock
+
+    from a13n_envd_client.eip import v1 as eip
+    from a13n_harness import RunBindings
+    from a13n_harness.environment.advanced import create_environment_runtime
+
+    limits = SimpleNamespace(
+        **dict.fromkeys(
+            (
+                "max_request_bytes",
+                "max_response_bytes",
+                "max_concurrent_operations",
+                "max_processes",
+                "max_operation_duration_ms",
+                "max_output_preview_bytes",
+                "max_output_bytes_per_stream",
+                "max_transfer_frame_bytes",
+                "max_concurrent_file_transfers",
+                "max_file_transfer_bytes",
+            ),
+            1024,
+        )
+    )
+    first = (
+        SimpleNamespace(ready=False)
+        if failure == "not_ready"
+        else EnvironmentError("Transient readiness failure", code="environment_unavailable")
+    )
+    readiness = AsyncMock(side_effect=[first, SimpleNamespace(ready=True), SimpleNamespace(ready=True)])
+    stat = AsyncMock(
+        return_value=eip.FileStatResult(
+            info=eip.FileInfo(path=eip.EIPPath(path="/note.txt"), kind=eip.FileKind.FILE, size_bytes=4)
+        )
+    )
+    session = SimpleNamespace(
+        descriptor=SimpleNamespace(
+            device_id="device",
+            session_id="session",
+            generation=1,
+            working_directory="/",
+            available_methods=("file.stat",),
+            limits=limits,
+        ),
+        readiness=readiness,
+        client=SimpleNamespace(file_stat=stat),
+    )
+    closed = []
+
+    @asynccontextmanager
+    async def scope():
+        try:
+            yield session
+        finally:
+            closed.append(True)
+
+    adapter = RemoteEnvdEnvironment(
+        provider_key="http_envd",
+        environment_id="test",
+        state=EnvironmentState(provider_key="http_envd", state_version="1", state={"device_id": "device"}),
+        session_context=scope(),
+    )
+    if eager:
+        await adapter.prepare()
+    runtime = create_environment_runtime(mounts={"workspace": adapter}, default_mount="workspace")
+    async with runtime.bind(
+        thread_id="thread-1", run_id="run-1", instance=RunBindings.embedded().instance, host_refs={}
+    ) as bound:
+        with pytest.raises(EnvironmentError) as caught:
+            await bound.files.stat("note.txt")
+        assert caught.value.code == "environment_unavailable"
+        assert adapter.availability.status == "unavailable"
+        stat.assert_not_awaited()
+        for _ in range(2):
+            assert (await bound.files.stat("note.txt")).size == 4
+            assert adapter.availability.status == "available"
+            assert adapter.availability.ready_families == frozenset({"files"})
+        assert readiness.await_count == 3
+        assert stat.await_count == 2
+        assert closed == []
+    assert closed == [True]
+    assert adapter.availability.status == "unavailable"
+
+
 async def test_remote_cleanup_attempts_both_owners_and_retains_all_failures():
     first, second = RuntimeError("facets"), EIPSessionStateError("session")
     closed = []

@@ -89,16 +89,7 @@ class ModelCharacteristicsAliasCatalog(Mapping[str, ModelCharacteristicsAlias]):
         updates: Mapping[str, ModelCharacteristicsAlias],
     ) -> ModelCharacteristicsAliasCatalog:
         """Return an immutable catalog after shallow alias replacement."""
-        merged = dict(self._entries)
-        for key, entry in updates.items():
-            if not isinstance(key, str) or not isinstance(entry, ModelCharacteristicsAlias):
-                raise TypeError(
-                    "model characteristics alias updates must map strings to ModelCharacteristicsAlias values"
-                )
-            if key != entry.key:
-                raise ValueError("model characteristics alias update key must match its entry")
-            merged[key] = entry
-        return ModelCharacteristicsAliasCatalog(merged)
+        return ModelCharacteristicsAliasCatalog({**self._entries, **updates})
 
 
 class ModelSettingsAliasCatalog(Mapping[str, ModelSettingsAlias]):
@@ -130,14 +121,7 @@ class ModelSettingsAliasCatalog(Mapping[str, ModelSettingsAlias]):
 
     def with_updates(self, updates: Mapping[str, ModelSettingsAlias]) -> ModelSettingsAliasCatalog:
         """Return an immutable catalog after shallow alias replacement."""
-        merged = dict(self._entries)
-        for key, entry in updates.items():
-            if not isinstance(key, str) or not isinstance(entry, ModelSettingsAlias):
-                raise TypeError("model settings alias updates must map strings to ModelSettingsAlias values")
-            if key != entry.key:
-                raise ValueError("model settings alias update key must match its entry")
-            merged[key] = entry
-        return ModelSettingsAliasCatalog(merged)
+        return ModelSettingsAliasCatalog({**self._entries, **updates})
 
 
 def _context_window_tokens(tokens: int) -> ModelCharacteristicsTransform:

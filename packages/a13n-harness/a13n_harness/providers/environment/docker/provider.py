@@ -102,7 +102,7 @@ class DockerEnvironment(Environment):
         self.commands: DockerCommands | None = None
         self.processes: DockerProcesses | None = None
         self.retention: LocalRetentionStore | None = None
-        self._available = False
+        self._availability = EnvironmentAvailability(status="preparing")
 
     @property
     def provider_key(self) -> str:
@@ -118,10 +118,7 @@ class DockerEnvironment(Environment):
 
     @property
     def availability(self) -> EnvironmentAvailability:
-        return EnvironmentAvailability(
-            status="available" if self._available else "unavailable",
-            ready_families=self.descriptor.operation_families if self._available else frozenset(),
-        )
+        return self._availability
 
     @property
     def operations(self) -> EnvironmentOperations:
@@ -230,7 +227,9 @@ class DockerEnvironment(Environment):
                 outputs=self.retention,
                 ports=GuestPorts(self.commands),
             )
-            self._available = True
+            self._availability = EnvironmentAvailability(
+                status="available", ready_families=self.descriptor.operation_families
+            )
 
     def _create(self):
         from docker.types import Mount
@@ -273,7 +272,7 @@ class DockerEnvironment(Environment):
                 raise EnvironmentError("Docker container is not running", code="environment_unavailable")
 
     async def _close(self) -> None:
-        self._available = False
+        self._availability = EnvironmentAvailability(status="unavailable")
         self._operations = EnvironmentOperations()
         try:
             if self.processes is not None:

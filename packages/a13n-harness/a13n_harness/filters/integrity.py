@@ -42,12 +42,11 @@ class MessageIntegrityFilterCapability(AbstractCapability[AgentContext]):
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
         del ctx
-        messages = deepcopy(request_context.messages)
-        filtered, changed = _filter_tool_result_pairs(messages)
+        filtered, changed = _filter_tool_result_pairs(request_context.messages)
         if not changed:
             return request_context
         updated = copy(request_context)
-        updated.messages = filtered
+        updated.messages = deepcopy(filtered)
         return updated
 
 

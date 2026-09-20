@@ -23,6 +23,30 @@ def _files(root: Path, budget: int = 1024) -> LocalFileOperator:
     )
 
 
+@pytest.mark.parametrize("exists", [False, True])
+@pytest.mark.parametrize("replace", [False, True])
+async def test_copy_replacement_permission_does_not_require_existing_destination(tmp_path, exists, replace):
+    payload = b"complete replacement"
+    (tmp_path / "source").write_bytes(payload)
+    if exists:
+        (tmp_path / "destination").write_bytes(b"original")
+    files = _files(tmp_path)
+    try:
+        if exists and not replace:
+            with pytest.raises(EnvironmentError) as error:
+                await files.copy("/source", "/destination", replace=replace)
+            assert error.value.code == "environment_conflict"
+            assert (tmp_path / "destination").read_bytes() == b"original"
+        else:
+            result = await files.copy("/source", "/destination", replace=replace)
+            assert result.bytes_copied == len(payload)
+            assert (tmp_path / "destination").read_bytes() == payload
+        assert (tmp_path / "source").read_bytes() == payload
+        assert sorted(path.name for path in tmp_path.iterdir()) == ["destination", "source"]
+    finally:
+        files.close()
+
+
 async def test_small_file_accepts_large_requested_page(tmp_path: Path) -> None:
     (tmp_path / "SKILL.md").write_bytes(b"# Skill\nRead the guide.\n")
     result = await _files(tmp_path, 64).read_text("/SKILL.md", line_limit=1000, max_line_length=20_000)

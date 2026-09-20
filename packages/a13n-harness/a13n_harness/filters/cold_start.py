@@ -58,12 +58,12 @@ class ColdStartFilterCapability(AbstractCapability[AgentContext]):
         if last_response is None or _idle_seconds(last_response[1].timestamp) < self.configuration.idle_seconds:
             return request_context
 
-        messages = deepcopy(request_context.messages)
+        messages = list(request_context.messages)
         changed = _trim_consumed_tool_returns(messages, last_response[0], self.configuration)
         if not changed:
             return request_context
         updated = copy(request_context)
-        updated.messages = messages
+        updated.messages = deepcopy(messages)
         return updated
 
 

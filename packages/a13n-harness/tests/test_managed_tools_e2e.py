@@ -26,7 +26,7 @@ from a13n_harness.tools import (
     ToolOutputPolicy,
     current_invocation_scope,
 )
-from a13n_harness.tools.invocation import _apply_result_policy
+from a13n_harness.tools._output import _apply_result_policy
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ToolFailed
@@ -426,4 +426,4 @@ async def test_result_redaction_and_unavailable_spill_fallback_are_bounded() -> 
 
 async def test_managed_results_reject_non_native_values_before_json_projection() -> None:
     with pytest.raises(ToolFailed, match="invalid result"):
-        await _apply_result_policy(tuple(range(10_000)), _metadata())
+        await _apply_result_policy(tuple(range(10_000)), _metadata().output_policy)

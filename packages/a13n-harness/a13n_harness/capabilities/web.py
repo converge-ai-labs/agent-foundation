@@ -86,32 +86,6 @@ class WebCapability(AbstractCapability[AgentContext]):
             return []
         return [WebSearchTool(search_context_size=search.search_context_size)]
 
-    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        existing = ctx.deps._run_capability(WEB_CAPABILITY_ID)
-        if existing is not None:
-            if not isinstance(existing, _WebActiveCapability):
-                raise DefinitionError("Web has an incompatible run replacement.", code="capability_type_mismatch")
-            return existing
-        if WEB_CAPABILITY_ID not in ctx.deps._capability_provenance.definition_ids:
-            raise DefinitionError(
-                "WebCapability must originate from the Agent definition.", code="capability_scope_invalid"
-            )
-        replacement = _WebActiveCapability(self.configuration, context=ctx.deps)
-        ctx.deps._record_run_capability(WEB_CAPABILITY_ID, replacement)
-        return replacement
-
-
-@dataclass(init=False)
-class _WebActiveCapability(WebCapability):
-    def __init__(self, configuration: WebConfiguration, *, context: AgentContext) -> None:
-        super().__init__(configuration)
-        self._context = context
-
-    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        if ctx.deps is not self._context:
-            raise DefinitionError("Web run replacement cannot cross logical runs.", code="capability_scope_invalid")
-        return self
-
     def get_toolset(self) -> AbstractToolset[AgentContext]:
         return DynamicToolset(self._toolset_for_run, per_run_step=False, id=_WEB_TOOLSET_ID)
 
@@ -128,10 +102,12 @@ class _WebActiveCapability(WebCapability):
         ).get_toolset()
 
     def _bind(self, ctx: RunContext[AgentContext]) -> WebBinding:
-        if ctx.deps is not self._context:
-            raise DefinitionError("Web run replacement cannot cross logical runs.", code="capability_scope_invalid")
+        if WEB_CAPABILITY_ID not in ctx.deps._capability_provenance.definition_ids:
+            raise DefinitionError(
+                "WebCapability must originate from the Agent definition.", code="capability_scope_invalid"
+            )
         owner = ctx.capabilities.get(WEB_CAPABILITY_ID)
-        if type(owner) is not _WebActiveCapability or owner is not self:
+        if type(owner) is not WebCapability or owner is not self:
             raise DefinitionError(
                 "The finalized Web owner has an incompatible identity.", code="capability_scope_invalid"
             )

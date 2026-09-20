@@ -43,25 +43,6 @@ if TYPE_CHECKING:
     from .coordinator import CompositeBoundEnvironment
 
 
-class _UnavailableFacet:
-    __slots__ = ("_family",)
-
-    def __init__(self, family: str) -> None:
-        self._family = family
-
-    def __getattr__(self, method: str) -> Any:
-        async def unavailable(*args: Any, **kwargs: Any) -> Any:
-            del args, kwargs
-            raise EnvironmentError(
-                f"Environment operation family {self._family!r} is unavailable.",
-                code="environment_unsupported",
-                details={"family": self._family, "method": method},
-                retry_hint="dependency_change",
-            )
-
-        return unavailable
-
-
 class _OutputFacade:
     def __init__(self, environment: CompositeBoundEnvironment) -> None:
         self._environment = environment
@@ -121,19 +102,7 @@ class _ShellFacade:
         self._environment = environment
 
     async def exec(self, request: CommandRequest, *, alias: str | None = None) -> ShellExecResult:
-        entered, provider_request = self._environment._prepare_command(request, alias=alias)
-        async with self._environment._operation_lease(
-            entered,
-            EnvironmentAction.SHELL_EXEC,
-            "shell",
-            timeout_seconds=provider_request.limits.wall_time_seconds,
-        ) as entered:
-            shell = entered.operations.shell
-            if shell is None:
-                raise EnvironmentError("Shell operation facet is unavailable.", code="environment_unsupported")
-            result = await shell.exec(provider_request)
-            _validate_provider_artifacts(entered, result)
-            return result
+        return await self.exec_captured(request, alias=alias)
 
     async def exec_captured(
         self,
@@ -142,7 +111,7 @@ class _ShellFacade:
         alias: str | None = None,
         expected_mount_id: str | None = None,
     ) -> ShellExecResult:
-        """Preflight and hold one mount incarnation through foreground output materialization."""
+        """Dispatch bounded foreground execution under one exact mount-incarnation lease."""
         entered, provider_request = self._environment._prepare_command(request, alias=alias)
         if expected_mount_id is not None and entered.mount_id != expected_mount_id:
             raise EnvironmentError("Shell mount changed before dispatch.", code="environment_stale_mount")

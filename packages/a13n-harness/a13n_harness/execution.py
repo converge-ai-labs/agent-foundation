@@ -25,10 +25,8 @@ from pydantic_ai.agent import AgentRunEvents
 from pydantic_ai.agent.abstract import AbstractAgent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import (
-    MCP,
     AbstractCapability,
     CombinedCapability,
-    Instrumentation,
     ResolveModelId,
     WrapperCapability,
 )
@@ -49,62 +47,24 @@ from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
 from typing_extensions import is_typeddict
 
-from a13n_harness.capabilities.codeact import CODEACT_CAPABILITY_ID, CodeActCapability
+from a13n_harness._capability_contract import _validate_built_capability_tree, _validate_capability_source
 from a13n_harness.capabilities.context import (
     COMPACTION_CAPABILITY_ID,
-    FILE_CONTEXT_CAPABILITY_ID,
     HANDOFF_CAPABILITY_ID,
-    RUNTIME_CONTEXT_CAPABILITY_ID,
-    WORKSPACE_OUTLINE_CAPABILITY_ID,
-    CompactionCapability,
-    FileContextCapability,
     HandoffCapability,
-    RuntimeContextCapability,
-    WorkspaceOutlineCapability,
-)
-from a13n_harness.capabilities.documents import (
-    DOCUMENTS_CAPABILITY_ID,
-    DocumentsCapability,
-)
-from a13n_harness.capabilities.interaction import (
-    USER_INTERACTION_CAPABILITY_ID,
-    UserInteractionCapability,
 )
 from a13n_harness.capabilities.lifecycle import (
-    LIFECYCLE_EVENT_CAPABILITY_ID,
     LifecycleEventCapability,
 )
-from a13n_harness.capabilities.media import (
-    MEDIA_CAPABILITY_ID,
-    MediaCapability,
-)
-from a13n_harness.capabilities.skills import (
-    SKILLS_CAPABILITY_ID,
-    SkillsCapability,
-)
 from a13n_harness.capabilities.steering import (
-    STEERING_CAPABILITY_ID,
     SteeringBridge,
     SteeringCapability,
 )
-from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID, SubagentCapability
 from a13n_harness.capabilities.tool_proxy import (
-    TOOL_PROXY_CAPABILITY_ID,
     ToolProxyPlan,
-    _ToolProxyGroupCapability,
-    _ToolProxySurfaceCapability,
-)
-from a13n_harness.capabilities.web import (
-    WEB_CAPABILITY_ID,
-    WebCapability,
-)
-from a13n_harness.capabilities.working_state import (
-    WORKING_STATE_CAPABILITY_ID,
-    WorkingStateCapability,
 )
 from a13n_harness.capability_types import (
     CapabilityTypeCatalog,
-    _validate_capability_id,
     first_party_declarative_capability_types,
 )
 from a13n_harness.context import (
@@ -113,10 +73,6 @@ from a13n_harness.context import (
     RunBindings,
     SubagentCollection,
     _CapabilityProvenance,
-)
-from a13n_harness.environment.dynamic import (
-    DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
-    DynamicEnvironmentCapability,
 )
 from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime
 from a13n_harness.environment.sources import EnvironmentEntry, normalize_environment_inputs
@@ -143,7 +99,6 @@ from a13n_harness.events import (
 )
 from a13n_harness.filters.cold_start import ColdStartFilterCapability, ColdStartFilterConfiguration
 from a13n_harness.filters.integrity import (
-    MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
     MessageIntegrityFilterCapability,
 )
 from a13n_harness.identity import AgentIdentityRef
@@ -155,19 +110,16 @@ from a13n_harness.input import (
     normalize_input,
 )
 from a13n_harness.model_context import (
-    MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
     ModelContextCoordinatorCapability,
 )
 from a13n_harness.models.binding import RunModelResolver, resolve_run_model
 from a13n_harness.models.inference import GatewayModelProviderFactory, infer_model
 from a13n_harness.models.profile import project_context_window
 from a13n_harness.models.request_headers import (
-    MODEL_REQUEST_HEADERS_CAPABILITY_ID,
     ModelRequestHeadersCapability,
     ModelRequestPatchConfiguration,
 )
 from a13n_harness.models.structured_output import (
-    STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID,
     StructuredOutputAutoToolChoiceCapability,
 )
 from a13n_harness.observation import (
@@ -197,7 +149,6 @@ from a13n_harness.plugins import (
     bind_run_plugins,
 )
 from a13n_harness.pricing import (
-    MODEL_COST_CAPABILITY_ID,
     AbstractModelCostCapability,
     CatalogModelCostCapability,
     PricingCatalog,
@@ -216,26 +167,19 @@ from a13n_harness.result import HarnessRunResult, SafeFailure
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
 from a13n_harness.spec import _default_usage_limits
 from a13n_harness.state import AgentContextState, HarnessState
-from a13n_harness.tools.client import (
-    CLIENT_TOOLS_CAPABILITY_ID,
-    ClientToolsCapability,
-)
 from a13n_harness.tools.deferred import (
     DeferredToolResume,
     bind_managed_approval_identities,
     preflight_deferred_resume,
 )
 from a13n_harness.tools.invocation import (
-    TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
     ToolExecutionBoundaryCapability,
 )
-from a13n_harness.tools.permissions import TOOL_PERMISSIONS_CAPABILITY_ID, ToolPermissionsCapability
-from a13n_harness.tools.policy import INVOCATION_POLICY_CAPABILITY_ID, InvocationPolicyCapability
+from a13n_harness.tools.permissions import ToolPermissionsCapability
 from a13n_harness.tools.surface import (
-    TOOL_SURFACE_CAPABILITY_ID,
     ToolSurfaceCapability,
 )
-from a13n_harness.usage import USAGE_CAPABILITY_ID, RunUsageLedger, UsageCapability
+from a13n_harness.usage import RunUsageLedger, UsageCapability
 
 _EXTENSION_EVENT_ADAPTER = TypeAdapter(HarnessExtensionEvent)
 _EMPTY_CAPABILITY_TYPE_CATALOG = CapabilityTypeCatalog()
@@ -2588,25 +2532,30 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 code="plugin_result_run_mismatch",
             )
         try:
-            messages = candidate.all_messages()
-            new_messages = candidate.new_messages()
-            new_message_index = len(messages) - len(new_messages)
-            if new_message_index < 0 or messages[new_message_index:] != new_messages:
-                raise ValueError("new messages are not a suffix of all messages")
-            validated = HarnessRunResult(
-                thread_id=candidate.thread_id,
-                run_id=candidate.run_id,
-                status=candidate.status,
-                output=candidate.output,
-                state=candidate.state,
-                usage=candidate.usage,
-                usage_records=candidate.usage_records,
-                failure=candidate.failure,
-                suspend_reason=candidate.suspend_reason,
-                deferred=candidate.deferred,
-                _messages=messages,
-                _new_message_index=new_message_index,
-            )
+            if type(candidate) is HarnessRunResult:
+                # Revalidate result fields without decoding immutable normalized history.
+                validated = candidate.replace()
+            else:
+                # Subclasses may override the public views; normalize and check them.
+                messages = candidate.all_messages()
+                new_messages = candidate.new_messages()
+                new_message_index = len(messages) - len(new_messages)
+                if new_message_index < 0 or messages[new_message_index:] != new_messages:
+                    raise ValueError("new messages are not a suffix of all messages")
+                validated = HarnessRunResult(
+                    thread_id=candidate.thread_id,
+                    run_id=candidate.run_id,
+                    status=candidate.status,
+                    output=candidate.output,
+                    state=candidate.state,
+                    usage=candidate.usage,
+                    usage_records=candidate.usage_records,
+                    failure=candidate.failure,
+                    suspend_reason=candidate.suspend_reason,
+                    deferred=candidate.deferred,
+                    _messages=messages,
+                    _new_message_index=new_message_index,
+                )
             if validated.status == "completed":
                 output = validated.output
                 if _business_output_contains_deferred_value(output):
@@ -2878,454 +2827,6 @@ def _uses_tool_based_output(value: Any) -> bool:
     if isinstance(value, tuple | list):
         return any(_uses_tool_based_output(item) for item in value)
     return value is not str
-
-
-def _validate_built_capability_tree(
-    root: AbstractCapability[AgentContext],
-    *,
-    definition_reserved_ids: frozenset[str],
-    expected_instrumentation: Instrumentation | None,
-    expected_structured_output_compatibility: bool,
-) -> None:
-    """Validate stable IDs and protected provenance on the complete Agent-bound tree."""
-    leaves: list[AbstractCapability[AgentContext]] = []
-    root.apply(leaves.append)
-    seen_ids: dict[str, str] = {}
-    execution_boundary_count = 0
-    tool_surface_count = 0
-    message_integrity_count = 0
-    lifecycle_event_count = 0
-    steering_count = 0
-    model_context_coordinator_count = 0
-    model_resolver_count = 0
-    model_request_headers_capability_count = 0
-    structured_output_auto_tool_choice_count = 0
-    usage_count = 0
-    model_cost_count = 0
-    instrumentation_count = 0
-    reserved_ids = {
-        TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
-        TOOL_SURFACE_CAPABILITY_ID,
-        MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
-        LIFECYCLE_EVENT_CAPABILITY_ID,
-        STEERING_CAPABILITY_ID,
-        MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
-        MODEL_REQUEST_HEADERS_CAPABILITY_ID,
-        STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID,
-        INVOCATION_POLICY_CAPABILITY_ID,
-        USAGE_CAPABILITY_ID,
-        MODEL_COST_CAPABILITY_ID,
-        CLIENT_TOOLS_CAPABILITY_ID,
-        CODEACT_CAPABILITY_ID,
-        TOOL_PROXY_CAPABILITY_ID,
-        DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
-        TOOL_PERMISSIONS_CAPABILITY_ID,
-        RUNTIME_CONTEXT_CAPABILITY_ID,
-        WORKSPACE_OUTLINE_CAPABILITY_ID,
-        FILE_CONTEXT_CAPABILITY_ID,
-        HANDOFF_CAPABILITY_ID,
-        COMPACTION_CAPABILITY_ID,
-        USER_INTERACTION_CAPABILITY_ID,
-        SKILLS_CAPABILITY_ID,
-        MEDIA_CAPABILITY_ID,
-        DOCUMENTS_CAPABILITY_ID,
-        WEB_CAPABILITY_ID,
-        WORKING_STATE_CAPABILITY_ID,
-        SUBAGENT_CAPABILITY_ID,
-    }
-    for capability in leaves:
-        if not isinstance(capability, AbstractCapability):
-            raise DefinitionError(
-                "Built Capability trees must contain only AbstractCapability leaves.",
-                code="capability_type_invalid",
-                details={"source": "built"},
-            )
-        capability_id = capability.id
-        if capability_id is not None:
-            capability_id = _validate_capability_id(
-                capability_id,
-                capability_type=type(capability),
-                source="built",
-            )
-            previous = seen_ids.get(capability_id)
-            if previous is not None:
-                raise DefinitionError(
-                    "Capability IDs must be unique in the built Agent tree.",
-                    code="capability_id_duplicate",
-                    details={
-                        "capability_id": capability_id,
-                        "capability_type": type(capability).__name__,
-                        "other_capability_type": previous,
-                    },
-                )
-            seen_ids[capability_id] = type(capability).__name__
-
-        if isinstance(capability, Instrumentation):
-            instrumentation_count += 1
-            if capability is not expected_instrumentation:
-                raise DefinitionError(
-                    "Pydantic AI Instrumentation is reserved to HarnessBuilder.",
-                    code="instrumentation_owner_conflict",
-                    details={"source": "built"},
-                )
-            continue
-        if isinstance(capability, ToolExecutionBoundaryCapability):
-            execution_boundary_count += 1
-            if capability_id != TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID:
-                raise DefinitionError(
-                    "The mandatory tool execution boundary Capability has an invalid ID.",
-                    code="capability_scope_invalid",
-                )
-            continue
-        if isinstance(capability, ToolSurfaceCapability):
-            tool_surface_count += 1
-            if capability_id != TOOL_SURFACE_CAPABILITY_ID:
-                raise DefinitionError(
-                    "The mandatory tool-surface Capability has an invalid ID.",
-                    code="capability_scope_invalid",
-                )
-            continue
-        if type(capability) is MessageIntegrityFilterCapability:
-            message_integrity_count += 1
-            if capability_id != MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID:
-                raise DefinitionError(
-                    "The mandatory message-integrity Filter Capability has an invalid ID.",
-                    code="capability_scope_invalid",
-                )
-            continue
-        if type(capability) is LifecycleEventCapability:
-            lifecycle_event_count += 1
-            if capability_id != LIFECYCLE_EVENT_CAPABILITY_ID:
-                raise DefinitionError(
-                    "The mandatory lifecycle event Capability has an invalid ID.",
-                    code="capability_scope_invalid",
-                )
-            continue
-        if type(capability) is SteeringCapability:
-            steering_count += 1
-            if capability_id != STEERING_CAPABILITY_ID:
-                raise DefinitionError(
-                    "The mandatory steering Capability has an invalid ID.",
-                    code="capability_scope_invalid",
-                )
-            continue
-        if type(capability) is ModelContextCoordinatorCapability:
-            model_context_coordinator_count += 1
-            if capability_id != MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID:
-                raise DefinitionError(
-                    "The mandatory model context coordinator Capability has an invalid ID.",
-                    code="capability_scope_invalid",
-                )
-            continue
-        if isinstance(capability, ResolveModelId):
-            model_resolver_count += 1
-            continue
-        if type(capability) is ModelRequestHeadersCapability:
-            model_request_headers_capability_count += 1
-            if capability_id != MODEL_REQUEST_HEADERS_CAPABILITY_ID:
-                raise DefinitionError(
-                    "The mandatory model request headers Capability has an invalid ID.",
-                    code="capability_scope_invalid",
-                )
-            continue
-        if type(capability) is StructuredOutputAutoToolChoiceCapability:
-            structured_output_auto_tool_choice_count += 1
-            if capability_id != STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID:
-                raise DefinitionError(
-                    "The mandatory structured-output compatibility Capability has an invalid ID.",
-                    code="capability_scope_invalid",
-                )
-            continue
-        if type(capability) is UsageCapability:
-            usage_count += 1
-            if capability_id != USAGE_CAPABILITY_ID:
-                raise DefinitionError(
-                    "The mandatory Usage Capability has an invalid ID.",
-                    code="capability_scope_invalid",
-                )
-            continue
-        if isinstance(capability, AbstractModelCostCapability):
-            model_cost_count += 1
-            if capability_id != MODEL_COST_CAPABILITY_ID:
-                raise DefinitionError(
-                    "The mandatory model-cost Capability has an invalid ID.",
-                    code="capability_scope_invalid",
-                )
-            continue
-
-        allowed_definition_reserved = (
-            type(capability)
-            in (
-                ClientToolsCapability,
-                CodeActCapability,
-                _ToolProxySurfaceCapability,
-                DynamicEnvironmentCapability,
-                ToolPermissionsCapability,
-                RuntimeContextCapability,
-                WorkspaceOutlineCapability,
-                FileContextCapability,
-                HandoffCapability,
-                CompactionCapability,
-                UserInteractionCapability,
-                SkillsCapability,
-                MediaCapability,
-                DocumentsCapability,
-                WebCapability,
-                WorkingStateCapability,
-                SubagentCapability,
-            )
-            and capability_id in definition_reserved_ids
-        )
-        if (
-            isinstance(capability, InvocationPolicyCapability) or capability_id in reserved_ids
-        ) and not allowed_definition_reserved:
-            raise DefinitionError(
-                "A reserved Harness Capability is present in the built Agent tree from the wrong source.",
-                code="capability_scope_invalid",
-                details={
-                    "capability_id": capability_id,
-                    "capability_type": type(capability).__name__,
-                    "source": "built",
-                },
-            )
-
-    surface_index = next(
-        (index for index, capability in enumerate(leaves) if isinstance(capability, ToolSurfaceCapability)),
-        None,
-    )
-    if surface_index is not None:
-        for capability in leaves[:surface_index]:
-            # Membership adds no global wrapper; its original nodes are visited
-            # separately below and retain the same surface-order validation.
-            if type(capability) is _ToolProxyGroupCapability:
-                continue
-            if isinstance(
-                capability, ToolExecutionBoundaryCapability | CodeActCapability | _ToolProxySurfaceCapability
-            ):
-                continue
-            if type(capability).get_wrapper_toolset is not AbstractCapability.get_wrapper_toolset:
-                raise DefinitionError(
-                    "Only ToolProxy, CodeAct, and the tool execution boundary may wrap the mandatory tool surface.",
-                    code="tool_surface_order_invalid",
-                    details={"capability_type": type(capability).__name__},
-                )
-
-    expected_instrumentation_count = 1 if expected_instrumentation is not None else 0
-    if instrumentation_count != expected_instrumentation_count:
-        raise DefinitionError(
-            "The built Agent has an invalid Pydantic AI Instrumentation owner count.",
-            code="instrumentation_owner_conflict",
-            details={"source": "built"},
-        )
-    if execution_boundary_count != 1:
-        raise DefinitionError(
-            "The built Agent must contain exactly one mandatory tool execution boundary Capability.",
-            code="capability_scope_invalid",
-        )
-    if tool_surface_count != 1:
-        raise DefinitionError(
-            "The built Agent must contain exactly one mandatory tool-surface Capability.",
-            code="capability_scope_invalid",
-        )
-    if message_integrity_count != 1:
-        raise DefinitionError(
-            "The built Agent must contain exactly one mandatory message-integrity Filter Capability.",
-            code="capability_scope_invalid",
-        )
-    if lifecycle_event_count != 1:
-        raise DefinitionError(
-            "The built Agent must contain exactly one mandatory lifecycle event Capability.",
-            code="capability_scope_invalid",
-        )
-    if steering_count != 1:
-        raise DefinitionError(
-            "The built Agent must contain exactly one mandatory steering Capability.",
-            code="capability_scope_invalid",
-        )
-    if model_context_coordinator_count != 1:
-        raise DefinitionError(
-            "The built Agent must contain exactly one mandatory model context coordinator Capability.",
-            code="capability_scope_invalid",
-        )
-    if model_resolver_count != 1:
-        raise DefinitionError(
-            "The built Agent must contain exactly one mandatory model resolver Capability.",
-            code="capability_scope_invalid",
-        )
-    if model_request_headers_capability_count != 1:
-        raise DefinitionError(
-            "The built Agent must contain exactly one mandatory model request headers Capability.",
-            code="capability_scope_invalid",
-        )
-    expected_structured_output_count = int(expected_structured_output_compatibility)
-    if structured_output_auto_tool_choice_count != expected_structured_output_count:
-        raise DefinitionError(
-            "The built Agent has an invalid structured-output compatibility Capability count.",
-            code="capability_scope_invalid",
-        )
-    if usage_count != 1:
-        raise DefinitionError(
-            "The built Agent must contain exactly one mandatory Usage Capability.",
-            code="capability_scope_invalid",
-        )
-    if model_cost_count != 1:
-        raise DefinitionError(
-            "The built Agent must contain exactly one mandatory model-cost Capability.",
-            code="capability_scope_invalid",
-        )
-
-
-def _validate_capability_source(
-    capabilities: Sequence[AbstractCapability[AgentContext]],
-    *,
-    source: Literal["definition", "plugin", "run"],
-) -> frozenset[str]:
-    """Flatten Capability trees and preserve ownership of reserved Harness IDs."""
-    run_types = (
-        MCP,
-        InvocationPolicyCapability,
-    )
-    leaves: list[AbstractCapability[AgentContext]] = []
-    for capability in capabilities:
-        if not isinstance(capability, AbstractCapability):
-            raise DefinitionError(
-                "Configured Capabilities must inherit AbstractCapability.",
-                code="capability_type_invalid",
-                details={"source": source},
-            )
-        if isinstance(capability, Instrumentation):
-            raise DefinitionError(
-                "Pydantic AI Instrumentation is reserved to HarnessBuilder.",
-                code="instrumentation_owner_conflict",
-                details={"source": source},
-            )
-        if source == "run" and type(capability) not in run_types:
-            raise DefinitionError(
-                "RunBindings.capabilities accepts only documented runtime policy and MCP types.",
-                code="capability_scope_invalid",
-                details={
-                    "capability_id": capability.id,
-                    "capability_type": type(capability).__name__,
-                    "source": source,
-                },
-            )
-        capability.apply(leaves.append)
-
-    if any(isinstance(capability, Instrumentation) for capability in leaves):
-        raise DefinitionError(
-            "Pydantic AI Instrumentation is reserved to HarnessBuilder.",
-            code="instrumentation_owner_conflict",
-            details={"source": source},
-        )
-
-    reserved_ids = {
-        TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
-        TOOL_SURFACE_CAPABILITY_ID,
-        MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
-        STEERING_CAPABILITY_ID,
-        MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
-        MODEL_REQUEST_HEADERS_CAPABILITY_ID,
-        STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID,
-        INVOCATION_POLICY_CAPABILITY_ID,
-        USAGE_CAPABILITY_ID,
-        MODEL_COST_CAPABILITY_ID,
-        CLIENT_TOOLS_CAPABILITY_ID,
-        CODEACT_CAPABILITY_ID,
-        TOOL_PROXY_CAPABILITY_ID,
-        DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
-        TOOL_PERMISSIONS_CAPABILITY_ID,
-        RUNTIME_CONTEXT_CAPABILITY_ID,
-        WORKSPACE_OUTLINE_CAPABILITY_ID,
-        FILE_CONTEXT_CAPABILITY_ID,
-        HANDOFF_CAPABILITY_ID,
-        COMPACTION_CAPABILITY_ID,
-        USER_INTERACTION_CAPABILITY_ID,
-        SKILLS_CAPABILITY_ID,
-        MEDIA_CAPABILITY_ID,
-        DOCUMENTS_CAPABILITY_ID,
-        WEB_CAPABILITY_ID,
-        WORKING_STATE_CAPABILITY_ID,
-        SUBAGENT_CAPABILITY_ID,
-    }
-    accepted: set[str] = set()
-    for capability in leaves:
-        if not isinstance(capability, AbstractCapability):
-            raise DefinitionError(
-                "Capability trees must contain only AbstractCapability leaves.",
-                code="capability_type_invalid",
-                details={"source": source},
-            )
-        allowed = (
-            (
-                source == "definition"
-                and (
-                    isinstance(capability, AbstractModelCostCapability)
-                    or type(capability)
-                    in (
-                        ClientToolsCapability,
-                        CodeActCapability,
-                        _ToolProxySurfaceCapability,
-                        DynamicEnvironmentCapability,
-                        ToolPermissionsCapability,
-                        RuntimeContextCapability,
-                        WorkspaceOutlineCapability,
-                        FileContextCapability,
-                        HandoffCapability,
-                        CompactionCapability,
-                        UserInteractionCapability,
-                        SkillsCapability,
-                        MediaCapability,
-                        DocumentsCapability,
-                        WebCapability,
-                        WorkingStateCapability,
-                        SubagentCapability,
-                    )
-                )
-            )
-            or (source == "plugin" and type(capability) is _ToolProxySurfaceCapability)
-            or (source == "run" and type(capability) in run_types)
-        )
-        reserved_type = isinstance(
-            capability,
-            ToolExecutionBoundaryCapability
-            | ToolSurfaceCapability
-            | MessageIntegrityFilterCapability
-            | SteeringCapability
-            | ModelContextCoordinatorCapability
-            | InvocationPolicyCapability
-            | UsageCapability
-            | AbstractModelCostCapability
-            | ClientToolsCapability
-            | CodeActCapability
-            | _ToolProxySurfaceCapability
-            | DynamicEnvironmentCapability
-            | RuntimeContextCapability
-            | WorkspaceOutlineCapability
-            | FileContextCapability
-            | HandoffCapability
-            | CompactionCapability
-            | UserInteractionCapability
-            | SkillsCapability
-            | MediaCapability
-            | DocumentsCapability
-            | WebCapability
-            | WorkingStateCapability
-            | SubagentCapability,
-        )
-        if reserved_type or capability.id in reserved_ids:
-            if not allowed:
-                raise DefinitionError(
-                    "A reserved Harness Capability is installed from the wrong source.",
-                    code="capability_scope_invalid",
-                    details={
-                        "capability_id": capability.id,
-                        "capability_type": type(capability).__name__,
-                        "source": source,
-                    },
-                )
-            if capability.id is not None:
-                accepted.add(capability.id)
-    return frozenset(accepted)
 
 
 def _prepare_pydantic_output_spec(value: Any) -> Any:

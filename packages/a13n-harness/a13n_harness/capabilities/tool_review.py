@@ -3,27 +3,30 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterable
+from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 from functools import cache
 from html import escape
 from importlib.resources import files
 from typing import Literal, Protocol, cast, runtime_checkable
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 from pydantic_ai import Agent, RunContext, ToolOutput
+from pydantic_ai.messages import AgentStreamEvent
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness._review_context import ReviewEvidence, render_review_input
 from a13n_harness._tool_selectors import match_selector, validate_selector
-from a13n_harness.capabilities._review import drain_review_events as _drain_review_events
-from a13n_harness.capabilities._review import provider_usage_receipts as _provider_usage_receipts
 from a13n_harness.context import AgentContext
 from a13n_harness.models.structured_output import StructuredOutputAutoToolChoiceModel
 from a13n_harness.observation import _auxiliary_agent_capabilities
 from a13n_harness.tools.policy import InvocationDecisionKind
-from a13n_harness.usage import ProviderUsage
+from a13n_harness.usage import ProviderUsage, UsageMeasure
 
 
 class ToolReviewRequest(BaseModel):
@@ -228,3 +231,35 @@ class AgentToolReviewer:
         except Exception as exc:
             raise ToolReviewError("tool_review_failed", usage=_provider_usage_receipts(self._model, usage)) from exc
         return ToolReviewResult(assessment=result.output, usage=_provider_usage_receipts(self._model, result.usage))
+
+
+async def _drain_review_events(ctx: RunContext[object], events: AsyncIterable[AgentStreamEvent]) -> None:
+    del ctx
+    async for _ in events:
+        pass
+
+
+def _provider_usage_receipts(model: Model, usage: RunUsage) -> tuple[ProviderUsage, ...]:
+    measures = tuple(
+        UsageMeasure(unit=unit, quantity=Decimal(value))
+        for unit, value in (
+            ("requests", usage.requests),
+            ("tool_calls", usage.tool_calls),
+            ("input_tokens", usage.input_tokens),
+            ("cache_write_tokens", usage.cache_write_tokens),
+            ("cache_read_tokens", usage.cache_read_tokens),
+            ("output_tokens", usage.output_tokens),
+        )
+        if value
+    )
+    if not measures:
+        return ()
+    return (
+        ProviderUsage(
+            usage_id=f"tool-review-{uuid4()}",
+            provider=model.system,
+            product=model.model_name,
+            timestamp=datetime.now(UTC),
+            measures=measures,
+        ),
+    )

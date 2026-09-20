@@ -21,7 +21,8 @@ from a13n_harness.tools import (
     InvocationPolicyDecision,
     ToolOutputPolicy,
 )
-from a13n_harness.tools.invocation import _UNMANAGED_OUTPUT_POLICY, _apply_result_policy
+from a13n_harness.tools._output import _apply_result_policy
+from a13n_harness.tools.invocation import _UNMANAGED_OUTPUT_POLICY
 from a13n_harness.toolsets import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     acknowledge_tool_output,
@@ -483,7 +484,7 @@ async def test_native_tool_return_policy_bounds_text_and_preserves_multimodal_va
             metadata={"secret": "application-secret"},
             tools=["Bearer tool-secret"],
         ),
-        metadata,
+        metadata.output_policy,
     )
 
     assert isinstance(projected, ToolReturn)
@@ -515,7 +516,7 @@ async def test_native_tool_return_text_overflow_is_explicit_without_filtering_me
 
     projected = await _apply_result_policy(
         ToolReturn("ok", content=[image], tools=["x" * 1024]),
-        metadata,
+        metadata.output_policy,
     )
 
     assert isinstance(projected, ToolReturn)
@@ -617,7 +618,7 @@ async def test_large_json_spill_without_sink_returns_bounded_structured_preview(
 
     projected = await _apply_result_policy(
         {"content": "x" * 1_000, "hint": "continue"},
-        metadata,
+        metadata.output_policy,
     )
 
     assert isinstance(projected, dict)
