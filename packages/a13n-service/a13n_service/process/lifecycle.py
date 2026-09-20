@@ -27,6 +27,10 @@ from a13n_service.bots.memory.verification import BotMemoryVerifier
 from a13n_service.bots.progress.delivery import CardDelivery
 from a13n_service.bots.progress.replies import CardReplies
 from a13n_service.bots.progress.service import ProgressService
+from a13n_service.bots.routines.cards import RoutineCards
+from a13n_service.bots.routines.runtime import RoutineTools
+from a13n_service.bots.routines.scheduler import RoutineScheduler
+from a13n_service.bots.routines.service import RoutineService
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.ingress.attachments import AttachmentInputs
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
@@ -223,6 +227,7 @@ async def open_process_runtime(
                     invocations=agent_resources.invocations,
                     configuration_resolver=build_agent_resolver(components, shared, agent_resources),
                     observability=observability,
+                    tool_contributions=(RoutineTools(RoutineService(storage.sessions)),),
                     observations=ReplyObservations(
                         storage.sessions,
                         cards=CardReplies(
@@ -335,6 +340,24 @@ async def open_process_runtime(
                         progress_loop.run,
                         return_is_expected=progress_loop.is_draining,
                         shutdown=shutdown_progress,
+                    ),
+                )
+                routines = RoutineScheduler(
+                    storage.sessions,
+                    control.gateway.commands,
+                    RoutineCards(storage.sessions, memory_http, protector),
+                )
+                routine_loop = PeriodicTask("bot_routines", routines.scan, interval_seconds=5, timeout_seconds=650)
+
+                async def shutdown_routines() -> None:
+                    await routine_loop.shutdown(timeout_seconds=5)
+
+                progress_background += (
+                    BackgroundTask(
+                        "bot routines",
+                        routine_loop.run,
+                        return_is_expected=routine_loop.is_draining,
+                        shutdown=shutdown_routines,
                     ),
                 )
             runtime = ProcessRuntime(

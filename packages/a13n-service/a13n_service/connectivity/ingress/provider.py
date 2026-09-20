@@ -97,7 +97,9 @@ class ProviderActionDecision(_StrictModel):
     """Authenticated interaction, never model input or an execution principal."""
 
     kind: Literal["action"] = "action"
-    action: Literal["stop"] = "stop"
+    action: Literal[
+        "stop", "routine_confirm", "routine_cancel", "routine_pause", "routine_resume", "routine_delete"
+    ] = "stop"
     reference: Annotated[str, StringConstraints(min_length=1, max_length=72)]
     token: Annotated[str, StringConstraints(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")] = Field(
         repr=False

@@ -76,6 +76,12 @@ class ScopeGuard(Protocol):
     async def __call__(self, session: AsyncSession | None = None) -> None: ...
 
 
+class BoundToolContribution(Protocol):
+    async def __call__(
+        self, scope: AttemptToolScope, guard: ScopeGuard, attempt: AttemptContext
+    ) -> MCP[AgentContext] | None: ...
+
+
 class ExternalToolRuntime:
     def __init__(
         self,
@@ -89,6 +95,7 @@ class ExternalToolRuntime:
         oauth_refresh: OAuthCredentialRefresh,
         observations: NativeObservationFactory | None = None,
         files: FileDelivery | None = None,
+        contributions: tuple[BoundToolContribution, ...] = (),
     ) -> None:
         self._sessions = sessions
         self._protector = protector
@@ -100,6 +107,7 @@ class ExternalToolRuntime:
         self._oauth_refresh = oauth_refresh
         self._observations = observations
         self._files = files
+        self._contributions = contributions
         self._selections = ConnectivitySelectionResolver(sessions)
 
     async def _scope(
@@ -268,6 +276,10 @@ class ExternalToolRuntime:
                     observations=self._observations,
                     files=self._files,
                 )
+                if capability is not None:
+                    capabilities.append(capability)
+            for contribution in self._contributions:
+                capability = await contribution(accepted, guard, attempt)
                 if capability is not None:
                     capabilities.append(capability)
             yield tuple(capabilities)

@@ -416,7 +416,16 @@ def _normalize_action(payload: JsonObject, config: SlackAccountConfig) -> Provid
     actions = payload.get("actions")
     if not isinstance(actions, list):
         raise _request_error(400, "invalid_card_action")
-    recognized = [a for a in actions if isinstance(a, dict) and a.get("action_id") == STOP_ACTION_ID]
+    routine_actions = {
+        f"a13n.routine.v1.{name}": f"routine_{name}" for name in ("confirm", "cancel", "pause", "resume", "delete")
+    }
+    recognized = [
+        a
+        for a in actions
+        if isinstance(a, dict)
+        and isinstance(a.get("action_id"), str)
+        and (a.get("action_id") == STOP_ACTION_ID or a.get("action_id") in routine_actions)
+    ]
     if not recognized:
         return ProviderCompleteDecision(response=_acknowledgement())
     try:
@@ -436,8 +445,10 @@ def _normalize_action(payload: JsonObject, config: SlackAccountConfig) -> Provid
         value = _JSON_OBJECT.validate_json(encoded)
         return ProviderActionDecision.model_validate(
             {
-                "action": "stop",
-                "reference": value.get("run_id"),
+                "action": routine_actions.get(str(action.get("action_id")), "stop"),
+                "reference": value.get("run_id")
+                if action.get("action_id") == STOP_ACTION_ID
+                else value.get("routine_id"),
                 "token": value.get("token"),
                 "actor_id": user.get("id"),
                 "conversation_id": container.get("channel_id"),

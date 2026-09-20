@@ -5,6 +5,7 @@ import hmac
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.bots.routines.service import handle_action
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import ProviderActionDecision
@@ -25,6 +26,12 @@ def toast(message: str, kind: str = "info") -> JsonObject:
 
 class ProgressActions:
     async def handle(self, session: AsyncSession, account: AccountRecord, action: ProviderActionDecision) -> JsonObject:
+        if action.action.startswith("routine_"):
+            try:
+                return await handle_action(session, account, action)
+            except (AuthorizationError, ProgressUnavailable):
+                return {}
+
         def respond(message: str, kind: str = "info") -> JsonObject:
             return {} if account.provider_key == "slack" else toast(message, kind)
 
