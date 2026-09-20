@@ -18,7 +18,6 @@ class HookSubscriptionInvariantCode(StrEnum):
     destination_limit = "destination_limit"
     secret_unavailable = "secret_unavailable"
     workspace_unavailable = "workspace_unavailable"
-    event_workspace_unavailable = "event_workspace_unavailable"
 
 
 class HookSubscriptionInvariantError(RuntimeError):

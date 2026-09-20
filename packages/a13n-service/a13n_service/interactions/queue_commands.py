@@ -65,6 +65,7 @@ from .command_evidence import (
 from .command_preparation import CommandInput, PreparedCommandInput
 from .errors import InteractionCommandError, command_not_found, idempotency_conflict, map_acceptance_error
 from .initialization import NewRunPolicy
+from .session_scope import SessionScope
 
 _USER_INPUT_ORIGIN = SubmissionOrigin()
 
@@ -177,7 +178,7 @@ class QueuedRunCommands:
             if replay is not None:
                 return replay
 
-        current, head, thread, queued = await self._load_queued_consumption_source(
+        current, head, thread, queued, session_scope = await self._load_queued_consumption_source(
             actor=actor,
             thread_id=thread_id,
         )
@@ -225,6 +226,7 @@ class QueuedRunCommands:
 
             try:
                 return await self._acceptance.consume_queued(
+                    session_scope=session_scope,
                     run=run,
                     state=candidate.state,
                     queued=queued,
@@ -385,7 +387,7 @@ class QueuedRunCommands:
         *,
         actor: AuthenticatedActor,
         thread_id: str,
-    ) -> tuple[Run, Run | None, Thread, QueuedSubmission]:
+    ) -> tuple[Run, Run | None, Thread, QueuedSubmission, SessionScope]:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
@@ -412,7 +414,7 @@ class QueuedRunCommands:
             ).one_or_none()
             if row is None:
                 raise command_not_found()
-            _session_record, thread_record, current_record = row
+            conversation, thread_record, current_record = row
             queued_record = await database.scalar(
                 select(QueuedSubmissionRecord)
                 .where(
@@ -444,6 +446,8 @@ class QueuedRunCommands:
             head_record = (
                 None
                 if thread_record.head_run_id is None
+                else current_record
+                if thread_record.head_run_id == current_record.id
                 else await database.scalar(
                     select(RunRecord).where(
                         RunRecord.organization_id == thread_record.organization_id,
@@ -468,4 +472,5 @@ class QueuedRunCommands:
                 None if head_record is None else head_record.to_resource(),
                 thread_record.to_resource(),
                 queued,
+                SessionScope.from_record(conversation),
             )

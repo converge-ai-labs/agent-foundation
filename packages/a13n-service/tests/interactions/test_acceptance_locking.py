@@ -78,9 +78,7 @@ async def test_independent_invocation_freezes_share_agent_and_revision_locks(
             await freeze(second)
 
 
-async def test_lifecycle_hook_matching_overlaps_but_excludes_workspace_hook_mutations(
-    interaction_sessions, interaction_object_store
-):
+async def test_lifecycle_hook_matching_allows_workspace_hook_mutations(interaction_sessions, interaction_object_store):
     from a13n_service.hooks.persistence import lock_hook_workspace, write_hook_lifecycle
     from a13n_service.lifecycle.models import LifecycleEventRecord
     from a13n_service.storage import short_session
@@ -95,8 +93,6 @@ async def test_lifecycle_hook_matching_overlaps_but_excludes_workspace_hook_muta
         async with transaction(sessions) as second:
             await second.execute(text("SET LOCAL lock_timeout = '100ms'"))
             assert await write_hook_lifecycle(second, event) == ()
-            with pytest.raises(OperationalError) as conflict:
-                async with transaction(sessions) as updating:
-                    await updating.execute(text("SET LOCAL lock_timeout = '100ms'"))
-                    await lock_hook_workspace(updating, organization_id=run.organization_id, workspace_id=WORKSPACE_ID)
-            assert conflict.value.orig.sqlstate == "55P03"
+            async with transaction(sessions) as updating:
+                await updating.execute(text("SET LOCAL lock_timeout = '100ms'"))
+                await lock_hook_workspace(updating, organization_id=run.organization_id, workspace_id=WORKSPACE_ID)

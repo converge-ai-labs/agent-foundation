@@ -55,6 +55,7 @@ from .command_evidence import (
 from .command_preparation import CommandInput
 from .control_domain import InterruptReceipt
 from .errors import InteractionCommandError, command_not_found, idempotency_conflict
+from .session_scope import SessionScope
 from .steer_idempotency import SteerIdempotency, find_steer, steer_receipt
 
 _USER_INPUT_ORIGIN = SubmissionOrigin()
@@ -94,7 +95,7 @@ class ActiveRunCommands:
         replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
         if replay is not None:
             return replay
-        source, thread = await self._load_interrupt_source(actor=actor, run_id=run_id)
+        source, thread, session_scope = await self._load_interrupt_source(actor=actor, run_id=run_id)
         if source.version != request.expected_run_version or thread.version != request.expected_thread_version:
             raise InteractionCommandError(
                 "run_precondition_changed",
@@ -112,6 +113,7 @@ class ActiveRunCommands:
                     session_id=source.session_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_interrupt,
+                    session_scope=session_scope,
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
@@ -327,7 +329,7 @@ class ActiveRunCommands:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
-                    select(RunRecord, ThreadRecord)
+                    select(RunRecord, ThreadRecord, SessionRecord)
                     .join(
                         SessionRecord,
                         and_(
@@ -350,7 +352,7 @@ class ActiveRunCommands:
             ).one_or_none()
             if row is None:
                 raise command_not_found()
-            source, thread = row
+            source, thread, conversation = row
             # Steer writes were authorized by _steer_replay before input preparation.
             # Receipt reads are independent requests and must authorize here.
             if read_only:
@@ -362,6 +364,7 @@ class ActiveRunCommands:
                         session_id=source.session_id,
                         agent_id=source.agent_id,
                         action=WorkspaceAction.run_read,
+                        session_scope=SessionScope.from_record(conversation),
                     )
                 except AuthorizationError as error:
                     raise command_not_found() from error
@@ -429,7 +432,7 @@ class ActiveRunCommands:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
-                    select(RunRecord, ThreadRecord)
+                    select(RunRecord, ThreadRecord, SessionRecord)
                     .join(
                         SessionRecord,
                         and_(
@@ -452,7 +455,8 @@ class ActiveRunCommands:
             ).one_or_none()
             if row is None:
                 raise command_not_found()
-            source, thread = row
+            source, thread, conversation = row
+            session_scope = SessionScope.from_record(conversation)
             try:
                 await authorize_interaction(
                     database,
@@ -461,6 +465,7 @@ class ActiveRunCommands:
                     session_id=source.session_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_interrupt,
+                    session_scope=session_scope,
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
@@ -470,4 +475,4 @@ class ActiveRunCommands:
                     "The selected Run is not active.",
                     category=ErrorCategory.conflict,
                 )
-            return source.to_resource(), thread.to_resource()
+            return source.to_resource(), thread.to_resource(), session_scope

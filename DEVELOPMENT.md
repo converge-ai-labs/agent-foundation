@@ -87,6 +87,18 @@ FastAPI yield-dependency cleanup timing has changed across releases. A streaming
 
 Complete authentication, authorization, and initial reads in a short session that closes before constructing the response. Pass immutable values into the generator. If the stream needs database state, open a fresh short session for each bounded operation. Background tasks also create their own session from the factory. Release subscriptions and tasks in `finally`, and test that an open stream does not retain a pool connection.
 
+## SQL Operation Design
+
+Minimize database work across the complete application operation using the short-read, external-preparation, short-commit flow above. Simple database-only operations can stay in one transaction. Preserve the owning specification's observation and concurrency boundaries.
+
+- **Observe authority once.** Follow the [IAM contract](spec/a13n-service/33-identity-and-access-management.md#authorization-contract): read each Principal/Workspace and credential on first use, then reuse detached facts while still checking each action, target, and credential boundary. Do not use IAM row locks. Later revocation affects the next operation; requests, polls, and independent background items do not share an operation snapshot. Attempt authorization refresh remains separate.
+- **Select configuration once.** For [Run acceptance](spec/a13n-service/18-agent-control-input-and-continuation.md), validate and freeze the complete selection, including descendants, using ordinary reads. Do not reread defaults or rebuild prepared state because of later edits. No shared database timestamp is required. Management serialization and runtime eligibility checks retain their own contracts.
+- **Keep commit-time arbitration.** Recheck required state, versions, source integrity, capacity, leases, generations, and idempotency. Keep command replay preflight read-only; arbitrate evidence with the business mutation and roll back tentative writes before replaying a concurrent winner.
+- **Pass known facts forward.** Reuse existing IDs, selections, and returned values. Prefer existing parameters or small cohesive types; avoid giant Context objects and long forwarding chains. Reuse does not replace authoritative scope or relation checks.
+- **Batch repeated work.** Deduplicate inputs and use bounded set reads and writes. Batch recurring renewals when justified, preserving per-item authority, deadlines, cancellation, conflicts, and accounting.
+- **Combine mutations and narrow locks.** Prefer conditional `UPDATE ... RETURNING` when it expresses the complete invariant. For queue claims that allow skipping contention, use bounded `FOR UPDATE SKIP LOCKED` with an update and returned claims; reuse canonical helpers. Preserve necessary locks, ordering, and fences, and evaluate lease expiry after contention. Commit before external execution or reporting success.
+- **Verify the reduction.** Compare equivalent scenarios with an explicit SQL-counting method under the [existing validation workflow](CONTRIBUTING.md#local-validation). Pair count assertions with relevant concurrency and rollback tests. Fewer statements must preserve correctness and must not introduce unbounded reads, longer transactions, or unnecessary abstractions.
+
 ## Migrations
 
 Each a13n Service build artifact supplies one final metadata registry and ordered migration graph through its fixed distribution descriptor. Domains own model and revision meaning; the distribution explicitly assembles their contributions; a13n Service owns one resolved registry, one graph, and at most one head for that artifact. Package scanning, import side effects, organization state, and runtime edition selection never change migration contents.

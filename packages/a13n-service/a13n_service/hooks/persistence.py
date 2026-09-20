@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import and_, cast, func, or_, select
+from sqlalchemy import and_, cast, func, or_, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -211,18 +211,32 @@ async def write_hook_lifecycle(
 ) -> tuple[OutboxRecord, ...]:
     """Append matching delivery intents, then expire inline Hooks on sealed Runs."""
 
-    # Matching events share the Workspace fence; management still takes an
-    # exclusive lock before changing subscriptions or checking capacity.
-    workspace = await _lock_event_workspace(database, event)
+    # Observe subscription heads once. Only immutable Revisions are pinned until
+    # their Outbox references commit; management does not lock those Revisions.
     statement = (
         select(HookSubscriptionRecord, HookSubscriptionRevisionRecord)
         .join(
             HookSubscriptionRevisionRecord,
             HookSubscriptionRevisionRecord.id == HookSubscriptionRecord.current_revision_id,
         )
+        .join(
+            SessionRecord,
+            and_(
+                SessionRecord.organization_id == HookSubscriptionRecord.organization_id,
+                SessionRecord.workspace_id == HookSubscriptionRecord.workspace_id,
+                SessionRecord.id == event.session_id,
+            ),
+        )
+        .join(
+            WorkspaceRecord,
+            and_(
+                WorkspaceRecord.organization_id == SessionRecord.organization_id,
+                WorkspaceRecord.id == SessionRecord.workspace_id,
+                WorkspaceRecord.deleted_at.is_(None),
+            ),
+        )
         .where(
             HookSubscriptionRecord.organization_id == event.organization_id,
-            HookSubscriptionRecord.workspace_id == workspace.id,
             HookSubscriptionRecord.enabled.is_(True),
             HookSubscriptionRecord.expired_at.is_(None),
             HookSubscriptionRecord.deleted_at.is_(None),
@@ -241,7 +255,7 @@ async def write_hook_lifecycle(
         )
         .order_by(HookSubscriptionRecord.id)
         .limit(MAX_ACTIVE_HOOK_SUBSCRIPTIONS + 1)
-        .with_for_update(of=HookSubscriptionRecord)
+        .with_for_update(of=HookSubscriptionRevisionRecord, read=True, key_share=True)
     )
     statement = statement.where(HookSubscriptionRevisionRecord.hook_names.op("@>")(cast([event.event_type], JSONB)))
     candidates = (await database.execute(statement)).all()
@@ -275,19 +289,22 @@ async def write_hook_lifecycle(
     database.add_all(records)
     await database.flush()
     if event.event_type in {"run.waiting", "run.completed", "run.failed", "run.cancelled"}:
-        inline = await database.scalar(
-            select(HookSubscriptionRecord)
+        await database.scalar(
+            update(HookSubscriptionRecord)
             .where(
                 HookSubscriptionRecord.organization_id == event.organization_id,
                 HookSubscriptionRecord.inline_run_id == event.run_id,
                 HookSubscriptionRecord.expired_at.is_(None),
             )
-            .with_for_update()
+            .values(
+                expired_at=event.occurred_at,
+                updated_at=func.greatest(
+                    event.occurred_at, HookSubscriptionRecord.updated_at + timedelta(microseconds=1)
+                ),
+            )
+            .returning(HookSubscriptionRecord)
+            .execution_options(populate_existing=True)
         )
-        if inline is not None:
-            inline.expired_at = event.occurred_at
-            inline.touch(event.occurred_at)
-            await database.flush()
     return records
 
 
@@ -335,32 +352,6 @@ async def lock_hook_workspace(
         raise HookSubscriptionInvariantError(
             HookSubscriptionInvariantCode.workspace_unavailable,
             "the Hook Workspace is unavailable",
-        )
-    return workspace
-
-
-async def _lock_event_workspace(
-    database: AsyncSession,
-    event: LifecycleEventRecord,
-) -> WorkspaceRecord:
-    workspace = await database.scalar(
-        select(WorkspaceRecord)
-        .join(
-            SessionRecord,
-            (SessionRecord.workspace_id == WorkspaceRecord.id)
-            & (SessionRecord.organization_id == WorkspaceRecord.organization_id),
-        )
-        .where(
-            SessionRecord.organization_id == event.organization_id,
-            SessionRecord.id == event.session_id,
-            WorkspaceRecord.deleted_at.is_(None),
-        )
-        .with_for_update(of=WorkspaceRecord, read=True)
-    )
-    if workspace is None:
-        raise HookSubscriptionInvariantError(
-            HookSubscriptionInvariantCode.event_workspace_unavailable,
-            "lifecycle event has no active Hook Workspace",
         )
     return workspace
 

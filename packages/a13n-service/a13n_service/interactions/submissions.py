@@ -611,6 +611,8 @@ class QueuedSubmissionService:
             head_record = (
                 None
                 if thread_record.head_run_id is None
+                else current_record
+                if current_record is not None and thread_record.head_run_id == current_record.id
                 else await database.scalar(
                     select(RunRecord).where(
                         RunRecord.organization_id == thread_record.organization_id,

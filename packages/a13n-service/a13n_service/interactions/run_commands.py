@@ -67,6 +67,7 @@ from .command_values import (
 )
 from .errors import InteractionCommandError, command_not_found
 from .initialization import NewRunPolicy
+from .session_scope import SessionScope
 
 _USER_INPUT_ORIGIN = SubmissionOrigin()
 
@@ -144,6 +145,7 @@ class RunCommands:
             run_id = new_run_id()
             session_id = request.session_id or new_session_id()
             session = None
+            session_scope = None
             if request.session_id is None:
                 now = self._clock()
                 session = Session(
@@ -156,7 +158,7 @@ class RunCommands:
                     updated_at=now,
                 )
             else:
-                await self._require_session(
+                session_scope = await self._require_session(
                     organization_id=prepared_input.invocation.organization_id,
                     workspace_id=workspace_id,
                     session_id=session_id,
@@ -212,6 +214,7 @@ class RunCommands:
             try:
                 return await self._acceptance.accept_new_thread(
                     session=session,
+                    session_scope=session_scope,
                     thread=thread,
                     run=run,
                     state=state,
@@ -284,7 +287,7 @@ class RunCommands:
     ) -> RunAcceptanceReceipt:
         """Accept prepared command intent; the calling entry point owns replay evidence."""
         environment = request.environment
-        source, thread = await self._load_continue_source(actor=actor, source_run_id=source_run_id)
+        source, thread, session_scope = await self._load_continue_source(actor=actor, source_run_id=source_run_id)
         source_state = await self._states.read_run(source)
         prepared_input = await self._inputs.prepare(
             self._invocations,
@@ -345,6 +348,7 @@ class RunCommands:
 
             return await self._acceptance.advance_thread(
                 label_overrides=request.labels,
+                session_scope=session_scope,
                 run=run,
                 state=state,
                 expected_thread_version=request.expected_thread_version,
@@ -419,7 +423,7 @@ class RunCommands:
     ) -> RunAcceptanceReceipt:
         """Accept prepared command intent; the calling entry point owns replay evidence."""
         environment = request.environment
-        source, thread = await self._load_empty_thread_source(
+        source, thread, session_scope = await self._load_empty_thread_source(
             actor=actor, thread_id=thread_id, agent_id=request.agent_id
         )
         target_agent_id = request.agent_id or (source.agent_id if source else None)
@@ -479,6 +483,7 @@ class RunCommands:
 
             return await self._acceptance.advance_thread(
                 label_overrides=request.labels,
+                session_scope=session_scope,
                 run=run,
                 state=state,
                 expected_thread_version=request.expected_thread_version,
@@ -520,7 +525,7 @@ class RunCommands:
             await self._acceptance.validate_retained(replay.run_id)
             return replay
 
-        source = await self._load_fork_source(actor=actor, run_id=run_id)
+        source, session_scope = await self._load_fork_source(actor=actor, run_id=run_id)
         source_state = await self._states.read_run(source)
         reuse_exact_source = (
             request.agent_id is None
@@ -639,6 +644,7 @@ class RunCommands:
             try:
                 return await self._acceptance.accept_new_thread(
                     session=None,
+                    session_scope=session_scope,
                     thread=thread,
                     run=forked_run,
                     state=state,
@@ -662,7 +668,7 @@ class RunCommands:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
-                    select(RunRecord, ThreadRecord)
+                    select(RunRecord, ThreadRecord, SessionRecord)
                     .join(
                         SessionRecord,
                         and_(
@@ -685,7 +691,7 @@ class RunCommands:
             ).one_or_none()
             if row is None:
                 raise command_not_found()
-            source_record, thread_record = row
+            source_record, thread_record, conversation = row
             try:
                 await authorize_agent(
                     database,
@@ -703,7 +709,7 @@ class RunCommands:
                     "The selected Run is not a completed continuation source.",
                     category=ErrorCategory.conflict,
                 )
-            return source, thread_record.to_resource()
+            return source, thread_record.to_resource(), SessionScope.from_record(conversation)
 
     async def _load_empty_thread_source(
         self,
@@ -711,11 +717,11 @@ class RunCommands:
         actor: AuthenticatedActor,
         thread_id: str,
         agent_id: str | None,
-    ) -> tuple[Run | None, Thread]:
+    ) -> tuple[Run | None, Thread, SessionScope]:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
-                    select(RunRecord, ThreadRecord)
+                    select(RunRecord, ThreadRecord, SessionRecord)
                     .select_from(ThreadRecord)
                     .outerjoin(
                         RunRecord,
@@ -739,7 +745,7 @@ class RunCommands:
             ).one_or_none()
             if row is None:
                 raise command_not_found()
-            source_record, thread_record = row
+            source_record, thread_record, conversation = row
             target_agent_id = agent_id or (source_record.agent_id if source_record else None)
             if target_agent_id is None:
                 raise InteractionCommandError(
@@ -768,13 +774,17 @@ class RunCommands:
                     "The Thread does not have an empty continuation head.",
                     category=ErrorCategory.conflict,
                 )
-            return source_record.to_resource() if source_record else None, thread_record.to_resource()
+            return (
+                source_record.to_resource() if source_record else None,
+                thread_record.to_resource(),
+                SessionScope.from_record(conversation),
+            )
 
-    async def _load_fork_source(self, *, actor: AuthenticatedActor, run_id: str) -> Run:
+    async def _load_fork_source(self, *, actor: AuthenticatedActor, run_id: str) -> tuple[Run, SessionScope]:
         async with short_session(self._sessions) as database:
-            source_record = (
+            row = (
                 await database.execute(
-                    select(RunRecord)
+                    select(RunRecord, SessionRecord)
                     .join(
                         SessionRecord,
                         and_(
@@ -787,9 +797,10 @@ class RunCommands:
                         SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
-            ).scalar_one_or_none()
-            if source_record is None:
+            ).one_or_none()
+            if row is None:
                 raise command_not_found()
+            source_record, conversation = row
             try:
                 await authorize_agent(
                     database,
@@ -807,9 +818,9 @@ class RunCommands:
                     "The selected Run is not a completed fork source.",
                     category=ErrorCategory.conflict,
                 )
-            return source
+            return source, SessionScope.from_record(conversation)
 
-    async def _require_session(self, *, organization_id: str, workspace_id: str, session_id: str) -> None:
+    async def _require_session(self, *, organization_id: str, workspace_id: str, session_id: str) -> SessionScope:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
@@ -837,3 +848,4 @@ class RunCommands:
                 "The selected Session already has its root Thread.",
                 category=ErrorCategory.conflict,
             )
+        return SessionScope.from_record(row[0])

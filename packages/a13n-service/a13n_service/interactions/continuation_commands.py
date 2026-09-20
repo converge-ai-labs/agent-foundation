@@ -66,6 +66,7 @@ from .command_values import (
 from .errors import InteractionCommandError, command_not_found
 from .feedback import map_waiting_feedback
 from .input import input_text
+from .session_scope import SessionScope
 
 _USER_INPUT_ORIGIN = SubmissionOrigin()
 
@@ -112,7 +113,7 @@ class ContinuationCommands:
             await self._acceptance.validate_retained(replay.run_id)
             return replay
 
-        source, thread, parent = await self._load_retry_source(actor=actor, run_id=run_id)
+        source, thread, parent, session_scope = await self._load_retry_source(actor=actor, run_id=run_id)
         source_state = await self._states.read_run(source)
         parent_state = (await self._states.read_run(parent)).envelope if parent is not None else None
         new_run_id_value = new_run_id()
@@ -185,10 +186,13 @@ class ContinuationCommands:
                     actor=actor,
                     workspace_id=actor.workspace_id,
                     session_id=source.session_id,
+                    session_scope=session_scope,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_retry,
                 )
-                await authorize_retained_execution(database, source=source, workspace_id=actor.workspace_id)
+                await authorize_retained_execution(
+                    database, source=source, workspace_id=actor.workspace_id, session_scope=session_scope
+                )
             except AuthorizationError as error:
                 raise command_not_found() from error
 
@@ -201,6 +205,7 @@ class ContinuationCommands:
 
         try:
             return await self._acceptance.advance_thread(
+                session_scope=session_scope,
                 environment=RetainedRunEnvironment(source.id, source.thread_id),
                 run=retry_run,
                 state=state,
@@ -231,7 +236,7 @@ class ContinuationCommands:
         protocol_context: ProtocolInputContext | None = None,
     ) -> RunAcceptanceReceipt:
         require_idempotency_key(idempotency_key)
-        source, thread = await self._load_feedback_source(actor=actor, run_id=run_id)
+        source, thread, session_scope = await self._load_feedback_source(actor=actor, run_id=run_id)
         source_state = await self._states.read_run(source)
         if source.sealed_state is None or source.pending is None:
             raise InteractionCommandError(
@@ -286,6 +291,7 @@ class ContinuationCommands:
                 source=source,
                 thread=thread,
                 source_state=source_state,
+                session_scope=session_scope,
                 request=request,
                 normalized=normalized,
                 request_fingerprint=evidence.fingerprint,
@@ -307,7 +313,7 @@ class ContinuationCommands:
         prepared_assets: Mapping[str, Asset] | None = None,
     ) -> RunAcceptanceReceipt:
         require_idempotency_key(idempotency_key)
-        source, thread, source_state, normalized = await self._prepare_waiting_continue(
+        source, thread, source_state, normalized, session_scope = await self._prepare_waiting_continue(
             actor=actor, run_id=run_id, request=request, prepared_assets=prepared_assets
         )
         request_fingerprint = digest_request(
@@ -337,6 +343,7 @@ class ContinuationCommands:
                 source=source,
                 thread=thread,
                 source_state=source_state,
+                session_scope=session_scope,
                 request=request,
                 normalized=normalized,
                 request_fingerprint=evidence.fingerprint,
@@ -358,7 +365,7 @@ class ContinuationCommands:
         prepared_assets: Mapping[str, Asset] | None = None,
     ) -> RunAcceptanceReceipt:
         """Accept waiting intent under the calling entry point's command identity."""
-        source, thread, source_state, normalized = await self._prepare_waiting_continue(
+        source, thread, source_state, normalized, session_scope = await self._prepare_waiting_continue(
             actor=actor, run_id=run_id, request=request, prepared_assets=prepared_assets
         )
         return await self._accept_waiting_successor(
@@ -366,6 +373,7 @@ class ContinuationCommands:
             source=source,
             thread=thread,
             source_state=source_state,
+            session_scope=session_scope,
             request=request,
             normalized=normalized,
             request_fingerprint=request_fingerprint,
@@ -380,8 +388,8 @@ class ContinuationCommands:
         run_id: str,
         request: WaitingContinueRunCommand,
         prepared_assets: Mapping[str, Asset] | None,
-    ) -> tuple[Run, Thread, StoredRunState, WaitingRunContinueInput]:
-        source, thread = await self._load_feedback_source(
+    ) -> tuple[Run, Thread, StoredRunState, WaitingRunContinueInput, SessionScope]:
+        source, thread, session_scope = await self._load_feedback_source(
             actor=actor,
             run_id=run_id,
             actions=frozenset({WorkspaceAction.run_continue, WorkspaceAction.run_feedback}),
@@ -407,13 +415,14 @@ class ContinuationCommands:
             pending=source.pending,
             input=accepted_input,
         )
-        return source, thread, source_state, normalized
+        return source, thread, source_state, normalized, session_scope
 
     async def _accept_waiting_successor(
         self,
         *,
         actor: AuthenticatedActor,
         source: Run,
+        session_scope: SessionScope,
         thread: Thread,
         source_state: StoredRunState,
         request: WaitingRunFeedbackRequest | WaitingContinueRunCommand,
@@ -491,10 +500,13 @@ class ContinuationCommands:
                         actor=actor,
                         workspace_id=actor.workspace_id,
                         session_id=source.session_id,
+                        session_scope=session_scope,
                         agent_id=source.agent_id,
                         action=action,
                     )
-                await authorize_retained_execution(database, source=source, workspace_id=actor.workspace_id)
+                await authorize_retained_execution(
+                    database, source=source, workspace_id=actor.workspace_id, session_scope=session_scope
+                )
             except AuthorizationError as error:
                 raise command_not_found() from error
 
@@ -506,6 +518,7 @@ class ContinuationCommands:
             )
 
         return await self._acceptance.advance_thread(
+            session_scope=session_scope,
             label_overrides=request.labels,
             environment=RetainedRunEnvironment(source.id, source.thread_id),
             run=successor,
@@ -521,11 +534,13 @@ class ContinuationCommands:
             transaction_hook=transaction_hook,
         )
 
-    async def _load_retry_source(self, *, actor: AuthenticatedActor, run_id: str) -> tuple[Run, Thread, Run | None]:
+    async def _load_retry_source(
+        self, *, actor: AuthenticatedActor, run_id: str
+    ) -> tuple[Run, Thread, Run | None, SessionScope]:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
-                    select(RunRecord, ThreadRecord)
+                    select(RunRecord, ThreadRecord, SessionRecord)
                     .join(
                         SessionRecord,
                         and_(
@@ -548,13 +563,15 @@ class ContinuationCommands:
             ).one_or_none()
             if row is None:
                 raise command_not_found()
-            source_record, thread_record = row
+            source_record, thread_record, conversation = row
+            session_scope = SessionScope.from_record(conversation)
             try:
                 await authorize_interaction(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
                     session_id=source_record.session_id,
+                    session_scope=session_scope,
                     agent_id=source_record.agent_id,
                     action=WorkspaceAction.run_retry,
                 )
@@ -580,7 +597,7 @@ class ContinuationCommands:
                 if parent_record is None:
                     raise command_not_found()
                 parent = parent_record.to_resource()
-            return source_record.to_resource(), thread_record.to_resource(), parent
+            return source_record.to_resource(), thread_record.to_resource(), parent, session_scope
 
     async def _load_feedback_source(
         self,
@@ -588,11 +605,11 @@ class ContinuationCommands:
         actor: AuthenticatedActor,
         run_id: str,
         actions: frozenset[WorkspaceAction] = frozenset({WorkspaceAction.run_feedback}),
-    ) -> tuple[Run, Thread]:
+    ) -> tuple[Run, Thread, SessionScope]:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
-                    select(RunRecord, ThreadRecord)
+                    select(RunRecord, ThreadRecord, SessionRecord)
                     .join(
                         SessionRecord,
                         and_(
@@ -615,7 +632,8 @@ class ContinuationCommands:
             ).one_or_none()
             if row is None:
                 raise command_not_found()
-            source_record, thread_record = row
+            source_record, thread_record, conversation = row
+            session_scope = SessionScope.from_record(conversation)
             try:
                 for action in actions:
                     await authorize_interaction(
@@ -623,6 +641,7 @@ class ContinuationCommands:
                         actor=actor,
                         workspace_id=actor.workspace_id,
                         session_id=source_record.session_id,
+                        session_scope=session_scope,
                         agent_id=source_record.agent_id,
                         action=action,
                     )
@@ -635,4 +654,4 @@ class ContinuationCommands:
                     "The selected Run is not waiting for feedback.",
                     category=ErrorCategory.conflict,
                 )
-            return source, thread_record.to_resource()
+            return source, thread_record.to_resource(), session_scope
