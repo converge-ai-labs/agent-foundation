@@ -84,7 +84,7 @@ def no_client(*args, **kwargs):
 httpx2.AsyncClient = no_client
 from a13n_harness.providers.plugins import load_provider_plugins
 from a13n_harness.providers.web.builtins import built_in_web_providers
-assert len(built_in_web_providers()) == 9
+assert len(built_in_web_providers()) == 10
 manifest = load_provider_plugins(("acme",))[0].manifest
 assert manifest.web[0].type == "acme_web"
 assert manifest.model[0].type == "acme_model"
