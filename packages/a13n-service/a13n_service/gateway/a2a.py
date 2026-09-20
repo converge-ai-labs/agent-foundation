@@ -892,11 +892,12 @@ class A2AService:
         delivered_artifacts = {_artifact_digest(artifact) for artifact in initial.artifacts}
         while monotonic() - started < self._maximum_wait_seconds:
             await anyio.sleep(self._poll_interval_seconds)
+            # History belongs to the initial Task snapshot; later events carry only status and artifacts.
             current = await self.get_task(
                 actor=actor,
                 agent_id=agent_id,
                 task_id=task_id,
-                history_length=history_length,
+                history_length=0,
             )
             for artifact in current.artifacts:
                 digest = _artifact_digest(artifact)
