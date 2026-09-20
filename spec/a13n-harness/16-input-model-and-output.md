@@ -379,11 +379,9 @@ class ModelRecoveryPolicy:
     backoff_max_seconds: float = 30.0
 ```
 
-`max_attempts` is total, including the first attempt. Backoff uses full jitter from zero to the bounded exponential ceiling. A prompt factory may be synchronous or asynchronous and receives the failure, next attempt index, and detached latest messages.
+`max_attempts` bounds consecutive failed attempts, including the initial failed attempt, rather than the cumulative attempts in a logical Run. An accepted primary model response resets the budget and equal-jitter exponential backoff. Recovery requires a recognized transient failure at the primary model-request boundary; interrupted history alone does not authorize a retry. [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#model-attempt-recovery) owns the failure classification, budget reset, backoff, prompt-factory inputs, and cancellation rules.
 
-Recoverable failures are narrowly classified model API errors, non-output-exhaustion `UnexpectedModelBehavior`, and public history showing an interrupted model-request boundary. Harness errors, cancellation, usage limits, exhausted output validation, tool failures, and native deferred/HITL results are hard stops.
-
-Each retry uses normalized interrupted history and new semantic input while preserving one outer Harness run, context, Environment, plugin graph, and `RunUsage`. Each `ModelAttempt` receives a unique model-attempt ID. Detailed lifecycle semantics are owned by [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#model-attempt-recovery).
+Each retry uses normalized interrupted history and new semantic input while preserving one outer Harness run, context, Environment, plugin graph, and `RunUsage`. Each `ModelAttempt` receives a unique model-attempt ID.
 
 Provider-suspended continuation is not attempt recovery. Pydantic owns the public suspended message semantics; the Harness does not append a generic route pin or force a special hosted resolver contract.
 

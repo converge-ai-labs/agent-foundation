@@ -27,6 +27,7 @@ A Host may map one logical Harness run to one durable execution attempt. It does
 @dataclass(frozen=True, slots=True)
 class RunBindings:
     instance: AgentInstanceContext
+    environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     capabilities: tuple[
         AbstractCapability[AgentContext], ...
@@ -37,7 +38,7 @@ class RunBindings:
 
 The trusted caller may supply fresh bindings for a logical run; an embedded call that omits them receives fresh embedded bindings. The Harness:
 
-1. validates and normalizes `environment`, `environments`, and `default_environment` into one complete mount mapping without provider effects;
+1. validates and normalizes `environment`, `environments`, and `default_environment`, or accepts an explicit `RunBindings.environment` runtime, under the [Environment input rules](08-environment-integration.md#run-inputs) without provider effects;
 2. allocates the public Harness `run_id` and obtains a new or restored State-owned `thread_id`;
 3. assigns opaque mount IDs and enters every fresh adapter with ephemeral Run, Thread, Agent-instance, mount, and Host correlation;
 4. atomically publishes the initial mount snapshot only after every adapter enters successfully;
@@ -51,7 +52,7 @@ The same context and entered Environment facade are reused by every internal `Mo
 
 The logical Run receives one `run_id`, and each internal `ModelAttempt` receives a transient model-attempt ID, but they do not define the provider model session or prompt-cache scope. All attempts read the same State-owned `AgentContext.thread_id`. A later continuation creates a new Harness run and fresh bindings while restoring that ID from the selected State; a new root or child State and an explicit `HarnessState.fork()` use distinct IDs. No `RunBindings`, metadata, or invocation argument can override it. [Input, Model, and Output Boundaries](16-input-model-and-output.md#thread-affinity) owns the provider mapping contract.
 
-`RunBindings.embedded()` creates a process-local Agent instance and accepts an optional model resolver, model-context middleware, Capabilities, metadata, and bounded Host references. When no Environment input is supplied to `run()` or `stream()`, Harness creates an empty bound facade. It never discovers a Provider or hidden provider configuration.
+`RunBindings.embedded()` creates a process-local Agent instance and accepts an optional model resolver, model-context middleware, Capabilities, metadata, and bounded Host references. When neither adapter inputs nor an explicit `RunBindings.environment` runtime are supplied, Harness creates an empty bound facade. It never discovers a Provider or hidden provider configuration.
 
 ## Usage Limits and Native Retries
 
