@@ -203,6 +203,12 @@ The Agent selection is resolved before axes that can use that Agent's defaults. 
 
 Collection defaults are ordered exact resource IDs. The first explicitly supplied collection wins as a whole; collections are not concatenated or unioned across layers. Omission continues fallback and an explicitly empty collection selects none. A missing referenced resource, wrong-kind reference, or duplicate default rejects the candidate generation.
 
+## Media Understanding Defaults
+
+Root `media_understanding` maps optional `image`, `video`, and `audio` fields to Model resource IDs. Omitted or null per-kind values retain Harness environment fallback; they do not disable it. Non-null references must resolve to Models declaring the corresponding native input capability. Missing references and incompatible capability edits reject the entire candidate, including deletion of a referenced Model. Validation does not initialize providers or credentials.
+
+These are global composition inputs, not Thread, Project, or Agent overrides. WebUI Models exposes three purpose selectors and per-Model set/clear actions through ordinary root source publication. Shortcuts preserve unrelated root fields and do not publish over an unsaved root draft. Selectors expose declared capabilities, configured IDs, and only the kinds with environment fallback configured, never ambient values or credentials. [Composition](02-agent-composition-and-snapshots.md#media-understanding-auxiliary-models) owns capture and execution precedence.
+
 ## Credentials
 
 Model and Provider resources contain credential references, never credential bytes. MCP environment and header fields additionally accept literal strings in user-owned YAML/JSON sources:

@@ -98,8 +98,8 @@ COMMANDS = (
     ),
     Command(
         "model",
-        "Select and remember a model per Project; default clears the preference.",
-        "[model-id|default]",
+        "Select a Project model or configure media understanding defaults.",
+        "[model-id|default|defaults]",
         maximum=1,
     ),
     Command(

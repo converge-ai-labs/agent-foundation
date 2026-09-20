@@ -355,6 +355,7 @@ class RootRunExecutor:
                 environment=environment.runtime,
                 tool_result_directory=environment.tool_result_directory,
                 model_resolver=reconstructed.model_resolver,
+                file_media_understanding=reconstructed.file_media_understanding(previous_state.thread_id),
                 working_state_observer=(
                     partial(self._work.observe, thread_id, base_continuation_id=base_continuation_id)
                     if self._work is not None

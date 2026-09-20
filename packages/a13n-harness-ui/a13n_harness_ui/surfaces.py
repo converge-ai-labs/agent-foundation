@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
+from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from a13n_stream_protocol import ContentMetadata
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
@@ -709,9 +710,12 @@ class ModelSummary(SurfaceModel):
     route: str = Field(min_length=1)
     thinking: ThinkingControl | None = None
     fast: FastControl | None = None
+    media_capabilities: tuple[NativeInputMediaKind, ...] = ()
 
 
 class ThreadSelectorCatalog(SurfaceModel):
+    media_understanding: dict[NativeInputMediaKind, str] = Field(default_factory=dict)
+    media_understanding_environment: tuple[NativeInputMediaKind, ...] = ()
     agents: tuple[AgentSummary, ...]
     models: tuple[ModelSummary, ...] = ()
     environments: tuple[EnvironmentProfileSummary, ...]

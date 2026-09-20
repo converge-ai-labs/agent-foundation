@@ -83,6 +83,14 @@ security:
 
 The reviewer has no execution tools and uses the [Harness-owned bounded review lifecycle and output-tool protocol](../a13n-harness/07-tool-execution.md#model-backed-review-and-shell-specialization). The Harness UI shortcut supplies `on_error: allow` when the Agent does not specify it, so non-timeout review failure adds no restriction; invocation-policy denial and approval requirements still apply. Review timeout always denies before execution, regardless of `on_error`. The Harness library defaults `on_flagged` to `deny` and `on_error` to `approval_required`. Human waiting uses the uniform CLI Host interaction timeout, regardless of tool type. Shell review is not filesystem, process, or network isolation and remains useful in explicitly selected Full Control mode. Setup offers a reviewed lightweight subscription Model or reuses the connected API-key Model and lets the user opt out before publication. Existing root shortcut fields are preserved.
 
+### Media Understanding Auxiliary Models
+
+A resolved Run composition captures each configured root media-understanding Model as an independent complete recipe, including settings, connection configuration, characteristics, and authentication references without secret bytes. Missing media captures deserialize as empty and preserve legacy canonical serialization. Changes to the accepted configuration affect future captures only; recovery reconstructs captured recipes. Root and child execution bind the provider using the actual executing Harness Thread identity.
+
+Harness file `view` owns native-first dispatch. Native-capable Models receive media directly without constructing auxiliary providers or resolving their credentials. Otherwise the per-kind configured recipe takes precedence over Harness environment fallback. Unconfigured kinds retain that fallback independently, including in partially configured compositions. Configured resolution or inference failures do not fall back to an ambient Model. Cancellation propagates normally.
+
+Auxiliary inference uses the selected Model's own settings and normal Host credential/session-affinity resolution. Primary Model settings and operation thinking/fast overrides do not leak into it. The adapter is lazy and Run-local; neither validation nor reconstruction sends a provider request. There are no forced-proxy modes or per-Agent overrides, and composer attachment behavior is unchanged.
+
 ## MCP Servers
 
 Files under `mcp/` use lower-case `.yaml` or `.json`. Either format accepts one canonical reusable MCP server:

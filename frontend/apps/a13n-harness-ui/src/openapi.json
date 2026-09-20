@@ -9148,6 +9148,14 @@
                 "type": "null"
               }
             ]
+          },
+          "media_capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/NativeInputMediaKind"
+            },
+            "type": "array",
+            "title": "Media Capabilities",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -9216,6 +9224,14 @@
           "recommended"
         ],
         "title": "ModelToolChoice"
+      },
+      "NativeInputMediaKind": {
+        "type": "string",
+        "enum": [
+          "image",
+          "video",
+          "audio"
+        ]
       },
       "NotePage": {
         "properties": {
@@ -12585,6 +12601,24 @@
       },
       "ThreadSelectorCatalog": {
         "properties": {
+          "media_understanding": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NativeInputMediaKind"
+            },
+            "type": "object",
+            "title": "Media Understanding"
+          },
+          "media_understanding_environment": {
+            "items": {
+              "$ref": "#/components/schemas/NativeInputMediaKind"
+            },
+            "type": "array",
+            "title": "Media Understanding Environment",
+            "default": []
+          },
           "agents": {
             "items": {
               "$ref": "#/components/schemas/AgentSummary"

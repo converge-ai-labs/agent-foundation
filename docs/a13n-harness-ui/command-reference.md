@@ -235,35 +235,35 @@ Type these in the terminal composer, not your shell. Tab completes supported syn
 
 “While busy” means the command parser allows it during work; it is not permission to bypass a pending interaction or operate on an unavailable resource. `/steer` requires a currently steerable root operation. Attachment commands change the draft; active Enter steering sends its text and attachments together. See [Use the terminal](everyday-use.md).
 
-| Command grammar                         | Aliases | While busy | Purpose                                                                   |
-| --------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------- |
-| `/help [command]`                       | `/?`    | Yes        | Show command help and keyboard shortcuts.                                 |
-| `/mode [concise\|detailed]`             | —       | Yes        | Switch output detail without changing execution.                          |
-| `/theme [auto\|dark\|light]`            | —       | Yes        | Choose a terminal theme.                                                  |
-| `/mouse [on\|off]`                      | —       | Yes        | Toggle wheel capture; off preserves native selection/copy.                |
-| `/attach path`                          | —       | Yes        | Attach a file or image to the current draft.                              |
-| `/paste-image`                          | —       | Yes        | Read clipboard images explicitly.                                         |
-| `/recover`                              | —       | No         | Restore an unsent prompt.                                                 |
-| `/status`                               | —       | Yes        | Show model, context, environment, and subscription usage.                 |
-| `/ps`                                   | —       | Yes        | Inspect observed background processes and their last reported status.     |
-| `/subagents [execution-id\|next]`       | —       | Yes        | Inspect this conversation's child executions and retained output.         |
-| `/usage [details\|subscription\|reset]` | —       | Yes        | Show recorded Thread usage; subscription/reset inspect Codex limits.      |
-| `/goal task description`                | —       | No         | Start a Goal with bounded self-checks against the authored objective.     |
-| `/steer message`                        | —       | Yes        | Add guidance while the agent is working.                                  |
-| `/import`                               | —       | No         | Preview and optionally enable external subagents with parent inheritance. |
-| `/agent [agent-id]`                     | —       | No         | Switch agent, including its model, instructions, and tools.               |
-| `/model [model-id\|default]`            | —       | No         | Select and remember a model per Project; `default` clears the preference. |
-| `/fast [on\|off\|reset]`                | —       | No         | Toggle supported Fast processing without saving configuration.            |
-| `/thinking [level]`                     | —       | No         | Show or change reasoning effort for subsequent turns.                     |
-| `/environment [mode]`                   | —       | No         | Show or select execution permissions for subsequent turns.                |
-| `/new`                                  | —       | No         | Start a fresh session; keep all saved history.                            |
-| `/resume [session-id]`                  | —       | No         | Search, preview, and name saved sessions, or resume one by ID.            |
-| `/history`                              | —       | No         | Browse retained messages (Ctrl+T).                                        |
-| `/notes`                                | —       | No         | Show saved notes with full contents within display budgets.               |
-| `/config`                               | —       | No         | Find your configuration files.                                            |
-| `/review request-id`                    | —       | No         | Inspect a pending request against the selected continuation.              |
-| `/cancel`                               | —       | Yes        | Stop the current task.                                                    |
-| `/quit`                                 | `/exit` | Yes        | End this session.                                                         |
+| Command grammar                         | Aliases | While busy | Purpose                                                                                                                     |
+| --------------------------------------- | ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `/help [command]`                       | `/?`    | Yes        | Show command help and keyboard shortcuts.                                                                                   |
+| `/mode [concise\|detailed]`             | —       | Yes        | Switch output detail without changing execution.                                                                            |
+| `/theme [auto\|dark\|light]`            | —       | Yes        | Choose a terminal theme.                                                                                                    |
+| `/mouse [on\|off]`                      | —       | Yes        | Toggle wheel capture; off preserves native selection/copy.                                                                  |
+| `/attach path`                          | —       | Yes        | Attach a file or image to the current draft.                                                                                |
+| `/paste-image`                          | —       | Yes        | Read clipboard images explicitly.                                                                                           |
+| `/recover`                              | —       | No         | Restore an unsent prompt.                                                                                                   |
+| `/status`                               | —       | Yes        | Show model, context, environment, and subscription usage.                                                                   |
+| `/ps`                                   | —       | Yes        | Inspect observed background processes and their last reported status.                                                       |
+| `/subagents [execution-id\|next]`       | —       | Yes        | Inspect this conversation's child executions and retained output.                                                           |
+| `/usage [details\|subscription\|reset]` | —       | Yes        | Show recorded Thread usage; subscription/reset inspect Codex limits.                                                        |
+| `/goal task description`                | —       | No         | Start a Goal with bounded self-checks against the authored objective.                                                       |
+| `/steer message`                        | —       | Yes        | Add guidance while the agent is working.                                                                                    |
+| `/import`                               | —       | No         | Preview and optionally enable external subagents with parent inheritance.                                                   |
+| `/agent [agent-id]`                     | —       | No         | Switch agent, including its model, instructions, and tools.                                                                 |
+| `/model [model-id\|default\|defaults]`  | —       | No         | Select a Project Model; `default` clears its preference; `defaults` configures global media understanding with Save/Cancel. |
+| `/fast [on\|off\|reset]`                | —       | No         | Toggle supported Fast processing without saving configuration.                                                              |
+| `/thinking [level]`                     | —       | No         | Show or change reasoning effort for subsequent turns.                                                                       |
+| `/environment [mode]`                   | —       | No         | Show or select execution permissions for subsequent turns.                                                                  |
+| `/new`                                  | —       | No         | Start a fresh session; keep all saved history.                                                                              |
+| `/resume [session-id]`                  | —       | No         | Search, preview, and name saved sessions, or resume one by ID.                                                              |
+| `/history`                              | —       | No         | Browse retained messages (Ctrl+T).                                                                                          |
+| `/notes`                                | —       | No         | Show saved notes with full contents within display budgets.                                                                 |
+| `/config`                               | —       | No         | Find your configuration files.                                                                                              |
+| `/review request-id`                    | —       | No         | Inspect a pending request against the selected continuation.                                                                |
+| `/cancel`                               | —       | Yes        | Stop the current task.                                                                                                      |
+| `/quit`                                 | `/exit` | Yes        | End this session.                                                                                                           |
 
 `/thinking` opens the selected Model's supported choices; command completion uses the same list. `default` inherits the Model's configured settings. Depending on the model and adapter, explicit choices can include `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported choices are rejected, and unknown models offer only default with an explanation. `/environment` selects `full-control` or `sandbox` where supported. Native `/steer` retains its whole trailing message rather than splitting it into shell words.
 

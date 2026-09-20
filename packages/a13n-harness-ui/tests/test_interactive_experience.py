@@ -600,7 +600,8 @@ def test_model_and_agent_have_independent_commands_and_help() -> None:
     assert registry.parse("/model").command is not registry.parse("/agent").command
     assert registry.completions("/model")[0][0] == "/model"
     assert "[agent-id]" in registry.help("agent")
-    assert "[model-id|default]" in registry.help("model")
+    assert "[model-id|default|defaults]" in registry.help("model")
+    assert registry.parse("/model defaults").arguments == ("defaults",)
     for command in ("/model other", "/agent other"):
         with pytest.raises(ValueError, match="unavailable"):
             registry.parse(command, busy=True)

@@ -212,6 +212,10 @@ class AgentCompositionResolver:
             thread_configuration_version=selection.version,
             project_id=selection.project_id,
             project_roots=selection.local_roots,
+            media_understanding={
+                kind: self._model_recipe(source.models[model_id])
+                for kind, model_id in source.document.media_understanding.selections().items()
+            },
             webui_sidekick=(
                 SidekickConfiguration(
                     agent=source.document.webui.sidekick.agent, model=source.document.webui.sidekick.model

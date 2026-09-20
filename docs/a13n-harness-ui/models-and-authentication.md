@@ -98,6 +98,30 @@ Unknown model IDs are labeled unknown and do not automatically enable media. Exa
 
 Existing Model files are never backfilled automatically. If an older setup generated `capabilities: []` for an image-capable model, change only that field to `[image_understanding]` after checking the selected model and endpoint. Later Runs use the accepted configuration; active Runs and historical captures remain unchanged. Adding an Agent that reuses a Model preserves that Model exactly.
 
+## Media understanding defaults
+
+In **Settings → Models → Media understanding**, select a saved Model for Image, Video, or Audio and save. A Model's **Set as…** menu assigns or clears the same defaults. In the TUI, use `/model defaults` (also available from `/model`), choose a purpose and Model, then confirm **Save**. These are global settings, separate from the conversation's primary Model and the TUI's remembered Project Model.
+
+```yaml
+# Root configuration, including when selected with --config
+media_understanding:
+  image: model-vision
+  video: model-video
+  audio: null
+```
+
+Each reference must exist and declare the matching `image_understanding`, `video_understanding`, or `audio_understanding` capability. Unsupported Models are not selectable for that purpose. Remove references before deleting a Model or removing its required capability.
+
+The file `view` tool remains native-first:
+
+1. If the active Model declares the media capability, Harness attaches the media directly. No auxiliary Model or credentials are initialized.
+2. Otherwise, the configured Model for that media kind describes or transcribes the file and returns text. Its own request settings, connection configuration, credential reference, and Thread affinity are used; the primary Model's settings and temporary `/thinking` or `/fast` overrides are not inherited.
+3. An omitted or `null` reference uses the existing Harness environment fallback for that kind. **Environment** means a corresponding model environment variable is set; **Not configured** means none is set. Clearing a default does not disable the environment fallback. See [Harness multimedia configuration](../a13n-harness/multimedia-understanding.md) for variable names and settings.
+
+A configured Model failure is reported, not silently replaced by an environment Model. Saving validates references and capability declarations without making a provider request or proving account access. Credentials are loaded only when auxiliary inference is needed. Provider charges may apply.
+
+New Runs capture the selected Models' complete recipes, without secret bytes. Edits affect future captures, not already captured Runs or recovered continuations. Child Runs use the same configuration-generation and capture rules. This setting controls file `view` fallback; it does not convert unsupported composer attachments or force a proxy for native-capable Models.
+
 ## Starter model choices
 
 Initial setup and new-Model creation offer these explicit subscription routes:

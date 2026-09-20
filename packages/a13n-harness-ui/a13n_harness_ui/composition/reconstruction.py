@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -33,6 +33,7 @@ from a13n_harness.pricing import PricingCatalog
 from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
+from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import TextContent
@@ -44,6 +45,7 @@ from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
+from a13n_harness_ui.media_understanding import FileMediaUnderstanding
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver, SubscriptionSource, model_recipe_id
 
@@ -57,6 +59,12 @@ class ReconstructedAgent:
     executable: ExecutableAgent[str]
     model_resolver: HarnessUiModelResolver
     definition_capability_ids: frozenset[str]
+    media_models: Mapping[NativeInputMediaKind, ResolvedModelRecipe] = field(default_factory=dict)
+
+    def file_media_understanding(self, thread_id: str) -> FileMediaUnderstanding | None:
+        if not self.media_models:
+            return None
+        return FileMediaUnderstanding(self.media_models, self.model_resolver.fresh(), thread_id=thread_id)
 
 
 class _GlobalGuidanceCapability(AbstractModelContextCapability):
@@ -209,7 +217,7 @@ class AgentReconstructor:
                     (item.plugin_id, item.path, item.skills_path) for item in composition.content_plugins
                 ),
             )
-            model_recipes: dict[str, ResolvedModelRecipe] = {}
+            model_recipes = {model_recipe_id(recipe): recipe for recipe in composition.media_understanding.values()}
             definition = self._definition(
                 composition.root,
                 plugin_catalog=plugin_catalog,
@@ -244,6 +252,9 @@ class AgentReconstructor:
                 api_keys=self._api_keys,
             ),
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
+            media_models={
+                kind: recipe.model_copy(deep=True) for kind, recipe in composition.media_understanding.items()
+            },
         )
 
     def _definition(
