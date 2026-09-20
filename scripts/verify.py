@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ast
 import os
+import shlex
 import subprocess
 import tempfile
 import time
@@ -19,7 +20,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from scripts import impact
+import yaml
+
+from scripts import impact, verify_dependencies
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = REPOSITORY_ROOT / "packages"
@@ -37,6 +40,8 @@ COMPACT_PYTEST = "-q --tb=short --no-header"
 
 @dataclass
 class Plan:
+    workflows: set[str] = field(default_factory=set)
+    lint_all_workflows: bool = False
     python_tests: set[str] = field(default_factory=set)
     consumer_tests: set[str] = field(default_factory=set)
     python_files: set[str] = field(default_factory=set)
@@ -58,15 +63,15 @@ def changed_files(base: str) -> list[str]:
     """Committed changes since the merge base plus everything in the working tree."""
     files: set[str] = set()
     commands = (
-        ["git", "diff", "--name-only", "--no-renames", "--merge-base", base],
-        ["git", "diff", "--name-only", "--no-renames", "HEAD"],
-        ["git", "ls-files", "--others", "--exclude-standard"],
+        ["git", "diff", "--name-only", "-z", "--no-renames", "--merge-base", base],
+        ["git", "diff", "--name-only", "-z", "--no-renames", "HEAD"],
+        ["git", "ls-files", "-z", "--others", "--exclude-standard"],
     )
     for command in commands:
         result = subprocess.run(command, cwd=REPOSITORY_ROOT, capture_output=True, text=True, check=False)
         if result.returncode:
             raise SystemExit(f"{' '.join(command)} failed: {result.stderr.strip()}")
-        files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
+        files.update(path for path in result.stdout.split("\0") if path)
     return sorted(files)
 
 
@@ -92,6 +97,9 @@ class PythonGraph:
         for path, module in self._discover():
             self.modules[path] = module
             self._by_name[(module.distribution if module.name.startswith("tests") else None, module.name)] = path
+        for source in self.modules:
+            for test in verify_dependencies.tests_for(source.relative_to(self.root).as_posix(), self.root):
+                self._importers[source].add(test)
         for path, module in self.modules.items():
             for target in self._imports(path, module):
                 self._importers[target].add(path)
@@ -130,6 +138,9 @@ class PythonGraph:
             if path is not None:
                 return path
             candidate, _, _ = candidate.rpartition(".")
+        # Executed scripts and several tooling tests put scripts/ on sys.path.
+        if module.distribution is None and not name.startswith("scripts."):
+            return self._resolve(f"scripts.{name}", module)
         return None
 
     def _import_names(self, path: Path, module: Module) -> Iterable[tuple[str, list[tuple[str, str]]]]:
@@ -196,7 +207,7 @@ class PythonGraph:
     def affected_tests(self, changed: Iterable[Path]) -> set[Path]:
         """Every test file that transitively imports one of the changed modules."""
         seen: set[Path] = set()
-        queue = deque(path for path in changed if path in self.modules)
+        queue = deque(changed)
         while queue:
             current = queue.popleft()
             if current in seen:
@@ -231,14 +242,37 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
         posix = Path(relative).as_posix()
         if posix.endswith(".md") and path.is_file():
             result.markdown_files.add(posix)
+        declared = verify_dependencies.tests_for(posix, REPOSITORY_ROOT)
+        if declared:
+            selected = {test.relative_to(REPOSITORY_ROOT).as_posix() for test in declared}
+            result.python_tests.update(selected)
+            result.notes.append(f"{posix}: declared file/command dependencies -> {', '.join(sorted(selected))}")
         if posix in GLOBAL_PYTHON_INPUTS:
             python_full = True
             result.notes.append(f"{posix} changes every Python suite")
-        elif posix.startswith("scripts/"):
+        elif posix.startswith(("scripts/", ".github/")):
+            if posix.startswith(".github/workflows/") and path.suffix in {".yml", ".yaml"}:
+                if path.is_file():
+                    result.workflows.add(posix)
+                else:
+                    result.lint_all_workflows = True
+                result.notes.append(f"{posix}: validate workflow syntax with actionlint")
+            elif posix == ".github/actionlint.yaml":
+                result.lint_all_workflows = True
             if posix.endswith(".py") and path.is_file():
                 result.python_files.add(posix)
+            if path.name == "conftest.py" and path.is_relative_to(SCRIPTS / "tests"):
+                scope = path.parent
+                while not scope.is_dir():
+                    scope = scope.parent
+                selected = scope.relative_to(REPOSITORY_ROOT).as_posix()
+                result.python_tests.add(selected)
+                result.notes.append(f"{posix}: shared pytest fixtures; running {selected}")
+            elif path.suffix == ".py":
                 python_sources.append(path)
-            result.python_tests.add("scripts/tests")
+            elif not declared and not posix.endswith(".md"):
+                result.python_tests.add("scripts/tests")
+                result.notes.append(f"{posix}: no declared tooling tests; running scripts/tests")
         elif posix.startswith("packages/"):
             tests_dir = _distribution_tests(path)
             if posix.endswith(".py") and path.is_file():
@@ -300,7 +334,7 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
         graph = graph or PythonGraph()
         for source in python_sources:
             if source not in graph.modules:
-                tests_dir = _distribution_tests(source)
+                tests_dir = _distribution_tests(source) or ("scripts/tests" if source.is_relative_to(SCRIPTS) else None)
                 if tests_dir:
                     result.python_tests.add(tests_dir)
                     result.notes.append(
@@ -309,9 +343,14 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
                 continue
             owner = graph.modules[source].distribution
             affected = graph.affected_tests([source])
+            if affected:
+                names = sorted(path.relative_to(REPOSITORY_ROOT).as_posix() for path in affected)
+                result.notes.append(
+                    f"{source.relative_to(REPOSITORY_ROOT)}: Python dependency graph -> {', '.join(names)}"
+                )
             if not affected:
                 tests_dir = _distribution_tests(source) or ("scripts/tests" if source.is_relative_to(SCRIPTS) else None)
-                if tests_dir and not any(t.startswith(tests_dir) for t in result.python_tests):
+                if tests_dir:
                     result.python_tests.add(tests_dir)
                     result.notes.append(
                         f"no test imports {source.relative_to(REPOSITORY_ROOT).as_posix()}; running {tests_dir}"
@@ -403,6 +442,18 @@ class Step:
 
 def steps_for(result: Plan) -> list[Step]:
     steps: list[Step] = []
+    if result.workflows or result.lint_all_workflows:
+        # CI owns the actionlint version and compatibility flags; reuse its command.
+        workflow = yaml.load(
+            (REPOSITORY_ROOT / ".github/workflows/ci-automation.yml").read_text(), Loader=yaml.BaseLoader
+        )
+        validation = next(
+            step for step in workflow["jobs"]["workflows"]["steps"] if step["name"] == "Validate workflows"
+        )
+        command = [part.replace("$PWD", str(REPOSITORY_ROOT)) for part in shlex.split(validation["run"])]
+        if not result.lint_all_workflows:
+            command.extend(sorted(result.workflows))
+        steps.append(Step("actionlint", command, cwd=REPOSITORY_ROOT))
     python_files = sorted(result.python_files)
     if python_files:
         steps.append(Step("ruff check", ["uv", "run", "--locked", "ruff", "check", "--no-fix", *python_files]))
