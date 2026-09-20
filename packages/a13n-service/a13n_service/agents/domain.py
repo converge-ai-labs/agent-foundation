@@ -352,6 +352,9 @@ class ChildAgentExecution(StrictModel):
 
 class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
     resolved_reviewer_model: EffectiveAgentModel | None = Field(default=None, exclude_if=lambda value: value is None)
+    media_understanding: dict[Literal["image", "video", "audio"], EffectiveAgentModel] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     memory: MemoryConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)

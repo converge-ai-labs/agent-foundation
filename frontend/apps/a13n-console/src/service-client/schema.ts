@@ -3729,6 +3729,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/media-understanding-defaults": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Media Understanding Defaults */
+    get: operations["get_workspaces_workspace_media_understanding_defaults"];
+    /** Replace Media Understanding Defaults */
+    put: operations["put_workspaces_workspace_media_understanding_defaults"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/members": {
     parameters: {
       query?: never;
@@ -8508,6 +8526,28 @@ export interface components {
       title: string;
       /** Version */
       version: number;
+    };
+    /** MediaUnderstandingDefaults */
+    MediaUnderstandingDefaults: {
+      /** Audio */
+      audio?: string | null;
+      /** Image */
+      image?: string | null;
+      /** Version */
+      version: number;
+      /** Video */
+      video?: string | null;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** MediaUnderstandingSelection */
+    MediaUnderstandingSelection: {
+      /** Audio */
+      audio?: string | null;
+      /** Image */
+      image?: string | null;
+      /** Video */
+      video?: string | null;
     };
     /** Memory */
     Memory: {
@@ -25650,6 +25690,100 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["InvitationDelivery"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_media_understanding_defaults: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MediaUnderstandingDefaults"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  put_workspaces_workspace_media_understanding_defaults: {
+    parameters: {
+      query?: never;
+      header: {
+        "If-Match": string;
+      };
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MediaUnderstandingSelection"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MediaUnderstandingDefaults"];
         };
       };
       /** @description Invalid request. */

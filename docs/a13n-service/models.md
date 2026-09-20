@@ -178,6 +178,38 @@ Content-Type: application/json
 
 Omitting `settings` or `declarations` preserves that existing field. Changing the upstream ID or API validates the resulting configuration and never silently removes incompatible settings. Disable a Model or Provider with `{"enabled": false}`; disabling a Provider blocks every dependent Model at the next outbound request.
 
+## Workspace media understanding
+
+On the Workspace **Models** page, use **Media understanding** to choose separate image, video, and audio defaults. Each choice must be an enabled Workspace or Organization Model declaring the corresponding media capability, with an enabled Provider. These defaults belong only to this Workspace; there is no Organization default or Agent/Run override. Readers can view them; `models.manage` permission is required to save.
+
+The file `view` tool remains native-first: if the active Agent Model supports that media kind, it receives the media directly. Otherwise the selected auxiliary Model interprets it using its own saved request settings, without the primary Agent's overrides. A configured failure is reported rather than silently switching Providers.
+
+**Not configured** clears the Workspace selection for that kind and preserves the existing Harness environment fallback. Operators can configure `HARNESS_IMAGE_UNDERSTANDING_MODEL`, `HARNESS_VIDEO_UNDERSTANDING_MODEL`, or `HARNESS_AUDIO_UNDERSTANDING_MODEL` on Workers. These are shared deployment settings, outside Workspace Model management; the Console does not claim whether the selected Worker has a fallback. With neither native support nor a configured or environment model, understanding is unavailable.
+
+Read the current defaults and retain their `ETag`:
+
+```http
+GET /api/v1/workspaces/<workspace-id>/media-understanding-defaults
+Authorization: Bearer <foundation-token>
+```
+
+Replace all three choices using that exact ETag. An omitted field or null clears that choice:
+
+```http
+PUT /api/v1/workspaces/<workspace-id>/media-understanding-defaults
+Authorization: Bearer <foundation-token>
+If-Match: <exact-etag-from-get>
+Content-Type: application/json
+
+{"image": "vision", "video": null, "audio": null}
+```
+
+A concurrent edit returns `412 precondition_failed`; reload before replacing it. Reads return the three keys, `workspace_id`, and a version (zero before the first save). Saving validates configuration without invoking a Provider.
+
+New root Run acceptance captures the selected Models and their saved settings for the complete child graph. Retries, waiting continuations that retain effective configuration, Worker recovery, and asynchronous child admission preserve that capture. A new turn after a terminal Run uses a fresh selection and observes current defaults. Changing defaults or Model settings affects later fresh Runs, not already accepted work. Provider credentials, endpoints, and enablement still refresh before each outbound request, and auxiliary requests use the executing root or child's Harness Thread identity for gateway affinity.
+
+Upgrade control and Worker processes before configuring these defaults. Existing captures without media defaults retain their previous behavior; older Workers cannot consume newly captured media defaults. Clearing current defaults does not remove them from previously accepted Runs.
+
 ## Parameters and overrides
 
 The Provider type's JSON Schema describes the serializable native parameters for the selected API, including provider-specific settings. Missing parameter help text does not prevent configuration or execution. Unknown top-level keys, invalid value shapes, and explicitly supplied protected fields for model identity, credentials, endpoints, messages, tool declarations, or output schemas are rejected. Local validation does not guarantee upstream acceptance.

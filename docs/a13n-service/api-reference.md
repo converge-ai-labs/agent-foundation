@@ -4527,6 +4527,39 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/workspaces/{workspace}/media-understanding-defaults`
+
+Get Media Understanding Defaults.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MediaUnderstandingDefaults`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/workspaces/{workspace}/media-understanding-defaults`
+
+Replace Media Understanding Defaults.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default    |
+| ----------- | -------- | -------- | ------------- | -------------------------- |
+| `workspace` | path     | true     | string        | —                          |
+| `If-Match`  | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `MediaUnderstandingSelection`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MediaUnderstandingDefaults`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/workspaces/{workspace}/model-catalog`
 
 List Model Catalog.

@@ -145,7 +145,11 @@ async def prepare_agent_resources(
         tuple(
             model.execution
             for selected in configurations.values()
-            for model in (selected.resolved_model, selected.resolved_reviewer_model)
+            for model in (
+                selected.resolved_model,
+                selected.resolved_reviewer_model,
+                *selected.media_understanding.values(),
+            )
             if model is not None
         ),
     )
