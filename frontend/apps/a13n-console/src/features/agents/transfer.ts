@@ -7,7 +7,10 @@ import {
   visit,
 } from "yaml";
 import type { Schema } from "../../shared/api";
-import { schemaErrors, validateAgentConfig } from "../../shared/forms";
+import {
+  schemaErrors,
+  validateAgentConfig,
+} from "../../shared/forms/validation";
 import type { AgentConfig } from "./configuration";
 
 export const MAX_AGENT_FILE_BYTES = 1024 * 1024;

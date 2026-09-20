@@ -14,6 +14,41 @@ Good code expresses the problem clearly and makes behavior and change easy to fo
 
 Consider runtime, recovery, operational, and maintenance costs. Support performance trade-offs with measurements or an explicit capacity model. Match explanation and validation to the change; routine fixes do not need a separate design exercise.
 
+## Frontend Tests
+
+These principles apply to Console, Harness UI, and the shared UI packages. Each required behavior should have a clear test owner and run at the smallest boundary that can expose its failure. Select tests by the user outcome and failure guarantee they protect, rather than preserving a test because it already exists or aiming for a fixed test count.
+
+Default to **logic tests plus core UI flows**. A new business-rule combination belongs in a logic test, not another rendered-page scenario. Add a UI test when the regression depends on a user action reaching the correct operation, visible success or failure feedback, sensitive state leaving the form, permission-dependent reads or controls, or browser interaction. Keep separate UI cases when these boundaries can fail independently.
+
+Static copy, menu inventories, ordinary empty-state wording and repeated provider variants do not warrant standalone page tests. Keep a representative flow for a shared handler; test meaningful provider-specific rules at their production owner. Distinct provider forms, permissions, keyboard behavior and recovery paths still need their own UI coverage. Do not extract trivial JSX or introduce a view-model framework merely to manufacture logic tests.
+
+### Choose the boundary
+
+| Behavior                                                                                            | Primary test boundary                                                                | Retain at the next boundary                                                                 |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Parsing, normalization, validation, state transitions, version preconditions, retry decisions       | Production functions in Node tests                                                   | A representative interaction proving the UI uses the rule                                   |
+| Request construction, response handling, discovery and multi-request recovery                       | The production operation with the real application client and a controlled transport | A core user journey proving submission, feedback and recovery remain connected              |
+| Shared menus, dialogs, keyboard navigation, focus, accessible names and disabled behavior           | The owning shared component                                                          | Application-specific labels, permissions and event wiring where they can fail independently |
+| Core create/edit/submit/cancel flows, credentials leaving the UI, recovery after uncertain outcomes | Focused UI integration tests                                                         | Browser or host integration only when that boundary adds a failure mode                     |
+| Real navigation, browser storage, native-host integration, layout-sensitive interaction             | The relevant browser or host integration                                             | Avoid reproducing its full scenario matrix in every lower layer                             |
+
+Core flows include consequential failures. Preserve guarantees such as avoiding duplicate writes after a lost response, retaining a version precondition, clearing credentials, concealing unauthorized controls, and treating model output as untrusted. Backend authorization remains a backend responsibility; frontend tests cover its projection and correct request binding. A passing lower-level test cannot establish that a button is wired to the operation, that an error is visible, or that focus and credentials behave correctly.
+
+### Simplify an existing suite
+
+1. Read the owning behavior contract and identify the regression each test can detect. Distinguish required guarantees from incidental text, DOM structure, or historical implementation detail.
+2. For each existing case, decide whether to retain its UI boundary, move its rule coverage, or delete it. Delete duplicate cases only after identifying the surviving owner. A behavior with no remaining coverage needs an explicit decision about whether the guarantee is still required.
+3. Move rules out of JSX only when the resulting production code has a cohesive responsibility. Call that implementation from both the UI and tests. Prefer a feature-local function and explicit state over a generic test framework, a second implementation, or a configurable abstraction introduced only for mocking.
+4. Cover meaningful input combinations in small Node tests. Keep a representative normal UI flow and the distinct critical recovery/wiring cases. Do not combine unrelated cases into one long scenario merely to reduce the test count.
+5. Remove the superseded assertions, setup, helpers and imports in the same change. Share fixture data when multiple boundaries need the same contract; keep mutable state and clients owned by each test. Avoid a shared fixture factory with options for unrelated features.
+6. Run the affected tests and the owning suite. Compare the same scope before and after, including any new lower-level tests. Record DOM cases/files, execution time, environment/setup cost and suite wall time separately. Include the measured workload and worker settings; repeat a timing claim when variation could change the decision.
+
+Use actual completion signals: a response, an observable state transition, or an explicit barrier. Keep real timeouts as failure bounds. Control a timer only when its passage is part of the test; suppressing a tooltip hover delay is appropriate for a help-content assertion, but not for a hover-timing assertion. Paste complete field values when per-key behavior is irrelevant; retain typing for keyboard and incremental-input behavior. Do not stabilize a suite by removing isolation, adding retries, or globally widening timeouts without investigating the failure.
+
+Pure tests should run in Node with narrow imports that do not load a design-system barrel. Console routes `*.test.ts` to its Node project; Harness UI uses per-file environment declarations for DOM cases, while the shared UI package defaults to jsdom. Check the owning Vitest configuration when moving a case; file extensions alone do not select Node in every package. JSX, browser globals and real DOM interactions require the corresponding configured environment; renaming a file does not remove its dependencies. Keep rendering and logic assertions in separate cases when that makes their ownership clearer, without generating many tiny files whose setup costs dominate.
+
+Apply this method incrementally when touching a feature or investigating a slow/flaky test. Reviewers should be able to identify the surviving coverage for every removed case, why each retained UI flow needs its boundary, and whether measurements include the replacement tests. Avoid broad test deletion based only on filenames, age, line counts or coverage percentages. Follow [local validation](CONTRIBUTING.md#local-validation) for commands and gate scope.
+
 ## Service Shape
 
 `a13n-service` ships one package and container image with three independently deployable roles and their all-in-one composition:
