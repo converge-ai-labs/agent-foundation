@@ -117,7 +117,7 @@ async def test_native_background_stdin_and_output(tmp_path: Path) -> None:
         await processes.release(started.process.handle)
 
 
-@pytest.mark.parametrize("ending", ["root_exit", "timeout", "kill", "cancel", "close"])
+@pytest.mark.parametrize("ending", ["root_exit", "kill", "cancel", "close"])
 async def test_native_owned_descendants_are_cleaned(tmp_path: Path, ending: str) -> None:
     # The child would write after its owner ends and inherits its output handles.
     marker = tmp_path / "escaped"
@@ -128,7 +128,7 @@ async def test_native_owned_descendants_are_cleaned(tmp_path: Path, ending: str)
         "pathlib.Path('started').touch(); " + ("pass" if ending == "root_exit" else "time.sleep(30)")
     )
     async with _processes(tmp_path) as processes:
-        limits = CommandLimits(wall_time_seconds=0.5 if ending == "timeout" else 10)
+        limits = CommandLimits(wall_time_seconds=10)
         if ending == "cancel":
             task = asyncio.create_task(processes.exec(_request(parent, limits=limits)))
         else:
@@ -148,16 +148,24 @@ async def test_native_owned_descendants_are_cleaned(tmp_path: Path, ending: str)
             terminal = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=5)
             assert terminal.status.cleanup == "complete"
             assert terminal.output is not None and terminal.output.stdout.producer_complete
-            if ending == "timeout":
-                assert terminal.status.phase == "timed_out"
     await asyncio.sleep(2.1)
     assert not marker.exists()
 
 
+async def test_native_execution_deadline_reports_timeout_and_cleanup(tmp_path: Path) -> None:
+    # A deadline may expire during child startup; no readiness sentinel is required.
+    async with _processes(tmp_path) as processes:
+        result = await processes.exec(
+            _request("import time; time.sleep(30)", limits=CommandLimits(wall_time_seconds=0.05))
+        )
+        assert result.status.phase == "timed_out"
+        assert result.status.cleanup == "complete"
+        assert result.output.stdout.producer_complete and result.output.stderr.producer_complete
+
+
 async def test_native_powershell_unicode_and_quoting(tmp_path: Path) -> None:
     # This checks encoding and quoting, not shell startup latency on a shared CI
-    # runner. Keep a bounded startup allowance; the timeout lifecycle test above
-    # independently checks its explicit 0.5-second deadline.
+    # runner. The deadline test independently checks timeout policy and cleanup.
     async with _processes(tmp_path, powershell=True, max_wall_time_seconds=60) as processes:
         result = await processes.exec(
             CommandRequest(

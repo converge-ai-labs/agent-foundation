@@ -400,15 +400,40 @@ async def test_shutdown_stops_admission_before_waiting_in_composition_order(
 @pytest.mark.anyio
 @pytest.mark.parametrize("role", tuple(ProcessRole))
 async def test_environment_roles_share_one_response_reader_without_starting_one_for_connectivity(
-    local_settings, tmp_path, redis_url, role
+    local_settings, tmp_path, role, monkeypatch
 ):
     import asyncio
 
+    from a13n_service.environments.websocket.relay_runtime import RelayResponseRuntime
+    from a13n_service.process import lifecycle
+
+    started = asyncio.Event()
+    built = []
+
+    async def build_responses(settings, storage, catalog, stack):
+        assert "websocket_envd" in catalog
+        responses = RelayResponseRuntime(storage.redis, storage.redis, "test-origin")
+
+        async def run():
+            started.set()
+            await responses._closed.wait()
+
+        monkeypatch.setattr(responses, "run", run)
+        stack.push_async_callback(responses.close)
+        built.append(responses)
+        return responses
+
+    async def no_control_connection_listener(*args, **kwargs):
+        return None
+
+    # Role composition does not depend on a real Redis script or connection listener.
+    monkeypatch.setattr(lifecycle, "build_relay_responses", build_responses)
+    monkeypatch.setattr(
+        "a13n_service.process.control.composition.build_client_connections", no_control_connection_listener
+    )
     settings = local_settings(
         tmp_path / role.value,
         role=role,
-        redis_backend="redis",
-        redis_url=redis_url,
         environment_provider_builtins=("websocket_envd",),
         environment_client_public_origin="wss://service.example",
     )
@@ -419,11 +444,11 @@ async def test_environment_roles_share_one_response_reader_without_starting_one_
         if role is ProcessRole.connectivity:
             assert responses is None
             assert runtime.shared.devices.relay is None
+            assert not built
             return
-        assert responses is not None
-        async with asyncio.timeout(2):
-            while not responses.responses._running:
-                await asyncio.sleep(0)
+        assert built == [responses]
+        async with asyncio.timeout(10):
+            await started.wait()
         assert runtime.shared.devices.relay._runtime is responses
         if runtime.control is not None:
             assert runtime.control.environments.devices is runtime.shared.devices
@@ -431,3 +456,31 @@ async def test_environment_roles_share_one_response_reader_without_starting_one_
             assert runtime.worker.client_connections._responses is responses.responses
             assert runtime.worker.client_connections.instance_id == responses.instance_id
     assert responses.is_closed()
+
+
+@pytest.mark.anyio
+async def test_environment_response_runtime_starts_and_stops_with_real_redis(local_settings, tmp_path, redis_url):
+    import asyncio
+    from time import monotonic
+
+    app = create_app(
+        local_settings(
+            tmp_path,
+            redis_backend="redis",
+            redis_url=redis_url,
+            environment_provider_builtins=("websocket_envd",),
+            environment_client_public_origin="wss://service.example",
+        )
+    )
+    started_at = monotonic()
+    try:
+        async with app.router.lifespan_context(app):
+            responses = app.state.runtime.shared.relay_responses
+            assert responses is not None
+            async with asyncio.timeout(10):
+                while not responses.responses._running:
+                    await asyncio.sleep(0)
+            assert app.state.runtime.worker.client_connections._responses is responses.responses
+        assert responses.is_closed()
+    finally:
+        print(f"Real Redis response runtime startup/lifespan: {monotonic() - started_at:.3f}s")
