@@ -31,6 +31,7 @@ on:
       - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_release_notes.py"
       - "scripts/tests/test_pr_labels.py"
+      - "scripts/tests/test_pr_change_breakdown.py"
   push:
     branches: [main]
     paths:
@@ -61,6 +62,7 @@ on:
       - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_release_notes.py"
       - "scripts/tests/test_pr_labels.py"
+      - "scripts/tests/test_pr_change_breakdown.py"
   workflow_dispatch:
 
 env:
@@ -139,6 +141,7 @@ jobs:
           scripts/tests/test_prepare_release_version.py
           scripts/tests/test_release_notes.py
           scripts/tests/test_pr_labels.py
+          scripts/tests/test_pr_change_breakdown.py
           scripts/tests/test_local_validation.py
           scripts/tests/test_image_workflows.py
           scripts/tests/test_prepare_harness_ui_image.py

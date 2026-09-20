@@ -1,0 +1,39 @@
+name: PR Change Breakdown
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-change-breakdown-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  breakdown:
+    if: github.event.action != 'edited' || github.event.changes.base != null
+    runs-on: ubuntu-latest
+    steps:
+      # Only trusted base code is loaded. Never check out or execute PR head code.
+      - name: Checkout classification rules from the base revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            proto/a13n-envd/eip/v1/artifacts/generated-files.json
+          sparse-checkout-cone-mode: false
+
+      - name: Update change breakdown comment
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const {publish} = require('./.github/scripts/pr-change-breakdown.cjs');
+            await publish({github, context, core});

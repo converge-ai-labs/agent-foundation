@@ -157,6 +157,14 @@ pnpm --dir frontend --filter a13n-console run check
 pnpm --dir frontend --filter a13n-console test src/features/skills/import.test.tsx
 ```
 
+## PR Change Breakdown
+
+The [PR Change Breakdown workflow](.github/workflows/pr-change-breakdown.yml) maintains one `github-actions[bot]` comment on each PR, including drafts. It refreshes on opening, pushes, reopening, readiness, and base-branch edits without changing the PR body or adding a merge gate. The comment identifies the head and base commits, summarizes file counts and textual additions/deletions by purpose, breaks product code down by component, and provides collapsible file lists with diff links.
+
+[Classification rules](.github/scripts/pr-change-rules.cjs) own ordered path matching and component ownership. Each file belongs to exactly one category; specific rules precede source-directory fallbacks, and unmatched paths remain visible as Unclassified. Generated EIP paths reuse the existing generator manifest. Update these rules when introducing a new repository surface. Classification uses the trusted base revision, so rule changes take effect after merging. The workflow never executes PR head code or requires a model key or third-party bot.
+
+Statistics cover the current PR diff, not accumulated commits. Renames count once under their new path, removals retain their old path, and inline tests remain classified with their source file. GitHub line counts describe textual changes, not review risk; binary changes and pure renames may report no textual delta. If the files API returns fewer files than the PR reports (including its 3,000-file limit), the comment explicitly marks all statistics as incomplete. Long file lists are shortened to fit the comment while preserving statistics for every returned file. Reports collected across a concurrent head/base change are discarded; the next PR event refreshes the comment.
+
 ## PR Labels
 
 The labeling job in the [PR Labels workflow](.github/workflows/pr-labels.yml) adds changelog labels when a PR is opened or marked ready for review. That job does not run on each push or label edit; the independent compatibility-review notice also refreshes on pushes and reopening. Draft PRs skip code CI; marking a PR ready starts the applicable path-filtered checks, and later code pushes rerun them. Labels do not gate CI. Open work in progress as a draft to avoid spending CI time before review. Write the usual Conventional Commit title; no manual label step or extra merge gate is required:
