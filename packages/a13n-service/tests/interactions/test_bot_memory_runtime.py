@@ -727,6 +727,8 @@ async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
         filesystem=True,
     )
     assert capability and capability.document_factory
+    # Surface runtime/bootstrap failures instead of hiding them as an optional empty index.
+    capability.recall_required = True
     original = capability.document_factory
     captured = []
 

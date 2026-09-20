@@ -71,6 +71,8 @@ class RoutineService:
             return {"routine_id": row.id, "state": row.state, "confirmation_required": row.proposal_json is not None}
         if arguments.routine_id is not None and (row is None or row.state == "deleted"):
             raise RoutineInputError("routine_unavailable")
+        if row is not None and arguments.operation in {"pause", "resume"} and row.definition_json is None:
+            raise RoutineInputError("routine_requires_confirmation")
         if arguments.definition is not None and arguments.definition.schedule.next_after(now) is None:
             raise RoutineInputError("routine_time_must_be_in_future")
         await session.get(AccountRecord, context.account_id, with_for_update=True)
@@ -165,6 +167,8 @@ async def handle_action(session: AsyncSession, account: AccountRecord, action: P
     else:
         proposal = None
         operation = action.action.removeprefix("routine_")
+    if operation in {"pause", "resume"} and row.definition_json is None:
+        return {}
     if operation in {"save", "resume"}:
         await authorize_routine(session, row)
         definition = (
