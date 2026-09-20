@@ -41,10 +41,10 @@ export function ExecutionDetails({
 }) {
   const mobile = useMediaQuery("(max-width: 700px)");
   const pauseFollowing = useContext(PauseConversationFollowing);
-  const [expanded, setExpanded] = useState<boolean>();
+  const [expanded, setExpanded] = useState(false);
   const [inspecting, setInspecting] = useState(false);
   const [visited, setVisited] = useState(false);
-  const open = expanded ?? !complete;
+  const open = expanded;
   useEffect(() => {
     if (!mobile) setInspecting(false);
   }, [mobile]);

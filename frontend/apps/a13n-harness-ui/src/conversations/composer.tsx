@@ -15,7 +15,6 @@ import {
   ArrowUp,
   Stop,
   X,
-  SlidersHorizontal,
   Target,
   CircleNotch,
 } from "@phosphor-icons/react";
@@ -330,7 +329,7 @@ export function Composer({
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
   onReviewOutcome?: () => void;
-  controls?: (expanded: boolean) => ReactNode;
+  controls?: () => ReactNode;
   leadingControls?: ReactNode;
   modelId?: string;
 }) {
@@ -357,7 +356,6 @@ export function Composer({
     )
       editor.current?.focus();
   }, [preparing]);
-  const [optionsExpanded, setOptionsExpanded] = useState(false);
   useEffect(() => {
     if (!referenceAdded) return;
     const frame = requestAnimationFrame(() => {
@@ -792,6 +790,11 @@ export function Composer({
         </div>
       )}
       <div className={styles.composerBody}>
+        {controls && (
+          <div className={styles.composerRunChoices} aria-label="Run settings">
+            {controls()}
+          </div>
+        )}
         <div className={styles.composerHeader}>
           <Button
             variant={draft.mode === "goal" ? "secondary" : "ghost"}
@@ -1019,17 +1022,6 @@ export function Composer({
             onClick={() => upload.current?.click()}
           >
             <Plus />
-          </Button>
-          {controls?.(optionsExpanded)}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className={styles.optionsButton}
-            aria-label="Composer options"
-            aria-expanded={optionsExpanded}
-            onClick={() => setOptionsExpanded(!optionsExpanded)}
-          >
-            <SlidersHorizontal />
           </Button>
           <Button
             ref={sendButton}

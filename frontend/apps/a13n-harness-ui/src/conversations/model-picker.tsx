@@ -97,7 +97,7 @@ export function ModelPicker({
         {summary && <span className={styles.summary}>· {summary}</span>}
         <CaretDownIcon aria-hidden />
       </PopoverTrigger>
-      <PopoverPopup side="top" align="end" className={styles.popup}>
+      <PopoverPopup side="top" align="start" className={styles.popup}>
         {choosingModel ? (
           <>
             <div className={styles.heading}>

@@ -94,6 +94,7 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
     setup,
   );
   await screen.findByText("Checking output");
+  expect(screen.queryByText(/Work observation.*unavailable/)).toBeNull();
   expect(
     screen.getByRole("button", { name: "Inspect tasks" }).textContent,
   ).toContain("1/2");

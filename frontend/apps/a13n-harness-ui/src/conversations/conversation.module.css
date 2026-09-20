@@ -510,9 +510,36 @@
   font-size: 12px;
   color: var(--a13n-secondary);
 }
-.optionsButton {
-  display: none;
-  grid-area: options;
+.executionLoad {
+  padding-block: 8px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.executionLoad > button {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+  color: inherit;
+  cursor: pointer;
+}
+.executionLoad > button:hover {
+  background: var(--a13n-hover);
+}
+.executionLoad > button:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
+.executionLoad > button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.composerRunChoices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 .composerHeader {
   display: flex;
@@ -549,23 +576,11 @@
 }
 .composerActions {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.4fr) auto auto;
-  grid-template-areas: "attach agent model fast send";
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "attach . send";
   align-items: center;
   gap: 8px;
   margin-top: 8px;
-}
-@container composer (max-width: 720px) {
-  .composerActions {
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
-    grid-template-areas:
-      "attach model options send"
-      "secondary secondary secondary secondary";
-    row-gap: 0;
-  }
-  .optionsButton {
-    display: inline-flex;
-  }
 }
 @container composer (max-width: 480px) {
   .composerBody {

@@ -1,20 +1,24 @@
 import {
   memo,
   useEffect,
+  useContext,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { useExecutionHistory } from "./queries";
+import { useTurnHistory } from "./queries";
 import {
   captureReadingAnchor,
   restoreReadingAnchor,
   type ReadingAnchor,
 } from "./reading-anchor";
 import { ArrowClockwise } from "@phosphor-icons/react";
-import { ExecutionDetails } from "./execution-details";
+import {
+  ExecutionDetails,
+  PauseConversationFollowing,
+} from "./execution-details";
 import { ToolActivity } from "./tool-call";
 import {
   activityKind,
@@ -289,18 +293,13 @@ function Rows({
   rows,
   threadId,
   continuation = false,
-  copyOutput = false,
+  output = [],
 }: {
   rows: Row[];
   threadId?: string;
   continuation?: boolean;
-  copyOutput?: boolean;
+  output?: Extract<Row, { kind: "assistant" }>[];
 }) {
-  const output = copyOutput
-    ? rows.flatMap((row) =>
-        row.kind === "assistant" && !row.live ? [row] : [],
-      )
-    : [];
   const copyText = output
     .map((row) => row.text)
     .filter(Boolean)
@@ -542,17 +541,7 @@ function TurnRows({
   );
 }
 
-function Turn({
-  id,
-  turn,
-  rows,
-  threadId,
-  missing,
-  entries,
-  loadDetails,
-  onSavedEntries,
-  continuation,
-}: {
+function Turn(props: {
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
@@ -563,136 +552,43 @@ function Turn({
   onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
   continuation?: string | null;
 }) {
-  const complete =
-    turn?.final_position != null &&
-    rows.every((row) => row.position !== undefined);
-  const input = rows.filter(
-    (row) =>
-      row.kind === "input" &&
-      (turn ? row.position === turn.input_position : row.id === `input:${id}`),
-  );
-  // Saved output stays readable even while live work is appended or an older
-  // history has no successful-completion marker. Completion controls folding,
-  // not whether an already saved answer belongs inside execution details.
-  const outputPosition = turn?.output_position ?? turn?.final_position;
-  const final = rows.filter(
-    (row) =>
-      outputPosition != null &&
-      row.kind === "assistant" &&
-      row.position === outputPosition,
-  );
-  // A resumed/live suffix follows the old saved answer chronologically. It
-  // must not move above that answer or disappear with the earlier process.
-  const following = final.length
-    ? rows.filter(
-        (row) => row.position === undefined || row.position > outputPosition!,
-      )
-    : [];
-  const process = rows.filter(
-    (row) =>
-      !input.includes(row) && !final.includes(row) && !following.includes(row),
-  );
-  const latest = process.at(-1);
-  const latestTool = latest?.kind === "tools" ? latest.tools.at(-1) : undefined;
-  const toolInfo = latestTool ? describeTool(latestTool) : undefined;
-  const preview = complete
-    ? "View the steps behind this response"
-    : toolInfo
-      ? `${toolInfo.label} ${toolInfo.summary} · ${toolInfo.phase}`
-      : latest?.kind === "assistant"
-        ? latest.text.replace(/\s+/g, " ").trim().slice(0, 180)
-        : latest?.kind === "thinking"
-          ? "Reasoning…"
-          : "View the available execution steps";
-  return (
-    <section data-turn-id={id} className={styles.turn} tabIndex={-1}>
-      <Rows rows={input} threadId={threadId} />
-      {(process.length > 0 || missing) && (
-        <ExecutionDetails
-          complete={complete}
-          preview={preview}
-          summary={
-            <>
-              {!!turn?.tool_count && (
-                <span>
-                  {" "}
-                  · {turn.tool_count}{" "}
-                  {turn.tool_count === 1 ? "tool call" : "tool calls"}
-                </span>
-              )}
-              {!!turn?.steering_count && (
-                <span>
-                  {" "}
-                  · {turn.steering_count}{" "}
-                  {turn.steering_count === 1
-                    ? "additional input"
-                    : "additional inputs"}
-                </span>
-              )}
-            </>
-          }
-        >
-          {(open) =>
-            loadDetails && turn ? (
-              <ExecutionHistory
-                threadId={threadId}
-                continuation={continuation}
-                turn={turn}
-                entries={entries}
-                process={process}
-                open={open}
-                missing={missing}
-                onSavedEntries={onSavedEntries}
-              />
-            ) : (
-              <ExecutionReader open={open}>
-                <Rows rows={process} threadId={threadId} continuation />
-              </ExecutionReader>
-            )
-          }
-        </ExecutionDetails>
-      )}
-      <Rows rows={final} threadId={threadId} continuation copyOutput />
-      <Rows rows={following} threadId={threadId} continuation />
-    </section>
+  return props.loadDetails && props.turn ? (
+    <TurnHistory {...props} turn={props.turn} />
+  ) : (
+    <TurnSegments {...props} />
   );
 }
 
-function ExecutionHistory({
-  threadId,
-  continuation,
+function TurnHistory({
   turn,
   entries,
-  process,
-  open,
-  missing,
+  rows,
+  continuation,
   onSavedEntries,
+  ...props
 }: {
-  threadId: string;
-  continuation?: string | null;
+  id: string;
   turn: Schema<"TranscriptTurn">;
   entries: Schema<"TranscriptEntry">[];
-  process: Row[];
-  open: boolean;
+  rows: Row[];
+  threadId: string;
   missing: boolean;
+  continuation?: string | null;
   onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
 }) {
-  const history = useExecutionHistory(
-    threadId,
-    continuation,
-    turn,
-    open && missing,
-  );
+  const history = useTurnHistory(props.threadId, continuation, turn);
+  const pauseFollowing = useContext(PauseConversationFollowing);
   useEffect(() => {
-    // Saved steering can be outside the outer conversation window. Reconcile
-    // its local echo without merging execution pages into that window.
     if (history.data)
       onSavedEntries?.(history.data.pages.flatMap((page) => page.entries));
   }, [history.data, onSavedEntries]);
   const byPosition = new Map<number, Schema<"TranscriptEntry">>();
   for (const entry of [
     ...entries,
-    ...(history.data?.pages.flatMap((page) => page.entries) ?? []),
+    ...(history.data?.pages.flatMap((page) => [
+      ...(page.boundary_entries ?? []),
+      ...page.entries,
+    ]) ?? []),
   ]) {
     if (
       entry.position >= turn.input_position &&
@@ -703,76 +599,223 @@ function ExecutionHistory({
   const loaded = [...byPosition.values()].sort(
     (a, b) => a.position - b.position,
   );
-  const output = turn.output_position ?? turn.final_position;
-  const rows = [
-    ...savedRows(loaded, savedToolGroups(loaded), continuation).filter(
-      (row) =>
-        !(row.kind === "input" && row.position === turn.input_position) &&
-        !(row.kind === "assistant" && row.position === output) &&
-        (output == null || row.position! <= output),
+  const saved = savedRows(loaded, savedToolGroups(loaded), continuation);
+  const savedInputs = new Set(
+    saved.filter((row) => row.kind === "input").map((row) => row.id),
+  );
+  const merged = [
+    ...saved,
+    ...rows.filter(
+      (row) => row.position === undefined && !savedInputs.has(row.id),
     ),
-    ...process.filter((row) => row.position === undefined),
   ];
   const load = () => {
     if (history.isFetching) return;
-    if (history.isFetchNextPageError || history.hasNextPage)
+    pauseFollowing?.();
+    if (history.hasNextPage || history.isFetchNextPageError)
       void history.fetchNextPage();
-    else if (history.isError) void history.refetch();
+    else void history.refetch();
   };
   return (
-    <ExecutionReader
-      open={open}
-      loadEarlier={history.hasNextPage || history.isError ? load : undefined}
+    <TurnSegments
+      {...props}
+      turn={turn}
+      rows={merged}
+      entries={loaded}
+      missing={loaded.length < turn.end_position - turn.input_position}
+      loadEarlier={load}
       loading={history.isFetching}
       failed={history.isError}
+    />
+  );
+}
+
+function TurnSegments({
+  id,
+  turn,
+  rows,
+  entries,
+  threadId,
+  missing,
+  loadEarlier,
+  loading = false,
+  failed = false,
+}: {
+  id: string;
+  turn?: Schema<"TranscriptTurn">;
+  rows: Row[];
+  entries: Schema<"TranscriptEntry">[];
+  threadId: string;
+  missing: boolean;
+  loadEarlier?: () => void;
+  loading?: boolean;
+  failed?: boolean;
+}) {
+  const complete =
+    turn?.final_position != null &&
+    rows.every((row) => row.position !== undefined);
+  const outputPosition = turn?.output_position ?? turn?.final_position;
+  const output = rows.flatMap((row) =>
+    outputPosition != null &&
+    row.kind === "assistant" &&
+    row.position === outputPosition
+      ? [row]
+      : [],
+  );
+  const positions = new Set(entries.map((entry) => entry.position));
+  const segments: {
+    id: string;
+    kind: "visible" | "execution" | "gap";
+    rows: Row[];
+  }[] = [];
+  let previousPosition = turn?.input_position ?? 0;
+  // Key execution by its preceding conversation boundary, not transient live
+  // row IDs, so saving the same stretch does not close an open reader.
+  let boundary = id;
+  let textIndex = 0;
+  const appendGap = (before: number) => {
+    if (missing && before > previousPosition) {
+      let gap = false;
+      for (let position = previousPosition; position < before; position++) {
+        if (!positions.has(position)) {
+          gap = true;
+          break;
+        }
+      }
+      if (gap) {
+        boundary = `gap:${before}`;
+        textIndex = 0;
+        segments.push({ id: boundary, kind: "gap", rows: [] });
+      }
+    }
+    previousPosition = before;
+  };
+  for (const row of rows) {
+    appendGap(row.position ?? turn?.end_position ?? previousPosition);
+    const kind =
+      row.kind === "input" || row.kind === "assistant"
+        ? "visible"
+        : "execution";
+    if (row.kind === "input") {
+      boundary = row.id;
+      textIndex = 0;
+    } else if (row.kind === "assistant") textIndex++;
+    const previous = segments.at(-1);
+    if (previous?.kind === kind) previous.rows.push(row);
+    else
+      segments.push({
+        id:
+          kind === "execution" ? `${boundary}:execution:${textIndex}` : row.id,
+        kind,
+        rows: [row],
+      });
+  }
+  appendGap(turn?.end_position ?? previousPosition);
+  return (
+    <section data-turn-id={id} className={styles.turn} tabIndex={-1}>
+      {segments.map((segment) => {
+        if (segment.kind === "gap")
+          return (
+            <div
+              key={segment.id}
+              className={styles.executionLoad}
+              role="status"
+            >
+              {loadEarlier ? (
+                <button type="button" onClick={loadEarlier} disabled={loading}>
+                  {loading
+                    ? "Loading earlier messages…"
+                    : failed
+                      ? "Retry earlier messages"
+                      : "Load earlier messages in this turn"}
+                </button>
+              ) : (
+                "Earlier messages in this turn are not loaded."
+              )}
+            </div>
+          );
+        if (segment.kind === "visible")
+          return (
+            <Rows
+              key={segment.id}
+              rows={segment.rows}
+              threadId={threadId}
+              output={output}
+            />
+          );
+        return (
+          <ExecutionSegment
+            key={segment.id}
+            rows={segment.rows}
+            threadId={threadId}
+            complete={complete}
+          />
+        );
+      })}
+    </section>
+  );
+}
+
+function ExecutionSegment({
+  rows,
+  threadId,
+  complete,
+}: {
+  rows: Row[];
+  threadId: string;
+  complete: boolean;
+}) {
+  const latest = rows.at(-1);
+  const latestTool = latest?.kind === "tools" ? latest.tools.at(-1) : undefined;
+  const toolInfo = latestTool ? describeTool(latestTool) : undefined;
+  const toolCount = rows.reduce(
+    (count, row) => count + (row.kind === "tools" ? row.tools.length : 0),
+    0,
+  );
+  const preview = toolInfo
+    ? `${toolInfo.label} ${toolInfo.summary} · ${toolInfo.phase}`
+    : latest?.kind === "thinking"
+      ? "Reasoning…"
+      : "View the available execution steps";
+  return (
+    <ExecutionDetails
+      complete={complete}
+      preview={preview}
+      summary={
+        toolCount ? (
+          <span>
+            {" "}
+            · {toolCount} {toolCount === 1 ? "tool call" : "tool calls"}
+          </span>
+        ) : null
+      }
     >
-      <Rows rows={rows} threadId={threadId} continuation />
-    </ExecutionReader>
+      {(open) => (
+        <ExecutionReader open={open}>
+          <Rows rows={rows} threadId={threadId} continuation />
+        </ExecutionReader>
+      )}
+    </ExecutionDetails>
   );
 }
 
 function ExecutionReader({
   open,
   children,
-  loadEarlier,
-  loading = false,
-  failed = false,
 }: {
   open: boolean;
   children: ReactNode;
-  loadEarlier?: () => void;
-  loading?: boolean;
-  failed?: boolean;
 }) {
   const reader = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
-  const previousTop = useRef(0);
   const anchor = useRef<ReadingAnchor | undefined>(undefined);
-  const prepend = useRef<{ top: number; height: number } | undefined>(
-    undefined,
-  );
-  const requestEarlier = () => {
-    const element = reader.current;
-    if (!element || !loadEarlier || loading || prepend.current) return;
-    follow.current = false;
-    prepend.current = { top: element.scrollTop, height: element.scrollHeight };
-    loadEarlier();
-  };
   useLayoutEffect(() => {
     const element = reader.current;
     if (!open || !element) return;
-    if (prepend.current) {
-      if (loading) return;
-      // A tool result at a page edge can merge into an earlier call row.
-      // Preserve geometry even when that first semantic anchor disappears.
-      element.scrollTop =
-        prepend.current.top + element.scrollHeight - prepend.current.height;
-      prepend.current = undefined;
-    } else if (follow.current) element.scrollTop = element.scrollHeight;
+    if (follow.current) element.scrollTop = element.scrollHeight;
     else restoreReadingAnchor(element, anchor.current);
-    previousTop.current = element.scrollTop;
     anchor.current = captureReadingAnchor(element);
-  }, [children, open, loading]);
+  }, [children, open]);
   return (
     <div
       ref={reader}
@@ -803,25 +846,11 @@ function ExecutionReader({
       onScroll={(event) => {
         if (event.target !== event.currentTarget) return;
         const element = event.currentTarget;
-        const upward = element.scrollTop < previousTop.current;
         follow.current =
           element.scrollHeight - element.scrollTop - element.clientHeight <= 1;
-        previousTop.current = element.scrollTop;
         anchor.current = captureReadingAnchor(element);
-        if (upward && element.scrollTop < 80 && !failed) requestEarlier();
       }}
     >
-      {loading ? (
-        <small role="status">Loading earlier steps…</small>
-      ) : loadEarlier ? (
-        <button
-          type="button"
-          className={styles.executionToggle}
-          onClick={requestEarlier}
-        >
-          {failed ? "Retry earlier steps" : "Load earlier steps"}
-        </button>
-      ) : null}
       {children}
     </div>
   );

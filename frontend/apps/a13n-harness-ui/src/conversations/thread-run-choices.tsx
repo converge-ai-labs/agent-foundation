@@ -240,7 +240,6 @@ export function EnvironmentPicker({
 }
 
 export function ThreadRunChoices({
-  expanded = false,
   catalog,
   agentId,
   defaultAgentId,
@@ -254,7 +253,6 @@ export function ThreadRunChoices({
   onAgentChange,
   onModelChange,
 }: {
-  expanded?: boolean;
   catalog?: Schema<"ThreadSelectorCatalog">;
   agentId: string;
   defaultAgentId?: string;
@@ -290,63 +288,59 @@ export function ThreadRunChoices({
   }, [selectionKey, onThinkingChange, onFastChange]);
   return (
     <div className={styles.runChoices}>
-      <div className={styles.secondaryChoices} data-expanded={expanded}>
-        <div className={styles.runChoice} title={agent?.name ?? agentId}>
-          <span className={styles.choiceLabel}>Agent</span>
-          <SearchPicker
-            label="Agent"
-            popupClassName={styles.choicePopup}
-            placeholder={agent?.name ?? (agentId || "Default agent")}
-            emptyMessage="No agents found."
-            value={agentId}
-            disabled={disabled || !catalog}
-            onValueChange={onAgentChange}
-            groups={[
-              {
-                label: "Agents",
-                options: [
-                  ...(defaultAgentId
-                    ? [
-                        {
-                          value: "",
-                          label:
-                            catalog?.agents.find(
-                              (item) => item.agent_id === defaultAgentId,
-                            )?.name ?? "Default agent",
-                          badge: "Default",
-                          description: "Follow the project or app default.",
-                        },
-                      ]
-                    : []),
-                  ...(catalog?.agents ?? []).map((item) => ({
-                    value: item.agent_id,
-                    label: item.name,
-                    description: item.agent_id,
-                  })),
-                  ...(agentId && !agent
-                    ? [
-                        {
-                          value: agentId,
-                          label: `${agentId} (unavailable)`,
-                          disabled: true,
-                        },
-                      ]
-                    : []),
-                ],
-              },
-            ]}
-          />
-        </div>
-        <div className={styles.fastChoice}>
-          <FastToggle
-            model={catalog?.models?.find(
-              (item) => item.model_id === (modelId ?? inheritedModelId),
-            )}
-            value={fast}
-            disabled={disabled || !catalog}
-            onChange={onFastChange}
-          />
-        </div>
+      <FastToggle
+        model={catalog?.models?.find(
+          (item) => item.model_id === (modelId ?? inheritedModelId),
+        )}
+        value={fast}
+        disabled={disabled || !catalog}
+        onChange={onFastChange}
+      />
+      <div className={styles.runChoice} title={agent?.name ?? agentId}>
+        <span className={styles.choiceLabel}>Agent</span>
+        <SearchPicker
+          label="Agent"
+          popupClassName={styles.choicePopup}
+          placeholder={agent?.name ?? (agentId || "Default agent")}
+          emptyMessage="No agents found."
+          value={agentId}
+          disabled={disabled || !catalog}
+          onValueChange={onAgentChange}
+          groups={[
+            {
+              label: "Agents",
+              options: [
+                ...(defaultAgentId
+                  ? [
+                      {
+                        value: "",
+                        label:
+                          catalog?.agents.find(
+                            (item) => item.agent_id === defaultAgentId,
+                          )?.name ?? "Default agent",
+                        badge: "Default",
+                        description: "Follow the project or app default.",
+                      },
+                    ]
+                  : []),
+                ...(catalog?.agents ?? []).map((item) => ({
+                  value: item.agent_id,
+                  label: item.name,
+                  description: item.agent_id,
+                })),
+                ...(agentId && !agent
+                  ? [
+                      {
+                        value: agentId,
+                        label: `${agentId} (unavailable)`,
+                        disabled: true,
+                      },
+                    ]
+                  : []),
+              ],
+            },
+          ]}
+        />
       </div>
       <div className={styles.modelChoice}>
         <span className={styles.choiceLabel}>Model</span>

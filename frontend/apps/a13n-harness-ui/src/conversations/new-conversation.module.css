@@ -132,30 +132,30 @@
   }
 }
 
-.runChoices,
-.secondaryChoices {
+.runChoices {
   display: contents;
 }
 .runChoice,
 .modelChoice {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
+  max-width: 100%;
+  padding-left: 8px;
+  border-radius: 10px;
+  background: var(--a13n-surface);
 }
 .runChoice {
-  grid-area: agent;
+  flex: 0 1 220px;
 }
 .modelChoice {
-  grid-area: model;
-}
-.fastChoice {
-  grid-area: fast;
+  flex: 0 1 360px;
 }
 .choiceLabel {
   flex-shrink: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 11px;
 }
 .runChoice > button,
 .modelChoice > button {
@@ -164,41 +164,30 @@
   min-width: 0;
   max-width: 100%;
   height: 32px;
-  padding-inline: 8px;
-  font-size: 13px;
+  padding-inline: 6px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
   font-weight: 400;
   box-shadow: none;
 }
+.modelChoice > button {
+  justify-content: flex-start;
+}
+.modelChoice > button > svg:last-child {
+  margin-left: auto;
+}
 .location > button:hover,
-.runChoice > button:hover {
+.runChoice > button:hover,
+.modelChoice > button:hover {
   background: var(--a13n-hover);
 }
-@container composer (max-width: 720px) {
-  .secondaryChoices {
-    grid-area: secondary;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-    padding-top: 10px;
-    margin-top: 10px;
-    border-top: 1px solid var(--a13n-border);
-  }
-  .secondaryChoices[data-expanded="false"] {
-    display: none;
-  }
+@container composer (max-width: 480px) {
   .runChoice {
-    flex: 1;
+    flex: 1 1 160px;
   }
   .modelChoice {
-    justify-self: start;
-    width: 100%;
-    max-width: 360px;
-  }
-}
-@container composer (max-width: 480px) {
-  .modelChoice > .choiceLabel {
-    display: none;
+    flex: 1 1 100%;
   }
 }
 

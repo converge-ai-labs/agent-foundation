@@ -271,23 +271,16 @@ export function useHistory(
   };
 }
 
-// Execution pages never extend the conversation window or another turn's cache.
-export function useExecutionHistory(
+// Explicit gap loading extends one turn without paging through earlier turns.
+export function useTurnHistory(
   threadId: string,
   continuation: string | null | undefined,
   turn: Schema<"TranscriptTurn">,
-  enabled: boolean,
 ) {
   const { client } = useTransport();
   return useInfiniteQuery({
-    queryKey: [
-      "thread",
-      threadId,
-      "execution-history",
-      continuation,
-      turn.turn_id,
-    ],
-    enabled,
+    queryKey: ["thread", threadId, "turn-history", continuation, turn.turn_id],
+    enabled: false,
     staleTime: Infinity,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>

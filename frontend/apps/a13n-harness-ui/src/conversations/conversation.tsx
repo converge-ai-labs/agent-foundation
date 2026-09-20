@@ -478,7 +478,7 @@ function Conversation({
     const element = reader.current;
     // Also retry the top-edge observation after an in-flight refetch settles.
     // Short/context-only pages need no scroll gesture to fill the viewport.
-    // Turn-boundary cursors skip execution pages owned by the inner readers.
+    // Turn-boundary cursors skip gaps with their own explicit message loader.
     if (
       pageReady &&
       element &&
@@ -807,9 +807,8 @@ function Conversation({
                 }
               />
             }
-            controls={(expanded) => (
+            controls={() => (
               <ThreadRunChoices
-                expanded={expanded}
                 catalog={selectors.data}
                 agentId={thread?.configuration.agent_source.id ?? ""}
                 defaultModelId={thread?.configuration.default_model_id}
