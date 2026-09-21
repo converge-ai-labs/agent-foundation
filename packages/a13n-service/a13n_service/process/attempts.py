@@ -15,18 +15,19 @@ from a13n_logging import get_logger
 from anyio import fail_after
 
 from a13n_service.agent_configuration.drafts import ConfigurationDrafts
-from a13n_service.agent_configuration.resources import ConfigurationResources
-from a13n_service.agent_configuration.runtime import ConfigurationCapability
+from a13n_service.agent_configuration.execution import ConfigurationExecution
 from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
-from a13n_service.gateway.queries import NativeInteractionQueries
+from a13n_service.interactions.agent_runtime import AgentRuntimeAssembler
+from a13n_service.interactions.attempt_environments import AttemptEnvironments
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
 from a13n_service.interactions.attempts import AttemptContext, AttemptExecutionService, read_attempt_authority
 from a13n_service.interactions.control_wakeups import AttemptControlWakeups
+from a13n_service.interactions.execution_source import ExecutionSource, PublishedAgentExecution
 from a13n_service.interactions.harness_results import AttemptDisposition, AttemptOutcome, StoredHarnessOutcomeAdapter
 from a13n_service.interactions.harness_runtime import HarnessDriver
 from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, RedisThreadControlSignals, ThreadInboxStore
@@ -191,44 +192,50 @@ class WorkerAttempts:
                     else SubagentCapability()
                 )
 
-            def configuration_capability() -> ConfigurationCapability:
-                if self._configuration_drafts is None:
-                    raise RuntimeError("Configuration drafts are unavailable on this Worker")
-                return ConfigurationCapability(
+            source: ExecutionSource = (
+                ConfigurationExecution(
                     sessions,
+                    run,
+                    workspace_id,
+                    lambda: control.current_context,
                     self._configuration_drafts,
-                    ConfigurationResources(sessions),
-                    NativeInteractionQueries(sessions, self._display),
-                    run=run,
-                    workspace_id=workspace_id,
-                    current_context=lambda: control.current_context,
+                    self._display,
                 )
+                if run.configuration_context is not None
+                else PublishedAgentExecution(run, workspace_id, lambda: control.current_context, self._external_tools)
+            )
 
             projector = AttemptRunStreamProjector(self._stream, context)
-            preparer = WorkerAttemptPreparer(
+            runtime = AgentRuntimeAssembler(
+                source=source,
                 sessions=sessions,
                 run=run,
                 workspace_id=workspace_id,
                 catalog=catalog,
                 control=control,
-                committer=self._committer,
-                payloads=self._payloads,
                 sources=sources,
-                inputs=inputs,
                 model_resolver=self._resources.live_model_providers,
                 model_factory=self._resources.native_model_factory,
                 skills=self._skills,
-                async_results=async_results,
                 asset_publication=self._asset_publication,
                 environments=self._environments,
-                client_connections=self._client_connections,
                 external_tools=self._external_tools,
                 subagent_capability=subagent_capability,
                 secrets=self._secrets,
                 web=self._web,
                 memory=self._shared.memory_behaviors,
-                configuration_capability=configuration_capability if self._configuration_drafts is not None else None,
-                environment_projector=projector,
+            )
+            preparer = WorkerAttemptPreparer(
+                sessions=sessions,
+                run=run,
+                control=control,
+                runtime=runtime,
+                environments=AttemptEnvironments(
+                    sessions, self._environments, control, projector, self._client_connections
+                ),
+                committer=self._committer,
+                sources=sources,
+                inputs=inputs,
             )
             driver = HarnessDriver(
                 HarnessBuilder(

@@ -24,6 +24,7 @@ from a13n_service.storage import short_session
 
 from .attempts import AttemptContext
 from .domain import Run
+from .execution_source import ExecutionSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,24 +47,15 @@ async def validate_agent_resources(
     current_context: Callable[[], AttemptContext],
     skills: SkillRuntimePreparer,
     external_tools: ExternalToolRuntime,
+    source: ExecutionSource,
     working_directory: str = "/",
 ) -> dict[str | None, PreparedSkillRuntime]:
     """Validate retained dependencies without opening execution resources."""
     children = inline_child_executions(config)
     async with short_session(sessions) as session:
         for agent_id in {run.agent_id, *(edge.child_agent_id for edge, _ in children.values())}:
-            if run.configuration_context is not None and agent_id == run.agent_id:
-                from a13n_service.agent_configuration.authorization import authorize_execution
-
-                await authorize_execution(
-                    session,
-                    principal=run.authority_principal,
-                    organization_id=run.organization_id,
-                    workspace_id=workspace_id,
-                    agent_id=agent_id,
-                    context=run.configuration_context,
-                    snapshot=current_context().authorization.snapshot,
-                )
+            if agent_id == run.agent_id:
+                await source.authorize_root(session, current_context().authorization.snapshot)
                 continue
             await authorize_persisted_agent_principal_actions(
                 session,
@@ -74,8 +66,7 @@ async def validate_agent_resources(
                 actions=frozenset({WorkspaceAction.agent_invoke}),
                 snapshot=current_context().authorization.snapshot,
             )
-    if run.configuration_context is None:
-        await external_tools.validate(current_context)
+    await source.validate_tools()
     configurations = {run.agent_revision_id: config}
     for revision_id, (edge, child) in children.items():
         await external_tools.validate(
@@ -105,16 +96,13 @@ async def prepare_agent_resources(
     current_context: Callable[[], AttemptContext],
     skills: dict[str | None, PreparedSkillRuntime],
     external_tools: ExternalToolRuntime,
+    source: ExecutionSource,
     stack: AsyncExitStack,
 ) -> PreparedAgentResources:
     """Open fresh root and inline-child clients in the owning Attempt resource scope."""
     children = inline_child_executions(config)
     capabilities: dict[str | None, tuple[AbstractCapability[AgentContext], ...]] = {}
-    capabilities[run.agent_revision_id] = (
-        await stack.enter_async_context(external_tools.capabilities(current_context))
-        if run.configuration_context is None
-        else ()
-    )
+    capabilities[run.agent_revision_id] = await source.open_capabilities(stack)
     configurations = {run.agent_revision_id: config}
     for revision_id, (edge, child) in children.items():
         capabilities[revision_id] = await stack.enter_async_context(

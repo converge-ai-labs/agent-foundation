@@ -382,6 +382,7 @@ async def test_publication_capability_is_selected_independently_for_inline_child
 
     from a13n_service.agents.domain import ChildAgentExecution, ResolvedSubagentEdge
     from a13n_service.interactions.agent_resources import prepare_agent_resources
+    from a13n_service.interactions.execution_source import PublishedAgentExecution
     from a13n_service.interactions.models import RunRecord
     from a13n_service.skills.runtime import PreparedSkillRuntime
 
@@ -424,6 +425,7 @@ async def test_publication_capability_is_selected_independently_for_inline_child
         yield ()
 
     skills = {revision: PreparedSkillRuntime(None, None, None) for revision in (AGENT_REVISION_ID, child_revision_id)}
+    external_tools = SimpleNamespace(capabilities=no_external_tools, child_capabilities=no_external_tools)
     async with AsyncExitStack() as stack:
         resources = await prepare_agent_resources(
             run=run,
@@ -432,7 +434,8 @@ async def test_publication_capability_is_selected_independently_for_inline_child
             current_context=lambda: publication.authority,
             skills=skills,
             asset_publication=publication.runtime,
-            external_tools=SimpleNamespace(capabilities=no_external_tools, child_capabilities=no_external_tools),
+            external_tools=external_tools,
+            source=PublishedAgentExecution(run, WORKSPACE_ID, lambda: publication.authority, external_tools),
             stack=stack,
         )
         selected = {

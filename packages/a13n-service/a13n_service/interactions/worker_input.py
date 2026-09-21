@@ -6,11 +6,13 @@ import posixpath
 from collections.abc import AsyncIterable, AsyncIterator
 
 import httpx2
-from a13n_harness import AgentContext, RunInputValue
+from a13n_harness import AgentContext, DeferredToolResume, RunInputValue, RunPreparationContext
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from pydantic_ai import RunContext
+from pydantic import TypeAdapter
+from pydantic_ai import RunContext, ToolDenied
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import EffectiveAgentConfig
@@ -19,12 +21,16 @@ from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.queries import require_active_asset
 from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_workspace_principal_action
+from a13n_service.observability import observe_input
 from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
 
-from .control_domain import ThreadInboxEntry, ThreadInboxKind
-from .domain import Run, RunPayloadObjectRef
+from .control_domain import ThreadInboxEntry, ThreadInboxKind, WaitingRunContinueInput, WaitingRunFeedback
+from .control_models import ThreadInboxRecord
+from .domain import Run, RunInputKind, RunPayloadObjectRef
 from .harness_control import RunControlCapability
+from .harness_results import AttemptCommitter
+from .harness_runtime import HarnessInput, ImmediateHarnessInput, MaterializedHarnessInput
 from .input import (
     AcceptedAgentInput,
     AcquiredBinary,
@@ -36,6 +42,8 @@ from .input import (
     native_input_adapter,
 )
 from .objects import RunPayloadStore
+from .run_control import RunAttemptControl
+from .state import CompletedOutcomeCandidate
 
 
 class WorkerInputSources:
@@ -193,3 +201,84 @@ class WorkerInputMaterializer:
         if value is None:
             raise ValueError("Accepted input produced no semantic content")
         return value
+
+    async def restore(
+        self,
+        run: Run,
+        control: RunAttemptControl,
+        committer: AttemptCommitter,
+        sessions: async_sessionmaker[AsyncSession],
+    ) -> tuple[HarnessInput, DeferredToolResume | None]:
+        """Restore accepted/resumed input; acquire binary content only after Environment entry."""
+        config = control.current_state.envelope.effective_agent_config
+        resume = None
+        accepted: AcceptedAgentInput | None = None
+        if not control.current_state.envelope.initial_input_applied:
+            payload = (
+                run.input
+                if run.input_object is None
+                else (await self._payloads.read(run.organization_id, run.input_object)).payload
+            )
+            observe_input(payload)
+            if run.input_kind is RunInputKind.agent_input:
+                accepted = AcceptedAgentInput.model_validate(payload)
+            elif run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
+                feedback = (
+                    WaitingRunContinueInput.model_validate(payload)
+                    if run.input_kind is RunInputKind.waiting_continue
+                    else WaitingRunFeedback.model_validate(payload)
+                )
+                if isinstance(feedback, WaitingRunContinueInput):
+                    accepted = feedback.input
+                deferred = control.current_state.envelope.host.deferred
+                if deferred is None:
+                    raise ValueError("Accepted feedback has no deferred continuation")
+                results = DeferredToolResults()
+                for resolution in feedback.resolutions:
+                    if resolution.kind.value == "approval":
+                        results.approvals[resolution.call_id] = (
+                            True
+                            if resolution.outcome.value == "approve"
+                            else ToolDenied(resolution.reason or "Approval was denied.")
+                        )
+                    else:
+                        results.calls[resolution.call_id] = (
+                            ToolDenied("No response was supplied.")
+                            if resolution.outcome.value == "no_response"
+                            else resolution.result
+                        )
+                resume = DeferredToolResume(
+                    TypeAdapter(DeferredToolRequests).validate_python(deferred.requests), results
+                )
+            elif run.input_kind is RunInputKind.async_subagent_result:
+                async with short_session(sessions) as session:
+                    row = await session.get(ThreadInboxRecord, run.trigger_entity_id)
+                    if row is None or row.target_run_id != run.id or row.organization_id != run.organization_id:
+                        raise ValueError("Accepted async result has no matching inbox authority")
+                    entry = row.to_resource()
+                if entry.payload != payload:
+                    raise ValueError("Accepted async result input changed")
+                accepted = AcceptedAgentInput.model_validate(
+                    {
+                        "schema_version": "1",
+                        "content": [{"type": "text", "text": await self._async_results(entry)}],
+                    }
+                )
+        input_source = ImmediateHarnessInput()
+        if accepted is not None:
+
+            async def input_factory(preparation: RunPreparationContext) -> RunInputValue:
+                self._sources.environment = preparation.environment
+                assert accepted is not None
+                value = await self.map(accepted, run.id, config)
+                return value
+
+            input_source = MaterializedHarnessInput(input_factory)
+        elif isinstance(control.current_state.envelope.outcome_candidate, CompletedOutcomeCandidate):
+
+            async def continuation_factory(preparation: RunPreparationContext) -> RunInputValue:
+                self._sources.environment = preparation.environment
+                return await control.continuation_input(committer)
+
+            input_source = MaterializedHarnessInput(continuation_factory)
+        return input_source, resume

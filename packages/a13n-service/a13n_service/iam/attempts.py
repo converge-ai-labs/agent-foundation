@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import Protocol
 
 from a13n_harness.errors import RunError
 from a13n_logging import get_logger
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agent_configuration.context import ConfigurationRunContext
 from a13n_service.environments.authorization import EnvironmentAuthorization, read_environment_authorization
 from a13n_service.environments.mount_models import RunEnvironmentMountRecord
 from a13n_service.storage import short_session
@@ -20,6 +20,15 @@ from .domain import AuthorizationError, PrincipalRef
 
 logger = get_logger(__name__)
 _LOOPS_PER_REFRESH = 10
+
+
+class RootExecutionPolicy(Protocol):
+    """Trusted source-specific authority, evaluated inside the shared IAM refresh."""
+
+    @property
+    def required_actions(self) -> frozenset[WorkspaceAction]: ...
+
+    async def refresh(self, session: AsyncSession, snapshot: PrincipalPermissions) -> None: ...
 
 
 class AttemptAuthorizationError(RunError):
@@ -39,7 +48,7 @@ class _ExecutionScope:
     run_id: str
     run_attempt_id: str
     environment_id: str | None
-    configuration_context: ConfigurationRunContext | None
+    root_policy: RootExecutionPolicy | None
 
 
 class AttemptAuthorization:
@@ -122,7 +131,7 @@ class AttemptAuthorization:
         run_id: str,
         run_attempt_id: str,
         environment_id: str | None = None,
-        configuration_context: ConfigurationRunContext | None = None,
+        root_policy: RootExecutionPolicy | None = None,
     ) -> None:
         """Read IAM before preparation effects; this owner cannot be rebound or reset."""
         async with self._lock:
@@ -138,7 +147,7 @@ class AttemptAuthorization:
                 run_id,
                 run_attempt_id,
                 environment_id,
-                configuration_context,
+                root_policy,
             )
             await self._refresh()
 
@@ -154,11 +163,16 @@ class AttemptAuthorization:
             if self._requests_since_refresh == _LOOPS_PER_REFRESH:
                 await self._refresh()
                 snapshot = self.snapshot
-            configuration_root = scope.configuration_context is not None and selected == scope.root_agent_id
-            if not configuration_root and WorkspaceAction.agent_invoke not in snapshot.for_agent(selected):
+            required = self._root_actions() if selected == scope.root_agent_id else {WorkspaceAction.agent_invoke}
+            if not required.issubset(snapshot.for_agent(selected)):
                 raise AuthorizationError("permission_denied", concealed=True)
             self._model_requests += 1
             self._requests_since_refresh += 1
+
+    def _root_actions(self) -> frozenset[WorkspaceAction]:
+        assert self._scope is not None
+        policy = self._scope.root_policy
+        return policy.required_actions if policy is not None else frozenset({WorkspaceAction.agent_invoke})
 
     async def _refresh(self) -> None:
         scope, sessions = self._scope, self._sessions
@@ -171,18 +185,8 @@ class AttemptAuthorization:
                     organization_id=scope.organization_id,
                     workspace_id=scope.workspace_id,
                 )
-                if scope.configuration_context is not None:
-                    from a13n_service.agent_configuration.authorization import authorize_execution
-
-                    await authorize_execution(
-                        session,
-                        principal=scope.principal,
-                        organization_id=scope.organization_id,
-                        workspace_id=scope.workspace_id,
-                        agent_id=scope.root_agent_id,
-                        context=scope.configuration_context,
-                        snapshot=snapshot,
-                    )
+                if scope.root_policy is not None:
+                    await scope.root_policy.refresh(session, snapshot)
                 environment_ids = set(self._environments)
                 if scope.environment_id is not None:
                     environment_ids.add(scope.environment_id)
@@ -196,9 +200,7 @@ class AttemptAuthorization:
                     )
                     for environment_id in sorted(environment_ids)
                 }
-            if scope.configuration_context is None and WorkspaceAction.agent_invoke not in snapshot.for_agent(
-                scope.root_agent_id
-            ):
+            if not self._root_actions().issubset(snapshot.for_agent(scope.root_agent_id)):
                 raise AuthorizationError("permission_denied", concealed=True)
         except AuthorizationError as error:
             self._failure = "attempt_authorization_denied"

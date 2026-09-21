@@ -197,6 +197,8 @@ Static validity, restricted execution, and tests with explicitly selected test r
 
 ## Model-Visible Tools and Authority
 
+The assistant's execution integration owns accepted-definition validation, protected draft-binding authorization, configuration-tool composition, and deployment-knowledge mounting. Worker process composition selects that integration once; shared runtime assembly invokes it at the common preparation and resource-opening boundaries. Attempt IAM refreshes the protected root policy on its normal cadence without adding `agent.invoke` to the permission snapshot or extending the exception to children. Generic Worker and IAM modules do not assemble assistant tools or inspect its knowledge layout.
+
 All tools receive a host-bound User, Workspace, Session, Thread, stable draft and current Run/Attempt context. The host resolves current mode and target from that draft and validates them at each operation's owning boundary. Model parameters cannot replace these bindings. Tool functions call the Service domain in process; they do not replay browser cookies, use a superuser token, or create a parallel HTTP client. Fixed tool composition and run-bound service dependencies follow the Harness plugin contract.
 
 | Tool                             | Responsibility                                                                                   | Permission and scope                                                                                                                                                                                                |
