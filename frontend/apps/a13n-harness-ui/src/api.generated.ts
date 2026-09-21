@@ -254,6 +254,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Unsent Drafts */
+        get: operations["list_unsent_drafts_api_drafts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/host/terminals": {
         parameters: {
             query?: never;
@@ -2477,6 +2494,18 @@ export interface components {
             entries: components["schemas"]["FileEntry"][];
             /** Next Offset */
             next_offset: number | null;
+        };
+        /** DraftSummary */
+        DraftSummary: {
+            /** Thread Id */
+            thread_id: string;
+            /** Draft Id */
+            draft_id: string;
+            /**
+             * Unsent Since
+             * Format: date-time
+             */
+            unsent_since: string;
         };
         /**
          * EnvironmentAction
@@ -4996,7 +5025,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "comment" | "thread_work";
+            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "comment" | "thread_work" | "draft";
             /**
              * Root Thread Id
              * @default null
@@ -6136,6 +6165,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_unsent_drafts_api_drafts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftSummary"][];
                 };
             };
         };

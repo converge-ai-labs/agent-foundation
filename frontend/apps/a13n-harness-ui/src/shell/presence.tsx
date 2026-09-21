@@ -109,6 +109,21 @@ export function useLiveWorkbench(
           results?.invalidate(
             event.root_thread_id ?? event.thread_id ?? undefined,
           );
+        if (event?.kind === "draft") {
+          scheduleRefresh(
+            queries,
+            (query) => query.queryKey[0] === "unsent-drafts",
+          );
+          return;
+        }
+        if (
+          event &&
+          ["thread", "root_operation", "child_execution"].includes(event.kind)
+        )
+          scheduleRefresh(
+            queries,
+            (query) => query.queryKey[0] === "unsent-threads",
+          );
         if (event?.kind === "thread_work") {
           const id = event.root_thread_id ?? event.thread_id;
           if (id) refreshThread(queries, id, "work");
@@ -136,7 +151,9 @@ export function useLiveWorkbench(
             );
           } else
             scheduleRefresh(queries, (query) =>
-              ["thread", "threads"].includes(String(query.queryKey[0])),
+              ["thread", "threads", "unsent-drafts", "unsent-threads"].includes(
+                String(query.queryKey[0]),
+              ),
             );
         } else {
           // Open/reset reconcile all observations. Configuration changes do not
@@ -159,7 +176,9 @@ export function useLiveWorkbench(
       if (document.visibilityState === "visible") {
         results?.invalidate();
         scheduleRefresh(queries, (query) =>
-          ["thread", "threads"].includes(String(query.queryKey[0])),
+          ["thread", "threads", "unsent-drafts", "unsent-threads"].includes(
+            String(query.queryKey[0]),
+          ),
         );
       }
     }, 15000);

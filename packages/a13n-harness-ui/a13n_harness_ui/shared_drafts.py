@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import re
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from time import monotonic
 from typing import Literal
 from uuid import uuid4
@@ -19,6 +20,12 @@ from a13n_harness_ui.surfaces import SurfaceModel
 MAX_DRAFT_BYTES = 512 * 1024
 DRAFT_PRESENCE_TIMEOUT_SECONDS = 30
 _INLINE_ATTACHMENT = re.compile(r"\ufffc(inline-[0-9a-f-]{36})\ufffc")
+
+
+class DraftSummary(SurfaceModel):
+    thread_id: str
+    draft_id: str
+    unsent_since: datetime
 
 
 class DraftPresence(SurfaceModel):
@@ -81,6 +88,7 @@ class SharedDraft:
     def __init__(self) -> None:
         self.draft_id = f"draft-{uuid4().hex}"
         self.document = composer_document()
+        self.unsent_since: datetime | None = None
         self.participants: dict[str, DraftPresence] = {}
         self._presence_updated: dict[str, float] = {}
         self.changed = Event()
@@ -129,8 +137,10 @@ class SharedDraft:
         participant: str,
         command: DraftCommand,
         validate_attachments: Callable[[tuple[str, ...]], Awaitable[None]],
-    ) -> None:
+    ) -> bool:
+        """Apply an edit and report a change in nonempty draft membership."""
         async with self._lock:
+            was_unsent = self.unsent_since is not None
             if self.closed or participant not in self.participants or command.draft_id != self.draft_id:
                 raise HarnessUiError("The shared draft instance changed.", code="draft_instance_conflict")
             if command.kind == "presence":
@@ -157,7 +167,18 @@ class SharedDraft:
                 # Publish only after the entire composer has validated. Rejected
                 # selections cannot partially replace the shared text.
                 self.document = candidate
+                text = str(candidate.get("text", type=Text))
+                # Live inline tokens and legacy selections count even while an
+                # upload is incomplete. Dormant undo registry entries do not.
+                nonempty = bool(text.strip()) or any(
+                    not key.startswith("inline-") for key in candidate.get("attachments", type=Map[str]).keys()
+                )
+                if not nonempty:
+                    self.unsent_since = None
+                elif self.unsent_since is None:
+                    self.unsent_since = datetime.now(UTC)
             self._notify()
+            return was_unsent != (self.unsent_since is not None)
 
     def close(self) -> None:
         self.closed = True

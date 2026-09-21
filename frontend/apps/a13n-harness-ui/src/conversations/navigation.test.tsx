@@ -21,6 +21,8 @@ import { watchSummary } from "../transport/events";
 import { IDBFactory } from "fake-indexeddb";
 import { ResultTracker, ResultsContext } from "./results";
 import type { Schema } from "../transport/client";
+import { UnsentProvider, useTrackUnsent } from "./unsent";
+import { ThreadDraft } from "./draft";
 
 vi.mock("../transport/events", () => ({ watchSummary: vi.fn(() => () => {}) }));
 
@@ -60,6 +62,9 @@ function json(body: unknown, status = 200) {
     headers: { "Content-Type": "application/json" },
   });
 }
+let unsentDrafts: Schema<"DraftSummary">[];
+let unsentThreads: ReturnType<typeof thread>[];
+let failDrafts: boolean;
 let activity: URL[];
 let activeThreads: ReturnType<typeof thread>[];
 let writes: Request[];
@@ -72,6 +77,9 @@ let recentTitle: string;
 let queryClient: QueryClient;
 beforeEach(() => {
   localStorage.clear();
+  unsentDrafts = [];
+  unsentThreads = [];
+  failDrafts = false;
   activity = [];
   activeThreads = [];
   writes = [];
@@ -91,6 +99,27 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (request: Request) => {
       const url = new URL(request.url);
+      if (url.pathname === "/api/drafts")
+        return failDrafts
+          ? json({ error: { message: "Draft discovery unavailable" } }, 503)
+          : json(unsentDrafts);
+      if (
+        url.pathname === "/api/threads/activity/lookup" &&
+        unsentThreads.length
+      ) {
+        const body = await request.json();
+        return json(
+          unsentThreads
+            .filter((item) => body.thread_ids.includes(item.thread_id))
+            .map((item) => ({ thread: item, project_name: "One" })),
+        );
+      }
+      if (request.method === "GET") {
+        const unsent = unsentThreads.find(
+          (item) => url.pathname === `/api/threads/${item.thread_id}`,
+        );
+        if (unsent) return json({ thread: unsent });
+      }
       if (request.method !== "GET") {
         writes.push(request.clone());
         if (request.method === "PUT") {
@@ -190,13 +219,25 @@ function Location() {
     </output>
   );
 }
-function mount(path = "/", live = false, results: ResultTracker | null = null) {
+function TrackDraft({ draft }: { draft: ThreadDraft }) {
+  useTrackUnsent("old-draft", draft);
+  return null;
+}
+function mount(
+  path = "/",
+  live = false,
+  results: ResultTracker | null = null,
+  draft?: ThreadDraft,
+) {
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportContext value={createTransport("test", () => {})}>
         <MemoryRouter initialEntries={[path]}>
           <ResultsContext value={results}>
-            {live ? <LiveNavigation /> : <ConversationNavigation />}
+            <UnsentProvider>
+              {draft && <TrackDraft draft={draft} />}
+              {live ? <LiveNavigation /> : <ConversationNavigation />}
+            </UnsentProvider>
           </ResultsContext>
           <Location />
         </MemoryRouter>
@@ -877,4 +918,84 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
     within(group).getByLabelText("1 conversations with new results"),
   ).toBeTruthy();
   vi.restoreAllMocks();
+});
+
+it("surfaces unvisited drafts above collapsed projects and refreshes only discovery on a draft hint", async () => {
+  unsentThreads = [
+    thread("old-draft"),
+    { ...thread("archived-draft"), archived: true },
+  ];
+  unsentDrafts = unsentThreads.map((item) => ({
+    thread_id: item.thread_id,
+    draft_id: `draft-${item.thread_id}`,
+    unsent_since: "2026-09-21T10:00:00Z",
+  }));
+  mount("/", true);
+  const section = await screen.findByRole("region", { name: "Unsent input" });
+  expect(within(section).getByText("Unsent (1)")).toBeTruthy();
+  const shortcut = within(section).getByRole("link", { name: /old-draft/ });
+  expect(
+    within(shortcut).getByRole("img", { name: "Unsent input" }),
+  ).toBeTruthy();
+  expect(within(shortcut).getByText("One")).toBeTruthy();
+  expect(screen.queryByText("archived-draft")).toBeNull();
+  expect(activity).toHaveLength(0);
+  fireEvent.click(shortcut);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current route").textContent).toBe(
+      "/threads/old-draft",
+    ),
+  );
+  expect(within(section).getByText("old-draft")).toBeTruthy();
+  await screen.findByText("Recent 5");
+  const activityCalls = activity.length;
+  unsentDrafts = [];
+  await act(async () => {
+    vi.mocked(watchSummary).mock.calls.at(-1)![1]({
+      kind: "draft",
+      thread_id: "old-draft",
+      epoch: "test",
+      sequence: 1,
+    });
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: "Unsent input" })).toBeNull(),
+  );
+  expect(activity).toHaveLength(activityCalls);
+});
+
+it("shows local input immediately, retains the shortcut on opening, and removes it on clear", async () => {
+  const draft = new ThreadDraft();
+  unsentThreads = [thread("old-draft")];
+  mount("/", false, null, draft);
+  await screen.findByRole("button", { name: "One" });
+  expect(screen.queryByRole("region", { name: "Unsent input" })).toBeNull();
+  act(() => {
+    draft.doc.getText("text").insert(0, "Remember me");
+  });
+  const section = await screen.findByRole("region", { name: "Unsent input" });
+  await within(section).findByText("old-draft");
+  act(() => {
+    draft.doc.getText("text").delete(0, draft.doc.getText("text").length);
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: "Unsent input" })).toBeNull(),
+  );
+});
+
+it("makes discovery failure retryable rather than silently treating it as an empty index", async () => {
+  failDrafts = true;
+  mount();
+  await screen.findByText("Draft discovery unavailable");
+  failDrafts = false;
+  unsentThreads = [thread("old-draft")];
+  unsentDrafts = [
+    {
+      thread_id: "old-draft",
+      draft_id: "draft-one",
+      unsent_since: "2026-09-21T10:00:00Z",
+    },
+  ];
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText("Unsent (1)");
 });

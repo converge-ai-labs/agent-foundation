@@ -415,7 +415,7 @@ The hub references only the existing observer for the latest root Run per Thread
 
 Subscription installation and retained replay are atomic within the owning hub, so events after cutover remain buffered even while snapshot queries run. Ring loss or a subscriber gap requests reset; it never invents historical output. Closing or cancelling delivery releases the registered subscriber even under task cancellation, without cancelling the producing Run.
 
-A separate lightweight App-wide stream emits bounded invalidation hints for configuration, catalog, Project, Thread metadata/configuration/continuation, root operation, child execution, and committed output-comment changes. Each hint identifies only the affected summary scope needed for refetch. It carries no transcript or checkpoint payload and is not durable truth. A surface that misses hints refetches its summaries.
+A separate lightweight App-wide stream emits bounded invalidation hints for configuration, catalog, Project, Thread metadata/configuration/continuation, root operation, child execution, committed output-comment changes, and shared-draft empty/nonempty transitions. Draft hints follow [unsent input discovery](webui/01-collaborative-conversations.md#unsent-input-discovery) and never carry prompt content. Each hint identifies only the affected summary scope needed for refetch. It carries no transcript or checkpoint payload and is not durable truth. A surface that misses hints refetches its summaries.
 
 Retained transcript comes from selected continuations and child compact checkpoints. Current-process activity is merged only for presentation and never written back as continuation truth outside its owning checkpoint path.
 

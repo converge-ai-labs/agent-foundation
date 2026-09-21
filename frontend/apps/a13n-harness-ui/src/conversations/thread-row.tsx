@@ -27,6 +27,7 @@ import {
 } from "../shell/participant-avatars";
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
+import { useUnsent } from "./unsent";
 
 function threadState(row: ActivityRow) {
   if (row.pending_decision) return "Needs your answer";
@@ -60,12 +61,15 @@ export function ThreadRow({
   row,
   presence,
   showRestore = false,
+  showProject = false,
 }: {
   row: ActivityRow;
   presence: Schema<"PresenceFrame"> | null;
   showRestore?: boolean;
+  showProject?: boolean;
 }) {
   const { tracker: results } = useResults();
+  const unsent = useUnsent().inputs.has(row.thread.thread_id);
   const unread = results?.isUnread(row.thread.thread_id);
   const navigate = useNavigate();
   const location = useLocation();
@@ -102,6 +106,7 @@ export function ThreadRow({
         queryKey: ["thread", row.thread.thread_id],
       });
       void refreshThreadLists(queries);
+      void queries.invalidateQueries({ queryKey: ["unsent-threads"] });
     },
   });
   return (
@@ -116,8 +121,26 @@ export function ThreadRow({
           <ThreadStateIcon row={row} />
           <span>
             <strong title={title}>{title}</strong>
+            {showProject && (
+              <small>
+                {row.project_name ??
+                  (row.thread.configuration.project_id
+                    ? "Unavailable project"
+                    : "Without a project")}
+              </small>
+            )}
             {threadState(row) && <small>{threadState(row)}</small>}
           </span>
+          {unsent && (
+            <span
+              className={styles.unsentMarker}
+              role="img"
+              aria-label="Unsent input"
+              title="Unsent input"
+            >
+              <PencilSimple aria-hidden="true" />
+            </span>
+          )}
           {unread && (
             <span
               className={styles.resultDot}

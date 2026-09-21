@@ -128,6 +128,17 @@ export class ThreadDraft {
     this.version++;
     this.listeners.forEach((listener) => listener());
   }
+  get hasUnsentInput() {
+    return (
+      !!values(this.doc).prompt.trim() ||
+      attachmentSelections(this.doc).length > 0
+    );
+  }
+  get hasUnacknowledgedEdits() {
+    return this.accepted
+      ? !covers(this.accepted, Y.snapshot(this.doc))
+      : this.hasUnsentInput;
+  }
   get synchronized() {
     return (
       this.status === "Connected" &&

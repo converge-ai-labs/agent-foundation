@@ -38,6 +38,26 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.unsentSection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  max-height: 35%;
+  flex-shrink: 0;
+  padding-block: 4px 8px;
+}
+.unsentList {
+  overflow: auto;
+  min-height: 0;
+  scrollbar-gutter: stable;
+}
+.unsentMarker {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--a13n-secondary);
+  margin-top: 2px;
+}
 .threadGroups {
   flex: 1;
   overflow: auto;

@@ -520,6 +520,28 @@
         }
       }
     },
+    "/api/drafts": {
+      "get": {
+        "summary": "List Unsent Drafts",
+        "operationId": "list_unsent_drafts_api_drafts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DraftSummary"
+                  },
+                  "type": "array",
+                  "title": "Response List Unsent Drafts Api Drafts Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/host/terminals": {
       "get": {
         "summary": "Terminals",
@@ -7388,6 +7410,31 @@
         ],
         "title": "DirectoryPage"
       },
+      "DraftSummary": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "draft_id": {
+            "type": "string",
+            "title": "Draft Id"
+          },
+          "unsent_since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Unsent Since"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "draft_id",
+          "unsent_since"
+        ],
+        "title": "DraftSummary"
+      },
       "EnvironmentAction": {
         "description": "Exact authorization values in the locked first-party catalog.",
         "enum": [
@@ -14183,7 +14230,8 @@
               "root_operation",
               "child_execution",
               "comment",
-              "thread_work"
+              "thread_work",
+              "draft"
             ],
             "title": "Kind",
             "type": "string"

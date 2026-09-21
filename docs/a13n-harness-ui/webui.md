@@ -16,6 +16,14 @@ WebUI enables native file browsing, editing, transfer, creation, move, deletion,
 
 Markdown files open with **Preview** selected and expose **Preview** and **Text** as explicit buttons; the preview renders the current local buffer, so unsaved edits can be checked before saving. File operations are compact buttons, and **Add to chat** is the single file-context action: it adds the selected source lines when the text editor has a selection, otherwise the complete reviewed file. It does not send the composer. Same-instance Host-file links in assistant Markdown open the Files drawer on the current page. WebUI root Agents receive the supported relative link shape in their per-input surface guidance: `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}`. Bare Host paths and direct Files API URLs are not browser file links; external Markdown links continue to open separately.
 
+## Find unfinished input
+
+**Unsent (N)** at the top of the conversation sidebar links to saved conversations with unfinished shared input, even when their Projects are collapsed or they are outside the recent list. Each shortcut includes its Project name. A pencil marker labeled **Unsent input** also appears beside the conversation in ordinary lists, without replacing running or unread-result indicators. The shortcut section stays visible while searching or filtering the lists below it.
+
+Opening a conversation does not dismiss the reminder. Send successfully and clear the captured input, or remove the text and selected attachments yourself; edits added concurrently remain marked. Pending and failed attachment uploads count, but whitespace and changes to composer settings do not. Archiving hides the shortcut without discarding the draft.
+
+These are shared Thread drafts, not a personal task queue. Synchronized drafts can be rediscovered after refreshing the browser while the same server is running; server restart discards them. The separate, not-yet-created New conversation draft still opens through Home.
+
 ## Fast mode
 
 Open **Model settings** to find the **Fast** button beside the current Model, with thinking controls below. This layout is shared by new and saved conversations; Agent and Model remain in the composer footer, while Goal stays in the header. It lights up when Fast is on and stays unlit otherwise, without a Default label or a separate reset button. Before you click it, it follows the Model's configured Fast setting; an unspecified default stays unlit without changing the Model settings. Click to explicitly request Fast or standard processing for subsequent Sends in this tab. Switching Agent or Model clears the temporary choice and follows the newly selected Model. Fast does not change thinking, save Model configuration, or accompany steering.

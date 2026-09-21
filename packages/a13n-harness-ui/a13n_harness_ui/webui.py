@@ -109,7 +109,7 @@ from a13n_harness_ui.page_presence import (
 )
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
-from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame
+from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame, DraftSummary
 from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage.usage import ThreadUsageView
 from a13n_harness_ui.surfaces import (
@@ -742,6 +742,10 @@ def create_webui(
             pass
         finally:
             directory.detach(participant)
+
+    @server.get("/api/drafts", response_model=tuple[DraftSummary, ...])
+    async def list_unsent_drafts() -> tuple[DraftSummary, ...]:
+        return await app().list_unsent_drafts()
 
     @server.websocket("/api/threads/{thread_id}/draft/connect")
     async def connect_draft(socket: WebSocket, thread_id: str) -> None:

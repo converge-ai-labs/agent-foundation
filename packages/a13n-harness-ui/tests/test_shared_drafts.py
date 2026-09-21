@@ -161,3 +161,47 @@ async def test_editor_presence_expires_without_changing_draft_or_losing_names(mo
     draft.detach(first)
     clock += 30
     assert first not in draft.frame(observer).participants
+
+
+async def test_unsent_membership_changes_only_after_validated_content_transitions() -> None:
+    from a13n_harness_ui.shared_drafts import DraftPresence
+
+    draft = SharedDraft()
+    participant = draft.attach()
+    author = composer_document()
+    text = author.get("text", type=Text)
+    registry = author.get("attachments", type=Map[str])
+    text.insert(0, " \n")
+    assert not await draft.command(participant, sync(draft, author), valid)
+    assert draft.unsent_since is None
+    key = "inline-00000000-0000-0000-0000-000000000000"
+    registry[key] = "pending"
+    # A dormant undo identity does not select input.
+    assert not await draft.command(participant, sync(draft, author), valid)
+    text.insert(0, f"\ufffc{key}\ufffc")
+    assert await draft.command(participant, sync(draft, author), valid)
+    since = draft.unsent_since
+    assert since is not None
+    registry[key] = "failed"
+    text.insert(0, "Keep editing")
+    assert not await draft.command(participant, sync(draft, author), valid)
+    assert draft.unsent_since == since
+    assert not await draft.command(
+        participant, DraftCommand(kind="presence", draft_id=draft.draft_id, presence=DraftPresence(name="Peer")), valid
+    )
+    assert draft.unsent_since == since
+    del text[:]
+
+    async def reject(_attachments: tuple[str, ...]) -> None:
+        raise ValueError("Rejected edit")
+
+    with pytest.raises(ValueError, match="Rejected edit"):
+        await draft.command(participant, sync(draft, author), reject)
+    assert draft.unsent_since == since
+    assert await draft.command(participant, sync(draft, author), valid)
+    assert draft.unsent_since is None
+    registry["legacy"] = "failed"
+    assert await draft.command(participant, sync(draft, author), valid)
+    assert draft.unsent_since is not None
+    draft.detach(participant)
+    assert draft.unsent_since is not None

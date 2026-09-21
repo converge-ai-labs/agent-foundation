@@ -46,6 +46,7 @@ import { useStopOperation } from "./stop-operation";
 import { skillReferences, type LoadSkills } from "./skill-references";
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
+import { useTrackUnsent } from "./unsent";
 import { commentReference, CommentReferenceContent } from "./comment-reference";
 import { previewInput, type LocalInput } from "./local-input";
 import type { OrderedInputPart } from "./inline-attachments";
@@ -96,6 +97,7 @@ export function useDraft(threadId: string) {
     drafts.set(threadId, draft);
   }
   useSyncExternalStore(draft.subscribe, draft.getSnapshot);
+  useTrackUnsent(threadId, draft);
   return draft;
 }
 

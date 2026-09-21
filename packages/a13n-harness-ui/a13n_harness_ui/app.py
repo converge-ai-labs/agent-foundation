@@ -197,7 +197,7 @@ from a13n_harness_ui.setup import (
     SetupStatus,
     preflight_environment,
 )
-from a13n_harness_ui.shared_drafts import DraftCommand, SharedDraft
+from a13n_harness_ui.shared_drafts import DraftCommand, DraftSummary, SharedDraft
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     LocalStore,
@@ -1427,6 +1427,15 @@ class HarnessUiApp:
         except HarnessUiError as exc:
             return exc.code
 
+    async def list_unsent_drafts(self) -> tuple[DraftSummary, ...]:
+        """Discover process-local shared input without joining editors or reading text."""
+        async with self._operation():
+            return tuple(
+                DraftSummary(thread_id=thread_id, draft_id=draft.draft_id, unsent_since=draft.unsent_since)
+                for thread_id, draft in self._shared_drafts.items()
+                if draft.unsent_since is not None and not draft.closed
+            )
+
     async def shared_draft(self, thread_id: str) -> SharedDraft:
         async with self._operation():
             thread = await self._threads.get(thread_id)
@@ -1446,7 +1455,8 @@ class HarnessUiApp:
                 if sum(item.size for item, _ in selected) > MAX_INPUT_BYTES:
                     raise ValueError("An input supports up to 20 MiB of attachments.")
 
-            await draft.command(participant, command, validate)
+            if await draft.command(participant, command, validate):
+                await self._summary_hub.publish(kind="draft", thread_id=thread_id)
 
     @property
     def host_terminal_available(self) -> bool:

@@ -58,6 +58,14 @@ The shared document contains prompt text and selected attachment references only
 
 Page presence, editor presence, and the draft are distinct values even when an implementation shares an authenticated connection. Page changes update presence, not the CRDT roots. A same-page group uses that page's existing capabilities: the shared composer for prompt coediting, [comments](05-output-comments.md) for saved AI output, and the existing native-operation rules for files or terminals. Presence does not make every text surface collaboratively editable.
 
+## Unsent Input Discovery
+
+The App exposes a content-free index of nonempty shared drafts independently of editor membership. Authenticated `GET /api/drafts` returns `thread_id`, `draft_id`, and `unsent_since` for each existing nonempty room. Reading this index never creates a room, joins an editor, changes Thread navigation recency, or starts execution. Thread metadata and archive state remain on the ordinary Thread lookup APIs.
+
+A draft is nonempty when it contains non-whitespace prompt text or selected attachments, including pending or failed uploads. Dormant inline attachment registry entries retained for undo do not count. `unsent_since` records the latest empty-to-nonempty transition and does not change on subsequent typing or presence updates. Validated transitions between empty and nonempty publish a `draft` summary invalidation carrying only the Thread identity. Rejected edits leave the index unchanged.
+
+The browser discovers rooms on initial load and summary reconciliation without opening every editor. Current editor content and unacknowledged local edits provide immediate reminders; a clean detached replica does not override newer room discovery. Reminders describe shared Thread input, not private participant ownership or accepted execution queues. They survive browser reload only while the server retains the synchronized room. Server restart discards the shared index together with its rooms; existing explicit draft replacement/recovery behavior remains unchanged.
+
 ## Goal Submission Mode
 
 The shared composer exposes a per-submission Goal toggle for new and existing root conversations. Its `normal`/`goal` selection is private browser draft state, not shared CRDT content or Thread configuration. New-conversation draft restoration preserves this selection and defaults older drafts to `normal`. Another participant's shared-text edits do not change it.
