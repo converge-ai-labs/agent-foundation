@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 
 from a13n_harness import ModelCapability
 from a13n_harness.token_pricing import TokenPricing
+from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -42,6 +43,21 @@ def normalize_key(value: str) -> str:
 
 
 ModelKey = Annotated[str, AfterValidator(normalize_key)]
+
+MEDIA_KINDS: tuple[NativeInputMediaKind, ...] = ("image", "video", "audio")
+
+
+class MediaUnderstandingSelection(BaseModel):
+    """Per-kind auxiliary Model choice shared by Workspace, Agent, and Run levels."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    image: ModelKey | None = None
+    video: ModelKey | None = None
+    audio: ModelKey | None = None
+
+    def selections(self) -> dict[NativeInputMediaKind, str]:
+        return {kind: key for kind in MEDIA_KINDS if (key := getattr(self, kind)) is not None}
 
 
 def new_model_provider_id() -> str:

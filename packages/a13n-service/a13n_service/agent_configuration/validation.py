@@ -31,6 +31,7 @@ async def dependency_digest(
     models = [prepared.model]
     if prepared.reviewer_model is not None:
         models.append(prepared.reviewer_model)
+    models.extend(prepared.media_models.values())
     model_observations = []
     for model in models:
         provider = await session.get(ModelProviderRecord, model.resource.provider_id)

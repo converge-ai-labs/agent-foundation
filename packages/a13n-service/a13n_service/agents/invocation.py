@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from a13n_service.memory.domain import MemoryConfiguration
+from a13n_service.models.domain import MediaUnderstandingSelection
 from a13n_service.models.settings import JsonObject
 
 from .domain import (
@@ -37,6 +38,9 @@ class MergedAgentRunConfig(StrictModel):
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     memory: MemoryConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
+    media_understanding: MediaUnderstandingSelection = Field(
+        default_factory=MediaUnderstandingSelection, exclude_if=lambda value: not value.selections()
+    )
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
     model_settings_override: JsonObject | None = Field(default=None, exclude=True)
@@ -252,6 +256,12 @@ def merge_agent_run_override(
         toolsets=toolsets,
         memory=override.memory if "memory" in fields else base.memory,
         reviewer=override.reviewer if "reviewer" in fields else base.reviewer,
+        media_understanding=MediaUnderstandingSelection.model_validate(
+            {
+                **base.media_understanding.selections(),
+                **(override.media_understanding.selections() if override.media_understanding is not None else {}),
+            }
+        ),
         protocol=protocol,
     )
 

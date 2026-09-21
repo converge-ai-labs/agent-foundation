@@ -73,6 +73,12 @@
   line-height: 16px;
   white-space: nowrap;
 }
+/* A workspace media understanding default is a role this model plays, not a declaration. */
+.chip[data-role] {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+  font-weight: 500;
+}
 .statusCell {
   display: flex;
   align-items: center;
@@ -99,6 +105,71 @@
   }
   .listTable th:nth-child(5) {
     width: 14%;
+  }
+}
+
+/* Media understanding defaults ------------------------------------------- */
+.mediaDefaults {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+/* Reads as the section description the grouped card cannot carry itself. */
+.mediaRule {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 20px;
+}
+/* The control cell holds the picker and, while a row saves, its status beside it. */
+.mediaControl {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+}
+.mediaPicker {
+  width: 260px;
+  max-width: 100%;
+  min-width: 0;
+}
+.mediaStatus {
+  flex: none;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 17px;
+}
+/* The hint or warning is the row's second explanation line, not a caption under the picker. */
+.mediaNote {
+  display: block;
+  margin-top: 3px;
+  text-wrap: pretty;
+}
+.mediaNote[data-tone="warning"] {
+  color: var(--warning-foreground);
+}
+.mediaLink {
+  color: inherit;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.mediaLink:hover {
+  text-decoration: underline;
+}
+/* An inherited row is identified by its kind, not by a model. */
+.mediaGlyph {
+  color: var(--a13n-muted);
+}
+@container (max-width: 420px) {
+  .mediaControl {
+    justify-content: flex-start;
+  }
+  .mediaPicker {
+    width: 100%;
   }
 }
 

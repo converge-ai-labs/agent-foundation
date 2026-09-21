@@ -52,6 +52,7 @@ def agent_config(
     skills: list[object] | None = None,
     connection_tools: tuple[dict[str, object], ...] | None = None,
     subagents: dict[str, object] | None = None,
+    media_understanding: dict[str, str] | None = None,
 ) -> AgentConfig:
     toolsets = default_toolsets()
     for key in ("files", "shell"):
@@ -71,6 +72,7 @@ def agent_config(
                 "settings": {"temperature": 0.2},
                 "characteristics": {"context_window_tokens": 128000},
             },
+            "media_understanding": media_understanding or {},
             "instructions": instructions,
             "input_adapter": {"adapter_key": "native", "config": {}},
             "plugins": plugins or [],
@@ -92,6 +94,42 @@ def agent_config(
             },
         }
     )
+
+
+async def add_model(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    key: str,
+    model_id: str,
+    capabilities: tuple[str, ...],
+) -> None:
+    """Add one extra enabled Workspace Model beside the primary one."""
+
+    async with transaction(sessions) as session:
+        session.add(
+            ModelRecord(
+                id=model_id,
+                organization_id=ORG_ID,
+                workspace_id=WORKSPACE_ID,
+                key=key,
+                normalized_key=key,
+                provider_id=PROVIDER_ID,
+                name=key,
+                description=None,
+                upstream_model="gpt-5.6-terra",
+                catalog_ref=None,
+                model_api="openai.responses",
+                settings={},
+                declarations={"capabilities": list(capabilities)},
+                enabled=True,
+                created_by_type="user",
+                created_by_id=USER_ID,
+                updated_by_type="user",
+                updated_by_id=USER_ID,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
 
 
 async def create_current_revision(

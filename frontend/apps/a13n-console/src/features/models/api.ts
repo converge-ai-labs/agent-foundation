@@ -1,6 +1,19 @@
 import type { Client } from "../../service-client";
 import { data, representation, type Schema } from "../../shared/api";
 export type ModelScope = { kind: "workspace" | "organization"; id: string };
+/** The Workspace media understanding defaults, read by their settings section and by the Models list. */
+export function mediaDefaultsQuery(client: Client, workspaceId: string) {
+  return {
+    queryKey: ["media-understanding-defaults", workspaceId],
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      client.http
+        .GET("/api/v1/workspaces/{workspace}/media-understanding-defaults", {
+          params: { path: { workspace: workspaceId } },
+          signal,
+        })
+        .then(representation),
+  };
+}
 /** Scope selects the owning endpoint once; inherited resources retain their Organization owner. */
 export function modelApi(client: Client, scope: ModelScope) {
   const org = scope.kind === "organization",

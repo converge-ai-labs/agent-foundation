@@ -31,7 +31,7 @@ from a13n_service.iam.domain import ActorRef
 from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.labels import Labels
 from a13n_service.memory.domain import MemoryConfiguration
-from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
+from a13n_service.models.domain import MediaUnderstandingSelection, ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
 from a13n_service.resource_keys import ResourceKey
 from a13n_service.secrets.domain import SecretKey
@@ -234,6 +234,9 @@ class AgentConfig(StrictModel):
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     memory: MemoryConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
+    media_understanding: MediaUnderstandingSelection = Field(
+        default_factory=MediaUnderstandingSelection, exclude_if=lambda value: not value.selections()
+    )
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] = ""
@@ -290,6 +293,7 @@ class AgentRunOverride(StrictModel):
     toolsets: ToolsetOverrides | None = None
     memory: MemoryConfiguration | None = None
     reviewer: AgentReviewer | None = None
+    media_understanding: MediaUnderstandingSelection | None = None
     model: ModelOverride | None = None
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)

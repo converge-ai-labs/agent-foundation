@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.memory import MemoryProviderDefinition
 from a13n_harness.providers.web.builtins import built_in_web_providers
 from a13n_harness.providers.web.definition import WebProviderDefinition
+from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -67,6 +68,7 @@ class PreparedRevisionResolution:
     subagents: tuple[PreparedSubagent, ...]
     connectivity: PreparedConnectivity
     reviewer_model: PreparedModelExecution | None = None
+    media_models: dict[NativeInputMediaKind, PreparedModelExecution] = field(default_factory=dict)
     creation: bool = False
     authorization_agent_id: str | None = None
 
@@ -121,6 +123,9 @@ class AgentResolver:
             if config.reviewer is not None
             else None
         )
+        media_models = await self._model_selector.prepare_media_selection(
+            organization_id=organization_id, workspace_id=workspace_id, selection=config.media_understanding
+        )
         async with short_session(self._sessions) as session:
             await _authorize_revision(
                 session,
@@ -169,6 +174,7 @@ class AgentResolver:
             subagents=subagents,
             connectivity=connectivity,
             reviewer_model=reviewer_model,
+            media_models=media_models,
             creation=creation,
             authorization_agent_id=authorization_agent_id,
         )
@@ -225,6 +231,8 @@ class AgentResolver:
         model = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
         if prepared.reviewer_model is not None:
             await self._model_selector.freeze_in_transaction(session, prepared=prepared.reviewer_model)
+        for media_model in prepared.media_models.values():
+            await self._model_selector.freeze_in_transaction(session, prepared=media_model)
         skills = await self._freeze_skills(session, prepared)
         subagents = await self._freeze_subagents(session, prepared)
         await freeze_revision_connectivity(self._connectivity_resolver, session, prepared.connectivity)

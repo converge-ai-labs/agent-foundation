@@ -8,6 +8,7 @@ import {
   KeyIcon,
   StackIcon,
   EnvelopeIcon,
+  EyeIcon,
   MonitorIcon,
   GearSixIcon,
   SlidersIcon,
@@ -88,6 +89,15 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       value: "providers",
       label: "Providers",
       icon: SlidersIcon,
+    },
+    {
+      value: "media-understanding",
+      layout: "form",
+      label: "Media understanding",
+      description:
+        "Models that read images, video and audio for agents whose model cannot.",
+      icon: EyeIcon,
+      permission: "models.read",
     },
     {
       value: "members",

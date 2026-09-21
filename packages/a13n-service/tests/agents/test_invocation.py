@@ -5,6 +5,7 @@ from a13n_harness import ModelCapability
 from a13n_harness.token_pricing import TokenPriceTier, TokenPricing, TokenRates
 from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
+    AgentConfig,
     AgentRunOverride,
     CreateAgentRequest,
     CreateAgentRevisionRequest,
@@ -21,7 +22,7 @@ from a13n_service.models.models import ModelRecord
 from a13n_service.storage import transaction
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import MODEL_ID, WORKSPACE_ID, actor, agent_config
+from .conftest import MODEL_ID, WORKSPACE_ID, actor, add_model, agent_config
 
 
 def test_absent_override_inherits_complete_agent_config() -> None:
@@ -496,7 +497,7 @@ async def test_run_reasoning_choice_replaces_agent_reasoning_choice(
 
 @pytest.mark.parametrize("field", ["account_tools", "native_tool_contexts"])
 def test_native_authority_cannot_be_supplied_through_agent_config_or_override(field):
-    from a13n_service.agents.domain import AgentConfig, AgentRevision, EffectiveAgentConfig
+    from a13n_service.agents.domain import AgentRevision, EffectiveAgentConfig
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
@@ -614,6 +615,51 @@ def test_toolset_and_reviewer_overrides_inherit_replace_and_clear() -> None:
     assert not replaced.toolsets["shell"].enabled
     assert replaced.toolsets["shell"].tools["exec"].permission == "deny"
     assert replaced.toolsets["shell"].tools["wait"].permission == "inherit"
+
+
+def test_media_understanding_override_patches_each_kind() -> None:
+    base = agent_config(media_understanding={"image": "agent-vision", "audio": "agent-vision"})
+
+    inherited = merge_agent_run_override(base, AgentRunOverride.model_validate({"instructions": "Other."}))
+    assert inherited.media_understanding == base.media_understanding
+    patched = merge_agent_run_override(
+        base, AgentRunOverride.model_validate({"media_understanding": {"image": "run-vision", "video": None}})
+    )
+    assert patched.media_understanding.image == "run-vision"
+    assert patched.media_understanding.audio == "agent-vision"
+    assert patched.media_understanding.video is None
+    nulled = merge_agent_run_override(base, AgentRunOverride.model_validate({"media_understanding": None}))
+    assert nulled.media_understanding == base.media_understanding
+    assert AgentConfig.model_validate_json(base.model_dump_json()).media_understanding == base.media_understanding
+    assert "media_understanding" not in merge_agent_run_override(agent_config(), None).model_dump(mode="json")
+
+
+@pytest.mark.anyio
+async def test_revision_creation_validates_selected_media_models(
+    agent_management: AgentManagement,
+    agent_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await add_model(
+        agent_sessions, key="vision", model_id="mdl_vision1234567890", capabilities=("image_understanding",)
+    )
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-media-agent",
+        request=CreateAgentRequest(name="Media Agent", config=agent_config(media_understanding={"image": "vision"})),
+    )
+    assert created.revision.config.media_understanding.image == "vision"
+    for index, selection in enumerate(({"audio": "vision"}, {"image": "missing"})):
+        with pytest.raises(AgentError) as failure:
+            await agent_management.commands.create(
+                actor=actor(),
+                workspace_id=WORKSPACE_ID,
+                idempotency_key=f"rejected-media-{index}",
+                request=CreateAgentRequest(
+                    name=f"Rejected {index}", config=agent_config(media_understanding=selection)
+                ),
+            )
+        assert failure.value.details == {"reason": "managed_resource_unavailable"}
 
 
 @pytest.mark.anyio

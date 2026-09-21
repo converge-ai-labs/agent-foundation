@@ -56,6 +56,7 @@ def model_error_reason(error: ModelError) -> str:
         "credential_not_eligible": "model_credential_unavailable",
         "model_configuration_changed": "model_configuration_changed",
         "invalid_model_configuration": "model_incompatible",
+        "model_media_capability_required": "model_incompatible",
     }.get(error.code, "model_unavailable")
 
 

@@ -294,3 +294,32 @@ it("checks and remaps memory providers without replacing behavior options", asyn
     provider_id: "memprov_ready",
   });
 });
+
+it("lists every selected media model key and remaps one kind at a time", () => {
+  const config = {
+    ...initialConfig("Media"),
+    model: { model_key: "primary" },
+    media_understanding: { image: "vision", video: null, audio: "speech" },
+  };
+  const refs = agentDependencies(config);
+  expect(
+    refs.filter((ref) => ref.path.startsWith("media_understanding.")),
+  ).toEqual([
+    expect.objectContaining({
+      path: "media_understanding.image",
+      kind: "model",
+      value: "vision",
+    }),
+    expect.objectContaining({
+      path: "media_understanding.audio",
+      kind: "model",
+      value: "speech",
+    }),
+  ]);
+  const image = refs.find((ref) => ref.path === "media_understanding.image")!;
+  expect(image.replace("eyes").media_understanding).toEqual({
+    image: "eyes",
+    video: null,
+    audio: "speech",
+  });
+});

@@ -17,6 +17,7 @@ from a13n_service.request_runtime import get_control_runtime
 from .domain import (
     CreateModelProviderRequest,
     CreateModelRequest,
+    MediaUnderstandingSelection,
     Model,
     ModelCatalogCollection,
     ModelCollection,
@@ -27,7 +28,7 @@ from .domain import (
     UpdateModelProviderRequest,
     UpdateModelRequest,
 )
-from .media_defaults import MediaUnderstandingDefaults, MediaUnderstandingSelection
+from .media_defaults import MediaUnderstandingDefaults
 from .provider_service import ModelProviderService
 from .providers import ModelProviderMetadata
 from .service import ModelService

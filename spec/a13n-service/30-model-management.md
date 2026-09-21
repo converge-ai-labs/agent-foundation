@@ -178,18 +178,37 @@ For OpenRouter, the initial API is `openrouter.chat_completions` and an omitted 
 
 ## Workspace media understanding defaults
 
-Each Workspace owns independent image, video, and audio Model defaults for file `view` understanding. The defaults may select Workspace Models or visible Organization Models by their immutable `key`. There are no Organization defaults, inheritance, or Agent/Run overrides. Reading requires `models.read`; replacement requires `models.manage` and a matching strong ETag. A missing stored configuration reads as version zero with all selections null. Every accepted replacement increments its version, validates scope, Model and Provider availability, and the matching declared media capability, and records a security audit event without making provider requests.
+Each Workspace owns independent image, video, and audio Model defaults for file `view` understanding. The defaults select Workspace Models or visible Organization Models by their immutable `key`. There are no Organization defaults or cross-Workspace inheritance. Reading requires `models.read`; replacement requires `models.manage` and a matching strong ETag. A missing stored configuration reads as version zero with all selections null. Every accepted replacement increments its version, validates scope, Model and Provider availability, and the matching declared media capability, and records a security audit event without making provider requests.
 
 ```http
 GET /api/v1/workspaces/{workspace}/media-understanding-defaults
 PUT /api/v1/workspaces/{workspace}/media-understanding-defaults
 ```
 
-The replacement body contains nullable `image`, `video`, and `audio` Model keys; omitted fields clear that selection. Reads additionally return `workspace_id` and `version`. Console exposes three concise selectors on the Workspace Models page, restricted to compatible Models. Null clears the Workspace selection; it does not disable environment fallback.
+The replacement body contains nullable `image`, `video`, and `audio` Model keys; omitted fields clear that selection. Reads additionally return `workspace_id` and `version`. Console exposes three concise selectors restricted to compatible Models on the Workspace Settings page.
 
-Harness retains native-first dispatch. A native-capable active Model receives the media directly without initializing auxiliary credentials. Otherwise, the captured default for that kind performs auxiliary inference with its own saved settings, not the primary Agent's settings. An unset kind retains the existing Harness environment fallback. This fallback is deployment-operator configuration shared by that Worker's tenants, not a Workspace-managed Model, and does not enter the Service Model/Provider management chain. A configured Model failure never falls back to the environment.
+### Agent and Run selections
 
-Configuration selection captures auxiliary Model execution snapshots and saved settings in the effective execution configuration, including nested children. New selections observe the Workspace defaults; retries, replacement attempts, and continuations that retain effective configuration reuse their captures. Existing captures without this field retain environment behavior. Auxiliary requests use the executing root or child Harness Thread's affinity identity and the same live Provider, credential rotation, endpoint policy, disablement, and request retry rules as primary inference. Model/provider disablement remains a live kill switch rather than clearing defaults. This setting affects file `view` only, not composer attachment conversion or primary Model selection.
+An [Agent Revision](28-agent-management.md#agentconfig) and one [Run override](28-agent-management.md#agentrunoverride-and-effective-configuration) select the same three kinds through the same `MediaUnderstandingSelection` shape. Each kind resolves independently in precedence order Run override, then Agent Revision, then Workspace default. A null or absent kind inherits the next level, an empty selection changes nothing, and a null Run selection object inherits the Agent Revision entirely. There is no explicit-disable value at any level. Console exposes the same capability-filtered selectors in the Agent editor and in Run options.
+
+```json
+{
+  "config_override": {
+    "media_understanding": {
+      "image": "vision-model",
+      "audio": "transcription-model"
+    }
+  }
+}
+```
+
+The shared override contract applies to every Native input path that accepts `config_override`. No separate endpoint or credential-bearing per-Run configuration is introduced.
+
+Agent Revision creation validates each explicitly selected Model exactly as it validates the reviewer Model, and freezes those Model executions in the Revision transaction. It does not read Workspace defaults. Run acceptance reads the Workspace defaults once and prepares each distinct Model key once for the complete graph, so every node selecting the same key shares one capture. Each node resolves its own Agent configuration against those defaults; a root Agent selection or root Run override never reaches a child. An explicit Agent or Run selection that no longer prepares rejects acceptance. A Workspace default that no longer prepares does not: that kind is skipped with a logged warning, so one broken default cannot block every Run in the Workspace.
+
+Harness retains native-first dispatch. A native-capable active Model receives the media directly without initializing auxiliary credentials. Otherwise, the captured Model for that kind performs auxiliary inference with its own saved settings, not the primary Agent's settings. A kind left unselected at every level is unavailable; the `view` tool reports `media_understanding_unavailable` rather than using Worker environment settings, and a selected Model failure is reported rather than substituted.
+
+Acceptance captures the resolved execution snapshots and saved settings in the effective execution configuration, including nested children. Retries, replacement attempts, and continuations that retain effective configuration reuse their captures. Auxiliary requests use the executing root or child Harness Thread's affinity identity and the same live Provider, credential rotation, endpoint policy, disablement, and request retry rules as primary inference. Model/provider disablement remains a live kill switch rather than clearing selections. This setting affects file `view` only, not composer attachment conversion or primary Model selection.
 
 ## Catalog and manual Model creation
 

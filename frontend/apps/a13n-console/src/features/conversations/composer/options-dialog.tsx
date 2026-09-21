@@ -6,6 +6,8 @@ import {
   Input,
   Label,
   ModalFrame,
+  SearchPicker,
+  SettingsSection,
   Switch,
 } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
@@ -17,11 +19,40 @@ import { allPages, data, type Schema } from "../../../shared/api";
 import { ErrorNotice } from "../../../shared/feedback";
 import { jsonObject, runOverride, TextAreaField } from "../../../shared/forms";
 import { DeviceDirectory } from "../../environments/device-directory";
+import {
+  InheritIcon,
+  MediaUnderstandingFields,
+  mediaKinds,
+  mediaSelected,
+  modelOption,
+  modelPopupWidth,
+  useMediaSummary,
+  useMediaUnderstandingChoices,
+  useWorkspaceMediaDefault,
+  type MediaKind,
+  type ModelIdentity,
+} from "../../models/media-understanding-fields";
 import styles from "./composer.module.css";
 
-export type OptionField = "agent" | "model" | "environment" | "instructions";
+export type OptionField =
+  "agent" | "model" | "environment" | "instructions" | MediaKind;
+
+/** Media rows own their identifiers in the shared selector. */
+export function optionFieldId(field: OptionField) {
+  return mediaKinds.some((entry) => entry.kind === field)
+    ? `media-understanding-${field}`
+    : `run-option-${field}`;
+}
 
 type Options = Omit<Schema["ThreadRunSubmissionIntent-Input"], "input">;
+
+/** Overrides with their own controls; advanced JSON must not restate them. */
+const dedicatedOverrides = [
+  "model",
+  "instructions",
+  "plugins",
+  "media_understanding",
+];
 
 /** The next run's overrides, held beside the message they will be sent with. */
 export function useRunOptions(initial: Options = {}) {
@@ -31,6 +62,9 @@ export function useRunOptions(initial: Options = {}) {
     [model, setModel] = useState(
       initial.config_override?.model?.model_key ?? "",
     );
+  const [mediaUnderstanding, setMediaUnderstanding] = useState(
+    initial.config_override?.media_understanding ?? {},
+  );
   const [settings, setSettings] = useState(
       initial.config_override?.model?.settings
         ? JSON.stringify(initial.config_override.model.settings, null, 2)
@@ -63,12 +97,13 @@ export function useRunOptions(initial: Options = {}) {
     model?: string;
     environment?: string;
     agent?: string;
+    media?: Partial<Record<MediaKind, string>>;
   }>({});
   const [advanced, setAdvanced] = useState(
     JSON.stringify(
       Object.fromEntries(
         Object.entries(initial.config_override ?? {}).filter(
-          ([key]) => !["model", "instructions", "plugins"].includes(key),
+          ([key]) => !dedicatedOverrides.includes(key),
         ),
       ),
       null,
@@ -76,6 +111,8 @@ export function useRunOptions(initial: Options = {}) {
     ),
   );
   return {
+    mediaUnderstanding,
+    setMediaUnderstanding,
     overrideInstructions,
     setOverrideInstructions,
     agent,
@@ -101,7 +138,7 @@ export function useRunOptions(initial: Options = {}) {
     setLabels,
     build: (): Options => {
       const extra = jsonObject(advanced);
-      for (const key of ["model", "instructions", "plugins"])
+      for (const key of dedicatedOverrides)
         if (key in extra)
           throw new Error(
             `The ${key} field cannot be edited in advanced run configuration.`,
@@ -126,6 +163,9 @@ export function useRunOptions(initial: Options = {}) {
                 ...(settings.trim() ? { settings: jsonObject(settings) } : {}),
               },
             }
+          : {}),
+        ...(mediaSelected(mediaUnderstanding).length
+          ? { media_understanding: mediaUnderstanding }
           : {}),
         ...(overrideInstructions ? { instructions } : {}),
       });
@@ -220,7 +260,7 @@ export function RunOptionsDialog({
   useEffect(() => {
     if (!open || !focus) return;
     const timer = setTimeout(
-      () => document.getElementById(`run-option-${focus}`)?.focus(),
+      () => document.getElementById(optionFieldId(focus))?.focus(),
       0,
     );
     return () => clearTimeout(timer);
@@ -278,26 +318,10 @@ export function RunOptionsDialog({
             ]}
           />
         )}
-        <ChoiceField
-          id="run-option-model"
-          placeholder={t("Inherit")}
-          value={options.model || "inherit"}
-          onValueChange={(value) => {
-            options.setModel(value === "inherit" ? "" : value);
-            options.setLabels((previous) => ({
-              ...previous,
-              model: choices.data?.models.find((item) => item.key === value)
-                ?.name,
-            }));
-          }}
-          label={t("Model")}
-          options={[
-            { value: "inherit", label: t("Inherit") },
-            ...(choices.data?.models ?? []).map((model) => ({
-              value: model.key,
-              label: model.name,
-            })),
-          ]}
+        <ModelOptions
+          options={options}
+          models={choices.data?.models}
+          focus={focus}
         />
         <ChoiceField
           id="run-option-environment"
@@ -376,5 +400,102 @@ export function RunOptionsDialog({
         </DisclosureSection>
       </div>
     </ModalFrame>
+  );
+}
+
+/**
+ * The model this run reasons with and the models that read media for it, in
+ * one block. Mounted with the dialog, so the model lookups run only once it
+ * opens and the chosen names travel to the chips.
+ */
+function ModelOptions({
+  options,
+  models,
+  focus,
+}: {
+  options: RunOptionsState;
+  models?: ModelIdentity[];
+  focus?: OptionField;
+}) {
+  const { t } = useTranslation();
+  const identity = useMediaUnderstandingChoices();
+  const workspaceDefault = useWorkspaceMediaDefault();
+  const summary = useMediaSummary();
+  // A chip that names a kind opens the disclosure it lives in, so the focused picker is in view.
+  const focusedKind = mediaKinds.some((entry) => entry.kind === focus);
+  const [mediaExpanded, setMediaExpanded] = useState(focusedKind);
+  useEffect(() => {
+    if (focusedKind) setMediaExpanded(true);
+  }, [focusedKind]);
+  return (
+    <>
+      <FormField label={t("Model")}>
+        <SearchPicker
+          id="run-option-model"
+          label={t("Model")}
+          placeholder={t("Inherit")}
+          emptyMessage={t(
+            "No models available. Configure a provider and model first.",
+          )}
+          popupClassName={modelPopupWidth}
+          value={options.model || "inherit"}
+          groups={[
+            {
+              label: t("Model"),
+              options: [
+                {
+                  value: "inherit",
+                  label: t("Inherit"),
+                  icon: <InheritIcon />,
+                },
+                ...(models ?? []).map((model) =>
+                  modelOption(model, identity.providerName(model.provider_id)),
+                ),
+              ],
+            },
+          ]}
+          onValueChange={(value) => {
+            options.setModel(value === "inherit" ? "" : value);
+            options.setLabels((previous) => ({
+              ...previous,
+              model: models?.find((item) => item.key === value)?.name,
+            }));
+          }}
+        />
+      </FormField>
+      <DisclosureSection
+        title={t("Media understanding")}
+        summary={summary(options.mediaUnderstanding, t("Inherit"))}
+        open={mediaExpanded}
+        onOpenChange={setMediaExpanded}
+      >
+        <SettingsSection variant="plain">
+          <MediaUnderstandingFields
+            value={options.mediaUnderstanding}
+            explainEmpty={false}
+            inherit={{
+              label: t("Inherit"),
+              describe: (kind) => {
+                const model = workspaceDefault(kind);
+                return model
+                  ? t("Agent or workspace default · {{model}}", { model })
+                  : t("Agent or workspace default");
+              },
+            }}
+            onChange={(value, kind) => {
+              options.setMediaUnderstanding(value);
+              const key = value[kind];
+              options.setLabels((previous) => ({
+                ...previous,
+                media: {
+                  ...previous.media,
+                  [kind]: key ? identity.find(key)?.name : undefined,
+                },
+              }));
+            }}
+          />
+        </SettingsSection>
+      </DisclosureSection>
+    </>
   );
 }

@@ -37,8 +37,11 @@ The following routes are relative to `/workspace/:workspaceKey`:
 | Connections          | `connections`                                             | Connected accounts and remote MCP servers; unified search and authorization |
 | Traces               | `traces`, `traces/:traceId`                               | Authorized backend diagnostics or an explicit unavailable state             |
 | Workspace settings   | `settings`                                                | Membership, invitations, keys, service accounts, permissions, and settings  |
+| Media understanding  | `settings/media-understanding`                            | Image, video, and audio models for agents whose model cannot read them      |
 
 Provider management lives in Workspace or Organization settings under `section=providers`, with `category=connectors` for Composio. The Connections dialog combines Provider applications, the deployment-resolved Remote MCP catalog from Service, and a custom URL; saved accounts and servers retain their separate backend resources. Operators can extend or override the catalog through Service configuration without rebuilding Console.
+
+Workspace settings → **Media understanding** holds the image, video, and audio defaults for agents whose own model cannot read that media. Each row saves on its own as soon as you change it, so there is no Save action; a kind with no eligible model says so and links back to Models. The Models page no longer configures them, but it marks the models a default currently selects. Agent and run options override a kind for one agent or one run.
 
 Organization settings live at `/organization/settings`; personal settings live at `/settings/profile`. Profile images, active sessions, password/email changes, and security activity belong to their identity settings, not Agent configuration.
 

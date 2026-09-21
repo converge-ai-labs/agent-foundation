@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -17,27 +17,9 @@ from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import short_session, transaction
 
-from .domain import Model, ModelKey
+from .domain import MediaUnderstandingSelection, Model
 from .models import MediaUnderstandingDefaultsRecord, ModelProviderRecord, ModelRecord
 from .service_common import ModelError, audit_record, authorize_models
-
-MEDIA_KINDS: tuple[NativeInputMediaKind, ...] = ("image", "video", "audio")
-
-
-class MediaUnderstandingSelection(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    image: ModelKey | None = None
-    video: ModelKey | None = None
-    audio: ModelKey | None = None
-
-    def selections(self) -> dict[NativeInputMediaKind, str]:
-        values: dict[NativeInputMediaKind, str | None] = {
-            "image": self.image,
-            "video": self.video,
-            "audio": self.audio,
-        }
-        return {kind: key for kind, key in values.items() if key is not None}
 
 
 class MediaUnderstandingDefaults(MediaUnderstandingSelection):

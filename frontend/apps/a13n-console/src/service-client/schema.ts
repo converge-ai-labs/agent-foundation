@@ -4782,6 +4782,7 @@ export interface components {
        * @default
        */
       instructions?: string;
+      media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
       memory?: components["schemas"]["MemoryConfiguration"] | null;
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
@@ -4838,6 +4839,7 @@ export interface components {
        * @default
        */
       instructions?: string;
+      media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
       memory?: components["schemas"]["MemoryConfiguration"] | null;
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
@@ -5025,6 +5027,8 @@ export interface components {
         components["schemas"]["ConnectionToolSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
+      media_understanding?:
+        components["schemas"]["MediaUnderstandingSelection"] | null;
       memory?: components["schemas"]["MemoryConfiguration"] | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
@@ -5052,6 +5056,8 @@ export interface components {
         components["schemas"]["ConnectionToolSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
+      media_understanding?:
+        components["schemas"]["MediaUnderstandingSelection"] | null;
       memory?: components["schemas"]["MemoryConfiguration"] | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
@@ -8556,7 +8562,10 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
-    /** MediaUnderstandingSelection */
+    /**
+     * MediaUnderstandingSelection
+     * @description Per-kind auxiliary Model choice shared by Workspace, Agent, and Run levels.
+     */
     MediaUnderstandingSelection: {
       /** Audio */
       audio?: string | null;

@@ -24,7 +24,11 @@ from .runtime import SnapshotRunModelResolver
 
 
 class FileMediaUnderstanding:
-    """A fresh binding per root or inline child; Harness still owns native dispatch."""
+    """A fresh binding per root or inline child; Harness still owns native dispatch.
+
+    Service Runs select auxiliary Models through configuration only; an unselected kind is
+    unavailable rather than falling back to Worker environment settings.
+    """
 
     def __init__(
         self, models: Mapping[NativeInputMediaKind, EffectiveAgentModel], resolver: SnapshotRunModelResolver
@@ -41,20 +45,17 @@ class FileMediaUnderstanding:
     async def understand(self, request: MediaUnderstandingRequest) -> MediaUnderstandingResult:
         selected = self._models.get(request.kind)
         if selected is None:
-            provider = AgentMediaUnderstandingProvider.from_environment(kind=request.kind)
-            if provider is None:
-                raise MediaUnderstandingError("media_understanding_unavailable")
-        else:
-            if self._thread_id is None:
-                raise MediaUnderstandingError("media_understanding_configuration_invalid")
-            try:
-                model = await self._resolver.resolve(selected.execution.model_id, thread_id=self._thread_id)
-                provider = AgentMediaUnderstandingProvider(
-                    models={request.kind: model},
-                    model_settings={request.kind: cast(ModelSettings, dict(selected.settings))},
-                )
-            except (ModelResolutionError, TypeError, ValueError) as error:
-                raise MediaUnderstandingError("media_understanding_configuration_invalid") from error
+            raise MediaUnderstandingError("media_understanding_unavailable")
+        if self._thread_id is None:
+            raise MediaUnderstandingError("media_understanding_configuration_invalid")
+        try:
+            model = await self._resolver.resolve(selected.execution.model_id, thread_id=self._thread_id)
+            provider = AgentMediaUnderstandingProvider(
+                models={request.kind: model},
+                model_settings={request.kind: cast(ModelSettings, dict(selected.settings))},
+            )
+        except (ModelResolutionError, TypeError, ValueError) as error:
+            raise MediaUnderstandingError("media_understanding_configuration_invalid") from error
         return await provider.understand(request)
 
 

@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from a13n_harness import AgentContext
 from a13n_harness.spec import ModelCapability
-from a13n_harness.toolsets.file_media import AgentMediaUnderstandingProvider
 from a13n_service.agents.domain import ChildEnvironmentPolicy
 from a13n_service.agents.reconstruction import AgentReconstructor
 from a13n_service.environments.local_directory import ManagedLocalDirectory
@@ -120,8 +119,6 @@ async def test_worker_view_media_uses_executing_thread_and_own_settings(
         return await original_resolve(self, model_id, thread_id=thread_id)
 
     monkeypatch.setattr(SnapshotRunModelResolver, "resolve", resolve)
-    ambient = Mock(side_effect=AssertionError("Configured or native image must not use environment fallback"))
-    monkeypatch.setattr(AgentMediaUnderstandingProvider, "from_environment", ambient)
     executing_threads = []
 
     async def identify(ctx: RunContext[AgentContext]) -> str:
@@ -240,6 +237,5 @@ async def test_worker_view_media_uses_executing_thread_and_own_settings(
     else:
         assert media_threads == [executing_threads[0]]
         assert returned == ["label from media model"]
-    ambient.assert_not_called()
     retained = await states.read(parent.organization_id, parent.id)
     assert retained.envelope.effective_agent_config.media_understanding == {"image": media}

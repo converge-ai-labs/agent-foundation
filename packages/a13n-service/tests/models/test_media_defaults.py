@@ -3,15 +3,16 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from a13n_service.agents.invocation_resolution.media import MediaUnderstandingResolution
 from a13n_service.etags import resource_etag
 from a13n_service.iam.models import RoleBindingRecord, SecurityAuditRecord
 from a13n_service.models.domain import (
     CreateModelProviderRequest,
     CreateModelRequest,
+    MediaUnderstandingSelection,
     ModelDeclarations,
     UpdateModelRequest,
 )
-from a13n_service.models.media_defaults import MediaUnderstandingSelection
 from a13n_service.models.models import MediaUnderstandingDefaultsRecord
 from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.runtime import AcceptedModelSelector
@@ -144,7 +145,11 @@ async def test_prepared_media_keeps_saved_settings_after_model_and_defaults_edit
         if_match=initial.etag(),
     )
     selector = AcceptedModelSelector(model_sessions, built_in_model_provider_catalog())
-    prepared = await selector.prepare_media_defaults(organization_id=ORG_ID, workspace_id=WORKSPACE_ID)
+
+    def resolution() -> MediaUnderstandingResolution:
+        return MediaUnderstandingResolution(model_sessions, selector, organization_id=ORG_ID, workspace_id=WORKSPACE_ID)
+
+    prepared = await resolution().resolve(MediaUnderstandingSelection())
     await model_service.update(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -157,7 +162,7 @@ async def test_prepared_media_keeps_saved_settings_after_model_and_defaults_edit
     )
     assert prepared["image"].resource.settings == {"temperature": 0.7}
     assert prepared["image"].resource.upstream_model == "vision-v1"
-    assert await selector.prepare_media_defaults(organization_id=ORG_ID, workspace_id=WORKSPACE_ID) == {}
+    assert await resolution().resolve(MediaUnderstandingSelection()) == {}
 
 
 async def test_defaults_allow_shared_models_but_not_sibling_models(model_service, provider_service, model_sessions):
