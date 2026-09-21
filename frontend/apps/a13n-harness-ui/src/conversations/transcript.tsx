@@ -406,7 +406,9 @@ export function ConversationTranscript({
   turns = [],
   loadDetails = false,
   onSavedEntries,
+  recovery,
 }: {
+  recovery?: FocusDisplay["recovery"];
   turns?: Schema<"TranscriptTurn">[];
   loadDetails?: boolean;
   onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
@@ -464,6 +466,7 @@ export function ConversationTranscript({
         loadDetails={loadDetails}
         onSavedEntries={onSavedEntries}
         continuation={continuation}
+        recovery={recovery}
       />
       {gap && <GapNotice />}
     </>
@@ -479,7 +482,9 @@ function TurnRows({
   loadDetails,
   onSavedEntries,
   continuation,
+  recovery,
 }: {
+  recovery?: FocusDisplay["recovery"];
   rows: Row[];
   entries: Schema<"TranscriptEntry">[];
   turns: Schema<"TranscriptTurn">[];
@@ -511,13 +516,15 @@ function TurnRows({
     if (groups.at(-1)?.id !== id) groups.push({ id, turn, rows: [] });
     groups.at(-1)!.rows.push(row);
   }
-  return groups.map((group) =>
-    group.id === "ungrouped" ? (
+  if (!groups.length && recovery) groups.push({ id: "ungrouped", rows: [] });
+  return groups.map((group, index) =>
+    group.id === "ungrouped" && !recovery ? (
       <Rows key={group.id} rows={group.rows} threadId={threadId} />
     ) : (
       <Turn
         key={group.id}
         {...group}
+        recovery={index === groups.length - 1 ? recovery : undefined}
         entries={entries}
         threadId={threadId}
         missing={
@@ -538,6 +545,7 @@ function TurnRows({
 }
 
 function Turn(props: {
+  recovery?: FocusDisplay["recovery"];
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
@@ -564,6 +572,7 @@ function TurnHistory({
   ...props
 }: {
   id: string;
+  recovery?: FocusDisplay["recovery"];
   turn: Schema<"TranscriptTurn">;
   entries: Schema<"TranscriptEntry">[];
   rows: Row[];
@@ -629,7 +638,9 @@ function TurnSegments({
   retry,
   loading = false,
   failed = false,
+  recovery,
 }: {
+  recovery?: FocusDisplay["recovery"];
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
@@ -711,6 +722,18 @@ function TurnSegments({
       mountedExecution.current.has(segment.id) ||
       segment.rows.some((row) => row.position === undefined),
   );
+  let recoverySegment = visibleSegments.findLast(
+    (segment) => segment.kind === "execution",
+  );
+  if (recovery && !recoverySegment) {
+    // Use the next execution boundary so arriving tools reuse an open reader.
+    recoverySegment = {
+      id: `${boundary}:execution:${textIndex}`,
+      kind: "execution",
+      rows: [],
+    };
+    visibleSegments.push(recoverySegment);
+  }
   useLayoutEffect(() => {
     mountedExecution.current = new Set(
       visibleSegments
@@ -757,6 +780,7 @@ function TurnSegments({
             rows={segment.rows}
             threadId={threadId}
             complete={complete}
+            recovery={segment === recoverySegment ? recovery : undefined}
           />
         );
       })}
@@ -768,7 +792,9 @@ function ExecutionSegment({
   rows,
   threadId,
   complete,
+  recovery,
 }: {
+  recovery?: FocusDisplay["recovery"];
   rows: Row[];
   threadId: string;
   complete: boolean;
@@ -801,6 +827,7 @@ function ExecutionSegment({
       {(open) => (
         <ExecutionReader open={open}>
           <Rows rows={rows} threadId={threadId} continuation />
+          <RecoveryNotice recovery={recovery} />
         </ExecutionReader>
       )}
     </ExecutionDetails>

@@ -345,3 +345,133 @@ it("does not read a turn already covered by the conversation window", async () =
   hook.unmount();
   queryClient.clear();
 });
+
+it("keeps the previous continuation until replacement turns are complete, including failure and retry", async () => {
+  const original = {
+    continuation_id: "C0",
+    entries: [2, 3, 4, 5].map(turnEntry),
+    turns: [turn],
+    next_cursor: null,
+  };
+  const replacement = {
+    continuation_id: "C1",
+    entries: [turnEntry(5)],
+    boundary_entries: [turnEntry(2)],
+    turns: [turn],
+    next_cursor: "older",
+    earlier_turns_cursor: null,
+  };
+  let finish!: (value: unknown) => void;
+  let fail!: (reason: Error) => void;
+  const GET = vi.fn((_path, options) => {
+    const query = options.params.query;
+    if (query.expected_continuation_id === "C0")
+      return Promise.resolve({ data: original });
+    if (!query.turn_id) return Promise.resolve({ data: replacement });
+    return new Promise((resolve, reject) => {
+      finish = resolve;
+      fail = reject;
+    });
+  });
+  const { queryClient, wrapper } = turnHistoryHarness(GET);
+  const hook = renderHook(
+    ({ continuation }) => useHistory("one", continuation, true),
+    { wrapper, initialProps: { continuation: "C0" } },
+  );
+  await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+  hook.rerender({ continuation: "C1" });
+  await waitFor(() => expect(GET).toHaveBeenCalledTimes(3));
+  expect(hook.result.current.data?.pages[0]).toEqual(original);
+  expect(hook.result.current.isPreviousHistory).toBe(true);
+  expect(hook.result.current.hasNextPage).toBe(false);
+  await act(async () => fail(new Error("Turn temporarily unavailable")));
+  await waitFor(() => expect(hook.result.current.isError).toBe(true));
+  expect(hook.result.current.data?.pages[0]).toEqual(original);
+  let retry!: Promise<unknown>;
+  act(() => {
+    retry = hook.result.current.refetch();
+  });
+  await waitFor(() => expect(GET).toHaveBeenCalledTimes(5));
+  await act(async () => {
+    finish({
+      data: {
+        entries: [2, 3, 4, 5].map(turnEntry),
+        next_cursor: null,
+      },
+    });
+    await retry;
+  });
+  await waitFor(() =>
+    expect(hook.result.current.data?.pages[0].continuation_id).toBe("C1"),
+  );
+  expect(hook.result.current.data?.pages[0].entries).toEqual(
+    [2, 3, 4, 5].map(turnEntry),
+  );
+  expect(hook.result.current.isPreviousHistory).toBe(false);
+  expect(hook.result.current.hasNextPage).toBe(false);
+  hook.unmount();
+  queryClient.clear();
+});
+
+it("publishes the initial history window without waiting for missing turn details", async () => {
+  const page = {
+    continuation_id: "C0",
+    entries: [turnEntry(5)],
+    boundary_entries: [turnEntry(2)],
+    turns: [turn],
+    next_cursor: "older",
+  };
+  const GET = vi.fn().mockResolvedValue({ data: page });
+  const { queryClient, wrapper } = turnHistoryHarness(GET);
+  const hook = renderHook(() => useHistory("one", "C0", true), { wrapper });
+  await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+  expect(hook.result.current.data?.pages[0]).toEqual(page);
+  expect(GET).toHaveBeenCalledTimes(1);
+  hook.unmount();
+  queryClient.clear();
+});
+
+it("cancels replacement turn pagination without publishing a late checkpoint", async () => {
+  let finish!: (value: unknown) => void;
+  let oldSignal!: AbortSignal;
+  const GET = vi.fn((_path, options) => {
+    const continuation = options.params.query.expected_continuation_id;
+    if (options.params.query.turn_id) {
+      oldSignal = options.signal;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    }
+    return Promise.resolve({
+      data: {
+        continuation_id: continuation,
+        entries: (continuation === "C1" ? [5] : [2, 3, 4, 5]).map(turnEntry),
+        turns: [turn],
+        next_cursor: null,
+      },
+    });
+  });
+  const { queryClient, wrapper } = turnHistoryHarness(GET);
+  const hook = renderHook(
+    ({ continuation }) => useHistory("one", continuation, true),
+    { wrapper, initialProps: { continuation: "C0" } },
+  );
+  await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+  hook.rerender({ continuation: "C1" });
+  await waitFor(() => expect(GET).toHaveBeenCalledTimes(3));
+  hook.rerender({ continuation: "C2" });
+  expect(oldSignal.aborted).toBe(true);
+  await waitFor(() =>
+    expect(hook.result.current.data?.pages[0].continuation_id).toBe("C2"),
+  );
+  await act(async () =>
+    finish({ data: { entries: [turnEntry(5)], next_cursor: "older" } }),
+  );
+  expect(GET).toHaveBeenCalledTimes(4);
+  expect(
+    queryClient.getQueryData(["thread", "one", "history", "C1"]),
+  ).toBeUndefined();
+  expect(hook.result.current.data?.pages[0].continuation_id).toBe("C2");
+  hook.unmount();
+  queryClient.clear();
+});

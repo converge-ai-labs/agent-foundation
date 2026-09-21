@@ -7,7 +7,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
-import { result, type Schema } from "../transport/client";
+import { result, type Schema, type Transport } from "../transport/client";
 
 const pendingRefreshes = new WeakSet<Query>();
 
@@ -215,8 +215,17 @@ export function useHistory(
     // returning to a cached page must not refetch every loaded history page.
     staleTime: Infinity,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam, signal }) =>
-      result(
+    queryFn: async ({ pageParam, signal }) => {
+      const replacing =
+        pageParam === undefined &&
+        queries.getQueryCache().findAll({
+          queryKey: ["thread", threadId, "history"],
+          predicate: (candidate) =>
+            candidate.queryKey[3] !== continuation &&
+            candidate.queryKey[4] === turnId &&
+            candidate.state.data !== undefined,
+        }).length > 0;
+      const page = await result(
         client.GET("/api/threads/{thread_id}/transcript", {
           params: {
             path: { thread_id: threadId },
@@ -229,7 +238,37 @@ export function useHistory(
           },
           signal,
         }),
-      ),
+      );
+      if (!replacing) return page;
+      // Keep the old source (and its live suffix) until the replacement is
+      // readable. Publishing only boundaries would unmount loaded messages and
+      // execution readers on every checkpoint, then flash a turn-loading gap.
+      const entries = new Map(
+        [...(page.boundary_entries ?? []), ...page.entries].map((entry) => [
+          entry.position,
+          entry,
+        ]),
+      );
+      for (const turn of page.turns ?? []) {
+        const loaded = [...entries.keys()].filter(
+          (position) =>
+            position >= turn.input_position && position < turn.end_position,
+        ).length;
+        if (loaded === turn.end_position - turn.input_position) continue;
+        for (const entry of await readTurnHistory(
+          client,
+          threadId,
+          continuation,
+          turn,
+          signal,
+        ))
+          entries.set(entry.position, entry);
+      }
+      return {
+        ...page,
+        entries: [...entries.values()].sort((a, b) => a.position - b.position),
+      };
+    },
     getNextPageParam: (last) =>
       (last.earlier_turns_cursor === undefined
         ? last.next_cursor
@@ -285,47 +324,54 @@ export function useTurnHistory(
     enabled,
     staleTime: Infinity,
     retry: false,
-    queryFn: async ({ signal }) => {
-      const entries = new Map<number, Schema<"TranscriptEntry">>();
-      let cursor: string | undefined;
-      let earliest = turn.end_position;
-      do {
-        const page = await result(
-          client.GET("/api/threads/{thread_id}/transcript", {
-            params: {
-              path: { thread_id: threadId },
-              query: {
-                expected_continuation_id: continuation ?? undefined,
-                turn_id: turn.turn_id,
-                cursor,
-                limit: 100,
-              },
-            },
-            signal,
-          }),
-        );
-        for (const entry of [
-          ...(page.boundary_entries ?? []),
-          ...page.entries,
-        ]) {
-          if (
-            entry.position >= turn.input_position &&
-            entry.position < turn.end_position
-          )
-            entries.set(entry.position, entry);
-        }
-        const first = page.entries[0]?.position;
-        if (first === undefined || first >= earliest)
-          throw new Error("Turn history is incomplete.");
-        earliest = first;
-        cursor =
-          earliest > turn.input_position
-            ? (page.next_cursor ?? undefined)
-            : undefined;
-      } while (cursor);
-      if (entries.size !== turn.end_position - turn.input_position)
-        throw new Error("Turn history is incomplete.");
-      return [...entries.values()].sort((a, b) => a.position - b.position);
-    },
+    queryFn: ({ signal }) =>
+      readTurnHistory(client, threadId, continuation, turn, signal),
   });
+}
+
+async function readTurnHistory(
+  client: Transport["client"],
+  threadId: string,
+  continuation: string | null | undefined,
+  turn: Schema<"TranscriptTurn">,
+  signal: AbortSignal,
+) {
+  const entries = new Map<number, Schema<"TranscriptEntry">>();
+  let cursor: string | undefined;
+  let earliest = turn.end_position;
+  do {
+    signal.throwIfAborted();
+    const page = await result(
+      client.GET("/api/threads/{thread_id}/transcript", {
+        params: {
+          path: { thread_id: threadId },
+          query: {
+            expected_continuation_id: continuation ?? undefined,
+            turn_id: turn.turn_id,
+            cursor,
+            limit: 100,
+          },
+        },
+        signal,
+      }),
+    );
+    for (const entry of [...(page.boundary_entries ?? []), ...page.entries]) {
+      if (
+        entry.position >= turn.input_position &&
+        entry.position < turn.end_position
+      )
+        entries.set(entry.position, entry);
+    }
+    const first = page.entries[0]?.position;
+    if (first === undefined || first >= earliest)
+      throw new Error("Turn history is incomplete.");
+    earliest = first;
+    cursor =
+      earliest > turn.input_position
+        ? (page.next_cursor ?? undefined)
+        : undefined;
+  } while (cursor);
+  if (entries.size !== turn.end_position - turn.input_position)
+    throw new Error("Turn history is incomplete.");
+  return [...entries.values()].sort((a, b) => a.position - b.position);
 }

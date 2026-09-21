@@ -98,6 +98,7 @@ it("reconciles control truth without refetching immutable pages, including an in
   const client = new QueryClient();
   client.setQueryData(["thread", "one", "detail"], {});
   client.setQueryData(["thread", "one", "history", "C0"], {});
+  client.setQueryData(["thread", "one", "turn-history", "C0", "turn-one"], []);
   let resolve!: (value: object) => void;
   const pending = client.fetchQuery({
     queryKey: ["thread", "one", "inputs", "C0"],
@@ -118,6 +119,10 @@ it("reconciles control truth without refetching immutable pages, including an in
   ).toBe(false);
   expect(
     client.getQueryState(["thread", "one", "inputs", "C0"])?.isInvalidated,
+  ).toBe(false);
+  expect(
+    client.getQueryState(["thread", "one", "turn-history", "C0", "turn-one"])
+      ?.isInvalidated,
   ).toBe(false);
   client.clear();
 });

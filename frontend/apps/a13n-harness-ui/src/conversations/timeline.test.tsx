@@ -930,3 +930,109 @@ it.each(["desktop", "mobile"])(
     queries.clear();
   },
 );
+
+it.each([false, true])(
+  "folds restored model connections into the latest execution segment (existing steps: %s)",
+  (withSteps) => {
+    const input = saved(
+      previewInput("round", ["Prompt"]) as Schema<"TranscriptPart">[],
+      0,
+    );
+    const props = {
+      threadId: "one",
+      entries: [input],
+      turns: [
+        {
+          turn_id: "round",
+          input_position: 0,
+          end_position: 1,
+          preview: "Prompt",
+        },
+      ],
+      localInputs: [],
+      blocks: withSteps
+        ? [
+            { id: "plan", kind: "thinking" as const, text: "Plan" },
+            { id: "reply", kind: "assistant" as const, text: "Response" },
+          ]
+        : [{ id: "reply", kind: "assistant" as const, text: "Response" }],
+    };
+    const view = render(<ConversationTranscript {...props} />);
+    const existing = screen.queryByRole("button", {
+      name: /Execution details/,
+    });
+    view.rerender(
+      <ConversationTranscript
+        {...props}
+        recovery={{ id: "retry-1", state: "resumed", retries: 1 }}
+      />,
+    );
+    expect(
+      screen.getAllByRole("button", { name: /Execution details/ }),
+    ).toHaveLength(1);
+    if (existing)
+      expect(screen.getByRole("button", { name: /Execution details/ })).toBe(
+        existing,
+      );
+    expect(screen.queryByRole("status")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+    const notice = screen.getByRole("status");
+    expect(notice.textContent).toContain("Model connection restored · 1 retry");
+    expect(notice.closest("[data-execution-reader]")).toBe(
+      screen.getByRole("region", { name: "Execution details" }),
+    );
+  },
+);
+
+it.each(["desktop", "mobile"])(
+  "keeps a %s recovery-only inspector open when execution steps arrive",
+  async (layout) => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: layout === "mobile" && query === "(max-width: 700px)",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    const props = {
+      threadId: "one",
+      entries: [
+        saved(
+          previewInput("round", ["Prompt"]) as Schema<"TranscriptPart">[],
+          0,
+        ),
+      ],
+      turns: [
+        {
+          turn_id: "round",
+          input_position: 0,
+          end_position: 1,
+          preview: "Prompt",
+        },
+      ],
+      localInputs: [],
+      recovery: { id: "retry-1", state: "resumed" as const, retries: 1 },
+      blocks: [{ id: "reply", kind: "assistant" as const, text: "Checking" }],
+    };
+    const view = render(<ConversationTranscript {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+    const reader = await screen.findByRole("region", {
+      name: "Execution details",
+    });
+    const dialog = screen.queryByRole("dialog");
+    view.rerender(
+      <ConversationTranscript
+        {...props}
+        blocks={[
+          ...props.blocks,
+          { id: "tool", kind: "tool", name: "view", text: "{}", done: true },
+        ]}
+      />,
+    );
+    expect(screen.getByRole("region", { name: "Execution details" })).toBe(
+      reader,
+    );
+    if (layout === "mobile") expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(screen.getByRole("status").textContent).toContain(
+      "Model connection restored · 1 retry",
+    );
+  },
+);

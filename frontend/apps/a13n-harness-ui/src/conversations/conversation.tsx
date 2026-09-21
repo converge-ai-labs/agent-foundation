@@ -663,6 +663,11 @@ function Conversation({
                   continuation={continuation}
                   gap={showLive && display.gap}
                   threadId={threadId}
+                  recovery={
+                    !hasLater && display.recovery?.state === "resumed"
+                      ? display.recovery
+                      : undefined
+                  }
                 />
               </PauseConversationFollowing>
               {hasLater && (
@@ -709,7 +714,9 @@ function Conversation({
                     draft.submission.receipt !== receipt)
                 }
               />
-              <RecoveryNotice recovery={display.recovery} />
+              {display.recovery?.state !== "resumed" && (
+                <RecoveryNotice recovery={display.recovery} />
+              )}
               {!!detail.data?.deferred_requests?.length && (
                 <Decisions
                   threadId={threadId}

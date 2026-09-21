@@ -17,7 +17,9 @@ export function scheduleRefresh(
     if (
       kind === "thread" &&
       (typeof continuation === "string" || continuation === null) &&
-      ["history", "inputs", "tasks", "notes"].includes(String(section)) &&
+      ["history", "turn-history", "inputs", "tasks", "notes"].includes(
+        String(section),
+      ) &&
       (query.state.data !== undefined || query.state.fetchStatus === "fetching")
     )
       continue;

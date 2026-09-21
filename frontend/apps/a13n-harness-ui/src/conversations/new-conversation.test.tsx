@@ -1845,3 +1845,93 @@ it.each(["desktop", "mobile"])(
     expect(requests).toHaveLength(6);
   },
 );
+
+it("keeps readable messages and an open execution reader through a multi-page checkpoint replacement", async () => {
+  const input = {
+    position: 0,
+    message_kind: "request",
+    parts: previewInput("round", ["Long task"]),
+  };
+  const progress = {
+    position: 1,
+    message_kind: "response",
+    parts: [{ kind: "assistant", text: "Earlier progress" }],
+  };
+  const plan = {
+    position: 2,
+    message_kind: "response",
+    parts: [{ kind: "thinking", text: "Inspect this plan" }],
+  };
+  const output = {
+    position: 3,
+    message_kind: "response",
+    parts: [{ kind: "assistant", text: "Current progress" }],
+  };
+  const turn = {
+    turn_id: "round",
+    input_position: 0,
+    end_position: 4,
+    output_position: 3,
+    preview: "Long task",
+  };
+  let finish!: () => void;
+  const pausedTurn = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let turnPages = 0;
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    const url = new URL((request as Request).url);
+    if (!url.pathname.endsWith("/transcript")) return original(request);
+    const replacement =
+      url.searchParams.get("expected_continuation_id") === "C1";
+    const fullTurn = url.searchParams.has("turn_id");
+    if (fullTurn) {
+      turnPages++;
+      if (url.searchParams.has("cursor")) {
+        await pausedTurn;
+        return json({ entries: [input, progress, plan], next_cursor: null });
+      }
+    }
+    return json({
+      continuation_id: replacement ? "C1" : null,
+      entries: replacement ? [output] : [input, progress, plan, output],
+      boundary_entries: [input],
+      turns: [turn],
+      next_cursor: replacement ? "older" : null,
+      earlier_turns_cursor: null,
+      later_turns_cursor: null,
+    });
+  });
+  mount(`/threads/${id}`);
+  const message = await screen.findByText("Earlier progress");
+  fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+  const reader = screen.getByRole("region", { name: "Execution details" });
+  await act(async () => {
+    queries.setQueryData(["thread", id, "detail"], {
+      ...threadDetail,
+      continuation_id: "C1",
+    });
+  });
+  await waitFor(() => expect(turnPages).toBe(2));
+  expect(screen.queryByText("Loading turn…")).toBeNull();
+  expect(screen.getByText("Earlier progress")).toBe(message);
+  expect(screen.getByRole("region", { name: "Execution details" })).toBe(
+    reader,
+  );
+  await act(async () => finish());
+  await waitFor(() =>
+    expect(queries.getQueryData(["thread", id, "history", "C1"])).toBeTruthy(),
+  );
+  expect(screen.queryByText("Loading turn…")).toBeNull();
+  expect(screen.getByText("Earlier progress")).toBe(message);
+  expect(screen.getByRole("region", { name: "Execution details" })).toBe(
+    reader,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: /Execution details/ })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(turnPages).toBe(2);
+});
