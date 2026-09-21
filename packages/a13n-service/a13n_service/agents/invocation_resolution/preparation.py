@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.memory import MemoryProviderDefinition
 from a13n_harness.providers.web.definition import WebProviderDefinition
-from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agent_configuration.context import ConfigurationRunContext
@@ -21,7 +20,8 @@ from a13n_service.iam import (
     authorize_agent,
     authorize_workspace,
 )
-from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExecution
+from a13n_service.models.media_defaults import MediaUnderstandingSelection, read_media_defaults
+from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
 from a13n_service.storage import short_session
 
@@ -94,7 +94,7 @@ class AgentInvocationPreparer:
         root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
         _active_agents: tuple[str, ...] = (),
         _budget: _GraphBudget | None = None,
-        _media_models: dict[NativeInputMediaKind, PreparedModelExecution] | None = None,
+        _media_defaults: MediaUnderstandingSelection | None = None,
     ) -> PreparedAgentInvocation:
         budget = _budget or _GraphBudget()
         budget.remaining -= 1
@@ -181,12 +181,15 @@ class AgentInvocationPreparer:
                     config=merged,
                 )
             try:
-                media_models = (
-                    _media_models
-                    if _media_models is not None
-                    else await self._model_selector.prepare_media_defaults(
-                        organization_id=authorized.organization_id, workspace_id=workspace_id
-                    )
+                if _media_defaults is None:
+                    async with short_session(self._sessions) as session:
+                        _media_defaults = await read_media_defaults(session, workspace_id)
+                media_models = await self._model_selector.prepare_media_selection(
+                    organization_id=authorized.organization_id,
+                    workspace_id=workspace_id,
+                    selection=MediaUnderstandingSelection.model_validate(
+                        {**_media_defaults.selections(), **merged.media_understanding.selections()}
+                    ),
                 )
                 model = await self._model_selector.prepare(
                     organization_id=authorized.organization_id,
@@ -233,7 +236,7 @@ class AgentInvocationPreparer:
                         agent_revision_id=edge.child_agent_revision_id,
                         _active_agents=(*_active_agents, agent_id),
                         _budget=budget,
-                        _media_models=media_models,
+                        _media_defaults=_media_defaults,
                     ),
                 )
                 for edge in subagents
@@ -282,8 +285,14 @@ class AgentInvocationPreparer:
                     memory_provider_catalog=self._memory_provider_catalog,
                     web_provider_catalog=self._web_provider_catalog,
                 )
-            media_models = await self._model_selector.prepare_media_defaults(
-                organization_id=authorized.organization_id, workspace_id=actor.workspace_id
+            async with short_session(self._sessions) as session:
+                media_defaults = await read_media_defaults(session, actor.workspace_id)
+            media_models = await self._model_selector.prepare_media_selection(
+                organization_id=authorized.organization_id,
+                workspace_id=actor.workspace_id,
+                selection=MediaUnderstandingSelection.model_validate(
+                    {**media_defaults.selections(), **merged.media_understanding.selections()}
+                ),
             )
             model = await self._model_selector.prepare(
                 organization_id=authorized.organization_id,

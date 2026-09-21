@@ -729,6 +729,8 @@
   "Not archived": "未归档",
   "Not configured": "未配置",
   "Media understanding": "媒体理解",
+  "Workspace default": "工作空间默认值",
+  "Fallback models for file viewing when the active model cannot understand the media natively.": "当前模型无法原生理解媒体时，用于文件查看的备用模型。",
   "Workspace defaults": "工作空间默认设置",
   "Image understanding": "图像理解",
   "Video understanding": "视频理解",

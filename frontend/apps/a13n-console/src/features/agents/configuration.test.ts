@@ -130,3 +130,30 @@ test("memory is a dedicated revision field preserving explicit false, zero and d
     ),
   ).toThrow(/recall_timeout/);
 });
+
+test("media understanding uses its dedicated field and preserves per-kind inheritance", () => {
+  const original = {
+    ...initialConfig("Support"),
+    model: { model_key: "support" },
+    media_understanding: { image: "vision", audio: null },
+  };
+  expect(JSON.parse(advancedConfig(original))).not.toHaveProperty(
+    "media_understanding",
+  );
+  const next = buildConfig(
+    original,
+    {
+      model: original.model,
+      media_understanding: original.media_understanding,
+    },
+    advancedConfig(original),
+  );
+  expect(next.media_understanding).toEqual(original.media_understanding);
+  expect(() =>
+    buildConfig(
+      original,
+      { model: original.model },
+      '{"media_understanding": {}}',
+    ),
+  ).toThrow(/dedicated field/);
+});

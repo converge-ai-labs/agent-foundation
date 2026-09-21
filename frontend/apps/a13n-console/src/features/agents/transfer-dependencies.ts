@@ -43,6 +43,19 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
       }),
     },
   ];
+  for (const kind of ["image", "video", "audio"] as const) {
+    const key = config.media_understanding?.[kind];
+    if (key)
+      refs.push({
+        path: `media_understanding.${kind}`,
+        kind: "model",
+        value: key,
+        replace: (value) => ({
+          ...config,
+          media_understanding: { ...config.media_understanding, [kind]: value },
+        }),
+      });
+  }
   if (config.default_environment_template_id)
     refs.push({
       path: "default_environment_template_id",

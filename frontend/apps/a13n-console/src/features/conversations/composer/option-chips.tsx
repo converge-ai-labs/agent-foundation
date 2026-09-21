@@ -53,6 +53,14 @@ export function RunOptions({
           value={options.labels.environment ?? options.environment}
         />
       )}
+      {Object.values(options.mediaUnderstanding).some(Boolean) && (
+        <OptionChip
+          onClick={() => edit("media")}
+          label={t("Media understanding")}
+        >
+          {t("Media understanding")}
+        </OptionChip>
+      )}
       {options.overrideInstructions && (
         <OptionChip
           onClick={() => edit("instructions")}

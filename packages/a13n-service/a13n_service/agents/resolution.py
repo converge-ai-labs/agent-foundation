@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.memory import MemoryProviderDefinition
 from a13n_harness.providers.web.builtins import built_in_web_providers
 from a13n_harness.providers.web.definition import WebProviderDefinition
+from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -66,6 +67,7 @@ class PreparedRevisionResolution:
     skills: tuple[PreparedSkillBinding, ...]
     subagents: tuple[PreparedSubagent, ...]
     connectivity: PreparedConnectivity
+    media_models: dict[NativeInputMediaKind, PreparedModelExecution] = field(default_factory=dict)
     reviewer_model: PreparedModelExecution | None = None
     creation: bool = False
     authorization_agent_id: str | None = None
@@ -110,6 +112,9 @@ class AgentResolver:
             workspace_id=workspace_id,
             model_key=config.model.model_key,
             settings=config.model.settings,
+        )
+        media_models = await self._model_selector.prepare_media_selection(
+            organization_id=organization_id, workspace_id=workspace_id, selection=config.media_understanding
         )
         reviewer_model = (
             await self._model_selector.prepare(
@@ -168,6 +173,7 @@ class AgentResolver:
             skills=skills,
             subagents=subagents,
             connectivity=connectivity,
+            media_models=media_models,
             reviewer_model=reviewer_model,
             creation=creation,
             authorization_agent_id=authorization_agent_id,
@@ -223,6 +229,8 @@ class AgentResolver:
                 selection=selection if isinstance(selection, ScrapeSelection) else None,
             )
         model = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
+        for media_model in prepared.media_models.values():
+            await self._model_selector.freeze_in_transaction(session, prepared=media_model)
         if prepared.reviewer_model is not None:
             await self._model_selector.freeze_in_transaction(session, prepared=prepared.reviewer_model)
         skills = await self._freeze_skills(session, prepared)

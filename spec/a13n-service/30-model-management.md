@@ -178,7 +178,7 @@ For OpenRouter, the initial API is `openrouter.chat_completions` and an omitted 
 
 ## Workspace media understanding defaults
 
-Each Workspace owns independent image, video, and audio Model defaults for file `view` understanding. The defaults may select Workspace Models or visible Organization Models by their immutable `key`. There are no Organization defaults, inheritance, or Agent/Run overrides. Reading requires `models.read`; replacement requires `models.manage` and a matching strong ETag. A missing stored configuration reads as version zero with all selections null. Every accepted replacement increments its version, validates scope, Model and Provider availability, and the matching declared media capability, and records a security audit event without making provider requests.
+Each Workspace owns independent image, video, and audio Model defaults for file `view` understanding. The defaults may select Workspace Models or visible Organization Models by their immutable `key`. There are no Organization defaults. Agent configuration and Run `config_override.media_understanding` can select the same managed Model keys independently for each kind. Reading requires `models.read`; replacement requires `models.manage` and a matching strong ETag. A missing stored configuration reads as version zero with all selections null. Every accepted replacement increments its version, validates scope, Model and Provider availability, and the matching declared media capability, and records a security audit event without making provider requests.
 
 ```http
 GET /api/v1/workspaces/{workspace}/media-understanding-defaults
@@ -187,9 +187,28 @@ PUT /api/v1/workspaces/{workspace}/media-understanding-defaults
 
 The replacement body contains nullable `image`, `video`, and `audio` Model keys; omitted fields clear that selection. Reads additionally return `workspace_id` and `version`. Console exposes three concise selectors on the Workspace Models page, restricted to compatible Models. Null clears the Workspace selection; it does not disable environment fallback.
 
+### Agent and Run selections
+
+`AgentConfig.media_understanding` and `AgentRunOverride.media_understanding` reuse `MediaUnderstandingSelection`: optional nullable `image`, `video`, and `audio` Model keys. Each kind resolves independently in precedence order **Run override → Agent Revision → Workspace default**. Missing or null kinds inherit the next layer; an empty object changes nothing. A null Run selection object also inherits. These fields select fallback Models, not a disable switch. Agent authoring validates explicit selections without capturing Workspace defaults. Run acceptance validates and captures only the final selections, so an overridden unavailable Workspace default does not block that Agent.
+
+For example, a Native Run request can include:
+
+```json
+{
+  "config_override": {
+    "media_understanding": {
+      "image": "vision-model",
+      "audio": "transcription-model"
+    }
+  }
+}
+```
+
+The shared override contract applies to all Native input paths that accept `config_override`, including queued submission intent. No separate endpoint or credential-bearing per-Run configuration is introduced. Console provides an optional media-understanding disclosure in Agent model settings and Run options; chosen Run overrides remain visible in the composer. Returning a selector to inheritance removes its local choice without editing Workspace defaults.
+
 Harness retains native-first dispatch. A native-capable active Model receives the media directly without initializing auxiliary credentials. Otherwise, the captured default for that kind performs auxiliary inference with its own saved settings, not the primary Agent's settings. An unset kind retains the existing Harness environment fallback. This fallback is deployment-operator configuration shared by that Worker's tenants, not a Workspace-managed Model, and does not enter the Service Model/Provider management chain. A configured Model failure never falls back to the environment.
 
-Configuration selection captures auxiliary Model execution snapshots and saved settings in the effective execution configuration, including nested children. New selections observe the Workspace defaults; retries, replacement attempts, and continuations that retain effective configuration reuse their captures. Existing captures without this field retain environment behavior. Auxiliary requests use the executing root or child Harness Thread's affinity identity and the same live Provider, credential rotation, endpoint policy, disablement, and request retry rules as primary inference. Model/provider disablement remains a live kill switch rather than clearing defaults. This setting affects file `view` only, not composer attachment conversion or primary Model selection.
+Configuration selection captures auxiliary Model execution snapshots and saved settings in the effective execution configuration, including nested children. One graph selection reads Workspace defaults once, but each child resolves its own Agent configuration against those defaults; a root Agent selection or root Run override does not leak into children. New selections observe the Workspace defaults; retries, replacement attempts, and continuations that retain effective configuration reuse their captures. Existing captures without this field retain environment behavior. Auxiliary requests use the executing root or child Harness Thread's affinity identity and the same live Provider, credential rotation, endpoint policy, disablement, and request retry rules as primary inference. Model/provider disablement remains a live kill switch rather than clearing defaults. This setting affects file `view` only, not composer attachment conversion or primary Model selection.
 
 ## Catalog and manual Model creation
 

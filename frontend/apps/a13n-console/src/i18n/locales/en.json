@@ -730,6 +730,8 @@
   "Not archived": "Not archived",
   "Not configured": "Not configured",
   "Media understanding": "Media understanding",
+  "Workspace default": "Workspace default",
+  "Fallback models for file viewing when the active model cannot understand the media natively.": "Fallback models for file viewing when the active model cannot understand the media natively.",
   "Workspace defaults": "Workspace defaults",
   "Image understanding": "Image understanding",
   "Video understanding": "Video understanding",

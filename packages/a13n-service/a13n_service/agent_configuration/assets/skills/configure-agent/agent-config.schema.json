@@ -471,6 +471,50 @@
       "title": "ManagedMemoryBackend",
       "type": "object"
     },
+    "MediaUnderstandingSelection": {
+      "additionalProperties": false,
+      "description": "Per-kind managed Model keys; null leaves selection to the lower layer.",
+      "properties": {
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image"
+        },
+        "video": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video"
+        },
+        "audio": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio"
+        }
+      },
+      "title": "MediaUnderstandingSelection",
+      "type": "object"
+    },
     "MemoryConfiguration": {
       "anyOf": [
         {
@@ -1362,6 +1406,9 @@
   },
   "additionalProperties": false,
   "properties": {
+    "media_understanding": {
+      "$ref": "#/$defs/MediaUnderstandingSelection"
+    },
     "default_environment_template_id": {
       "anyOf": [
         {

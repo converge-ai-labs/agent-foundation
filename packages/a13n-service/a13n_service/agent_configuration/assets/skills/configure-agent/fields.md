@@ -2,6 +2,8 @@
 
 AgentConfig is a complete structured configuration. `model.model_key` selects an existing authorized Model; `model.settings` contains settings supported by that Model's calling API. Never enter API keys or credential-bearing URLs. Provider setup belongs to the scoped settings page and requires the user's normal rights.
 
+`media_understanding` selects optional image, video, and audio fallback Model keys. Explicit choices require the matching declared media capability; omitted or null kinds inherit Workspace defaults. Native-capable primary Models still receive files directly. Run requests can override these choices through `config_override.media_understanding` without changing the Agent.
+
 `instructions` supplies business behavior. `input_adapter` uses `native` with an empty config. `protocol` includes `public_name`, optional description, output modes, client tool policy, schemas and limits. Preserve unsupported editor fields.
 
 `toolsets` selects files, shell, web and assets; each has `enabled`, `config` and per-tool selections. Each tool selection has `enabled`, `permission` and `config`. Web search and scrape need existing authorized Web Provider references. Shell and writable files need an appropriate managed Environment at business Run admission. The assistant's read-only knowledge mount is never a test sandbox.

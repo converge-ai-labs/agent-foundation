@@ -15,6 +15,8 @@ from tests.agents.conftest import agent_config
         {"instructions": "Only this instruction changes."},
         {"model": {"settings": {"temperature": 0.2}}},
         {"retries": {"tools": 0}},
+        {"media_understanding": {"image": "vision", "audio": None}},
+        {"media_understanding": None},
         {"output_spec": None, "skills": []},
         {"subagents": {"helper": {"description": "New description"}}},
     ],

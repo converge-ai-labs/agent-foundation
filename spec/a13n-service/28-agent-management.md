@@ -195,6 +195,7 @@ class ProtocolConfig:
 
 
 class AgentConfig:
+    media_understanding: MediaUnderstandingSelection
     default_environment_template_id: EnvironmentTemplateId | None
     toolsets: dict[Literal["files", "shell", "web", "assets"], ToolsetSelection]
     subagent_mode: Literal["inline", "async"] = "inline"
@@ -306,6 +307,7 @@ class RetryOverride:
 
 
 class AgentRunOverride:
+    media_understanding: MediaUnderstandingSelection | None
     toolsets: dict[Literal["files", "shell", "web", "assets"], ToolsetSelection] | None
     model: ModelOverride | None
     memory: MemorySelection | None
@@ -365,7 +367,7 @@ Each `child_configs` entry contains the child `agent_id`, `revision_content_dige
 
 Acceptance merges and resolves the selected Revision and request exactly once, then persists a complete immutable `EffectiveAgentConfig` plus its digest. Its Skill entries are the exact five-field [`SkillRevisionLock`](31-skill-management.md#agent-selection-and-run-locking) values selected at that acceptance boundary. Retry, waiting Continue, deferred-action completion, and other successor operations preserve the source snapshot when their owning contract requires it; Worker replacement of the same accepted Run always reuses it. No execution attempt re-reads an Agent or Skill head or reapplies merge rules. Input, Environment selection, attachments, timeout, usage budget, metadata, priority, idempotency, and scheduling mode remain Run fields rather than Agent config overrides.
 
-`media_understanding` contains the Workspace defaults captured for the complete graph under [Model Management](30-model-management.md#workspace-media-understanding-defaults). It is effective execution data, not authored Agent configuration or a Run override. Empty selections are omitted from serialization to preserve legacy effective-config digests. Retained execution does not reread Workspace defaults.
+`media_understanding` contains the final per-kind Model captures under [Model Management](30-model-management.md#agent-and-run-selections). Authored Agent keys and Run override keys resolve against Workspace defaults independently at each graph node; this effective field holds execution snapshots, not the authored selection objects. Empty selections are omitted from serialization to preserve legacy effective-config digests. Retained execution does not reread Workspace defaults.
 
 ## Immutable AgentRevision
 

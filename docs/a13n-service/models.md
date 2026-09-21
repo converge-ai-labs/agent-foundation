@@ -180,11 +180,31 @@ Omitting `settings` or `declarations` preserves that existing field. Changing th
 
 ## Workspace media understanding
 
-On the Workspace **Models** page, use **Media understanding** to choose separate image, video, and audio defaults. Each choice must be an enabled Workspace or Organization Model declaring the corresponding media capability, with an enabled Provider. These defaults belong only to this Workspace; there is no Organization default or Agent/Run override. Readers can view them; `models.manage` permission is required to save.
+On the Workspace **Models** page, use **Media understanding** to choose separate image, video, and audio defaults. Each choice must be an enabled Workspace or Organization Model declaring the corresponding media capability, with an enabled Provider. These defaults belong only to this Workspace; there is no Organization default. Individual Agents and Runs can override them. Readers can view them; `models.manage` permission is required to save.
 
 The file `view` tool remains native-first: if the active Agent Model supports that media kind, it receives the media directly. Otherwise the selected auxiliary Model interprets it using its own saved request settings, without the primary Agent's overrides. A configured failure is reported rather than silently switching Providers.
 
 **Not configured** clears the Workspace selection for that kind and preserves the existing Harness environment fallback. Operators can configure `HARNESS_IMAGE_UNDERSTANDING_MODEL`, `HARNESS_VIDEO_UNDERSTANDING_MODEL`, or `HARNESS_AUDIO_UNDERSTANDING_MODEL` on Workers. These are shared deployment settings, outside Workspace Model management; the Console does not claim whether the selected Worker has a fallback. With neither native support nor a configured or environment model, understanding is unavailable.
+
+### Agent and Run overrides
+
+In an Agent's **Model** settings, expand **Media understanding** to choose fallback Models. Leave each selector at **Workspace default** to inherit. These choices publish with the Agent's next saved version.
+
+In the conversation composer's **Run options**, expand **Media understanding** to override the next Run. The composer shows a media-understanding chip when a choice is customized. **Inherit** removes the local choice.
+
+The API uses the same fields on Agent configuration and inside the existing Run `config_override`:
+
+```json
+{
+  "config_override": {
+    "media_understanding": {"image": "vision", "audio": "speech"}
+  }
+}
+```
+
+For each kind, the first non-null choice wins: **Run → Agent → Workspace**. Omitted or null kinds inherit; `{}` changes nothing. These choices do not disable native understanding or environment fallback. Child Agents use their own configuration against the Workspace defaults, not the root Agent's override. Only the selected Models are validated and captured at Run acceptance; retry reuses those captures.
+
+### Workspace API
 
 Read the current defaults and retain their `ETag`:
 

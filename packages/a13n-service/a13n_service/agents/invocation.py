@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from a13n_service.memory.domain import MemoryConfiguration
+from a13n_service.models.domain import MediaUnderstandingSelection
 from a13n_service.models.settings import JsonObject
 
 from .domain import (
@@ -34,6 +35,9 @@ from .toolsets import Toolsets, default_toolsets
 class MergedAgentRunConfig(StrictModel):
     """Typed non-secret config after applying one Run override to a Revision."""
 
+    media_understanding: MediaUnderstandingSelection = Field(
+        default_factory=MediaUnderstandingSelection, exclude_if=lambda value: not value.selections()
+    )
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     memory: MemoryConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -236,6 +240,12 @@ def merge_agent_run_override(
             retries = RetryConfig(tools=tools, output=output)
 
     return MergedAgentRunConfig(
+        media_understanding=MediaUnderstandingSelection.model_validate(
+            {
+                **base.media_understanding.selections(),
+                **(override.media_understanding.selections() if override.media_understanding is not None else {}),
+            }
+        ),
         subagent_mode=base.subagent_mode,
         model=model,
         model_settings_override=model_settings_override,

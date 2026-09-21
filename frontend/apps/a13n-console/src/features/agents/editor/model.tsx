@@ -10,6 +10,7 @@ import { ErrorNotice } from "../../../shared/feedback";
 import { TextAreaField } from "../../../shared/forms";
 import { Section } from "../../../shared/page";
 import { ModelIcon } from "../../models/model-icon";
+import { MediaUnderstandingOverrides } from "../../models/media-understanding-fields";
 import type { useAgentChoices } from "../choices";
 import styles from "./editor.module.css";
 import type { AgentDraft } from "./draft";
@@ -110,6 +111,12 @@ export function ModelSection({
         />
         <ErrorNotice error={validation} />
       </DisclosureSection>
+      <MediaUnderstandingOverrides
+        scope="agent"
+        value={draft.mediaUnderstanding}
+        onChange={draft.setMediaUnderstanding}
+        readOnly={readOnly}
+      />
     </Section>
   );
 }

@@ -16,10 +16,12 @@ import { useWorkspace } from "../../../layout/workspace";
 import { allPages, data, type Schema } from "../../../shared/api";
 import { ErrorNotice } from "../../../shared/feedback";
 import { jsonObject, runOverride, TextAreaField } from "../../../shared/forms";
+import { MediaUnderstandingOverrides } from "../../models/media-understanding-fields";
 import { DeviceDirectory } from "../../environments/device-directory";
 import styles from "./composer.module.css";
 
-export type OptionField = "agent" | "model" | "environment" | "instructions";
+export type OptionField =
+  "agent" | "model" | "environment" | "instructions" | "media";
 
 type Options = Omit<Schema["ThreadRunSubmissionIntent-Input"], "input">;
 
@@ -31,6 +33,9 @@ export function useRunOptions(initial: Options = {}) {
     [model, setModel] = useState(
       initial.config_override?.model?.model_key ?? "",
     );
+  const [mediaUnderstanding, setMediaUnderstanding] = useState(
+    initial.config_override?.media_understanding ?? {},
+  );
   const [settings, setSettings] = useState(
       initial.config_override?.model?.settings
         ? JSON.stringify(initial.config_override.model.settings, null, 2)
@@ -68,7 +73,13 @@ export function useRunOptions(initial: Options = {}) {
     JSON.stringify(
       Object.fromEntries(
         Object.entries(initial.config_override ?? {}).filter(
-          ([key]) => !["model", "instructions", "plugins"].includes(key),
+          ([key]) =>
+            ![
+              "model",
+              "instructions",
+              "plugins",
+              "media_understanding",
+            ].includes(key),
         ),
       ),
       null,
@@ -76,6 +87,8 @@ export function useRunOptions(initial: Options = {}) {
     ),
   );
   return {
+    mediaUnderstanding,
+    setMediaUnderstanding,
     overrideInstructions,
     setOverrideInstructions,
     agent,
@@ -101,7 +114,12 @@ export function useRunOptions(initial: Options = {}) {
     setLabels,
     build: (): Options => {
       const extra = jsonObject(advanced);
-      for (const key of ["model", "instructions", "plugins"])
+      for (const key of [
+        "model",
+        "instructions",
+        "plugins",
+        "media_understanding",
+      ])
         if (key in extra)
           throw new Error(
             `The ${key} field cannot be edited in advanced run configuration.`,
@@ -126,6 +144,9 @@ export function useRunOptions(initial: Options = {}) {
                 ...(settings.trim() ? { settings: jsonObject(settings) } : {}),
               },
             }
+          : {}),
+        ...(Object.values(mediaUnderstanding).some(Boolean)
+          ? { media_understanding: mediaUnderstanding }
           : {}),
         ...(overrideInstructions ? { instructions } : {}),
       });
@@ -172,6 +193,10 @@ export function RunOptionsDialog({
   const { t } = useTranslation(),
     client = useClient(),
     { workspace } = useWorkspace();
+  const [mediaOpen, setMediaOpen] = useState(false);
+  useEffect(() => {
+    if (open && focus === "media") setMediaOpen(true);
+  }, [open, focus]);
   const choices = useQuery({
     queryKey: ["run-options", workspace.id],
     enabled: open,
@@ -344,6 +369,13 @@ export function RunOptionsDialog({
             rows={4}
           />
         )}
+        <MediaUnderstandingOverrides
+          scope="run"
+          value={options.mediaUnderstanding}
+          onChange={options.setMediaUnderstanding}
+          open={mediaOpen}
+          onOpenChange={setMediaOpen}
+        />
         <DisclosureSection title={<>{t("Advanced")}</>}>
           <div className={styles.optionFields}>
             <TextAreaField

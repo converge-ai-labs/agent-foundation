@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 
 from a13n_harness import ModelCapability
 from a13n_harness.token_pricing import TokenPricing
+from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -50,6 +51,24 @@ def new_model_provider_id() -> str:
 
 def new_model_id() -> str:
     return new_object_id("mdl")
+
+
+class MediaUnderstandingSelection(BaseModel):
+    """Per-kind managed Model keys; null leaves selection to the lower layer."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    image: ModelKey | None = None
+    video: ModelKey | None = None
+    audio: ModelKey | None = None
+
+    def selections(self) -> dict[NativeInputMediaKind, str]:
+        values: dict[NativeInputMediaKind, str | None] = {
+            "image": self.image,
+            "video": self.video,
+            "audio": self.audio,
+        }
+        return {kind: key for kind, key in values.items() if key is not None}
 
 
 class CatalogRef(BaseModel):

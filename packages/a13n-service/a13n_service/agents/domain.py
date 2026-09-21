@@ -31,7 +31,7 @@ from a13n_service.iam.domain import ActorRef
 from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.labels import Labels
 from a13n_service.memory.domain import MemoryConfiguration
-from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
+from a13n_service.models.domain import MediaUnderstandingSelection, ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
 from a13n_service.resource_keys import ResourceKey
 from a13n_service.secrets.domain import SecretKey
@@ -230,6 +230,9 @@ class AgentReviewer(ToolReviewConfig):
 
 
 class AgentConfig(StrictModel):
+    media_understanding: MediaUnderstandingSelection = Field(
+        default_factory=MediaUnderstandingSelection, exclude_if=lambda value: not value.selections()
+    )
     default_environment_template_id: ObjectId | None = None
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     memory: MemoryConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -287,6 +290,7 @@ class RetryOverride(StrictModel):
 
 
 class AgentRunOverride(StrictModel):
+    media_understanding: MediaUnderstandingSelection | None = None
     toolsets: ToolsetOverrides | None = None
     memory: MemoryConfiguration | None = None
     reviewer: AgentReviewer | None = None

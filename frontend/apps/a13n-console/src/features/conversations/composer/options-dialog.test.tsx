@@ -187,3 +187,62 @@ it("submits a Device default as an explicit path without access presets", async 
     }),
   );
 });
+
+it("edits media overrides through selectors and restores inheritance without advanced JSON", async () => {
+  http.GET.mockImplementation(async (path: string) => ({
+    data: {
+      items: path.endsWith("/model-providers")
+        ? [{ id: "provider", enabled: true }]
+        : path.endsWith("/models")
+          ? [
+              {
+                key: "vision",
+                name: "Vision",
+                enabled: true,
+                provider_id: "provider",
+                declarations: { capabilities: ["image_understanding"] },
+              },
+            ]
+          : [],
+    },
+  }));
+  const submit = vi.fn();
+  function Editor() {
+    const options = useRunOptions({
+      config_override: {
+        media_understanding: { image: "unavailable", audio: null },
+      },
+    });
+    return (
+      <>
+        <RunOptions options={options} />
+        <button onClick={() => submit(options.build())}>Submit</button>
+      </>
+    );
+  }
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <Editor />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Media understanding" }));
+  const image = await screen.findByRole("combobox", {
+    name: "Image understanding",
+  });
+  await user.click(image);
+  await user.click(await screen.findByRole("option", { name: "Vision" }));
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit.mock.lastCall?.[0].config_override).toEqual({
+    media_understanding: { image: "vision", audio: null },
+  });
+  await user.click(screen.getByRole("button", { name: "Media understanding" }));
+  await user.click(
+    screen.getByRole("combobox", { name: "Image understanding" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Inherit" }));
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit.mock.lastCall?.[0].config_override).toBeUndefined();
+});

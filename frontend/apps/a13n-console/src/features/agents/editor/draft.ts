@@ -30,6 +30,9 @@ export function useAgentDraft(initial: AgentConfig) {
   const initialSettingsText = JSON.stringify(initialExtraSettings, null, 2);
   const [instructions, setInstructions] = useState(initial.instructions ?? ""),
     [model, setModel] = useState(initial.model.model_key),
+    [mediaUnderstanding, setMediaUnderstanding] = useState(
+      initial.media_understanding ?? {},
+    ),
     [thinking, setThinking] = useState(thinkingSelection(initialThinking)),
     [maxTokens, setMaxTokens] = useState(initialMaxTokensText),
     [settings, setSettings] = useState(initialSettingsText),
@@ -42,6 +45,11 @@ export function useAgentDraft(initial: AgentConfig) {
     [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []);
   const dirty =
+    (["image", "video", "audio"] as const).some(
+      (kind) =>
+        (mediaUnderstanding[kind] ?? null) !==
+        (initial.media_understanding?.[kind] ?? null),
+    ) ||
     JSON.stringify(memory) !== JSON.stringify(initial.memory) ||
     environmentTemplateId !==
       (initial.default_environment_template_id ?? null) ||
@@ -62,6 +70,8 @@ export function useAgentDraft(initial: AgentConfig) {
     setInstructions,
     model,
     setModel,
+    mediaUnderstanding,
+    setMediaUnderstanding,
     thinking,
     setThinking,
     maxTokens,
@@ -127,6 +137,7 @@ export function buildDraftConfig(
       config: buildConfig(
         initial,
         {
+          media_understanding: draft.mediaUnderstanding,
           instructions: draft.instructions,
           memory: draft.memory,
           toolsets: draft.toolsets,

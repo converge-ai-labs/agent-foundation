@@ -294,3 +294,18 @@ it("checks and remaps memory providers without replacing behavior options", asyn
     provider_id: "memprov_ready",
   });
 });
+
+it("discovers and remaps media model keys without changing other kinds", () => {
+  const config = {
+    ...initialConfig("Media"),
+    media_understanding: { image: "old-vision", audio: "speech" },
+  };
+  const media = agentDependencies(config).find(
+    (ref) => ref.path === "media_understanding.image",
+  )!;
+  expect(media.value).toBe("old-vision");
+  expect(media.replace("new-vision").media_understanding).toEqual({
+    image: "new-vision",
+    audio: "speech",
+  });
+});
