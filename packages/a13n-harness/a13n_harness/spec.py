@@ -7,7 +7,7 @@ from copy import deepcopy
 from enum import StrEnum
 from typing import Any, Self
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, TypeAdapter, field_serializer
 from pydantic_ai.agent.spec import AgentSpec as PydanticAgentSpec
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.usage import UsageLimits
@@ -35,6 +35,11 @@ class HarnessModelCharacteristics(BaseModel):
     )
     proactive_context_management_threshold: float | None = Field(default=0.65, ge=0.0, le=1.0)
     compact_threshold: float = Field(default=0.90, gt=0.0, le=1.0)
+
+    @field_serializer("capabilities", when_used="json")
+    def _serialize_capabilities(self, capabilities: frozenset[ModelCapability]) -> list[str]:
+        """Keep snapshots and content digests independent of set iteration order."""
+        return sorted(capability.value for capability in capabilities)
 
     @property
     def summary_reminder_tokens(self) -> int | None:

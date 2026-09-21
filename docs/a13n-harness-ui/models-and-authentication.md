@@ -333,6 +333,19 @@ After initial setup, `add model` saves only a reusable Model, then offers a sepa
 
 ## Native request settings
 
+For an API-key gateway using **Google Cloud**, author the Model route explicitly; the setup catalog's `google:` connection uses the **Gemini Developer API**, which is a different transport:
+
+```yaml
+route: google-cloud:your-gateway-model-id
+authentication:
+  kind: api_key
+  credential_ref: key-gateway
+model_configuration:
+  base_url: https://gateway.example.com
+```
+
+Keep the gateway's model ID and endpoint. The native SDK adds its version and resource path; do not append `/v1beta` or `/v1beta1` merely to switch transports. Existing `google-gla:`, `google-vertex:`, and `gemini:` aliases use the same Cloud transport; `google-cloud:` makes that choice explicit. This API-key route does not configure Cloud IAM or service-account credentials. Validate the configuration, then test an actual request: acceptance alone does not prove gateway or model access.
+
 `settings` is a JSON-compatible object passed through to Harness/Pydantic AI, not a Harness UI parameter allowlist. Native provider-specific and future options, nested objects, explicit `null`, and string whitespace are preserved in saved compositions and fresh Agent construction. The installed native Model and provider own parameter meaning, precedence, supported values, and errors at use time. Loading configuration or creating a Project does not validate a provider's request parameters or make a model request.
 
 Use the documentation for your installed Pydantic AI/provider version. Examples include:
@@ -349,4 +362,4 @@ For example, an existing `settings.service_tier: priority` continues to work wit
 
 Opaque settings are retained verbatim, not secret-scrubbed by guessing field names. Use the dedicated authentication and MCP credential sources for secrets; do not place credentials in settings or extension configuration unless you intend those values to be persisted in local configuration captures. Diagnostics and settings display should be reviewed before sharing.
 
-`model_configuration` is separate Host wiring, not request settings: it accepts an optional `base_url` for the HTTP/API-key providers offered by setup (and the legacy `openai` alias). Use an HTTP(S) URL without embedded credentials, query parameters, or fragments. Local HTTP endpoints are supported. Subscription endpoints cannot be overridden. The `xai:` native SDK route also requires empty `model_configuration`; it uses upstream's default gRPC endpoint and does not accept an HTTP `base_url`. Unknown Host constructor fields and unsupported routes still fail rather than being silently ignored.
+`model_configuration` is separate Host wiring, not request settings: it accepts an optional `base_url` for the HTTP/API-key providers offered by setup, the legacy `openai` alias, and the native `google-cloud` route and its aliases. Use an HTTP(S) URL without embedded credentials, query parameters, or fragments. Local HTTP endpoints are supported. Subscription endpoints cannot be overridden. The `xai:` native SDK route also requires empty `model_configuration`; it uses upstream's default gRPC endpoint and does not accept an HTTP `base_url`. Unknown Host constructor fields and unsupported routes still fail rather than being silently ignored.

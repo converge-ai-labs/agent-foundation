@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from itertools import permutations
 from pathlib import Path
 from typing import Any
 
@@ -766,6 +767,56 @@ async def test_acceptance_publishes_complete_generation_before_atomic_selection(
             ("project", "project-main"),
             ("subagent", "subagent-explorer"),
         }
+
+
+@pytest.mark.parametrize(
+    "capabilities", list(permutations(("image_understanding", "video_understanding", "audio_understanding")))
+)
+async def test_reacceptance_preserves_legacy_capability_order_without_rewriting_snapshot(tmp_path, capabilities):
+    from a13n_harness import HarnessModelCharacteristics, ModelCapability
+    from a13n_harness_ui.errors import StoreIntegrityError
+
+    root = _write_source(tmp_path)
+    model_path = tmp_path / "models/primary.yaml"
+    model_path.write_text(
+        model_path.read_text()
+        + "model_characteristics:\n"
+        + "  capabilities: [image_understanding, video_understanding, audio_understanding]\n"
+    )
+    source = await load_harness_ui_configuration(root)
+    payload = source.model_dump(mode="json")
+    payload["models"]["model-primary"]["model_characteristics"]["capabilities"] = list(capabilities)
+    async with open_local_store(StorageSettings(data_root=tmp_path / "state")) as store:
+        envelope = await store.objects.publish(
+            object_kind=ObjectKind.configuration_generation, object_schema_version="1", payload=payload
+        )
+        await store.configurations.accept(
+            generation_digest=source.source_digest,
+            generation=envelope.ref,
+            sources=(),
+            resources=(),
+            expected_current_digest=None,
+        )
+        service = CompositionAcceptanceService(store, AgentCompositionResolver(_catalog()))
+        for _ in range(2):
+            accepted = await service.accept(source, expected_current_digest=source.source_digest)
+            assert accepted.generation == envelope.ref
+            assert await service.current() == source
+        assert await store.objects.read(envelope.ref) == envelope
+        assert len(await store.objects.references()) == 1
+
+        model = source.models["model-primary"].model_copy(
+            update={
+                "model_characteristics": HarnessModelCharacteristics(
+                    capabilities=frozenset({ModelCapability.IMAGE_UNDERSTANDING})
+                )
+            }
+        )
+        changed = source.model_copy(update={"models": {**source.models, model.id: model}})
+        with pytest.raises(StoreIntegrityError) as collision:
+            await service.accept(changed, expected_current_digest=source.source_digest)
+        assert collision.value.code == "configuration_digest_collision"
+        assert await store.configurations.reference(source.source_digest) == envelope.ref
 
 
 async def test_reacceptance_preserves_digest_collisions_and_compare_and_select(tmp_path: Path) -> None:
