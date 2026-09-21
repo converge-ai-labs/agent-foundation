@@ -159,6 +159,13 @@ def test_populated_upgrade_preserves_keys_past_old_expiry(postgres_database):
         with pytest.raises(DBAPIError, match="sealed"):
             with engine.begin() as connection:
                 connection.execute(runs.update().values(version=2))
+        # The preceding display migration allows recovery scheduling on sealed Runs;
+        # key backfill must restore that guard, including its display exceptions.
+        with engine.begin() as connection:
+            connection.execute(runs.update().values(display_settled_at=NOW, display_next_attempt_at=NOW))
+            updated = connection.execute(select(runs)).mappings().one()
+            assert updated["display_settled_at"] == updated["display_next_attempt_at"] == NOW
+            assert updated["request_key"] == run["request_key"]
         with pytest.raises(RuntimeError, match="forward repair or database restore"):
             migrator.downgrade("ec56e4426fb7")
         with engine.connect() as connection:
