@@ -135,7 +135,7 @@ async def test_auxiliary_models_are_native_descendants_of_the_invoking_tool(
         ),
     )
     assert result.output_or_raise() == "done"
-    records = [record for record in result.usage_records if isinstance(record, ProviderUsageRecord)]
+    records = [record for record in result.usage_records if record.source == source]
     assert len(records) == (2 if kind == "shell" and nested else 1)
     assert source == records[0].source
     spans = exporter.get_finished_spans()

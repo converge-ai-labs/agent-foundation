@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from a13n_harness import HarnessRunResult, HarnessRunResultEvent
 from a13n_harness.events import HarnessEvent, HarnessExtensionEvent, UsageReportPayload
-from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord, ProviderUsage, ProviderUsageRecord
+from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord, ProviderUsage, ProviderUsageRecord, UsageMeasure
 from a13n_harness_ui.errors import StoreIntegrityError
 from a13n_harness_ui.interactive.usage import thread_usage_text
 from a13n_harness_ui.settings import StorageSettings
@@ -67,6 +67,7 @@ def _receipt(
             provider="test-provider",
             product="test-product",
             timestamp=_NOW,
+            measures=(UsageMeasure(unit="requests", quantity=Decimal(1)),),
             cost=cost,
             currency=currency,
         ),
@@ -275,3 +276,102 @@ async def test_usage_cache_reads_only_new_committed_suffix_and_survives_other_wr
         assert cached.combined.model_requests == 3
         assert len(decoded) == 5
         assert cached == await ThreadUsageRepository(database.sessions).snapshot(thread_id="thread-root")
+
+
+async def test_legacy_and_auxiliary_records_reaggregate_without_repricing_or_context_pollution(tmp_path: Path) -> None:
+    import json
+
+    from a13n_harness_ui.storage.models import ThreadUsageRecord
+
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        legacy = _model(0).model_dump(mode="json")
+        for field in (
+            "source",
+            "tool_id",
+            "tool_call_id",
+            "pricing_status",
+            "cost_source",
+            "pricing_revision",
+            "pricing_rule_id",
+        ):
+            legacy.pop(field, None)
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thread-root"))
+            await session.flush()
+            session.add(
+                ThreadUsageRecord(
+                    root_thread_id="thread-root",
+                    origin_thread_id="thread-root",
+                    record_id=legacy["record_id"],
+                    run_id=legacy["run_id"],
+                    descendant=False,
+                    payload_json=json.dumps(legacy),
+                    observed_at=_NOW,
+                )
+            )
+        repository = ThreadUsageRepository(database.sessions)
+        primary = _model(1, cost=Decimal("0.1")).model_copy(update={"model_name": "switched-model"})
+        media = _model(2, cost=Decimal("0.2")).model_copy(
+            update={
+                "source": "files.media_understanding",
+                "tool_id": "filesystem.view",
+                "model_name": "media-model",
+            }
+        )
+        child_media = _model(3, run="run-child", child=True, cost=Decimal("0.3")).model_copy(
+            update={
+                "source": "files.media_understanding",
+                "model_name": "media-model",
+            }
+        )
+        records = (primary, media, child_media, _receipt(cost=None, currency=None))
+        await repository.append(thread_id="thread-root", records=records)
+        await repository.append(thread_id="thread-root", records=records)
+        # Old reports and new terminal reconciliation agree after additive defaults.
+        await repository.append(thread_id="thread-root", records=(ModelUsageRecord.model_validate(legacy),))
+        view = await repository.snapshot(thread_id="thread-root")
+        assert view.combined.model_requests == 4
+        assert view.combined.model_cost_usd == Decimal("0.6")
+        assert view.combined.unknown_model_costs == 1
+        assert view.combined.unknown_provider_costs == 1
+        assert dict(view.combined.tokens)["input_tokens"] == 400
+        model = next(row for row in view.model_scopes if row.name == "test-provider/media-model")
+        assert model.root.model_cost_usd == Decimal("0.2")
+        assert model.descendants.model_cost_usd == Decimal("0.3")
+        assert model.combined.model_cost_usd == Decimal("0.5")
+        assert sum(group.totals.model_requests for group in view.groups) == 4
+        assert await repository.latest_root_request(thread_id="thread-root") == primary
+        fresh = ThreadUsageRepository(database.sessions)
+        assert await fresh.snapshot(thread_id="thread-root") == view
+        assert "media-model" in thread_usage_text(view)
+        assert "files.media_understanding" in thread_usage_text(view, details=True)
+
+
+async def test_auxiliary_group_overflow_preserves_all_scope_totals(tmp_path: Path) -> None:
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thread-root"))
+        repository = ThreadUsageRepository(database.sessions)
+        records = tuple(
+            _model(index, child=index % 2 == 1).model_copy(
+                update={
+                    "model_name": f"model-{index}",
+                    "source": "files.media_understanding",
+                    "agent_instance_id": f"agent-{index}",
+                }
+            )
+            for index in range(140)
+        )
+        for start in range(0, len(records), 128):
+            await repository.append(thread_id="thread-root", records=records[start : start + 128])
+        view = await repository.snapshot(thread_id="thread-root")
+        assert len(view.models) == 32
+        assert len(view.model_scopes) == 33
+        assert len(view.groups) == 128
+        assert view.other_groups is not None and view.other_groups.model_requests == 12
+        assert sum(row.root.model_requests for row in view.model_scopes) == 70
+        assert sum(row.descendants.model_requests for row in view.model_scopes) == 70
+        assert view.combined.model_requests == 140
+        assert await repository.latest_root_request(thread_id="thread-root") is None

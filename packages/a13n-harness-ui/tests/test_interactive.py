@@ -923,7 +923,7 @@ def test_context_samples_replace_root_requests_without_double_counting_cache_or_
     from datetime import UTC, datetime
 
     from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
-    from a13n_harness_ui.live import LiveEvent, root_context_samples
+    from a13n_harness_ui.live import LiveEvent, model_usage, root_context_samples
 
     root = ModelUsageRecord(
         record_id="root-1",
@@ -938,6 +938,7 @@ def test_context_samples_replace_root_requests_without_double_counting_cache_or_
     )
     child = root.model_copy(update={"record_id": "child-1", "parent_agent_instance_id": "agent-root"})
     delegated = root.model_copy(update={"record_id": "delegated-1", "delegation_id": "delegation-1"})
+    auxiliary = root.model_copy(update={"record_id": "aux-1", "source": "files.media_understanding"})
     event = LiveEvent(
         epoch="test",
         sequence=1,
@@ -952,12 +953,13 @@ def test_context_samples_replace_root_requests_without_double_counting_cache_or_
                 "event": {
                     "payload": {
                         "type": "usage_report",
-                        "records": [item.model_dump(mode="json") for item in (root, child, delegated)],
+                        "records": [item.model_dump(mode="json") for item in (root, child, delegated, auxiliary)],
                     }
                 }
             }
         },
     )
+    assert len(model_usage(event)) == 4
     samples = root_context_samples(event)
     assert len(samples) == 1
     assert samples[0].tokens == 120
@@ -1622,7 +1624,9 @@ async def test_usage_updates_before_root_operation_completes(tmp_path: Path, mon
         assert status.requests == 3
         assert status.usage.input_tokens == dict(totals.tokens)["input_tokens"]
         assert status.total_tokens == dict(totals.tokens)["input_tokens"] + dict(totals.tokens)["output_tokens"]
-        assert status.usage.cost is None
+        assert status.usage.cost == totals.model_cost_usd
+        assert status.unknown_costs == totals.unknown_model_costs
+        assert "cost --" in status.line()
         assert status.context_tokens == latest_context
         await backend.new()
         assert status.requests == 0 and status.usage is None and status.context_tokens is None

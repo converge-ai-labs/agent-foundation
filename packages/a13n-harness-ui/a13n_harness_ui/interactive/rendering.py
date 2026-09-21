@@ -6,6 +6,7 @@ import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -73,12 +74,14 @@ class Status:
     session_id: str | None = None
     usage: BoundedRequestUsage | None = None
     requests: int = 0
+    unknown_costs: int = 0
     notices: list[str] = field(default_factory=list)
     _usage_ids: set[str] = field(default_factory=set)
 
     def reset_usage(self) -> None:
         self.usage = None
         self.requests = 0
+        self.unknown_costs = 0
         self._usage_ids.clear()
 
     def restore_usage(self, totals: UsageTotals) -> None:
@@ -87,10 +90,9 @@ class Status:
 
         self.reset_usage()
         self.requests = totals.model_requests
+        self.unknown_costs = totals.unknown_model_costs
         if self.requests:
-            self.usage = BoundedRequestUsage.model_validate(
-                {**dict(totals.tokens), "cost": None if totals.unknown_model_costs else totals.model_cost_usd}
-            )
+            self.usage = BoundedRequestUsage.model_validate({**dict(totals.tokens), "cost": totals.model_cost_usd})
 
     def record_usage(self, record: ModelUsageRecord) -> None:
         from a13n_harness.usage import BoundedRequestUsage
@@ -106,9 +108,8 @@ class Status:
         if previous is not None:
             old = previous.model_dump(include=set(counters))
             values = {key: values[key] + old[key] for key in counters}
-        cost = current.cost
-        if previous is not None:
-            cost = None if cost is None or previous.cost is None else previous.cost + cost
+        self.unknown_costs += current.cost is None
+        cost = (current.cost or Decimal(0)) + (previous.cost or Decimal(0) if previous is not None else Decimal(0))
         self.usage = BoundedRequestUsage(**values, cost=cost)
 
     @property
@@ -120,14 +121,18 @@ class Status:
 
     def usage_details(self) -> str:
         if self.usage is None:
-            return "Root Thread usage: unavailable (no observed model response)."
+            return "Conversation usage: unavailable (no observed model response)."
         usage = self.usage
-        cost = "unknown" if usage.cost is None else f"USD {usage.cost:.6f} (model estimate, not subscription billing)"
+        cost = (
+            "unknown"
+            if self.requests == self.unknown_costs or usage.cost is None
+            else f"USD {usage.cost:.6f}{'+' if self.unknown_costs else ''} (model estimate, not subscription billing)"
+        )
         return (
-            f"Observed root Thread: {self.requests} requests · {self.total_tokens:,} total tokens · input {usage.input_tokens:,} · output {usage.output_tokens:,}\n"
+            f"Observed conversation: {self.requests} requests · {self.total_tokens:,} total tokens · input {usage.input_tokens:,} · output {usage.output_tokens:,}\n"
             f"Cache read {usage.cache_read_tokens:,} · cache write {usage.cache_write_tokens:,} (provider-reported counters)\n"
             f"Cache rate: {self.cache_rate_text} of input + output. "
-            f"Cost: {cost}. Child and non-model usage excluded."
+            f"Cost: {cost}. {self.unknown_costs} unknown-cost responses. Root, subagents and auxiliary models included; non-model usage separate."
         )
 
     @property
@@ -149,7 +154,11 @@ class Status:
         context = "--" if self.context_tokens is None else f"{self.context_tokens:,}"
         if self.context_tokens is not None and self.context_window:
             context += f" ({100 * self.context_tokens / self.context_window:.0f}%)"
-        cost = "cost --" if self.usage is None or self.usage.cost is None else f"${self.usage.cost:.4f}"
+        cost = (
+            "cost --"
+            if self.usage is None or self.usage.cost is None or self.requests == self.unknown_costs
+            else f"${self.usage.cost:.4f}{'+' if self.unknown_costs else ''}"
+        )
         compact = width is not None and width < 60
         total = self.total_tokens
         token_count = "--"

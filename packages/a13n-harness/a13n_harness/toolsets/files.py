@@ -38,7 +38,7 @@ from a13n_harness.tools.metadata import (
     ToolOutputPolicy,
     ToolResourceResolver,
 )
-from a13n_harness.usage import ProviderUsage
+from a13n_harness.usage import ProviderUsage, _auxiliary_usage_scope
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolError, ToolFailure, environment_failure, tool_failure
@@ -503,7 +503,8 @@ class FileToolset:
                 instructions=instructions,
             )
             try:
-                raw = await provider.understand(request)
+                with _auxiliary_usage_scope(ctx, source="files.media_understanding", tool_id="filesystem.view"):
+                    raw = await provider.understand(request)
             except HarnessError:
                 raise
             except MediaUnderstandingError as exc:

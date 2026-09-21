@@ -18,7 +18,7 @@ import {
   useContextUsage,
   useThreadUsage,
 } from "./usage";
-import { ContextDetails, CostDetails, TokenDetails } from "./usage-details";
+import { ContextDetails, UsageDetails } from "./usage-details";
 import styles from "./composer-status.module.css";
 
 export function ComposerStatus({
@@ -111,10 +111,10 @@ export function ComposerStatus({
         )}
         {(
           [
-            ["Tokens", summary.tokens, "Token usage"],
+            ["Tokens", summary.tokens, "Conversation usage"],
             ["Context", summary.context, "Context usage"],
-            ["Cost", summary.cost, "Model costs"],
-            ["Cache", summary.cache, "Token usage"],
+            ["Cost", summary.cost, "Conversation usage"],
+            ["Cache", summary.cache, "Conversation usage"],
           ] as const
         ).map(([label, value, title]) => (
           <Popover
@@ -139,10 +139,8 @@ export function ComposerStatus({
                   used={tokens}
                   capacity={context.data?.context_window}
                 />
-              ) : label === "Cost" ? (
-                <CostDetails usage={usage.data} />
               ) : (
-                <TokenDetails usage={usage.data} />
+                <UsageDetails usage={usage.data} />
               )}
               <ErrorNotice
                 error={

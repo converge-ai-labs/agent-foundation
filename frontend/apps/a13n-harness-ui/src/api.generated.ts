@@ -3174,6 +3174,26 @@ export interface components {
             /** Replaces Host Operation */
             replaces_host_operation?: ("search" | "scrape") | null;
         };
+        /** ModelUsageGroup */
+        ModelUsageGroup: {
+            /** Model */
+            model: string;
+            /** Agent Instance Id */
+            agent_instance_id: string;
+            /** Descendant */
+            descendant: boolean;
+            /** Source */
+            source: string;
+            totals: components["schemas"]["UsageTotals"];
+        };
+        /** ModelUsageView */
+        ModelUsageView: {
+            /** Name */
+            name: string;
+            root: components["schemas"]["UsageTotals"];
+            descendants: components["schemas"]["UsageTotals"];
+            combined: components["schemas"]["UsageTotals"];
+        };
         /** @enum {string} */
         NativeInputMediaKind: "image" | "video" | "audio";
         /** NotePage */
@@ -4515,6 +4535,17 @@ export interface components {
             /** Recent Runs */
             recent_runs: components["schemas"]["RunUsageView"][];
             other_runs: components["schemas"]["UsageTotals"];
+            /**
+             * Model Scopes
+             * @default []
+             */
+            model_scopes?: components["schemas"]["ModelUsageView"][];
+            /**
+             * Groups
+             * @default []
+             */
+            groups?: components["schemas"]["ModelUsageGroup"][];
+            other_groups?: components["schemas"]["UsageTotals"] | null;
         };
         /**
          * ThreadWork

@@ -56,6 +56,23 @@ class RunUsageView:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelUsageView:
+    name: str
+    root: UsageTotals
+    descendants: UsageTotals
+    combined: UsageTotals
+
+
+@dataclass(frozen=True, slots=True)
+class ModelUsageGroup:
+    model: str
+    agent_instance_id: str
+    descendant: bool
+    source: str
+    totals: UsageTotals
+
+
+@dataclass(frozen=True, slots=True)
 class ThreadUsageView:
     thread_id: str
     first_observed_at: datetime | None
@@ -67,6 +84,9 @@ class ThreadUsageView:
     other_models: UsageTotals
     recent_runs: tuple[RunUsageView, ...]
     other_runs: UsageTotals
+    model_scopes: tuple[ModelUsageView, ...] = ()
+    groups: tuple[ModelUsageGroup, ...] = ()
+    other_groups: UsageTotals | None = None
 
 
 @dataclass
@@ -130,6 +150,9 @@ class _Aggregation:
     models: dict[str, _Totals] = field(default_factory=dict)
     runs: dict[str, _Totals] = field(default_factory=dict)
     run_agents: dict[str, tuple[str, bool]] = field(default_factory=dict)
+    model_owners: dict[tuple[str, bool], _Totals] = field(default_factory=dict)
+    groups: dict[tuple[str, str, bool, str], _Totals] = field(default_factory=dict)
+    other_groups: _Totals = field(default_factory=_Totals)
 
     def add(self, sequence: int, descendant: bool, payload: str, observed: datetime) -> None:
         record = _RECORD.validate_json(payload)
@@ -148,6 +171,13 @@ class _Aggregation:
                 self.models.setdefault(name, _Totals()).add(record)
             else:
                 self.other.add(record)
+                name = "Other models"
+            self.model_owners.setdefault((name, descendant), _Totals()).add(record)
+            key = (name, record.agent_instance_id, descendant, record.source)
+            if key in self.groups or len(self.groups) < _GROUPS * 4:
+                self.groups.setdefault(key, _Totals()).add(record)
+            else:
+                self.other_groups.add(record)
         self.cursor = sequence
 
     def view(self, thread_id: str) -> ThreadUsageView:
@@ -171,6 +201,24 @@ class _Aggregation:
                 if run_id in self.run_agents
             ),
             other_runs=self.other_runs.view(),
+            model_scopes=tuple(
+                ModelUsageView(
+                    name=name,
+                    root=self.model_owners.get((name, False), _Totals()).view(),
+                    descendants=self.model_owners.get((name, True), _Totals()).view(),
+                    combined=totals.view(),
+                )
+                for name, totals in sorted(
+                    [*self.models.items(), *([("Other models", self.other)] if self.other.requests else [])]
+                )
+            ),
+            groups=tuple(
+                ModelUsageGroup(
+                    model=name, agent_instance_id=agent, descendant=child, source=source, totals=totals.view()
+                )
+                for (name, agent, child, source), totals in sorted(self.groups.items())
+            ),
+            other_groups=self.other_groups.view(),
         )
 
 
@@ -241,6 +289,7 @@ class ThreadUsageRepository:
             ThreadUsageRecord.root_thread_id == thread_id,
             ThreadUsageRecord.descendant.is_(False),
             func.json_extract(ThreadUsageRecord.payload_json, "$.kind") == "model",
+            func.coalesce(func.json_extract(ThreadUsageRecord.payload_json, "$.source"), "agent") == "agent",
         )
         if run_id is not None:
             query = query.where(ThreadUsageRecord.run_id == run_id)

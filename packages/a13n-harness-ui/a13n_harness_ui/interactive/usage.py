@@ -47,6 +47,11 @@ def _usage_summary(view: ThreadUsageView) -> str:
         lines.append(
             f"Provider cost incomplete · {totals.unknown_provider_costs} unknown / {totals.omitted_currency_receipts} currency entries omitted"
         )
+    lines.append("By model · root + subagents + auxiliary models:")
+    lines.extend(_model_table(view.models))
+    if view.other_models.model_requests:
+        lines.extend(_model_table((("Other models", view.other_models),)))
+    lines.append("+ marks a partial known subtotal; missing historical prices are not backfilled.")
     lines.append("/usage details · /usage subscription")
     return "\n".join(lines)
 
@@ -75,6 +80,28 @@ def _usage_details(view: ThreadUsageView) -> str:
         lines.extend(_total_lines(name, totals, details=False))
     if view.other_models.model_requests:
         lines.extend(_total_lines("Other models (breakdown limited to 32 names)", view.other_models, details=False))
+    for label, scope in (("Root", "root"), ("Subagents", "descendants")):
+        rows = tuple(
+            (model.name, model.root if scope == "root" else model.descendants)
+            for model in view.model_scopes
+            if (model.root if scope == "root" else model.descendants).model_requests
+        )
+        if rows:
+            lines.append(f"By model · {label}:")
+            lines.extend(_model_table(rows))
+    if view.groups:
+        lines.append("By agent and source (overlapping dimensions, not additional usage):")
+        for group in view.groups:
+            role = "subagent" if group.descendant else "root"
+            lines.extend(
+                _total_lines(
+                    f"{group.model} · {role} · {group.agent_instance_id} · {group.source}",
+                    group.totals,
+                    details=False,
+                )
+            )
+    if view.other_groups is not None and view.other_groups.model_requests:
+        lines.extend(_total_lines("Other agent/source groups (included in totals)", view.other_groups, details=False))
     lines.append("Recent Runs (up to 32, newest observed first; unique contributions):")
     for run in view.recent_runs:
         role = "child" if run.descendant else "root"
@@ -90,6 +117,23 @@ def _usage_details(view: ThreadUsageView) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _model_table(models: tuple[tuple[str, UsageTotals], ...]) -> list[str]:
+    lines = ["  Model | Requests | Input | Output | Cache read / write | USD"]
+    for name, totals in models:
+        tokens = dict(totals.tokens)
+        cost = (
+            "unknown"
+            if totals.model_requests == totals.unknown_model_costs
+            else f"{totals.model_cost_usd:.6f}{'+' if totals.unknown_model_costs else ''}"
+        )
+        lines.append(
+            f"  {name} | {totals.model_requests:,} | {tokens.get('input_tokens', 0):,} | "
+            f"{tokens.get('output_tokens', 0):,} | {tokens.get('cache_read_tokens', 0):,} / "
+            f"{tokens.get('cache_write_tokens', 0):,} | {cost}"
+        )
+    return lines
 
 
 def _total_lines(title: str, totals: UsageTotals, *, details: bool = True) -> list[str]:

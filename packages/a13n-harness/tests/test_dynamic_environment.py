@@ -85,7 +85,7 @@ from a13n_harness.toolsets._scoped_files import ScopedFileAccess
 from a13n_harness.toolsets.files import FileToolset
 from a13n_harness.toolsets.process_manager import _fit_stream_prefixes
 from a13n_harness.toolsets.shell import ShellToolset
-from a13n_harness.usage import ProviderUsageRecord
+from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord
 from pydantic_ai import BinaryContent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -1290,14 +1290,19 @@ async def test_view_uses_environment_configured_default_understanding_agent(
     assert binary.data == b"\x89PNG"
     assert binary.media_type == "image/png"
     assert tool_returns[0].content == "Environment agent detected: hello"
-    provider_record = next(record for record in result.usage_records if isinstance(record, ProviderUsageRecord))
-    assert provider_record.source == "files.media_understanding"
-    assert provider_record.tool_id == "filesystem.view"
-    assert {measure.unit: measure.quantity for measure in provider_record.usage.measures} == {
-        "requests": 1,
-        "input_tokens": 5,
-        "output_tokens": 3,
-    }
+    media = [
+        record
+        for record in result.usage_records
+        if isinstance(record, ModelUsageRecord) and record.source == "files.media_understanding"
+    ]
+    assert len(media) == 1
+    assert media[0].tool_id == "filesystem.view"
+    assert media[0].tool_call_id == "view-image-default-agent"
+    assert media[0].model_name == understanding_model.model_name
+    assert media[0].request_usage.input_tokens == 5
+    assert media[0].request_usage.output_tokens == 3
+    assert result.usage.requests == 2
+    assert not any(isinstance(record, ProviderUsageRecord) for record in result.usage_records)
 
 
 async def test_view_records_nested_usage_when_understanding_output_retries_exhaust(
@@ -1361,15 +1366,18 @@ async def test_view_records_nested_usage_when_understanding_output_retries_exhau
             "retry_hint": "dependency_change",
         },
     }
-    provider_record = next(record for record in result.usage_records if isinstance(record, ProviderUsageRecord))
-    assert provider_record.source == "files.media_understanding"
-    assert provider_record.tool_id == "filesystem.view"
-    assert provider_record.tool_call_id == "view-image-invalid-output"
-    assert {measure.unit: measure.quantity for measure in provider_record.usage.measures} == {
-        "requests": 3,
-        "input_tokens": 6,
-        "output_tokens": 3,
-    }
+    media = [
+        record
+        for record in result.usage_records
+        if isinstance(record, ModelUsageRecord) and record.source == "files.media_understanding"
+    ]
+    assert len(media) == 3
+    assert all(record.tool_id == "filesystem.view" for record in media)
+    assert all(record.tool_call_id == "view-image-invalid-output" for record in media)
+    assert sum(record.request_usage.input_tokens for record in media) == 6
+    assert sum(record.request_usage.output_tokens for record in media) == 3
+    assert result.usage.requests == 2
+    assert not any(isinstance(record, ProviderUsageRecord) for record in result.usage_records)
 
 
 async def test_view_reports_unavailable_understanding_as_an_ordinary_tool_result(
@@ -1496,6 +1504,7 @@ async def test_media_understanding_releases_mount_scope_before_model_execution()
             deps=SimpleNamespace(
                 model_characteristics=None,
                 record_provider_usage=record_provider_usage,
+                _run_capability=lambda capability_id: None,
             ),
             tool_call_id="view-detached-media",
         ),

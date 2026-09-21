@@ -29,7 +29,10 @@ const usage: Schema<"ThreadUsageView"> = {
   },
   combined: {
     ...totals,
-    tokens: [["input_tokens", 10000]],
+    tokens: [
+      ["input_tokens", 10000],
+      ["cache_read_tokens", 600],
+    ],
     model_cost_usd: "100.025",
   },
   models: [],
@@ -37,7 +40,7 @@ const usage: Schema<"ThreadUsageView"> = {
   recent_runs: [],
   other_runs: totals,
 };
-it("matches root CLI accounting rather than descendant totals or cache/input alone", () => {
+it("matches conversation-wide CLI accounting while context stays request-local", () => {
   expect(
     usageSummary(usage, {
       thread_id: "thread-one",
@@ -45,11 +48,11 @@ it("matches root CLI accounting rather than descendant totals or cache/input alo
       context_window: 100000,
     }),
   ).toEqual({
-    totalTokens: 1000,
-    tokens: "1.0K",
+    totalTokens: 10000,
+    tokens: "10.0K",
     context: "25%",
-    cost: "$0.0250",
-    cache: "60.0%",
+    cost: "$100.03",
+    cache: "6.0%",
   });
 });
 it("distinguishes missing usage from zero, partial costs and tiny nonzero costs", () => {
@@ -62,22 +65,25 @@ it("distinguishes missing usage from zero, partial costs and tiny nonzero costs"
   });
   expect(usageSummary({ ...usage, first_observed_at: null }).cost).toBe("—");
   expect(
-    usageSummary({ ...usage, root: { ...totals, unknown_model_costs: 2 } })
+    usageSummary({ ...usage, combined: { ...totals, unknown_model_costs: 2 } })
       .cost,
   ).toBe("—");
   expect(
-    usageSummary({ ...usage, root: { ...totals, unknown_model_costs: 1 } })
+    usageSummary({ ...usage, combined: { ...totals, unknown_model_costs: 1 } })
       .cost,
   ).toBe("$0.0250+");
   expect(
-    usageSummary({ ...usage, root: { ...totals, model_cost_usd: "0" } }).cost,
+    usageSummary({ ...usage, combined: { ...totals, model_cost_usd: "0" } })
+      .cost,
   ).toBe("$0.0000");
   expect(
-    usageSummary({ ...usage, root: { ...totals, model_cost_usd: "0.000001" } })
-      .cost,
+    usageSummary({
+      ...usage,
+      combined: { ...totals, model_cost_usd: "0.000001" },
+    }).cost,
   ).toBe("<$0.0001");
   expect(
-    usageSummary({ ...usage, root: { ...totals, tokens: [] } }).cache,
+    usageSummary({ ...usage, combined: { ...totals, tokens: [] } }).cache,
   ).toBe("—");
   expect(
     usageSummary(usage, {
@@ -97,7 +103,7 @@ it.each([
 ])("formats %i total tokens like the CLI as %s", (total, text) => {
   const summary = usageSummary({
     ...usage,
-    root: { ...totals, tokens: [["input_tokens", total]] },
+    combined: { ...totals, tokens: [["input_tokens", total]] },
   });
   expect(summary.totalTokens).toBe(total);
   expect(summary.tokens).toBe(text);
@@ -105,10 +111,11 @@ it.each([
 it("keeps unobserved model usage unavailable without losing observed zero", () => {
   expect(usageSummary({ ...usage, first_observed_at: null }).tokens).toBe("—");
   expect(
-    usageSummary({ ...usage, root: { ...totals, model_requests: 0 } }).tokens,
+    usageSummary({ ...usage, combined: { ...totals, model_requests: 0 } })
+      .tokens,
   ).toBe("—");
   expect(
-    usageSummary({ ...usage, root: { ...totals, tokens: [] } }).tokens,
+    usageSummary({ ...usage, combined: { ...totals, tokens: [] } }).tokens,
   ).toBe("0");
 });
 const operation: Schema<"RootOperationView"> = {

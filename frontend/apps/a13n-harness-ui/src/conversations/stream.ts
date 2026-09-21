@@ -538,6 +538,7 @@ export class FocusDisplay {
         if (
           !object(record) ||
           record.kind !== "model" ||
+          (record.source ?? "agent") !== "agent" ||
           record.run_id !== this.runId ||
           record.parent_agent_instance_id != null ||
           record.delegation_id != null ||
