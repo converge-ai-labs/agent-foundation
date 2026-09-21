@@ -1,8 +1,26 @@
 import { StatusPill, type StatusPillVariant } from "a13n-ui";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { StatePill } from "../../shared/feedback";
+import { UNKNOWN } from "../../shared/unknown";
 import styles from "./traces.module.css";
+
+/** Label above value, the one fact anatomy the traces surfaces share. */
+export function Fact({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={styles.fact}>
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
 
 /** Presentation only: missing end time does not imply running execution. */
 export function durationMs(observation: Schema["Observation"]): number | null {
@@ -21,7 +39,7 @@ export function Duration({
   return (
     <>
       {value === null
-        ? "-"
+        ? UNKNOWN
         : `${(value / 1000).toLocaleString(undefined, { maximumFractionDigits: 6 })} s`}
     </>
   );
@@ -37,7 +55,7 @@ export function TelemetryStatus({
   observation: Schema["Observation"];
 }) {
   return observation.status === null ? (
-    <>-</>
+    <>{UNKNOWN}</>
   ) : (
     <StatePill state={observation.status} />
   );
@@ -77,7 +95,7 @@ const levelVariants: Record<string, StatusPillVariant> = {
  */
 export function TracePill({ level }: { level: string | null }) {
   const { t } = useTranslation();
-  if (!level) return <>-</>;
+  if (!level) return <>{UNKNOWN}</>;
   const normalized = level.toLowerCase();
   const label = levelLabels[normalized];
   return (

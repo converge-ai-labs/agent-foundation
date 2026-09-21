@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import anyio
 import httpx2
 import pytest
+from a13n_service.api import install_api_conventions
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.interactions.models import RunAttemptRecord
@@ -25,7 +28,7 @@ from a13n_service.trace_query import (
     TraceCorrelation,
     TraceView,
 )
-from fastapi import Request
+from fastapi import FastAPI, Request
 from tests.hooks.support import hook_actor
 from tests.interactions.conftest import AGENT_REVISION_ID
 
@@ -37,6 +40,75 @@ pytestmark = pytest.mark.skipif(
     not all((_BASE_URL, _PUBLIC_KEY, _SECRET_KEY)),
     reason="A13N_TEST_LANGFUSE_* is not configured",
 )
+
+
+@pytest.mark.anyio
+async def test_service_http_request_is_discoverable_by_request_id_in_langfuse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert _BASE_URL is not None
+    assert _PUBLIC_KEY is not None
+    assert _SECRET_KEY is not None
+    authorization = base64.b64encode(f"{_PUBLIC_KEY}:{_SECRET_KEY}".encode()).decode()
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "otlp")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", f"{_BASE_URL.rstrip('/')}/api/public/otel")
+    monkeypatch.setenv(
+        "OTEL_EXPORTER_OTLP_HEADERS",
+        f"Authorization=Basic%20{authorization},x-langfuse-ingestion-version=4",
+    )
+    runtime = build_observability_runtime(
+        enabled=True,
+        trace_content=TraceContent.none,
+        service_name="a13n-service-integration-test",
+        service_version="test",
+        deployment_environment="integration",
+        service_role="control",
+        shutdown_timeout_seconds=10,
+    )
+    app = FastAPI()
+    app.state.runtime = SimpleNamespace(observability=runtime)
+    install_api_conventions(app)
+
+    @app.get("/integration-probe")
+    async def integration_probe(request: Request) -> dict[str, str]:
+        return {"request_id": request.state.request_id}
+
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://service") as service_client:
+        response = await service_client.get("/integration-probe")
+    request_id = response.headers["X-Request-ID"]
+    await runtime.aclose()
+
+    filters = [
+        {
+            "type": "stringObject",
+            "column": "metadata",
+            "key": "request_id",
+            "operator": "=",
+            "value": request_id,
+        }
+    ]
+    async with httpx2.AsyncClient(
+        base_url=_BASE_URL, auth=(_PUBLIC_KEY, _SECRET_KEY), timeout=5, trust_env=False
+    ) as client:
+        rows: list[dict[str, object]] = []
+        with anyio.fail_after(30):
+            while not rows:
+                query_response = await client.get(
+                    "/api/public/v2/observations",
+                    params={
+                        "fields": "core,basic,metadata,trace_context",
+                        "expandMetadata": "attributes,resourceAttributes,scope",
+                        "filter": json.dumps(filters),
+                        "limit": "10",
+                    },
+                )
+                query_response.raise_for_status()
+                rows = query_response.json().get("data", [])
+                if not rows:
+                    await anyio.sleep(0.5)
+
+    assert any(row.get("name") == "a13n.service.http.request" for row in rows)
 
 
 @pytest.mark.anyio

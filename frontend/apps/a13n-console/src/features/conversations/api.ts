@@ -1,6 +1,5 @@
 import { readDisplay } from "./display";
 import type { Client, paths } from "../../service-client";
-import { ApiError } from "../../service-client";
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import {
   allPages,
@@ -220,9 +219,14 @@ export function invalidateConversation(
 
 export const isActiveRun = (status?: string) =>
   status === "accepted" || status === "running";
+/** Chat and Debug are the same page; the disclosure level travels in the URL. */
+export type ViewLevel = "chat" | "debug";
+
 export function runPath(
   basePath: string,
   receipt: { session_id: string; thread_id: string; run_id: string },
+  view?: ViewLevel,
 ) {
-  return `${basePath}/sessions/${receipt.session_id}/threads/${receipt.thread_id}/runs/${receipt.run_id}`;
+  const path = `${basePath}/sessions/${receipt.session_id}/threads/${receipt.thread_id}/runs/${receipt.run_id}`;
+  return view ? `${path}?view=${view}` : path;
 }

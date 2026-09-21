@@ -57,7 +57,8 @@ async def test_skill_publication_orders_with_run_acceptance(skills: SkillJourney
         other = "TWO" if expected == "ONE" else "ONE"
         assert "ATTACHMENT_" + other not in result["output_text"]
         replay = await skills.live.http.post(skills.base + "/runs", headers=headers, json=body)
-        assert replay.status_code == 202 and replay.json() == receipt
+        assert replay.status_code == 202, replay.text
+        await skills.live.assert_current_acceptance(replay.json(), receipt)
     finally:
         if barrier:
             skills.release(barrier)

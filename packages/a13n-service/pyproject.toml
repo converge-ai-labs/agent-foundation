@@ -28,6 +28,7 @@ dependencies = [
     "httpx2>=2.5,<3",
     "jsonschema>=4.25,<5",
     "opentelemetry-exporter-otlp>=1.39,<2",
+    "opentelemetry-exporter-prometheus>=0.65b0,<0.66",
     "opentelemetry-sdk>=1.39,<2",
     "pydantic[email]>=2.12,<3",
     "pydantic-ai>=2.41.0,<3",
@@ -49,6 +50,7 @@ dependencies = [
     "zstandard>=0.25,<0.26",
     "websockets>=15,<16",
     "protobuf>=6.32,<7",
+    "prometheus-client>=0.26,<1",
 ]
 
 [project.scripts]

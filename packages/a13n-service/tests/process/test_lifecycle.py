@@ -185,7 +185,8 @@ async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(loca
                     "request_id": response.headers["X-Request-ID"],
                 }
             }
-        assert delivery.headers["X-Request-ID"] == "req-draining"
+        assert delivery.headers["X-Request-ID"].startswith("req-")
+        assert delivery.headers["X-Request-ID"] != "req-draining"
         assert health.status_code == 200
 
     assert app.state.runtime.status.startup_complete is False

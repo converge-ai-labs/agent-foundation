@@ -1,0 +1,106 @@
+.popup {
+  width: min(400px, calc(100vw - 24px));
+}
+.popup [data-slot="popover-viewport"] {
+  padding: 0;
+}
+.sheet {
+  grid-template-rows: auto minmax(0, 1fr);
+  border-radius: 16px 16px 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  outline: none;
+}
+.title {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+}
+.body {
+  min-width: 0;
+  min-height: 0;
+  max-height: min(65dvh, 540px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px 16px;
+}
+.row {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  height: auto;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 10px 8px;
+  font-weight: 400;
+}
+.row > span:first-child {
+  flex-shrink: 0;
+}
+.value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--a13n-secondary);
+}
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.choice {
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding: 10px 8px;
+  justify-content: space-between;
+  white-space: normal;
+  text-align: left;
+  font-weight: 400;
+}
+.choice > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.choice small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.hint {
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 639px) {
+  .body input {
+    font-size: 16px;
+  }
+  .header button,
+  .body button {
+    min-height: 44px;
+  }
+}

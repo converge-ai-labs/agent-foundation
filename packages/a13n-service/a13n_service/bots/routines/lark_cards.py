@@ -10,8 +10,9 @@ from pydantic import JsonValue
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.temporal import assume_utc, utc_now
 
-from .domain import ProposeRoutine, RoutineDefinition
+from .domain import RoutineDefinition
 from .models import RoutineRecord
+from .service import proposal_arguments
 
 
 @cache
@@ -22,7 +23,7 @@ def _labels(language: str) -> dict[str, str]:
 
 def render(row: RoutineRecord, *, language: str = "en_us") -> JsonObject:
     labels = _labels(language)
-    proposal = ProposeRoutine.model_validate(row.proposal_json) if row.proposal_json else None
+    proposal = proposal_arguments(row) if row.proposal_json else None
     definition = (
         proposal.definition
         if proposal and proposal.definition
@@ -30,17 +31,46 @@ def render(row: RoutineRecord, *, language: str = "en_us") -> JsonObject:
     )
     state = labels[f"confirm_{proposal.operation}" if proposal else row.state]
     title = definition.title if definition else labels["title"]
+    event = definition.event if definition else None
+    if event:
+        if proposal and proposal.operation == "save":
+            state = labels["confirm_event"]
+        elif not proposal and row.state == "active":
+            state = labels["event_queued" if row.next_run_at else "watching"]
+        elif not proposal and row.state == "completed":
+            state = labels["event_completed"]
     details = [state]
+    schedule = definition.schedule if definition else None
+    if schedule:
+        details.append(schedule.describe())
+    if event:
+        details.append(labels["event_condition"].format(event=labels.get(event.event_type, event.event_type)))
+        conditions = ", ".join(
+            f"{labels.get('filter_' + key, key)}: {value}" for key, value in event.filters.items() if value is not None
+        )
+        details.append(labels["event_filters"].format(filters=conditions or labels["all_events"]))
+        details.append(labels["event_once" if event.once else "event_ongoing"])
+        source = row.proposal_json.get("_event_source") if row.proposal_json else None
+        if isinstance(source, dict):
+            details.append(
+                labels["event_source"].format(
+                    account=source["account_name"],
+                    kind=labels.get(str(source["target_kind"]), source["target_kind"]),
+                    target=source["external_target_id"],
+                )
+            )
+        details.append(labels["event_source_id"].format(id=event.source_target_id))
+        details.append(labels["event_sharing"])
     if definition:
-        details += [definition.schedule.describe(), definition.prompt]
+        details.append(definition.prompt)
     details.append(labels["destination"].format(owner=row.owner_id))
-    next_at = definition.schedule.next_after(utc_now()) if proposal and definition else row.next_run_at
-    if next_at and definition:
-        zone = ZoneInfo(definition.schedule.timezone)
+    next_at = schedule.next_after(utc_now()) if proposal and schedule else row.next_run_at
+    if next_at and schedule:
+        zone = ZoneInfo(schedule.timezone)
         details.append(
             labels["next"].format(time=f"{assume_utc(next_at).astimezone(zone):%Y-%m-%d %H:%M} ({zone.key})")
         )
-    elif proposal and definition:
+    elif proposal and schedule:
         details.append(labels["expired"])
     if proposal:
         details.append(labels["confirmation"])

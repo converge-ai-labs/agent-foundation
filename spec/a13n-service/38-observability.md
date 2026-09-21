@@ -21,7 +21,17 @@ Telemetry storage, retention, and archival belong to the deployment operator and
 | Telemetry storage, retention, and archival      | Deployment operator and selected backend                       | Remain outside Service and never become durable lifecycle authority                |
 | OTLP fan-out and tail sampling                  | External OpenTelemetry Collector                               | Remain outside the Service process                                                 |
 
-This contract owns tracing. Harness metrics retain their independent provider and instrument ownership. A trace setting neither enables nor disables an otherwise selected meter provider.
+Service owns the process meter provider when `observability.metrics=true` (default false). It shares that provider with Harness and exposes a Prometheus reader at `GET`/`HEAD /metrics` on the internal HTTP listener. Disabling tracing does not disable metrics. Each container runs one process and must be scraped directly; there is no multiprocess aggregation or required Collector. The endpoint returns 404 when metrics are disabled and performs no database queries. Operators enable it only behind an internal network boundary.
+
+Service records HTTP request count and response-lifetime duration, with fixed histogram buckets and bounded method, route template, status, and outcome labels. Outcomes distinguish success, client/server error, failed streams and cancellation. IDs, raw paths and query strings are not metric labels. Harness retains ownership of its existing instruments. This contract does not introduce queue sampling, background/business metrics, dashboards or alert policies.
+
+## HTTP and Log Correlation
+
+One HTTP request owns one independent `a13n.service.http.request` SERVER span through response completion or disconnect, except the metrics endpoint itself. It uses the existing provider, sampling and OTLP destination. It records safe method, route template, status and outcome, never request content. Its Service-generated `request_id` appears in the response and request logs; a valid incoming `X-Request-ID` is retained separately as `upstream_request_id`. After durable acceptance or idempotent replay, the HTTP boundary also records `run_id`. HTTP correlation projects `a13n.request.id` and `a13n.service.run.id`, with `request_id` and `run_id` observation metadata for Langfuse. No persistent ID mapping is created.
+
+RunAttempt traces retain their independent roots and existing Service/Harness descendants. Attempt logs bind `run_id` and `run_attempt_id`; Service logging adds active OTel trace/span IDs. Context is restored on boundary exit. Generic HTTP traces do not expand the authorized Agent Trace Query API. Sampling, exporter failure and backend retention can leave no trace for a request.
+
+Service configures the existing `a13n-logging` package once. Output selects stdout, size-rotating files, or both. File output uses a bounded background writer; overflow/disk failure may lose records without failing business work, and shutdown waiting is bounded. Rotation size is a threshold and backup count excludes the active file. Every process owns its file. Service projects exception types and stack locations without raw exception messages at its logging handlers; arbitrary explicit log messages still require safe values at their owner.
 
 ## Thread Trace and Vendor Mapping
 
@@ -47,7 +57,7 @@ Service projects the following generic grouping on every approved span in a RunA
 | `a13n.thread.id`              | `thread_id`          | Stable Agent Foundation Thread correlation                          |
 | `a13n.observation.session.id` | Service `session_id` | Higher product grouping that can contain root and child Threads     |
 
-For Langfuse's OTLP ingestion this produces the explicit mapping:
+For RunAttempt traces, Langfuse's OTLP ingestion produces the explicit mapping:
 
 ```text
 Langfuse Session      = Service Thread
@@ -61,27 +71,28 @@ Service's `Session` and Langfuse's Session intentionally have different meanings
 
 ## Producer and Export Configuration
 
-Service's OTel producer policy has exactly two common fields:
+Service's OTel producer policy has independent tracing and metrics fields:
 
 ```toml
 [observability]
 tracing = true
+metrics = false # enable only on an internal HTTP listener
 trace_content = "none" # none | standard | full
 ```
 
-They map to `A13N_SERVICE_OBSERVABILITY_TRACING` and `A13N_SERVICE_OBSERVABILITY_TRACE_CONTENT` under the common runtime precedence. Release defaults are `tracing=true` and `trace_content="none"`. Development deployments can explicitly select another content value; there is no implicit development profile, Workspace override, per-Run override, default/ceiling pair, or configuration hot reload. The content value is dormant while tracing is disabled and is not recorded as a span attribute. Trace query selection and credentials are an independent control-plane concern owned by [Trace Query](39-trace-query.md#configuration-and-provider-selection); selecting or disabling a query provider never changes this producer or exporter configuration.
+The tracing fields map to `A13N_SERVICE_OBSERVABILITY_TRACING` and `A13N_SERVICE_OBSERVABILITY_TRACE_CONTENT` under the common runtime precedence. Metrics map to `A13N_SERVICE_OBSERVABILITY_METRICS`, default false. Release defaults are `tracing=true` and `trace_content="none"`. Development deployments can explicitly select another content value; there is no implicit development profile, Workspace override, per-Run override, default/ceiling pair, or configuration hot reload. The content value is dormant while tracing is disabled and is not recorded as a span attribute. Trace query selection and credentials are an independent control-plane concern owned by [Trace Query](39-trace-query.md#configuration-and-provider-selection); selecting or disabling a query provider never changes this producer or exporter configuration.
 
 Endpoint, protocol, headers, TLS, compression, sampler, batching, queue, timeout, retry, and resource overrides use only standard `OTEL_*` settings. Service defines no `profile`, `backend`, `langfuse_enabled`, or parallel `A13N_SERVICE_*` transport settings. OTLP authentication values remain protected deployment configuration and never enter effective-configuration output, diagnostics, or traces.
 
 Runtime behavior is:
 
-| Configuration                                       | Provider behavior                                                                                            |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `tracing=false`                                     | Construct no real tracer provider, processor, or trace exporter; pass disabled instrumentation to Harness    |
-| `tracing=true`, exporter unset or `none`            | Construct the structural instrumentation boundary with no network exporter and emit one safe startup warning |
-| `tracing=true`, exporter `otlp`                     | Construct one batch processor and one OTLP exporter from standard OTel settings                              |
-| Unsupported exporter or malformed static OTel value | Fail startup before serving work                                                                             |
-| Export endpoint unavailable after startup           | Keep readiness and Agent work independent; bounded retry, drop, and safe diagnostics apply                   |
+| Configuration                                       | Provider behavior                                                                                                                |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `tracing=false`                                     | Construct no real tracer provider, processor, or trace exporter; pass no tracer provider to Harness (metrics remain independent) |
+| `tracing=true`, exporter unset or `none`            | Construct the structural instrumentation boundary with no network exporter and emit one safe startup warning                     |
+| `tracing=true`, exporter `otlp`                     | Construct one batch processor and one OTLP exporter from standard OTel settings                                                  |
+| Unsupported exporter or malformed static OTel value | Fail startup before serving work                                                                                                 |
+| Export endpoint unavailable after startup           | Keep readiness and Agent work independent; bounded retry, drop, and safe diagnostics apply                                       |
 
 The Service uses the OTel `always_on` sampler unless standard `OTEL_TRACES_SAMPLER` and `OTEL_TRACES_SAMPLER_ARG` select another head sampler. One root decision applies to the complete RunAttempt subtree. Result-aware tail sampling belongs to an external Collector.
 
@@ -229,7 +240,7 @@ These indicators contain no payload, and an external input indicator changes to 
 
 These fields do not copy system prompts, intermediate model messages, tool arguments or results, complete conversation history, Harness state, binary bytes, file contents, or usage records. `full` expands upstream Pydantic capture but does not make the Service root another dump of those descendants.
 
-Except for this explicit root input/output boundary and the registered phase-result summaries, Service-owned Resource, span, event, and link fields use only the closed registries in this contract. They never contain credentials, Secret values, Authorization, cookies, environment variables, raw headers or bodies, raw exception objects, native paths, arbitrary metadata, provider response bodies, or copied prompt/model/tool content. This producer constraint does not make allowed root or upstream Pydantic content safe. A deployment requiring stronger controls places a tested processor or Collector policy before data crosses its trust boundary.
+Except for this explicit root input/output boundary, the registered phase-result summaries and the HTTP fields defined above, Service-owned Resource, span, event, and link fields use only the closed registries in this contract. They never contain credentials, Secret values, Authorization, cookies, environment variables, raw headers or bodies, raw exception objects, native paths, arbitrary metadata, provider response bodies, or copied prompt/model/tool content. This producer constraint does not make allowed root or upstream Pydantic content safe. A deployment requiring stronger controls places a tested processor or Collector policy before data crosses its trust boundary.
 
 Service adds no trace-specific byte truncation. Oversized upstream spans can be rejected by an exporter or backend and are then lost as telemetry without changing Agent or Run behavior.
 

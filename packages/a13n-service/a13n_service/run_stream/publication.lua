@@ -27,6 +27,8 @@ if server_id == '' then
 end
 if not server_id then refuse('CONTINUITY') end
 if operation == 'initialize' and request.expected_server_id ~= server_id then refuse('CONTINUITY') end
+if operation == 'initialize' and type(request.recovery_deadline) == 'number' and
+   tonumber(redis.call('TIME')[1]) >= request.recovery_deadline then refuse('CONTINUITY') end
 
 local pending = field('pending')
 if metadata_type ~= 'none' then
@@ -96,7 +98,7 @@ local function compare_ids(left, right)
     return millis == 0 and compare_fences(ls, rs) or millis
 end
 
--- A verified object checkpoint is the only authority for retention. Repeating
+-- A verified object checkpoint is the only authority for prefix trimming. Repeating
 -- this operation after a lost response or a partial trim is idempotent.
 if operation == 'acknowledge_display' then
     if pending and pending ~= request.digest then refuse('PENDING') end
@@ -114,13 +116,16 @@ if operation == 'acknowledge_display' then
             if row[2][index] == 'body' then bytes = bytes + #row[2][index + 1] end
         end
     end
-    local retained = redis.call('XREVRANGE', stream, '+', '-', 'COUNT', request.max_events)
-    local cutoff = retained[#retained][1]
-    if compare_ids(cursor, cutoff) < 0 then cutoff = cursor end
-    local removed = redis.call('XREVRANGE', stream, '(' .. cutoff, '-', 'COUNT', 1)
-    if #removed > 0 then
-        redis.call('HSET', metadata, 'trimmed', '1', 'trimmed_through', removed[1][1])
-        redis.call('XTRIM', stream, 'MINID', cutoff)
+    -- Finding the retention boundary loads full event bodies; skip it when no trim is needed.
+    if redis.call('XLEN', stream) > request.max_events then
+        local retained = redis.call('XREVRANGE', stream, '+', '-', 'COUNT', request.max_events)
+        local cutoff = retained[#retained][1]
+        if compare_ids(cursor, cutoff) < 0 then cutoff = cursor end
+        local removed = redis.call('XREVRANGE', stream, '(' .. cutoff, '-', 'COUNT', 1)
+        if #removed > 0 then
+            redis.call('HSET', metadata, 'trimmed', '1', 'trimmed_through', removed[1][1])
+            redis.call('XTRIM', stream, 'MINID', cutoff)
+        end
     end
     redis.call('HSET', metadata, 'durable_cursor', cursor,
         'pending_events', #suffix, 'pending_bytes', bytes, 'length', redis.call('XLEN', stream))
@@ -275,6 +280,9 @@ if operation == 'activate' then
     update(receipt_key, cjson.encode({digest = request.digest, leased_id = ids[1], recovery_id = ids[2] or ''}))
 elseif operation == 'initialize' then
     update('initialization', cjson.encode({digest = request.digest, id = ids[1]}))
+    if type(request.recovery_deadline) == 'number' then
+        update('recovery_deadline', request.recovery_deadline)
+    end
 elseif operation == 'complete' then
     update('attempt_projection:' .. request.attempt_id, request.harness_run_id)
 elseif operation == 'incomplete' then
@@ -290,7 +298,13 @@ update('length', redis.call('XLEN', stream))
 update('pending_events', pending_events)
 update('pending_bytes', pending_bytes)
 redis.call('HSET', metadata, unpack(updates))
-if not closed then
+local recovery = tonumber(field('recovery_deadline'))
+if recovery then
+    local retained = tonumber(field('retention_deadline'))
+    if retained then recovery = retained end
+    redis.call('EXPIREAT', stream, recovery)
+    redis.call('EXPIREAT', metadata, recovery)
+elseif not closed then
     redis.call('PERSIST', stream)
     redis.call('PERSIST', metadata)
 end

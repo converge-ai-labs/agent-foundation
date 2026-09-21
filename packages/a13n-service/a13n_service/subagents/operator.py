@@ -102,9 +102,10 @@ class DurableSubagentOperator(SubagentOperator):
         del tool_call
         authority = self._require_plan(plan, request.subagent_name)
         delegated_input = _delegated_input(plan)
-        prepared = await self._admission_preparer.prepare_delegate(authority, plan, request, delegated_input)
+        admission = await self._admission_preparer.prepare_delegate(authority, plan, request, delegated_input)
+        prepared = admission.candidate
         _validate_delegate_candidate(prepared, authority=authority, plan=plan, delegated_input=delegated_input)
-        receipt = await self._acceptance.accept(prepared, authority)
+        receipt = await self._acceptance.accept(prepared, authority, parent_source=admission.parent)
         return _accepted_view(
             receipt,
             child_definition_id=prepared.child_definition_id,
@@ -270,13 +271,14 @@ class DurableSubagentOperator(SubagentOperator):
                 "subagent_not_resumable",
                 "The retained subagent execution is not a selected completed child head",
             )
-        prepared = await self._admission_preparer.prepare_resume(
+        admission = await self._admission_preparer.prepare_resume(
             authority,
             source,
             plan,
             request,
             delegated_input,
         )
+        prepared = admission.candidate
         _validate_resume_candidate(
             prepared,
             authority=authority,
@@ -284,7 +286,9 @@ class DurableSubagentOperator(SubagentOperator):
             plan=plan,
             delegated_input=delegated_input,
         )
-        receipt = await self._acceptance.accept_resume(prepared, authority)
+        receipt = await self._acceptance.accept_resume(
+            prepared, authority, parent_source=admission.parent, source_state=admission.source_state
+        )
         return _accepted_view(
             receipt,
             child_definition_id=prepared.child_definition_id,

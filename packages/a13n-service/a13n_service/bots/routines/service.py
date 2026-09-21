@@ -20,6 +20,7 @@ from a13n_service.temporal import assume_utc, utc_now
 from .authority import authorize_routine
 from .context import conversation_id, is_group
 from .domain import ProposeRoutine, RoutineDefinition
+from .events import activate_source, authorize_source, resolve_source, source_snapshot
 from .models import RoutineRecord
 
 
@@ -73,7 +74,11 @@ class RoutineService:
             raise RoutineInputError("routine_unavailable")
         if row is not None and arguments.operation in {"pause", "resume"} and row.definition_json is None:
             raise RoutineInputError("routine_requires_confirmation")
-        if arguments.definition is not None and arguments.definition.schedule.next_after(now) is None:
+        if (
+            arguments.definition is not None
+            and arguments.definition.schedule is not None
+            and arguments.definition.schedule.next_after(now) is None
+        ):
             raise RoutineInputError("routine_time_must_be_in_future")
         await session.get(AccountRecord, context.account_id, with_for_update=True)
         if row is None:
@@ -103,7 +108,11 @@ class RoutineService:
             )
             session.add(row)
         await authorize_routine(session, row)
-        row.proposal_json = arguments.model_dump(mode="json")
+        proposal = arguments.model_dump(mode="json", exclude_none=True)
+        if arguments.definition is not None and arguments.definition.event is not None:
+            source_account, source_target = await resolve_source(session, row, arguments.definition.event)
+            proposal["_event_source"] = source_snapshot(source_account, source_target)
+        row.proposal_json = proposal
         row.proposal_expires_at = now + timedelta(hours=24)
         changed(row)
         await session.flush()
@@ -162,7 +171,7 @@ async def handle_action(session: AsyncSession, account: AccountRecord, action: P
             or assume_utc(row.proposal_expires_at) <= utc_now()
         ):
             return {}
-        proposal = ProposeRoutine.model_validate(row.proposal_json)
+        proposal = proposal_arguments(row)
         operation = proposal.operation
     else:
         proposal = None
@@ -178,12 +187,18 @@ async def handle_action(session: AsyncSession, account: AccountRecord, action: P
         )
         if definition is None:
             return {}
-        next_at = definition.schedule.next_after(utc_now())
-        if next_at is None:
+        next_at = definition.schedule.next_after(utc_now()) if definition.schedule else None
+        if definition.schedule is not None and next_at is None:
             row.last_error = "scheduled_time_expired"
             changed(row)
             return {}
-        row.definition_json = definition.model_dump(mode="json")
+        if operation == "resume" and definition.event:
+            await authorize_source(session, row)
+        expected = row.proposal_json.get("_event_source") if proposal and row.proposal_json else None
+        await activate_source(
+            session, row, definition, utc_now(), expected=expected if isinstance(expected, dict) else None
+        )
+        row.definition_json = definition.model_dump(mode="json", exclude_none=True)
         row.state = "active"
         row.next_run_at = next_at
         row.last_error = None
@@ -200,7 +215,16 @@ async def handle_action(session: AsyncSession, account: AccountRecord, action: P
             row.state = "deleted"
     else:
         return {}
+    row.lease_token = None
+    row.lease_until = None
     row.proposal_json = None
     row.proposal_expires_at = None
     changed(row)
     return {}
+
+
+def proposal_arguments(row: RoutineRecord) -> ProposeRoutine:
+    assert row.proposal_json is not None
+    return ProposeRoutine.model_validate(
+        {key: value for key, value in row.proposal_json.items() if key != "_event_source"}
+    )

@@ -154,13 +154,16 @@ An authenticated `ping` is acknowledged without admission. Supported input event
 - `issue_comment`: `created`;
 - `pull_request`: `opened`, `reopened`, `closed`, `ready_for_review`, `converted_to_draft`, `synchronize`, `labeled`, and `unlabeled`;
 - `pull_request_review`: `submitted` and `dismissed`; and
-- `pull_request_review_comment`: `created`.
+- `pull_request_review_comment`: `created`; and
+- `workflow_run`: `completed`, for confirmed event subscriptions rather than Issue/PR conversation input.
 
 An exact target uses `target_kind="repository"` and one canonical positive decimal repository database ID. Repository names, labels, branches, and event content do not define match rules. Supported event/action pairs remain adapter-owned; the repository ID is immutable identity.
 
 Safe normalization contains only the bounded event/action, repository ID and label, issue or pull-request number and kind, title/body projection, state, labels, verified actor projection, safe public URLs, and changed-field summary required by the event. Stable references are the installation plus repository database ID, that repository plus issue or pull-request number and kind, and the exact review thread/comment database or node ID when present.
 
-Events authored by the verified bot account are ignored, as are unsupported edit/delete actions. Service does not append a visible or hidden operation marker to comments. The installation grants read-only Metadata plus only the repository permissions required by enabled events and actions: Issues read/write for issue input and comments, and Pull Requests read/write for pull-request input, reviews, comments, and file reads. An authenticated irrelevant, ping, or duplicate delivery returns `200`; a newly eligible event returns `202` only after durable admission. Invalid authentication returns `401`, malformed authenticated input returns `400`, and exhausted capacity returns `503` with `Retry-After`.
+PR events also retain the exact boolean `merged`; workflow completions retain workflow ID, workflow Run ID, attempt number, head branch, conclusion, and occurrence time. Workflow events have a workflow Run target reference and never receive Issue/PR native actions. [Event-triggered channel tasks](../../frontend/bots.md#event-triggered-channel-tasks) own subscription matching and destination authority.
+
+Events authored by the verified bot account are ignored except completed workflows and merged PR closures needed by explicit subscriptions; unsupported edit/delete actions are ignored. Service does not append a visible or hidden operation marker to comments. The installation grants read-only Metadata plus only the repository permissions required by enabled events and actions: Issues read/write for issue input and comments, and Pull Requests read/write for pull-request input, reviews, comments, and file reads, plus Actions read for Workflow run events. An authenticated irrelevant, ping, or duplicate delivery returns `200`; a newly eligible event returns `202` only after durable admission. Invalid authentication returns `401`, malformed authenticated input returns `400`, and exhausted capacity returns `503` with `Retry-After`.
 
 ### Native actions
 

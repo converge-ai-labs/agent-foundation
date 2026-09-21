@@ -64,6 +64,49 @@ async def test_missing_retained_items_are_explicit(queries: NativeInteractionQue
     assert application_error_status(captured.value) == 409
 
 
+@pytest.mark.parametrize("snapshot_state", ["missing", "partial", "finalized"])
+async def test_expired_recovery_read_preserves_snapshot_coverage(queries, snapshot_state):
+    from datetime import timedelta
+
+    from a13n_harness import SafeFailure
+    from a13n_service.interactions.models import RunRecord
+    from a13n_service.run_stream import RunDisplaySnapshot, run_stream_key_digest_sha256
+    from a13n_service.storage import transaction
+    from a13n_service.temporal import utc_now
+
+    from tests.interactions.conftest import ORGANIZATION_ID
+
+    sealed = utc_now() - timedelta(days=2)
+    async with transaction(queries._sessions) as database:
+        run = await database.get(RunRecord, RUN_ID)
+        run.status = "failed"
+        run.sealed_at = sealed
+        run.failure_json = SafeFailure(code="test_failure", message="Failed.").model_dump(mode="json")
+    if snapshot_state == "missing":
+        with pytest.raises(NativeQueryError) as captured:
+            await queries.items(actor=hook_actor(), run_id=RUN_ID, limit=50, cursor=None)
+        assert captured.value.code == "items_unavailable"
+        assert captured.value.details["recovery_exhausted"] is True
+        return
+    snapshot = RunDisplaySnapshot(
+        version=1,
+        run_id=RUN_ID,
+        thread_id=THREAD_ID,
+        cursor="1-0",
+        stream_key_digest_sha256=run_stream_key_digest_sha256(ORGANIZATION_ID, RUN_ID),
+        finalized=snapshot_state == "finalized",
+        closed_at=sealed if snapshot_state == "finalized" else None,
+    )
+    await queries._display.publish(ORGANIZATION_ID, snapshot, previous=None)
+    page = await queries.items(actor=hook_actor(), run_id=RUN_ID, limit=50, cursor=None)
+    assert page.complete is True
+    assert page.finalized is (snapshot_state == "finalized")
+    assert page.recovery_exhausted is (snapshot_state == "partial")
+    assert page.incomplete_reason is None and page.snapshot_version == 1
+    stored = await queries._display.read(ORGANIZATION_ID, RUN_ID, expected_thread_id=THREAD_ID)
+    assert stored.snapshot == snapshot
+
+
 async def test_active_display_pagination_restarts_when_snapshot_changes(queries: NativeInteractionQueries) -> None:
     from a13n_service.run_stream import RetainedItem, RunDisplaySnapshot, run_stream_key_digest_sha256
 

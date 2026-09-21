@@ -13,9 +13,9 @@
 .transcript {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 22px;
+  gap: 32px;
   align-content: start;
-  padding-bottom: 16px;
+  padding-bottom: 20px;
 }
 .notice {
   display: flex;
@@ -27,46 +27,47 @@
   font-size: 12.5px;
   line-height: 1.6;
 }
-
-/* Run separator ---------------------------------------------------------- */
-.separator {
+/* Reaching further back is an aside, not a call to action. */
+.earlierRuns {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  justify-content: center;
+  padding: 6px 0 2px;
+}
+.earlierRunsAction {
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+.earlierRunsAction:hover {
+  color: var(--a13n-text);
+}
+
+/* One turn --------------------------------------------------------------- */
+.turn {
+  display: grid;
+  gap: 14px;
   min-width: 0;
-  padding-top: 8px;
 }
-.rule {
-  flex: 1;
-  height: 1px;
-  background: var(--a13n-border-soft);
+.turnAction {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -6px;
 }
-.separatorLabel {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  color: var(--a13n-secondary);
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-}
+.turnAction a,
+.turnAction button,
 .separatorLink {
-  flex: none;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 12px;
   text-decoration: none;
 }
+.turnAction a:hover,
+.turnAction button:hover,
 .separatorLink:hover {
   color: var(--a13n-text);
   text-decoration: underline;
 }
-.earlierRuns {
-  display: flex;
-  justify-content: center;
-}
 
-/* User message ----------------------------------------------------------- */
+/* What the person sent --------------------------------------------------- */
 .userTurn {
   display: grid;
   justify-items: end;
@@ -74,11 +75,13 @@
   min-width: 0;
 }
 .userCaption {
+  padding-right: 4px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
 }
 .userMessage {
-  max-width: 80%;
+  max-width: 78%;
   min-width: 0;
   padding: 10px 14px;
   border-radius: 16px 16px 6px 16px;
@@ -86,11 +89,30 @@
   font-size: 14px;
   line-height: 1.6;
 }
+.guidanceMessage {
+  display: grid;
+  gap: 3px;
+  background: transparent;
+  border: 1px dashed var(--a13n-border);
+}
+.guidanceLabel {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
 .prose {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 14px;
   line-height: 1.6;
+}
+/* The second, quieter fact about a request: a terminal status, a parent task. */
+.requestNote {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 .resolutions {
   display: grid;
@@ -100,6 +122,7 @@
 .attachments {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
   margin-top: 8px;
 }
@@ -110,7 +133,7 @@
   max-width: 100%;
   min-width: 0;
   padding: 4px 8px;
-  border-radius: 8px;
+  border-radius: var(--a13n-radius-tile);
   background: var(--a13n-elevated);
   box-shadow: var(--a13n-shadow-subtle);
   color: var(--a13n-secondary);
@@ -134,7 +157,7 @@
   white-space: nowrap;
 }
 
-/* Agent answer ----------------------------------------------------------- */
+/* What the agent answered ------------------------------------------------ */
 .agentTurn {
   min-width: 0;
 }
@@ -142,10 +165,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   margin-bottom: 10px;
-  font-size: 13px;
 }
 .agentHeading strong {
+  font-size: 12.5px;
   font-weight: 500;
 }
 .agentAvatar {
@@ -160,9 +184,17 @@
   color: var(--a13n-text);
   font-size: 10px;
 }
+.agentStatus {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.agentStatus[data-state="waiting"] {
+  color: var(--a13n-warning);
+}
 .agentContent {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
   padding-left: 28px;
 }
@@ -171,9 +203,24 @@
   font-size: 14px;
   line-height: 1.65;
 }
+.agentMessage[data-streaming] > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--a13n-text);
+  animation: caret 1.1s step-end infinite;
+}
+.thinking {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+}
 .messageActions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 4px;
   margin-top: 2px;
   opacity: 0;
@@ -188,116 +235,11 @@
     opacity: 1;
   }
 }
-
-/* Execution rows --------------------------------------------------------- */
-.executionGroup {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  padding: 4px;
-  border-radius: var(--a13n-radius-group);
-  background: var(--a13n-surface);
-}
-.executionRow {
-  min-width: 0;
-}
-.executionTrigger {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: var(--a13n-radius-row);
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.executionTrigger:hover {
-  background: var(--a13n-hover);
-}
-.executionTrigger:focus-visible {
-  outline: 2px solid var(--a13n-focus);
-  outline-offset: -2px;
-}
-.caret {
-  flex: none;
-  color: var(--a13n-secondary);
-  transition: transform 120ms ease;
-}
-.caret[data-expanded] {
-  transform: rotate(90deg);
-}
-.executionIcon {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  border-radius: 8px;
-  background: var(--a13n-elevated);
-  box-shadow: var(--a13n-shadow-subtle);
-  color: var(--a13n-secondary);
-}
-.executionName {
-  flex: none;
-  max-width: 45%;
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.executionSummary {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--a13n-secondary);
-  font-size: 12.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.executionState {
-  display: flex;
-  align-items: center;
-  flex: none;
-  margin-left: auto;
-  color: var(--a13n-secondary);
-}
-.executionBody {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  padding: 4px 10px 12px 40px;
-}
-.executionBody h4 {
-  margin: 0;
-  color: var(--a13n-secondary);
-  font-size: 11px;
-  font-weight: 500;
-}
-.executionBody pre {
-  background: var(--a13n-elevated);
-  max-height: 320px;
-}
-.reasoningProse {
-  color: var(--a13n-secondary);
-  font-size: 13px;
-  line-height: 1.65;
-}
-.executionNote {
-  margin: 0;
-  color: var(--a13n-secondary);
-  font-size: 12.5px;
-}
 .workingRow {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0;
-  padding: 2px 4px;
   color: var(--a13n-secondary);
   font-size: 12.5px;
 }
@@ -308,23 +250,20 @@
   background: currentColor;
   animation: pulse 1.8s ease-in-out infinite;
 }
-.spinning {
-  animation: spin 1.5s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 @keyframes pulse {
   50% {
     opacity: 0.3;
   }
 }
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .spinning,
   .workingDot,
-  .caret {
+  .messageActions,
+  .agentMessage[data-streaming] > :last-child::after {
     animation: none;
     transition: none;
   }
@@ -333,8 +272,8 @@
 /* Failure and structured output ------------------------------------------ */
 .failure {
   display: grid;
-  gap: 8px;
-  padding: 14px 16px;
+  gap: 6px;
+  padding: 12px 14px;
   border-radius: var(--a13n-radius-group);
   background: color-mix(in srgb, var(--a13n-danger) 7%, var(--a13n-canvas));
 }
@@ -345,9 +284,10 @@
   color: var(--a13n-danger);
 }
 .failure h3 {
+  flex: 1;
   margin: 0;
   color: var(--a13n-text);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
 }
 .failure p {
@@ -358,152 +298,16 @@
 }
 .failureActions {
   display: flex;
+  flex: none;
   gap: 8px;
-  padding-top: 2px;
 }
 .structuredOutput,
 .inlineDisclosure {
   min-width: 0;
 }
-
-/* Pending requests ------------------------------------------------------- */
-.pending {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  padding: 16px;
-  border-radius: var(--a13n-radius-group);
-  background: var(--a13n-surface);
-}
-.pending h3 {
-  margin: 0;
-  font-size: 13.5px;
-  font-weight: 500;
-}
-.pending > p {
-  margin: 0 0 6px;
-  color: var(--a13n-secondary);
-  font-size: 12.5px;
-  line-height: 1.6;
-}
-.pendingForm,
-.pendingFields {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-  border: 0;
-  padding: 0;
-  margin: 0;
-}
-.pendingAction {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-  padding: 14px;
-  border-radius: var(--a13n-radius-row);
-  background: var(--a13n-elevated);
-}
-.pendingIdentity {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-.pendingIdentity strong {
-  font-size: 13.5px;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-.pendingIdentity small {
-  color: var(--a13n-secondary);
-  font-size: 12px;
-}
-.approvalChoices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.approvalDetails {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 4px 12px;
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: var(--a13n-radius-row);
-  background: var(--a13n-surface);
-  font-size: 12.5px;
-  overflow-wrap: anywhere;
-}
-.approvalDetails dt {
-  color: var(--a13n-secondary);
-}
-.approvalDetails dd {
-  margin: 0;
-}
-.pendingSwitch {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-}
-.pendingFooter {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.continuation {
-  display: grid;
-  gap: 16px;
-}
-
-/* Queue ------------------------------------------------------------------ */
-.queue {
-  min-width: 0;
-}
-.queueBody {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-}
-.queueToolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.queueNote {
-  margin: 0;
-  color: var(--a13n-secondary);
-  font-size: 12.5px;
-  line-height: 1.6;
-}
-.queueItem {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-  padding: 12px 14px;
-  border-radius: var(--a13n-radius-row);
-  background: var(--a13n-elevated);
-}
-.queueItem header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-}
-.queueActions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-}
-.queueLink {
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  justify-self: start;
+/* Inside the danger notice the error fold is part of it, not a second block. */
+.failure [data-slot="disclosure-surface"] {
+  background: transparent;
 }
 
 /* Dock ------------------------------------------------------------------- */
@@ -521,22 +325,56 @@
     color-mix(in srgb, var(--a13n-canvas) 0%, transparent)
   );
 }
-.readOnly {
+.dockNotice {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.dockNotice > span {
+  flex: 1;
+  min-width: 0;
+}
+.dockLink {
+  color: var(--a13n-text);
+  font-weight: 500;
+  text-decoration: none;
+}
+.dockLink:hover {
+  text-decoration: underline;
+}
+.dockReceipt {
+  margin: 0;
+  padding-left: 2px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
 }
 .stopButton:hover {
   background: color-mix(in srgb, var(--a13n-danger) 12%, transparent);
   color: var(--a13n-danger);
 }
-.jumpToLatest {
-  justify-self: center;
+/* A floating pill over the transcript: it must read as lifted off the page,
+   so it outranks the shared button surface. */
+.dock .jumpToLatest {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
   z-index: 3;
-  background: var(--a13n-elevated);
+  transform: translateX(-50%);
+  margin-bottom: 10px;
   border-color: transparent;
-  box-shadow: var(--a13n-shadow);
+  border-radius: 999px;
+  background: var(--a13n-elevated);
+  box-shadow:
+    var(--a13n-shadow),
+    0 0 0 1px color-mix(in srgb, var(--a13n-text) 8%, transparent);
 }
 
 @media (max-width: 680px) {
@@ -548,14 +386,5 @@
   }
   .agentContent {
     padding-left: 0;
-  }
-  .executionName {
-    max-width: 60%;
-  }
-  .executionSummary {
-    display: none;
-  }
-  .executionBody {
-    padding-left: 18px;
   }
 }

@@ -63,7 +63,10 @@ async def test_queue_contention_preserves_capacity_permutation_and_single_consum
     full = await live.thread(source["thread_id"])
     assert full["version"] == before["version"] and full["queue_version"] == before["queue_version"] + capacity
     for _, command, reply in by_id.values():
-        assert await journey.post(*command[:2], key=command[2], expected=202) == reply
+        assert await journey.post(*command[:2], key=command[2], expected=202) == {
+            **reply,
+            "queue_version": full["queue_version"],
+        }
     assert await live.thread(source["thread_id"]) == full
     path = f"/api/v1/threads/{source['thread_id']}/queued-submissions/reorder"
     body = {"expected_queue_version": full["queue_version"], "queued_submission_ids": list(reversed(ids))}

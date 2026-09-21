@@ -9,6 +9,7 @@ import rfc8785
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from a13n_service.interactions.control_domain import ThreadInboxEntry, ThreadInboxKind
 from a13n_service.interactions.domain import Run, RunInputKind, RunPayloadObjectRef, RunStatus
@@ -41,13 +42,77 @@ class AsyncSubagentResultItemUnavailable(AsyncSubagentResultError):
 
 
 @dataclass(frozen=True, slots=True)
-class AsyncSubagentResultAuthority:
-    """Relational authority needed to validate one immutable result payload."""
+class ChildResultSource:
+    """Detached provenance shared by publication and consumption of a sealed child result."""
 
-    payload: AsyncSubagentResultInboxPayload
     relationship: ChildRunRelationship
     child: Run
     parent: Run
+
+
+@dataclass(frozen=True, slots=True)
+class AsyncSubagentResultAuthority(ChildResultSource):
+    payload: AsyncSubagentResultInboxPayload
+
+
+async def read_child_result_source(
+    database: AsyncSession,
+    *,
+    organization_id: str,
+    child_run_id: str,
+    relationship_id: str | None = None,
+    parent: Run | None = None,
+) -> ChildResultSource:
+    """Read the exact relationship and child together, reusing an already locked origin when supplied."""
+
+    query = (
+        select(ChildRunRelationshipRecord, RunRecord)
+        .join(
+            RunRecord,
+            (RunRecord.organization_id == ChildRunRelationshipRecord.organization_id)
+            & (RunRecord.id == ChildRunRelationshipRecord.child_run_id),
+        )
+        .where(
+            ChildRunRelationshipRecord.organization_id == organization_id,
+            ChildRunRelationshipRecord.child_run_id == child_run_id,
+        )
+    )
+    if relationship_id is not None:
+        query = query.where(ChildRunRelationshipRecord.id == relationship_id)
+    if parent is None:
+        origin = aliased(RunRecord)
+        row = (
+            await database.execute(
+                query.add_columns(origin).join(
+                    origin,
+                    (origin.organization_id == ChildRunRelationshipRecord.organization_id)
+                    & (origin.id == ChildRunRelationshipRecord.parent_run_id),
+                )
+            )
+        ).one_or_none()
+        if row is None:
+            raise AsyncSubagentResultError("child result relationship authority is incomplete")
+        relationship, child, origin_record = row
+        parent = origin_record.to_resource()
+    else:
+        retained = (await database.execute(query)).one_or_none()
+        if retained is None:
+            raise AsyncSubagentResultError("child result relationship authority is incomplete")
+        relationship, child = retained
+    assert parent is not None
+    return validate_child_result_source(relationship.to_resource(), child.to_resource(), parent)
+
+
+def validate_child_result_source(relationship: ChildRunRelationship, child: Run, parent: Run) -> ChildResultSource:
+    if (
+        child.organization_id != parent.organization_id
+        or child.session_id != parent.session_id
+        or relationship.parent_run_id != parent.id
+        or relationship.child_run_id != child.id
+        or relationship.child_thread_id != child.thread_id
+    ):
+        raise AsyncSubagentResultError("child result relationship authority is incomplete")
+    return ChildResultSource(relationship=relationship, child=child, parent=parent)
 
 
 def build_async_subagent_result_payload(
@@ -134,50 +199,34 @@ def parse_async_subagent_result_entry(entry: ThreadInboxEntry) -> AsyncSubagentR
 async def read_async_subagent_result_authority(
     database: AsyncSession,
     entry: ThreadInboxEntry,
+    *,
+    parent: Run | None = None,
 ) -> AsyncSubagentResultAuthority:
     """Read and verify normalized relational provenance for one result."""
 
     payload = parse_async_subagent_result_entry(entry)
-    relationship = await database.scalar(
-        select(ChildRunRelationshipRecord).where(
-            ChildRunRelationshipRecord.organization_id == entry.organization_id,
-            ChildRunRelationshipRecord.id == payload.relationship_id,
-        )
+    source = await read_child_result_source(
+        database,
+        organization_id=entry.organization_id,
+        child_run_id=payload.child_run_id,
+        relationship_id=payload.relationship_id,
+        parent=parent,
     )
-    child = await database.scalar(
-        select(RunRecord).where(
-            RunRecord.organization_id == entry.organization_id,
-            RunRecord.id == payload.child_run_id,
-        )
-    )
-    parent = None
-    if relationship is not None:
-        parent = await database.scalar(
-            select(RunRecord).where(
-                RunRecord.organization_id == entry.organization_id,
-                RunRecord.id == relationship.parent_run_id,
-            )
-        )
-    if relationship is None or child is None or parent is None:
-        raise AsyncSubagentResultError("async result durable authority is incomplete")
+    relationship, child, parent = source.relationship, source.child, source.parent
     if (
-        relationship.child_run_id != child.id
-        or relationship.parent_run_id != parent.id
-        or entry.origin_run_id != parent.id
+        entry.origin_run_id != parent.id
         or parent.thread_id != entry.thread_id
         or relationship.subagent_name != payload.subagent_name
         or relationship.child_thread_id != payload.child_thread_id
         or relationship.child_run_id != payload.child_run_id
-        or child.thread_id != relationship.child_thread_id
-        or child.session_id != parent.session_id
-        or child.status != payload.terminal_status
+        or child.status.value != payload.terminal_status
     ):
         raise AsyncSubagentResultError("async result durable authority is incomplete")
     return AsyncSubagentResultAuthority(
         payload=payload,
-        relationship=relationship.to_resource(),
-        child=child.to_resource(),
-        parent=parent.to_resource(),
+        relationship=relationship,
+        child=child,
+        parent=parent,
     )
 
 

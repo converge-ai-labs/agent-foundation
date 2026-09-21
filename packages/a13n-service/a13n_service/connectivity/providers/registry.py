@@ -4,6 +4,7 @@ from functools import partial
 
 from ..adapters import IngressAdapter
 from ..composition import AdapterDefinition, AdapterRegistry
+from ..subscriptions import EventSubscriptions
 from .common.origins import normalize_provider_origins
 from .definition import NativeProvider
 from .github.definition import PROVIDER as GITHUB
@@ -30,3 +31,13 @@ def built_in_ingress_adapter_registry(
         )
         for p in _PROVIDERS.values()
     )
+
+
+def event_subscription_adapters() -> dict[tuple[str, str], EventSubscriptions]:
+    return {
+        (provider.key, version): provider.event_subscriptions
+        for provider in _PROVIDERS.values()
+        if provider.event_subscriptions is not None
+        for version in provider.event_subscriptions.config_versions
+        if version in provider.config_versions
+    }

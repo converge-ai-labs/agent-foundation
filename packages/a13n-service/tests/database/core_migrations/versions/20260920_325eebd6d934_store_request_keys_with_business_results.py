@@ -1,7 +1,7 @@
 """Store request keys with business results.
 
 Revision ID: 325eebd6d934
-Revises: a839cb6a7291
+Revises: c235c691c1a1
 Create Date: 2026-09-20 09:57:10.684632+00:00
 """
 
@@ -14,7 +14,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "325eebd6d934"
-down_revision: str | Sequence[str] | None = "a839cb6a7291"
+down_revision: str | Sequence[str] | None = "c235c691c1a1"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

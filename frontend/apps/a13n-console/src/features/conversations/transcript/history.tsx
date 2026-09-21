@@ -8,15 +8,29 @@ import { useWorkspace } from "../../../layout/workspace";
 import { ErrorNotice, Loading } from "../../../shared/feedback";
 import type { Schema } from "../../../shared/api";
 import { useAgent } from "../../agents/queries";
-import { conversationQueries, runPath } from "../api";
+import { conversationQueries, runPath, type ViewLevel } from "../api";
 import { useEarlierMessages } from "../earlier";
+import { emptyExecution } from "../execution";
 import { compareCursors, mergeRetainedItems } from "../projection";
+import { useRunStream } from "../run-stream";
+import { runTimeline } from "../timeline";
+import { DebugRunSection } from "./debug/run-section";
+import { useThreadRuns } from "./thread-runs";
 import { EarlierMessages } from "./earlier-messages";
 import { RunBlock } from "./run-block";
+import debug from "./debug/debug.module.css";
 import styles from "./transcript.module.css";
 
 /** Ancestor runs stay collapsed until the reader asks for more context. */
-export function HistoryTranscript({ runId }: { runId: string }) {
+export function HistoryTranscript({
+  runId,
+  thread,
+  level,
+}: {
+  runId: string;
+  thread: Schema["ThreadResource"];
+  level: ViewLevel;
+}) {
   const client = useClient(),
     { workspace } = useWorkspace(),
     { t } = useTranslation(),
@@ -24,6 +38,7 @@ export function HistoryTranscript({ runId }: { runId: string }) {
   const lineage = useQuery(
     conversationQueries(client, workspace.id).lineage(runId),
   );
+  const { number } = useThreadRuns(level === "debug" ? thread.id : "");
   const ancestors = [...(lineage.data?.items ?? [])]
     .filter((entry) => entry.run_id !== runId)
     .sort((a, b) => a.depth_from_head - b.depth_from_head);
@@ -34,25 +49,94 @@ export function HistoryTranscript({ runId }: { runId: string }) {
         <div className={styles.earlierRuns}>
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
+            className={styles.earlierRunsAction}
             onClick={() => setLimit((value) => value + 1)}
             type="button"
           >
-            {t("Load earlier messages")}
+            {t("Load earlier runs")}
           </Button>
         </div>
       )}
       {ancestors
         .slice(0, limit)
         .reverse()
-        .map((entry) => (
-          <HistoricalRun key={entry.run_id} runId={entry.run_id} />
-        ))}
+        .map((entry) =>
+          level === "debug" ? (
+            <DebugAncestor
+              key={entry.run_id}
+              runId={entry.run_id}
+              thread={thread}
+              index={number(entry.run_id)}
+              runNumber={number}
+            />
+          ) : (
+            <HistoricalRun
+              key={entry.run_id}
+              runId={entry.run_id}
+              thread={thread}
+            />
+          ),
+        )}
     </>
   );
 }
 
-function HistoricalRun({ runId }: { runId: string }) {
+/** An ancestor is read at the level the reader chose, with its own stream. */
+function DebugAncestor({
+  runId,
+  thread,
+  index,
+  runNumber,
+}: {
+  runId: string;
+  thread: Schema["ThreadResource"];
+  index: number | null;
+  runNumber: (runId: string) => number | null;
+}) {
+  const client = useClient(),
+    { workspace } = useWorkspace(),
+    queries = conversationQueries(client, workspace.id);
+  const runQuery = useQuery({ ...queries.run(runId), staleTime: 60_000 });
+  const live = useRunStream(runId, { replay: true });
+  const run = runQuery.data;
+  const timeline = useMemo(
+    () =>
+      run &&
+      runTimeline({
+        run,
+        items: live.items,
+        execution: live.execution,
+        coverage: live.execution.coverage,
+      }),
+    [run, live.items, live.execution],
+  );
+  if (runQuery.isPending) return <Loading variant="list" rows={3} />;
+  if (!run || !timeline)
+    return (
+      <ErrorNotice
+        error={runQuery.error}
+        retry={() => void runQuery.refetch()}
+      />
+    );
+  return (
+    <DebugRunSection
+      run={run}
+      thread={thread}
+      timeline={timeline}
+      index={index}
+      runNumber={runNumber}
+    />
+  );
+}
+
+function HistoricalRun({
+  runId,
+  thread,
+}: {
+  runId: string;
+  thread: Schema["ThreadResource"];
+}) {
   const client = useClient(),
     { workspace, basePath } = useWorkspace(),
     { t } = useTranslation(),
@@ -82,22 +166,36 @@ function HistoricalRun({ runId }: { runId: string }) {
       ].sort((a, b) => compareCursors(a.firstCursor, b.firstCursor)),
     [retained.data, older],
   );
+  const run = runQuery.data;
+  // A historical run is read from its retained Items alone: the timeline
+  // reports the calls they recorded without inferring a complete history.
+  const timeline = useMemo(
+    () =>
+      run &&
+      runTimeline({
+        run,
+        items,
+        execution: emptyExecution(),
+        coverage: "unavailable",
+      }),
+    [run, items],
+  );
   const reload = () => {
     void runQuery.refetch();
     void retained.refetch();
   };
   if (runQuery.isPending || retained.isPending)
     return <Loading variant="list" rows={2} />;
-  if (!runQuery.data || !retained.data)
+  if (!run || !timeline || !retained.data)
     return (
       <ErrorNotice error={runQuery.error ?? retained.error} retry={reload} />
     );
-  const run = runQuery.data;
   return (
-    <>
+    <div className={debug.runAnchor} data-run={run.id}>
       <RunBlock
         run={run}
-        items={items}
+        thread={thread}
+        timeline={timeline}
         agentName={agent.data?.name}
         agentImageUrl={agent.data?.image_url}
         earlier={<EarlierMessages {...earlier} />}
@@ -118,6 +216,6 @@ function HistoricalRun({ runId }: { runId: string }) {
           </Button>
         </p>
       )}
-    </>
+    </div>
   );
 }

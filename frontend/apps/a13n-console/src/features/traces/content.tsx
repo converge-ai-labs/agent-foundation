@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { CopyButton } from "../../shared/identity";
 import { MarkdownContent } from "../../shared/markdown";
+import { UNKNOWN } from "../../shared/unknown";
 import styles from "./traces.module.css";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -75,6 +76,26 @@ function TraceText({ text }: { text: string }) {
   return <MarkdownContent text={text} literalHtml />;
 }
 
+/** Compact view omits retained content, so it offers its own way back. */
+export function CompactNotice({
+  view,
+  onFull,
+}: {
+  view: Schema["TraceView"];
+  onFull: () => void;
+}) {
+  const { t } = useTranslation();
+  if (view !== "compact") return null;
+  return (
+    <p className={styles.providerNote}>
+      {t("Compact omits retained content and diagnostic attributes.")}{" "}
+      <Button variant="ghost" size="sm" type="button" onClick={onFull}>
+        {t("Show full content")}
+      </Button>
+    </p>
+  );
+}
+
 export function TraceContent({
   content,
   compact = false,
@@ -87,7 +108,7 @@ export function TraceContent({
   if (content === null)
     return (
       <p className={styles.contentEmpty}>
-        {t(compact ? "Content omitted in Compact view." : "-")}
+        {compact ? t("Content omitted in Compact view.") : UNKNOWN}
       </p>
     );
   return (

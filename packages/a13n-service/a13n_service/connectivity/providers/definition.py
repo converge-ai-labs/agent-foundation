@@ -9,6 +9,7 @@ from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from ..adapters import IngressAdapter
 from ..domain import JsonObject
 from ..native_actions import NativeAction
+from ..subscriptions import EventSubscriptions
 from .tool_contracts import AccountTools
 
 
@@ -32,3 +33,4 @@ class NativeProvider:
     context_version: str
     account_tools: AccountTools
     inbound_actions: Callable[[InboundActionContext], dict[str, NativeAction]]
+    event_subscriptions: EventSubscriptions | None = None

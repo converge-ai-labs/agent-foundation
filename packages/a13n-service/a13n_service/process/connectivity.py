@@ -13,9 +13,9 @@ from a13n_harness.providers.connector.http import ConnectorHttpClient
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.memory import MemoryProviderDefinition
 
-from a13n_service.bots.connectivity.setup_tests import SetupObservations
 from a13n_service.bots.memory.lifecycle import invalidate_conversation
 from a13n_service.bots.progress.actions import ProgressActions
+from a13n_service.bots.routines.observations import BotObservations
 from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.accounts.target_service import AccountTargetService
 from a13n_service.connectivity.adapters import IngressAdapter
@@ -312,7 +312,7 @@ async def _build_data_runtime(
         account_pending_max_bytes=settings.connectivity.account_pending_max_bytes,
         batch_max_bytes=settings.connectivity.batch_max_bytes,
         dedup_horizon_seconds=settings.connectivity.dedup_horizon_seconds,
-        observations=SetupObservations(),
+        observations=BotObservations(),
         actions=ProgressActions(),
     )
     if input_acceptor is None:
@@ -326,7 +326,7 @@ async def _build_data_runtime(
         backoff_steps=settings.connectivity.admission_backoff_steps,
         max_backoff_seconds=settings.connectivity.admission_max_backoff_seconds,
         input_max_bytes=settings.connectivity.batch_max_bytes,
-        observations=SetupObservations(),
+        observations=BotObservations(),
     )
     retention = IngressRetentionReconciler(
         storage.sessions,

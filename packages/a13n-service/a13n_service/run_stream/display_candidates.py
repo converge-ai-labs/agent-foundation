@@ -1,17 +1,22 @@
-"""Bounded, fair Run discovery; SQL owns identity and lifecycle settlement only."""
+"""Indexed discovery of active display work, finite recovery, and overdue cleanup."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.interactions.models import RunRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
-from a13n_service.storage import short_session
-from a13n_service.temporal import assume_utc
+from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import assume_utc, optional_assume_utc
+
+from .recovery import DISPLAY_RECOVERY_WINDOW
+
+type DisplayLane = Literal["active", "recovery", "cleanup"]
 
 _TERMINAL_EVENTS = ("run.waiting", "run.completed", "run.failed", "run.cancelled")
 
@@ -21,6 +26,7 @@ class DisplayCandidate:
     organization_id: str
     run_id: str
     thread_id: str
+    sealed_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,15 +41,54 @@ class DisplayCandidates:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
-    async def page(self, *, after_run_id: str | None, limit: int) -> tuple[DisplayCandidate, ...]:
-        # Every retained Run is revisited, including terminal Runs after restart.
-        # Keyset traversal prevents a busy prefix from starving later identities.
-        query = select(RunRecord.organization_id, RunRecord.id, RunRecord.thread_id).order_by(RunRecord.id).limit(limit)
-        if after_run_id is not None:
-            query = query.where(RunRecord.id > after_run_id)
+    async def page(
+        self, *, lane: DisplayLane, after: DisplayCandidate | None, limit: int, now: datetime
+    ) -> tuple[DisplayCandidate, ...]:
+        run = RunRecord
+        query = select(run.organization_id, run.id, run.thread_id, run.sealed_at).limit(limit)
+        if lane == "active":
+            query = query.where(run.sealed_at.is_(None)).order_by(run.id)
+            if after is not None:
+                query = query.where(run.id > after.run_id)
+        else:
+            cutoff = now - DISPLAY_RECOVERY_WINDOW
+            query = query.where(run.sealed_at.is_not(None), run.display_settled_at.is_(None))
+            query = query.where(run.sealed_at > cutoff if lane == "recovery" else run.sealed_at <= cutoff)
+            query = query.where(or_(run.display_next_attempt_at.is_(None), run.display_next_attempt_at <= now))
+            query = query.order_by(run.sealed_at, run.id)
+            if after is not None:
+                query = query.where(tuple_(run.sealed_at, run.id) > (after.sealed_at, after.run_id))
         async with short_session(self._sessions) as database:
             rows = (await database.execute(query)).all()
-        return tuple(DisplayCandidate(*row) for row in rows)
+        return tuple(
+            DisplayCandidate(org, run_id, thread, optional_assume_utc(sealed)) for org, run_id, thread, sealed in rows
+        )
+
+    async def settle(self, candidate: DisplayCandidate, *, now: datetime) -> None:
+        async with transaction(self._sessions) as database:
+            await database.execute(
+                update(RunRecord)
+                .where(
+                    RunRecord.organization_id == candidate.organization_id,
+                    RunRecord.id == candidate.run_id,
+                    RunRecord.sealed_at.is_not(None),
+                    RunRecord.display_settled_at.is_(None),
+                )
+                .values(display_settled_at=now, display_next_attempt_at=None)
+            )
+
+    async def retry_after(self, candidate: DisplayCandidate, *, when: datetime) -> None:
+        async with transaction(self._sessions) as database:
+            await database.execute(
+                update(RunRecord)
+                .where(
+                    RunRecord.organization_id == candidate.organization_id,
+                    RunRecord.id == candidate.run_id,
+                    RunRecord.sealed_at.is_not(None),
+                    RunRecord.display_settled_at.is_(None),
+                )
+                .values(display_next_attempt_at=when)
+            )
 
     async def settlement(self, candidate: DisplayCandidate) -> DisplaySettlement:
         fact = LifecycleEventRecord

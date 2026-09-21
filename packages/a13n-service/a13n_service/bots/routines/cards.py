@@ -21,16 +21,17 @@ from a13n_service.secrets import SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import assume_utc, utc_now
 
-from .domain import ProposeRoutine, RoutineDefinition
+from .domain import RoutineDefinition
 from .lark_cards import render as render_lark
 from .models import RoutineRecord
+from .service import proposal_arguments
 
 ACTION_PREFIX = "a13n.routine.v1."
 OPERATIONS = frozenset({"confirm", "cancel", "pause", "resume", "delete"})
 
 
 def render(row: RoutineRecord) -> JsonObject:
-    proposal = ProposeRoutine.model_validate(row.proposal_json) if row.proposal_json else None
+    proposal = proposal_arguments(row) if row.proposal_json else None
     definition = (
         proposal.definition
         if proposal and proposal.definition
@@ -42,19 +43,40 @@ def render(row: RoutineRecord) -> JsonObject:
             proposal.operation
         ]
         if proposal
-        else "Schedule finished · Run submitted"
+        else "Task finished · Run submitted"
         if row.state == "completed"
         else row.state.capitalize()
     )
 
     def display_time(value: datetime) -> str:
-        zone = ZoneInfo(definition.schedule.timezone) if definition else ZoneInfo("UTC")
+        zone = ZoneInfo(definition.schedule.timezone) if definition and definition.schedule else ZoneInfo("UTC")
         return f"{assume_utc(value).astimezone(zone):%Y-%m-%d %H:%M} ({zone.key})"
 
+    if definition and definition.event and row.state == "active" and proposal is None and row.next_run_at is None:
+        state = "Watching for matching events"
     text = f"{title} — {state}"
-    details = [definition.schedule.describe(), definition.prompt] if definition else []
+    details = (
+        [
+            definition.schedule.describe()
+            if definition.schedule
+            else definition.event.describe()
+            if definition.event
+            else "",
+            definition.prompt,
+        ]
+        if definition
+        else []
+    )
+    if definition and definition.event:
+        details.append(f"Source configuration: {definition.event.source_target_id}")
+        source = row.proposal_json.get("_event_source") if row.proposal_json else None
+        if isinstance(source, dict):
+            details.append(
+                f"Account: {source['account_name']} · {source['target_kind']} ID: {source['external_target_id']}"
+            )
+        details.append("Matching events will start this task in this channel. Source information may be shared here.")
     details.append(f"Destination: this channel · Owner: {row.owner_id}")
-    if proposal and definition:
+    if proposal and definition and definition.schedule:
         next_at = definition.schedule.next_after(utc_now())
         details.append(
             f"Proposed next run: {display_time(next_at) if next_at else 'Time has expired; propose a new time'}"
@@ -91,7 +113,7 @@ def render(row: RoutineRecord) -> JsonObject:
         }
         if operation == "delete":
             button["confirm"] = {
-                "title": {"type": "plain_text", "text": "Delete scheduled task?"},
+                "title": {"type": "plain_text", "text": "Delete task?"},
                 "text": {"type": "plain_text", "text": "Future runs stop. Already accepted runs are not cancelled."},
                 "confirm": {"type": "plain_text", "text": "Delete"},
                 "deny": {"type": "plain_text", "text": "Keep task"},

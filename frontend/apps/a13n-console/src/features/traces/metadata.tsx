@@ -2,6 +2,7 @@ import { Badge } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { TraceJson } from "./content";
+import { UNKNOWN } from "../../shared/unknown";
 import styles from "./traces.module.css";
 
 export function metadataChips(observation: Schema["Observation"]) {
@@ -60,7 +61,7 @@ export function AttributeValues({
 }: {
   value: Schema["Observation"]["attributes"];
 }) {
-  if (value === null) return <p className={styles.providerNote}>-</p>;
+  if (value === null) return <p className={styles.providerNote}>{UNKNOWN}</p>;
   if (Object.keys(value).length === 0) return <TraceJson value={value} />;
   return (
     <dl className={styles.properties}>

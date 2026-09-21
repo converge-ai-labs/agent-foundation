@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { decodeContent, TraceContent, TraceJson } from "./content";
 import { observationKind } from "./identity";
+import { UNKNOWN } from "../../shared/unknown";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -120,7 +121,7 @@ it("keeps JSON fences inert, highlights tokens, and does not execute HTML", () =
 
 it("distinguishes unavailable, compact-omitted, empty text, and explicit JSON null", () => {
   const { rerender } = render(<TraceContent content={null} />);
-  expect(screen.getByText("-")).toBeTruthy();
+  expect(screen.getByText(UNKNOWN)).toBeTruthy();
   rerender(<TraceContent content={null} compact />);
   expect(screen.getByText("Content omitted in Compact view.")).toBeTruthy();
   cleanup();

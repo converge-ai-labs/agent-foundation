@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { EditorView, keymap, placeholder } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { Compartment, Prec } from "@codemirror/state";
 import {
   autocompletion,
@@ -33,7 +33,6 @@ export function ComposerEditor({
   local = false,
   loadSkills,
   skillContext,
-  placeholderText = "Describe a task…",
 }: {
   draft: ThreadDraft;
   profile: Profile;
@@ -45,7 +44,6 @@ export function ComposerEditor({
   local?: boolean;
   loadSkills?: LoadSkills;
   skillContext?: string;
-  placeholderText?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const attributes = useRef(new Compartment());
@@ -58,7 +56,6 @@ export function ComposerEditor({
     : "Shared with this conversation. Drafts do not survive server restarts. Enter to send; Shift+Enter for a new line.";
   const contentAttributes = useMemo(
     () => [
-      placeholder(placeholderText),
       EditorView.contentAttributes.of({
         "aria-label": local ? "Message" : "Shared prompt",
         "data-composer-editor": "",
@@ -67,7 +64,7 @@ export function ComposerEditor({
         role: "textbox",
       }),
     ],
-    [description, local, placeholderText],
+    [description, local],
   );
   const initialAttributes = useRef(contentAttributes);
   const send = useRef(submit);
@@ -202,7 +199,6 @@ export function ComposerEditor({
             overflow: "auto",
             fontFamily: "inherit",
           },
-          ".cm-placeholder": { color: "var(--a13n-secondary)" },
           ".cm-cursor": { borderLeftColor: "var(--a13n-text)" },
           "&.cm-focused": { outline: "none" },
           ".cm-ySelectionCaret": {

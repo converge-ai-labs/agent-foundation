@@ -107,12 +107,15 @@ async def test_disabled_query_uses_the_shared_safe_error_envelope(
         )
 
     assert response.status_code == 503
+    request_id = response.headers["X-Request-ID"]
+    assert request_id.startswith("req-")
+    assert request_id != "req-trace-test"
     assert response.json() == {
         "error": {
             "code": "trace_query_unavailable",
             "message": "Trace Query is temporarily unavailable.",
             "details": {},
-            "request_id": "req-trace-test",
+            "request_id": request_id,
         }
     }
 

@@ -456,6 +456,14 @@ class RunRecord(EntityRequestKey, Base):
         Index("ix_runs_thread_created", "organization_id", "thread_id", "created_at", "id"),
         Index("ix_runs_parent", "organization_id", "parent_run_id", "id"),
         Index("ix_runs_retry", "organization_id", "retry_of_run_id", "id"),
+        Index("ix_runs_display_active", "id", postgresql_where=text("sealed_at IS NULL")),
+        Index(
+            "ix_runs_display_unsettled",
+            "sealed_at",
+            "id",
+            postgresql_where=text("sealed_at IS NOT NULL AND display_settled_at IS NULL"),
+        ),
+        CheckConstraint("display_settled_at IS NULL OR sealed_at IS NOT NULL", name="display_settled_after_seal"),
     )
 
     environment_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id"), index=True)
@@ -536,6 +544,8 @@ class RunRecord(EntityRequestKey, Base):
     waiting_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    display_settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    display_next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     def to_resource(self) -> Run:
         values: dict[str, Any] = {

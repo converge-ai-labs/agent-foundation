@@ -27,6 +27,7 @@ CONTEXT_VERSION = "github_app_event_v1"
 
 _EVENT_ACTIONS = frozenset(
     {
+        "workflow_run.completed",
         "issues.opened",
         "issues.reopened",
         "issues.closed",
@@ -82,7 +83,12 @@ def authenticate_and_normalize(
     sender = _object(payload.get("sender"))
     if sender is None:
         raise _request_error(400, "invalid_payload")
-    if sender.get("id") == identity.bot_account_id:
+    self_merge = (
+        event_name == "pull_request"
+        and action == "closed"
+        and (_object(payload.get("pull_request")) or {}).get("merged") is True
+    )
+    if sender.get("id") == identity.bot_account_id and event_name != "workflow_run" and not self_merge:
         return ProviderCompleteDecision(response=ProviderHttpResponse(status_code=200))
     try:
         normalized = _normalize_event(
@@ -142,11 +148,11 @@ def _normalize_event(
         "type": _optional_string(sender.get("type"), max_length=128),
     }
     target, target_kind = _target(payload, event_name)
-    number = _required_int(target, "number")
+    number = _required_int(target, "id" if event_name == "workflow_run" else "number")
     labels = _labels(target.get("labels"))
     action_label = _label_name(payload.get("label"))
     base_branch = _base_branch(target) if target_kind == "pull_request" else None
-    title = _optional_string(target.get("title"), max_length=40_000)
+    title = _optional_string(target.get("name" if event_name == "workflow_run" else "title"), max_length=40_000)
     content_source = _event_content_source(payload, event_name, target)
     body = _optional_string(content_source.get("body"), max_length=262_144)
     state = _optional_string(target.get("state"), max_length=128)
@@ -174,6 +180,14 @@ def _normalize_event(
         "html_url": html_url,
         "changed_fields": changed,
     }
+    if event_name == "pull_request":
+        data["merged"] = target.get("merged") is True
+    if event_name == "workflow_run":
+        context["head_branch"] = _optional_string(target.get("head_branch"), max_length=256)
+        context["workflow_id"] = _required_int(target, "workflow_id")
+        data["workflow_run_id"] = number
+        data["run_attempt"] = _required_int(target, "run_attempt")
+        data["conclusion"] = _optional_string(target.get("conclusion"), max_length=64)
     refs = {
         "repository": ExternalRef(
             kind="github.repository",
@@ -203,6 +217,8 @@ def _normalize_event(
 
 
 def _target(payload: JsonObject, event_name: str) -> tuple[JsonObject, str]:
+    if event_name == "workflow_run":
+        return _required_object(payload, "workflow_run"), "workflow_run"
     if event_name.startswith("pull_request"):
         return _required_object(payload, "pull_request"), "pull_request"
     issue = _required_object(payload, "issue")

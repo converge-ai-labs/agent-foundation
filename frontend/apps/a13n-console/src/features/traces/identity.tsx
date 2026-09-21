@@ -58,7 +58,7 @@ export function ObservationGlyph({
   return <Icon size={size} aria-hidden="true" />;
 }
 
-/** The 20px kind tile that leads a timeline row. */
+/** The 22px kind tile that leads a timeline row. */
 export function ObservationIcon({
   observation,
 }: {
@@ -70,7 +70,7 @@ export function ObservationIcon({
       data-kind={observationKind(observation)}
       aria-hidden="true"
     >
-      <ObservationGlyph observation={observation} size={12} />
+      <ObservationGlyph observation={observation} size={13} />
       {isFailed(observation) && <span className={styles.errorDot} />}
     </span>
   );

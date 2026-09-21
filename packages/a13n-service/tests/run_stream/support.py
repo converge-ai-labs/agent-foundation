@@ -15,7 +15,7 @@ def publication_failure(operation: str, *, after: Literal["event", "receipts", "
     """Inject a runtime error at an actual partial-write boundary in the owning Lua."""
     marker = {
         "event": "    updates[#updates + 1] = 'event:' .. event.id",
-        "receipts": "if not closed then",
+        "receipts": "\nlocal recovery = tonumber(field('recovery_deadline'))",
         "retention": "\nredis.call('HDEL', metadata, 'pending')",
     }[after]
     assert _SCRIPT.count(marker) == 1

@@ -23,6 +23,7 @@ from a13n_service.run_stream.domain import PublicationRejected, PublicationUnava
 from a13n_service.run_stream.events import lifecycle_stream_event
 from a13n_service.run_stream.redis import _RETIREMENT_SCRIPT, _keys
 from a13n_service.storage import short_session
+from a13n_service.temporal import utc_now
 from redis.exceptions import ConnectionError
 from sqlalchemy import select
 
@@ -137,7 +138,7 @@ async def test_terminal_projection_retires_unavailable_history_without_reactivat
 ):
     sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store, max_attempts=1)
-    now = NOW + timedelta(seconds=1)
+    now = utc_now()
     scheduler = AttemptScheduler(sessions, clock=lambda: now, lifecycle=test_lifecycle_writer())
     claim = await scheduler.claim(run.id, _worker(lease_seconds=1))
     assert isinstance(claim, ClaimedAttempt)
@@ -181,7 +182,9 @@ async def test_terminal_projection_retires_unavailable_history_without_reactivat
         assert terminal.projection_state == "abandoned"
     assert await redis_client.xrange(events) == retained_rows
     for key in (events, metadata):
-        assert await redis_client.ttl(key) in {-1, -2}
+        assert await redis_client.ttl(key) == -2 or await redis_client.expiretime(key) == int(
+            (now + timedelta(days=1)).timestamp()
+        )
     stored = await RunDisplayConsumer(
         DisplayCandidates(sessions), stream, RunDisplayStore(interaction_object_store)
     ).consume_run(DisplayCandidate(ORGANIZATION_ID, run.id, run.thread_id))
@@ -202,7 +205,7 @@ async def test_terminal_cleanup_keeps_retrying_after_publication_budget_is_exhau
 ):
     sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store, max_attempts=1)
-    now = NOW + timedelta(seconds=1)
+    now = utc_now()
     scheduler = AttemptScheduler(sessions, clock=lambda: now, lifecycle=test_lifecycle_writer())
     claim = await scheduler.claim(run.id, _worker(lease_seconds=1))
     assert isinstance(claim, ClaimedAttempt)
@@ -231,6 +234,8 @@ async def test_terminal_cleanup_keeps_retrying_after_publication_budget_is_exhau
         faulty = healthy
 
     async def interrupt_retirement(**kwargs):
+        if json.loads(kwargs["args"][0])["operation"] == "schedule_expiry":
+            return await healthy(**kwargs)
         stream._retirement_script = healthy
         result = await faulty(**kwargs)
         if failure == "lost_ack":
@@ -259,8 +264,8 @@ async def test_terminal_cleanup_keeps_retrying_after_publication_budget_is_exhau
     assert await projector.project_once() == 1
     assert await projector.project_once() == 0
     stream._script = publication_script
-    assert await redis_client.ttl(events) == -1
-    assert await redis_client.ttl(metadata) == -1
+    assert await redis_client.expiretime(events) == int((now + timedelta(days=1)).timestamp())
+    assert await redis_client.expiretime(metadata) == int((now + timedelta(days=1)).timestamp())
     stored = await RunDisplayConsumer(
         DisplayCandidates(sessions), stream, RunDisplayStore(interaction_object_store)
     ).consume_run(DisplayCandidate(ORGANIZATION_ID, run.id, run.thread_id))

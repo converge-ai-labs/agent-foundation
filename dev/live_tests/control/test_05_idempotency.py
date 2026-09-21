@@ -1,4 +1,4 @@
-"""Case 5: concurrent identical submissions and changed-intent conflicts."""
+"""Case 5: concurrent key reuse and current-state replay without repeated execution."""
 
 from uuid import uuid4
 
@@ -19,16 +19,22 @@ async def test_start_is_idempotent(live):
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(submit)
         tasks.start_soon(submit)
-    assert receipts[0] == receipts[1]
+    stable_fields = ("session_id", "thread_id", "run_id", "hook_subscription_id", "status", "schema_version")
+    assert {field: receipts[0][field] for field in stable_fields} == {
+        field: receipts[1][field] for field in stable_fields
+    }
     run = await live.finish(receipts[0]["run_id"])
-    assert await live.start(case, key=key) == receipts[0], "Replay changed after completion"
-    await live.request(
+    replay = await live.start(case, key=key)
+    await live.assert_current_acceptance(replay, receipts[0])
+    changed = await live.request(
         "POST",
         f"/api/v1/workspaces/{live.config['workspace_id']}/runs",
-        expected=409,
+        expected=202,
         headers={"Idempotency-Key": key},
         json=live.start_body({**case, "token": uuid4().hex}),
     )
+    assert changed == replay
+    assert run["output_text"] == case["token"]
     runs = await live.collection(f"/api/v1/threads/{run['thread_id']}/runs")
     assert [item["id"] for item in runs] == [run["id"]]
     assert len(await live.collection(f"/api/v1/runs/{run['id']}/attempts")) == 1

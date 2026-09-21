@@ -20,6 +20,7 @@ from a13n_service.hooks.persistence import load_inline_hook_subscription
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt
 from a13n_service.interactions.models import RunRecord, ThreadRecord
+from a13n_service.observability.correlation import publish_run_acceptance
 from a13n_service.storage import short_session
 
 from .access import authorize_interaction
@@ -70,7 +71,9 @@ class RunRequest:
                     agent_id=run.agent_id,
                     action=WorkspaceAction.run_read,
                 )
-                return await run_receipt(database, run)
+                receipt = await run_receipt(database, run)
+            publish_run_acceptance(receipt.run_id)
+            return receipt
         except AuthorizationError as error:
             raise command_not_found() from error
 

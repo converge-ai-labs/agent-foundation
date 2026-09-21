@@ -34,7 +34,7 @@ import { Page } from "../../shared/page";
 import { TraceTable } from "./list-table";
 import type { ObservationSort } from "./sorting";
 import { useListCosts } from "./list-cost";
-import styles from "./traces.module.css";
+import styles from "./list.module.css";
 
 function localTime(date: Date) {
   if (!Number.isFinite(date.getTime())) date = new Date();

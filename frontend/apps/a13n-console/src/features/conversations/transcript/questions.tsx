@@ -100,7 +100,7 @@ export function QuestionResponse({
           <fieldset key={q.question} className={styles.question}>
             <legend>
               <span className={styles.header}>{q.header}</span>
-              <span>{q.question}</span>
+              <span className={styles.prompt}>{q.question}</span>
             </legend>
             <p className={styles.hint}>
               {t(
@@ -158,6 +158,7 @@ export function QuestionResponse({
             </div>
             {value.other && (
               <Textarea
+                className={styles.custom}
                 aria-label={`${q.header}: ${t("Your answer")}`}
                 value={value.custom}
                 onChange={(event) =>
@@ -172,6 +173,7 @@ export function QuestionResponse({
         type="button"
         variant="ghost"
         size="sm"
+        className={styles.skip}
         aria-pressed={skipped}
         onClick={() => {
           setSkipped(true);

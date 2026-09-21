@@ -7,7 +7,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal, Self
 
-from a13n_logging import LogFormat
+from a13n_logging import LogDestination, LogFormat
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator, model_validator
 
 from a13n_service import __version__
@@ -158,6 +158,7 @@ class PricingSettings(Section):
 
 class ObservabilitySettings(Section):
     tracing: bool = True
+    metrics: bool = False
     trace_content: TraceContent = TraceContent.none
     query: ObservabilityQuerySettings = Field(default_factory=ObservabilityQuerySettings)
 
@@ -435,3 +436,13 @@ class MigrationSettings(Section):
 class LoggingSettings(Section):
     level: str = "INFO"
     format: LogFormat = LogFormat.pretty
+    destination: LogDestination = LogDestination.stdout
+    file_path: Path | None = None
+    file_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
+    file_backup_count: int = Field(default=5, ge=1, le=100)
+
+    @model_validator(mode="after")
+    def file_destination_has_path(self) -> Self:
+        if self.destination in {LogDestination.file, LogDestination.both} and self.file_path is None:
+            raise ValueError("logging.file_path is required for file output")
+        return self

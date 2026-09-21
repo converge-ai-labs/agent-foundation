@@ -14,7 +14,7 @@ import anyio
 import pytest
 from a13n_service.connectivity.runtime import ConnectivityDataRuntime, ConnectivityRuntime
 from a13n_service.database.migration import DatabaseMigrator
-from a13n_service.observability import ObservabilityRuntime
+from a13n_service.observability import ObservabilityRuntime, TraceContent
 from a13n_service.process.runtime import ControlRuntime, ProcessRuntime, ProcessStatus, SharedRuntime
 from a13n_service.settings import Settings
 from a13n_service.storage.config import PostgreSQLConfig, RedisMemoryConfig, RedisServerConfig
@@ -196,7 +196,9 @@ class ProcessRuntimeFactory:
             settings=settings or Settings(),
             status=ProcessStatus(startup_complete=True),
             request_authenticator=request_authenticator,
-            observability=Mock(spec=ObservabilityRuntime),
+            observability=ObservabilityRuntime(
+                tracer_provider=None, metrics_runtime=None, trace_content=TraceContent.none
+            ),
             shared=shared,
             control=control,
             worker=None,

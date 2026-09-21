@@ -34,13 +34,13 @@ from a13n_service.gateway.models import (
     A2APushConfigurationRecord,
     A2ATaskBindingRecord,
 )
-from a13n_service.iam.models import SecurityAuditRecord
+from a13n_service.iam.models import RoleBindingRecord, SecurityAuditRecord
 from a13n_service.interactions.models import RunRecord
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from fastapi import FastAPI, Request
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.agents.conftest import agent_config
@@ -451,23 +451,34 @@ async def test_list_tasks_pages_by_status_timestamp_and_applies_projection_optio
     assert captured.value.code == "invalid_page_token"
 
 
+@pytest.mark.parametrize("history_length", [None, 0, 1])
 async def test_stream_delivers_complete_artifact_before_terminal_status(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
+    history_length: int | None,
 ) -> None:
+    from tests.sql_capture import capture_sql
+
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     service, objects = await _service(lifecycle_interaction_sessions, tmp_path, maximum_wait_seconds=1)
     task = await service.send(actor=_actor(), agent_id=AGENT_ID, request=_request())
     async with short_session(lifecycle_interaction_sessions) as database:
         binding = await database.get(A2ATaskBindingRecord, task.id)
     assert binding is not None
-    async with aclosing(service.stream_task(actor=_actor(), agent_id=AGENT_ID, task_id=task.id)) as stream:
-        initial = await anext(stream)
+    async with aclosing(
+        service.stream_task(actor=_actor(), agent_id=AGENT_ID, task_id=task.id, history_length=history_length)
+    ) as stream:
+        with capture_sql(lifecycle_interaction_sessions) as statements:
+            initial = await anext(stream)
         assert initial.WhichOneof("payload") == "task"
         assert initial.task.status.state == a2a.TASK_STATE_SUBMITTED
         assert not initial.task.artifacts
+        assert list(initial.task.history) == ([] if history_length == 0 else list(task.history))
+        assert len([sql for sql in statements if "a2a_message_bindings" in sql]) == (0 if history_length == 0 else 1)
         await _complete_run(lifecycle_interaction_sessions, objects, run_id=binding.current_run_id)
-        events = [initial, *[event async for event in stream]]
+        with capture_sql(lifecycle_interaction_sessions) as statements:
+            events = [initial, *[event async for event in stream]]
+        assert not any("a2a_message_bindings" in sql for sql in statements)
 
     kinds = tuple(event.WhichOneof("payload") for event in events)
     assert kinds[0] == "task"
@@ -477,6 +488,31 @@ async def test_stream_delivers_complete_artifact_before_terminal_status(
     assert events[-1].status_update.status.state == a2a.TASK_STATE_COMPLETED
     final = await service.get_task(actor=_actor(), agent_id=AGENT_ID, task_id=task.id)
     assert events[-2].artifact_update.artifact == final.artifacts[0]
+
+
+async def test_stream_reauthorizes_after_initial_snapshot(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path, maximum_wait_seconds=1)
+    actor = _actor()
+    task = await service.send(actor=actor, agent_id=AGENT_ID, request=_request())
+
+    async with aclosing(service.stream_task(actor=actor, agent_id=AGENT_ID, task_id=task.id)) as stream:
+        assert (await anext(stream)).task.id == task.id
+        async with transaction(lifecycle_interaction_sessions) as database:
+            await database.execute(
+                delete(RoleBindingRecord).where(
+                    RoleBindingRecord.principal_id == actor.principal.principal_id,
+                    RoleBindingRecord.resource_type == "workspace",
+                    RoleBindingRecord.resource_id == actor.workspace_id,
+                )
+            )
+        with pytest.raises(A2AError) as captured:
+            await anext(stream)
+        assert captured.value.code == "resource_not_found"
+        assert captured.value.category == ErrorCategory.not_found
 
 
 async def test_list_tasks_http_binding_preserves_empty_page_token_and_a2a_query_errors(

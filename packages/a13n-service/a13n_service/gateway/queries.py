@@ -30,8 +30,9 @@ from a13n_service.lifecycle import LifecycleEntityType
 from a13n_service.lifecycle.projections import public_output_reference
 from a13n_service.lifecycle.reconciliation import load_owning_run
 from a13n_service.run_stream import RetainedItem, RunDisplayStore, RunStreamError
+from a13n_service.run_stream.recovery import display_recovery_deadline
 from a13n_service.storage import ObjectStoreError, short_session
-from a13n_service.temporal import assume_utc, optional_assume_utc
+from a13n_service.temporal import assume_utc, optional_assume_utc, utc_now
 
 from .session_queries import SessionCollection, SessionFilters, collect_sessions
 
@@ -177,6 +178,7 @@ class ItemCollection(_Resource):
     complete: bool
     incomplete_reason: str | None
     finalized: bool
+    recovery_exhausted: bool = False
 
 
 class NativeInteractionQueries:
@@ -533,6 +535,8 @@ class NativeInteractionQueries:
                 action=WorkspaceAction.run_read,
             )
             organization_id = run.organization_id
+            recovery_deadline = display_recovery_deadline(run.sealed_at)
+        recovery_exhausted = recovery_deadline is not None and utc_now() >= recovery_deadline
         try:
             snapshot = (await self._display.read(organization_id, run_id, expected_thread_id=run.thread_id)).snapshot
         except (ObjectStoreError, RunStreamError) as error:
@@ -540,6 +544,7 @@ class NativeInteractionQueries:
                 "items_unavailable",
                 "Retained Items are unavailable for this Run.",
                 category=ErrorCategory.conflict,
+                details={"recovery_exhausted": recovery_exhausted},
             ) from error
         if expected_version is not None and expected_version != snapshot.version:
             raise NativeQueryError(
@@ -565,6 +570,7 @@ class NativeInteractionQueries:
             complete=snapshot.complete,
             incomplete_reason=snapshot.incomplete_reason,
             finalized=snapshot.finalized,
+            recovery_exhausted=recovery_exhausted and not snapshot.finalized,
             items=tuple(
                 ItemResource.model_validate(
                     {

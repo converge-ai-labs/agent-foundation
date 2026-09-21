@@ -8,7 +8,7 @@ The opt-in HTTP journeys send real requests to separate local Control and Worker
 | `harness_integration/test_02_continuation.py`      | Successor Run reconstructs conversation context                                                                |
 | `harness_integration/test_03_tools_environment.py` | Real local shell writes and reads a file                                                                       |
 | `protocol/test_04_stream_reconnect.py`             | Disconnect during execution and resume with Last-Event-ID                                                      |
-| `control/test_05_idempotency.py`                   | Concurrent duplicate submission and changed-intent conflict                                                    |
+| `control/test_05_idempotency.py`                   | Concurrent key reuse and current-state replay without repeated execution                                       |
 | `control/test_06_steer.py`                         | Idempotent mid-tool input has one durable inbox row and one occurrence in the actual model request; no new Run |
 | `control/test_07_interrupt.py`                     | Interrupt model I/O and tool execution; verify teardown                                                        |
 | `control/test_08_approval.py`                      | Approve/reject pending work through a successor Run                                                            |

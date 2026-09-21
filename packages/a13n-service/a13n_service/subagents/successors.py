@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 import anyio
@@ -22,12 +22,12 @@ from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.acceptance_validation import validate_prepared_run
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt, ThreadInboxEntry
 from a13n_service.interactions.control_models import ThreadInboxRecord
-from a13n_service.interactions.domain import Run
+from a13n_service.interactions.domain import Run, Thread
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
 from a13n_service.interactions.environment_selection import RetainedRunEnvironment
 from a13n_service.interactions.inbox import ThreadControlSignalPublisher
 from a13n_service.interactions.lifecycle import LifecycleWriter
-from a13n_service.interactions.models import RunRecord, SessionRecord
+from a13n_service.interactions.models import SessionRecord
 from a13n_service.interactions.objects import (
     RUN_STATE_CONTENT_TYPE,
     RunObjectError,
@@ -53,7 +53,6 @@ from .result_payload import (
 from .successor_inbox import (
     bind_locked_unbound_async_entries,
     consume_async_result_for_successor,
-    reconcile_pending_async_results,
 )
 from .successor_preparation import (
     PreparedAsyncResultSuccessor,
@@ -75,6 +74,7 @@ class _PreparedSelection:
     selected_parent: Run
     result_authority: AsyncSubagentResultAuthority
     session_scope: SessionScope
+    finalized_count: int
 
 
 class AsyncSubagentSuccessorReconciler:
@@ -148,6 +148,7 @@ class AsyncSubagentSuccessorReconciler:
             terminal_item=terminal_item,
             now=now,
         )
+        receipt = replace(receipt, finalized_count=receipt.finalized_count + selected.finalized_count)
         await self._signal_if_bound(organization_id=organization_id, receipt=receipt)
         return receipt
 
@@ -189,13 +190,6 @@ class AsyncSubagentSuccessorReconciler:
             self._after_thread_id = thread_id
             try:
                 with anyio.fail_after(item_timeout_seconds):
-                    async with transaction(self._sessions) as database:
-                        finalized = await reconcile_pending_async_results(
-                            database,
-                            organization_id=organization_id,
-                            thread_id=thread_id,
-                            now=self._clock(),
-                        )
                     receipt = await self.reconcile_thread(organization_id=organization_id, thread_id=thread_id)
             except AsyncSubagentResultItemUnavailable:
                 logger.info(
@@ -216,7 +210,7 @@ class AsyncSubagentSuccessorReconciler:
                     extra={"event": "async_subagent_successor_recovery_deferred", "thread_id": thread_id},
                 )
                 continue
-            reconciled += int(finalized > 0 or receipt.outcome not in {"idle", "queue_precedence"})
+            reconciled += int(receipt.finalized_count > 0 or receipt.outcome not in {"idle", "queue_precedence"})
         return Sweep(
             examined=len(candidates),
             completed=reconciled,
@@ -243,18 +237,28 @@ class AsyncSubagentSuccessorReconciler:
             if isinstance(selected, AsyncSubagentSuccessorReceipt):
                 return selected
             entry = selected.entry.to_resource()
-            authority = await read_async_subagent_result_authority(database, entry)
+            thread = selected.thread.to_resource()
+            parent = selected.selected_parent.to_resource()
+            origin = selected.origin.to_resource()
+            finalized_count = selected.finalized_count
+        # Expiry/suppression is durable even when this successor's content or authorization is unavailable.
+        async with short_session(self._sessions) as database:
+            authority = await read_async_subagent_result_authority(database, entry, parent=origin)
             session_scope = await _authorize_successor(
                 database,
-                selected,
-                child_run_id=authority.child.id,
+                thread=thread,
+                parent=parent,
+                origin=origin,
+                child=authority.child,
+                entry_id=entry.id,
             )
-            return _PreparedSelection(
-                entry=entry,
-                selected_parent=selected.selected_parent.to_resource(),
-                result_authority=authority,
-                session_scope=session_scope,
-            )
+        return _PreparedSelection(
+            entry=entry,
+            selected_parent=parent,
+            result_authority=authority,
+            session_scope=session_scope,
+            finalized_count=finalized_count,
+        )
 
     async def _publish_initial(self, prepared: PreparedAsyncResultSuccessor) -> StoredRunState:
         try:
@@ -292,7 +296,7 @@ class AsyncSubagentSuccessorReconciler:
             )
             if isinstance(selected, AsyncSubagentSuccessorReceipt):
                 return selected
-            child_run_id = await _validate_final_selection(
+            child = await _validate_final_selection(
                 database,
                 selected,
                 prepared,
@@ -302,8 +306,11 @@ class AsyncSubagentSuccessorReconciler:
             )
             session = await _authorize_successor(
                 database,
-                selected,
-                child_run_id=child_run_id,
+                thread=selected.thread.to_resource(),
+                parent=selected.selected_parent.to_resource(),
+                origin=selected.origin.to_resource(),
+                child=child,
+                entry_id=selected.entry.id,
                 session_scope=session_scope,
             )
             successor_record = await add_run_with_environment(
@@ -338,6 +345,7 @@ class AsyncSubagentSuccessorReconciler:
             return AsyncSubagentSuccessorReceipt(
                 thread_id=thread_id,
                 outcome="run_accepted",
+                finalized_count=selected.finalized_count,
                 inbox_entry_id=selected.entry.id,
                 successor=RunAcceptanceReceipt(
                     session_id=selected.thread.session_id,
@@ -380,9 +388,11 @@ async def _validate_final_selection(
     parent_state: StoredRunState,
     initial_state: StoredRunState,
     terminal_item: RetainedItem | None,
-) -> str:
-    authority = await read_async_subagent_result_authority(database, selected.entry.to_resource())
-    payload = validate_async_subagent_result_authority(authority, terminal_item)
+) -> Run:
+    authority = await read_async_subagent_result_authority(
+        database, selected.entry.to_resource(), parent=selected.origin.to_resource()
+    )
+    validate_async_subagent_result_authority(authority, terminal_item)
     _verify_selected_parent_state(selected.selected_parent.to_resource(), parent_state)
     expected = prepare_async_result_successor(
         selected_parent=selected.selected_parent.to_resource(),
@@ -395,68 +405,65 @@ async def _validate_final_selection(
     if expected != prepared or initial_state.envelope != prepared.state:
         raise AsyncSubagentSuccessorError("automatic successor preparation no longer matches authority")
     validate_prepared_run(prepared.run, prepared.state)
-    return payload.child_run_id
+    return authority.child
 
 
 async def _authorize_successor(
     database: AsyncSession,
-    selected: LockedAsyncResultSelection,
     *,
-    child_run_id: str,
+    thread: Thread,
+    parent: Run,
+    origin: Run,
+    child: Run,
+    entry_id: str,
     session_scope: SessionScope | None = None,
 ) -> SessionScope:
     if session_scope is None:
         record = await database.scalar(
             select(SessionRecord).where(
-                SessionRecord.organization_id == selected.thread.organization_id,
-                SessionRecord.id == selected.thread.session_id,
+                SessionRecord.organization_id == thread.organization_id,
+                SessionRecord.id == thread.session_id,
             )
         )
         session_scope = None if record is None else SessionScope.from_record(record)
     session = session_scope
-    child = await database.scalar(
-        select(RunRecord).where(
-            RunRecord.organization_id == selected.thread.organization_id,
-            RunRecord.id == child_run_id,
-        )
-    )
     if (
         session is None
-        or child is None
-        or session.organization_id != selected.thread.organization_id
-        or session.id != selected.thread.session_id
-        or selected.selected_parent.session_id != session.id
-        or selected.origin.session_id != session.id
+        or child.organization_id != thread.organization_id
+        or session.organization_id != thread.organization_id
+        or session.id != thread.session_id
+        or parent.session_id != session.id
+        or origin.session_id != session.id
         or child.session_id != session.id
     ):
         raise AsyncSubagentSuccessorError("automatic successor Session authority is incomplete")
     actor = AuthenticatedActor(
-        principal=selected.origin.to_resource().authority_principal,
+        principal=origin.authority_principal,
         auth_method="run_authority",
-        credential_id=f"run_{selected.origin.id}",
+        credential_id=f"run_{origin.id}",
         boundary_workspace_id=session.workspace_id,
-        request_id=selected.entry.id,
+        request_id=entry_id,
     )
     try:
         await authorize_agent(
             database,
             actor=actor,
             workspace_id=session.workspace_id,
-            agent_id=selected.selected_parent.agent_id,
+            agent_id=parent.agent_id,
             action=WorkspaceAction.run_read,
         )
         await authorize_agent(
             database,
             actor=actor,
             workspace_id=session.workspace_id,
-            agent_id=selected.selected_parent.agent_id,
+            agent_id=parent.agent_id,
             action=WorkspaceAction.run_continue,
         )
         await authorize_agent(
             database,
             actor=actor,
             workspace_id=session.workspace_id,
-            agent_id=selected.selected_parent.agent_id,
+            agent_id=parent.agent_id,
             action=WorkspaceAction.agent_invoke,
         )
         await authorize_agent(

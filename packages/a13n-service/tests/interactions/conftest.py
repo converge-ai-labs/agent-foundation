@@ -25,6 +25,7 @@ from a13n_service.storage import transaction
 from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
+from a13n_service.temporal import utc_now
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -40,6 +41,14 @@ SESSION_ID = "sess_1234567890abcdef"
 THREAD_ID = "thread-1234567890abcdef1234567890abcdef"
 USER_ID = "usr_1234567890abcdef"
 NOW = datetime(2026, 9, 3, 0, 30, tzinfo=UTC)
+
+
+@pytest.fixture
+def live_subagent_clock(monkeypatch):
+    # Redis absolute expiry uses wall time; these integration helpers must agree.
+    now = utc_now()
+    for module in ("test_subagent_acceptance", "test_subagent_results", "test_subagent_successors"):
+        monkeypatch.setattr(f"tests.interactions.{module}.NOW", now)
 
 
 def agent_config() -> AgentConfig:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 
 from sqlalchemy import select
@@ -13,19 +13,19 @@ from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.inbox_persistence import (
     ThreadInboxConflict,
     finalize_ineligible_async_results,
-    lock_inbox_related_runs,
     release_pending_inbox_capacity,
 )
-from a13n_service.interactions.models import ThreadRecord
+from a13n_service.interactions.models import RunRecord, ThreadRecord
 
 
-async def lock_unbound_async_entries(
+async def reconcile_async_result_inbox(
     database: AsyncSession,
     *,
     thread: ThreadRecord,
     now: datetime,
-) -> tuple[ThreadInboxRecord, ...]:
-    """Lock, origin-gate, and return the inactive Thread's unbound async FIFO."""
+    locked_origins: Mapping[str, RunRecord],
+) -> tuple[tuple[ThreadInboxRecord, ...], int]:
+    """Finalize every pending result and return the unbound FIFO under the same Thread lock."""
 
     rows = tuple(
         (
@@ -36,8 +36,6 @@ async def lock_unbound_async_entries(
                     ThreadInboxRecord.thread_id == thread.id,
                     ThreadInboxRecord.kind == ThreadInboxKind.async_subagent_result.value,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
-                    ThreadInboxRecord.target_run_id.is_(None),
-                    ThreadInboxRecord.source_waiting_run_id.is_(None),
                 )
                 .order_by(ThreadInboxRecord.delivery_sequence, ThreadInboxRecord.id)
                 .with_for_update()
@@ -49,37 +47,18 @@ async def lock_unbound_async_entries(
         thread=thread,
         rows=rows,
         now=now,
+        locked_origins=locked_origins,
     )
-    return tuple(row for row in rows if row.status == ThreadInboxStatus.pending.value)
-
-
-async def reconcile_pending_async_results(
-    database: AsyncSession, *, organization_id: str, thread_id: str, now: datetime
-) -> int:
-    """Finalize expired or suppressed results regardless of their current binding."""
-    thread = await database.scalar(
-        select(ThreadRecord)
-        .where(ThreadRecord.organization_id == organization_id, ThreadRecord.id == thread_id)
-        .with_for_update()
+    return (
+        tuple(
+            row
+            for row in rows
+            if row.status == ThreadInboxStatus.pending.value
+            and row.target_run_id is None
+            and row.source_waiting_run_id is None
+        ),
+        sum(row.status != ThreadInboxStatus.pending.value for row in rows),
     )
-    if thread is None:
-        return 0
-    await lock_inbox_related_runs(database, organization_id=organization_id, thread_id=thread_id, required_run_ids=())
-    rows = tuple(
-        await database.scalars(
-            select(ThreadInboxRecord)
-            .where(
-                ThreadInboxRecord.organization_id == organization_id,
-                ThreadInboxRecord.thread_id == thread_id,
-                ThreadInboxRecord.kind == ThreadInboxKind.async_subagent_result.value,
-                ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
-            )
-            .order_by(ThreadInboxRecord.delivery_sequence, ThreadInboxRecord.id)
-            .with_for_update()
-        )
-    )
-    await finalize_ineligible_async_results(database, thread=thread, rows=rows, now=now)
-    return sum(row.status != ThreadInboxStatus.pending.value for row in rows)
 
 
 def bind_locked_unbound_async_entries(
@@ -134,5 +113,5 @@ def consume_async_result_for_successor(
 __all__ = [
     "bind_locked_unbound_async_entries",
     "consume_async_result_for_successor",
-    "lock_unbound_async_entries",
+    "reconcile_async_result_inbox",
 ]

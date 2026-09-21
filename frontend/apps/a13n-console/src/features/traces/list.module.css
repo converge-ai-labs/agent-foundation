@@ -1,0 +1,238 @@
+/* Traces list ------------------------------------------------------------ */
+.providerChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.providerChip img {
+  display: block;
+}
+
+.traceTable {
+  table-layout: fixed;
+  min-width: 880px;
+}
+.traceTable th:first-child {
+  width: auto;
+  min-width: 220px;
+}
+.traceTable th[data-column="run"] {
+  width: 164px;
+}
+.traceTable th[data-column="level"] {
+  width: 96px;
+}
+.traceTable th[data-column="duration"] {
+  width: 100px;
+}
+.traceTable th[data-column="cost"] {
+  width: 92px;
+}
+.traceTable th[data-column="started"] {
+  width: 182px;
+}
+/* The timestamp keeps its own inset so it never touches the cost column. */
+.traceTable th[data-column="started"],
+.traceTable td[data-column="started"] {
+  padding-inline-start: 16px;
+}
+.traceTable td[data-column="started"],
+.traceTable td[data-column="duration"],
+.traceTable td[data-column="cost"] {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 1160px) {
+  .traceTable {
+    min-width: 700px;
+  }
+  .traceTable th:first-child {
+    min-width: 180px;
+  }
+  .traceTable th[data-column="run"] {
+    width: 116px;
+  }
+  .traceTable th[data-column="level"] {
+    width: 88px;
+  }
+  .traceTable th[data-column="duration"] {
+    width: 88px;
+  }
+  .traceTable th[data-column="cost"] {
+    width: 80px;
+  }
+  .traceTable th[data-column="started"] {
+    width: 150px;
+  }
+}
+
+.traceIdentity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.traceCopy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.traceName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--a13n-text);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.traceName:hover {
+  text-decoration: underline;
+}
+.traceMeta {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+@media (hover: hover) {
+  .traceMeta button {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  tr:hover .traceMeta button,
+  .traceMeta button:focus-visible {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .traceMeta button {
+    transition: none;
+  }
+}
+.runLink {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.runLink:hover {
+  color: var(--a13n-text);
+  text-decoration: underline;
+}
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-inline: 4px;
+  margin-inline: -4px;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+.sortButton svg {
+  flex: none;
+  opacity: 0.25;
+  transition: opacity 120ms ease;
+}
+.sortButton:hover svg,
+.sortButton[data-active] svg {
+  opacity: 1;
+}
+
+/* Filter popovers -------------------------------------------------------- */
+.filterPopup {
+  width: min(336px, calc(100vw - 24px));
+}
+.metadataPopup {
+  width: min(400px, calc(100vw - 24px));
+}
+.filterPopover {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.popoverTitle {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.popoverHint {
+  margin: 3px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+}
+.presets button {
+  font-weight: 400;
+}
+.presets button[data-active] {
+  background: var(--a13n-elevated);
+  box-shadow: var(--a13n-shadow-subtle);
+  color: var(--a13n-text);
+}
+.rangeFields {
+  display: grid;
+  gap: 12px;
+}
+.rangeFields [data-slot="field-label"] {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.popoverError {
+  margin: 0;
+  color: var(--destructive-foreground);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.popoverFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--a13n-border-soft);
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.chipLabel {
+  color: var(--a13n-secondary);
+}
+.addFilter {
+  justify-self: start;
+}
+.metadataRows {
+  display: grid;
+  gap: 8px;
+}
+.metadataRow {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sortButton svg {
+    transition: none;
+  }
+}

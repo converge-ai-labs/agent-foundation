@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from time import monotonic
 
 import anyio
@@ -12,11 +14,12 @@ from a13n_service.storage import ObjectConflict, ObjectNotFound
 from a13n_service.storage.codec import canonical_model_bytes, run_codec
 from a13n_service.temporal import utc_now
 
-from .display_candidates import DisplayCandidate, DisplayCandidates
+from .display_candidates import DisplayCandidate, DisplayCandidates, DisplayLane
 from .display_model import DisplayLimitExceeded, RunDisplaySnapshot
 from .display_projection import project_display
 from .display_store import RunDisplayStore, StoredDisplay
 from .domain import PublicationContinuityLost, RunStreamReplayGap
+from .recovery import display_recovery_deadline
 from .redis import RedisRunStream, run_stream_key_digest_sha256
 
 logger = logging.getLogger("a13n_service.run_stream.display_consumer")
@@ -82,12 +85,14 @@ class RunDisplayConsumer:
         store: RunDisplayStore,
         *,
         policy: DisplayConsumerPolicy = _DEFAULT_POLICY,
+        clock: Callable[[], datetime] = utc_now,
     ) -> None:
         self._candidates = candidates
         self._stream = stream
         self._store = store
         self._policy = policy
-        self._after_run_id: str | None = None
+        self._clock = clock
+        self._after: dict[DisplayLane, DisplayCandidate | None] = {}
         self._draining = False
         self._stopped = anyio.Event()
 
@@ -103,21 +108,30 @@ class RunDisplayConsumer:
 
     async def run(self) -> None:
         try:
-            while not self._draining:
-                try:
-                    await self.consume_once()
-                except Exception:
-                    logger.exception("Display candidate discovery failed", extra={"event": "display_discovery_failed"})
-                await anyio.sleep(self._policy.poll_interval_seconds)
+            async with anyio.create_task_group() as tasks:
+                for lane in ("active", "recovery", "cleanup"):
+                    tasks.start_soon(self._run_lane, lane)
         finally:
             self._stopped.set()
 
-    async def consume_once(self) -> int:
+    async def _run_lane(self, lane: DisplayLane) -> None:
+        while not self._draining:
+            try:
+                await self.consume_once(lane=lane)
+            except Exception:
+                logger.exception(
+                    "Display candidate discovery failed", extra={"event": "display_discovery_failed", "lane": lane}
+                )
+            await anyio.sleep(self._policy.poll_interval_seconds)
+
+    async def consume_once(self, *, lane: DisplayLane = "active") -> int:
         candidates = await self._candidates.page(
-            after_run_id=self._after_run_id, limit=self._policy.candidate_batch_size
+            lane=lane, after=self._after.get(lane), limit=self._policy.candidate_batch_size, now=self._clock()
         )
-        self._after_run_id = candidates[-1].run_id if candidates else None
-        semaphore = anyio.Semaphore(self._policy.concurrency)
+        self._after[lane] = candidates[-1] if candidates else None
+        # Recovery and cleanup each have one independent slot; slow archival
+        # cannot occupy the active lane's concurrency budget.
+        semaphore = anyio.Semaphore(self._policy.concurrency if lane == "active" else 1)
         async with anyio.create_task_group() as tasks:
             for candidate in candidates:
                 tasks.start_soon(self._consume_candidate, candidate, semaphore)
@@ -139,8 +153,23 @@ class RunDisplayConsumer:
                 logger.exception(
                     "Display consumption failed", extra={"event": "display_flush_failed", "run_id": candidate.run_id}
                 )
+                if candidate.sealed_at is not None:
+                    with anyio.fail_after(self._policy.operation_timeout_seconds):
+                        await self._candidates.retry_after(candidate, when=self._clock() + timedelta(seconds=5))
 
     async def consume_run(self, candidate: DisplayCandidate) -> StoredDisplay | None:
+        deadline = display_recovery_deadline(candidate.sealed_at)
+        if deadline is not None:
+            # Set expiry before touching object storage, including during outages.
+            await self._stream.schedule_expiry(candidate.organization_id, candidate.run_id, deadline=deadline)
+            if self._clock() >= deadline:
+                await self._candidates.settle(candidate, now=self._clock())
+                return None
+            with anyio.fail_after((deadline - self._clock()).total_seconds()):
+                return await self._consume_run(candidate)
+        return await self._consume_run(candidate)
+
+    async def _consume_run(self, candidate: DisplayCandidate) -> StoredDisplay | None:
         started = monotonic()
         try:
             previous = await self._store.read(
@@ -164,6 +193,7 @@ class RunDisplayConsumer:
                 await self._acknowledge(candidate, base)
             except PublicationContinuityLost:
                 pass  # Its acknowledged Redis horizon may already have expired.
+            await self._candidates.settle(candidate, now=self._clock())
             return previous
         if previous is not None and base.complete and base.cursor is not None:
             # Restore the Redis watermark after a crash between PUT and ACK.
@@ -178,6 +208,8 @@ class RunDisplayConsumer:
         snapshot = snapshot.model_copy(update={"version": 1 if previous is None else previous.snapshot.version + 1})
         stored = await self._store.publish(candidate.organization_id, snapshot, previous=previous)
         await self._acknowledge(candidate, stored.snapshot)
+        if stored.snapshot.finalized:
+            await self._candidates.settle(candidate, now=self._clock())
         logger.info(
             "Run display checkpoint persisted",
             extra={

@@ -18,7 +18,8 @@ from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.inbox_persistence import lock_inbox_related_runs
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 
-from .successor_inbox import bind_locked_unbound_async_entries, lock_unbound_async_entries
+from .result_binding import select_result_binding
+from .successor_inbox import bind_locked_unbound_async_entries, reconcile_async_result_inbox
 
 type SuccessorReconciliationOutcome = Literal[
     "idle",
@@ -39,6 +40,7 @@ class AsyncSubagentSuccessorReceipt:
     outcome: SuccessorReconciliationOutcome
     inbox_entry_id: str | None = None
     successor: RunAcceptanceReceipt | None = None
+    finalized_count: int = 0
 
 
 @dataclass(slots=True)
@@ -48,6 +50,7 @@ class LockedAsyncResultSelection:
     selected_parent: RunRecord
     origin: RunRecord
     later_entries: tuple[ThreadInboxRecord, ...]
+    finalized_count: int
 
 
 async def lock_and_route_async_result(
@@ -82,30 +85,37 @@ async def lock_and_route_async_result(
     }
     current = runs[thread.current_run_id]
     head = None if thread.head_run_id is None else runs[thread.head_run_id]
-    entries = await lock_unbound_async_entries(database, thread=thread, now=now)
+    entries, finalized_count = await reconcile_async_result_inbox(database, thread=thread, now=now, locked_origins=runs)
     if not entries:
-        return AsyncSubagentSuccessorReceipt(thread_id=thread_id, outcome="idle")
+        return AsyncSubagentSuccessorReceipt(thread_id=thread_id, outcome="idle", finalized_count=finalized_count)
     first_entry_id = entries[0].id
-    if current.status in {RunStatus.accepted.value, RunStatus.running.value}:
-        bind_locked_unbound_async_entries(entries, target_run_id=current.id)
+    target_run_id, waiting_source_id = select_result_binding(
+        thread.to_resource(), current.to_resource(), None if head is None else head.to_resource()
+    )
+    if target_run_id is not None:
+        bind_locked_unbound_async_entries(entries, target_run_id=target_run_id)
         return AsyncSubagentSuccessorReceipt(
             thread_id=thread_id,
             outcome="bound_active",
             inbox_entry_id=first_entry_id,
+            finalized_count=finalized_count,
         )
-    waiting_source = _selected_waiting_source(thread, current, head)
-    if waiting_source is not None:
-        bind_locked_unbound_async_entries(entries, source_waiting_run_id=waiting_source.id)
+    if current.status == RunStatus.waiting.value and waiting_source_id is None:
+        raise AsyncSubagentSuccessorError("waiting current Run is not the selected head")
+    if waiting_source_id is not None:
+        bind_locked_unbound_async_entries(entries, source_waiting_run_id=waiting_source_id)
         return AsyncSubagentSuccessorReceipt(
             thread_id=thread_id,
             outcome="retained_waiting",
             inbox_entry_id=first_entry_id,
+            finalized_count=finalized_count,
         )
     if await _has_queued_submission(database, organization_id=organization_id, thread_id=thread_id):
         return AsyncSubagentSuccessorReceipt(
             thread_id=thread_id,
             outcome="queue_precedence",
             inbox_entry_id=first_entry_id,
+            finalized_count=finalized_count,
         )
     selected_parent = _selected_completed_parent(thread, current, head)
     if selected_parent is None:
@@ -122,22 +132,8 @@ async def lock_and_route_async_result(
         selected_parent=selected_parent,
         origin=origin,
         later_entries=entries[1:],
+        finalized_count=finalized_count,
     )
-
-
-def _selected_waiting_source(
-    thread: ThreadRecord,
-    current: RunRecord,
-    head: RunRecord | None,
-) -> RunRecord | None:
-    if current.status == RunStatus.waiting.value:
-        if head is None or thread.head_run_id != current.id or head.id != current.id:
-            raise AsyncSubagentSuccessorError("waiting current Run is not the selected head")
-        return current
-    if current.status in {RunStatus.failed.value, RunStatus.cancelled.value} and head is not None:
-        if head.status == RunStatus.waiting.value:
-            return head
-    return None
 
 
 def _selected_completed_parent(
@@ -161,21 +157,20 @@ async def _has_queued_submission(
     organization_id: str,
     thread_id: str,
 ) -> bool:
-    rows = tuple(
-        (
-            await database.scalars(
-                select(QueuedSubmissionRecord.id)
-                .where(
-                    QueuedSubmissionRecord.organization_id == organization_id,
-                    QueuedSubmissionRecord.thread_id == thread_id,
-                    QueuedSubmissionRecord.position.is_not(None),
-                )
-                .order_by(QueuedSubmissionRecord.position, QueuedSubmissionRecord.id)
-                .with_for_update()
+    return (
+        await database.scalar(
+            select(QueuedSubmissionRecord.id)
+            .where(
+                QueuedSubmissionRecord.organization_id == organization_id,
+                QueuedSubmissionRecord.thread_id == thread_id,
+                QueuedSubmissionRecord.position.is_not(None),
             )
-        ).all()
+            .order_by(QueuedSubmissionRecord.position, QueuedSubmissionRecord.id)
+            .limit(1)
+            .with_for_update()
+        )
+        is not None
     )
-    return bool(rows)
 
 
 __all__ = [

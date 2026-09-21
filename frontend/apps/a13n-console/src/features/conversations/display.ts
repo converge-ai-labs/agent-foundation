@@ -2,7 +2,11 @@ import { ApiError, type Client } from "../../service-client";
 import { data, workspaceHeaders, type Schema } from "../../shared/api";
 
 export type DisplayRead =
-  | { available: false; items: Schema["ItemResource"][] }
+  | {
+      available: false;
+      items: Schema["ItemResource"][];
+      recovery_exhausted?: boolean;
+    }
   | ({ available: true } & Schema["ItemCollection"]);
 
 /** Read one page, newest first on the wire and chronological for presentation. */
@@ -27,7 +31,11 @@ export async function readDisplay(
     return { ...page, available: true, items: [...page.items].reverse() };
   } catch (error) {
     if (error instanceof ApiError && error.code === "items_unavailable")
-      return { available: false, items: [] };
+      return {
+        available: false,
+        items: [],
+        recovery_exhausted: error.details.recovery_exhausted === true,
+      };
     throw error;
   }
 }
