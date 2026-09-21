@@ -162,6 +162,8 @@ async def environment(kind):
             stack.push_async_callback(runtime.close)
         adapter = provider.construct(
             environment_id="env-storage",
+            operation_id="storage-test",
+            allow_create=False,
             configuration=provider.validate_environment(configuration),
             state=state,
             runtime=runtime,

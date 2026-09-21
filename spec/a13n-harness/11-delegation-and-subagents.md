@@ -233,6 +233,8 @@ class InlineSubagentState(BaseModel):
     subagent_name: str
     child_definition_id: str
     state: HarnessState
+    deferred_requests: DeferredToolRequests | None = None
+    pending_run_id: str | None = None
 
 
 class InlineSubagentCollectionState(BaseModel):
@@ -249,13 +251,25 @@ Inline execution uses the exact active parent `BoundEnvironment` mapping rather 
 
 The child can use ordinary Environment operations through the borrowed facade while the parent remains active, but it cannot publish that facade as an independently owned Host Environment. Inline child continuation therefore stores no `environment_states`; the Host-authoritative parent Environment mapping remains owned and exported by the parent Run.
 
-Calls for different inline IDs may run concurrently. Competing calls for the same ID are rejected while one advance is active. Parent cancellation cancels the nested child stack. A child cannot suspend the parent through deferred tools; deferred child requests become a bounded inline failure. An inline advance becomes durable only when the Host selects a complete parent checkpoint containing it.
+Calls for different inline IDs may run concurrently. Competing calls for the same ID are rejected while one advance is active. Parent cancellation cancels the nested child stack. A child does not suspend the parent stack through deferred tools: a suspended child returns a bounded inline failure naming its compact ID while retaining its exact pending requests and child Run ID with its complete state. An inline advance becomes durable only when the Host selects a complete parent checkpoint containing it.
+
+### Deferred Inline Continuation
+
+`RunBindings.deferred_tools_supported` defaults to `True` and selects current Host support independently of instance lineage. Inline children inherit this value; an authored child bindings factory may narrow but not broaden an unsupported parent. A Host that cannot collect deferred feedback sets it to `False`. The tool-surface and runtime denial rules belong to [Tool Execution](07-tool-execution.md).
+
+Pending inline records retain `deferred_requests` and `pending_run_id` together or neither. Requests preserve native calls, approvals, and metadata through JSON restoration. Existing records without either field remain readable. Requests lost by an older producer are not reconstructed from history.
+
+A Host supplies a tuple of `InlineSubagentDeferredResults(child_thread_id, pending_run_id, results)` in fresh parent `RunBindings.inline_subagent_results`. Each submission contains a complete native `DeferredToolResults` batch. Before parent execution or Environment entry, Harness rejects unknown or non-pending targets, duplicate child targets, stale Run correlation, incomplete or wrong-category results, and requests inconsistent with retained child history. Thread IDs identify arbitrary nested children; compact IDs remain local to their direct parent.
+
+Submission alone does not schedule a child. The parent's ordinary `resume_subagent(execution_id, prompt)` advances the child. If pending, it uses only the correlated trusted results with the existing native deferred preprocessing; the prompt is not an approval, answer, or new child input. Pending children without a matching submission return a bounded failure without state change or interrupted-tool replay. Without pending requests, ordinary prompt continuation is unchanged. Nested execution receives only submissions for its own retained subtree. Concurrent advancement of one child remains rejected.
+
+The latest complete child checkpoint replaces the retained record, including after cleanup failure. Unconsumed pending requests remain pending; integrated results are not restored as pending merely because later work fails. A new suspension replaces the pending batch and Run ID. Submitted results are Run-local authority, not persisted approvals. The Host checks exported state to determine which targets advanced and may resubmit unconsumed results in a later Run. Fork retains pending questions but changes child Thread IDs, so the new branch requires a fresh correlated submission. Host checkpoint selection and persistence remain responsible for replay control; Harness does not promise exactly-once effects across replay of old checkpoints.
 
 ### Child Usage Limits
 
 Hosts obtain each built child's definition baseline through `ExecutableAgent.definition_usage_limits()`. Its detached-copy semantics are defined in [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#usage-limits-and-native-retries).
 
-Harness intersects every non-`None` ceiling from the current parent Run, the current roster child Agent definition, and the authored child edge. Each numeric field uses the smallest present value, and `count_tokens_before_request` is enabled when any contributing limit enables it. Inline execution passes the result directly to the nested child. Async execution places the same detached ceiling in `SubagentDelegationPlan`; when a Host-authorized resume replacement is selected, its definition limits are intersected once more. The Host can narrow but not broaden the result.
+Harness intersects every non-`None` ceiling from the current roster child Agent definition and the authored child edge. The parent's own usage limits and accumulator do not constrain children: each child Run has an independent usage accumulator, shared only by its own ModelAttempts. Each numeric field uses the smallest present value, and `count_tokens_before_request` is enabled when any contributing limit enables it. Inline execution passes the result directly to the nested child. Async execution places the same detached ceiling in `SubagentDelegationPlan`; when a Host-authorized resume replacement is selected, its definition limits are intersected once more. The Host can narrow but not broaden the result.
 
 ## Context, Identity, and State Authority
 
@@ -280,26 +294,26 @@ Parent `AgentContextState` is authoritative only for inline continuation. Async 
 
 ## Observation and Completion
 
-Inline execution forwards child Harness events with their original child Run and Thread provenance into the parent stream, then emits parent-scoped delegation completion or failure. Parent usage aggregates nested child usage without rewriting child observation provenance.
+Inline execution forwards child Harness events with their original child Run and Thread provenance into the parent stream, then emits parent-scoped delegation completion or failure. Each Run reports its own usage, excluding child usage. Hosts may aggregate the attributed parent and child usage records for display without applying a shared tree-wide enforcement budget.
 
 For async work, the Host owns observation storage, subscriptions, wake policy, and activity compaction. The operator consumes each child `HarnessRunStream` as the narrow ordered public-recording boundary; Harness emits only public `HarnessStreamEvent` values and imports no AG-UI or Host presentation type. Standard result models provide bounded status and closed activity projections when the operator returns them. Activity contains no separate raw `output`; a final answer is represented by closed text activity. Harness does not retain a weak observer, enqueue completion into a later parent Run, or infer current status from an old parent projection. Host wake and protocol delivery are separate from execution authority as defined by [Observation](19-observation-model.md) and the [Agent Stream Protocol](../a13n-stream-protocol/README.md).
 
 ## Failure and Cancellation Semantics
 
-| Condition                                      | Inline mode                                                                | Async Host operator                                                          |
-| ---------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Unknown child                                  | Tool failure before child execution                                        | Tool failure before Host admission                                           |
-| Invalid context, Identity, or limit resolution | Tool failure before child execution                                        | Tool failure before Host admission                                           |
-| Child dispatch or execution failure            | Preserve the latest complete retained state and return bounded failure     | Host records and projects its authoritative accepted outcome                 |
-| Child completion                               | Store complete child state before tool success                             | Host reports success according to its own checkpoint acknowledgement         |
-| Child suspension                               | Retain resumable state and return bounded unsupported/suspension semantics | Host stores the exact checkpoint and reports resumability                    |
-| Parent cancellation                            | Cancels the nested child stack                                             | Does not imply child cancellation                                            |
-| Operator unavailable                           | Not applicable                                                             | Async configuration or operation fails; no inline fallback                   |
-| Wait timeout                                   | Not applicable                                                             | One Host wait result; child remains active unless Host status says otherwise |
-| Steer or cancel race                           | Not applicable                                                             | Operator acknowledgement is authoritative; Harness invents no terminal state |
-| Host process or worker loss                    | Parent and inline child are lost together                                  | Host defines loss, recovery, and retention                                   |
-| Parent Run close                               | Child is already complete or cancelled with the stack                      | Does not close operator or accepted execution                                |
-| Child definition changed before resume         | Exact stored definition ID is required                                     | Current roster name resolves; Host validates checkpoint compatibility        |
+| Condition                                      | Inline mode                                                             | Async Host operator                                                          |
+| ---------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Unknown child                                  | Tool failure before child execution                                     | Tool failure before Host admission                                           |
+| Invalid context, Identity, or limit resolution | Tool failure before child execution                                     | Tool failure before Host admission                                           |
+| Child dispatch or execution failure            | Preserve the latest complete retained state and return bounded failure  | Host records and projects its authoritative accepted outcome                 |
+| Child completion                               | Store complete child state before tool success                          | Host reports success according to its own checkpoint acknowledgement         |
+| Child suspension                               | Retain state and exact pending batch; return bounded suspension failure | Host stores the exact checkpoint and reports resumability                    |
+| Parent cancellation                            | Cancels the nested child stack                                          | Does not imply child cancellation                                            |
+| Operator unavailable                           | Not applicable                                                          | Async configuration or operation fails; no inline fallback                   |
+| Wait timeout                                   | Not applicable                                                          | One Host wait result; child remains active unless Host status says otherwise |
+| Steer or cancel race                           | Not applicable                                                          | Operator acknowledgement is authoritative; Harness invents no terminal state |
+| Host process or worker loss                    | Parent and inline child are lost together                               | Host defines loss, recovery, and retention                                   |
+| Parent Run close                               | Child is already complete or cancelled with the stack                   | Does not close operator or accepted execution                                |
+| Child definition changed before resume         | Exact stored definition ID is required                                  | Current roster name resolves; Host validates checkpoint compatibility        |
 
 ## Invariants
 

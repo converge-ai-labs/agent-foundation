@@ -62,7 +62,9 @@ class E2BSandboxes:
             configuration or self.configuration,
             environment_id=identity,
             state=state,
-            runtime=E2BProviderRuntime(self.settings.api_key, managed=managed, operation_id="op-live-" + uuid4().hex),
+            runtime=E2BProviderRuntime(self.settings.api_key),
+            allow_create=managed,
+            operation_id="op-live-" + uuid4().hex,
         )
         self.adapters.append(adapter)
         return adapter

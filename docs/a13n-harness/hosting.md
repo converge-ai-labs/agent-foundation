@@ -122,7 +122,7 @@ A suspended root Harness result closes the process-local run. The Host owns:
 
 Resume through `DeferredToolResume` in a new root run. Do not keep a database transaction, worker lease call, or live stream open while waiting for human input.
 
-Child runs never create durable deferred work. Declaratively deferred tools are absent, and runtime `CallDeferred` or `ApprovalRequired` requests become denied tool results inside the same child run. If a custom path unexpectedly returns terminal deferred requests, the child fails with `subagent_deferred_unsupported`. A Host asynchronous-child service therefore persists active or terminal child records only; it must not create a waiting child state, collect child deferred responses, or interpret deferred stream events as suspension authority.
+A Host selects child deferred support through fresh `RunBindings.deferred_tools_supported`. Hosts supporting this lifecycle retain exact terminal pending requests with the child checkpoint and resume through `DeferredToolResume`, just like roots. Hosts without it set the flag to `False`: declarative deferrals disappear, dynamic deferrals become denied results, and unexpected terminal deferral fails with `deferred_tools_unsupported`. Harness UI currently disables async child deferred support while retaining ordinary prompt resume. Deferred events alone never authorize waiting work. Harness-owned [inline continuation](delegation-and-codeact.md#resume-a-waiting-inline-child) stores pending requests in complete parent state and routes trusted results without retaining a live parent stack.
 
 ## Environments
 

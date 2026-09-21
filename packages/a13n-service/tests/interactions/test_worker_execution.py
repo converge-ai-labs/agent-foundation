@@ -231,6 +231,8 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
         async def prepare_with_environment(self, context):
             async with original_prepare(self, context) as invocation:
                 environment = DIRECT_LOCAL.construct(
+                    operation_id="op-test",
+                    allow_create=True,
                     configuration=DirectLocalEnvironmentConfiguration(
                         root=DirectLocalRootConfiguration(path=workspace)
                     ),

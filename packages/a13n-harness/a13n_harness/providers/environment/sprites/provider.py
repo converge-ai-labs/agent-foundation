@@ -45,10 +45,11 @@ class SpritesEnvironment(NativeEnvironment[SpritesEnvironmentConfiguration, Name
         environment_id: str,
         state: EnvironmentState | None,
         runtime: NativeRuntime,
+        allow_create: bool,
+        operation_id: str,
     ):
-        super().__init__(
-            "sprites", config, environment_id, state, managed=runtime.managed, state_model=NamedTargetState
-        )
+        del operation_id
+        super().__init__("sprites", config, environment_id, state, managed=allow_create, state_model=NamedTargetState)
         assert isinstance(runtime.credential, TokenCredential)
         self.token = runtime.credential.api_key
         self.http: NativeHTTP | None = None

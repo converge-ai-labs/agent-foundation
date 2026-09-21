@@ -62,8 +62,11 @@ class VercelEnvironment(NativeEnvironment[VercelEnvironmentConfiguration, NamedT
         environment_id: str,
         state: EnvironmentState | None,
         runtime: NativeRuntime,
+        allow_create: bool,
+        operation_id: str,
     ):
-        super().__init__("vercel", config, environment_id, state, managed=runtime.managed, state_model=NamedTargetState)
+        del operation_id
+        super().__init__("vercel", config, environment_id, state, managed=allow_create, state_model=NamedTargetState)
         assert isinstance(runtime.configuration, VercelConnectionConfiguration)
         assert isinstance(runtime.credential, TokenCredential)
         self.backend = runtime.configuration

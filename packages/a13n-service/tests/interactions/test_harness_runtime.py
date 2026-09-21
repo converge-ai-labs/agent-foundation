@@ -229,7 +229,12 @@ def _environment(root: Path, environment_id: str) -> DirectLocalEnvironment:
         ).model_dump(mode="json"),
     )
     environment = provider.construct(
-        configuration=configuration, environment_id=environment_id, state=None, runtime=None
+        operation_id="op-test",
+        allow_create=True,
+        configuration=configuration,
+        environment_id=environment_id,
+        state=None,
+        runtime=None,
     )
     assert isinstance(environment, DirectLocalEnvironment)
     return environment

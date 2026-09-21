@@ -24,6 +24,8 @@ class DirectLocalEnvironmentProviderBinding(_EnvironmentAdapterBinding):
     ) -> None:
         provider = DIRECT_LOCAL
         environment = provider.construct(
+            operation_id="op-test",
+            allow_create=True,
             configuration=configuration,
             environment_id=environment_id,
             state=None,

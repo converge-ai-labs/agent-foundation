@@ -128,7 +128,9 @@ def environment(state=None, *, managed=True, configuration=None, identity="env-t
         configuration=configuration or E2BEnvironmentConfiguration(),
         environment_id=identity,
         state=state,
-        runtime=E2BProviderRuntime(SecretStr("secret-api-key"), managed=managed),
+        runtime=E2BProviderRuntime(SecretStr("secret-api-key")),
+        allow_create=managed,
+        operation_id="op-test",
     )
 
 
@@ -267,17 +269,28 @@ async def test_keepalive_reports_observed_expiry_and_never_shortens(api):
     assert api.calls.count("renew") == 1
 
 
-async def test_host_runtime_uses_explicit_credentials_and_correlation(api):
+@pytest.mark.parametrize("borrowed", [False, True])
+async def test_host_runtime_uses_explicit_credentials_and_correlation(api, borrowed):
     provider = E2B
     runtime = await provider.runtime_factory(
         configuration=E2BConnectionConfiguration(),
         credential=E2BCredential(api_key=SecretStr("secret-api-key")),
-        allow_create=True,
-        operation_id="operation-1",
     )
     assert "secret-api-key" not in repr(runtime)
-    env = provider.construct(
-        configuration=E2BEnvironmentConfiguration(), environment_id="env-test", state=None, runtime=runtime
+    inputs = (
+        {"runtime": runtime}
+        if borrowed
+        else {
+            "configuration": E2BConnectionConfiguration(),
+            "credential": E2BCredential(api_key=SecretStr("secret-api-key")),
+        }
+    )
+    env = await provider.create(
+        E2BEnvironmentConfiguration(),
+        operation_id="operation-1",
+        allow_create=True,
+        environment_id="env-test",
+        **inputs,
     )
     await env.prepare()
     assert next(iter(api.targets.values())).metadata["a13n_operation"] == "operation-1"
@@ -309,11 +322,14 @@ async def test_custom_api_endpoint_reaches_sdk(api, monkeypatch, api_url):
     runtime = await provider.runtime_factory(
         configuration=E2BConnectionConfiguration(domain="sandbox.example", api_url=api_url),
         credential=E2BCredential(api_key=SecretStr("test-key")),
-        allow_create=True,
-        operation_id=None,
     )
     env = provider.construct(
-        configuration=E2BEnvironmentConfiguration(), environment_id="env-test", state=None, runtime=runtime
+        operation_id="op-test",
+        allow_create=True,
+        configuration=E2BEnvironmentConfiguration(),
+        environment_id="env-test",
+        state=None,
+        runtime=runtime,
     )
     await env.prepare()
     assert api.options[0]["api_url"] == (api_url or "https://api.sandbox.example")

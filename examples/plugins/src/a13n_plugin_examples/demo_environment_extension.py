@@ -64,9 +64,9 @@ async def _run_extension_demo(
     configuration = provider.validate_environment(
         {"root": str(workspace_root)},
     )
-    environment = provider.construct(
+    environment = await provider.create(
         environment_id="extension-workspace",
-        configuration=configuration,
+        environment=configuration,
         state=None,
         runtime=None,
     )

@@ -578,9 +578,9 @@ class EnvironmentRunService:
                     "allowed_environment_keys": [],
                 },
             )
-            environment = provider.construct(
+            environment = await provider.create(
                 environment_id=f"thread-files-{root.name}",
-                configuration=configuration,
+                environment=configuration,
                 state=None,
                 runtime=None,
             )
@@ -616,9 +616,9 @@ class EnvironmentRunService:
                     "allowed_environment_keys": [],
                 },
             )
-            environment = provider.construct(
+            environment = await provider.create(
                 environment_id=f"local-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
-                configuration=configuration,
+                environment=configuration,
                 state=None,
                 runtime=None,
             )
@@ -652,9 +652,9 @@ class EnvironmentRunService:
                     "allowed_environment_keys": [],
                 },
             )
-            environment = provider.construct(
+            environment = await provider.create(
                 environment_id=f"local-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
-                configuration=configuration,
+                environment=configuration,
                 state=None,
                 runtime=None,
             )

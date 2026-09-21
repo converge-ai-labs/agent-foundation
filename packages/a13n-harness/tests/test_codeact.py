@@ -273,6 +273,7 @@ async def test_codeact_nested_deferral_uses_child_denial_and_root_handler() -> N
             parent_agent_instance_id="parent-1",
             delegation_id="delegation-1",
         ),
+        deferred_tools_supported=False,
         environment=EmptyEnvironmentRuntime(),
     )
 

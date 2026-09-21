@@ -52,15 +52,15 @@ async def _run_environment_demo(
     docs_root: Path,
 ) -> EnvironmentDemoResult:
     provider = catalog.require(PROVIDER_TYPE)
-    source = provider.construct(
+    source = await provider.create(
         environment_id="workspace-source",
-        configuration=_configuration(provider, source_root),
+        environment=_configuration(provider, source_root),
         state=None,
         runtime=None,
     )
-    docs = provider.construct(
+    docs = await provider.create(
         environment_id="workspace-docs",
-        configuration=_configuration(provider, docs_root),
+        environment=_configuration(provider, docs_root),
         state=None,
         runtime=None,
     )

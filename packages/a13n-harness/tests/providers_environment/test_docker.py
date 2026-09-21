@@ -342,7 +342,7 @@ async def test_external_registration_keeps_allocation_identity(native):
     engine.client.containers.get.side_effect = None
     engine.client.containers.get.return_value = container
     external = DockerEnvironment(
-        env.config, "env_registered", env.dump_state(), DockerProviderRuntime(engine, managed=False)
+        env.config, "env_registered", env.dump_state(), DockerProviderRuntime(engine), allow_create=False
     )
     await external.prepare()
     assert external.environment_id == "env_registered"
@@ -388,7 +388,7 @@ async def test_missing_external_target_never_adopts_same_name_replacement(native
     await env.close()
     engine.client.containers.get.reset_mock()
     external = DockerEnvironment(
-        env.config, "env_registered", env.dump_state(), DockerProviderRuntime(engine, managed=False)
+        env.config, "env_registered", env.dump_state(), DockerProviderRuntime(engine), allow_create=False
     )
     assert await external.reconcile() == "absent"
     engine.client.containers.get.assert_called_once_with(env.dump_state().state["container_id"])
@@ -421,3 +421,30 @@ async def test_cancelled_engine_acquisition_closes_the_engine_it_owns(monkeypatc
     with pytest.raises(asyncio.CancelledError):
         await acquisition
     await asyncio.wait_for(closed.wait(), 5)
+
+
+async def test_borrowed_docker_runtime_obeys_each_adapters_creation_policy(native):
+    source, engine, _ = native
+    external = await DOCKER.create(
+        source.config,
+        runtime=source.runtime,
+        environment_id=source.environment_id,
+        allow_create=False,
+    )
+    with pytest.raises(EnvironmentProviderError) as error:
+        await external.prepare()
+    assert error.value.category == "missing"
+    engine.client.containers.create.assert_not_called()
+    await external.close()
+    engine.client.close.assert_not_called()
+
+    managed = await DOCKER.create(
+        source.config,
+        runtime=source.runtime,
+        environment_id=source.environment_id,
+        allow_create=True,
+    )
+    await managed.prepare()
+    engine.client.containers.create.assert_called_once()
+    await managed.close()
+    engine.client.close.assert_not_called()

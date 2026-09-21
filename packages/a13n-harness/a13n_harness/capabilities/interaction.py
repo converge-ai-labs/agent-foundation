@@ -25,7 +25,7 @@ USER_INTERACTION_CAPABILITY_ID = "a13n.user-interaction"
 
 @dataclass(kw_only=True)
 class UserInteractionCapability(AbstractCapability[AgentContext]):
-    """Expose structured questions only to an independent root Agent."""
+    """Expose structured questions when the current Host supports deferred tools."""
 
     id: str | None = USER_INTERACTION_CAPABILITY_ID
 
@@ -54,7 +54,7 @@ class UserInteractionCapability(AbstractCapability[AgentContext]):
         return DynamicToolset(self._toolset_for_run, per_run_step=False, id="a13n-user-interaction")
 
     async def _toolset_for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext] | None:
-        if ctx.deps.instance.parent_agent_instance_id is not None:
+        if not ctx.deps.deferred_tools_supported:
             return None
         return UserInteractionToolset().get_toolset()
 

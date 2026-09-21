@@ -120,6 +120,7 @@ async def test_structured_question_is_not_exposed_to_child_runs() -> None:
                 delegation_id="delegation-1",
             ),
             environment=EmptyEnvironmentRuntime(),
+            deferred_tools_supported=False,
         ),
     )
 

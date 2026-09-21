@@ -30,7 +30,7 @@ from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDen
 
 pytestmark = pytest.mark.anyio
 
-_DENIAL = "Deferred tool interaction is unavailable in subagent runs."
+_DENIAL = "Deferred tool interaction is unavailable for this Run."
 _DENIAL_RESULT = repr(ToolDenied(_DENIAL))
 
 
@@ -43,6 +43,7 @@ def _child_bindings(*, capabilities: tuple[Any, ...] = ()) -> RunBindings:
             delegation_id="delegation-1",
         ),
         environment=EmptyEnvironmentRuntime(),
+        deferred_tools_supported=False,
         capabilities=capabilities,
     )
 

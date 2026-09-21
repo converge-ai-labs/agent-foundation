@@ -40,13 +40,16 @@ async def test_cloud_files_execution_and_resume(key, tmp_path):
     runtime = await provider.runtime_factory(
         configuration=backend,
         credential=credential,
-        operation_id="operation-" + secrets.token_hex(12),
-        allow_create=True,
     )
 
     def fresh(state=None):
         return provider.construct(
-            configuration=configuration, environment_id=environment_id, state=state, runtime=runtime
+            operation_id="operation-" + secrets.token_hex(12),
+            allow_create=True,
+            configuration=configuration,
+            environment_id=environment_id,
+            state=state,
+            runtime=runtime,
         )
 
     env = fresh()

@@ -91,8 +91,11 @@ class ModalEnvironment(NativeEnvironment[ModalEnvironmentConfiguration, ModalSta
         environment_id: str,
         state: EnvironmentState | None,
         runtime: NativeRuntime,
+        allow_create: bool,
+        operation_id: str,
     ):
-        super().__init__("modal", config, environment_id, state, managed=runtime.managed, state_model=ModalState)
+        del operation_id
+        super().__init__("modal", config, environment_id, state, managed=allow_create, state_model=ModalState)
         assert isinstance(runtime.configuration, ModalConnectionConfiguration)
         assert isinstance(runtime.credential, ModalCredential)
         self.backend = runtime.configuration

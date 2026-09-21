@@ -119,7 +119,7 @@ result = await executable.run(
 )
 ```
 
-The override is not a field-by-field merge. Keep stable workload budgets on `AgentSpec`; use the invocation argument for a narrower or otherwise deliberately different one-run budget. Inline children receive the strictest value for each field across the parent effective limit, child `AgentSpec`, authored edge, and current Host policy.
+The override is not a field-by-field merge. Keep stable workload budgets on `AgentSpec`; use the invocation argument for a narrower or otherwise deliberately different one-run budget. Inline children receive the strictest value for each field across their own definition and authored edge, with an independent usage accumulator. Parent limits do not impose a tree-wide cap.
 
 `AgentSpec.retries` remains the native Pydantic AI setting:
 
@@ -270,14 +270,14 @@ output = result.output_or_raise()
 
 A result has one status:
 
-| Status      | Meaning                                                      | Important fields                           |
-| ----------- | ------------------------------------------------------------ | ------------------------------------------ |
-| `completed` | A validated business output completed and cleanup succeeded  | `output`, `state`, `usage`                 |
-| `suspended` | A root native deferred tool or approval requires later input | `state`, `deferred`, `suspend_reason`      |
-| `failed`    | The logical run ended with a safe normalized failure         | `failure`, optional safe `state` candidate |
-| `cancelled` | Cancellation stopped the logical run                         | no business output                         |
+| Status      | Meaning                                                           | Important fields                           |
+| ----------- | ----------------------------------------------------------------- | ------------------------------------------ |
+| `completed` | A validated business output completed and cleanup succeeded       | `output`, `state`, `usage`                 |
+| `suspended` | A supported native deferred tool or approval requires later input | `state`, `deferred`, `suspend_reason`      |
+| `failed`    | The logical run ended with a safe normalized failure              | `failure`, optional safe `state` candidate |
+| `cancelled` | Cancellation stopped the logical run                              | no business output                         |
 
-Use `raise_for_status()` when only completion is acceptable. Use `output_or_raise()` to both validate status and return the typed output. Inspect `status`, `failure`, or `deferred` when the application handles other outcomes explicitly. A child invocation never returns `suspended`: dynamic deferral is denied inside the same model loop, and an unexpected terminal deferred output becomes `failed` with `subagent_deferred_unsupported`.
+Use `raise_for_status()` when only completion is acceptable. Use `output_or_raise()` to both validate status and return the typed output. Inspect `status`, `failure`, or `deferred` when the application handles other outcomes explicitly. Roots and children can return `suspended` when fresh `RunBindings.deferred_tools_supported` is enabled (the default). If disabled, dynamic deferral is denied inside the same model loop, and unexpected terminal deferral becomes `failed` with `deferred_tools_unsupported`.
 
 `all_messages()` returns the complete detached message history represented by the result. `new_messages()` returns only messages added by that logical run.
 

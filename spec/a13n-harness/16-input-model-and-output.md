@@ -412,7 +412,7 @@ This compatibility behavior avoids forced-tool modes rejected by provider profil
 
 The Harness builds one matching process-local output adapter from the effective build-time contract, including return annotations of synchronous, `Awaitable`, and `Coroutine` output functions, and uses it to validate plugin-produced completed output. If Pydantic cannot generate a schema for an otherwise valid arbitrary process-local code-first return type, the adapter permits arbitrary types rather than rejecting the upstream output contract. Declarative output uses the same schema-derived `StructuredDict` adapter and instance validator as model output, so a plugin cannot bypass the declared constraints.
 
-For a root invocation, a Pydantic result whose output is `DeferredToolRequests` becomes a suspended Harness result rather than a completed business output. `.calls` and `.approvals` retain their native distinct meanings. The later Host or caller supplies the exact pending requests and matching Pydantic results through `DeferredToolResume` in a new logical run with prior state and fresh bindings. A child invocation resolves dynamic deferral as denied tool results inside the same loop; an unexpected terminal deferred output instead becomes a failed result with `code="subagent_deferred_unsupported"`.
+For a Run with deferred support, a Pydantic result whose output is `DeferredToolRequests` becomes a suspended Harness result rather than a completed business output. `.calls` and `.approvals` retain their native distinct meanings. The later Host or caller supplies the exact pending requests and matching Pydantic results through `DeferredToolResume` in a new logical run with prior state and fresh bindings. A Run with `deferred_tools_supported=False` resolves dynamic deferral as denied tool results inside the same loop; an unexpected terminal deferred output instead becomes a failed result with `code="deferred_tools_unsupported"`. Supported children use the same native preprocessing; inline routing is defined in [Delegation and Subagents](11-delegation-and-subagents.md#deferred-inline-continuation).
 
 Trusted plugins may replace the complete result candidate, including output, usage, and state. The Harness revalidates field combinations, output type, message suffix, and run correlation. It does not enforce state provenance or require state history to match the result message view.
 
@@ -444,8 +444,8 @@ A saved reference is not an image attachment and does not make subsequent Models
 | Invalid declarative object JSON Schema          | `DefinitionError` retaining the native validation cause                           |
 | Tool-based structured output request            | Provider receives auto tool choice; local output validation remains authoritative |
 | Output validation retries exhausted             | No Harness `ModelAttempt` recovery                                                |
-| Root native deferred/HITL output                | Suspended result with native `DeferredToolRequests`                               |
-| Unexpected child terminal deferred output       | Failed result with `subagent_deferred_unsupported`                                |
+| Supported native deferred/HITL output           | Suspended result with native `DeferredToolRequests`                               |
+| Unsupported Run terminal deferred output        | Failed result with `deferred_tools_unsupported`                                   |
 | Invalid plugin-completed output                 | `PluginError(code="plugin_result_invalid")`                                       |
 
 ## Boundaries

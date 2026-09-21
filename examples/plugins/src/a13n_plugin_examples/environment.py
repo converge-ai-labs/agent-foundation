@@ -56,9 +56,11 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: object | None,
+    operation_id: str,
+    allow_create: bool,
 ) -> Environment:
     """This deterministic Provider needs no credential or SDK collaborator."""
-    del runtime
+    del runtime, operation_id, allow_create
     if state is not None:
         raise TypeError("example_workspace accepts no stored state")
     return WorkspaceEnvironment(_direct_configuration(configuration), environment_id=environment_id)

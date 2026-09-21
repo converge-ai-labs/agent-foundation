@@ -48,6 +48,8 @@ def _executable():
 def _environment(root: Path, environment_id: str) -> Environment:
     provider = DIRECT_LOCAL
     return provider.construct(
+        operation_id="op-test",
+        allow_create=True,
         configuration=DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
         ),

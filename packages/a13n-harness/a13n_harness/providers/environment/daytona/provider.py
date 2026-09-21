@@ -63,8 +63,11 @@ class DaytonaEnvironment(NativeEnvironment[DaytonaEnvironmentConfiguration, Targ
         environment_id: str,
         state: EnvironmentState | None,
         runtime: NativeRuntime,
+        allow_create: bool,
+        operation_id: str,
     ):
-        super().__init__("daytona", config, environment_id, state, managed=runtime.managed, state_model=TargetState)
+        del operation_id
+        super().__init__("daytona", config, environment_id, state, managed=allow_create, state_model=TargetState)
         assert isinstance(runtime.configuration, DaytonaConnectionConfiguration)
         assert isinstance(runtime.credential, TokenCredential)
         self.backend = runtime.configuration

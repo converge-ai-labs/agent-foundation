@@ -170,13 +170,15 @@ class HarnessState(BaseModel):
 
     def fork(self, *, thread_id: str | None = None) -> HarnessState:
         """Copy portable continuation data into a distinct generated or Host-selected Thread."""
+        from a13n_harness.capabilities.subagents import _fork_inline_subagent_state
+
         selected_thread_id = thread_id if thread_id is not None else _new_thread_id()
         if selected_thread_id == self.thread_id:
             raise ValueError("fork thread_id must differ from the source Thread")
         return HarnessState.new(
             thread_id=selected_thread_id,
             message_history=self.message_history,
-            agent_context_state=self.agent_context_state,
+            agent_context_state=_fork_inline_subagent_state(self.agent_context_state),
             environment_states={},
         )
 

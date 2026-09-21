@@ -173,12 +173,17 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch):
         runtime = await provider.runtime_factory(
             configuration=provider.configuration_model(workspace="fixture", app_name="fixture"),
             credential=provider.credential_model(token_id="fixture", token_secret="fixture"),
-            allow_create=True,
-            operation_id="op-fixture",
         )
 
         def create(state=None):
-            return provider.construct(configuration=config, environment_id="env-fixture", state=state, runtime=runtime)
+            return provider.construct(
+                operation_id="op-test",
+                allow_create=True,
+                configuration=config,
+                environment_id="env-fixture",
+                state=state,
+                runtime=runtime,
+            )
 
         env = create()
         try:

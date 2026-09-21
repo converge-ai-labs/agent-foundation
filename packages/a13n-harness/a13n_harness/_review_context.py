@@ -66,8 +66,8 @@ async def record_approval_denials(
     """Observe the Host approval channel, not tool-return text or result metadata."""
     from a13n_harness.tools.approval import NATIVE_TOOL_APPROVAL_KEY, TOOL_APPROVAL_KEY
 
-    if context.instance.parent_agent_instance_id is not None:
-        return  # The boundary automatically denies child interactions; that is not human feedback.
+    if not context.deferred_tools_supported:
+        return  # Automatic unsupported-Host denials are not human feedback.
     pending = requests.metadata if requests is not None else context._tool_pending_approvals
     for call_id, result in results.approvals.items():
         if result is not False and not isinstance(result, ToolDenied):

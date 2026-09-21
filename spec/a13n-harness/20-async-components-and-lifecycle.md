@@ -119,7 +119,7 @@ sequenceDiagram
     Threads-->>Operator: bounded projection
 ```
 
-The Host owns acceptance, exact checkpoint selection, retries, wake, final state publication, steering, cancellation, linked continuation, loss, cleanup, and retention. The child is never an async `HarnessState` nested in the parent.
+The Host owns acceptance, exact checkpoint selection, retries, wake, final state publication, steering, cancellation, linked continuation, loss, cleanup, and retention. It selects `RunBindings.deferred_tools_supported` for each child independently of lineage. Hosts that support deferred children retain exact native pending requests with their checkpoint and use the ordinary `DeferredToolResume` preprocessor under fresh authority; Hosts without that lifecycle explicitly disable it. The child is never an async `HarnessState` nested in the parent.
 
 ## Failure Semantics
 

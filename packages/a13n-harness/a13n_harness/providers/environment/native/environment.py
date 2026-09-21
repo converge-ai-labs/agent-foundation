@@ -175,8 +175,6 @@ class NativeEnvironment[C: CommandConfiguration, S: TargetState](Environment):
 class NativeRuntime:
     configuration: BaseModel
     credential: BaseModel
-    managed: bool
-    operation_id: str
 
 
 def native_definition[C: BaseModel, K: BaseModel, E: CommandConfiguration](
@@ -187,16 +185,14 @@ def native_definition[C: BaseModel, K: BaseModel, E: CommandConfiguration](
     credential_model: type[K],
     environment_model: type[E],
     state_model: type[TargetState],
-    environment_type: Callable[[E, str, EnvironmentState | None, NativeRuntime], Environment],
+    environment_type: Callable[[E, str, EnvironmentState | None, NativeRuntime, bool, str], Environment],
     supports_stop: bool,
     requires_keepalive: bool,
 ) -> EnvironmentProviderDefinition[C, K, E, NativeRuntime]:
-    async def runtime(
-        *, configuration: C, credential: K | None, operation_id: str, allow_create: bool
-    ) -> NativeRuntime:
+    async def runtime(*, configuration: C, credential: K | None) -> NativeRuntime:
         if credential is None:
             raise ValueError(f"the {type!r} Environment Provider requires a credential")
-        return NativeRuntime(configuration, credential, allow_create, operation_id)
+        return NativeRuntime(configuration, credential)
 
     def describe(configuration: E) -> EnvironmentDescriptor:
         return descriptor(configuration)
@@ -208,11 +204,17 @@ def native_definition[C: BaseModel, K: BaseModel, E: CommandConfiguration](
         return value.target_id if value else None
 
     def construct(
-        *, configuration: E, environment_id: str, state: EnvironmentState | None, runtime: NativeRuntime | None
+        *,
+        configuration: E,
+        environment_id: str,
+        state: EnvironmentState | None,
+        runtime: NativeRuntime | None,
+        operation_id: str,
+        allow_create: bool,
     ) -> Environment:
         if runtime is None:
             raise TypeError("Native Environment construction requires a runtime")
-        return environment_type(configuration, environment_id, state, runtime)
+        return environment_type(configuration, environment_id, state, runtime, allow_create, operation_id)
 
     return EnvironmentProviderDefinition(
         type=type,

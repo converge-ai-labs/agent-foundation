@@ -1021,6 +1021,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 host_refs={"thread_id": state.thread_id},
             ),
             environment=environment.runtime,
+            deferred_tools_supported=False,
             tool_result_directory=environment.tool_result_directory,
             model_resolver=reconstructed.model_resolver.fresh(),
             file_media_understanding=reconstructed.file_media_understanding(state.thread_id),

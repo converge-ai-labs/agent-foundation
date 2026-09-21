@@ -47,7 +47,12 @@ async def search_files(request, tmp_path):
     provider = DIRECT_LOCAL
     configuration = provider.validate_environment({"root": {"path": str(tmp_path)}})
     environment = provider.construct(
-        environment_id="conformance", configuration=configuration, state=None, runtime=None
+        operation_id="op-test",
+        allow_create=True,
+        environment_id="conformance",
+        configuration=configuration,
+        state=None,
+        runtime=None,
     )
     await environment.enter(mount_id="mount")
     await environment.prepare()

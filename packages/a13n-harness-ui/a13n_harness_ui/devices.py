@@ -245,8 +245,9 @@ class DeviceConnections:
         resource = binding.device
         configuration = RemoteEnvdEnvironmentConfiguration(working_directory=binding.selection.working_directory)
         if isinstance(resource.transport, HttpDeviceTransport):
-            return HTTP_ENVD.construct(
-                configuration=configuration,
+            return await HTTP_ENVD.create(
+                environment=configuration,
+                allow_create=False,
                 environment_id=environment_id,
                 state=state
                 or EnvironmentState(
@@ -254,8 +255,9 @@ class DeviceConnections:
                 ),
                 runtime=await self._http_runtime(resource),
             )
-        return WEBSOCKET_ENVD.construct(
-            configuration=configuration,
+        return await WEBSOCKET_ENVD.create(
+            environment=configuration,
+            allow_create=False,
             environment_id=environment_id,
             state=state
             or EnvironmentState(

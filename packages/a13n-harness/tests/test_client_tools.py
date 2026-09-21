@@ -101,6 +101,7 @@ def _child_bindings() -> RunBindings:
             delegation_id="delegation-1",
         ),
         environment=EmptyEnvironmentRuntime(),
+        deferred_tools_supported=False,
     )
 
 
@@ -187,7 +188,7 @@ async def test_child_deferred_terminal_guard_fails_instead_of_suspending(monkeyp
 
     assert result.status == "failed"
     assert result.failure is not None
-    assert result.failure.code == "subagent_deferred_unsupported"
+    assert result.failure.code == "deferred_tools_unsupported"
     assert result.state is not None
     assert result.deferred is None
     assert result.suspend_reason is None

@@ -233,9 +233,15 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
                     **requests.metadata.get(call.tool_call_id, {}),
                     **captured,
                 }
-        if ctx.deps.instance.parent_agent_instance_id is None:
+        for call in requests.calls:
+            definition = ctx.tools.get(call.tool_name)
+            if definition is not None and definition.kind in {"function", "unapproved"}:
+                requests.metadata.setdefault(call.tool_call_id, {})["a13n.harness.deferred-function-id"] = (
+                    tool_identity(definition).tool_id
+                )
+        if ctx.deps.deferred_tools_supported:
             return None
-        message = "Deferred tool interaction is unavailable in subagent runs."
+        message = "Deferred tool interaction is unavailable for this Run."
         return DeferredToolResults(
             calls={request.tool_call_id: ToolDenied(message) for request in requests.calls},
             approvals={request.tool_call_id: ToolDenied(message) for request in requests.approvals},
@@ -819,10 +825,19 @@ def _validate_resume_surface(
     # consumed this batch and may prepare a different dynamic tool surface.
     if resume is None or ctx.run_step != 0:
         return
-    required_names = {call.tool_name for call in resume.requests.calls}
-    for name in required_names:
+    for call in resume.requests.calls:
+        name = call.tool_name
         tool = tools.get(name)
-        if tool is None or tool.tool_def.kind != "external":
+        function_id = resume.requests.metadata.get(call.tool_call_id, {}).get("a13n.harness.deferred-function-id")
+        matches = tool is not None and (
+            (tool.tool_def.kind == "external" and function_id is None)
+            or (
+                function_id is not None
+                and tool.tool_def.kind in {"function", "unapproved"}
+                and tool_identity(tool.tool_def).tool_id == function_id
+            )
+        )
+        if not matches:
             raise DefinitionError(
                 "The current tool surface does not match the pending external call.",
                 code="deferred_surface_mismatch",

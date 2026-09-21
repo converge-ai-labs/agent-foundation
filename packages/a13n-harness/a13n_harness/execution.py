@@ -516,6 +516,9 @@ class ExecutableAgent[OutputT]:
             if deferred_resume is not None
             else None
         )
+        from a13n_harness.capabilities.subagents import _preflight_inline_subagent_results
+
+        _preflight_inline_subagent_results(resolved_bindings.inline_subagent_results, previous_state)
         effective_usage_limits = deepcopy(usage_limits) if usage_limits is not None else self.definition_usage_limits()
         return HarnessRunStream(
             executable=self,
@@ -774,6 +777,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             events=self._emitter,
             usage_attribution=usage_attribution,
             deferred_resume=self._deferred_resume,
+            deferred_tools_supported=bindings.deferred_tools_supported,
+            inline_subagent_results=bindings.inline_subagent_results,
             _tool_recovery=self._tool_recovery,
             metadata=bindings.metadata,
             _steering=SteeringBridge(
@@ -1775,15 +1780,15 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 _messages=messages,
                 _new_message_index=new_message_index,
             )
-        if self.context.instance.parent_agent_instance_id is not None:
+        if not self.context.deferred_tools_supported:
             return HarnessRunResult(
                 thread_id=self.thread_id,
                 run_id=self.run_id,
                 status="failed",
                 output=None,
                 failure=SafeFailure(
-                    code="subagent_deferred_unsupported",
-                    message="Subagent runs cannot suspend for deferred tool requests.",
+                    code="deferred_tools_unsupported",
+                    message="This Host does not support deferred tool requests for this Run.",
                 ),
                 state=state,
                 usage=result.usage,

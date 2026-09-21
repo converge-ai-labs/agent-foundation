@@ -210,13 +210,13 @@ class _Runtime:
 
 
 def _definition(created: list[_Runtime]) -> EnvironmentProviderDefinition:
-    async def runtime_factory(*, configuration, credential, operation_id, allow_create):  # type: ignore[no-untyped-def]
-        del configuration, credential, operation_id, allow_create
+    async def runtime_factory(*, configuration, credential):  # type: ignore[no-untyped-def]
+        del configuration, credential
         created.append(_Runtime())
         return created[-1]
 
-    def construct(*, configuration, environment_id, state, runtime):  # type: ignore[no-untyped-def]
-        del configuration, environment_id, runtime
+    def construct(*, configuration, environment_id, state, runtime, operation_id, allow_create):  # type: ignore[no-untyped-def]
+        del configuration, environment_id, runtime, operation_id, allow_create
         return _Environment(state)
 
     return EnvironmentProviderDefinition(
@@ -310,3 +310,33 @@ async def test_unconfirmed_destroy_preserves_state_after_runtime_cleanup() -> No
         await environment.destroy()
     assert environment.dump_state() == state
     assert runtime.closed == 1
+
+
+@pytest.mark.parametrize("borrowed", [False, True])
+@pytest.mark.parametrize("allow_create", [False, True])
+async def test_creation_policy_and_operation_belong_to_the_adapter(borrowed: bool, allow_create: bool) -> None:
+    created: list[_Runtime] = []
+    observed: list[dict[str, object]] = []
+
+    def construct(**kwargs: object) -> Environment:
+        observed.append(kwargs)
+        return _Environment()
+
+    definition = replace(_definition(created), construct=construct)
+    runtime = _Runtime() if borrowed else None
+    environment = await definition.create({}, runtime=runtime, allow_create=allow_create, operation_id="op-current")
+    assert observed[0]["operation_id"] == "op-current"
+    assert observed[0]["allow_create"] is allow_create
+    assert observed[0]["runtime"] is (runtime if borrowed else created[0])
+    await environment.close()
+    assert not created if borrowed else created[0].closed == 1
+
+
+@pytest.mark.parametrize("account_inputs", [{"configuration": {}}, {"credential": {}}])
+async def test_borrowed_runtime_rejects_unused_account_inputs(account_inputs: dict[str, object]) -> None:
+    created: list[_Runtime] = []
+    runtime = _Runtime()
+    with pytest.raises(ValueError, match="borrowed runtime"):
+        await _definition(created).create({}, runtime=runtime, **account_inputs)
+    assert created == []
+    assert runtime.closed == 0

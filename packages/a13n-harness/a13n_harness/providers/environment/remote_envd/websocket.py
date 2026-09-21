@@ -39,12 +39,7 @@ def _backend_identity(configuration: BaseModel) -> str:
     return WEBSOCKET_PROVIDER_KEY
 
 
-async def _runtime(
-    *, configuration: BaseModel, credential: BaseModel | None, operation_id: str, allow_create: bool
-) -> WebSocketEnvdProviderRuntime:
-    del operation_id
-    if allow_create:
-        raise provider_error(WEBSOCKET_PROVIDER_KEY, "provider_external_only", Category.UNSUPPORTED)
+async def _runtime(*, configuration: BaseModel, credential: BaseModel | None) -> WebSocketEnvdProviderRuntime:
     if not isinstance(configuration, WebSocketEnvdConnectionConfiguration) or credential is not None:
         raise TypeError("WebSocket Envd requires WebSocketEnvdConnectionConfiguration and no stored credential")
     raise provider_error(WEBSOCKET_PROVIDER_KEY, "provider_runtime_required", Category.UNAVAILABLE)
@@ -56,7 +51,10 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: WebSocketEnvdProviderRuntime | None,
+    operation_id: str,
+    allow_create: bool,
 ) -> Environment:
+    del operation_id, allow_create
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration) or runtime is None:
         raise TypeError("WebSocket Envd requires RemoteEnvdEnvironmentConfiguration and WebSocketEnvdProviderRuntime")
     data = decode_state(WEBSOCKET_PROVIDER_KEY, state)

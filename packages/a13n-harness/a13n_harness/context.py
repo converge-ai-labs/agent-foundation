@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from a13n_harness.tools._output import _ToolResultSpillStore
     from a13n_harness.tools.approval import ToolApprovalContext
     from a13n_harness.tools.client import ClientToolsetDefinition
-    from a13n_harness.tools.deferred import DeferredToolResume
+    from a13n_harness.tools.deferred import DeferredToolResume, InlineSubagentDeferredResults
     from a13n_harness.tools.permission_gate import PermissionCheck
     from a13n_harness.toolsets.documents import DocumentConverter
     from a13n_harness.toolsets.file_media import MediaUnderstandingProvider
@@ -136,6 +136,8 @@ class RunBindings:
     environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     toolset_instructions: bool | None = None
+    deferred_tools_supported: bool = True
+    inline_subagent_results: tuple[InlineSubagentDeferredResults, ...] = ()
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     web: WebBinding | None = None
     media_reader: MediaReader | None = None
@@ -156,6 +158,14 @@ class RunBindings:
     )
 
     def __post_init__(self) -> None:
+        from a13n_harness.tools.deferred import InlineSubagentDeferredResults
+
+        if not isinstance(self.deferred_tools_supported, bool):
+            raise TypeError("deferred_tools_supported must be a boolean")
+        submissions = tuple(deepcopy(self.inline_subagent_results))
+        if not all(isinstance(item, InlineSubagentDeferredResults) for item in submissions):
+            raise TypeError("inline_subagent_results must contain InlineSubagentDeferredResults")
+        object.__setattr__(self, "inline_subagent_results", submissions)
         if self.tool_result_directory is not None:
             try:
                 parse_mount_path(self.tool_result_directory)
@@ -201,6 +211,8 @@ class RunBindings:
         environment: EnvironmentRuntime | None = None,
         model_resolver: RunModelResolver | None = None,
         toolset_instructions: bool | None = None,
+        deferred_tools_supported: bool = True,
+        inline_subagent_results: tuple[InlineSubagentDeferredResults, ...] = (),
         model_context: ModelContextMiddleware | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         web: WebBinding | None = None,
@@ -225,6 +237,8 @@ class RunBindings:
             environment=environment,
             model_resolver=model_resolver,
             toolset_instructions=toolset_instructions,
+            deferred_tools_supported=deferred_tools_supported,
+            inline_subagent_results=inline_subagent_results,
             model_context=model_context,
             capabilities=tuple(capabilities),
             web=web,
@@ -355,6 +369,8 @@ class AgentContext:
     deferred_resume: DeferredToolResume | None
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
+    deferred_tools_supported: bool = True
+    inline_subagent_results: tuple[InlineSubagentDeferredResults, ...] = ()
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
     _model_recovery: ModelRecoveryState = field(default_factory=ModelRecoveryState, repr=False, compare=False)
     model_context: ModelContextMiddleware | None = None

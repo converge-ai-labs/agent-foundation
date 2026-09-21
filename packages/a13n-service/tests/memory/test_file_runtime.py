@@ -96,6 +96,8 @@ async def test_file_binding_reconnect_and_marker_loss(
             allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
         ) as runtime:
             environment = provider.construct(
+                operation_id="op-test",
+                allow_create=True,
                 environment_id=run.environment_id,
                 configuration=configuration,
                 state=None,

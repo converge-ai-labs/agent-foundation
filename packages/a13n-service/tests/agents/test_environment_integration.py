@@ -55,6 +55,8 @@ async def test_root_and_inline_child_receive_and_use_environment_tools(
         if shell and executable is None:
             pytest.skip("A POSIX shell is required for this Provider configuration")
         environment = DIRECT_LOCAL.construct(
+            operation_id="op-test",
+            allow_create=True,
             configuration=DirectLocalEnvironmentConfiguration(
                 root=DirectLocalRootConfiguration(path=tmp_path),
                 shell_profiles=(DirectLocalShellProfile(profile_id="default", executable=Path(executable)),)

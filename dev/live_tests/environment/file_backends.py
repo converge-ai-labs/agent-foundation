@@ -195,6 +195,8 @@ class FileBackend:
     def adapter(self, *, state=None, runtime=None):
         environment = self.provider.construct(
             environment_id=self.identity,
+            operation_id=self.identity,
+            allow_create=False,
             configuration=self.configuration,
             state=state if state is not None else self.state,
             runtime=runtime or self.runtime,

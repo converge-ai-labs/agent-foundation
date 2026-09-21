@@ -137,12 +137,7 @@ def _backend_identity(configuration: BaseModel) -> str:
     return configuration.endpoint
 
 
-async def _runtime(
-    *, configuration: BaseModel, credential: BaseModel | None, operation_id: str, allow_create: bool
-) -> HttpEnvdProviderRuntime:
-    del operation_id
-    if allow_create:
-        raise provider_error(HTTP_PROVIDER_KEY, "provider_external_only", Category.UNSUPPORTED)
+async def _runtime(*, configuration: BaseModel, credential: BaseModel | None) -> HttpEnvdProviderRuntime:
     if not isinstance(configuration, HttpEnvdConnectionConfiguration) or not isinstance(credential, HttpEnvdCredential):
         raise TypeError("HTTP Envd requires HttpEnvdConnectionConfiguration and HttpEnvdCredential")
     return HttpEnvdProviderRuntime(configuration, credential)
@@ -154,7 +149,10 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: HttpEnvdProviderRuntime | None,
+    operation_id: str,
+    allow_create: bool,
 ) -> Environment:
+    del operation_id, allow_create
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration) or runtime is None:
         raise TypeError("HTTP Envd requires RemoteEnvdEnvironmentConfiguration and HttpEnvdProviderRuntime")
     data = decode_state(HTTP_PROVIDER_KEY, state)

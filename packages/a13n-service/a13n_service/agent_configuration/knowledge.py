@@ -44,6 +44,8 @@ class KnowledgeFiles:
         provider = DIRECT_LOCAL
         configuration = provider.validate_environment({"root": {"path": str(root)}, "max_value_bytes": 512 * 1024})
         return provider.construct(
+            operation_id="configuration-knowledge",
+            allow_create=False,
             environment_id="configuration-knowledge",
             configuration=configuration,
             state=None,

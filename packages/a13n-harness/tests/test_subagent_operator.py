@@ -337,7 +337,7 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
     result = await executable.run(
         "parent objective",
         bindings=_bindings(),
-        usage_limits=UsageLimits(request_limit=9, total_tokens_limit=100_000),
+        usage_limits=UsageLimits(request_limit=9, total_tokens_limit=70_000),
     )
 
     assert result.output_or_raise() == "done"

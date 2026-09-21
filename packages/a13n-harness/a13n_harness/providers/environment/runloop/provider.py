@@ -73,11 +73,13 @@ class RunloopEnvironment(NativeEnvironment[RunloopEnvironmentConfiguration, Targ
         environment_id: str,
         state: EnvironmentState | None,
         runtime: NativeRuntime,
+        allow_create: bool,
+        operation_id: str,
     ):
-        super().__init__("runloop", config, environment_id, state, managed=runtime.managed, state_model=TargetState)
+        super().__init__("runloop", config, environment_id, state, managed=allow_create, state_model=TargetState)
         assert isinstance(runtime.credential, TokenCredential)
         self.token = runtime.credential.api_key
-        self.operation_id = runtime.operation_id
+        self.operation_id = operation_id
         self.http: NativeHTTP | None = None
 
     def transport(self) -> NativeHTTP:

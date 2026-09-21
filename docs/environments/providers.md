@@ -44,8 +44,8 @@ An `EnvironmentProviderDefinition` should:
 
 1. declare one stable `type` matching `^[a-z][a-z0-9_]{0,63}$`, a `display_name`, and optional HTTPS `setup_url` and `setup_label`;
 2. declare a `configuration_model` for account inputs, an optional `credential_model`, and an `environment_model` for the desired target recipe;
-3. acquire clients, transports, and Host allocations only inside `runtime_factory`, never at import or validation time;
-4. return one fresh inert `Environment` from `construct()` and project its configured capabilities from `describe_environment()` without target I/O;
+3. acquire shared collaborators inside `runtime_factory(configuration=..., credential=...)`, or defer operation connections and sessions to preparation; never perform I/O at import or validation time;
+4. return one fresh inert `Environment` from `construct(configuration=recipe, environment_id=..., state=..., runtime=..., operation_id=..., allow_create=...)`; keep per-adapter creation policy and operation identity out of reusable runtimes, and project configured capabilities from `describe_environment()` without target I/O;
 5. validate supplied state before mutation and update cached state at every target-identity transition;
 6. expose provider-neutral `EnvironmentOperations` after entry;
 7. declare `supports_managed`, `supports_stop`, `supports_destroy`, and `requires_keepalive` truthfully, keep `close()` non-destructive, and remove a target only in explicit `destroy()`.

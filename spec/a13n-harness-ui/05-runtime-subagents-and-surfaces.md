@@ -215,6 +215,8 @@ Human response and expiry share the root admission boundary. A matching response
 
 ## Harness UI Subagent Operator
 
+The operator explicitly sets `RunBindings.deferred_tools_supported=False` for async child Runs. Harness UI does not expose an async child deferred-feedback or approval-resume lifecycle. This Host choice does not restrict Harness-supported inline or other Host-managed deferred continuation. Ordinary async `resume_subagent(execution_id, prompt)` remains available for eligible retained non-pending checkpoints.
+
 ### Admission and Identity
 
 The Harness resolves the selected child roster entry before calling the operator. The operator creates a child Thread whose discriminated Agent-resource or Markdown-subagent source comes from that entry. Project, local Environment profile, Environment bindings/default and Environment Run Extensions initialize from the parent Run capture. Agent-resource children use their own Plugin and MCP defaults when present; Markdown children inherit the parent capture's exact Plugin and MCP lists.

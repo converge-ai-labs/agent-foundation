@@ -386,6 +386,8 @@ def _main_identity(scenario: Scenario) -> AgentIdentityRef:
 def _local_environment(root: Path) -> Environment:
     return DIRECT_LOCAL.construct(
         environment_id="observation-demo-local",
+        operation_id="observation-demo-local",
+        allow_create=False,
         configuration=DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=root)),
         state=None,
         runtime=None,

@@ -64,7 +64,12 @@ async def _processes(
         },
     )
     environment = provider.construct(
-        configuration=configuration, environment_id="native-test", state=None, runtime=None
+        operation_id="op-test",
+        allow_create=True,
+        configuration=configuration,
+        environment_id="native-test",
+        state=None,
+        runtime=None,
     )
     await environment.enter(mount_id="root")
     try:

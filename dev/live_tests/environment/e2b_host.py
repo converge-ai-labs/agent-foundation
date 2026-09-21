@@ -33,11 +33,23 @@ class LifecycleBarrierEnvironment(E2BEnvironment):
 def _barrier_definition(root):
     """Wrap the released definition's construction; the Provider itself stays immutable."""
 
-    def construct(*, configuration, environment_id, state, runtime):
+    def construct(*, configuration, environment_id, state, runtime, operation_id, allow_create):
         # Reuse the production factory's type validation before constructing the test adapter.
-        E2B.construct(configuration=configuration, environment_id=environment_id, state=state, runtime=runtime)
+        E2B.construct(
+            configuration=configuration,
+            environment_id=environment_id,
+            state=state,
+            runtime=runtime,
+            operation_id=operation_id,
+            allow_create=allow_create,
+        )
         environment = LifecycleBarrierEnvironment(
-            configuration, environment_id=environment_id, state=state, runtime=runtime
+            configuration,
+            environment_id=environment_id,
+            state=state,
+            runtime=runtime,
+            operation_id=operation_id,
+            allow_create=allow_create,
         )
         environment.fault_root = root
         return environment

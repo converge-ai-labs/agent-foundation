@@ -441,7 +441,14 @@ async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspe
     assert result.output_or_raise() == "parent-recovered"
     assert result.status == "completed"
     assert child_failures
-    assert "subagent_deferred_unsupported" in child_failures[0]
+    assert "suspended" in child_failures[0]
+    assert result.state is not None
+    saved = InlineSubagentCollectionState.model_validate(
+        result.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+    )
+    record = next(iter(saved.children.values()))
+    assert record.deferred_requests is not None
+    assert record.pending_run_id is not None
 
 
 async def test_inline_delegation_persists_child_thread_and_forwards_events() -> None:
@@ -536,7 +543,7 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
     assert usage_records[0]["agent_instance_id"].startswith("agent-")
     assert usage_records[0]["parent_agent_instance_id"] == "parent-1"
     assert usage_records[0]["delegation_id"] == child_id
-    assert first.usage.requests == 3
+    assert first.usage.requests == 2
 
     second = await executable.run(
         "continue",
@@ -609,7 +616,7 @@ async def test_inline_delegation_intersects_child_agent_spec_usage_limits(
     result = await executable.run(
         "delegate",
         bindings=_bindings_factory(),
-        usage_limits=UsageLimits(request_limit=9, total_tokens_limit=100_000),
+        usage_limits=UsageLimits(request_limit=2, total_tokens_limit=70_000),
     )
 
     assert result.output_or_raise() == "parent-done"
@@ -770,7 +777,7 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
                 result = item.result
 
     assert result.output_or_raise() == "parent-done"
-    assert result.usage.requests == 5
+    assert result.usage.requests == 2
     child_events = [event for event in events if event.run_id != parent_run_id]
     child_run_ids = {
         event.run_id
@@ -925,8 +932,8 @@ async def test_inline_delegation_inherits_parent_pricing_without_double_counting
                 result = item.result
 
     assert result.output_or_raise() == "done"
-    assert result.usage.requests == 3
-    assert result.usage.cost == Decimal("0.75")
+    assert result.usage.requests == 2
+    assert result.usage.cost == Decimal("0.50")
     assert len(cost_capability.inputs) == 3
     child_usage = [
         event.event.payload["records"]
@@ -1079,10 +1086,10 @@ async def test_inline_delegation_cancellation_before_state_commit_leaves_no_chil
     never_release = asyncio.Event()
     original_store = delegation_toolset_module.DelegationToolset._store_child
 
-    async def paused_store(self, child_instance_id, child, state):
+    async def paused_store(self, child_instance_id, child, state, **kwargs):
         state_commit_started.set()
         await never_release.wait()
-        await original_store(self, child_instance_id, child, state)
+        await original_store(self, child_instance_id, child, state, **kwargs)
 
     monkeypatch.setattr(delegation_toolset_module.DelegationToolset, "_store_child", paused_store)
     executable = HarnessBuilder().build(

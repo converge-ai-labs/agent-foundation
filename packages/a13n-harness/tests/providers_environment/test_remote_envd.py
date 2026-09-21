@@ -70,7 +70,12 @@ async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path, direc
         assert not provider.supports_stop and not provider.supports_destroy and not provider.requires_keepalive
         assert provider.target_identity(configuration=recipe, state=state(provider.type)) == "env-native"
         environment = provider.construct(
-            configuration=recipe, environment_id="env-logical", state=state(provider.type), runtime=runtime
+            operation_id="op-test",
+            allow_create=False,
+            configuration=recipe,
+            environment_id="env-logical",
+            state=state(provider.type),
+            runtime=runtime,
         )
         assert provider.describe_environment(recipe).working_directory == (directory or "/")
         assert environment.descriptor.working_directory == (directory or "/")
@@ -84,7 +89,14 @@ async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path, direc
         await environment.close()
         assert environment.dump_state() == state(provider.type)
         with pytest.raises(EnvironmentProviderError):
-            provider.construct(configuration=recipe, environment_id="env-logical", state=None, runtime=runtime)
+            provider.construct(
+                operation_id="op-test",
+                allow_create=False,
+                configuration=recipe,
+                environment_id="env-logical",
+                state=None,
+                runtime=runtime,
+            )
         for invalid in (
             state("wrong_provider"),
             EnvironmentState(provider_key=provider.type, state_version="2", state={}),
@@ -108,6 +120,8 @@ async def test_lifecycle_never_prepares_or_destroys_external_daemon():
     )
     for action in ("stop", "destroy", "reconcile"):
         env = provider.construct(
+            operation_id="op-test",
+            allow_create=False,
             configuration=RemoteEnvdEnvironmentConfiguration(),
             environment_id="env-logical",
             state=state(),
@@ -400,7 +414,12 @@ async def test_http_failed_preparation_never_replays_connection_attempt(monkeypa
         HttpEnvdCredential(token=SecretStr("test-token")),
     )
     environment = provider.construct(
-        configuration=RemoteEnvdEnvironmentConfiguration(), environment_id="env-logical", state=state(), runtime=runtime
+        operation_id="op-test",
+        allow_create=False,
+        configuration=RemoteEnvdEnvironmentConfiguration(),
+        environment_id="env-logical",
+        state=state(),
+        runtime=runtime,
     )
     for _ in range(2):
         with pytest.raises(EnvironmentProviderError):

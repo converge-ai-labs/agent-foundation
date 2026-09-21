@@ -6,7 +6,7 @@ One Harness Run is one process-local logical invocation of an `ExecutableAgent`.
 
 A logical Harness Run may contain several sequential `ModelAttempt` values when `ModelRecoveryPolicy` is enabled. A `ModelAttempt` is one Pydantic AI Agent-loop invocation used for bounded semantic recovery. These values are an internal recovery mechanism, not separate Harness runs, Service `RunAttempt` values, plugin invocations, contexts, Environment adapter lifetimes, or usage ledgers. Each `ModelAttempt` receives a unique model-attempt ID passed through Pydantic AI's upstream `run_id` parameter, while the public Harness `run_id` remains stable. When [Harness Observation](19-observation-model.md) is enabled, the same invocation passes the State-owned Thread ID as Pydantic `conversation_id`; these fields correlate the native Agent-attempt span without changing lifecycle or provider affinity.
 
-Pydantic AI owns each inner Agent loop, model/tool execution, native deferred and approval values, output validation retries, messages, and provider-suspended continuation. Root invocations retain its native deferred boundary. For any child invocation, the Harness mandatory tool boundary resolves runtime deferral as denied tool results inside the same loop and reserves terminal deferred normalization as a fail-closed error. The Harness otherwise owns outer preparation, plugin middleware, bounded `ModelAttempt` coordination, terminal normalization, and cleanup.
+Pydantic AI owns each inner Agent loop, model/tool execution, native deferred and approval values, output validation retries, messages, and provider-suspended continuation. Runs retain its native deferred boundary when current Host bindings support it, independently of parent lineage. Unsupported Runs resolve runtime deferral as denied tool results inside the same loop and reserve terminal deferred normalization as a fail-closed error. The Harness otherwise owns outer preparation, plugin middleware, bounded `ModelAttempt` coordination, terminal normalization, and cleanup.
 
 ## Boundary
 
@@ -72,7 +72,7 @@ stateDiagram-v2
     created --> active: fresh Environment adapters entered
     active --> active: ModelAttempt or Run-local mount mutation
     active --> completed: validated output
-    active --> suspended: root native deferred or approval boundary
+    active --> suspended: supported native deferred or approval boundary
     active --> failed: handled terminal execution failure
     active --> cancelled: native or requested cancellation
     completed --> [*]
@@ -167,7 +167,7 @@ When the `ModelAttempt` budget is exhausted, the logical run returns `status="fa
 
 ## Native Deferred and Provider Continuation
 
-For a root invocation, a Pydantic result whose output is `DeferredToolRequests` ends the logical run with:
+For a Run with deferred support, a Pydantic result whose output is `DeferredToolRequests` ends the logical run with:
 
 - `status="suspended"`;
 - `suspend_reason="deferred"`;
@@ -176,7 +176,7 @@ For a root invocation, a Pydantic result whose output is `DeferredToolRequests` 
 
 External calls and approval requests retain their upstream distinct maps. The Harness does not execute them, convert one kind into the other, or start another `ModelAttempt`.
 
-A child invocation never enters `suspended`. Declaratively deferred definitions are absent from its effective surface. Runtime deferred calls and approvals are completely resolved as `ToolDenied` values by the mandatory outer tool boundary so the same Pydantic loop can continue. If an unexpected bypass still returns terminal `DeferredToolRequests`, terminal normalization produces a failed result with `code="subagent_deferred_unsupported"` rather than a suspension.
+`RunBindings.deferred_tools_supported` defaults to `True`; both roots and children can suspend. When `False`, declaratively deferred definitions are absent from the effective surface and runtime deferred calls and approvals are completely resolved as `ToolDenied` values so the same Pydantic loop can continue. An unexpected bypass returning terminal `DeferredToolRequests` produces a failed result with `code="deferred_tools_unsupported"`. Inline pending-state retention and trusted cross-Run result submission follow [Delegation and Subagents](11-delegation-and-subagents.md#deferred-inline-continuation).
 
 Provider-suspended continuation remains native Pydantic message behavior. The Harness preserves public message history and does not create a route-pin schema, duplicate provider job state, or reinterpret suspension as stream recovery. A later logical run receives fresh bindings and the Host-selected prior `HarnessState`; the selected model integration is responsible for any provider-specific ability to continue those public messages.
 

@@ -241,6 +241,8 @@ def test_local_configuration_contains_only_session_selection(tmp_path):
         LocalEnvdEnvironmentConfiguration(working_directory="relative")
     with pytest.raises(EnvironmentProviderError) as failure:
         LOCAL_ENVD.construct(
+            operation_id="op-test",
+            allow_create=True,
             configuration=LocalEnvdEnvironmentConfiguration(),
             environment_id="logical",
             state=EnvironmentState(provider_key=LOCAL_ENVD.type, state_version="1", state={"pid": 12}),

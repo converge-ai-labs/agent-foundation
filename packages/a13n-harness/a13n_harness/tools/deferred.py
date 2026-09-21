@@ -36,6 +36,23 @@ class DeferredToolResume:
             raise TypeError("Deferred tool values must be detachable") from exc
 
 
+@dataclass(frozen=True, slots=True)
+class InlineSubagentDeferredResults:
+    """Host submission correlated to one retained inline child and pending Run."""
+
+    child_thread_id: str
+    pending_run_id: str
+    results: DeferredToolResults
+
+    def __post_init__(self) -> None:
+        for value in (self.child_thread_id, self.pending_run_id):
+            if not isinstance(value, str) or not value.strip() or len(value) > 256:
+                raise ValueError("Deferred submission identities must be non-blank bounded strings")
+        if not isinstance(self.results, DeferredToolResults):
+            raise TypeError("results must be native DeferredToolResults")
+        object.__setattr__(self, "results", deepcopy(self.results))
+
+
 def preflight_deferred_resume(
     resume: DeferredToolResume,
     *,

@@ -13,14 +13,16 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.usage import UsageLimits
 
 from a13n_harness.context import AgentContext, BuiltSubagent
-from a13n_harness.errors import DefinitionError, StateError
+from a13n_harness.errors import DefinitionError, RunError, StateError
 from a13n_harness.identity import AgentIdentityRef
 from a13n_harness.input import RunInputValue
-from a13n_harness.state import HarnessState
+from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, HarnessState
+from a13n_harness.tools.deferred import DeferredToolResume, InlineSubagentDeferredResults, preflight_deferred_resume
 
 if TYPE_CHECKING:
     from a13n_harness.builder import DelegationContextPolicy
@@ -45,9 +47,13 @@ class InlineSubagentState(BaseModel):
     subagent_name: str = Field(min_length=1, max_length=63)
     child_definition_id: str = Field(min_length=1, max_length=256)
     state: HarnessState
+    deferred_requests: DeferredToolRequests | None = None
+    pending_run_id: str | None = Field(default=None, min_length=1, max_length=256)
 
     @model_validator(mode="after")
     def _validate_identity(self) -> InlineSubagentState:
+        if (self.deferred_requests is None) != (self.pending_run_id is None):
+            raise ValueError("pending Run identity and deferred requests must be retained together")
         match = _CHILD_ID_PATTERN.fullmatch(self.child_instance_id)
         if match is None or match.group("name") != self.subagent_name:
             raise ValueError("inline child identity is not canonical")
@@ -457,6 +463,72 @@ class _AsyncSubagentCapability(_SubagentActiveCapability):
 
     def get_toolset(self) -> AbstractToolset[AgentContext]:
         return self._toolset.get_toolset()
+
+
+def _inline_subagent_records(state: HarnessState | None) -> dict[str, InlineSubagentState]:
+    """Index only the owned inline tree by globally distinct Thread identity."""
+    records: dict[str, InlineSubagentState] = {}
+    pending = [state] if state is not None else []
+    seen = {state.thread_id} if state is not None else set()
+    while pending:
+        current = pending.pop()
+        entry = current.agent_context_state.entries.get(SUBAGENT_CAPABILITY_ID)
+        if entry is None:
+            continue
+        if entry.version != _INLINE_SUBAGENT_STATE_VERSION:
+            raise StateError("Unsupported inline subagent State.", code="subagent_state_incompatible")
+        collection = InlineSubagentCollectionState.model_validate(entry.data)
+        for record in collection.children.values():
+            thread_id = record.state.thread_id
+            if thread_id in seen:
+                raise StateError("Inline tree reuses a Thread identity.", code="subagent_state_incompatible")
+            seen.add(thread_id)
+            records[thread_id] = record
+            pending.append(record.state)
+    return records
+
+
+def _preflight_inline_subagent_results(
+    submissions: tuple[InlineSubagentDeferredResults, ...],
+    state: HarnessState | None,
+) -> None:
+    if not submissions:
+        return
+    records = _inline_subagent_records(state)
+    seen: set[str] = set()
+    for submission in submissions:
+        record = records.get(submission.child_thread_id)
+        if submission.child_thread_id in seen:
+            raise RunError("Duplicate inline deferred submission.", code="inline_deferred_duplicate")
+        seen.add(submission.child_thread_id)
+        if record is None or record.deferred_requests is None:
+            raise RunError("Inline child has no pending deferred requests.", code="inline_deferred_target_invalid")
+        if record.pending_run_id != submission.pending_run_id:
+            raise RunError("Inline deferred submission targets a stale Run.", code="inline_deferred_run_mismatch")
+        preflight_deferred_resume(
+            DeferredToolResume(record.deferred_requests, submission.results), previous_state=record.state
+        )
+
+
+def _fork_inline_subagent_state(snapshot: AgentContextStateSnapshot) -> AgentContextStateSnapshot:
+    """Fork the owned child tree while preserving opaque Capability namespaces."""
+    entries = snapshot.entries
+    entry = entries.get(SUBAGENT_CAPABILITY_ID)
+    if entry is None:
+        return snapshot
+    if entry.version != _INLINE_SUBAGENT_STATE_VERSION:
+        raise StateError("Cannot fork unsupported inline subagent State.", code="subagent_state_incompatible")
+    state = InlineSubagentCollectionState.model_validate(entry.data)
+    forked = InlineSubagentCollectionState(
+        children={
+            child_id: record.model_copy(update={"state": record.state.fork()})
+            for child_id, record in state.children.items()
+        }
+    )
+    entries[SUBAGENT_CAPABILITY_ID] = CapabilityState(
+        version=_INLINE_SUBAGENT_STATE_VERSION, data=forked.model_dump(mode="json")
+    )
+    return AgentContextStateSnapshot(entries=entries)
 
 
 def _validate_inline_subagent_state(state: InlineSubagentCollectionState, context: AgentContext) -> None:

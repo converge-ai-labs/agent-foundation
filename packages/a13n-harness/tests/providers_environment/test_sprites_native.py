@@ -70,12 +70,17 @@ def test_sprites_native_roundtrip_and_reconstruction(tmp_path, monkeypatch):
             runtime = await provider.runtime_factory(
                 configuration=provider.configuration_model(organization="fixture"),
                 credential=provider.credential_model(api_key="fixture"),
-                allow_create=True,
-                operation_id="op-test",
             )
 
             def create(state=None):
-                return provider.construct(configuration=config, environment_id="env-test", state=state, runtime=runtime)
+                return provider.construct(
+                    operation_id="op-test",
+                    allow_create=True,
+                    configuration=config,
+                    environment_id="env-test",
+                    state=state,
+                    runtime=runtime,
+                )
 
             first = create()
             await first.prepare()

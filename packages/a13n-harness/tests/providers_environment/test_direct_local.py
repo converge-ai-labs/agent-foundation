@@ -33,6 +33,8 @@ def _environment(root: Path, *, max_value_bytes: int | None = None) -> DirectLoc
         value["max_value_bytes"] = max_value_bytes
     configuration = provider.validate_environment(value)
     environment = provider.construct(
+        operation_id="op-test",
+        allow_create=True,
         environment_id="local-test",
         configuration=configuration,
         state=None,
@@ -220,6 +222,8 @@ def test_direct_local_provider_is_inert_and_rejects_state(tmp_path: Path) -> Non
 
     with pytest.raises(EnvironmentProviderError) as captured:
         provider.construct(
+            operation_id="op-test",
+            allow_create=True,
             environment_id="local-test",
             configuration=configuration,
             state=EnvironmentState(

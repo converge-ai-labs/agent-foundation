@@ -263,6 +263,8 @@ async def test_http_provider_operations_identity_and_sequential_reentry(binary, 
     provider = HTTP_ENVD
     async with daemon(binary, tmp_path, "http", f"127.0.0.1:{port}") as (process, workspace):
         env = provider.construct(
+            operation_id="op-test",
+            allow_create=False,
             configuration=RemoteEnvdEnvironmentConfiguration(),
             environment_id=LOGICAL_ID,
             state=state(provider),
@@ -275,6 +277,8 @@ async def test_http_provider_operations_identity_and_sequential_reentry(binary, 
         assert process.returncode is None
         assert (workspace / "text.txt").read_text() == "remote envd\n"
         again = provider.construct(
+            operation_id="op-test",
+            allow_create=False,
             configuration=RemoteEnvdEnvironmentConfiguration(),
             environment_id=LOGICAL_ID,
             state=env.dump_state(),
@@ -293,6 +297,8 @@ async def test_closed_eip_process_and_port_facets_raise_environment_errors(binar
     provider = HTTP_ENVD
     async with daemon(binary, tmp_path, "http", f"127.0.0.1:{port}"):
         environment = provider.construct(
+            operation_id="op-test",
+            allow_create=False,
             configuration=RemoteEnvdEnvironmentConfiguration(),
             environment_id=LOGICAL_ID,
             state=state(provider),
@@ -344,6 +350,8 @@ async def test_http_provider_rejects_untrusted_or_incompatible_peer(binary, tmp_
     async with daemon(binary, tmp_path, "http", f"127.0.0.1:{port}"):
         selected = state(provider, "wrong-env" if failure == "identity" else NATIVE_ID)
         env = provider.construct(
+            operation_id="op-test",
+            allow_create=False,
             configuration=RemoteEnvdEnvironmentConfiguration(
                 required_methods=("missing.method",) if failure == "methods" else ()
             ),
@@ -377,6 +385,8 @@ async def test_http_device_discovery_and_independent_session_ownership(binary, t
         assert listing.path == str(workspace) and not device._sessions
         first, second = [
             provider.construct(
+                operation_id="op-test",
+                allow_create=False,
                 configuration=RemoteEnvdEnvironmentConfiguration(working_directory=str(workspace)),
                 environment_id=LOGICAL_ID,
                 state=state(provider),
@@ -410,6 +420,8 @@ async def test_websocket_concurrent_scopes_keep_one_carrier_and_independent_proc
                 provider = WEBSOCKET_ENVD
                 environments = [
                     provider.construct(
+                        operation_id="op-test",
+                        allow_create=False,
                         configuration=RemoteEnvdEnvironmentConfiguration(),
                         environment_id=f"env-scope-{index}",
                         state=state(provider),
@@ -471,6 +483,8 @@ async def test_websocket_host_sdk_real_daemon_operations_and_reconnection(binary
                 provider = WEBSOCKET_ENVD
                 runtime = WebSocketEnvdProviderRuntime(hub)
                 env = provider.construct(
+                    operation_id="op-test",
+                    allow_create=False,
                     configuration=RemoteEnvdEnvironmentConfiguration(),
                     environment_id=LOGICAL_ID,
                     state=state(provider),
@@ -482,6 +496,8 @@ async def test_websocket_host_sdk_real_daemon_operations_and_reconnection(binary
                     await env.close()
                 assert process.returncode is None
                 again = provider.construct(
+                    operation_id="op-test",
+                    allow_create=False,
                     configuration=RemoteEnvdEnvironmentConfiguration(),
                     environment_id=LOGICAL_ID,
                     state=env.dump_state(),

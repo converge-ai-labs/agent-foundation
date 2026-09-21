@@ -27,7 +27,6 @@ class DockerSDKEngine:
 @dataclass(frozen=True)
 class DockerProviderRuntime:
     engine: DockerSDKEngine
-    managed: bool = True
 
     async def close(self) -> None:
         await self.engine.close()

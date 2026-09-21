@@ -87,16 +87,19 @@ class DockerEnvironment(Environment):
         environment_id: str,
         state: EnvironmentState | None,
         runtime: DockerProviderRuntime,
+        *,
+        allow_create: bool = True,
     ) -> None:
         super().__init__(state)
         self.config = configuration
         self._environment_id = environment_id
         self.runtime = runtime
+        self.managed = allow_create
         self.fingerprint = hashlib.sha256(
             json.dumps(configuration.model_dump(mode="json"), sort_keys=True).encode()
         ).hexdigest()
         self.target = decode_target_state(_KEY, state, DockerProviderStateData, fingerprint=self.fingerprint)
-        if self.target is not None and runtime.managed and self.target.environment_id != environment_id:
+        if self.target is not None and self.managed and self.target.environment_id != environment_id:
             raise provider_error(_KEY, "provider_target_conflict", EnvironmentProviderErrorCategory.CONFLICT)
         self._operations = EnvironmentOperations()
         self.commands: DockerCommands | None = None
@@ -140,7 +143,7 @@ class DockerEnvironment(Environment):
                 self.target.container_id if self.target else "a13n-" + self.allocation_id
             )
         except NotFound:
-            if not self.runtime.managed:
+            if not self.managed:
                 return None
             try:
                 container = self.runtime.engine.client.containers.get("a13n-" + self.allocation_id)
@@ -155,7 +158,7 @@ class DockerEnvironment(Environment):
             container = await asyncio.to_thread(self._lookup)
             created = container is None
             if created:
-                if not self.runtime.managed:
+                if not self.managed:
                     raise _missing()
                 creation = asyncio.create_task(asyncio.to_thread(self._create))
                 try:
@@ -177,7 +180,7 @@ class DockerEnvironment(Environment):
                 provider_key=_KEY, state_version="1", state=self.target.model_dump(mode="json")
             )
             if container.status != "running":
-                if not self.runtime.managed:
+                if not self.managed:
                     raise EnvironmentError("External Docker container is stopped", code="environment_unavailable")
                 await asyncio.to_thread(container.start)
             if self.processes is not None:
@@ -332,11 +335,9 @@ async def _release_engine(acquisition: asyncio.Task[DockerSDKEngine]) -> None:
         await engine.close()
 
 
-async def _runtime(
-    *, configuration: BaseModel, credential: BaseModel | None, operation_id: str, allow_create: bool
-) -> DockerProviderRuntime:
+async def _runtime(*, configuration: BaseModel, credential: BaseModel | None) -> DockerProviderRuntime:
     """Acquire the engine; a cancelled caller never leaks a live Docker client."""
-    del credential, operation_id
+    del credential
     if not isinstance(configuration, DockerConnectionConfiguration):
         raise TypeError("Docker requires DockerConnectionConfiguration")
     acquisition = asyncio.create_task(asyncio.to_thread(DockerSDKEngine.connect, configuration.docker_host))
@@ -345,7 +346,7 @@ async def _runtime(
     except asyncio.CancelledError:
         await _release_engine(acquisition)
         raise
-    return DockerProviderRuntime(engine, managed=allow_create)
+    return DockerProviderRuntime(engine)
 
 
 def _describe(configuration: DockerEnvironmentConfiguration) -> EnvironmentDescriptor:
@@ -365,10 +366,13 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: DockerProviderRuntime | None,
+    operation_id: str,
+    allow_create: bool,
 ) -> Environment:
+    del operation_id
     if not isinstance(configuration, DockerEnvironmentConfiguration) or runtime is None:
         raise TypeError("Docker requires typed configuration and runtime")
-    return DockerEnvironment(configuration, environment_id, state, runtime)
+    return DockerEnvironment(configuration, environment_id, state, runtime, allow_create=allow_create)
 
 
 DOCKER = EnvironmentProviderDefinition(

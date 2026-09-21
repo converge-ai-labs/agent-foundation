@@ -213,7 +213,7 @@ See [Context and memory](context-and-memory.md#working-state) for configuration,
 
 ## Structured User Interaction
 
-`UserInteractionCapability` exposes `ask_user_question` only to a root invocation. A root call does not block an open Harness run while waiting for a person. It produces a normal `status="suspended"` result with native deferred requests and portable state. The Host later starts a new run with fresh bindings, the previous state, and a correlated `DeferredToolResume`. A child receives neither this tool nor its guidance and cannot suspend for user interaction.
+`UserInteractionCapability` exposes `ask_user_question` when current `RunBindings.deferred_tools_supported` is enabled, for both roots and children. The call does not hold an open Harness run while waiting for a person. It produces `status="suspended"` with native requests and portable state. A Host later supplies fresh bindings, previous state, and a correlated `DeferredToolResume`. [Inline children](delegation-and-codeact.md#resume-a-waiting-inline-child) retain their pending batch in parent state and accept trusted results through `RunBindings.inline_subagent_results`. Unsupported Runs receive neither the tool nor its guidance.
 
 See [State and Resume](state-and-resume.md).
 

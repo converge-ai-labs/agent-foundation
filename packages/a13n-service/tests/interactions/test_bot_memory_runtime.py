@@ -795,6 +795,8 @@ async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
             allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
         ) as runtime:
             environment = provider.construct(
+                operation_id="op-test",
+                allow_create=True,
                 environment_id=run.environment_id,
                 configuration=config,
                 state=None,

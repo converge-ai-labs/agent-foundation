@@ -20,6 +20,8 @@ def create_demo_environment(workspace: Path) -> DirectLocalEnvironment:
         ).model_dump(mode="json"),
     )
     environment = provider.construct(
+        operation_id="agent-app-demo",
+        allow_create=False,
         configuration=configuration,
         environment_id="agent-app-demo",
         state=None,

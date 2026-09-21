@@ -55,15 +55,19 @@ class E2BEnvironment(Environment):
         environment_id: str,
         state: EnvironmentState | None,
         runtime: E2BProviderRuntime,
+        allow_create: bool = True,
+        operation_id: str | None = None,
     ) -> None:
         super().__init__(state)
         self._configuration = configuration
         self._environment_id = environment_id
         self._runtime = runtime
+        self._managed = allow_create
+        self._operation_id = operation_id
         self._state = decode_target_state(
             PROVIDER_KEY, state, E2BProviderStateData, fingerprint=configuration.fingerprint
         )
-        if self._state is not None and runtime.managed and self._state.environment_id != environment_id:
+        if self._state is not None and self._managed and self._state.environment_id != environment_id:
             raise provider_error("provider_target_conflict", Category.CONFLICT)
         self._native_id = self._state.environment_id if self._state else environment_id
         self._descriptor = descriptor(configuration)
@@ -155,14 +159,14 @@ class E2BEnvironment(Environment):
         config = self._configuration
         with sdk_errors(mutation=True):
             if target is None:
-                if not self._runtime.managed:
+                if not self._managed:
                     raise provider_error("provider_target_missing", Category.MISSING)
                 metadata = {
                     "a13n_harness.providers.environment": self._native_id,
                     "a13n_configuration": config.fingerprint,
                 }
-                if self._runtime.operation_id:
-                    metadata["a13n_operation"] = self._runtime.operation_id
+                if self._operation_id:
+                    metadata["a13n_operation"] = self._operation_id
                 sandbox = await AsyncSandbox.create(
                     template=config.template,
                     timeout=config.timeout_seconds,
@@ -308,8 +312,6 @@ def descriptor(
 class E2BProviderRuntime:
     api_key: SecretStr = field(repr=False)
     domain: str = "e2b.dev"
-    managed: bool = True
-    operation_id: str | None = None
     api_url: str | None = None
 
     def __post_init__(self) -> None:
@@ -317,17 +319,13 @@ class E2BProviderRuntime:
         E2BConnectionConfiguration(domain=self.domain, api_url=self.api_url)
 
 
-async def _runtime(
-    *, configuration: BaseModel, credential: BaseModel | None, operation_id: str, allow_create: bool
-) -> E2BProviderRuntime:
+async def _runtime(*, configuration: BaseModel, credential: BaseModel | None) -> E2BProviderRuntime:
     if not isinstance(configuration, E2BConnectionConfiguration) or not isinstance(credential, E2BCredential):
         raise TypeError("E2B requires E2BConnectionConfiguration and E2BCredential")
     return E2BProviderRuntime(
         api_key=credential.api_key,
         domain=configuration.domain,
         api_url=configuration.api_url,
-        managed=allow_create,
-        operation_id=operation_id,
     )
 
 
@@ -350,10 +348,19 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: E2BProviderRuntime | None,
+    operation_id: str,
+    allow_create: bool,
 ) -> Environment:
     if not isinstance(configuration, E2BEnvironmentConfiguration) or runtime is None:
         raise TypeError("E2B requires E2BEnvironmentConfiguration and E2BProviderRuntime")
-    return E2BEnvironment(configuration, environment_id=environment_id, state=state, runtime=runtime)
+    return E2BEnvironment(
+        configuration,
+        environment_id=environment_id,
+        state=state,
+        runtime=runtime,
+        operation_id=operation_id,
+        allow_create=allow_create,
+    )
 
 
 E2B = EnvironmentProviderDefinition(

@@ -67,8 +67,8 @@ async def run_direct_local(workspace: Path) -> StatelessExampleResult:
     )
     provider = ProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(spec.provider_key)
     configuration = provider.validate_environment(spec.configuration)
-    environment = provider.construct(
-        configuration=configuration, environment_id="direct-local-example", state=None, runtime=None
+    environment = await provider.create(
+        environment=configuration, environment_id="direct-local-example", state=None, runtime=None
     )
     if not isinstance(environment, DirectLocalEnvironment):
         raise TypeError("Direct Local Provider returned an unexpected Environment")
@@ -109,8 +109,8 @@ async def run_local_envd(
         executable=resolve_a13n_envd_executable(executable),
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
     )
-    environment = provider.construct(
-        configuration=configuration,
+    environment = await provider.create(
+        environment=configuration,
         environment_id="local-envd-example",
         state=None,
         runtime=runtime,
@@ -164,8 +164,8 @@ async def run_docker(
 
     async def use_target() -> None:
         nonlocal current_state, first_text, reentered_text, state_version
-        first = provider.construct(
-            configuration=configuration,
+        first = await provider.create(
+            environment=configuration,
             environment_id="docker-example",
             state=None,
             runtime=runtime,
@@ -184,8 +184,8 @@ async def run_docker(
             raise RuntimeError("Docker Provider did not publish re-entry state")
         state_version = current_state.state_version
 
-        reentered = provider.construct(
-            configuration=configuration,
+        reentered = await provider.create(
+            environment=configuration,
             environment_id="docker-example",
             state=current_state,
             runtime=runtime,
@@ -204,8 +204,9 @@ async def run_docker(
         nonlocal current_state
         if current_state is None:
             return
-        cleanup = provider.construct(
-            configuration=configuration,
+        cleanup = await provider.create(
+            environment=configuration,
+            allow_create=False,
             environment_id="docker-example",
             state=current_state,
             runtime=runtime,

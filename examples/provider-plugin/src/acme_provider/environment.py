@@ -31,13 +31,19 @@ class WorkspaceConfiguration(BaseModel):
 @dataclass(frozen=True)
 class WorkspaceRuntime:
     root: Path
-    allow_create: bool
 
 
 class Workspace(DirectLocalEnvironment):
-    def __init__(self, configuration: WorkspaceConfiguration, environment_id: str, runtime: WorkspaceRuntime):
+    def __init__(
+        self,
+        configuration: WorkspaceConfiguration,
+        environment_id: str,
+        runtime: WorkspaceRuntime,
+        *,
+        allow_create: bool,
+    ):
         self.workspace = runtime.root / configuration.directory / environment_id
-        self.allow_create = runtime.allow_create
+        self.allow_create = allow_create
         super().__init__(
             DirectLocalEnvironmentConfiguration.model_validate({"root": {"path": self.workspace}}),
             environment_id=environment_id,
@@ -57,11 +63,9 @@ async def runtime(
     *,
     configuration: WorkspaceConnection,
     credential: object | None,
-    operation_id: str,
-    allow_create: bool,
 ) -> WorkspaceRuntime:
-    del credential, operation_id
-    return WorkspaceRuntime(configuration.root, allow_create)
+    del credential
+    return WorkspaceRuntime(configuration.root)
 
 
 def construct(
@@ -70,10 +74,13 @@ def construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: WorkspaceRuntime | None,
+    operation_id: str,
+    allow_create: bool,
 ) -> Workspace:
+    del operation_id
     if runtime is None or state is not None:
         raise ValueError("Workspace requires a stateless local runtime")
-    return Workspace(configuration, environment_id, runtime)
+    return Workspace(configuration, environment_id, runtime, allow_create=allow_create)
 
 
 def describe(configuration: WorkspaceConfiguration) -> EnvironmentDescriptor:

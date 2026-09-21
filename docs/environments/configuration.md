@@ -7,10 +7,10 @@ An Environment has separate desired configuration, backend access, runtime colla
 | Target recipe (`environment_model`)           | What this Environment should expose             | Workspace root, Docker mounts, E2B template              |
 | Account configuration (`configuration_model`) | Where the Host reaches the backend              | Docker daemon, E2B domain, HTTP endpoint                 |
 | Credential (`credential_model`)               | Current access to that backend                  | E2B API key or HTTP EIP token                            |
-| Runtime collaborator                          | Live clients, sessions, and Host allocations    | Acquired only inside the definition's `runtime_factory`  |
+| Runtime collaborator                          | Live clients, sessions, and Host allocations    | Supplied by the Host or acquired by `runtime_factory`    |
 | `EnvironmentState`                            | Validated reference to an exact retained target | Container/sandbox identity and configuration fingerprint |
 
-Pass all four to `definition.create(recipe, configuration=..., credential=..., state=...)`. It validates the account configuration, enforces the declared credential rule, validates the recipe, and only then acquires the runtime collaborator, so everything before that acquisition is pure. `definition.describe_environment(recipe)` explains the intended capability without preparing the target; actual readiness still comes from the entered adapter. [Providers and runtime](providers.md) covers catalog selection and runtime construction.
+Use `definition.create(recipe, configuration=..., credential=..., state=...)` to let the Provider acquire its runtime. Alternatively, pass `runtime=...` without account configuration or credentials to borrow a Host-owned runtime; mixing both sources is rejected. It validates the account configuration, enforces the declared credential rule, validates the recipe, and only then acquires the runtime collaborator, so everything before that acquisition is pure. `definition.describe_environment(recipe)` explains the intended capability without preparing the target; actual readiness still comes from the entered adapter. [Providers and runtime](providers.md) covers catalog selection and runtime construction.
 
 A definition owns exactly one model of each kind. There is no configuration schema version: changing the meaning of an input changes the Provider type.
 

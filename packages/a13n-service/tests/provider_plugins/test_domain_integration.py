@@ -44,9 +44,15 @@ def _describe(configuration: Configuration) -> EnvironmentDescriptor:
 
 
 def _construct(
-    *, configuration: Configuration, environment_id: str, state: EnvironmentState | None, runtime: object | None
+    *,
+    configuration: Configuration,
+    environment_id: str,
+    state: EnvironmentState | None,
+    runtime: object | None,
+    operation_id: str,
+    allow_create: bool,
 ) -> Environment:
-    del configuration, environment_id, state, runtime
+    del configuration, environment_id, state, runtime, operation_id, allow_create
     raise NotImplementedError
 
 

@@ -120,7 +120,12 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         }
         configuration = provider.validate_environment(value)
         return provider.construct(
-            configuration=configuration, environment_id=_environment_id(self.key, root), state=state, runtime=runtime
+            configuration=configuration,
+            environment_id=_environment_id(self.key, root),
+            state=state,
+            runtime=runtime,
+            operation_id=_environment_id(self.key, root),
+            allow_create=False,
         )
 
 
@@ -153,7 +158,12 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         value: dict[str, JsonValue] = {"working_directory": root.as_posix()}
         configuration = provider.validate_environment(value)
         return provider.construct(
-            configuration=configuration, environment_id=_environment_id(self.key, root), state=state, runtime=runtime
+            configuration=configuration,
+            environment_id=_environment_id(self.key, root),
+            state=state,
+            runtime=runtime,
+            operation_id=_environment_id(self.key, root),
+            allow_create=False,
         )
 
 

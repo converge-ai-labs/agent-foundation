@@ -57,8 +57,9 @@ async def use_remote[R: HttpEnvdProviderRuntime | WebSocketEnvdProviderRuntime](
     generations: list[str] = []
     text = ""
     for index in range(2):
-        environment = provider.construct(
-            configuration=configuration,
+        environment = await provider.create(
+            environment=configuration,
+            allow_create=False,
             environment_id="env-example",  # Host identity, distinct from daemon identity.
             state=state,
             runtime=runtime,

@@ -146,9 +146,17 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
 
         async def create(state=None, managed=True):
             runtime = await provider.runtime_factory(
-                configuration=backend, credential=credential, allow_create=managed, operation_id="op-fixture"
+                configuration=backend,
+                credential=credential,
             )
-            return provider.construct(configuration=config, environment_id="env-fixture", state=state, runtime=runtime)
+            return provider.construct(
+                operation_id="op-test",
+                allow_create=managed,
+                configuration=config,
+                environment_id="env-fixture",
+                state=state,
+                runtime=runtime,
+            )
 
         first = await create()
         await first.enter(mount_id="mount-one")
@@ -277,10 +285,15 @@ def test_native_delete_keeps_state_until_terminal_evidence(key, poll_failure, tm
         runtime = await provider.runtime_factory(
             configuration=provider.configuration_model.model_validate(BACKENDS[key]),
             credential=provider.credential_model(api_key="fixture"),
-            allow_create=True,
-            operation_id="op-fixture",
         )
-        env = provider.construct(configuration=config, environment_id="env-fixture", state=None, runtime=runtime)
+        env = provider.construct(
+            operation_id="op-test",
+            allow_create=True,
+            configuration=config,
+            environment_id="env-fixture",
+            state=None,
+            runtime=runtime,
+        )
         try:
             await env.prepare()
             state = env.dump_state()

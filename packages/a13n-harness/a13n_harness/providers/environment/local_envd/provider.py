@@ -36,11 +36,9 @@ async def _runtime(
     *,
     configuration: HostLocalProviderConfiguration,
     credential: BaseModel | None,
-    operation_id: str,
-    allow_create: bool,
 ) -> LocalEnvdProviderRuntime:
     """Local Envd allocates a private daemon runtime directory for the Host."""
-    del configuration, credential, operation_id, allow_create
+    del configuration, credential
     from .runtime import TemporaryLocalEnvdRuntimeAllocator, resolve_a13n_envd_executable
 
     executable = await asyncio.to_thread(resolve_a13n_envd_executable)
@@ -69,7 +67,10 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: LocalEnvdProviderRuntime | None,
+    operation_id: str,
+    allow_create: bool,
 ) -> Environment:
+    del operation_id, allow_create
     if not isinstance(configuration, LocalEnvdEnvironmentConfiguration):
         raise TypeError("Local Envd requires LocalEnvdEnvironmentConfiguration")
     if state is not None:

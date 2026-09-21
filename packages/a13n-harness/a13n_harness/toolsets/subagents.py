@@ -235,7 +235,6 @@ class AsyncSubagentToolset:
 
         child_input = _build_child_input(ctx, child, prompt)
         limits = intersect_usage_limits(
-            ctx.usage_limits,
             child.executable.definition_usage_limits(),
             child.declaration.usage_limits,
         )

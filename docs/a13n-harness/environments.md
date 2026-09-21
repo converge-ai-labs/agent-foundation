@@ -79,6 +79,12 @@ finally:
 
 `HarnessState.environment_states` records the current mount-name-to-state aggregate for continuation export. It is useful evidence, but the Host still decides which managed state is authoritative, reconstructs fresh credentials and runtime collaborators, and supplies a fresh Environment. State contains no credential, live client, PID, transport session, mount policy, or destruction authority.
 
+## Runtime ownership and creation policy
+
+`definition.create()` either acquires a runtime from account `configuration` and `credential`, or borrows a supplied `runtime`. Do not pass account inputs alongside a borrowed runtime. An acquired closable runtime is released with the adapter; a borrowed runtime remains the Host's responsibility.
+
+`allow_create` and `operation_id` apply to the new adapter in both modes. A reusable runtime does not carry either value. Provider authors pass them through `construct()` rather than `runtime_factory()`. This separation lets the same Host-owned connection serve a managed adapter and a connect-only adapter without changing shared policy.
+
 ## Explicit destruction belongs to the Host
 
 Harness never calls `destroy()`. When retention policy selects cleanup, the Host constructs a fresh adapter from the exact current state and calls `destroy()` explicitly:

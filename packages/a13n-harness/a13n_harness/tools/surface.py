@@ -55,7 +55,7 @@ class ToolSurfaceToolset(WrapperToolset[AgentContext]):
         candidates = await self.wrapped.get_tools(ctx)
         return resolve_tool_surface(
             candidates,
-            allow_deferred=ctx.deps.instance.parent_agent_instance_id is None,
+            allow_deferred=ctx.deps.deferred_tools_supported,
         )
 
 

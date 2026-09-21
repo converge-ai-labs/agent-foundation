@@ -81,9 +81,11 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: object | None,
+    operation_id: str,
+    allow_create: bool,
 ) -> Environment:
     """Direct Local needs no collaborator: the host filesystem is the target."""
-    del runtime
+    del runtime, operation_id, allow_create
     if state is not None:
         raise _provider_error(
             "Direct Local is stateless and does not accept Environment state.",

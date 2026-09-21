@@ -52,6 +52,8 @@ async def stores(tmp_path, request):
                     )
                 )
                 environment = provider.construct(
+                    operation_id="op-test",
+                    allow_create=True,
                     environment_id=f"memory-test-{i}",
                     configuration=configuration,
                     state=None,

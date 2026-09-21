@@ -39,7 +39,12 @@ def test_environment_entrypoint_loading_is_explicit_and_construction_is_inert(tm
     root = tmp_path / "not-created-by-the-provider"
     configuration = provider.validate_environment({"root": str(root)})
     environment = provider.construct(
-        environment_id="workspace-inert", configuration=configuration, state=None, runtime=None
+        operation_id="op-test",
+        allow_create=False,
+        environment_id="workspace-inert",
+        configuration=configuration,
+        state=None,
+        runtime=None,
     )
     assert environment.provider_key == PROVIDER_TYPE
     assert not root.exists()
@@ -58,7 +63,14 @@ def test_environment_explicit_definition_needs_no_metadata_scan(
     provider = catalog.require(PROVIDER_TYPE)
     root = tmp_path / "still-inert"
     configuration = provider.validate_environment({"root": str(root)})
-    provider.construct(configuration=configuration, environment_id="workspace-code", state=None, runtime=None)
+    provider.construct(
+        operation_id="op-test",
+        allow_create=False,
+        configuration=configuration,
+        environment_id="workspace-code",
+        state=None,
+        runtime=None,
+    )
 
     assert tuple(catalog) == (PROVIDER_TYPE,)
     assert not root.exists()

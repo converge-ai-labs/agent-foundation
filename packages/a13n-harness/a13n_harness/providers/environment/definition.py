@@ -18,16 +18,21 @@ from .models import EnvironmentDescriptor, EnvironmentState
 class RuntimeFactory[C: BaseModel, K: BaseModel, R](Protocol):
     """Acquire the live collaborator one target needs: clients, sessions, allocations."""
 
-    def __call__(
-        self, *, configuration: C, credential: K | None, operation_id: str, allow_create: bool
-    ) -> Awaitable[R]: ...
+    def __call__(self, *, configuration: C, credential: K | None) -> Awaitable[R]: ...
 
 
 class EnvironmentConstructor[E: BaseModel, R](Protocol):
     """Build one fresh single-use adapter for the desired target configuration."""
 
     def __call__(
-        self, *, configuration: E, environment_id: str, state: EnvironmentState | None, runtime: R | None
+        self,
+        *,
+        configuration: E,
+        environment_id: str,
+        state: EnvironmentState | None,
+        runtime: R | None,
+        operation_id: str,
+        allow_create: bool,
     ) -> Environment: ...
 
 
@@ -92,9 +97,25 @@ class EnvironmentProviderDefinition[C: BaseModel, K: BaseModel, E: BaseModel, R]
 
         A `runtime` passed in is borrowed and outlives the adapter. Without one, the
         runtime the factory acquires belongs to the adapter and closes with it.
+        Account configuration and credentials belong exclusively to factory acquisition;
+        target creation policy and operation identity always belong to this adapter.
         """
         if allow_create and not self.supports_managed:
             raise provider_error(self.type, "provider_external_only", EnvironmentProviderErrorCategory.UNSUPPORTED)
+        if runtime is not None and (configuration is not None or credential is not None):
+            raise ValueError("A borrowed runtime cannot be combined with account configuration or credentials")
+        desired = self.validate_environment(environment)
+        identity = environment_id or "env-" + uuid4().hex
+        operation = operation_id or "op-" + uuid4().hex
+        if runtime is not None:
+            return self.construct(
+                configuration=desired,
+                environment_id=identity,
+                state=state,
+                runtime=runtime,
+                operation_id=operation,
+                allow_create=allow_create,
+            )
         connection = self.configuration_model.model_validate({} if configuration is None else configuration)
         try:
             secret = self.parse_credential(connection, credential)
@@ -102,18 +123,25 @@ class EnvironmentProviderDefinition[C: BaseModel, K: BaseModel, E: BaseModel, R]
             raise provider_error(
                 self.type, "provider_credential_invalid", EnvironmentProviderErrorCategory.INVALID
             ) from error
-        desired = self.validate_environment(environment)
-        identity = environment_id or "env-" + uuid4().hex
-        if runtime is not None or self.runtime_factory is None:
-            return self.construct(configuration=desired, environment_id=identity, state=state, runtime=runtime)
-        acquired = await self.runtime_factory(
-            configuration=connection,
-            credential=secret,
-            operation_id=operation_id or "op-" + uuid4().hex,
-            allow_create=allow_create,
-        )
+        if self.runtime_factory is None:
+            return self.construct(
+                configuration=desired,
+                environment_id=identity,
+                state=state,
+                runtime=None,
+                operation_id=operation,
+                allow_create=allow_create,
+            )
+        acquired = await self.runtime_factory(configuration=connection, credential=secret)
         try:
-            environment = self.construct(configuration=desired, environment_id=identity, state=state, runtime=acquired)
+            environment = self.construct(
+                configuration=desired,
+                environment_id=identity,
+                state=state,
+                runtime=acquired,
+                operation_id=operation,
+                allow_create=allow_create,
+            )
         except BaseException:
             if isinstance(acquired, ClosableRuntime):
                 await acquired.close()
