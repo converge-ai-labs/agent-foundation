@@ -121,22 +121,25 @@ it("identifies the session and switches the level in the URL", async () => {
   expect(screen.getByText("level:")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Debug" }));
   expect(await screen.findByText("level:?view=debug")).toBeTruthy();
+  // Chat is written out too: the level a reader chose outlives a reload.
   await user.click(screen.getByRole("button", { name: "Chat" }));
-  expect(await screen.findByText("level:")).toBeTruthy();
+  expect(await screen.findByText("level:?view=chat")).toBeTruthy();
 });
 
-it("forces Debug without a switch for an execution session", () => {
+it("opens an execution session in Debug and still offers Chat", async () => {
   show([fixtureThread({ session_purpose: "execution" })]);
-  expect(screen.queryByRole("button", { name: "Chat" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Debug" })).toBeNull();
+  const user = userEvent.setup();
+  expect(screen.getByText("level:")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Chat" }));
+  expect(await screen.findByText("level:?view=chat")).toBeTruthy();
 });
 
-it("replaces the switch with a breadcrumb inside a child thread", () => {
+it("keeps the switch beside the breadcrumb inside a child thread", () => {
   show(
     [fixtureThread(), child],
     "/sessions/ses_1/threads/thr_child/runs/run_2",
   );
-  expect(screen.queryByRole("button", { name: "Chat" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Chat" })).toBeTruthy();
   expect(
     screen.getByRole("link", { name: "Root thread" }).getAttribute("href"),
   ).toBe("/workspace/design/sessions/ses_1/threads/thr_1?view=debug");

@@ -6,46 +6,47 @@ import type { ViewLevel } from "../../api";
 type Thread = Pick<Schema["ThreadResource"], "session_purpose" | "role">;
 
 /**
- * Chat cannot describe work nobody in this Console controls: an execution
- * Session and every child Thread are inspected in Debug, with no switch.
+ * Where a Thread opens when the URL says nothing: an execution Session and a
+ * child Thread are read at the Debug level, everything else as a conversation.
+ * It is a default, not a lock; the reader can still ask for the other level.
  */
-function forcedDebug(thread?: Thread | null) {
-  return (
-    !!thread &&
+function defaultLevel(thread?: Thread | null): ViewLevel {
+  return thread &&
     (thread.session_purpose === "execution" || thread.role === "child")
-  );
+    ? "debug"
+    : "chat";
 }
 
 /**
  * The disclosure level lives in the URL and nowhere else, so a deep link and a
- * reload select the same level the reader chose.
+ * reload select the same level the reader chose. Switching always writes the
+ * level, so Chat on a Thread that opens in Debug survives a reload.
  */
 export function useViewLevel(
   thread?: Thread | null,
   { chatOnly = false }: { chatOnly?: boolean } = {},
 ) {
   const [search, setSearch] = useSearchParams();
-  const forced = !chatOnly && forcedDebug(thread);
+  const requested = search.get("view");
   const level: ViewLevel = chatOnly
     ? "chat"
-    : forced || search.get("view") === "debug"
-      ? "debug"
-      : "chat";
+    : requested === "debug" || requested === "chat"
+      ? requested
+      : defaultLevel(thread);
   const setLevel = useCallback(
     (next: ViewLevel) => {
       const params = new URLSearchParams(search);
-      if (next === "debug") params.set("view", "debug");
-      else params.delete("view");
+      params.set("view", next);
       setSearch(params, { replace: true });
     },
     [search, setSearch],
   );
-  return { level, forced, setLevel };
+  return { level, setLevel };
 }
 
 /** Switching levels keeps the run the reader was looking at under their eyes. */
 export function useAnchoredLevel(thread?: Thread | null) {
-  const { level, forced, setLevel } = useViewLevel(thread);
+  const { level, setLevel } = useViewLevel(thread);
   const anchor = useRef<string | null>(null);
   useEffect(() => {
     const id = anchor.current;
@@ -68,7 +69,6 @@ export function useAnchoredLevel(thread?: Thread | null) {
   }, [level]);
   return {
     level,
-    forced,
     switchLevel(next: ViewLevel) {
       anchor.current = topmostRun();
       setLevel(next);

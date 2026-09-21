@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
@@ -64,14 +64,67 @@ vi.mock("./assistant-message", () => ({
     </>
   ),
 }));
+
+/** The reader's viewport, which the sentinel and the ancestors live in. */
+class StageObserver {
+  static created: StageObserver[] = [];
+  targets: Element[] = [];
+  constructor(private callback: IntersectionObserverCallback) {
+    StageObserver.created.push(this);
+  }
+  observe(target: Element) {
+    this.targets.push(target);
+  }
+  unobserve() {}
+  disconnect() {
+    this.targets = [];
+  }
+  /** The sentinel has scrolled into view. */
+  reach() {
+    this.callback(
+      this.targets.map(
+        (target) =>
+          ({ target, isIntersecting: true }) as IntersectionObserverEntry,
+      ),
+      this as unknown as IntersectionObserver,
+    );
+  }
+}
+
+beforeEach(() => {
+  StageObserver.created = [];
+  vi.stubGlobal("IntersectionObserver", StageObserver);
+});
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   client?.close();
 });
 
-it("defers ancestor details and loads their earlier Items only on demand", async () => {
-  const requests: URL[] = [];
-  client = createClient({
+function stage(level: "chat" | "debug") {
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const view = render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <div data-session-stage>
+          <HistoryTranscript runId="current" thread={thread} level={level} />
+          <div data-run="current">Current run</div>
+        </div>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return {
+    cache,
+    viewport: view.container.querySelector<HTMLElement>(
+      "[data-session-stage]",
+    )!,
+  };
+}
+
+function ancestorService(requests: URL[]) {
+  return createClient({
     baseUrl: "https://test.invalid",
     auth: { type: "session" },
     fetch: async (input) => {
@@ -80,13 +133,20 @@ it("defers ancestor details and loads their earlier Items only on demand", async
       if (url.pathname.endsWith("/lineage"))
         return Response.json({
           items: [
-            { run_id: "current", depth_from_head: 0 },
-            { run_id: "parent", depth_from_head: 1 },
-            { run_id: "grandparent", depth_from_head: 2 },
+            { run_id: "current", thread_id: "thread", depth_from_head: 0 },
+            { run_id: "parent", thread_id: "thread", depth_from_head: 1 },
+            {
+              run_id: "grandparent",
+              thread_id: "thread",
+              depth_from_head: 2,
+            },
           ],
         });
+      if (url.pathname.endsWith("/threads/thread/runs"))
+        return Response.json({ items: [], next_cursor: null });
       if (url.pathname.endsWith("/items")) {
         const older = url.searchParams.has("cursor");
+        const run = url.pathname.split("/").at(-2);
         return Response.json({
           snapshot_version: 1,
           projection_cursor: "3-0",
@@ -96,7 +156,7 @@ it("defers ancestor details and loads their earlier Items only on demand", async
           next_cursor: older ? null : "older",
           items: [
             {
-              id: older ? "old" : "new",
+              id: older ? "old" : run,
               kind: "text_message",
               state: "completed",
               parent_item_id: null,
@@ -104,15 +164,15 @@ it("defers ancestor details and loads their earlier Items only on demand", async
               last_stream_id: older ? "1-0" : "2-0",
               content: {
                 text: older
-                  ? "Earlier parent message"
-                  : "Latest parent message",
+                  ? `Earlier ${run} message`
+                  : `Latest ${run} message`,
               },
             },
           ],
         });
       }
       return Response.json({
-        id: "parent",
+        id: url.pathname.split("/").at(-1),
         thread_id: "thread",
         session_id: "session",
         agent_id: "agent",
@@ -121,38 +181,38 @@ it("defers ancestor details and loads their earlier Items only on demand", async
       });
     },
   });
-  const cache = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  render(
-    <QueryClientProvider client={cache}>
-      <MemoryRouter>
-        <HistoryTranscript runId="current" thread={thread} level="chat" />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
-  await screen.findByRole("button", { name: "Load earlier runs" });
+}
+
+it("reaches one run further back each time the reader scrolls to the top", async () => {
+  const requests: URL[] = [];
+  client = ancestorService(requests);
+  const { cache, viewport } = stage("chat");
+  // Nothing but the lineage until the sentinel above the transcript is seen.
+  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
   expect(requests.map((url) => url.pathname)).toEqual([
     "/api/v1/runs/current/lineage",
   ]);
-  fireEvent.click(screen.getByRole("button", { name: "Load earlier runs" }));
-  await screen.findByText("Latest parent message");
   expect(
-    requests.filter((url) => url.pathname.endsWith("/items")),
-  ).toHaveLength(1);
+    screen.queryByRole("button", { name: "Load earlier runs" }),
+  ).toBeNull();
+  StageObserver.created[0]!.reach();
+  // While the run loads the stage is marked, so the transcript holds still.
+  expect(viewport.dataset.loadingEarlier).toBe("true");
+  // One run at a time: the next one waits for this one to render.
+  expect(StageObserver.created).toHaveLength(1);
   expect(requests.some((url) => url.pathname.includes("grandparent"))).toBe(
     false,
   );
-  // The first control loads an ancestor Run; the second loads that Run's earlier Items.
+  await screen.findByText("Latest parent message");
+  await waitFor(() => expect(StageObserver.created).toHaveLength(2));
+  expect(viewport.dataset.loadingEarlier).toBeUndefined();
+  StageObserver.created[1]!.reach();
+  await screen.findByText("Latest grandparent message");
+  // An ancestor's own earlier items still load on demand, inside that run.
   fireEvent.click(
-    screen.getByRole("button", { name: "Load earlier messages" }),
+    screen.getAllByRole("button", { name: "Load earlier messages" })[0]!,
   );
-  await screen.findByText("Earlier parent message");
-  await waitFor(() =>
-    expect(
-      requests.filter((url) => url.pathname.endsWith("/items")),
-    ).toHaveLength(2),
-  );
+  await screen.findByText("Earlier grandparent message");
   expect(requests.at(-1)?.searchParams.get("cursor")).toBe("older");
   cache.clear();
 });
@@ -168,8 +228,8 @@ it("reveals an ancestor as a debug section, replayed on its own", async () => {
       if (url.pathname.endsWith("/lineage"))
         return Response.json({
           items: [
-            { run_id: "current", depth_from_head: 0 },
-            { run_id: "parent", depth_from_head: 1 },
+            { run_id: "current", thread_id: "thread", depth_from_head: 0 },
+            { run_id: "parent", thread_id: "thread", depth_from_head: 1 },
           ],
         });
       if (url.pathname.endsWith("/runs"))
@@ -191,16 +251,7 @@ it("reveals an ancestor as a debug section, replayed on its own", async () => {
       });
     },
   });
-  const cache = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  render(
-    <QueryClientProvider client={cache}>
-      <MemoryRouter>
-        <HistoryTranscript runId="current" thread={thread} level="debug" />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+  const { cache } = stage("debug");
   fireEvent.click(
     await screen.findByRole("button", { name: "Load earlier runs" }),
   );

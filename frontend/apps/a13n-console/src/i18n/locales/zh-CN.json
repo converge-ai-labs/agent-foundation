@@ -3247,6 +3247,7 @@
   "Started by {{trigger}}": "由 {{trigger}} 触发",
   "Root thread": "根对话",
   "Child thread": "子对话",
+  "Fork": "分叉",
   "Disclosure level": "展示层级",
   "Chat": "对话",
   "{{tokens}} in": "输入 {{tokens}}",

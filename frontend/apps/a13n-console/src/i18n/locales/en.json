@@ -3247,6 +3247,7 @@
   "Started by {{trigger}}": "Started by {{trigger}}",
   "Root thread": "Root thread",
   "Child thread": "Child thread",
+  "Fork": "Fork",
   "Disclosure level": "Disclosure level",
   "Chat": "Chat",
   "{{tokens}} in": "{{tokens}} in",

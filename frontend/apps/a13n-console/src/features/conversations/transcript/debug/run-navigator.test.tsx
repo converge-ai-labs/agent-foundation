@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { createClient, type Client } from "../../../../service-client";
+import type { Client } from "../../../../service-client";
 import { RunNavigator } from "./run-navigator";
-import { fixtureRun, fixtureThread } from "../fixture";
+import {
+  fixtureBranchedSession,
+  fixtureForkThread,
+  fixtureThread,
+} from "../fixture";
 
 let client: Client;
 let cache: QueryClient;
@@ -16,13 +20,6 @@ vi.mock("../../../../layout/workspace", () => ({
     workspace: { id: "workspace" },
     basePath: "/workspace/design",
     can: () => true,
-  }),
-}));
-vi.mock("../../../agents/queries", () => ({
-  useAgent: (agentId?: string) => ({
-    data: agentId
-      ? { id: agentId, key: "researcher", name: "Researcher" }
-      : null,
   }),
 }));
 vi.mock("react-i18next", () => ({
@@ -35,61 +32,9 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-const child = fixtureThread({
-  id: "thr_child",
-  role: "child",
-  origin_thread_id: "thr_1",
-  origin_run_id: "run_2",
-  current_run_id: "run_child",
-  head_run_id: "run_child",
-});
-
 beforeEach(() => {
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  client = createClient({
-    baseUrl: "https://service.example",
-    auth: { type: "session" },
-    fetch: async (input, init) => {
-      const url = new URL(new Request(input, init).url);
-      if (url.pathname.endsWith("/sessions/ses_1/threads"))
-        return Response.json({
-          items: [fixtureThread(), child],
-          next_cursor: null,
-        });
-      if (url.pathname.endsWith("/threads/thr_1/runs"))
-        return Response.json({
-          items: [
-            fixtureRun({
-              id: "run_1",
-              input: null,
-              input_text: "Review the release",
-            }),
-            fixtureRun({
-              id: "run_2",
-              input: null,
-              input_text: "Write the marker",
-              status: "waiting",
-              completed_at: null,
-            }),
-          ],
-          next_cursor: null,
-        });
-      if (url.pathname.endsWith("/threads/thr_child/runs"))
-        return Response.json({
-          items: [
-            fixtureRun({
-              id: "run_child",
-              thread_id: "thr_child",
-              agent_id: "agt_child",
-              input: null,
-              input_text: "Find prior incidents",
-            }),
-          ],
-          next_cursor: null,
-        });
-      throw new Error(`Unexpected request: ${url.pathname}`);
-    },
-  });
+  client = fixtureBranchedSession();
 });
 afterEach(() => {
   cleanup();
@@ -102,11 +47,11 @@ function Location() {
   return <p>{`${pathname}${search}`}</p>;
 }
 
-function show() {
+function show(thread = fixtureThread(), runId = "run_2") {
   return render(
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={["/start"]}>
-        <RunNavigator thread={fixtureThread()} runId="run_2" />
+        <RunNavigator thread={thread} runId={runId} />
         <Routes>
           <Route path="*" element={<Location />} />
         </Routes>
@@ -115,20 +60,29 @@ function show() {
   );
 }
 
+/** The pill's own list, which the outline in the gutter mirrors. */
+async function openList(name: RegExp) {
+  await userEvent.setup().click(await screen.findByRole("button", { name }));
+  return within(await screen.findByRole("menu"));
+}
+
 it("lists every run of the thread and of its child threads, and opens one", async () => {
   show();
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: /Run 2 of 2/ }));
-  const items = await screen.findAllByRole("menuitem");
+  const list = await openList(/Run 2 of 2/);
+  await list.findByText("Alternative proposal");
+  const items = list.getAllByRole("menuitem");
+  // Both threads that branched from Run 2 follow it: the delegation, then the
+  // fork that reads on from it.
   expect(items.map((item) => item.textContent)).toEqual([
     "Run 1Review the release12s",
     "Run 2Write the markerstate.waiting",
     "Run 1Find prior incidents12s",
+    "Run 1Alternative proposal12s",
   ]);
-  // The child thread is named by the agent that answers it.
-  expect(screen.getByText("Researcher")).toBeTruthy();
-  expect(screen.queryByText("Child thread")).toBeNull();
-  await user.click(items[2]!);
+  // The child thread is named by the agent that answers it, under its run.
+  expect(list.getByText("Researcher")).toBeTruthy();
+  expect(list.queryByText("Child thread")).toBeNull();
+  await userEvent.setup().click(items[2]!);
   expect(
     await screen.findByText(
       "/workspace/design/sessions/ses_1/threads/thr_child/runs/run_child?view=debug",
@@ -146,7 +100,37 @@ it("steps to the previous run and keeps the debug level", async () => {
       "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_1?view=debug",
     ),
   ).toBeTruthy();
+  // The child thread's run follows the last run of this thread.
+  expect(
+    screen.getByRole("button", { name: "Next run" }).hasAttribute("disabled"),
+  ).toBe(false);
+});
+
+it("nests a fork under the run it branched from, ahead of its own", async () => {
+  show(fixtureForkThread, "run_fork");
+  const list = await openList(/^Run 1$/);
+  const items = await list.findAllByRole("menuitem");
+  // One run of its own, but the lineage reaches two more in the root thread.
+  expect(items.map((item) => item.textContent)).toEqual([
+    "Run 1Review the release12s",
+    "Run 2Write the markerstate.waiting",
+    "Run 1Alternative proposal12s",
+  ]);
+  const branch = list.getByText("Fork").parentElement;
+  expect(branch?.hasAttribute("data-nested")).toBe(true);
+  expect(branch?.previousElementSibling?.textContent).toContain(
+    "Write the marker",
+  );
+  expect(list.getByText("Root thread")).toBeTruthy();
   expect(
     screen.getByRole("button", { name: "Next run" }).hasAttribute("disabled"),
   ).toBe(true);
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Previous run" }));
+  expect(
+    await screen.findByText(
+      "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_2?view=debug",
+    ),
+  ).toBeTruthy();
 });

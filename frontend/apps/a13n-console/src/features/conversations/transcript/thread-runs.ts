@@ -63,11 +63,34 @@ export function useChildThreads(sessionId: string, threadId: string) {
 }
 
 /**
+ * The Threads this Run's lineage passes through before its own Thread — a
+ * fork or child Thread reads on from them — oldest first, with their Runs.
+ */
+export function useLineageThreads(runId: string, threadId: string) {
+  const client = useClient(),
+    { workspace } = useWorkspace();
+  const queries = conversationQueries(client, workspace.id);
+  const lineage = useQuery({ ...queries.lineage(runId), enabled: !!runId });
+  const ids = [...(lineage.data?.items ?? [])]
+    .sort((a, b) => b.depth_from_head - a.depth_from_head)
+    .map((entry) => entry.thread_id)
+    .filter((id, index, all) => id !== threadId && all.indexOf(id) === index);
+  const threads = useQueries({ queries: ids.map((id) => queries.thread(id)) });
+  const runs = useQueries({ queries: ids.map((id) => queries.runs(id)) });
+  return ids.flatMap((id, index): ThreadRuns[] => {
+    const thread = threads[index]?.data;
+    return thread
+      ? [{ thread, runs: chronological<Run>(runs[index]?.data ?? []) }]
+      : [];
+  });
+}
+
+/**
  * The child Thread an asynchronous delegation started. Threads carry the Run
  * they branched from, which is the only correlation the resource exposes.
  */
 export function childThreadOf(
-  children: readonly ChildThread[],
+  children: readonly ThreadRuns[],
   runId: string,
   offset = 0,
 ) {
@@ -77,13 +100,13 @@ export function childThreadOf(
   return matches[offset] ?? matches[0] ?? null;
 }
 
-interface ChildThread {
+export interface ThreadRuns {
   thread: Thread;
   runs: readonly Run[];
 }
 
 /** Where a child Thread opens: its latest Run, which is inspected in Debug. */
-export function childThreadPath(basePath: string, child: ChildThread) {
+export function childThreadPath(basePath: string, child: ThreadRuns) {
   return runPath(
     basePath,
     {

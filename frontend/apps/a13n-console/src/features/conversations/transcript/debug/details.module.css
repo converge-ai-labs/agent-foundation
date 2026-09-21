@@ -175,63 +175,11 @@
   width: min(520px, calc(100vw - 32px));
   max-height: min(60vh, 420px);
 }
-.navigatorItem {
-  display: grid;
-  grid-template-columns: 6px auto minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  font-size: 12.5px;
-}
-.navigatorItem[data-current] {
-  background: var(--a13n-selected);
-}
-.navigatorDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--a13n-border);
-}
-.navigatorDot[data-state="completed"] {
-  background: var(--a13n-success);
-}
-.navigatorDot[data-state="failed"],
-.navigatorDot[data-state="cancelled"] {
-  background: var(--a13n-danger);
-}
-.navigatorDot[data-state="waiting"] {
-  background: var(--a13n-warning);
-}
-.navigatorDot[data-state="running"],
-.navigatorDot[data-state="accepted"] {
-  background: var(--a13n-info);
-}
-.navigatorName {
-  font-weight: 500;
-  white-space: nowrap;
-}
-.navigatorExcerpt {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--a13n-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.navigatorMeta {
-  color: var(--a13n-secondary);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.navigatorChild {
-  margin-left: 12px;
-  padding-left: 10px;
-  border-left: 1px solid var(--a13n-border-soft);
-}
-.navigatorChildLabel {
-  padding: 4px 8px 2px;
-  color: var(--a13n-secondary);
-  font-size: 11px;
-  font-weight: 500;
+/* The gutter has room for the whole tree; the pill is for when it has not. */
+@media (min-width: 1440px) {
+  .navigatorPill {
+    display: none;
+  }
 }
 @media (max-width: 760px) {
   .details {

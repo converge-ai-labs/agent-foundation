@@ -27,7 +27,11 @@
   font-size: 12.5px;
   line-height: 1.6;
 }
-/* Reaching further back is an aside, not a call to action. */
+/* Chat reaches further back when this is scrolled into view. */
+.earlierRunsMark {
+  height: 1px;
+}
+/* In Debug, reaching further back is an aside, not a call to action. */
 .earlierRuns {
   display: flex;
   justify-content: center;

@@ -1,3 +1,4 @@
+import { createClient } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
 import { emptyExecution } from "../execution";
 import type { PresentedItem } from "../projection";
@@ -70,6 +71,122 @@ export function fixtureThread(
     version: 4,
     ...overrides,
   };
+}
+
+/** The Thread a Run delegated to, and the Thread a Run was forked into. */
+export const fixtureChildThread = fixtureThread({
+  id: "thr_child",
+  role: "child",
+  origin_kind: "child",
+  origin_thread_id: "thr_1",
+  origin_run_id: "run_2",
+  current_run_id: "run_child",
+  head_run_id: "run_child",
+});
+export const fixtureForkThread = fixtureThread({
+  id: "thr_fork",
+  role: "child",
+  origin_kind: "fork",
+  origin_thread_id: "thr_1",
+  origin_run_id: "run_2",
+  current_run_id: "run_fork",
+  head_run_id: "run_fork",
+});
+
+function lineageEntry(runId: string, threadId: string, depth: number) {
+  return {
+    run_id: runId,
+    thread_id: threadId,
+    session_id: "ses_1",
+    depth_from_head: depth,
+    lineage_kind: depth === 0 ? "root" : "continue",
+    parent_run_id: null,
+    status: "completed",
+    created_at: START,
+  };
+}
+
+/**
+ * The Session those Threads belong to, served: a root Thread of two Runs, a
+ * child Thread its second Run delegated to, and a fork of that same Run.
+ */
+export function fixtureBranchedSession() {
+  return createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session" },
+    fetch: async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+      const name = url.pathname.split("/").at(-1) ?? "";
+      if (url.pathname.endsWith("/runs/run_2/lineage"))
+        return Response.json({ items: [lineageEntry("run_2", "thr_1", 0)] });
+      if (url.pathname.endsWith("/runs/run_fork/lineage"))
+        return Response.json({
+          items: [
+            lineageEntry("run_fork", "thr_fork", 0),
+            lineageEntry("run_2", "thr_1", 1),
+            lineageEntry("run_1", "thr_1", 2),
+          ],
+        });
+      if (url.pathname.includes("/agents/"))
+        return Response.json({
+          id: name,
+          key: name,
+          name: name === "agt_child" ? "Researcher" : "Release Bot",
+        });
+      if (url.pathname.endsWith("/threads/thr_1"))
+        return Response.json(fixtureThread());
+      if (url.pathname.endsWith("/sessions/ses_1/threads"))
+        return Response.json({
+          items: [fixtureThread(), fixtureChildThread, fixtureForkThread],
+          next_cursor: null,
+        });
+      if (url.pathname.endsWith("/threads/thr_fork/runs"))
+        return Response.json({
+          items: [
+            fixtureRun({
+              id: "run_fork",
+              thread_id: "thr_fork",
+              lineage_kind: "fork",
+              input: null,
+              input_text: "Alternative proposal",
+            }),
+          ],
+          next_cursor: null,
+        });
+      if (url.pathname.endsWith("/threads/thr_1/runs"))
+        return Response.json({
+          items: [
+            fixtureRun({
+              id: "run_1",
+              input: null,
+              input_text: "Review the release",
+            }),
+            fixtureRun({
+              id: "run_2",
+              input: null,
+              input_text: "Write the marker",
+              status: "waiting",
+              completed_at: null,
+            }),
+          ],
+          next_cursor: null,
+        });
+      if (url.pathname.endsWith("/threads/thr_child/runs"))
+        return Response.json({
+          items: [
+            fixtureRun({
+              id: "run_child",
+              thread_id: "thr_child",
+              agent_id: "agt_child",
+              input: null,
+              input_text: "Find prior incidents",
+            }),
+          ],
+          next_cursor: null,
+        });
+      throw new Error(`Unexpected request: ${url.pathname}`);
+    },
+  });
 }
 
 const usage: StepUsage = {

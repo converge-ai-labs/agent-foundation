@@ -160,8 +160,9 @@ it("reads the level from the URL: chat keeps the snapshot, debug replays", async
   expect(await screen.findByText("Run")).toBeTruthy();
   expect(stream.calls.at(-1)).toEqual({ replay: true });
   expect(screen.getByText("Run failed")).toBeTruthy();
+  // The details card stays lazy; only the navigator's lineage read happens.
   const panels = requests.filter((request) =>
-    ["attempts", "events", "lineage"].includes(
+    ["attempts", "events"].includes(
       new URL(request.url).pathname.split("/").at(-1) ?? "",
     ),
   );

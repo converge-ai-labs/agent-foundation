@@ -48,7 +48,7 @@ export function SessionHeader({
   const root = threads.find(
     (entry) => entry.role === "root" && entry.session_id === sessionId,
   );
-  const { level, forced, switchLevel } = useAnchoredLevel(thread);
+  const { level, switchLevel } = useAnchoredLevel(thread);
   const { visible: memoryVisible } = useMemoryProviders();
   const run = useRun(runId);
   const valid = run.data?.session_id === sessionId;
@@ -116,7 +116,7 @@ export function SessionHeader({
       </div>
       <div className={styles.sessionControls}>
         {active && run.data && <StatePill state={run.data.status} />}
-        {child && root ? (
+        {child && root && (
           <span className={styles.breadcrumb}>
             <Link
               to={`${basePath}/sessions/${sessionId}/threads/${root.id}?view=debug`}
@@ -126,21 +126,18 @@ export function SessionHeader({
             <CaretRightIcon size={11} aria-hidden="true" />
             <span>{agent.data?.name ?? t("Child thread")}</span>
           </span>
-        ) : (
-          !forced && (
-            <SegmentedControl
-              label={t("Disclosure level")}
-              value={level}
-              onValueChange={(next) =>
-                switchLevel(next === "debug" ? "debug" : "chat")
-              }
-              options={[
-                { value: "chat", label: t("Chat") },
-                { value: "debug", label: t("Debug") },
-              ]}
-            />
-          )
         )}
+        <SegmentedControl
+          label={t("Disclosure level")}
+          value={level}
+          onValueChange={(next) =>
+            switchLevel(next === "debug" ? "debug" : "chat")
+          }
+          options={[
+            { value: "chat", label: t("Chat") },
+            { value: "debug", label: t("Debug") },
+          ]}
+        />
         <Menu>
           <MenuTrigger
             render={
