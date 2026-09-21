@@ -5,12 +5,11 @@ from datetime import timedelta
 
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.memory import MemoryProviderDefinition
-from sqlalchemy import and_, cast, or_, select
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.agents.references import provider_references
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.collection_cursors import (
     CollectionCursorMismatchError,
@@ -19,9 +18,9 @@ from a13n_service.collection_cursors import (
     encode_collection_cursor,
 )
 from a13n_service.credentials import provider_credential_payload
-from a13n_service.iam import AuthenticatedActor, authorize_agent
+from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.audit import security_audit_record
-from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction
+from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.resource_scope import authorize_scope
 from a13n_service.ids import new_object_id
 from a13n_service.provider_metadata import ProviderMetadataCollection
@@ -275,75 +274,23 @@ class MemoryProviderService:
             await require_provider(
                 session, organization_id=scope.organization_id, workspace_id=workspace_id, provider_id=provider_id
             )
-            query = (
-                select(AgentRevisionRecord, AgentRecord)
-                .join(AgentRecord, AgentRecord.id == AgentRevisionRecord.agent_id)
-                .where(
-                    AgentRecord.organization_id == scope.organization_id,
-                    or_(
-                        AgentRevisionRecord.config["memory"]["provider_id"].as_string() == provider_id,
-                        cast(AgentRevisionRecord.config, JSONB)["memory"]["entries"].contains(
-                            [{"backend": {"provider_id": provider_id}}]
-                        ),
-                    ),
+            try:
+                items, next_cursor = await provider_references(
+                    session,
+                    actor=actor,
+                    organization_id=scope.organization_id,
+                    workspace_id=workspace_id,
+                    provider_kind="memory",
+                    provider_id=provider_id,
+                    limit=limit,
+                    position=position,
+                    scope_key=scope_key,
                 )
+            except InvalidCollectionCursorError as error:
+                raise _invalid_cursor() from error
+            return MemoryProviderReferenceCollection(
+                items=tuple(MemoryProviderReference(**item) for item in items), next_cursor=next_cursor
             )
-            if workspace_id is not None:
-                query = query.where(AgentRecord.workspace_id == workspace_id)
-            if position is not None:
-                agent_id, revision_id = _account_position(position)
-                version = position.get("version")
-                if type(version) is not int or version < 1:
-                    raise _invalid_cursor()
-                query = query.where(
-                    or_(
-                        AgentRevisionRecord.agent_id > agent_id,
-                        and_(AgentRevisionRecord.agent_id == agent_id, AgentRevisionRecord.version > version),
-                        and_(
-                            AgentRevisionRecord.agent_id == agent_id,
-                            AgentRevisionRecord.version == version,
-                            AgentRevisionRecord.id > revision_id,
-                        ),
-                    )
-                )
-            query = query.order_by(AgentRevisionRecord.agent_id, AgentRevisionRecord.version, AgentRevisionRecord.id)
-            items: list[MemoryProviderReference] = []
-            # Page in bounded batches, applying Agent visibility before counting.
-            offset = 0
-            while len(items) <= limit:
-                rows = (await session.execute(query.offset(offset).limit(100))).all()
-                if not rows:
-                    break
-                for revision, agent in rows:
-                    try:
-                        await authorize_agent(
-                            session,
-                            actor=actor,
-                            workspace_id=agent.workspace_id,
-                            agent_id=agent.id,
-                            action=WorkspaceAction.agent_read,
-                        )
-                    except AuthorizationError:
-                        continue
-                    items.append(
-                        MemoryProviderReference(
-                            agent_id=agent.id,
-                            agent_revision_id=revision.id,
-                            version=revision.version,
-                            is_current=agent.default_revision_id == revision.id,
-                        )
-                    )
-                    if len(items) > limit:
-                        break
-                offset += len(rows)
-            page = items[:limit]
-            next_cursor = None
-            if len(items) > limit:
-                last = page[-1]
-                next_cursor = encode_collection_cursor(
-                    {"name": last.agent_id, "id": last.agent_revision_id, "version": last.version}, scope=scope_key
-                )
-            return MemoryProviderReferenceCollection(items=tuple(page), next_cursor=next_cursor)
 
     def audit(
         self,
