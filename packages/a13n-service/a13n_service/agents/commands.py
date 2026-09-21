@@ -22,7 +22,7 @@ from a13n_service.iam import (
 )
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.labels import LabelsBody, labels_etag
-from a13n_service.resource_keys import flush_key_change, insert_with_key
+from a13n_service.resource_keys import flush_key_change
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, next_updated_at, utc_now
 
@@ -33,7 +33,6 @@ from .domain import (
     CreateAgentRequest,
     UpdateAgentRequest,
     new_agent_id,
-    new_agent_revision_id,
 )
 from .errors import (
     AgentError,
@@ -49,13 +48,13 @@ from .persistence import (
     load_replay,
     lock_agent,
     new_agent_audit,
-    new_revision,
     request_identity,
     require_custom_mutable,
     require_etag,
     require_not_in_use,
     touch_agent,
 )
+from .publication import create_agent
 from .queries import AgentQueries
 from .resolution import AgentResolver, resolution_error
 
@@ -86,7 +85,6 @@ class AgentCommands:
     ) -> AgentRevisionCreateResult:
         identity = request_identity(idempotency_key)
         agent_id = new_agent_id()
-        revision_id = new_agent_revision_id()
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
@@ -148,45 +146,27 @@ class AgentCommands:
                     resolved = await self._resolver.freeze_in_transaction(session, prepared=prepared)
                 except Exception as error:
                     raise resolution_error(error) from error
-                record = AgentRecord(
-                    id=agent_id,
+                record, revision = await create_agent(
+                    session,
+                    agent_id=agent_id,
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
-                    source=AgentSource.custom.value,
                     name=request.name,
                     description=request.description,
                     labels=request.labels,
-                    default_revision_id=revision_id,
-                    enabled=True,
-                    archived_at=None,
-                    duplicated_from_agent_id=None,
-                    duplicated_from_revision_id=None,
-                    created_by_type=actor.principal.principal_type.value,
-                    created_by_id=actor.principal.principal_id,
-                    updated_by_type=actor.principal.principal_type.value,
-                    updated_by_id=actor.principal.principal_id,
-                    created_at=now,
-                    updated_at=now,
-                )
-                record.request_key = entity_key(
-                    actor,
-                    operation="agent.create",
-                    scope_id=workspace_id,
-                    key_digest=identity.key_digest,
-                    workspace_id=workspace_id,
-                )
-                await insert_with_key(session, record, prefix="agent", requested=request.key)
-                revision = new_revision(
-                    record,
-                    revision_id=revision_id,
-                    version=1,
                     config=request.config,
                     resolved=resolved,
-                    source_revision_id=None,
                     actor=actor,
                     now=now,
+                    requested_key=request.key,
+                    request_key=entity_key(
+                        actor,
+                        operation="agent.create",
+                        scope_id=workspace_id,
+                        key_digest=identity.key_digest,
+                        workspace_id=workspace_id,
+                    ),
                 )
-                session.add_all((record, revision))
                 session.add(
                     new_agent_audit(
                         actor=actor,

@@ -6,16 +6,14 @@ from a13n_logging import get_logger
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import new_agent_id, new_agent_revision_id
-from a13n_service.agents.models import AgentRecord
+from a13n_service.agents.domain import new_agent_id
 from a13n_service.agents.persistence import (
     lock_agent,
     new_agent_audit,
-    new_revision,
     require_custom_mutable,
     touch_agent,
 )
-from a13n_service.agents.publication import publish_revision
+from a13n_service.agents.publication import create_agent, publish_revision
 from a13n_service.agents.resolution import AgentResolver, resolution_error
 from a13n_service.collection_cursors import encode_time_cursor
 from a13n_service.durable_operations.idempotency import IdempotencyIdentity
@@ -24,7 +22,6 @@ from a13n_service.durable_operations.requests import evidence_record, load_repla
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.ids import new_object_id
-from a13n_service.resource_keys import insert_with_key
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, next_updated_at, utc_now
 
@@ -127,27 +124,8 @@ class ConfigurationApplication:
                 return retained
             require_review(record, request=request, if_match=if_match)
             now = next_updated_at(record.updated_at, self._clock())
-            if record.mode == "create":
-                assert candidate.creation_metadata is not None
-                target = AgentRecord(
-                    id=agent_id,
-                    organization_id=record.organization_id,
-                    workspace_id=record.workspace_id,
-                    source="custom",
-                    name=candidate.creation_metadata.name,
-                    description=candidate.creation_metadata.description,
-                    labels={},
-                    default_revision_id=new_agent_revision_id(),
-                    enabled=True,
-                    archived_at=None,
-                    created_by_type=actor.principal.principal_type.value,
-                    created_by_id=actor.principal.principal_id,
-                    updated_by_type=actor.principal.principal_type.value,
-                    updated_by_id=actor.principal.principal_id,
-                    created_at=now,
-                    updated_at=now,
-                )
-            else:
+            target = None
+            if record.mode == "update":
                 target = await lock_agent(session, record.organization_id, record.workspace_id, agent_id)
                 require_custom_mutable(target)
                 if resource_etag(target.id, target.updated_at) != record.base_agent_etag:
@@ -165,19 +143,22 @@ class ConfigurationApplication:
                     "Dependencies changed after review; save and review a fresh validation.",
                 )
             no_change = False
-            previous_default_revision_id = None if record.mode == "create" else target.default_revision_id
+            previous_default_revision_id = None
             change_summary = (
                 request.change_summary
                 if "change_summary" in request.model_fields_set
                 else candidate.suggested_change_summary
             )
             if record.mode == "create":
-                await insert_with_key(session, target, prefix="agent")
-                assert target.default_revision_id is not None
-                revision = new_revision(
-                    target,
-                    revision_id=target.default_revision_id,
-                    version=1,
+                assert candidate.creation_metadata is not None
+                target, revision = await create_agent(
+                    session,
+                    agent_id=agent_id,
+                    organization_id=record.organization_id,
+                    workspace_id=record.workspace_id,
+                    name=candidate.creation_metadata.name,
+                    description=candidate.creation_metadata.description,
+                    labels={},
                     config=candidate.config,
                     resolved=resolved,
                     source_revision_id=record.source_agent_revision_id,
@@ -185,10 +166,9 @@ class ConfigurationApplication:
                     actor=actor,
                     now=now,
                 )
-                session.add(revision)
-                target.default_revision_id = revision.id
                 touch_agent(target, actor=actor, now=now)
             else:
+                assert target is not None
                 publication = await publish_revision(
                     session,
                     locked_agent=target,

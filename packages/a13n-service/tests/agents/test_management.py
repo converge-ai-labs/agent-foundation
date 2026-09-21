@@ -4,6 +4,7 @@ import asyncio
 import base64
 from dataclasses import replace
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from a13n_harness.providers.catalog import ProviderCatalog
@@ -17,7 +18,7 @@ from a13n_service.agents.domain import (
     UpdateAgentRequest,
 )
 from a13n_service.agents.errors import AgentError
-from a13n_service.agents.models import AgentRecord
+from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.agents.persistence import load_replay, request_identity
 from a13n_service.digests import digest_request
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
@@ -38,7 +39,13 @@ from .conftest import NOW, WORKSPACE_ID, actor, agent_config
 
 @pytest.mark.anyio
 async def test_create_is_atomic_idempotent_and_starts_at_v1(agent_management: AgentManagement) -> None:
-    request = CreateAgentRequest(name="Support", config=agent_config())
+    request = CreateAgentRequest(
+        name="Support",
+        key="support-team",
+        description="Customer support",
+        labels={"team": "support"},
+        config=agent_config(),
+    )
 
     created = await agent_management.commands.create(
         actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="create-support", request=request
@@ -53,7 +60,49 @@ async def test_create_is_atomic_idempotent_and_starts_at_v1(agent_management: Ag
     assert created.revision.config == request.config
     assert created.revision.config_digest == digest_request(request.config)
     assert created.revision.connection_tools == ()
-    assert created.revision.connection_tools == ()
+    assert created.agent.key == request.key
+    assert created.agent.name == request.name and created.agent.description == request.description
+    assert created.agent.labels == request.labels
+    assert created.agent.created_at == created.agent.updated_at == created.revision.created_at == NOW
+    assert created.agent.created_by == created.agent.updated_by == created.revision.created_by
+    assert created.revision.source_revision_id is None and created.revision.change_summary is None
+
+
+@pytest.mark.anyio
+async def test_create_failure_rolls_back_agent_revision_and_request_key(agent_management, agent_sessions) -> None:
+    request = CreateAgentRequest(name="Atomic", key="atomic", config=agent_config())
+    with patch("a13n_service.agents.commands.new_agent_audit", side_effect=RuntimeError("injected failure")):
+        with pytest.raises(RuntimeError, match="injected failure"):
+            await agent_management.commands.create(
+                actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="atomic-create", request=request
+            )
+    async with transaction(agent_sessions) as session:
+        assert await session.scalar(select(AgentRecord)) is None
+        assert await session.scalar(select(AgentRevisionRecord)) is None
+        assert (
+            await session.scalar(select(SecurityAuditRecord).where(SecurityAuditRecord.action == "agent.create"))
+            is None
+        )
+    created = await agent_management.commands.create(
+        actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="atomic-create", request=request
+    )
+    replay = await agent_management.commands.create(
+        actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="atomic-create", request=request
+    )
+    assert replay == created and created.agent.key == "atomic" and created.revision.version == 1
+    async with transaction(agent_sessions) as session:
+        assert len((await session.scalars(select(AgentRecord))).all()) == 1
+        assert len((await session.scalars(select(AgentRevisionRecord))).all()) == 1
+        assert (
+            len(
+                (
+                    await session.scalars(
+                        select(SecurityAuditRecord).where(SecurityAuditRecord.action == "agent.create")
+                    )
+                ).all()
+            )
+            == 1
+        )
 
 
 @pytest.mark.anyio

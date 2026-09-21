@@ -105,6 +105,21 @@ async def test_apply_failure_rolls_back_target_receipt_and_publication(
         assert await session.scalar(select(func.count()).select_from(AgentRevisionRecord)) == (
             2 if mode == "update" else 1
         )
+        if original is None:
+            target = await session.get(AgentRecord, receipt.agent_id)
+            assert target is not None and draft.creation_metadata is not None
+            assert (
+                target.name == draft.creation_metadata.name
+                and target.description == draft.creation_metadata.description
+            )
+            assert target.default_revision_id == revision.id and target.key == "created-agent"
+            assert target.labels == {} and target.request_key is None
+            assert target.created_at == revision.created_at == receipt.applied_at
+            assert target.updated_at == receipt.applied_at + timedelta(microseconds=1)
+            assert (
+                target.created_by_id == target.updated_by_id == revision.created_by_id == actor().principal.principal_id
+            )
+            assert revision.source_revision_id is None
         if original is not None:
             target = await session.get(AgentRecord, original.agent.id)
             assert target is not None and target.default_revision_id == receipt.agent_revision_id
@@ -141,3 +156,29 @@ async def test_apply_failure_rolls_back_target_receipt_and_publication(
         assert intent.status == "published" and intent.source_id.startswith("capply_")
     # Publication is a best-effort hint; another subscriber can still observe it.
     assert await notifications.read_applications(subscription, limit=10) == hints
+
+
+async def test_create_application_allocates_a_new_key_when_name_is_taken(agent_sessions, agent_management):
+    existing = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="existing",
+        request=CreateAgentRequest(name="Created Agent", config=agent_config()),
+    )
+    conversations, drafts, applications = services(agent_sessions)
+    draft = await save(drafts, await new_draft(conversations))
+    receipt = await applications.apply(
+        actor=actor(),
+        draft_id=draft.id,
+        request=apply_request(draft),
+        idempotency_key="same-name",
+        if_match=resource_etag(draft.id, draft.updated_at),
+    )
+    async with short_session(agent_sessions) as session:
+        target = await session.get(AgentRecord, receipt.agent_id)
+        assert target is not None and target.id != existing.agent.id
+        assert target.key != existing.agent.key and target.key.startswith("created-agent-")
+        revision = await session.get(AgentRevisionRecord, target.default_revision_id)
+        assert revision is not None and revision.version == 1 and revision.agent_id == target.id
+        original = await session.get(AgentRecord, existing.agent.id)
+        assert original is not None and original.to_resource() == existing.agent
