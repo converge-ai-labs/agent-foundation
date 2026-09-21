@@ -330,7 +330,8 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         "Environment run extension activation and cleanup failed",
                         [primary, cleanup_error],
                     ) from None
-            self._runtime._activation_failed()
+            finally:
+                self._runtime._activation_failed()
             raise
         self._activation_state = "active"
         self._runtime._activated(self)
@@ -1430,8 +1431,9 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
                     "Environment initial candidate reuse rejection and cleanup failed",
                     [primary, cleanup],
                 ) from None
-            self._activation_error = primary
-            self._activation_changed.set()
+            finally:
+                self._activation_error = primary
+                self._activation_changed.set()
             raise primary
 
         scopes: list[AbstractAsyncContextManager[BoundEnvironmentProvider]] = []

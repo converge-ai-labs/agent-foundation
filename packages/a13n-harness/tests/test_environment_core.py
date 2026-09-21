@@ -89,12 +89,14 @@ class _Binding(EnvironmentProviderBinding):
         families: frozenset[str] = frozenset({"files"}),
         operations: EnvironmentProviderOperations | None = None,
         fail_entry: bool = False,
+        fail_discard: bool = False,
         permissions: frozenset[EnvironmentAction] | None = None,
     ) -> None:
         self.name = name
         self._families = families
         self._operations = operations if operations is not None else EnvironmentProviderOperations(files=_Files())
         self._fail_entry = fail_entry
+        self._fail_discard = fail_discard
         self.entered = 0
         self.exited = 0
         self.mount_id: str | None = None
@@ -138,6 +140,8 @@ class _Binding(EnvironmentProviderBinding):
 
     async def discard(self) -> None:
         self.discarded += 1
+        if self._fail_discard:
+            raise RuntimeError("discard failed")
 
 
 class _RunExtension:
@@ -404,28 +408,31 @@ def test_environment_run_callbacks_require_at_least_one_callback() -> None:
         EnvironmentRunCallbacks(extension_id="empty")
 
 
-async def test_environment_run_extension_entry_failure_unwinds_and_keeps_runtime_inactive() -> None:
+@pytest.mark.parametrize("fail_cleanup", [False, True])
+async def test_environment_run_extension_entry_failure_unwinds_and_keeps_runtime_inactive(fail_cleanup: bool) -> None:
     events: list[str] = []
     provider = _Binding("extension-entry-failure")
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
         extensions=(
-            _RunExtension("first", events),
+            _RunExtension("first", events, fail_exit=fail_cleanup),
             _RunExtension("failing", events, fail_entry=True),
         ),
     )
 
     async with binding.bind(thread_id="thread-1", run_id="run-extension-failure", instance=_instance(), host_refs={}):
-        with pytest.raises(EnvironmentError) as exc_info:
+        with pytest.raises(BaseExceptionGroup if fail_cleanup else EnvironmentError) as exc_info:
             await binding._activate()
-        assert exc_info.value.code == "environment_extension_bind_failed"
+        error = exc_info.value.exceptions[0] if isinstance(exc_info.value, BaseExceptionGroup) else exc_info.value
+        assert isinstance(error, EnvironmentError)
+        assert error.code == "environment_extension_bind_failed"
         assert events == ["enter:first", "enter:failing", "exit:first"]
         with pytest.raises(EnvironmentError) as repeated:
             await binding._activate()
         assert repeated.value.code == "environment_extension_bind_failed"
         with pytest.raises(EnvironmentError) as inactive:
-            await binding.wait_until_active()
+            await asyncio.wait_for(binding.wait_until_active(), timeout=1)
         assert inactive.value.code == "environment_activation_failed"
 
     assert provider.exited == 1
@@ -570,17 +577,24 @@ async def test_partial_entry_failure_closes_entered_and_discards_remaining_candi
     assert failed.discarded == later.discarded == 1
 
 
-async def test_initial_reuse_never_discards_an_active_advanced_binding() -> None:
+@pytest.mark.parametrize("fail_cleanup", [False, True])
+async def test_initial_reuse_never_discards_an_active_advanced_binding(fail_cleanup: bool) -> None:
     active = _Binding("active")
-    fresh = _Binding("fresh")
+    fresh = _Binding("fresh", fail_discard=fail_cleanup)
     runtime = create_environment_runtime(mounts=_request(active), default_mount="workspace-1")
     async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as bound:
         await runtime._activate()
         conflicting = create_environment_runtime(mounts=_request(active, fresh))
-        with pytest.raises(EnvironmentError) as reused:
+        with pytest.raises(BaseExceptionGroup if fail_cleanup else EnvironmentError) as reused:
             async with conflicting.bind(thread_id="thread-2", run_id="run-2", instance=_instance(), host_refs={}):
                 pytest.fail("A transferred candidate cannot enter another runtime")
-        assert reused.value.code == "environment_provider_binding_reused"
+        error = reused.value.exceptions[0] if isinstance(reused.value, BaseExceptionGroup) else reused.value
+        assert isinstance(error, EnvironmentError)
+        assert error.code == "environment_provider_binding_reused"
+        with pytest.raises(EnvironmentError) as inactive:
+            await asyncio.wait_for(conflicting.wait_until_active(), timeout=1)
+        assert inactive.value.code == "environment_activation_failed"
+        assert inactive.value.__cause__ is error
         assert active.entered == 1
         assert active.exited == active.discarded == 0
         assert fresh.entered == 0
