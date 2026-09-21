@@ -2,6 +2,17 @@ use std::{ffi::OsString, time::Duration};
 
 fn main() {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
+    if arguments.as_slice() == [OsString::from("--internal-egress-worker")]
+        || arguments.as_slice() == [OsString::from("--internal-egress-ready")]
+    {
+        if let Err(error) =
+            a13n_envd::run_internal_egress_worker(arguments[0] == "--internal-egress-ready")
+        {
+            eprintln!("a13n-envd failed: isolated Session worker unavailable: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if arguments.as_slice() == [OsString::from("--version")] {
         println!("a13n-envd {}", env!("CARGO_PKG_VERSION"));
         return;

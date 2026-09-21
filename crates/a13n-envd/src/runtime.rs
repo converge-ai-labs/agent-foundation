@@ -103,7 +103,7 @@ impl RuntimeState {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn generation(&self) -> &Path {
         &self.inner._generation
     }

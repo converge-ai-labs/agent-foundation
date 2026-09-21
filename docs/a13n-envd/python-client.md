@@ -175,6 +175,7 @@ Availability remains the initialized descriptor's decision. A generated method e
 | ----------------------- | ----------------------- | ---------------------------- | ---------------------------- | ------------------- |
 | `device.describe`       | `device_describe`       | `DeviceDescribeParams`       | `DeviceDescribeResult`       | `ledger_external`   |
 | `directory.list`        | `directory_list`        | `DirectoryListParams`        | `DirectoryListResult`        | `ledger_external`   |
+| `egress.update`         | `egress_update`         | `EgressUpdateParams`         | `EgressUpdateResult`         | `ledger_external`   |
 | `environment.describe`  | `environment_describe`  | `EnvironmentDescribeParams`  | `EnvironmentDescribeResult`  | `active_only`       |
 | `environment.readiness` | `environment_readiness` | `EnvironmentReadinessParams` | `EnvironmentReadinessResult` | `active_only`       |
 | `file.abort_writer`     | `file_abort_writer`     | `FileWriterAbortParams`      | `FileWriterAbortResult`      | `active_only`       |

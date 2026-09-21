@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Envd exposes Session-owned filesystem operations over the Device filesystem and bounded observation of listening ports. The Session's working directory supplies defaults, not an access boundary. Native account permissions and the Host's outer deployment boundary apply to every path.
+Envd exposes Session-owned filesystem operations over the Device filesystem and bounded observation of listening ports. An ordinary Session's working directory supplies defaults, not an access boundary. Native account permissions and the Host's outer deployment boundary apply to every path.
 
 ## Boundaries
 
@@ -27,7 +27,7 @@ Paths are absolute in the Device namespace and use `/` separators. POSIX paths r
 
 The daemon resolves its native startup cwd and configured default into this format. Discovery and Session descriptors return Device paths. Hosts retain Device identity with every path and translate aggregate aliases before EIP dispatch. A path on a remote Device never implicitly names a Host file. Relative Host tool inputs resolve against the captured Session working directory; EIP file operands are explicit absolute paths.
 
-Every Session may address paths outside its working directory. There is no Session folder allowlist, mount selector or path-based Session sharing. Host action ceilings can disable file mutations or shell execution without changing native filesystem ownership.
+Ordinary Sessions may address paths outside their working directory. There is no Session folder allowlist, mount selector or path-based Session sharing. Host action ceilings can disable file mutations or shell execution without changing native filesystem ownership.
 
 `max_file_bytes` bounds complete mutation candidates. It does not reject metadata, bounded range reads or incremental search merely because the source is larger. Those operations have their own transfer, response, work and duration bounds. Atomic publication is supported only where the target filesystem supplies the required native primitive; unsupported requests fail without a copy/delete fallback.
 
@@ -577,3 +577,5 @@ Providers can expose narrower limits and omit unsupported methods. A client neve
 12. `file.find` matches relative path names and never reads file content; `file.search` matches UTF-8 regular-file content and uses path globs only for file selection.
 13. Native files and crash-left destination-local candidates can outlive envd, while process, operation, receipt, command-output, transfer, and spool records never outlive their owning session or daemon generation.
 14. Environment state, transport state, and Host durable execution state never enter an EIP state export because EIP defines no state export or restore method.
+
+Controlled Sessions use the opt-in [egress boundary](07-execution-isolation.md#controlled-session-egress), including filesystem operations.

@@ -841,6 +841,199 @@
       "title": "EIPServerInfo",
       "type": "object"
     },
+    "EgressHosts": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "EgressHosts",
+      "type": "array"
+    },
+    "EgressPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_hosts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EgressHosts"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "secrets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EgressSecret"
+          },
+          "maxItems": 64,
+          "title": "Secrets",
+          "type": "array"
+        }
+      },
+      "title": "EgressPolicy",
+      "type": "object"
+    },
+    "EgressSecret": {
+      "additionalProperties": false,
+      "properties": {
+        "env": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Env",
+          "type": "string"
+        },
+        "inject_hosts": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Inject Hosts",
+          "type": "array"
+        },
+        "value": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "env",
+        "value",
+        "inject_hosts"
+      ],
+      "title": "EgressSecret",
+      "type": "object"
+    },
+    "EgressSecretStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "env": {
+          "title": "Env",
+          "type": "string"
+        },
+        "inject_hosts": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Inject Hosts",
+          "type": "array"
+        },
+        "sentinel": {
+          "title": "Sentinel",
+          "type": "string"
+        }
+      },
+      "required": [
+        "env",
+        "sentinel"
+      ],
+      "title": "EgressSecretStatus",
+      "type": "object"
+    },
+    "EgressStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_hosts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EgressHosts"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "revision": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "secrets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EgressSecretStatus"
+          },
+          "title": "Secrets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "title": "EgressStatus",
+      "type": "object"
+    },
+    "EgressUpdateParams": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_hosts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EgressHosts"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "expected_revision": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "remove_secrets": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Remove Secrets",
+          "type": "array"
+        },
+        "set_secrets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EgressSecret"
+          },
+          "maxItems": 64,
+          "title": "Set Secrets",
+          "type": "array"
+        },
+        "unrestricted": {
+          "default": false,
+          "title": "Unrestricted",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "expected_revision"
+      ],
+      "title": "EgressUpdateParams",
+      "type": "object"
+    },
+    "EgressUpdateResult": {
+      "additionalProperties": false,
+      "properties": {
+        "egress": {
+          "$ref": "#/$defs/EgressStatus"
+        }
+      },
+      "required": [
+        "egress"
+      ],
+      "title": "EgressUpdateResult",
+      "type": "object"
+    },
     "EncodedBytes": {
       "additionalProperties": false,
       "properties": {
@@ -3426,6 +3619,17 @@
           "title": "Device Id",
           "type": "string"
         },
+        "egress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EgressStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "execution_features": {
           "$ref": "#/$defs/ExecutionFeatures"
         },
@@ -3519,6 +3723,17 @@
     "SessionOpenParams": {
       "additionalProperties": false,
       "properties": {
+        "egress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EgressPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "expected_device_id": {
           "minLength": 1,
           "title": "Expected Device Id",

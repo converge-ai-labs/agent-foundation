@@ -183,8 +183,9 @@ def _field_annotation(
     if field.label == descriptor_pb2.FieldDescriptorProto.LABEL_REPEATED and not is_map:
         field_option = _field_option(field, options)
         annotation = f"tuple[{base_type}, ...]"
-        if constraint := _length_constraint(field_option):
-            return f"Annotated[{annotation}, {constraint}]", None
+        if field_option is not None and (constraint := _length_constraint(field_option)):
+            default = None if field_option.min_length > 0 else "()"
+            return f"Annotated[{annotation}, {constraint}]", default
         return annotation, "()"
     if is_map:
         return base_type, "Field(default_factory=dict)"
@@ -373,7 +374,7 @@ def render_models(index: SchemaIndex, options: OptionReader) -> str:
         if message_option is not None and message_option.transparent:
             if len(message.field) != 1:
                 raise ValueError(f"transparent message {message.name} must have exactly one field")
-            annotation = _base_field_type(message.field[0], index, options)
+            annotation, _ = _field_annotation(message.field[0], message, index, options)
             public_names.append(message.name)
             model_classes.append(message.name)
             lines.extend(
@@ -395,6 +396,11 @@ def render_models(index: SchemaIndex, options: OptionReader) -> str:
             annotation, default = _field_annotation(field, message, index, options)
             suffix = "" if default is None else f" = {default}"
             lines.append(f"    {field.name}: {annotation}{suffix}")
+
+        if message_option is not None and message_option.redacted_debug:
+            lines.extend(
+                ["", "    def __repr_args__(self) -> list[tuple[None, str]]:", "        return [(None, '[REDACTED]')]"]
+            )
 
         oneofs = real_oneofs(message)
         for index_number, fields in oneofs.items():

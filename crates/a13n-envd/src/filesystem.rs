@@ -131,39 +131,34 @@ impl StagingQuota {
     }
 
     fn charge_object(&self) -> Result<(), PathError> {
-        let mut state = self
-            .inner
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if state.objects >= self.inner.max_objects {
-            return Err(PathError::Quota);
-        }
-        if let Some(parent) = &self.inner.parent {
-            parent.charge_object()?;
-        }
-        state.objects += 1;
-        Ok(())
+        self.reserve(0, 1)
     }
-
     fn reserve_bytes(&self, bytes: u64) -> Result<(), PathError> {
+        self.reserve(bytes, 0)
+    }
+    fn reserve(&self, bytes: u64, objects: u64) -> Result<(), PathError> {
         let mut state = self
             .inner
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        let next = state.bytes.checked_add(bytes).ok_or(PathError::Quota)?;
-        if next > self.inner.max_bytes {
+        let next_bytes = state.bytes.checked_add(bytes).ok_or(PathError::Quota)?;
+        let next_objects = state.objects.checked_add(objects).ok_or(PathError::Quota)?;
+        if next_bytes > self.inner.max_bytes || next_objects > self.inner.max_objects {
             return Err(PathError::Quota);
         }
         if let Some(parent) = &self.inner.parent {
-            parent.reserve_bytes(bytes)?;
+            parent.reserve(bytes, objects)?;
         }
-        state.bytes = next;
+        state.bytes = next_bytes;
+        state.objects = next_objects;
         Ok(())
     }
 
     fn release(&self, bytes: u64) {
+        self.release_usage(bytes, 1);
+    }
+    fn release_usage(&self, bytes: u64, objects: u64) {
         let mut state = self
             .inner
             .state
@@ -175,10 +170,10 @@ impl StagingQuota {
             .expect("staging byte reservation releases exactly once");
         state.objects = state
             .objects
-            .checked_sub(1)
+            .checked_sub(objects)
             .expect("staging object reservation releases exactly once");
         if let Some(parent) = &self.inner.parent {
-            parent.release(bytes);
+            parent.release_usage(bytes, objects);
         }
     }
 }
@@ -213,7 +208,44 @@ impl Drop for StagingReservation {
     }
 }
 
+#[cfg(target_os = "linux")]
+pub(crate) struct SessionStagingReservation {
+    quota: StagingQuota,
+    bytes: u64,
+    objects: u64,
+    retained: bool,
+}
+#[cfg(target_os = "linux")]
+impl SessionStagingReservation {
+    pub(crate) fn retain(&mut self) {
+        self.retained = true;
+    }
+}
+#[cfg(target_os = "linux")]
+impl Drop for SessionStagingReservation {
+    fn drop(&mut self) {
+        if !self.retained {
+            self.quota.release_usage(self.bytes, self.objects);
+        }
+    }
+}
+
 impl DeviceFilesystem {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn reserve_session_staging(
+        &self,
+        bytes: u64,
+        objects: u64,
+    ) -> Result<SessionStagingReservation, PathError> {
+        self.staging_quota.reserve(bytes, objects)?;
+        Ok(SessionStagingReservation {
+            quota: self.staging_quota.clone(),
+            bytes,
+            objects,
+            retained: false,
+        })
+    }
+
     pub(crate) fn new(config: &Config) -> Result<Arc<Self>, FilesystemInitError> {
         Ok(Arc::new(Self {
             max_file_bytes: config.limits.max_file_bytes,
@@ -979,7 +1011,9 @@ impl PathError {
         match error.kind() {
             std::io::ErrorKind::NotFound => Self::NotFound,
             std::io::ErrorKind::AlreadyExists => Self::AlreadyExists,
-            std::io::ErrorKind::PermissionDenied => Self::Denied,
+            std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::ReadOnlyFilesystem => {
+                Self::Denied
+            }
             std::io::ErrorKind::NotADirectory | std::io::ErrorKind::IsADirectory => {
                 Self::NotRegular
             }

@@ -6,6 +6,15 @@ mod connect;
 mod daemon;
 mod data_dispatch;
 mod device_path;
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(
+    not(target_os = "linux"),
+    allow(
+        dead_code,
+        reason = "portable policy tests also run without the Linux runtime"
+    )
+)]
+mod egress;
 pub mod eip;
 mod filesystem;
 mod http;
@@ -26,6 +35,20 @@ mod windows_job;
 pub async fn run_internal_supervisor() -> Result<(), Box<dyn Error + Send + Sync>> {
     supervisor::run_internal().await?;
     Ok(())
+}
+
+/// Runs the private isolated Session bootstrap before constructing any threads.
+#[doc(hidden)]
+pub fn run_internal_egress_worker(ready: bool) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        egress::worker::run_internal(ready)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = ready;
+        Err(std::io::Error::other("egress isolation requires Linux"))
+    }
 }
 
 /// Runs one a13n-envd instance from trusted process configuration.

@@ -8,13 +8,13 @@ Every command is structured, runs inside the Host-provided deployment boundary, 
 
 ## Boundaries
 
-| Concern                                                         | Owner                                            | Contract                                     |
-| --------------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------- |
-| Command request, process handle, status, controls, and lifetime | This document                                    | Stable EIP behavior                          |
-| Filesystem/network containment                                  | [Execution Isolation](07-execution-isolation.md) | Host-provided boundary for the entire daemon |
-| stdout/stderr spool, references, reads, and release             | [Command Output Spool](06-output-retention.md)   | Separate append-only byte streams            |
-| Provider ingress for a listening process                        | Provider adapter                                 | Outside command start and port observation   |
-| Model-facing policy and durable Agent completion                | Harness and Host                                 | Never inferred from process exit             |
+| Concern                                                         | Owner                                            | Contract                                                |
+| --------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------- |
+| Command request, process handle, status, controls, and lifetime | This document                                    | Stable EIP behavior                                     |
+| Filesystem/network containment                                  | [Execution Isolation](07-execution-isolation.md) | Host boundary and optional controlled Session isolation |
+| stdout/stderr spool, references, reads, and release             | [Command Output Spool](06-output-retention.md)   | Separate append-only byte streams                       |
+| Provider ingress for a listening process                        | Provider adapter                                 | Outside command start and port observation              |
+| Model-facing policy and durable Agent completion                | Harness and Host                                 | Never inferred from process exit                        |
 
 ## Command Request
 

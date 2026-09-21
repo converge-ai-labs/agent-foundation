@@ -78,6 +78,7 @@ message SessionDescriptor {
   repeated ShellProfileDescriptor shell_profiles = 7;
   ExecutionFeatures execution_features = 8;
   SessionLifecyclePolicy lifecycle = 9;
+  optional EgressStatus egress = 10;
 }
 
 message InitializeResult {
@@ -98,6 +99,7 @@ message SessionOpenParams {
   string protocol_version = 3 [(eip_field).string_format = EIP_STRING_FORMAT_PROTOCOL_VERSION];
   optional string working_directory = 4 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
   repeated string required_methods = 5;
+  optional EgressPolicy egress = 6;
 }
 
 message SessionOpenResult {
@@ -135,4 +137,46 @@ message SessionCloseParams {}
 
 message SessionCloseResult {
   bool closed = 1 [(eip_field).const_bool = true];
+}
+
+// Presence distinguishes unrestricted public domains from an empty deny-all list.
+message EgressHosts {
+  option (eip_message).transparent = true;
+  repeated string hosts = 1 [(eip_field).max_length = 256];
+}
+
+message EgressSecret {
+  option (eip_message).redacted_debug = true;
+  string env = 1 [(eip_field).min_length = 1, (eip_field).max_length = 128];
+  string value = 2 [(eip_field).min_length = 1, (eip_field).max_length = 8192];
+  repeated string inject_hosts = 3 [(eip_field).min_length = 1, (eip_field).max_length = 256];
+}
+
+message EgressPolicy {
+  optional EgressHosts allow_hosts = 1;
+  repeated EgressSecret secrets = 2 [(eip_field).max_length = 64];
+}
+
+message EgressSecretStatus {
+  string env = 1;
+  string sentinel = 2;
+  repeated string inject_hosts = 3;
+}
+
+message EgressStatus {
+  uint64 revision = 1 [(eip_field).minimum = 1];
+  optional EgressHosts allow_hosts = 2;
+  repeated EgressSecretStatus secrets = 3;
+}
+
+message EgressUpdateParams {
+  uint64 expected_revision = 1 [(eip_field).minimum = 1];
+  optional EgressHosts allow_hosts = 2;
+  optional bool unrestricted = 3 [(eip_field).default_bool = false];
+  repeated EgressSecret set_secrets = 4 [(eip_field).max_length = 64];
+  repeated string remove_secrets = 5 [(eip_field).max_length = 64];
+}
+
+message EgressUpdateResult {
+  EgressStatus egress = 1;
 }

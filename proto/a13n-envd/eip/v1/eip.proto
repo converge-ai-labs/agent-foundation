@@ -146,6 +146,9 @@ service EnvironmentInteractionProtocol {
   rpc ReceiptGet(ReceiptGetParams) returns (ReceiptGetResult) {
     option (eip_method) = { jsonrpc_method: "receipt.get" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_COMMON };
   }
+  rpc EgressUpdate(EgressUpdateParams) returns (EgressUpdateResult) {
+    option (eip_method) = { jsonrpc_method: "egress.update" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_SESSION };
+  }
   rpc SessionClose(SessionCloseParams) returns (SessionCloseResult) {
     option (eip_method) = { jsonrpc_method: "session.close" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_SESSION };
   }

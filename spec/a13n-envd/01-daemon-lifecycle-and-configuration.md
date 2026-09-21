@@ -75,3 +75,5 @@ Drain stops new admission, closes Sessions through the same cleanup path, waits 
 Useful observations are Device/generation, transport state, Session counts, charged resource totals, collection counts and cleanup failures. Do not include credentials, full command text, output or native paths in ordinary diagnostics.
 
 Malformed requests, stale selectors and quota exhaustion fail at the relevant boundary. One Session's failure is not a device-wide failure. Cleanup uncertainty remains charged and is retried boundedly; forgetting ownership is not reclamation. Authentication and framing remain necessary even though the Host is trusted for all folders.
+
+Daemon JSON `egress.enabled` defaults to false and enables [controlled Session preparation](07-execution-isolation.md#controlled-session-egress). It carries no secret values. Ordinary Session launch policy remains unchanged.

@@ -89,7 +89,7 @@ MODEL_TYPES: dict[str, type[BaseModel]] = {
 def test_generated_surface_covers_eip_v1() -> None:
     assert EIP_PROTOCOL_VERSION == "0.1"
     assert EIP_PROTO_PACKAGE == "a13n.agent_envd.eip.v1"
-    assert len(METHODS) == 41
+    assert len(METHODS) == 42
     assert len(set(METHODS)) == len(METHODS)
     assert all(method.kind == "request_response" for method in METHODS.values())
     assert all(method.name == name for name, method in METHODS.items())
@@ -105,6 +105,7 @@ def test_generated_surface_covers_eip_v1() -> None:
         "session.attach",
         "session.keepalive",
         "session.close",
+        "egress.update",
     }
     transfer_methods = [method for method in METHODS.values() if method.transfer_action is not None]
     assert len(transfer_methods) == 5
@@ -418,3 +419,16 @@ def test_output_read_requires_an_explicit_offset() -> None:
     with pytest.raises(ValidationError):
         OutputReadParams.model_validate({**base, "cursor": "cursor-1", "start_offset": 0})
     assert OutputReadParams.model_validate({**base, "start_offset": 0}).start_offset == 0
+
+
+def test_egress_presence_bounds_and_secret_repr() -> None:
+    from a13n_envd_client.eip.v1 import EgressPolicy, EgressSecret
+
+    assert EgressPolicy.model_validate({}).allow_hosts is None
+    denied = EgressPolicy.model_validate({"allow_hosts": []})
+    assert denied.model_dump(mode="json")["allow_hosts"] == []
+    with pytest.raises(ValidationError):
+        EgressPolicy.model_validate({"allow_hosts": ["example.com"] * 257})
+    secret = EgressSecret(env="TEST_TOKEN", value="private-test-value", inject_hosts=("example.com",))
+    assert "private-test-value" not in repr(secret)
+    assert "private-test-value" not in repr(EgressPolicy(secrets=(secret,)))

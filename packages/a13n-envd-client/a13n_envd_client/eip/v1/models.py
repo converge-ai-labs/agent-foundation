@@ -387,6 +387,44 @@ class EIPServerInfo(EIPModel):
     version: StrictStr
 
 
+class EgressHosts(RootModel[Annotated[tuple[StrictStr, ...], Field(max_length=256)]]):
+    model_config = ConfigDict(frozen=True)
+    root: Annotated[tuple[StrictStr, ...], Field(max_length=256)]
+
+
+class EgressSecret(EIPModel):
+    env: Annotated[StrictStr, Field(min_length=1, max_length=128)]
+    value: Annotated[StrictStr, Field(min_length=1, max_length=8192)]
+    inject_hosts: Annotated[tuple[StrictStr, ...], Field(min_length=1, max_length=256)]
+
+    def __repr_args__(self) -> list[tuple[None, str]]:
+        return [(None, "[REDACTED]")]
+
+
+class EgressSecretStatus(EIPModel):
+    env: StrictStr
+    sentinel: StrictStr
+    inject_hosts: tuple[StrictStr, ...] = ()
+
+
+class EgressStatus(EIPModel):
+    revision: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    allow_hosts: EgressHosts | None = None
+    secrets: tuple[EgressSecretStatus, ...] = ()
+
+
+class EgressUpdateParams(EIPModel):
+    expected_revision: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    allow_hosts: EgressHosts | None = None
+    unrestricted: StrictBool = False
+    set_secrets: Annotated[tuple[EgressSecret, ...], Field(max_length=64)] = ()
+    remove_secrets: Annotated[tuple[StrictStr, ...], Field(max_length=64)] = ()
+
+
+class EgressUpdateResult(EIPModel):
+    egress: EgressStatus
+
+
 class EncodedBytes(EIPModel):
     encoding: Literal["base64"]
     data: Base64Unpadded
@@ -794,14 +832,6 @@ class SessionLifecyclePolicy(EIPModel):
     disconnect_grace_ms: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
 
 
-class SessionOpenParams(EIPModel):
-    expected_device_id: Identifier
-    expected_generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
-    protocol_version: ProtocolVersion
-    working_directory: AbsoluteEIPPath | None = None
-    required_methods: tuple[StrictStr, ...] = ()
-
-
 class ShellCommand(EIPModel):
     kind: Literal["shell"]
     profile_id: Identifier
@@ -839,6 +869,11 @@ class DeviceDescriptor(EIPModel):
     available_methods: tuple[StrictStr, ...] = ()
     limits: EIPLimits
     lifecycle: SessionLifecyclePolicy
+
+
+class EgressPolicy(EIPModel):
+    allow_hosts: EgressHosts | None = None
+    secrets: Annotated[tuple[EgressSecret, ...], Field(max_length=64)] = ()
 
 
 class FileCommitParams(EIPModel):
@@ -993,6 +1028,16 @@ class SessionDescriptor(EIPModel):
     shell_profiles: tuple[ShellProfileDescriptor, ...] = ()
     execution_features: ExecutionFeatures
     lifecycle: SessionLifecyclePolicy
+    egress: EgressStatus | None = None
+
+
+class SessionOpenParams(EIPModel):
+    expected_device_id: Identifier
+    expected_generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    protocol_version: ProtocolVersion
+    working_directory: AbsoluteEIPPath | None = None
+    required_methods: tuple[StrictStr, ...] = ()
+    egress: EgressPolicy | None = None
 
 
 class SessionOpenResult(EIPModel):
@@ -1114,6 +1159,12 @@ EIPClientInfo.model_rebuild()
 EIPLimits.model_rebuild()
 EIPPath.model_rebuild()
 EIPServerInfo.model_rebuild()
+EgressHosts.model_rebuild()
+EgressSecret.model_rebuild()
+EgressSecretStatus.model_rebuild()
+EgressStatus.model_rebuild()
+EgressUpdateParams.model_rebuild()
+EgressUpdateResult.model_rebuild()
 EncodedBytes.model_rebuild()
 EnvironmentDescribeParams.model_rebuild()
 EnvironmentReadinessParams.model_rebuild()
@@ -1175,11 +1226,11 @@ SessionCloseResult.model_rebuild()
 SessionKeepaliveParams.model_rebuild()
 SessionKeepaliveResult.model_rebuild()
 SessionLifecyclePolicy.model_rebuild()
-SessionOpenParams.model_rebuild()
 ShellCommand.model_rebuild()
 ShellProfileDescriptor.model_rebuild()
 ArgvCommand.model_rebuild()
 DeviceDescriptor.model_rebuild()
+EgressPolicy.model_rebuild()
 FileCommitParams.model_rebuild()
 FileCommitResult.model_rebuild()
 FileCopyResult.model_rebuild()
@@ -1203,6 +1254,7 @@ PortWaitResult.model_rebuild()
 ProcessCloseStdinParams.model_rebuild()
 ProcessOutput.model_rebuild()
 SessionDescriptor.model_rebuild()
+SessionOpenParams.model_rebuild()
 SessionOpenResult.model_rebuild()
 ShellExecResult.model_rebuild()
 CommandRequest.model_rebuild()
@@ -1244,6 +1296,13 @@ __all__ = [
     "EIPLimits",
     "EIPPath",
     "EIPServerInfo",
+    "EgressHosts",
+    "EgressPolicy",
+    "EgressSecret",
+    "EgressSecretStatus",
+    "EgressStatus",
+    "EgressUpdateParams",
+    "EgressUpdateResult",
     "EncodedBytes",
     "EnvironmentDescribeParams",
     "EnvironmentDescribeResult",

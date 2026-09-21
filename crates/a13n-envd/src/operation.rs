@@ -1125,6 +1125,17 @@ pub(crate) fn canonical_request_digest<P: Serialize>(
 }
 
 impl ShortIdAllocator {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn for_session(session_id: &str) -> Self {
+        Self {
+            namespace: session_id
+                .strip_prefix("session-")
+                .unwrap_or(session_id)
+                .into(),
+            counters: Arc::new(Mutex::new(BTreeMap::new())),
+        }
+    }
+
     pub(crate) fn for_generation(generation: u64) -> Self {
         Self {
             namespace: encode_base36(generation).into(),

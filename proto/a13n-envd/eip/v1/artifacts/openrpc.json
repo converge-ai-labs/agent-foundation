@@ -81,6 +81,62 @@
       "x-eip-transfer-direction": null
     },
     {
+      "name": "egress.update",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "expected_revision",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/EgressUpdateParams/properties/expected_revision"
+          }
+        },
+        {
+          "name": "allow_hosts",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/EgressUpdateParams/properties/allow_hosts"
+          }
+        },
+        {
+          "name": "unrestricted",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/EgressUpdateParams/properties/unrestricted"
+          }
+        },
+        {
+          "name": "set_secrets",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/EgressUpdateParams/properties/set_secrets"
+          }
+        },
+        {
+          "name": "remove_secrets",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/EgressUpdateParams/properties/remove_secrets"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/EgressUpdateResult"
+        }
+      },
+      "x-eip-error-family": "session",
+      "x-eip-introduced": "0.1",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/EgressUpdateParams"
+      },
+      "x-eip-replay-class": "ledger_external",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
       "name": "environment.describe",
       "paramStructure": "by-name",
       "params": [
@@ -1773,6 +1829,13 @@
           "required": false,
           "schema": {
             "$ref": "schema.json#/$defs/SessionOpenParams/properties/required_methods"
+          }
+        },
+        {
+          "name": "egress",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/SessionOpenParams/properties/egress"
           }
         }
       ],

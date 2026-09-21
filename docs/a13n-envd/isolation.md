@@ -4,7 +4,7 @@ Envd is an execution service for its operating-system account. It does not creat
 
 ## Isolation behavior
 
-A Device connection and its Sessions share the daemon's outer authority. Sessions isolate resource ownership and correlation, not tenants. Selecting a working directory neither restricts file access to that directory nor limits commands to it. Directory discovery reveals the directories accessible to the Device; disable it when the Host does not want to offer browsing.
+A Device connection and its ordinary Sessions share the daemon's outer authority. Ordinary Sessions isolate resource ownership and correlation, not tenants. Linux deployments can additionally enable [controlled Session egress](egress.md), which owns its namespace and credential-injection contract. Selecting a working directory neither restricts file access to that directory nor limits commands to it. Directory discovery reveals the directories accessible to the Device; disable it when the Host does not want to offer browsing.
 
 There is no per-command `required`/`disabled` isolation setting, mount policy, network override or production isolation probe. Old configuration fields are rejected rather than interpreted as compatibility aliases. A Host that promises a Sandbox must verify its own launcher and outer boundary; successful EIP readiness is not proof of sandboxing.
 
@@ -17,7 +17,7 @@ There is no per-command `required`/`disabled` isolation setting, mount policy, n
 
 Windows Job ownership is not filesystem or network confinement. Supported execution features report what is available; force kill is separate from graceful signal support. Use exact executable names, including `.exe` on Windows. Shell profiles are trusted startup configuration and must match the selected shell. PTY/ConPTY is not part of the command plane.
 
-File paths address the Device namespace: POSIX `/work/file`, Windows `/C:/work/file` or `/UNC/server/share/file`. Windows `/` is a virtual directory-discovery root for volumes, not a command cwd. Filesystem permissions, symlinks, links and platform access rules remain those of the daemon account.
+File paths address the Device namespace: POSIX `/work/file`, Windows `/C:/work/file` or `/UNC/server/share/file`. Windows `/` is a virtual directory-discovery root for volumes, not a command cwd. For ordinary Sessions, filesystem permissions, symlinks, links and platform access rules remain those of the daemon account. Controlled Sessions resolve paths inside their private mount namespace.
 
 ## Validate from this repository
 

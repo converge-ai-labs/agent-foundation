@@ -60,7 +60,7 @@ The Host creates and protects the runtime parent. Envd creates an unpredictable 
 }
 ```
 
-The working directory must exist. If omitted, the daemon captures its startup cwd. It is **not an access root**: file paths address the whole filesystem available to the daemon account and outer sandbox. Directory discovery is a bounded, one-level read that works before any Session exists.
+The working directory must exist. If omitted, the daemon captures its startup cwd. For ordinary Sessions it is **not an access root**: file paths address the whole filesystem available to the daemon account and outer sandbox. Directory discovery is a bounded, one-level read that works before any Session exists.
 
 Explicit Device IDs can come from `--device-id`, JSON `device_id`, or `A13N_ENVD_DEVICE_ID`. Without an explicit ID, an installation state directory retains the generated identity across restart. `--default-working-directory`, `--name` and `--description` override JSON metadata. Set directory discovery through JSON or `A13N_ENVD_DIRECTORY_DISCOVERY`. EIP paths use `/C:/...` and `/UNC/server/share/...` on Windows; daemon bootstrap paths use native OS spelling.
 
@@ -95,7 +95,7 @@ Full Control is not a sandbox and is independent of the Host's local execution p
 }
 ```
 
-No command methods are advertised when Full Control is disabled and both executable roots and shell profiles are empty. Executable roots and profiles are trusted launch configuration, not a Session sandbox. Filesystem, account and network restrictions must surround the entire daemon. See [outer security and troubleshooting](isolation.md).
+No command methods are advertised when Full Control is disabled and both executable roots and shell profiles are empty. Executable roots and profiles are trusted launch configuration, not a Session sandbox. The Host supplies the outer security boundary; optional [controlled Session egress](egress.md) adds per-Session destination restrictions and credential injection. See [outer security and troubleshooting](isolation.md).
 
 Child environments are built from the daemon's supported inherited values plus explicit command inputs. Daemon control variables are not command configuration. Inspect advertised execution features instead of assuming platform support for signals, limits or executable bits.
 
@@ -153,3 +153,7 @@ Important default limits include 128 Sessions, 256 Device concurrent operations,
 ### Shell-profile fields
 
 Required fields are `profile_id`, `display_name`, `native_executable`, `executable_search_roots` and positive `max_script_bytes`. Executables and search roots are existing absolute native paths. `fixed_arguments` defaults to `[]`, `safe_base_environment` to `{}` and `allow_login_mode` to `false`.
+
+## Controlled Session egress
+
+Set `"egress": {"enabled": true}` in daemon JSON to permit Linux controlled Sessions. Secret values are submitted through EIP, never this file. See [Session egress](egress.md) for prerequisites, creation, live updates and capacity behavior.

@@ -6,6 +6,7 @@ from typing import Protocol
 from .methods import (
     DEVICE_DESCRIBE,
     DIRECTORY_LIST,
+    EGRESS_UPDATE,
     ENVIRONMENT_DESCRIBE,
     ENVIRONMENT_READINESS,
     FILE_ABORT_WRITER,
@@ -52,6 +53,8 @@ from .models import (
     DeviceDescribeResult,
     DirectoryListParams,
     DirectoryListResult,
+    EgressUpdateParams,
+    EgressUpdateResult,
     EnvironmentDescribeParams,
     EnvironmentDescribeResult,
     EnvironmentReadinessParams,
@@ -145,6 +148,9 @@ class EIPClient:
 
     async def directory_list(self, params: DirectoryListParams) -> DirectoryListResult:
         return await self._requester.request(DIRECTORY_LIST, params)
+
+    async def egress_update(self, params: EgressUpdateParams) -> EgressUpdateResult:
+        return await self._requester.request(EGRESS_UPDATE, params)
 
     async def environment_describe(self, params: EnvironmentDescribeParams) -> EnvironmentDescribeResult:
         return await self._requester.request(ENVIRONMENT_DESCRIBE, params)

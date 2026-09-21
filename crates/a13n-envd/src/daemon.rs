@@ -40,6 +40,10 @@ use crate::{
 };
 
 const MAX_STRING_REQUEST_ID_BYTES: usize = 128;
+#[cfg(target_os = "linux")]
+pub(crate) mod egress;
+#[cfg(target_os = "linux")]
+mod isolated;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionState {
     Initialized,
@@ -70,15 +74,25 @@ pub(crate) struct CarrierResponse {
     handoff: Option<ResponseHandoff>,
 }
 
-pub(crate) struct ResponseHandoff {
-    operation: Option<ActiveResponseHandoff>,
-    _history: OwnedRwLockReadGuard<()>,
+pub(crate) enum ResponseHandoff {
+    Local {
+        operation: Option<ActiveResponseHandoff>,
+        _history: OwnedRwLockReadGuard<()>,
+    },
+    #[cfg(target_os = "linux")]
+    Remote(crate::egress::worker::client::Handoff),
 }
 
 impl ResponseHandoff {
     pub(crate) fn complete(self) {
-        if let Some(operation) = self.operation {
-            operation.complete();
+        match self {
+            Self::Local { operation, .. } => {
+                if let Some(operation) = operation {
+                    operation.complete();
+                }
+            }
+            #[cfg(target_os = "linux")]
+            Self::Remote(handoff) => handoff.complete(),
         }
     }
 }
@@ -137,7 +151,7 @@ struct DeviceRequest<'a> {
 fn session_methods(config: &Config) -> Vec<String> {
     eip::METHODS
         .iter()
-        .filter(|method| !method.device_scoped)
+        .filter(|method| !method.device_scoped && method.name != "egress.update")
         .filter(|method| method.name != "file.commit" || cfg!(unix))
         .filter(|method| {
             let execution = method.name.starts_with("process.")
@@ -171,6 +185,9 @@ impl Daemon {
                 .filter(|method| method.name != "directory.list" || config.directory_discovery)
                 .map(|method| method.name.to_owned()),
         );
+        if config.egress.enabled && cfg!(target_os = "linux") {
+            available_methods.push("egress.update".to_owned());
+        }
         available_methods.sort();
         Ok(Self {
             config: config.clone(),
@@ -374,6 +391,14 @@ impl Daemon {
             .session
             .admit_work()
             .ok_or(TransferError::Protocol)?;
+        #[cfg(target_os = "linux")]
+        if let Some(remote) = &session.remote {
+            return remote
+                .client
+                .data(frame)
+                .await
+                .map_err(|_| TransferError::Protocol);
+        }
         session.transfers.handle_frame(frame).await
     }
 
@@ -394,6 +419,10 @@ impl Daemon {
             detaching.spawn(async move {
                 let clean = tokio::time::timeout(Duration::from_secs(5), async {
                     let _cleanup = session.cleanup.lock().await;
+                    #[cfg(target_os = "linux")]
+                    if let Some(remote) = &session.remote {
+                        let _ = remote.client.detach().await;
+                    }
                     session.transfers.detach().await;
                 })
                 .await
@@ -609,6 +638,16 @@ impl Daemon {
                 Err(error) => return error_response(error),
             }
         };
+        #[cfg(target_os = "linux")]
+        if let Some(session) = &session
+            && session.remote.is_some()
+            && !matches!(request.method.as_str(), "egress.update" | "session.close")
+        {
+            return match session.relay(carrier, &request).await {
+                Ok(response) => response,
+                Err(error) => error_response(error),
+            };
+        }
         let history = match &session {
             Some(session) => Some(session.history.clone().read_owned().await),
             None => None,
@@ -692,7 +731,7 @@ impl Daemon {
         };
         CarrierResponse {
             payload,
-            handoff: history.map(|history| ResponseHandoff {
+            handoff: history.map(|history| ResponseHandoff::Local {
                 operation: handoff,
                 _history: history,
             }),
@@ -791,11 +830,13 @@ impl EipDeviceHandler for DeviceRequest<'_> {
             ));
         }
         let methods = session_methods(&self.daemon.config);
-        if params
-            .required_methods
-            .iter()
-            .any(|method| !methods.contains(method))
-        {
+        if params.required_methods.iter().any(|method| {
+            !methods.contains(method)
+                && !(method == "egress.update"
+                    && params.egress.is_some()
+                    && self.daemon.config.egress.enabled
+                    && cfg!(target_os = "linux"))
+        }) {
             return Err(protocol_error(
                 ErrorType::Unsupported,
                 "required session method is unavailable",
@@ -815,6 +856,18 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                 "working directory is unavailable",
             )
         })?;
+        if let Some(policy) = params.egress {
+            #[cfg(target_os = "linux")]
+            return self.daemon.open_controlled(self.carrier, cwd, policy).await;
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = policy;
+                return Err(protocol_error(
+                    ErrorType::Unsupported,
+                    "egress requires Linux",
+                ));
+            }
+        }
         if self.daemon.sessions().len() >= self.daemon.config.limits.max_sessions {
             self.daemon.maintenance().await;
         }
@@ -867,6 +920,8 @@ impl Daemon {
 }
 
 pub(crate) struct Session {
+    #[cfg(target_os = "linux")]
+    remote: Option<crate::egress::runtime::Runtime>,
     descriptor: SessionDescriptor,
     filesystem: Arc<DeviceFilesystem>,
     cleanup: tokio::sync::Mutex<()>,
@@ -970,6 +1025,7 @@ impl Session {
         )
         .map_err(|_| DaemonInitError::new("transfer initialization failed"))?;
         let descriptor = SessionDescriptor {
+            egress: None,
             device_id: config.device_id.clone(),
             generation: daemon.descriptor.generation,
             session_id,
@@ -991,6 +1047,8 @@ impl Session {
         };
         let (closed, _) = watch::channel(false);
         Ok(Self {
+            #[cfg(target_os = "linux")]
+            remote: None,
             closed,
             descriptor,
             filesystem: daemon.filesystem.for_session(),
@@ -1019,6 +1077,22 @@ impl Session {
             execution,
             transfers,
         })
+    }
+
+    #[allow(clippy::result_large_err, reason = "generated EIP error contract")]
+    fn current_descriptor(&self) -> Result<SessionDescriptor, EIPError> {
+        let descriptor = self.descriptor.clone();
+        #[cfg(target_os = "linux")]
+        let descriptor = {
+            let mut descriptor = descriptor;
+            if let Some(remote) = &self.remote {
+                descriptor.egress = Some(remote.status().map_err(|_| {
+                    protocol_error(ErrorType::NotInitialized, "egress broker is closed")
+                })?);
+            }
+            descriptor
+        };
+        Ok(descriptor)
     }
 
     fn under_pressure(&self) -> bool {
@@ -1062,6 +1136,10 @@ impl Session {
         self.closed.send_replace(true);
         self.operations.begin_drain();
         self.transfers.begin_session_close();
+        #[cfg(target_os = "linux")]
+        if let Some(remote) = &self.remote {
+            return tokio::time::timeout(budget, remote.close()).await.is_ok();
+        }
         // Fence and cancel first. Waiting for an active process before cancelling would deadlock close.
         tokio::time::timeout(budget, async {
             let execution_closed = match &self.execution {
@@ -1270,7 +1348,7 @@ impl EipSessionHandler for Session {
             BeginOutcome::New(operation) => operation,
         };
         let result = EnvironmentDescribeResult {
-            descriptor: self.descriptor.clone(),
+            descriptor: self.current_descriptor()?,
         };
         operation.finish(&result, None).map_err(map_ledger_error)?;
         Ok(result)
@@ -1281,7 +1359,7 @@ impl EipSessionHandler for Session {
         _params: eip::SessionAttachParams,
     ) -> Result<eip::SessionOpenResult, EIPError> {
         Ok(eip::SessionOpenResult {
-            descriptor: self.descriptor.clone(),
+            descriptor: self.current_descriptor()?,
         })
     }
 
@@ -1290,6 +1368,25 @@ impl EipSessionHandler for Session {
         _params: eip::SessionKeepaliveParams,
     ) -> Result<eip::SessionKeepaliveResult, EIPError> {
         Ok(eip::SessionKeepaliveResult { alive: true })
+    }
+
+    async fn egress_update(
+        &self,
+        params: eip::EgressUpdateParams,
+    ) -> Result<eip::EgressUpdateResult, EIPError> {
+        #[cfg(target_os = "linux")]
+        if let Some(remote) = &self.remote {
+            return remote
+                .update(params)
+                .map(|egress| eip::EgressUpdateResult { egress })
+                .map_err(egress::policy_error);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = params;
+        Err(protocol_error(
+            ErrorType::Unsupported,
+            "Session has no egress policy",
+        ))
     }
 
     async fn session_close(
@@ -2118,8 +2215,18 @@ impl EipSessionHandler for Session {
             BeginOutcome::ReplayFailure(error) => return Err(*error),
             BeginOutcome::New(operation) => operation,
         };
+        #[cfg(target_os = "linux")]
+        let request =
+            crate::egress::worker::request_environment(&params.request).map_err(|()| {
+                protocol_error(
+                    ErrorType::InvalidParams,
+                    "command cannot override egress environment variables",
+                )
+            })?;
+        #[cfg(not(target_os = "linux"))]
+        let request = std::borrow::Cow::Borrowed(&params.request);
         let started = match execution
-            .start(&filesystem, &params.request, true, || {
+            .start(&filesystem, &request, true, || {
                 match self.operations.interruption(&params.context.operation_id) {
                     Some(OperationInterruption::Cancelled) => {
                         return Err(ProcessError::PreDispatchCancelled);
@@ -2445,8 +2552,18 @@ impl EipSessionHandler for Session {
         let filesystem = self.filesystem.clone();
         let hard_deadline =
             effective_deadline(params.context.timeout_ms, self.max_operation_duration)?;
+        #[cfg(target_os = "linux")]
+        let request =
+            crate::egress::worker::request_environment(&params.request).map_err(|()| {
+                protocol_error(
+                    ErrorType::InvalidParams,
+                    "command cannot override egress environment variables",
+                )
+            })?;
+        #[cfg(not(target_os = "linux"))]
+        let request = std::borrow::Cow::Borrowed(&params.request);
         let started = match execution
-            .start(&filesystem, &params.request, true, || {
+            .start(&filesystem, &request, true, || {
                 match self.operations.interruption(&params.context.operation_id) {
                     Some(OperationInterruption::Cancelled) => {
                         return Err(ProcessError::PreDispatchCancelled);

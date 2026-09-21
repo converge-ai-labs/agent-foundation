@@ -42,7 +42,7 @@ mod tests {
     fn generated_registry_has_complete_v1_surface() {
         assert_eq!(EIP_PROTOCOL_VERSION, "0.1");
         assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");
-        assert_eq!(METHODS.len(), 41);
+        assert_eq!(METHODS.len(), 42);
         assert!(
             METHODS
                 .iter()
@@ -72,6 +72,7 @@ mod tests {
             vec![
                 "device.describe",
                 "directory.list",
+                "egress.update",
                 "initialize",
                 "session.attach",
                 "session.close",

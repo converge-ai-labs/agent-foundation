@@ -66,6 +66,7 @@ message EIPMessageOptions {
   bool transparent = 1;
   bool discriminated_union = 2;
   bool additive_response = 3;
+  bool redacted_debug = 4;
 }
 
 message EIPEnumValueOptions {

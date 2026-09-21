@@ -40,6 +40,23 @@ impl DeviceCapacity {
 }
 
 impl ResourceCapacity {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn reserve_session(&self, active: u64, records: u64) -> Option<ResourcePermit> {
+        Some(ResourcePermit {
+            active: Some(
+                self.active
+                    .clone()
+                    .try_acquire_many_owned(u32::try_from(active).ok()?)
+                    .ok()?,
+            ),
+            _record: self
+                .records
+                .clone()
+                .try_acquire_many_owned(u32::try_from(records).ok()?)
+                .ok()?,
+        })
+    }
+
     fn new(active: u64, records: u64) -> Self {
         Self {
             active: Arc::new(Semaphore::new(active as usize)),

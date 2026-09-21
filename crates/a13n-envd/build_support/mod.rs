@@ -854,7 +854,7 @@ fn render_message(
         output.push_str(&format!(
             "pub struct {}(pub {});\n\n",
             descriptor.name(),
-            rust_base_type(&fields[0])?
+            rust_field_type(&fields[0], false)?.0
         ));
         render_validation_impl(output, descriptor, &fields, extensions, true, false)?;
         return Ok(());
@@ -888,11 +888,21 @@ fn render_message(
             default_functions.insert(field.full_name().to_owned(), function);
         }
     }
-    if defaulted_messages.contains(descriptor.full_name()) {
-        output.push_str("#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]\n");
+    let options = descriptor.options();
+    let redacted = options.has_extension(&extensions.message)
+        && bool_field(
+            &extension_message(options, &extensions.message)?,
+            "redacted_debug",
+        );
+    let debug = if redacted { "" } else { "Debug, " };
+    let default = if defaulted_messages.contains(descriptor.full_name()) {
+        "Default, "
     } else {
-        output.push_str("#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]\n");
-    }
+        ""
+    };
+    output.push_str(&format!(
+        "#[derive({debug}Clone, {default}PartialEq, Serialize, Deserialize)]\n"
+    ));
     output.push_str("#[serde(deny_unknown_fields)]\n");
     output.push_str(&format!("pub struct {} {{\n", descriptor.name()));
     let real_oneof_names: BTreeSet<_> = real_oneof_fields(descriptor)
@@ -924,6 +934,10 @@ fn render_message(
         output.push_str(&format!("    pub {}: {},\n", field.name(), field_type));
     }
     output.push_str("}\n\n");
+    if redacted {
+        let name = descriptor.name();
+        output.push_str(&format!("impl std::fmt::Debug for {name} {{ fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{ f.write_str(\"{name}([REDACTED])\") }} }}\n"));
+    }
     render_validation_impl(output, descriptor, &fields, extensions, false, false)?;
     Ok(())
 }
@@ -1053,7 +1067,7 @@ fn render_field_checks(
                 .get_field_by_name("min_length")
                 .and_then(|value| value.as_u32())
                 .ok_or_else(|| "min_length is not uint32".to_owned())?;
-            let measured_length = if matches!(field.kind(), Kind::String) {
+            let measured_length = if !field.is_list() && matches!(field.kind(), Kind::String) {
                 format!("{target}.chars().count()")
             } else {
                 format!("{target}.len()")
@@ -1073,7 +1087,7 @@ fn render_field_checks(
                 .get_field_by_name("max_length")
                 .and_then(|value| value.as_u32())
                 .ok_or_else(|| "max_length is not uint32".to_owned())?;
-            let measured_length = if matches!(field.kind(), Kind::String) {
+            let measured_length = if !field.is_list() && matches!(field.kind(), Kind::String) {
                 format!("{target}.chars().count()")
             } else {
                 format!("{target}.len()")

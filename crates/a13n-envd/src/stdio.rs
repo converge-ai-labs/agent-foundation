@@ -23,14 +23,14 @@ const DATA_CONTENT_TYPE: &str = "application/vnd.a13n.eip-data";
 const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_CONTROL_BURST: usize = 8;
 
-enum InboundFrame {
+pub(crate) enum InboundFrame {
     Control(Vec<u8>),
     Data(DataFrame),
 }
 
-struct ControlResponse {
-    payload: Vec<u8>,
-    handoff: Option<ResponseHandoff>,
+pub(crate) struct ControlResponse {
+    pub(crate) payload: Vec<u8>,
+    pub(crate) handoff: Option<ResponseHandoff>,
 }
 
 pub(crate) async fn serve(daemon: Arc<Daemon>, config: &Config) -> io::Result<()> {
@@ -198,7 +198,7 @@ where
     written
 }
 
-async fn writer_loop<W>(
+pub(crate) async fn writer_loop<W>(
     mut writer: W,
     mut controls: mpsc::Receiver<ControlResponse>,
     mut data: mpsc::Receiver<DataFrame>,
@@ -260,7 +260,7 @@ where
     writer.flush().await
 }
 
-async fn read_frame<R>(
+pub(crate) async fn read_frame<R>(
     reader: &mut R,
     max_control_bytes: usize,
     max_data_bytes: usize,

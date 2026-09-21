@@ -54,7 +54,7 @@ The [configuration guide](../../docs/a13n-envd/configuration.md) owns all bootst
 
 ## Security and cleanup
 
-Envd operates with the daemon account's filesystem and network authority. It does not create a per-command sandbox, remap Session mounts, or implement a network-denial policy. Put mutually untrusted workloads behind separate Host-managed accounts, containers, VMs, or equivalent boundaries. Executable selection and resource accounting are not isolation.
+Ordinary Sessions operate with the daemon account's filesystem and network authority. Linux deployments can opt into [Session egress](../../docs/a13n-envd/egress.md) for transparent destination policy and HTTPS header credential injection. Put mutually untrusted workloads behind separate Host-managed accounts, containers, VMs, or equivalent boundaries. Executable selection and resource accounting are not isolation.
 
 Process cleanup owns the initial Unix process group or a non-breakaway Windows Job. Windows assigns a suspended child before execution and retains kill-on-close ownership. Platform limitations remain explicit in descriptors. Neither a process group nor a Job implies filesystem or network containment.
 

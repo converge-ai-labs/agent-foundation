@@ -13,6 +13,7 @@ from a13n_envd_client.eip.v1 import (
     DeviceDescriptor,
     DirectoryListParams,
     DirectoryListResult,
+    EgressPolicy,
     EIPCallContext,
     EIPClient,
     EIPClientInfo,
@@ -121,12 +122,17 @@ class EIPDeviceConnection:
         self,
         *,
         working_directory: str | None = None,
+        egress: EgressPolicy | None = None,
         required_methods: tuple[str, ...] = (),
         readiness_timeout: float = 10.0,
     ) -> EIPSession:
         self._ensure_open()
         _finite_timeout_ms(readiness_timeout, name="readiness_timeout")
-        required = tuple(dict.fromkeys((*required_methods, "environment.readiness")))
+        required = tuple(
+            dict.fromkeys(
+                (*required_methods, "environment.readiness", *(("egress.update",) if egress is not None else ()))
+            )
+        )
         try:
             session = await self._requester.open_session(
                 SessionOpenParams(
@@ -134,6 +140,7 @@ class EIPDeviceConnection:
                     expected_generation=self._descriptor.generation,
                     protocol_version=EIP_PROTOCOL_VERSION,
                     working_directory=working_directory,
+                    egress=egress,
                     required_methods=required,
                 ),
                 self._bind,
@@ -145,6 +152,8 @@ class EIPDeviceConnection:
                 await self.close()
             raise
         try:
+            if egress is not None and session.descriptor.egress is None:
+                raise EIPProtocolError("Session omitted requested egress policy")
             missing = set(required) - set(session.descriptor.available_methods)
             if missing:
                 raise EIPProtocolError(f"Session omitted required method: {min(missing)}")

@@ -19,7 +19,7 @@ Harness is one consumer through the provider-neutral [Environment integration](.
 | [04-resource-operations.md](04-resource-operations.md)                                     | Device paths, directory discovery, file/search/port operations and transfers   |
 | [05-command-and-process-execution.md](05-command-and-process-execution.md)                 | Command start, process status, control and native cleanup                      |
 | [06-output-retention.md](06-output-retention.md)                                           | Separate raw stdout/stderr, offsets, bounds and release                        |
-| [07-execution-isolation.md](07-execution-isolation.md)                                     | Host-provided execution boundary and truthful native cleanup limits            |
+| [07-execution-isolation.md](07-execution-isolation.md)                                     | Host boundary, controlled Session egress and native cleanup limits             |
 | [08-protocol-source-client-and-generation.md](08-protocol-source-client-and-generation.md) | IDL, generated Rust/Python surfaces, client and release ownership              |
 | [09-resource-lifetime-and-reclamation.md](09-resource-lifetime-and-reclamation.md)         | Session inactivity, disconnect grace, history and pressure collection          |
 

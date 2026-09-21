@@ -10,6 +10,8 @@ from .models import (
     DeviceDescribeResult,
     DirectoryListParams,
     DirectoryListResult,
+    EgressUpdateParams,
+    EgressUpdateResult,
     EnvironmentDescribeParams,
     EnvironmentDescribeResult,
     EnvironmentReadinessParams,
@@ -128,6 +130,19 @@ DIRECTORY_LIST = MethodSpec(
     params_type=DirectoryListParams,
     result_type=DirectoryListResult,
     device_scoped=True,
+)
+
+EGRESS_UPDATE = MethodSpec(
+    name="egress.update",
+    kind="request_response",
+    replay_class="ledger_external",
+    introduced="0.1",
+    error_family="session",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=EgressUpdateParams,
+    result_type=EgressUpdateResult,
+    device_scoped=False,
 )
 
 ENVIRONMENT_DESCRIBE = MethodSpec(
@@ -641,6 +656,7 @@ METHODS = MappingProxyType(
     {
         DEVICE_DESCRIBE.name: DEVICE_DESCRIBE,
         DIRECTORY_LIST.name: DIRECTORY_LIST,
+        EGRESS_UPDATE.name: EGRESS_UPDATE,
         ENVIRONMENT_DESCRIBE.name: ENVIRONMENT_DESCRIBE,
         ENVIRONMENT_READINESS.name: ENVIRONMENT_READINESS,
         FILE_ABORT_WRITER.name: FILE_ABORT_WRITER,

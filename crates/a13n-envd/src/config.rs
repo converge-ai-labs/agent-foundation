@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{eip::EIPLimits, runtime::RuntimeState};
 
@@ -54,7 +54,7 @@ const REVERSE_WEBSOCKET_VARIABLES: &[&str] = &[
     "A13N_ENVD_REVERSE_WS_CA_FILE",
 ];
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct TrustedShellProfileConfig {
     pub(crate) profile_id: String,
@@ -70,7 +70,7 @@ pub(crate) struct TrustedShellProfileConfig {
     pub(crate) allow_login_mode: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct CommandConfig {
     pub(crate) full_control: bool,
     pub(crate) base_environment: BTreeMap<String, String>,
@@ -82,9 +82,17 @@ pub(crate) struct CommandConfig {
     pub(crate) max_environment_bytes: usize,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub(crate) struct EgressConfig {
+    pub(crate) enabled: bool,
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FileConfig {
+    #[serde(default)]
+    egress: EgressConfig,
     device_id: Option<String>,
     name: Option<String>,
     description: Option<String>,
@@ -102,7 +110,7 @@ struct FileConfig {
     shell_profiles: Vec<TrustedShellProfileConfig>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct DaemonLimits {
     pub(crate) max_device_spool_bytes: u64,
@@ -194,6 +202,15 @@ pub(crate) struct ConnectionBootstrap {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Config {
+    pub(crate) egress: EgressConfig,
+    #[cfg_attr(
+        not(target_os = "linux"),
+        allow(
+            dead_code,
+            reason = "only Linux Session isolation masks bootstrap files"
+        )
+    )]
+    pub(crate) bootstrap_files: Vec<PathBuf>,
     pub(crate) device_id: String,
     pub(crate) default_working_directory: String,
     pub(crate) directory_discovery: bool,
@@ -231,6 +248,12 @@ impl Config {
         arguments: StartupArguments,
         connection: Option<ConnectionBootstrap>,
     ) -> Result<Self, ConfigError> {
+        let bootstrap_files = arguments
+            .config
+            .iter()
+            .map(fs::canonicalize)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ConfigError::new("cannot resolve configuration file"))?;
         let mut file = load_file_config(arguments.config.clone())?;
         arguments.apply(&mut file)?;
 
@@ -339,6 +362,8 @@ impl Config {
             prepare_command_config(file.trusted_executable_roots, file.shell_profiles)?
         };
         Ok(Self {
+            egress: file.egress,
+            bootstrap_files,
             device_id,
             default_working_directory,
             directory_discovery,
@@ -357,6 +382,8 @@ impl Config {
     #[cfg(test)]
     pub(crate) fn for_test(device_id: &str) -> Self {
         Self {
+            egress: EgressConfig::default(),
+            bootstrap_files: Vec::new(),
             device_id: device_id.to_owned(),
             default_working_directory: crate::device_path::from_native(
                 &env::current_dir().unwrap(),

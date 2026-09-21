@@ -113,7 +113,34 @@ pub(crate) enum RetentionError {
     Internal,
 }
 
+#[cfg(target_os = "linux")]
+pub(crate) struct SessionSpoolReservation {
+    quota: RetentionQuota,
+    bytes: u64,
+    objects: usize,
+}
+#[cfg(target_os = "linux")]
+impl Drop for SessionSpoolReservation {
+    fn drop(&mut self) {
+        self.quota.release(self.bytes, self.objects);
+    }
+}
+
 impl RetentionQuota {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn reserve_session(
+        &self,
+        bytes: u64,
+        objects: usize,
+    ) -> Option<SessionSpoolReservation> {
+        self.reserve(bytes, objects)
+            .then(|| SessionSpoolReservation {
+                quota: self.clone(),
+                bytes,
+                objects,
+            })
+    }
+
     pub(crate) fn new(config: &crate::config::Config) -> Result<Self, RetentionError> {
         Ok(Self {
             inner: Arc::new(Mutex::new(QuotaState::default())),
