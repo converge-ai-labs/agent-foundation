@@ -21,6 +21,11 @@ _ASSET = re.compile(r"organizations/([^/]+)/workspaces/([^/]+)/assets/version-1/
 _SKILL = re.compile(r"organizations/([^/]+)/workspaces/([^/]+)/skills/packages/version-1/([0-9a-f]{64})\.zip")
 
 
+def is_run_state_key(key: str) -> bool:
+    """Recognize the exact Run-exclusive state namespace, not display or payload objects."""
+    return _RUN.fullmatch(key) is not None and key.endswith("/state.json")
+
+
 async def retained_owner(database: AsyncSession, key: str, *, now: datetime) -> bool | None:
     """None means unknown ownership and must retain the object.
 

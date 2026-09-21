@@ -359,7 +359,6 @@ class RunAcceptanceService:
         run: Run,
         state: RunCheckpoint,
         queued: QueuedSubmission,
-        consumption_key: str | None = None,
         accepted_input: AcceptedAgentInput,
         expected_thread_version: int,
         expected_queue_version: int,
@@ -449,7 +448,6 @@ class RunAcceptanceService:
                     submission_digest_sha256=queued.submission_digest_sha256,
                     authority_principal=run.authority_principal,
                     consumed_run_id=run.id,
-                    consumption_key=consumption_key,
                     now=now,
                 )
             except QueueConsumptionConflict as error:

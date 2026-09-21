@@ -26,7 +26,6 @@ async def consume_first_submission(
     submission_digest_sha256: str,
     authority_principal: PrincipalRef,
     consumed_run_id: str,
-    consumption_key: str | None = None,
     now: datetime,
 ) -> QueuedSubmissionRecord:
     """Select, validate, and consume exactly the current first queued row."""
@@ -46,7 +45,6 @@ async def consume_first_submission(
 
     selected.position = None
     selected.consumed_run_id = consumed_run_id
-    selected.consumption_key = consumption_key
     selected.consumed_at = now
     selected.updated_at = now
     selected.version += 1

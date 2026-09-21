@@ -18,10 +18,12 @@ from a13n_service.interactions.control_domain import (
     UpdateQueuedSubmissionRequest,
     WaitingResolutionDefaults,
 )
+from a13n_service.interactions.control_models import QueuedSubmissionRecord
 from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.submissions import DeleteQueuedSubmissionRequest, QueuedSubmissionService
+from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from anyio import Event
@@ -84,9 +86,16 @@ async def _active_thread(
 async def _submission_setup(
     sessions: async_sessionmaker[AsyncSession],
     tmp_path,
+    *,
+    publication_store: bool = False,
 ):
     objects = await LocalObjectStore.create(tmp_path / "submission-objects")
-    commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
+    commands = _commands(
+        sessions,
+        PublicationObjectStore(objects, sessions) if publication_store else objects,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
     accepted = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
@@ -233,12 +242,16 @@ async def test_thread_submission_accepts_root_like_run_after_cancelled_empty_hea
     assert successor.lineage_kind == "root"
 
 
+@pytest.mark.parametrize("publication_store", [False, True])
 async def test_explicit_queue_consumption_accepts_under_retained_authority_and_replays(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
+    publication_store,
 ) -> None:
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    service, commands, _objects, source = await _submission_setup(lifecycle_interaction_sessions, tmp_path)
+    service, commands, _objects, source = await _submission_setup(
+        lifecycle_interaction_sessions, tmp_path, publication_store=publication_store
+    )
     queued_receipt = await service.submit(
         actor=_actor(),
         thread_id=source.thread_id,
@@ -267,17 +280,24 @@ async def test_explicit_queue_consumption_accepts_under_retained_authority_and_r
             idempotency_key="consume-first",
         )
     queue_reads = [sql for sql in statements if sql.startswith("SELECT") and "FROM thread_queued_submissions" in sql]
-    assert len(queue_reads) == 3
+    print(
+        f"queue_consume_sql publication_store={publication_store} "
+        f"cursor_executions={len(statements)} queue_reads={len(queue_reads)}"
+    )
+    assert len(queue_reads) == 2
     assert any("FOR UPDATE" in sql for sql in queue_reads)
+    assert not any("object_publications" in sql for sql in statements)
     async with transaction(lifecycle_interaction_sessions) as database:
         thread = await database.get(ThreadRecord, source.thread_id)
         thread.labels = {"team": "after-acceptance"}
-    repeated = await service.consume(
-        actor=_actor(),
-        thread_id=source.thread_id,
-        request=request,
-        idempotency_key="consume-first",
-    )
+    with capture_sql(lifecycle_interaction_sessions) as replay_statements:
+        repeated = await service.consume(
+            actor=_actor(),
+            thread_id=source.thread_id,
+            request=request,
+            idempotency_key="consume-first",
+        )
+    print(f"queue_consume_replay_sql cursor_executions={len(replay_statements)}")
 
     assert repeated == first
     assert first.outcome == "run_accepted"
@@ -293,6 +313,122 @@ async def test_explicit_queue_consumption_accepts_under_retained_authority_and_r
     assert successor.parent_run_id is None
     assert successor.lineage_kind == "root"
     assert successor.labels == {"team": "latest-before-consume", "batch": "queued"}
+    assert successor.request_key is not None
+    assert not any("idempotency_evidence" in sql for sql in statements + replay_statements)
+    assert sum("FROM runs JOIN thread_queued_submissions" in sql for sql in replay_statements) == 1
+    assert not any(sql.startswith("SELECT threads.") for sql in replay_statements)
+
+    await commands.active.interrupt(
+        actor=_actor(),
+        run_id=first.run.run_id,
+        idempotency_key="cancel-after-consume",
+        request=InterruptRequest(expected_run_version=1, expected_thread_version=3),
+    )
+    current = await service.consume(
+        actor=_actor(),
+        thread_id=source.thread_id,
+        request=ConsumeQueuedSubmissionRequest(expected_thread_version=999, expected_queue_version=999),
+        idempotency_key="consume-first",
+    )
+    assert current.run is not None
+    assert current.run.run_id == first.run.run_id
+    assert current.run.run_version == 2
+    assert current.run.thread_version == 4
+    assert current.queue_version == 2
+
+
+async def _consumable_queue(sessions, tmp_path):
+    await seed_hook_actor_access(sessions)
+    service, commands, _objects, source = await _submission_setup(sessions, tmp_path)
+    queued = await service.submit(
+        actor=_actor(),
+        thread_id=source.thread_id,
+        request=ThreadRunSubmissionRequest(expected_thread_version=1, input=_request("queued").input),
+        idempotency_key="enqueue",
+    )
+    await commands.active.interrupt(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="cancel",
+        request=InterruptRequest(expected_run_version=1, expected_thread_version=1),
+    )
+    return service, commands, source, queued
+
+
+async def test_concurrent_queue_consumption_commits_one_run_key(lifecycle_interaction_sessions, tmp_path, monkeypatch):
+    sessions = lifecycle_interaction_sessions
+    service, commands, source, queued = await _consumable_queue(sessions, tmp_path)
+    prepare = commands.queued.prepare_queued_run
+    ready = Event()
+    arrivals = 0
+
+    async def overlap(**kwargs):
+        nonlocal arrivals
+        prepared = await prepare(**kwargs)
+        arrivals += 1
+        if arrivals == 2:
+            ready.set()
+        await ready.wait()
+        return prepared
+
+    monkeypatch.setattr(commands.queued, "prepare_queued_run", overlap)
+
+    async def consume():
+        return await service.consume(
+            actor=_actor(),
+            thread_id=source.thread_id,
+            request=ConsumeQueuedSubmissionRequest(expected_thread_version=2, expected_queue_version=1),
+            idempotency_key="concurrent-consume",
+        )
+
+    first, second = await asyncio.gather(consume(), consume())
+    assert first == second
+    assert first.run is not None
+    assert queued.queued_submission is not None
+    async with short_session(sessions) as database:
+        runs = list(await database.scalars(select(RunRecord)))
+        assert len(runs) == 2
+        accepted = next(run for run in runs if run.id == first.run.run_id)
+        assert accepted.request_key is not None
+        consumed = await database.get(QueuedSubmissionRecord, queued.queued_submission.queued_submission_id)
+        assert consumed.consumed_run_id == accepted.id
+        assert consumed.version == 2
+        assert list(await database.scalars(select(IdempotencyEvidenceRecord))) == []
+
+
+async def test_queue_consumption_failure_rolls_back_key_and_allows_retry(
+    lifecycle_interaction_sessions, tmp_path, monkeypatch
+):
+    sessions = lifecycle_interaction_sessions
+    service, commands, source, queued = await _consumable_queue(sessions, tmp_path)
+    bindings = commands.acceptance._bindings
+    finalize = bindings.finalize
+
+    async def fail_binding(database, run, **kwargs):
+        retained = await database.get(RunRecord, run.id)
+        assert retained.request_key is not None
+        raise RuntimeError("binding rejected")
+
+    monkeypatch.setattr(bindings, "finalize", fail_binding)
+    kwargs = dict(
+        actor=_actor(),
+        thread_id=source.thread_id,
+        request=ConsumeQueuedSubmissionRequest(expected_thread_version=2, expected_queue_version=1),
+        idempotency_key="rollback-consume",
+    )
+    with pytest.raises(RuntimeError, match="binding rejected"):
+        await service.consume(**kwargs)
+    assert queued.queued_submission is not None
+    async with short_session(sessions) as database:
+        assert list(await database.scalars(select(RunRecord.id))) == [source.run_id]
+        retained = await database.get(QueuedSubmissionRecord, queued.queued_submission.queued_submission_id)
+        assert retained.position == 1 and retained.consumed_run_id is None
+        thread = await database.get(ThreadRecord, source.thread_id)
+        assert thread.version == 2 and thread.queue_version == 1
+    monkeypatch.setattr(bindings, "finalize", finalize)
+    result = await service.consume(**kwargs)
+    assert result.run is not None
+    assert result.queued_submission.consumed_run_id == result.run.run_id
 
 
 async def test_queue_mutations_are_replayable_with_original_response(

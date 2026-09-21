@@ -229,7 +229,6 @@ class ThreadInboxRecord(Base):
 
 class QueuedSubmissionRecord(EntityRequestKey, Base):
     __tablename__ = "thread_queued_submissions"
-    consumption_key: Mapped[str | None] = mapped_column(String(64), unique=True)
     __table_args__ = (
         ForeignKeyConstraint(
             ("organization_id", "thread_id"),

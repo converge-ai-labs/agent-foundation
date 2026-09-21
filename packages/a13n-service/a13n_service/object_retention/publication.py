@@ -13,6 +13,7 @@ from a13n_service.storage.object_store import ByteRange, ObjectInfo, ObjectPage,
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .models import ObjectPublicationRecord
+from .ownership import is_run_state_key
 from .persistence import lock_publication
 
 
@@ -56,6 +57,16 @@ class PublicationObjectStore:
         if not if_none_match and if_match is None:
             raise ObjectStoreUnavailable("Service publication requires a conditional write")
         with anyio.fail_after(self._timeout):
+            if is_run_state_key(key):
+                # A fresh Run owns this key exclusively. Orphan minimum age covers
+                # initial acceptance; the committed Run then pins the namespace.
+                return await self.backend.put(
+                    key,
+                    source,
+                    content_type=content_type,
+                    metadata=metadata,
+                    if_none_match=True,
+                )
             generation = await self._begin(key)
             conflict = False
             try:

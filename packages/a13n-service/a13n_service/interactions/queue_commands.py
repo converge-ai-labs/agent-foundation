@@ -156,11 +156,14 @@ class QueuedRunCommands:
         stored_key = None
         if idempotency_key is not None:
             require_idempotency_key(idempotency_key)
-            stored_key = scoped_idempotency_key(
-                actor=actor,
-                operation="queue.consume",
-                scope_id=thread_id,
-                supplied=idempotency_key,
+            stored_key = scope_key(
+                run_command_scope(actor),
+                scoped_idempotency_key(
+                    actor=actor,
+                    operation="queue.consume",
+                    scope_id=thread_id,
+                    supplied=idempotency_key,
+                ).removeprefix("idem_"),
             )
             replay = await self._queued_consumption_replay(
                 actor=actor,
@@ -190,7 +193,7 @@ class QueuedRunCommands:
                     return replay
             raise
 
-        run = prepared.run
+        run = prepared.run.model_copy(update={"request_key": stored_key})
 
         try:
             return await self._acceptance.consume_queued(
@@ -205,9 +208,6 @@ class QueuedRunCommands:
                 expected_head_run_id=None if head is None else head.id,
                 next_head_run_id=None if head is None else head.id,
                 final_validator=prepared.validate,
-                consumption_key=None
-                if stored_key is None
-                else scope_key(run_command_scope(actor), stored_key.removeprefix("idem_")),
                 label_overrides=queued.submission.labels,
             )
         except RunAcceptanceError as error:
@@ -318,17 +318,26 @@ class QueuedRunCommands:
     ) -> QueuedSubmissionConsumptionReceipt | None:
         async with short_session(self._sessions) as database:
             try:
-                queued = await database.scalar(
-                    select(QueuedSubmissionRecord).where(
-                        QueuedSubmissionRecord.consumption_key
-                        == scope_key(run_command_scope(actor), stored_key.removeprefix("idem_"))
+                retained = (
+                    await database.execute(
+                        select(RunRecord, QueuedSubmissionRecord, ThreadRecord)
+                        .join(
+                            QueuedSubmissionRecord,
+                            (QueuedSubmissionRecord.organization_id == RunRecord.organization_id)
+                            & (QueuedSubmissionRecord.thread_id == RunRecord.thread_id)
+                            & (QueuedSubmissionRecord.consumed_run_id == RunRecord.id),
+                        )
+                        .join(
+                            ThreadRecord,
+                            (ThreadRecord.organization_id == RunRecord.organization_id)
+                            & (ThreadRecord.id == RunRecord.thread_id),
+                        )
+                        .where(RunRecord.request_key == stored_key, RunRecord.thread_id == thread_id)
                     )
-                )
-                if queued is None or queued.consumed_run_id is None:
+                ).one_or_none()
+                if retained is None:
                     return None
-                run = await database.get(RunRecord, queued.consumed_run_id)
-                if run is None or run.thread_id != thread_id:
-                    return None
+                run, queued, thread = retained
                 await authorize_agent(
                     database,
                     actor=actor,
@@ -338,9 +347,6 @@ class QueuedRunCommands:
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
-            thread = await database.get(ThreadRecord, thread_id)
-            if thread is None:
-                return None
             receipt = QueuedSubmissionConsumptionReceipt(
                 outcome="run_accepted",
                 queued_submission=queued.to_resource(),

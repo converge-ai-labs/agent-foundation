@@ -423,8 +423,14 @@ class InboxReceipt:
     kind: ThreadInboxKind
 
 
+class ExecutionMemorySelection:
+    behavior_key: str
+    binding_schema_version: int  # Positive
+
+
 class HostContinuationState:
     schema_version: Literal["1"]
+    memory: ExecutionMemorySelection
     deferred: DeferredContinuationState | None
     inbox_receipts: tuple[InboxReceipt, ...] = ()
 
@@ -463,6 +469,8 @@ This is the complete serialized outer schema. `HarnessState` is encoded through 
 `effective_agent_config` stores the complete non-secret snapshot defined by [Agent Management](28-agent-management.md#agentrunoverride-and-effective-configuration). This includes the directly frozen deployment definition for configuration-assistant Runs with no AgentRevision. It remains byte-for-byte equivalent across checkpoint replacements, and its digest must match `Run.effective_agent_config_digest`. The separate accepted Connectivity selections and protected Ingress context remain immutable under their owning contracts. [Recovery Preparation](13-run-attempt-scheduling-and-recovery.md#recovery-preparation) revalidates references and current authority without rewriting the accepted configuration; [Skill retention](31-skill-management.md#agent-selection-and-run-locking) governs reconstruction from exact retained managed Skill packages.
 
 `usage_limits` persists the accepted native Pydantic AI per-invocation ceiling separately from reusable Agent configuration. It is immutable across checkpoints and replacement Attempts. Child admission intersects the Harness plan with the parent and frozen edge limits. A continuation or fork retains that ceiling and can only narrow it; explicit Retry copies the source ceiling. Each Attempt supplies it to the Harness with its own usage accumulator. Durable cross-Attempt charging and execution budgets remain governed by [Run Attempt recovery](13-run-attempt-scheduling-and-recovery.md#recovery-and-budget-enforcement). `None` uses the Harness definition default.
+
+`host.memory` is the sole durable execution memory selection under [Execution Memory Selection](42-memory.md#execution-memory-selection). It is required in the initial state and remains unchanged across checkpoints and replacement Attempts. It selects trusted reconstruction behavior and carries no live credentials or authority. There is no relational copy of this selection; application-owned bindings and physical storage identity records retain their separate contracts.
 
 Portable Harness Environment state is data, not authority over the Run row's Environment selection or the Environment record's current state and backing generation; their relationship is defined by [Run Binding and Recovery](29-environment-management.md#run-binding-and-recovery).
 
@@ -540,6 +548,10 @@ Run acceptance creates or advances the Thread row together with the Run row and 
 1. determine the operation's exact `authority_principal`, validate that Principal's current status and authorization together with Thread version, current/head selection, lineage, exact Revision, typed override, and any parent state; resolve and authorize the independent Environment choice or template revision without external I/O; then build the complete Run-owned initial state containing `EffectiveAgentConfig`;
 2. publish object-backed input, and `state.json` create-only;
 3. in one short transaction, insert or advance the Thread, allocate or revalidate the selected Environment record, insert the `accepted` Run with its fixed Environment ID/access, update the Thread default without acquiring target use, and commit required lifecycle facts with pending Hook dispatch, idempotency evidence, and any other domain-required outbox intents.
+
+Each new Run owns a fresh state key that is never reassigned to another Run. Initial `state.json` creation uses the object store's create-only condition directly, without creating a publication registry row, acquiring a publication lease, or locking a publication row in the acceptance transaction. This applies uniformly to queue consumption and every other new-Run acceptance path. A conflicting create never overwrites the existing state; unknown write outcomes retain the ordinary state read-back and integrity checks.
+
+Before acceptance commits, the configured orphan minimum age protects this fresh state object; its default is 24 hours. After commit, the retained Run pins its state namespace. This contract assumes initial publication and acceptance finish within that orphan window. It does not guarantee that an uncommitted acceptance suspended beyond the window can resume successfully, and adds no deadline record or commit-time expiry protocol for that case. Retrying the same abandoned candidate does not renew this guarantee. The collector still checks retained Run ownership and deletes only the observed object version. Historical source state remains protected by its retained Run and is copied into a new key rather than selected as another Run's state. Object-backed input and other reusable objects keep their separately owned publication fences.
 
 ```mermaid
 sequenceDiagram
@@ -694,7 +706,7 @@ The resume point is the current state object, not an event cursor, latest object
 
 Retention never removes a state or Run payload object while a retained Run or successor depends on it. A parent state remains frozen and reachable while any successor or lineage policy requires it. Reference-aware deletion of those state and payload objects never relies on object age alone. URL and Environment-path source bytes remain outside Service persistence. Asset bytes follow the independent [Asset deletion and retention contract](32-asset-management.md#deletion-and-retention); a Run reference does not pin or restore a deleted Asset.
 
-[Control Background Tasks](07-control-background-tasks.md#retention-and-collection) owns periodic discovery and collection of eligible retained or unselected objects, including exclusion against concurrent publication. That execution obligation introduces no Run expiry or permission to remove a retained lineage dependency.
+[Control Background Tasks](07-control-background-tasks.md#retention-and-collection) owns periodic discovery and collection of eligible retained or unselected objects under their age, retained-owner, and namespace-specific publication rules. That execution obligation introduces no Run expiry or permission to remove a retained lineage dependency.
 
 ## Accounting Boundary
 
@@ -785,4 +797,4 @@ Each new Run owns a complete state copy, so initialization cost grows with the r
 
 ## Application-neutral Memory Retention
 
-Run contains no application-specific memory field. The [Memory selection contract](42-memory.md#execution-memory-selection) owns the typed selection stored alongside every accepted Run. Acceptance and successor transactions invoke that contract; applications retain their own bindings keyed by Run ID. Recovery validates persisted selection rather than deriving application identity from native-tool context or current Agent configuration.
+The Run row contains no memory selection or application-specific memory field. The [Memory selection contract](42-memory.md#execution-memory-selection) owns the typed selection stored only in `RunCheckpoint.host.memory`. Acceptance and successor preparation freeze it before state publication; the final transaction commits any application-owned binding keyed by Run ID. Recovery validates the selection from the retained checkpoint rather than deriving application identity from native-tool context or current Agent configuration.

@@ -15,6 +15,7 @@ from a13n_service.temporal import utc_now
 
 from tests.hooks.support import RUN_ID, seed_run_and_secret
 from tests.interactions.conftest import ORGANIZATION_ID, USER_ID, WORKSPACE_ID
+from tests.sql_capture import capture_sql
 
 from .test_collection import collection_sessions as collection_sessions
 
@@ -47,6 +48,64 @@ def _upload(key_digest, now):
         created_at=now,
         expires_at=now + timedelta(days=1),
     )
+
+
+@pytest.mark.parametrize(
+    ("suffix", "registered"),
+    [
+        ("state.json", False),
+        ("display_messages.json", True),
+        ("payloads/input/" + "a" * 64 + ".json", True),
+        ("nested/state.json", True),
+    ],
+)
+async def test_only_exact_run_state_creation_skips_publication_registration(
+    collection_sessions, object_store, suffix, registered
+):
+    sessions = collection_sessions
+    key = f"organizations/{ORGANIZATION_ID}/runs/run_new/{suffix}"
+    writer = PublicationObjectStore(object_store, sessions)
+    with capture_sql(sessions) as statements:
+        await writer.put(key, b"initial", if_none_match=True)
+    assert bool(statements) is registered
+    async with short_session(sessions) as database:
+        assert (await database.get(ObjectPublicationRecord, key) is not None) is registered
+
+
+async def test_run_state_writes_preserve_create_only_and_version_conditions(collection_sessions, object_store):
+    sessions = collection_sessions
+    key = f"organizations/{ORGANIZATION_ID}/runs/run_new/state.json"
+    writer = PublicationObjectStore(object_store, sessions)
+    with capture_sql(sessions) as statements:
+        initial = await writer.put(key, b"initial", if_none_match=True)
+        with pytest.raises(ObjectConflict):
+            await writer.put(key, b"conflicting", if_none_match=True)
+        assert (await writer.stat(key)).version == initial.version
+        with pytest.raises(ObjectStoreUnavailable, match="conditional write"):
+            await writer.put(key, b"unconditional")
+        replaced = await writer.put(key, b"checkpoint", if_match=initial.version)
+        with pytest.raises(ObjectConflict):
+            await writer.put(key, b"stale", if_match=initial.version)
+    assert statements == []
+    assert replaced.version != initial.version
+    async with writer.open(key) as reader:
+        assert b"".join([part async for part in reader]) == b"checkpoint"
+
+
+async def test_unregistered_run_state_waits_for_orphan_minimum_age(collection_sessions, object_store):
+    sessions = collection_sessions
+    key = f"organizations/{ORGANIZATION_ID}/runs/run_orphan/state.json"
+    info = await PublicationObjectStore(object_store, sessions).put(key, b"initial", if_none_match=True)
+    clock = _Clock(info.modified_at + timedelta(hours=24))
+    collector = _collector(sessions, object_store, clock)
+    with capture_sql(sessions) as statements:
+        assert await collector.collect_unowned(key) is False
+    assert statements == []
+    assert (await object_store.stat(key)).version == info.version
+    clock.now += timedelta(microseconds=1)
+    assert await collector.collect_unowned(key) is True
+    with pytest.raises(ObjectNotFound):
+        await object_store.stat(key)
 
 
 @pytest.mark.parametrize("filename", ["state.json", "display_messages.json"])

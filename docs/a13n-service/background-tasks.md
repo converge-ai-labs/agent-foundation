@@ -87,6 +87,8 @@ Worker maintenance defaults to batches of 64, concurrency 4, a 5-second interval
 
 A minimum age is eligibility, not a promise that every object is deleted at that instant. References, audit, outstanding operations, and failed cleanup can retain data longer.
 
+Initial Run state uses a fresh key owned by that Run alone. Its publication and acceptance are expected to finish within `objects.orphan_minimum_age_hours`; resuming an uncommitted acceptance after a suspension longer than that window is not supported. Once the Run commits, its retained reference protects the state independently of age.
+
 ## Observe failures and shutdown
 
 The `a13n_service.background` logger records task/role, duration, outcome, examined candidates, committed progress, deferred/failed counts, and lag. Empty passes are debug-level, actual work is info-level, and retryable dependency failures are warnings. Correlation IDs stay in log fields rather than unbounded metric labels. Attempted deletion is not reported as confirmed reclaimed bytes.
@@ -97,7 +99,7 @@ Repeated deferral often means a retained reference or audit dependency. Repeated
 
 ## Upgrade writers and collectors coherently
 
-Use the same compatible schema and publication-fence implementation across every object-writing process and collector. Do not enable a new collector while older writers can publish without its fencing contract. Apply reviewed migrations before admitting the new deployment, and follow the release's rollout instructions rather than manually creating tables.
+Use the same compatible schema and namespace-specific publication contract across object-writing processes and collectors. For objects that use publication fencing, do not enable a new collector while older writers can publish without that fence. Fresh Run state follows the orphan-age boundary described above. Apply reviewed migrations before admitting the new deployment, and follow the release's rollout instructions rather than manually creating tables.
 
 Object stores must support atomic conditional deletion and fresh versions, including republishing identical bytes. Startup rejects incompatible storage. Retention grace alone is not a substitute for those capabilities.
 
