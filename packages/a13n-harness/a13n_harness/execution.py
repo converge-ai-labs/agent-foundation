@@ -1,35 +1,23 @@
-"""Code-first Agent construction and the canonical Harness run stream."""
+"""Executable Agents and the canonical Harness run stream."""
 
 from __future__ import annotations
 
 import asyncio
-import inspect
-import typing
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Collection, Coroutine, Mapping, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Mapping, Sequence
 from copy import deepcopy
-from dataclasses import dataclass, field, is_dataclass, replace
-from dataclasses import fields as dataclass_fields
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from functools import reduce
-from operator import or_
 from traceback import walk_tb
-from typing import Any, Literal, Self, cast, get_args, get_origin, get_type_hints, overload
+from typing import TYPE_CHECKING, Any, cast, overload
 from uuid import uuid4
 
 from a13n_logging import get_logger
 from anyio import CancelScope
 from opentelemetry.trace import StatusCode
-from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter, ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunEvents
-from pydantic_ai.agent.abstract import AbstractAgent
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.capabilities import (
-    AbstractCapability,
-    CombinedCapability,
-    ResolveModelId,
-    WrapperCapability,
-)
 from pydantic_ai.exceptions import AgentRunError, ModelHTTPError, RunCancelled, UsageLimitExceeded, UserError
 from pydantic_ai.messages import (
     AgentStreamEvent,
@@ -39,37 +27,21 @@ from pydantic_ai.messages import (
     ModelResponse,
     SystemPromptPart,
 )
-from pydantic_ai.models import Model, ModelResolutionContext
-from pydantic_ai.models.instrumented import InstrumentedModel
-from pydantic_ai.output import NativeOutput, OutputSpec, PromptedOutput, TextOutput, ToolOutput
-from pydantic_ai.run import AgentRunResultEvent
+from pydantic_ai.run import AgentRunResult, AgentRunResultEvent
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
-from typing_extensions import is_typeddict
 
-from a13n_harness._capability_contract import _validate_built_capability_tree, _validate_capability_source
+from a13n_harness._capability_contract import _validate_capability_source
+from a13n_harness._output_contract import _business_output_contains_deferred_value
 from a13n_harness.capabilities.context import (
     COMPACTION_CAPABILITY_ID,
     HANDOFF_CAPABILITY_ID,
-    HandoffCapability,
-)
-from a13n_harness.capabilities.lifecycle import (
-    LifecycleEventCapability,
 )
 from a13n_harness.capabilities.steering import (
     SteeringBridge,
-    SteeringCapability,
-)
-from a13n_harness.capabilities.tool_proxy import (
-    ToolProxyPlan,
-)
-from a13n_harness.capability_types import (
-    CapabilityTypeCatalog,
-    first_party_declarative_capability_types,
 )
 from a13n_harness.context import (
     AgentContext,
-    BuiltSubagent,
     RunBindings,
     SubagentCollection,
     _CapabilityProvenance,
@@ -77,9 +49,7 @@ from a13n_harness.context import (
 from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime
 from a13n_harness.environment.sources import EnvironmentEntry, normalize_environment_inputs
 from a13n_harness.errors import (
-    DefinitionError,
     HarnessError,
-    ModelResolutionError,
     PluginError,
     RetryHint,
     RunCleanupError,
@@ -97,11 +67,6 @@ from a13n_harness.events import (
     _ChildEventForwarder,
     _RunEventEmitter,
 )
-from a13n_harness.filters.cold_start import ColdStartFilterCapability, ColdStartFilterConfiguration
-from a13n_harness.filters.integrity import (
-    MessageIntegrityFilterCapability,
-)
-from a13n_harness.identity import AgentIdentityRef
 from a13n_harness.input import (
     RunInputFactory,
     RunInputValue,
@@ -109,35 +74,14 @@ from a13n_harness.input import (
     SemanticRunInput,
     normalize_input,
 )
-from a13n_harness.model_context import (
-    ModelContextCoordinatorCapability,
-)
-from a13n_harness.models.binding import RunModelResolver, resolve_run_model
-from a13n_harness.models.inference import GatewayModelProviderFactory, infer_model
-from a13n_harness.models.profile import project_context_window
-from a13n_harness.models.request_headers import (
-    ModelRequestHeadersCapability,
-    ModelRequestPatchConfiguration,
-)
-from a13n_harness.models.structured_output import (
-    StructuredOutputAutoToolChoiceCapability,
-)
+from a13n_harness.models.binding import RunModelResolver
 from a13n_harness.observation import (
-    HarnessInstrumentation,
-    _compile_observation,
     _LogicalRunObservation,
     _ObservationRuntime,
     observe_operation,
     observe_output,
     observe_phase,
     record_span_metadata,
-)
-from a13n_harness.output_schema import structured_output_type
-from a13n_harness.plugin_configuration import HarnessBuildContext, HarnessPluginConfiguration
-from a13n_harness.plugin_factories import (
-    HarnessPluginFactoryCatalog,
-    HarnessPluginFactoryContext,
-    build_harness_plugin_factory_catalog,
 )
 from a13n_harness.plugins import (
     AbstractHarnessPlugin,
@@ -146,19 +90,11 @@ from a13n_harness.plugins import (
     PluginRunItem,
     PluginRunNext,
     PluginRunResponse,
-    bind_agent_plugins,
     bind_run_plugins,
-)
-from a13n_harness.pricing import (
-    AbstractModelCostCapability,
-    CatalogModelCostCapability,
-    PricingCatalog,
-    get_current_pricing_catalog,
 )
 from a13n_harness.providers.environment.models import EnvironmentChange, EnvironmentError
 from a13n_harness.recovery import (
     InterruptedResponseTracker,
-    ModelRecoveryPolicy,
     ToolRecoveryMode,
     is_recoverable_model_failure,
     normalize_interrupted_history,
@@ -173,20 +109,16 @@ from a13n_harness.tools.deferred import (
     bind_managed_approval_identities,
     preflight_deferred_resume,
 )
-from a13n_harness.tools.invocation import (
-    ToolExecutionBoundaryCapability,
-)
-from a13n_harness.tools.permissions import ToolPermissionsCapability
-from a13n_harness.tools.surface import (
-    ToolSurfaceCapability,
-)
-from a13n_harness.usage import RunUsageLedger, UsageCapability
+from a13n_harness.usage import RunUsageLedger
+
+if TYPE_CHECKING:
+    from a13n_harness.builder import AgentDefinition
+
 
 _EXTENSION_EVENT_ADAPTER = TypeAdapter(HarnessExtensionEvent)
-_EMPTY_CAPABILITY_TYPE_CATALOG = CapabilityTypeCatalog()
 
 
-def _model_failure_details(
+def _report_model_failure(
     error: BaseException, *, thread_id: str, run_id: str, retrying: bool = False
 ) -> dict[str, JsonValue]:
     """Keep actionable structure without logging provider bodies or exception payloads."""
@@ -212,13 +144,6 @@ def _model_failure_details(
         "\n".join(locations),
     )
     return details
-
-
-class _UnsetOutputType:
-    __slots__ = ()
-
-
-_UNSET_OUTPUT_TYPE = _UnsetOutputType()
 
 
 @dataclass(frozen=True, slots=True)
@@ -325,216 +250,6 @@ def _environment_change_event(change: EnvironmentChange) -> HarnessExtensionEven
     return HarnessExtensionEvent(kind="context", payload=payload)
 
 
-@dataclass(frozen=True, slots=True)
-class DelegationContextPolicy:
-    """Portable ceilings on context and working-state sharing for one child edge."""
-
-    include_task: bool = True
-    history: Literal["none", "summary", "selected"] = "none"
-    task_state: Literal["shared", "isolated"] = "shared"
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.include_task, bool):
-            raise DefinitionError("Subagent include_task policy must be a boolean.", code="subagent_context_invalid")
-        if self.history not in {"none", "summary", "selected"}:
-            raise DefinitionError("Unsupported subagent history policy.", code="subagent_context_invalid")
-        if self.task_state not in {"shared", "isolated"}:
-            raise DefinitionError("Unsupported subagent task-state policy.", code="subagent_context_invalid")
-
-
-@dataclass(frozen=True, slots=True)
-class SubagentIdentityPolicy:
-    """Portable child Identity derivation for one authored edge."""
-
-    inherit_agent_id: bool = False
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.inherit_agent_id, bool):
-            raise DefinitionError(
-                "Subagent inherit_agent_id policy must be a boolean.",
-                code="subagent_identity_invalid",
-            )
-
-
-def derive_child_identity(
-    parent: AgentIdentityRef,
-    child_agent_id: str,
-    policy: SubagentIdentityPolicy | None = None,
-) -> AgentIdentityRef:
-    """Derive a fresh child Identity from one trusted parent Identity."""
-    if not isinstance(parent, AgentIdentityRef):
-        raise TypeError("parent must be an AgentIdentityRef")
-    if not isinstance(child_agent_id, str) or not child_agent_id.strip():
-        raise DefinitionError("child_agent_id must be a non-blank string.", code="subagent_identity_invalid")
-    selected_policy = policy or SubagentIdentityPolicy()
-    if not isinstance(selected_policy, SubagentIdentityPolicy):
-        raise DefinitionError("policy must be SubagentIdentityPolicy.", code="subagent_identity_invalid")
-    claims = dict(parent.claims)
-    if not selected_policy.inherit_agent_id:
-        claims["agent_id"] = child_agent_id
-    return AgentIdentityRef(issuer=parent.issuer, subject=parent.subject, **claims)
-
-
-@dataclass(frozen=True, slots=True)
-class SubagentDefinition:
-    """One named process-local child definition and authored edge ceilings."""
-
-    name: str
-    description: str
-    agent: AgentDefinition[Any]
-    context: DelegationContextPolicy = field(default_factory=DelegationContextPolicy)
-    identity: SubagentIdentityPolicy = field(default_factory=SubagentIdentityPolicy)
-    usage_limits: UsageLimits | None = None
-    run_bindings_factory: Callable[[RunBindings], RunBindings] | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not self.name.strip():
-            raise DefinitionError("Subagent name must be a non-blank string.", code="subagent_name_invalid")
-        if not isinstance(self.description, str) or not self.description.strip():
-            raise DefinitionError(
-                "Subagent description must be a non-blank string.",
-                code="subagent_description_invalid",
-            )
-        if not isinstance(self.agent, AgentDefinition):
-            raise DefinitionError("Subagent agent must be an AgentDefinition.", code="subagent_definition_invalid")
-        if not isinstance(self.context, DelegationContextPolicy):
-            raise DefinitionError("Subagent context must be DelegationContextPolicy.", code="subagent_context_invalid")
-        if not isinstance(self.identity, SubagentIdentityPolicy):
-            raise DefinitionError("Subagent identity must be SubagentIdentityPolicy.", code="subagent_identity_invalid")
-        if self.usage_limits is not None and not isinstance(self.usage_limits, UsageLimits):
-            raise DefinitionError("Subagent usage_limits must be UsageLimits or None.", code="subagent_limits_invalid")
-        if self.run_bindings_factory is not None and not callable(self.run_bindings_factory):
-            raise DefinitionError("Child run bindings factory must be callable.", code="subagent_binding_invalid")
-        object.__setattr__(self, "usage_limits", deepcopy(self.usage_limits))
-
-
-@dataclass(frozen=True, slots=True)
-class AgentDefinition[OutputT]:
-    """Immutable code-first inputs for one process-local executable Agent."""
-
-    agent: AgentSpec
-    output_type: OutputSpec[OutputT] | None
-    definition_id: str = field(default_factory=lambda: str(uuid4()))
-    model: Model | None = None
-    capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
-    plugins: tuple[AbstractHarnessPlugin, ...] = ()
-    tool_proxy: ToolProxyPlan | None = None
-    subagents: tuple[SubagentDefinition, ...] = ()
-    model_recovery: ModelRecoveryPolicy = field(default_factory=ModelRecoveryPolicy)
-
-    def __post_init__(self) -> None:
-        if not self.definition_id.strip():
-            raise DefinitionError("definition_id must not be blank.", code="definition_id_invalid")
-        if self.model is not None and not isinstance(self.model, Model):
-            raise DefinitionError("model must be a native Model or None.", code="model_invalid")
-        if isinstance(self.model, InstrumentedModel) or isinstance(self.agent.model, InstrumentedModel):
-            raise DefinitionError(
-                "InstrumentedModel is reserved to Harness-managed instrumentation.",
-                code="instrumentation_owner_conflict",
-            )
-        if self.model is not None and self.agent.model is not None:
-            raise DefinitionError(
-                "AgentSpec.model and AgentDefinition.model are mutually exclusive.",
-                code="model_selection_conflict",
-            )
-        has_schema = self.agent.output_schema is not None
-        if self.output_type is not None and has_schema:
-            raise DefinitionError(
-                "AgentDefinition.output_type and AgentSpec.output_schema are mutually exclusive.",
-                code="output_contract_conflict",
-            )
-        if self.output_type is None and not has_schema:
-            raise DefinitionError(
-                "AgentDefinition requires an explicit output_type or AgentSpec.output_schema.",
-                code="output_contract_missing",
-            )
-        if self.output_type is not None and _output_spec_contains_deferred_requests(self.output_type):
-            raise DefinitionError(
-                "DeferredToolRequests is reserved for Harness suspension and cannot be a business output.",
-                code="output_contract_reserved",
-            )
-        object.__setattr__(self, "agent", self.agent.model_copy(deep=True))
-        object.__setattr__(self, "capabilities", tuple(self.capabilities))
-        object.__setattr__(self, "plugins", tuple(self.plugins))
-        if self.tool_proxy is not None and not isinstance(self.tool_proxy, ToolProxyPlan):
-            raise TypeError("tool_proxy must be ToolProxyPlan or None")
-        subagents = tuple(self.subagents)
-        if not all(isinstance(child, SubagentDefinition) for child in subagents):
-            raise DefinitionError(
-                "subagents must contain only SubagentDefinition values.",
-                code="subagent_definition_invalid",
-            )
-        names = [child.name for child in subagents]
-        if len(set(names)) != len(names):
-            raise DefinitionError("Subagent names must be unique within one parent.", code="subagent_name_duplicate")
-        object.__setattr__(self, "subagents", subagents)
-
-    def with_updates(
-        self,
-        updates: Mapping[str, object] | None = None,
-        /,
-        **overrides: object,
-    ) -> Self:
-        """Return a fully validated definition with selected top-level fields replaced."""
-
-        requested: dict[str, object] = {}
-        if updates is not None:
-            if not isinstance(updates, Mapping) or not all(isinstance(key, str) for key in updates):
-                raise TypeError("updates must be a mapping with string keys")
-            requested.update(updates)
-        for key, value in overrides.items():
-            if key in requested:
-                raise ValueError(f"AgentDefinition update field {key!r} was supplied more than once")
-            requested[key] = value
-
-        fields = {item.name for item in dataclass_fields(type(self)) if item.init}
-        for key in requested:
-            if key not in fields:
-                raise ValueError(f"AgentDefinition has no updateable field {key!r}")
-        return replace(self, **requested)
-
-
-def _model_cost_capabilities(
-    capabilities: Sequence[AbstractCapability[AgentContext]],
-) -> tuple[AbstractModelCostCapability, ...]:
-    leaves: list[AbstractCapability[AgentContext]] = []
-    for capability in capabilities:
-        if not isinstance(capability, AbstractCapability):
-            continue
-        capability.apply(leaves.append)
-    return tuple(capability for capability in leaves if isinstance(capability, AbstractModelCostCapability))
-
-
-@dataclass
-class _DefaultColdStartCapability(AbstractCapability[AgentContext]):
-    """Select the default only after native declarative capabilities are resolved."""
-
-    configuration: ColdStartFilterConfiguration
-
-    def for_agent(self, agent: AbstractAgent[AgentContext, Any]) -> AbstractCapability[AgentContext]:
-        leaves: list[AbstractCapability[AgentContext]] = []
-        agent.root_capability.apply(leaves.append)
-        for capability in leaves:
-            while isinstance(capability, WrapperCapability):
-                capability = capability.wrapped
-            if isinstance(capability, ColdStartFilterCapability):
-                return CombinedCapability([])
-        return ColdStartFilterCapability(self.configuration)
-
-
-def _cold_start_capabilities(agent: AgentSpec) -> tuple[AbstractCapability[AgentContext], ...]:
-    configuration = agent.cold_start_filter if isinstance(agent, HarnessAgentSpec) else ColdStartFilterConfiguration()
-    return (_DefaultColdStartCapability(configuration),) if configuration is not None else ()
-
-
-def _normalize_system_prompt(agent: AgentSpec) -> tuple[str, ...]:
-    if not isinstance(agent, HarnessAgentSpec) or agent.system_prompt is None:
-        return ()
-    if isinstance(agent.system_prompt, str):
-        return (agent.system_prompt,)
-    return tuple(agent.system_prompt)
-
-
 def _normalize_toolset_instructions(agent: AgentSpec) -> bool:
     if isinstance(agent, HarnessAgentSpec):
         return agent.toolset_instructions
@@ -568,396 +283,6 @@ def _reconcile_system_prompt(
     return tuple(reconciled)
 
 
-def _resolve_model_characteristics_capabilities(
-    agent: AgentSpec,
-    capabilities: tuple[AbstractCapability[AgentContext], ...],
-) -> tuple[AbstractCapability[AgentContext], ...]:
-    model_characteristics = agent.model_characteristics if isinstance(agent, HarnessAgentSpec) else None
-    resolved: list[AbstractCapability[AgentContext]] = []
-    for capability in capabilities:
-        if isinstance(capability, HandoffCapability) and model_characteristics is not None:
-            configuration = capability.configuration
-            threshold_fields = {"include_summary_reminder", "summary_reminder_tokens"}
-            if not threshold_fields.intersection(configuration.model_fields_set):
-                proactive_threshold = model_characteristics.proactive_context_management_threshold
-                if proactive_threshold is None:
-                    configuration = configuration.model_copy(
-                        update={"include_summary_reminder": False},
-                        deep=True,
-                    )
-                    resolved.append(HandoffCapability(configuration))
-                    continue
-                if model_characteristics.context_window_tokens is not None:
-                    reminder_tokens = model_characteristics.summary_reminder_tokens
-                    assert reminder_tokens is not None
-                    configuration = configuration.model_copy(
-                        update={"summary_reminder_tokens": reminder_tokens},
-                        deep=True,
-                    )
-                    resolved.append(HandoffCapability(configuration))
-                    continue
-        resolved.append(capability)
-    return tuple(resolved)
-
-
-class HarnessBuilder:
-    """Build executable Agents through one authoritative Agent.from_spec path."""
-
-    def __init__(
-        self,
-        *,
-        capability_type_catalog: CapabilityTypeCatalog | None = None,
-        build_context: HarnessBuildContext | None = None,
-        configured_plugins_enabled: bool | None = None,
-        gateway_provider_factory: GatewayModelProviderFactory | None = None,
-        instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
-        session_affinity_header: str | None = None,
-        x_session_id_enabled: bool | None = None,
-        openai_prompt_cache_key_enabled: bool | None = None,
-    ) -> None:
-        if capability_type_catalog is not None and not isinstance(capability_type_catalog, CapabilityTypeCatalog):
-            raise DefinitionError(
-                "capability_type_catalog must be a CapabilityTypeCatalog or None.",
-                code="capability_type_catalog_invalid",
-            )
-        if build_context is not None and not isinstance(build_context, HarnessBuildContext):
-            raise PluginError(
-                "build_context must be a HarnessBuildContext or None.",
-                code="plugin_configuration_invalid",
-            )
-        if configured_plugins_enabled is not None and not isinstance(configured_plugins_enabled, bool):
-            raise PluginError(
-                "configured_plugins_enabled must be a boolean or None.",
-                code="plugin_configuration_enablement_invalid",
-            )
-        if gateway_provider_factory is not None and not callable(gateway_provider_factory):
-            raise DefinitionError(
-                "gateway_provider_factory must be callable or None.",
-                code="gateway_provider_factory_invalid",
-            )
-        self._capability_type_catalog = capability_type_catalog or _EMPTY_CAPABILITY_TYPE_CATALOG
-        self._gateway_provider_factory = gateway_provider_factory
-        resolved_instrumentation = (
-            HarnessInstrumentation.from_environment() if instrumentation == "environment" else instrumentation
-        )
-        self._observation = _compile_observation(resolved_instrumentation)
-        self._model_request_patch_configuration = ModelRequestPatchConfiguration.from_environment(
-            session_affinity_header=session_affinity_header,
-            x_session_id_enabled=x_session_id_enabled,
-            openai_prompt_cache_key_enabled=openai_prompt_cache_key_enabled,
-        )
-        if build_context is None:
-            resolved_build_context = HarnessBuildContext.from_environment(enabled=configured_plugins_enabled)
-        else:
-            effective_application = (
-                build_context.configured_plugins_enabled
-                if configured_plugins_enabled is None
-                else configured_plugins_enabled
-            )
-            if effective_application and not isinstance(
-                build_context.plugin_configuration,
-                HarnessPluginConfiguration,
-            ):
-                raise PluginError(
-                    "Enabling configured plugins in an explicit build context requires a configuration document.",
-                    code="plugin_configuration_invalid",
-                )
-            resolved_build_context = HarnessBuildContext(
-                configured_plugins_enabled=effective_application,
-                plugin_configuration=build_context.plugin_configuration if effective_application else None,
-                extensions=build_context.extensions,
-            )
-        self._build_context = HarnessBuildContext(
-            configured_plugins_enabled=resolved_build_context.configured_plugins_enabled,
-            plugin_configuration=resolved_build_context.plugin_configuration,
-            extensions=resolved_build_context.extensions,
-        )
-        self._plugin_factory_catalog: HarnessPluginFactoryCatalog | None = None
-        if self._build_context.configured_plugins_enabled:
-            configuration = self._build_context.plugin_configuration
-            if not isinstance(configuration, HarnessPluginConfiguration):
-                raise PluginError(
-                    "Enabled configured plugins require a configuration document.",
-                    code="plugin_configuration_invalid",
-                )
-            selected_keys = tuple(dict.fromkeys(entry.plugin_key for entry in configuration.enabled_plugins))
-            self._plugin_factory_catalog = build_harness_plugin_factory_catalog(
-                plugin_keys=selected_keys,
-            )
-
-    @overload
-    def build[BuildOutputT](
-        self,
-        definition: AgentDefinition[BuildOutputT],
-        /,
-        *,
-        pricing_catalog: PricingCatalog | None = None,
-    ) -> ExecutableAgent[BuildOutputT]: ...
-
-    @overload
-    def build[BuildOutputT](
-        self,
-        spec: AgentSpec,
-        /,
-        *,
-        output_type: OutputSpec[BuildOutputT],
-        definition_id: str | None = None,
-        model: Model | None = None,
-        capabilities: Sequence[AbstractCapability[AgentContext]] = (),
-        plugins: Sequence[AbstractHarnessPlugin] = (),
-        tool_proxy: ToolProxyPlan | None = None,
-        subagents: Sequence[SubagentDefinition] = (),
-        model_recovery: ModelRecoveryPolicy | None = None,
-        pricing_catalog: PricingCatalog | None = None,
-    ) -> ExecutableAgent[BuildOutputT]: ...
-
-    @overload
-    def build(
-        self,
-        spec: AgentSpec,
-        /,
-        *,
-        output_type: None,
-        definition_id: str | None = None,
-        model: Model | None = None,
-        capabilities: Sequence[AbstractCapability[AgentContext]] = (),
-        plugins: Sequence[AbstractHarnessPlugin] = (),
-        tool_proxy: ToolProxyPlan | None = None,
-        subagents: Sequence[SubagentDefinition] = (),
-        model_recovery: ModelRecoveryPolicy | None = None,
-        pricing_catalog: PricingCatalog | None = None,
-    ) -> ExecutableAgent[dict[str, JsonValue]]: ...
-
-    def build(
-        self,
-        definition_or_spec: AgentDefinition[Any] | AgentSpec,
-        /,
-        *,
-        output_type: OutputSpec[Any] | _UnsetOutputType | None = _UNSET_OUTPUT_TYPE,
-        definition_id: str | None = None,
-        model: Model | None = None,
-        capabilities: Sequence[AbstractCapability[AgentContext]] = (),
-        plugins: Sequence[AbstractHarnessPlugin] = (),
-        tool_proxy: ToolProxyPlan | None = None,
-        subagents: Sequence[SubagentDefinition] = (),
-        model_recovery: ModelRecoveryPolicy | None = None,
-        pricing_catalog: PricingCatalog | None = None,
-    ) -> ExecutableAgent[Any]:
-        """Build with one current or explicitly pinned default pricing snapshot.
-
-        An authored model-cost Capability takes precedence over ``pricing_catalog``.
-        """
-        if pricing_catalog is not None and not isinstance(pricing_catalog, PricingCatalog):
-            raise TypeError("pricing_catalog must be a PricingCatalog")
-        if isinstance(definition_or_spec, AgentDefinition):
-            if (
-                not isinstance(output_type, _UnsetOutputType)
-                or definition_id is not None
-                or model is not None
-                or capabilities
-                or plugins
-                or tool_proxy is not None
-                or subagents
-                or model_recovery is not None
-            ):
-                raise TypeError("AgentDefinition build does not accept AgentSpec construction arguments")
-            return self._build_definition(
-                definition_or_spec,
-                active_definition_ids=(),
-                pricing_catalog=get_current_pricing_catalog() if pricing_catalog is None else pricing_catalog,
-            )
-        if not isinstance(definition_or_spec, AgentSpec):
-            raise TypeError("build() requires an AgentDefinition or AgentSpec")
-        if isinstance(output_type, _UnsetOutputType):
-            raise TypeError("AgentSpec build requires the keyword-only output_type argument")
-        definition = AgentDefinition(
-            agent=definition_or_spec,
-            output_type=output_type,
-            definition_id=definition_id or str(uuid4()),
-            model=model,
-            capabilities=tuple(capabilities),
-            plugins=tuple(plugins),
-            tool_proxy=tool_proxy,
-            subagents=tuple(subagents),
-            model_recovery=model_recovery if model_recovery is not None else ModelRecoveryPolicy(),
-        )
-        return self._build_definition(
-            definition,
-            active_definition_ids=(),
-            pricing_catalog=get_current_pricing_catalog() if pricing_catalog is None else pricing_catalog,
-        )
-
-    def _build_definition[BuildOutputT](
-        self,
-        definition: AgentDefinition[BuildOutputT],
-        *,
-        active_definition_ids: tuple[int, ...],
-        pricing_catalog: PricingCatalog,
-    ) -> ExecutableAgent[BuildOutputT]:
-        definition_object_id = id(definition)
-        if definition_object_id in active_definition_ids:
-            raise DefinitionError("Subagent definitions must form a finite acyclic graph.", code="subagent_cycle")
-        child_path = (*active_definition_ids, definition_object_id)
-        built_children = tuple(
-            BuiltSubagent(
-                declaration=child,
-                definition=child.agent,
-                executable=self._build_definition(
-                    child.agent, active_definition_ids=child_path, pricing_catalog=pricing_catalog
-                ),
-            )
-            for child in definition.subagents
-        )
-        subagents = SubagentCollection({child.declaration.name: child for child in built_children})
-        configured_plugins = self._create_configured_plugins()
-        plugins, contributions = bind_agent_plugins((*definition.plugins, *configured_plugins))
-        plugin_capabilities = tuple(capability for sources in contributions.values() for capability in sources)
-        _validate_capability_source(plugin_capabilities, source="plugin")
-        _validate_capability_source(definition.capabilities, source="definition")
-        selected_capabilities = (*definition.capabilities, *plugin_capabilities)
-        if definition.tool_proxy is not None:
-            selected_capabilities = definition.tool_proxy._compose(selected_capabilities, contributions)
-        authored_capabilities = _resolve_model_characteristics_capabilities(
-            definition.agent,
-            selected_capabilities,
-        )
-        model_characteristics = (
-            definition.agent.model_characteristics if isinstance(definition.agent, HarnessAgentSpec) else None
-        )
-        profile_context_window = (
-            model_characteristics.context_window_tokens if model_characteristics is not None else None
-        )
-        selected_model_costs = _model_cost_capabilities(definition.capabilities)
-        if len(selected_model_costs) > 1:
-            raise DefinitionError(
-                "AgentDefinition capabilities must contain at most one model-cost Capability.",
-                code="capability_scope_invalid",
-            )
-        default_model_costs: tuple[AbstractModelCostCapability, ...] = (
-            () if selected_model_costs else (CatalogModelCostCapability(catalog=pricing_catalog),)
-        )
-        definition_reserved_ids = _validate_capability_source(authored_capabilities, source="definition")
-
-        async def resolve_model(
-            context: ModelResolutionContext[AgentContext],
-            model_id: str,
-        ) -> Model:
-            resolved = await resolve_run_model(context, model_id)
-            if resolved is not None:
-                if isinstance(resolved, InstrumentedModel):
-                    raise ModelResolutionError(
-                        "Run model resolution returned an InstrumentedModel reserved to Harness instrumentation.",
-                        code="instrumentation_owner_conflict",
-                        details={"model_id": model_id},
-                    )
-                return project_context_window(resolved, profile_context_window)
-            inferred = infer_model(
-                model_id,
-                gateway_provider_factory=self._gateway_provider_factory,
-            )
-            if isinstance(inferred, InstrumentedModel):
-                raise ModelResolutionError(
-                    "Model inference returned an InstrumentedModel reserved to Harness instrumentation.",
-                    code="instrumentation_owner_conflict",
-                    details={"model_id": model_id},
-                )
-            return project_context_window(inferred, profile_context_window)
-
-        try:
-            construction_spec, business_output, output_adapter = _resolve_business_output(definition)
-            definition_model = (
-                project_context_window(definition.model, profile_context_window)
-                if definition.model is not None
-                else None
-            )
-            structured_output_capabilities = (
-                (StructuredOutputAutoToolChoiceCapability(),) if _uses_tool_based_output(business_output) else ()
-            )
-            capabilities = (
-                *self._observation.pydantic_capabilities,
-                ToolExecutionBoundaryCapability(),
-                ToolSurfaceCapability(),
-                MessageIntegrityFilterCapability(),
-                LifecycleEventCapability(),
-                SteeringCapability(),
-                ModelContextCoordinatorCapability(),
-                ResolveModelId(resolve_model),
-                *_cold_start_capabilities(construction_spec),
-                *authored_capabilities,
-                *default_model_costs,
-                ModelRequestHeadersCapability(self._model_request_patch_configuration),
-                *structured_output_capabilities,
-                UsageCapability(),
-            )
-            definition_reserved_ids = definition_reserved_ids | _first_party_spec_reserved_ids(construction_spec)
-            complete_output = [business_output, DeferredToolRequests]
-            system_prompt = _normalize_system_prompt(construction_spec)
-            agent = Agent.from_spec(
-                construction_spec,
-                deps_type=AgentContext,
-                system_prompt=system_prompt,
-                custom_capability_types=(
-                    *first_party_declarative_capability_types(),
-                    *self._capability_type_catalog.custom_capability_types,
-                ),
-                model=definition_model,
-                output_type=complete_output,
-                capabilities=capabilities,
-                defer_model_check=True,
-            )
-            agent.instrument = False
-            _validate_built_capability_tree(
-                agent.root_capability,
-                definition_reserved_ids=definition_reserved_ids,
-                expected_instrumentation=self._observation.pydantic_instrumentation,
-                expected_structured_output_compatibility=bool(structured_output_capabilities),
-            )
-        except Exception as exc:
-            if isinstance(exc, HarnessError):
-                raise
-            raise DefinitionError(
-                "Pydantic AI Agent construction failed.",
-                code="agent_build_failed",
-                details={"definition_id": definition.definition_id},
-            ) from exc
-        return ExecutableAgent(
-            definition=definition,
-            agent=cast(Agent[AgentContext, BuildOutputT | DeferredToolRequests], agent),
-            system_prompt=system_prompt,
-            output_adapter=output_adapter,
-            plugins=plugins,
-            subagents=subagents,
-            definition_reserved_capability_ids=definition_reserved_ids,
-            model_inference=resolve_model,
-            observation=self._observation,
-        )
-
-    def _create_configured_plugins(self) -> tuple[AbstractHarnessPlugin, ...]:
-        catalog = self._plugin_factory_catalog
-        if catalog is None:
-            return ()
-        configuration = self._build_context.plugin_configuration
-        if not isinstance(configuration, HarnessPluginConfiguration):
-            raise PluginError(
-                "Enabled configured plugins require a configuration document.",
-                code="plugin_configuration_invalid",
-            )
-        return tuple(
-            catalog.create_plugin(
-                HarnessPluginFactoryContext(
-                    plugin_key=entry.plugin_key,
-                    plugin_id=entry.plugin_id,
-                    configuration=catalog.validate_configuration(
-                        entry.plugin_key,
-                        entry.configuration,
-                    ),
-                    extensions=self._build_context.extensions,
-                )
-            )
-            for entry in configuration.enabled_plugins
-        )
-
-
 class ExecutableAgent[OutputT]:
     """Reusable code-built Agent that creates one fresh context per invocation."""
 
@@ -984,7 +309,8 @@ class ExecutableAgent[OutputT]:
         self._model_inference = model_inference
         self._observation = observation
 
-    def _fresh_definition_usage_limits(self) -> UsageLimits:
+    def definition_usage_limits(self) -> UsageLimits:
+        """Return a detached definition baseline, independent of per-Run overrides."""
         return _usage_limits_from_spec(self.definition.agent)
 
     @overload
@@ -1190,9 +516,7 @@ class ExecutableAgent[OutputT]:
             if deferred_resume is not None
             else None
         )
-        effective_usage_limits = (
-            deepcopy(usage_limits) if usage_limits is not None else self._fresh_definition_usage_limits()
-        )
+        effective_usage_limits = deepcopy(usage_limits) if usage_limits is not None else self.definition_usage_limits()
         return HarnessRunStream(
             executable=self,
             input=input,
@@ -1596,8 +920,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         try:
             self._start_logical_event_mux()
             if self._pending_result is None:
-                self._ensure_response_next_task()
-                assert self._response_next_task is not None
+                if self._response_next_task is None:
+                    self._response_next_task = asyncio.create_task(self._response_queue.get())
                 task = self._response_next_task
                 wait_for: set[asyncio.Task[Any]] = {task}
                 lifecycle_task = self._environment_lifecycle_task
@@ -1773,10 +1097,6 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             raise failure
         if failures:
             raise BaseExceptionGroup("Harness plugin response cleanup failed", failures)
-
-    def _ensure_response_next_task(self) -> None:
-        if self._response_next_task is None:
-            self._response_next_task = asyncio.create_task(self._response_queue.get())
 
     async def _stop_response_pump(self, *, cancel: bool = True) -> None:
         task = self._response_pump_task
@@ -2128,34 +1448,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     emitter_task = None
                     yield self._adapt_extension_event(event) if isinstance(event, HarnessExtensionEvent) else event
                     continue
-                if source_task in done:
-                    task = source_task
-                    source_task = None
-                    item = task.result()
-                    if isinstance(item, _ResponsePumpTerminal):
-                        await source_pump
-                        if item.error is not None:
-                            raise item.error
-                        if pending_result is None:
-                            return
-                        if emitter_task is not None:
-                            if emitter_task.done():
-                                event = emitter_task.result()
-                                emitter_task = None
-                                yield (
-                                    self._adapt_extension_event(event)
-                                    if isinstance(event, HarnessExtensionEvent)
-                                    else event
-                                )
-                            else:
-                                emitter_task.cancel()
-                                await asyncio.gather(emitter_task, return_exceptions=True)
-                                emitter_task = None
-                        target_sequence = self.context.environment._change_sequence
-                        async for event in self._drain_emitter_through(target_sequence, terminal=False):
-                            yield event
-                        yield pending_result
-                        return
+                assert source_task in done
+                item = source_task.result()
+                source_task = None
+                if not isinstance(item, _ResponsePumpTerminal):
                     if pending_result is not None:
                         raise RunError(
                             "Harness model source emitted an item after its result candidate.",
@@ -2163,8 +1459,31 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         )
                     if isinstance(item, HarnessRunResult):
                         pending_result = item
-                        continue
-                    yield item
+                    else:
+                        yield item
+                    continue
+
+                await source_pump
+                if item.error is not None:
+                    raise item.error
+                if pending_result is None:
+                    return
+                if emitter_task is not None:
+                    if emitter_task.done():
+                        event = emitter_task.result()
+                        emitter_task = None
+                        yield (
+                            self._adapt_extension_event(event) if isinstance(event, HarnessExtensionEvent) else event
+                        )
+                    else:
+                        emitter_task.cancel()
+                        await asyncio.gather(emitter_task, return_exceptions=True)
+                        emitter_task = None
+                target_sequence = self.context.environment._change_sequence
+                async for event in self._drain_emitter_through(target_sequence, terminal=False):
+                    yield event
+                yield pending_result
+                return
         finally:
             tasks: list[asyncio.Task[Any]] = [
                 task for task in (source_task, emitter_task, source_pump) if task is not None
@@ -2256,55 +1575,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 yield self._adapt_extension_event(event)
                                 continue
                             if isinstance(event, AgentRunResultEvent):
-                                result = event.result
-                                messages = tuple(result.all_messages())
-                                new_message_index = len(messages) - len(result.new_messages())
-                                self._latest_messages = messages
-                                state = await exchange.context.export_state(messages)
-                                if isinstance(result.output, DeferredToolRequests):
-                                    if exchange.context.instance.parent_agent_instance_id is not None:
-                                        candidate = HarnessRunResult(
-                                            thread_id=self.thread_id,
-                                            run_id=self.run_id,
-                                            status="failed",
-                                            output=None,
-                                            failure=SafeFailure(
-                                                code="subagent_deferred_unsupported",
-                                                message="Subagent runs cannot suspend for deferred tool requests.",
-                                            ),
-                                            state=state,
-                                            usage=result.usage,
-                                            _messages=messages,
-                                            _new_message_index=new_message_index,
-                                        )
-                                    else:
-                                        deferred = bind_managed_approval_identities(
-                                            result.output,
-                                            exchange.context._managed_tool_ids,
-                                        )
-                                        candidate = HarnessRunResult(
-                                            thread_id=self.thread_id,
-                                            run_id=self.run_id,
-                                            status="suspended",
-                                            output=None,
-                                            deferred=deferred,
-                                            suspend_reason="deferred",
-                                            state=state,
-                                            usage=result.usage,
-                                            _messages=messages,
-                                            _new_message_index=new_message_index,
-                                        )
-                                else:
-                                    candidate = HarnessRunResult(
-                                        thread_id=self.thread_id,
-                                        run_id=self.run_id,
-                                        status="completed",
-                                        output=result.output,
-                                        state=state,
-                                        usage=result.usage,
-                                        _messages=messages,
-                                        _new_message_index=new_message_index,
-                                    )
+                                candidate = await self._native_result_candidate(event.result)
                                 yield self._record_inner_candidate(candidate)
                                 return
                             yield self._adapt_event(cast(AgentStreamEvent, event))
@@ -2348,7 +1619,6 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         yield await self._failed_candidate(
                             code="usage_limit_exceeded",
                             message="Pydantic AI usage limit exceeded.",
-                            refresh_messages=False,
                         )
                         return
                     except Exception as error:
@@ -2368,7 +1638,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                     status="cancelled",
                                     output=None,
                                     state=state,
-                                    usage=self._current_usage(),
+                                    usage=self._usage,
                                     _messages=messages,
                                     _new_message_index=min(self._new_message_index, len(messages)),
                                 )
@@ -2381,7 +1651,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                             recovery.consecutive_failures += 1
                         retrying = retryable and recovery.consecutive_failures < max_attempts
                         failure_details = (
-                            _model_failure_details(
+                            _report_model_failure(
                                 error, thread_id=self.thread_id, run_id=self.run_id, retrying=retrying
                             )
                             if model_failure or isinstance(error, AgentRunError)
@@ -2402,7 +1672,6 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 ),
                                 details=failure_details,
                                 retry_hint="new_run" if exhausted else "dependency_change",
-                                refresh_messages=False,
                             )
                             return
                         else:
@@ -2487,6 +1756,54 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             current_history = self._latest_messages
             attempt_index += 1
 
+    async def _native_result_candidate(
+        self, result: AgentRunResult[OutputT | DeferredToolRequests]
+    ) -> HarnessRunResult[OutputT]:
+        """Capture native completion while its attempt and live context are still open."""
+        messages = tuple(result.all_messages())
+        new_message_index = len(messages) - len(result.new_messages())
+        self._latest_messages = messages
+        state = await self.context.export_state(messages)
+        if not isinstance(result.output, DeferredToolRequests):
+            return HarnessRunResult(
+                thread_id=self.thread_id,
+                run_id=self.run_id,
+                status="completed",
+                output=result.output,
+                state=state,
+                usage=result.usage,
+                _messages=messages,
+                _new_message_index=new_message_index,
+            )
+        if self.context.instance.parent_agent_instance_id is not None:
+            return HarnessRunResult(
+                thread_id=self.thread_id,
+                run_id=self.run_id,
+                status="failed",
+                output=None,
+                failure=SafeFailure(
+                    code="subagent_deferred_unsupported",
+                    message="Subagent runs cannot suspend for deferred tool requests.",
+                ),
+                state=state,
+                usage=result.usage,
+                _messages=messages,
+                _new_message_index=new_message_index,
+            )
+        deferred = bind_managed_approval_identities(result.output, self.context._managed_tool_ids)
+        return HarnessRunResult(
+            thread_id=self.thread_id,
+            run_id=self.run_id,
+            status="suspended",
+            output=None,
+            deferred=deferred,
+            suspend_reason="deferred",
+            state=state,
+            usage=result.usage,
+            _messages=messages,
+            _new_message_index=new_message_index,
+        )
+
     async def _failed_candidate(
         self,
         *,
@@ -2494,10 +1811,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         message: str,
         details: dict[str, JsonValue] | None = None,
         retry_hint: RetryHint = "dependency_change",
-        refresh_messages: bool = True,
     ) -> HarnessRunResult[OutputT]:
-        if refresh_messages:
-            self._refresh_live_messages()
         state = await self.context.export_state(self._latest_messages)
         return self._record_inner_candidate(
             HarnessRunResult(
@@ -2506,7 +1820,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 status="failed",
                 output=None,
                 state=state,
-                usage=self._current_usage(),
+                usage=self._usage,
                 failure=SafeFailure.model_validate(
                     {
                         "code": code,
@@ -2611,15 +1925,6 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             # Before Pydantic binds the run, imported history remains the latest complete boundary.
             return
 
-    def _current_usage(self) -> RunUsage:
-        events = self._attempt_events
-        if events is None:
-            return self._usage
-        try:
-            return events.usage
-        except UserError:
-            return self._usage
-
     async def _close_resources(
         self,
         *,
@@ -2723,9 +2028,31 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             if phase_status == "failed":
                 phase.set_status(StatusCode.ERROR)
 
+        self._finish_observation(
+            outcome=outcome, cancellation=cancellation, failure=failure, cleanup_failed=bool(causes)
+        )
+
+        if cancellation is not None:
+            for cause in causes:
+                cancellation.add_note(f"Harness cleanup also failed: {cause!r}")
+            raise cancellation
+        if causes:
+            raise RunCleanupError(
+                "Harness run cleanup failed.",
+                outcome=outcome,
+                causes=tuple(causes),
+            )
+
+    def _finish_observation(
+        self,
+        *,
+        outcome: HarnessRunResult[Any] | None,
+        cancellation: asyncio.CancelledError | None,
+        failure: BaseException | None,
+        cleanup_failed: bool,
+    ) -> None:
         observation = self._observation
         if observation is not None:
-            cleanup_failed = bool(causes)
             if cancellation is not None:
                 observed_outcome = "cancelled"
             elif cleanup_failed or failure is not None:
@@ -2751,17 +2078,6 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 error=observed_outcome == "failed" or cleanup_failed,
             )
 
-        if cancellation is not None:
-            for cause in causes:
-                cancellation.add_note(f"Harness cleanup also failed: {cause!r}")
-            raise cancellation
-        if causes:
-            raise RunCleanupError(
-                "Harness run cleanup failed.",
-                outcome=outcome,
-                causes=tuple(causes),
-            )
-
     async def _close_run_attachments(self) -> None:
         """Close collaborators claimed by finalized definition owners before Environment teardown."""
         if self._run_attachments_closed:
@@ -2769,265 +2085,3 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._run_attachments_closed = True
         if self._context is not None:
             await self._context._close_run_cleanups()
-
-
-def _first_party_spec_reserved_ids(spec: AgentSpec) -> frozenset[str]:
-    """Authorize reserved definition IDs selected by exact first-party wire names."""
-    names = [capability.name for capability in spec.capabilities]
-    selected: set[str] = set()
-    for capability_type in (ToolPermissionsCapability,):
-        name = capability_type.get_serialization_name()
-        if name is None:
-            raise AssertionError(f"{capability_type.__name__} must be serializable")
-        count = names.count(name)
-        if count > 1:
-            raise DefinitionError(
-                f"AgentSpec contains duplicate {name} declarations.",
-                code="capability_id_duplicate",
-                details={"capability_id": capability_type.id, "source": "definition"},
-            )
-        if count:
-            assert capability_type.id is not None
-            selected.add(capability_type.id)
-    return frozenset(selected)
-
-
-def _resolve_business_output[OutputT](
-    definition: AgentDefinition[OutputT],
-) -> tuple[AgentSpec, Any, TypeAdapter[Any]]:
-    """Resolve and freeze the one business-output source used for Agent construction."""
-    construction_spec = definition.agent.model_copy(deep=True)
-    if definition.output_type is not None:
-        business_output = _prepare_pydantic_output_spec(definition.output_type)
-        return construction_spec, business_output, _build_output_adapter(definition.output_type)
-
-    schema = construction_spec.output_schema
-    assert schema is not None
-    try:
-        business_output = structured_output_type(schema)
-        output_adapter = TypeAdapter(business_output)
-    except Exception as exc:
-        raise DefinitionError(
-            "AgentSpec.output_schema is not a valid native structured object schema.",
-            code="agent_build_failed",
-            details={"definition_id": definition.definition_id},
-        ) from exc
-    construction_spec = construction_spec.model_copy(update={"output_schema": None}, deep=True)
-    return construction_spec, business_output, output_adapter
-
-
-def _uses_tool_based_output(value: Any) -> bool:
-    """Return whether the effective business output can create Pydantic output tools."""
-    if isinstance(value, ToolOutput):
-        return True
-    if isinstance(value, TextOutput | NativeOutput | PromptedOutput):
-        return False
-    if isinstance(value, tuple | list):
-        return any(_uses_tool_based_output(item) for item in value)
-    return value is not str
-
-
-def _prepare_pydantic_output_spec(value: Any) -> Any:
-    """Give Pydantic semantic return annotations for supported sync-awaitable output functions."""
-    if isinstance(value, TextOutput):
-        output_function = _prepare_pydantic_output_callable(value.output_function)
-        return value if output_function is value.output_function else TextOutput(output_function)
-    if isinstance(value, ToolOutput):
-        output = _prepare_pydantic_output_spec(value.output)
-        if output is value.output:
-            return value
-        return ToolOutput(
-            output,
-            name=value.name,
-            description=value.description,
-            max_retries=value.max_retries,
-            strict=value.strict,
-            sequential=value.sequential,
-        )
-    if isinstance(value, NativeOutput):
-        outputs = _prepare_pydantic_output_spec(value.outputs)
-        if outputs is value.outputs:
-            return value
-        return NativeOutput(
-            outputs,
-            name=value.name,
-            description=value.description,
-            strict=value.strict,
-            template=value.template,
-        )
-    if isinstance(value, PromptedOutput):
-        outputs = _prepare_pydantic_output_spec(value.outputs)
-        if outputs is value.outputs:
-            return value
-        return PromptedOutput(
-            outputs,
-            name=value.name,
-            description=value.description,
-            template=value.template,
-        )
-    if isinstance(value, tuple):
-        prepared = tuple(_prepare_pydantic_output_spec(item) for item in value)
-        return (
-            value if all(current is original for current, original in zip(prepared, value, strict=True)) else prepared
-        )
-    if isinstance(value, list):
-        prepared = [_prepare_pydantic_output_spec(item) for item in value]
-        return (
-            value if all(current is original for current, original in zip(prepared, value, strict=True)) else prepared
-        )
-    if inspect.isfunction(value) or inspect.ismethod(value):
-        return _prepare_pydantic_output_callable(value)
-    return value
-
-
-def _prepare_pydantic_output_callable(function: Callable[..., Any]) -> Callable[..., Any]:
-    type_hints = get_type_hints(function, include_extras=True)
-    return_type = type_hints.get("return", Any)
-    semantic_return_type = _semantic_output_return_type(function, return_type)
-    if semantic_return_type == return_type:
-        return function
-
-    def output_facade(*args: Any, **kwargs: Any) -> Any:
-        return function(*args, **kwargs)
-
-    output_facade.__name__ = function.__name__
-    output_facade.__qualname__ = function.__qualname__
-    output_facade.__module__ = function.__module__
-    output_facade.__doc__ = function.__doc__
-    output_facade.__annotations__ = {**type_hints, "return": semantic_return_type}
-    signature = inspect.signature(function).replace(return_annotation=semantic_return_type)
-    cast(Any, output_facade).__signature__ = signature
-    return output_facade
-
-
-def _semantic_output_return_type(function: Callable[..., Any], return_type: Any) -> Any:
-    if inspect.iscoroutinefunction(function):
-        return return_type
-    candidate = return_type
-    while get_origin(candidate) is typing.Annotated:
-        arguments = get_args(candidate)
-        candidate = arguments[0] if arguments else Any
-    origin = get_origin(candidate)
-    if origin is Awaitable:
-        arguments = get_args(candidate)
-        return arguments[0] if arguments else Any
-    if origin is Coroutine:
-        arguments = get_args(candidate)
-        return arguments[2] if len(arguments) == 3 else Any
-    return return_type
-
-
-def _business_output_contains_deferred_value(value: Any) -> bool:
-    """Fail closed if reserved suspension control leaks into a completed container value."""
-    seen: set[int] = set()
-
-    def contains(item: Any) -> bool:
-        if isinstance(item, DeferredToolRequests):
-            return True
-        if isinstance(item, dict):
-            nested = list(item.values())
-        elif isinstance(item, BaseModel):
-            nested = [getattr(item, field_name) for field_name in type(item).model_fields]
-            if item.model_extra is not None:
-                nested.extend(item.model_extra.values())
-        elif not isinstance(item, type) and is_dataclass(item):
-            nested = [getattr(item, field.name) for field in dataclass_fields(cast(Any, item))]
-        elif isinstance(item, list | tuple | set | frozenset):
-            nested = list(item)
-        else:
-            return False
-        item_id = id(item)
-        if item_id in seen:
-            return False
-        seen.add(item_id)
-        return any(contains(nested_value) for nested_value in nested)
-
-    return contains(value)
-
-
-def _output_spec_contains_deferred_requests(output_spec: OutputSpec[Any]) -> bool:
-    """Return whether a business output spec directly or transitively reserves deferred control output."""
-    seen: set[int] = set()
-
-    def contains(value: Any) -> bool:
-        value_id = id(value)
-        if value_id in seen:
-            return False
-        seen.add(value_id)
-
-        if isinstance(value, type) and issubclass(value, DeferredToolRequests):
-            return True
-        if isinstance(value, type) and issubclass(value, BaseModel):
-            return any(contains(model_field.annotation) for model_field in value.model_fields.values())
-        if isinstance(value, type) and is_dataclass(value):
-            annotations = get_type_hints(value, include_extras=True)
-            return any(contains(annotations.get(item.name, item.type)) for item in dataclass_fields(value))
-        if isinstance(value, type) and is_typeddict(value):
-            return any(contains(annotation) for annotation in get_type_hints(value, include_extras=True).values())
-        if isinstance(value, typing.TypeAliasType):
-            return contains(value.__value__)
-        if get_origin(value) is typing.Annotated:
-            arguments = get_args(value)
-            return bool(arguments) and contains(arguments[0])
-        if isinstance(value, NativeOutput | PromptedOutput):
-            return contains(value.outputs)
-        if isinstance(value, ToolOutput):
-            return contains(value.output)
-        if isinstance(value, TextOutput):
-            return contains_callable(value.output_function)
-        if isinstance(value, Sequence):
-            return any(contains(item) for item in value)
-        origin = get_origin(value)
-        if origin in (typing.Union, type(str | int), typing.Required, typing.NotRequired):
-            return any(contains(item) for item in get_args(value))
-        if isinstance(origin, type):
-            structured_origin = issubclass(origin, BaseModel) or is_dataclass(origin) or is_typeddict(origin)
-            if structured_origin or issubclass(origin, Collection):
-                return any(item is not Ellipsis and contains(item) for item in get_args(value))
-        if inspect.isfunction(value) or inspect.ismethod(value):
-            return contains_callable(value)
-        return False
-
-    def contains_callable(function: Callable[..., Any]) -> bool:
-        return_type = get_type_hints(function, include_extras=True).get("return", Any)
-        return contains(_semantic_output_return_type(function, return_type))
-
-    return contains(output_spec)
-
-
-def _build_output_adapter(output_spec: OutputSpec[Any]) -> TypeAdapter[Any]:
-    """Build a validator for the semantic value returned by an output specification."""
-    output_types: list[Any] = []
-
-    def collect(value: Any) -> None:
-        if isinstance(value, NativeOutput | PromptedOutput):
-            collect(value.outputs)
-        elif isinstance(value, ToolOutput):
-            collect(value.output)
-        elif isinstance(value, TextOutput):
-            collect_callable(value.output_function)
-        elif isinstance(value, Sequence):
-            for item in value:
-                collect(item)
-        elif get_origin(value) in (typing.Union, type(str | int)):
-            for item in get_args(value):
-                collect(item)
-        elif inspect.isfunction(value) or inspect.ismethod(value):
-            collect_callable(value)
-        elif value is None:
-            output_types.append(type(None))
-        else:
-            output_types.append(value)
-
-    def collect_callable(function: Callable[..., Any]) -> None:
-        return_type = get_type_hints(function, include_extras=True).get("return", Any)
-        collect(_semantic_output_return_type(function, return_type))
-
-    collect(output_spec)
-    if not output_types:
-        raise ValueError("Output specifications must contain at least one semantic output type.")
-    validation_type = reduce(or_, output_types)
-    try:
-        return TypeAdapter(validation_type)
-    except PydanticSchemaGenerationError:
-        return TypeAdapter(validation_type, config=ConfigDict(arbitrary_types_allowed=True))

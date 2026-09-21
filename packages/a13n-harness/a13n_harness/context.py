@@ -22,6 +22,7 @@ from a13n_harness.recovery import ModelRecoveryState
 from a13n_harness.state import AgentContextState, HarnessState
 
 if TYPE_CHECKING:
+    from a13n_harness.builder import AgentDefinition, SubagentDefinition
     from a13n_harness.capabilities.media import MediaReader
     from a13n_harness.capabilities.steering import SteeringBridge
     from a13n_harness.capabilities.web import WebBinding
@@ -29,7 +30,7 @@ if TYPE_CHECKING:
     from a13n_harness.environment.providers import BoundEnvironment as Environment
     from a13n_harness.environment.providers import EnvironmentRuntime
     from a13n_harness.events import HarnessEventEmitter
-    from a13n_harness.execution import AgentDefinition, ExecutableAgent, SubagentDefinition
+    from a13n_harness.execution import ExecutableAgent
     from a13n_harness.model_context import (
         ModelContextMiddleware,
         ModelContextProjection,
@@ -77,7 +78,7 @@ class BuiltSubagent:
 
 
 def _copy_subagent_declaration(declaration: SubagentDefinition) -> SubagentDefinition:
-    from a13n_harness.execution import SubagentDefinition
+    from a13n_harness.builder import SubagentDefinition
 
     return SubagentDefinition(
         name=declaration.name,

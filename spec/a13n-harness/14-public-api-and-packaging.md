@@ -8,6 +8,8 @@ The package does not expose a serialized Agent-definition language, compiler, or
 
 ## Root Public Surface
 
+`a13n_harness.builder` owns `AgentDefinition`, `HarnessBuilder`, `SubagentDefinition`, `DelegationContextPolicy`, `SubagentIdentityPolicy`, and `derive_child_identity`. `a13n_harness.execution` owns `ExecutableAgent` and `HarnessRunStream`; it does not re-export construction APIs. The package root lazily exposes these values from their owners. Business-output adaptation is package-private.
+
 The package root is a closed primary code-first facade. It exports only the values needed to define, build, run, observe, continue, and compose an Agent through the ordinary path:
 
 | Group                         | Root exports                                                                                                                                                                                                              |

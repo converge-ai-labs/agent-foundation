@@ -28,6 +28,7 @@ from a13n_harness import (
     SafeFailure,
 )
 from a13n_harness import __version__ as harness_version
+from a13n_harness.builder import derive_child_identity
 from a13n_harness.capabilities import (
     AsyncDelegateRequest,
     AsyncExecutionView,
@@ -48,7 +49,6 @@ from a13n_harness.capabilities import (
     SubagentWaitRequest,
     SubagentWaitResult,
 )
-from a13n_harness.execution import derive_child_identity
 from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import intersect_usage_limits
@@ -442,7 +442,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         )
         usage_limits = intersect_usage_limits(
             plan.usage_limits,
-            reconstructed.executable._fresh_definition_usage_limits(),
+            reconstructed.executable.definition_usage_limits(),
         )
         stream = self._new_stream(
             reconstructed=reconstructed,
@@ -849,7 +849,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         )
         usage_limits = intersect_usage_limits(
             plan.usage_limits,
-            reconstructed.executable._fresh_definition_usage_limits(),
+            reconstructed.executable.definition_usage_limits(),
         )
         stream = self._new_stream(
             reconstructed=reconstructed,

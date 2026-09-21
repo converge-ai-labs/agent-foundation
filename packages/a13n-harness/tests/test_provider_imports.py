@@ -13,7 +13,9 @@ _BLOCKED = (
     "mem0",
     "a13n_service",
     "pydantic_ai",
+    "a13n_harness.builder",
     "a13n_harness.execution",
+    "a13n_harness._output_contract",
     "a13n_harness.agent",
 )
 _BLOCK = f"""

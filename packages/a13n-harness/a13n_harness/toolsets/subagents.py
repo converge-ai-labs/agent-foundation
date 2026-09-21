@@ -231,12 +231,12 @@ class AsyncSubagentToolset:
         child: BuiltSubagent,
         prompt: str,
     ) -> SubagentDelegationPlan:
-        from a13n_harness.execution import derive_child_identity
+        from a13n_harness.builder import derive_child_identity
 
         child_input = _build_child_input(ctx, child, prompt)
         limits = intersect_usage_limits(
             ctx.usage_limits,
-            child.executable._fresh_definition_usage_limits(),
+            child.executable.definition_usage_limits(),
             child.declaration.usage_limits,
         )
         return SubagentDelegationPlan(

@@ -185,7 +185,7 @@ class DelegationToolset:
                 child_input = _build_child_input(ctx, child, prompt)
                 limits = intersect_usage_limits(
                     ctx.usage_limits,
-                    child.executable._fresh_definition_usage_limits(),
+                    child.executable.definition_usage_limits(),
                     child.declaration.usage_limits,
                 )
                 with observe_operation(
@@ -550,7 +550,7 @@ def _create_inline_child_bindings(
     child: BuiltSubagent,
     child_instance_id: str,
 ) -> RunBindings:
-    from a13n_harness.execution import derive_child_identity
+    from a13n_harness.builder import derive_child_identity
     from a13n_harness.tools.policy import INVOCATION_POLICY_CAPABILITY_ID, InvocationPolicyCapability
 
     parent = ctx.deps
