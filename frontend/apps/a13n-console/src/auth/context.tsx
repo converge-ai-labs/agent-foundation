@@ -104,26 +104,29 @@ function Identity({
     <AuthContext.Provider value={identity}>{children}</AuthContext.Provider>
   );
 }
-export function AuthProvider({
-  children,
-  fetch,
-}: {
-  children: ReactNode;
-  /** The one injection point: a development preview serves its own Service. */
-  fetch?: typeof globalThis.fetch;
-}) {
-  const connect = () =>
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [client, setClient] = useState(() =>
     createClient({
       baseUrl: window.location.origin,
       auth: { type: "session" },
-      fetch,
-    });
-  const [client, setClient] = useState(connect);
+    }),
+  );
   useEffect(() => () => client.close(), [client]);
   return (
     <QueryClientProvider client={queryClient}>
       <ClientContext.Provider value={client}>
-        <Identity renew={() => setClient(() => connect())}>{children}</Identity>
+        <Identity
+          renew={() =>
+            setClient(
+              createClient({
+                baseUrl: window.location.origin,
+                auth: { type: "session" },
+              }),
+            )
+          }
+        >
+          {children}
+        </Identity>
       </ClientContext.Provider>
     </QueryClientProvider>
   );
