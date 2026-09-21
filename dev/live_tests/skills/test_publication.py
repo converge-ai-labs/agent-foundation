@@ -52,13 +52,20 @@ async def test_skill_publication_orders_with_run_acceptance(skills: SkillJourney
         if boundary == "after-acceptance":
             await publish()
         result = await skills.live.finish(receipt["run_id"])
-        expected = "ONE" if pinned or boundary == "after-acceptance" else "TWO"
+        # Selection observes the default once; later publication cannot replace
+        # the prepared snapshot, even before the acceptance transaction commits.
+        expected = "TWO" if not pinned and boundary == "before-request" else "ONE"
         assert "ATTACHMENT_" + expected in result["output_text"], result["output_text"]
         other = "TWO" if expected == "ONE" else "ONE"
         assert "ATTACHMENT_" + other not in result["output_text"]
         replay = await skills.live.http.post(skills.base + "/runs", headers=headers, json=body)
         assert replay.status_code == 202, replay.text
         await skills.live.assert_current_acceptance(replay.json(), receipt)
+        if not pinned:
+            fresh = await skills.post(skills.base + "/runs", body, expected=202)
+            skills.live.track(fresh)
+            assert fresh["run_id"] != receipt["run_id"]
+            assert "ATTACHMENT_TWO" in (await skills.live.finish(fresh["run_id"]))["output_text"]
     finally:
         if barrier:
             skills.release(barrier)
