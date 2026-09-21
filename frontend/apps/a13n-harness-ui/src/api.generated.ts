@@ -3002,12 +3002,6 @@ export interface components {
             id: string;
         };
         ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"];
-        /**
-         * ModelCapability
-         * @description Harness-owned capabilities of the active Agent model.
-         * @enum {string}
-         */
-        ModelCapability: "image_understanding" | "video_understanding" | "audio_understanding";
         /** ModelCatalogSnapshot */
         ModelCatalogSnapshot: {
             /** Items */
@@ -5371,6 +5365,12 @@ export interface components {
             /** Base Url */
             base_url?: string | null;
         };
+        /**
+         * ModelCapability
+         * @description Harness-owned capabilities of the active Agent model.
+         * @enum {string}
+         */
+        ModelCapability: "image_understanding" | "video_understanding" | "audio_understanding";
         /** ModelRecipeRequest */
         ModelRecipeRequest: {
             /** Connection */

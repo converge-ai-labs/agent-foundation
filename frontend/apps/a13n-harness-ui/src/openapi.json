@@ -8774,16 +8774,6 @@
           }
         }
       },
-      "ModelCapability": {
-        "type": "string",
-        "enum": [
-          "image_understanding",
-          "video_understanding",
-          "audio_understanding"
-        ],
-        "title": "ModelCapability",
-        "description": "Harness-owned capabilities of the active Agent model."
-      },
       "ModelCatalogSnapshot": {
         "properties": {
           "items": {
@@ -15142,6 +15132,16 @@
           "model_id"
         ],
         "title": "ModelOptionsRequest"
+      },
+      "ModelCapability": {
+        "type": "string",
+        "enum": [
+          "image_understanding",
+          "video_understanding",
+          "audio_understanding"
+        ],
+        "title": "ModelCapability",
+        "description": "Harness-owned capabilities of the active Agent model."
       },
       "ModelRecipeRequest": {
         "properties": {
