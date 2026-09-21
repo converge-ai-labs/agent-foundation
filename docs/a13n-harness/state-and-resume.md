@@ -181,7 +181,7 @@ Resume validates that:
 
 A prior approval does not bypass current policy. Standard Environment-backed approvals bind the tool, arguments, resource kinds, and resolved paths, not mount IDs, connection generations, or backing identities. Reconnecting or replacing the backing environment does not by itself invalidate approval during HITL resume. Harness does not guarantee that the same path still refers to the same underlying target; Hosts needing that restriction use their invocation policy or approval verifier. Downloads bind their destination directory; document conversion binds its source and output parent directory. Pending approvals recorded with the old backing- or mount-based revisions, and legacy download/document approvals without revision facts, require fresh approval once.
 
-This native resume flow also applies to Host-managed children when current bindings support deferred tools. [Inline children](delegation-and-codeact.md#resume-a-waiting-inline-child) retain their exact pending batches in parent state and accept `InlineSubagentDeferredResults` through fresh parent bindings. Hosts without a deferred lifecycle explicitly set `deferred_tools_supported=False`; lineage alone does not disable interaction.
+This native resume flow also applies to Host-managed children when current bindings support deferred tools. [Built-in inline children](delegation-and-codeact.md#host-managed-feedback) disable deferred tools and support ordinary prompt continuation only. Hosts without a deferred lifecycle explicitly set `deferred_tools_supported=False`; lineage alone does not disable interaction.
 
 ## Safe Failure Candidates
 

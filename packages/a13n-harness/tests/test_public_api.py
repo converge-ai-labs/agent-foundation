@@ -46,7 +46,6 @@ def test_root_facade_is_the_exact_primary_code_first_api() -> None:
         "HarnessStreamEvent",
         "HarnessTraceContent",
         "IdentityError",
-        "InlineSubagentDeferredResults",
         "InputError",
         "ModelCapability",
         "ModelRecoveryPolicy",

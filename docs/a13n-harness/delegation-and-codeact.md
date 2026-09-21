@@ -97,43 +97,13 @@ Deferred support is selected by fresh `RunBindings.deferred_tools_supported`, no
 
 A Host without a child-feedback lifecycle sets `deferred_tools_supported=False`. Declaratively deferred tools and their first-party guidance are then omitted. Runtime `CallDeferred` and `ApprovalRequired` become `ToolDenied("Deferred tool interaction is unavailable for this Run.")` results inside the same model loop. A custom handler cannot bypass that setting. Unexpected terminal deferral fails with `deferred_tools_unsupported`. Harness UI currently selects this unsupported mode for async children; ordinary async prompt continuation remains available.
 
-#### Resume a Waiting Inline Child
+#### Host-Managed Feedback
 
-An inline child releases its execution stack when it suspends. The parent receives a bounded tool failure naming the compact child ID and may continue other work. Its exported state retains the child's exact native requests, metadata, pending Run ID, and complete history. Persist the complete parent checkpoint before collecting feedback.
+The built-in inline executor always disables deferred tools, even when the parent supports them. A child bindings factory cannot re-enable them. Inline `resume_subagent` remains ordinary prompt continuation; it does not accept deferred feedback or suspend the parent on the child's behalf.
 
-For a direct child, inspect the typed owned collection and supply a complete trusted batch on a later parent Run:
+A Host that owns child execution can enable deferred tools and use the same [native resume flow](state-and-resume.md#structured-suspension) as a root. Retain the exact `HarnessRunResult.deferred` batch together with `result.state`, collect authenticated feedback, then call that child's `ExecutableAgent.run()` or `stream()` directly with fresh bindings, `previous_state`, and `DeferredToolResume`. The Host owns scheduling, checkpoint selection, feedback correlation, and delivery. Observation events alone are not a resumable checkpoint, and no parent model call is required to resume a Host-managed child.
 
-```python
-from a13n_harness import InlineSubagentDeferredResults, RunBindings
-from a13n_harness.capabilities import InlineSubagentCollectionState
-from pydantic_ai.tools import DeferredToolResults
-
-children = InlineSubagentCollectionState.model_validate(
-    parent_state.agent_context_state.entries["a13n.subagents"].data
-).children
-pending = children[child_id]
-assert pending.pending_run_id is not None
-
-# These values come from authenticated Host feedback, never from model text.
-results = DeferredToolResults(
-    calls={external_call_id: external_result},
-    approvals={approval_call_id: True},
-)
-submission = InlineSubagentDeferredResults(
-    child_thread_id=pending.state.thread_id,
-    pending_run_id=pending.pending_run_id,
-    results=results,
-)
-result = await executable.run(
-    f"Continue inline child {child_id}.",
-    previous_state=parent_state,
-    bindings=RunBindings.embedded(inline_subagent_results=(submission,)),
-)
-```
-
-The batch must exactly cover the retained calls and approvals, including metadata required by the native protocol. Parent preflight rejects unknown targets, stale Run IDs, duplicates, and incomplete batches before model or Environment execution. Submissions can target nested children by Thread ID; when an ancestor is resumed, only its subtree's submissions follow it.
-
-The model still invokes `resume_subagent` to advance a selected child. Submission does not automatically schedule it, and that tool's prompt never supplies approvals or answers. A pending child without trusted results stays unchanged. Current tool identities, policy, and resource approval checks still apply; ordinary completed side effects in the pending batch are not replayed. Inspect the next exported state before deciding whether unconsumed submissions should be sent again. Forked children have new Thread IDs and require freshly correlated submissions. Replaying an old checkpoint is not an exactly-once guarantee.
+Declare only the child's business `output_type`, including structured Pydantic models. Harness automatically adds native `DeferredToolRequests` support when building roots and children; explicitly including that reserved type in the business output is rejected. Suspended results carry `deferred` and no business output. After successful resume, `output_or_raise()` returns the declared business type.
 
 Usage limits are independent per child Run. Each child receives the strictest per-field intersection of its own definition limits and the authored edge, not its parent's budget or accumulator. An async Host may narrow that ceiling. Child events remain attributed separately; Hosts can aggregate usage for display without introducing a shared enforcement cap.
 

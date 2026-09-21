@@ -516,9 +516,6 @@ class ExecutableAgent[OutputT]:
             if deferred_resume is not None
             else None
         )
-        from a13n_harness.capabilities.subagents import _preflight_inline_subagent_results
-
-        _preflight_inline_subagent_results(resolved_bindings.inline_subagent_results, previous_state)
         effective_usage_limits = deepcopy(usage_limits) if usage_limits is not None else self.definition_usage_limits()
         return HarnessRunStream(
             executable=self,
@@ -778,7 +775,6 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             usage_attribution=usage_attribution,
             deferred_resume=self._deferred_resume,
             deferred_tools_supported=bindings.deferred_tools_supported,
-            inline_subagent_results=bindings.inline_subagent_results,
             _tool_recovery=self._tool_recovery,
             metadata=bindings.metadata,
             _steering=SteeringBridge(

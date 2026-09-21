@@ -235,7 +235,7 @@ Credential leases close at the invocation boundary. Closing is idempotent. The H
 
 `ApprovalVerifier.verify(invocation, approval_metadata, *, context)` lets the Host verify optional saved approval metadata against current authority. Standard Environment approvals bind to logical paths, not automatically to a backing target generation. Replacing a target invalidates runtime references but does not by itself revoke path-based approval. Enforce exact-target restrictions with current policy or a verifier when your application requires them.
 
-A Run with Host deferred support can suspend for approval and later resume through [deferred feedback](state-and-resume.md). This includes children; [inline children](delegation-and-codeact.md#resume-a-waiting-inline-child) accept trusted batches through parent Run bindings. Never treat an old approval or a tool-call ID as authorization without the current prepared invocation.
+A Run with Host deferred support can suspend for approval and later resume through [deferred feedback](state-and-resume.md). This includes Host-managed children; [built-in inline execution](delegation-and-codeact.md#host-managed-feedback) explicitly disables deferred tools. Never treat an old approval or a tool-call ID as authorization without the current prepared invocation.
 
 Dispatch retries are bounded and require the supported certainty/idempotency conditions. `max_dispatch_retries` is not permission to replay an unknown external write. Transport timeout, cancellation, or cleanup failure can leave side effects uncertain; use the provider's receipt/reconciliation contract.
 

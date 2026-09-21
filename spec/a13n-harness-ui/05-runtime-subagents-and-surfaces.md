@@ -215,7 +215,7 @@ Human response and expiry share the root admission boundary. A matching response
 
 ## Harness UI Subagent Operator
 
-The operator explicitly sets `RunBindings.deferred_tools_supported=False` for async child Runs. Harness UI does not expose an async child deferred-feedback or approval-resume lifecycle. This Host choice does not restrict Harness-supported inline or other Host-managed deferred continuation. Ordinary async `resume_subagent(execution_id, prompt)` remains available for eligible retained non-pending checkpoints.
+The operator explicitly sets `RunBindings.deferred_tools_supported=False` for async child Runs. Harness UI does not expose an async child deferred-feedback or approval-resume lifecycle. Built-in Harness inline execution also disables deferred tools. Other Hosts can enable native child deferred continuation under their own lifecycle. Ordinary async `resume_subagent(execution_id, prompt)` remains available for eligible retained non-pending checkpoints.
 
 ### Admission and Identity
 

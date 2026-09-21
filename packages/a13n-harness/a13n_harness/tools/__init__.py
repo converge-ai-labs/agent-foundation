@@ -18,7 +18,7 @@ if TYPE_CHECKING:
         ClientToolsetDefinition,
         ClientToolsSpec,
     )
-    from a13n_harness.tools.deferred import DeferredToolResume, InlineSubagentDeferredResults
+    from a13n_harness.tools.deferred import DeferredToolResume
     from a13n_harness.tools.identity import (
         ToolIdentity,
         ToolIdentityToolset,
@@ -66,7 +66,7 @@ _EXPORTS = {
         "ClientToolsSpec",
         "ClientToolsetDefinition",
     ),
-    "a13n_harness.tools.deferred": ("DeferredToolResume", "InlineSubagentDeferredResults"),
+    "a13n_harness.tools.deferred": ("DeferredToolResume",),
     "a13n_harness.tools.identity": (
         "ToolIdentity",
         "ToolIdentityToolset",

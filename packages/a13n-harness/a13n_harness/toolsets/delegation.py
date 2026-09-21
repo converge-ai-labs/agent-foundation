@@ -15,7 +15,6 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import ModelMessagesTypeAdapter
-from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import UsageLimits
 
@@ -37,7 +36,6 @@ from a13n_harness.observation import observe_operation, observe_output, record_s
 from a13n_harness.providers.environment.models import EnvironmentChange, EnvironmentError
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
-from a13n_harness.tools.deferred import DeferredToolResume, preflight_deferred_resume
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_harness.usage import intersect_usage_limits
 
@@ -160,9 +158,6 @@ class DelegationToolset:
         except KeyError as exc:
             raise ToolFailed("Unknown inline subagent.") from exc
 
-        from a13n_harness.capabilities.subagents import _inline_subagent_records
-
-        deferred_resume: DeferredToolResume | None = None
         continuation = child_instance_id is not None
         baseline: HarnessState | None = None
         selected_state: HarnessState | None = None
@@ -177,23 +172,6 @@ class DelegationToolset:
                     raise ToolFailed("Inline child instance does not match the selected subagent.")
                 if child_instance_id in self._active_children:
                     raise ToolFailed("Inline child instance is already active.")
-                if record.deferred_requests is not None:
-                    submission = next(
-                        (
-                            item
-                            for item in self._context.inline_subagent_results
-                            if item.child_thread_id == record.state.thread_id
-                            and item.pending_run_id == record.pending_run_id
-                        ),
-                        None,
-                    )
-                    if submission is None:
-                        raise ToolFailed(
-                            "Inline child is waiting for Host-submitted deferred results; a prompt cannot resolve it."
-                        )
-                    deferred_resume = preflight_deferred_resume(
-                        DeferredToolResume(record.deferred_requests, submission.results), previous_state=record.state
-                    )
                 reserved_id = child_instance_id
                 selected_state = record.state.model_copy(deep=True)
             else:
@@ -204,7 +182,7 @@ class DelegationToolset:
 
         try:
             try:
-                child_input = None if deferred_resume is not None else _build_child_input(ctx, child, prompt)
+                child_input = _build_child_input(ctx, child, prompt)
                 limits = intersect_usage_limits(
                     child.executable.definition_usage_limits(),
                     child.declaration.usage_limits,
@@ -222,18 +200,7 @@ class DelegationToolset:
                             "delegation.continuation": continuation,
                         },
                     )
-                    descendants = _inline_subagent_records(selected_state)
                     bindings = _create_inline_child_bindings(ctx, child, reserved_id)
-                    bindings = replace(
-                        bindings,
-                        inline_subagent_results=tuple(
-                            item
-                            for item in self._context.inline_subagent_results
-                            if (pending := descendants.get(item.child_thread_id)) is not None
-                            and pending.deferred_requests is not None
-                            and pending.pending_run_id == item.pending_run_id
-                        ),
-                    )
                     bindings = await _finalize_child_bindings(ctx, child, bindings)
                     result = await self._run_child(
                         ctx,
@@ -244,7 +211,6 @@ class DelegationToolset:
                         bindings,
                         selected_state,
                         limits,
-                        deferred_resume,
                     )
                     record_span_metadata(
                         span,
@@ -273,7 +239,6 @@ class DelegationToolset:
                         subagent=subagent,
                         invocation_id=invocation_id,
                         child_run_id=outcome.run_id,
-                        deferred_requests=outcome.deferred,
                     )
                 await _emit_delegation_event_best_effort(
                     ctx,
@@ -320,7 +285,6 @@ class DelegationToolset:
                         subagent=subagent,
                         invocation_id=invocation_id,
                         child_run_id=result.run_id,
-                        deferred_requests=result.deferred,
                     )
                 await _emit_delegation_event(
                     ctx,
@@ -387,19 +351,17 @@ class DelegationToolset:
         self,
         ctx: RunContext[AgentContext],
         child: BuiltSubagent,
-        child_input: RunInputValue | None,
+        child_input: RunInputValue,
         child_instance_id: str,
         invocation_id: str,
         bindings: RunBindings,
         previous_state: HarnessState | None,
         limits: UsageLimits | None,
-        deferred_resume: DeferredToolResume | None = None,
     ) -> HarnessRunResult[Any]:
         stream = child.executable.stream(
             child_input,
             bindings=bindings,
             previous_state=previous_state,
-            deferred_resume=deferred_resume,
             usage_limits=limits,
         )
         forwarder = stream._bind_parent_event_forwarder(ctx.deps.events)
@@ -442,12 +404,9 @@ class DelegationToolset:
         subagent: str,
         invocation_id: str,
         child_run_id: str | None = None,
-        deferred_requests: DeferredToolRequests | None = None,
     ) -> None:
         try:
-            await self._store_child(
-                child_instance_id, child, state, deferred_requests=deferred_requests, child_run_id=child_run_id
-            )
+            await self._store_child(child_instance_id, child, state)
         except (StateError, ValueError) as exc:
             await _emit_delegation_event(
                 ctx,
@@ -465,9 +424,6 @@ class DelegationToolset:
         child_instance_id: str,
         child: BuiltSubagent,
         state: HarnessState,
-        *,
-        deferred_requests: DeferredToolRequests | None = None,
-        child_run_id: str | None = None,
     ) -> None:
         from a13n_harness.capabilities.subagents import (
             _INLINE_SUBAGENT_STATE_VERSION,
@@ -477,34 +433,11 @@ class DelegationToolset:
             _validate_inline_subagent_state,
         )
 
-        pending_run_id = child_run_id if deferred_requests is not None else None
-        previous = self._state.children.get(child_instance_id)
-        if deferred_requests is None and previous is not None and previous.deferred_requests is not None:
-            submission = next(
-                (
-                    item
-                    for item in self._context.inline_subagent_results
-                    if item.child_thread_id == state.thread_id and item.pending_run_id == previous.pending_run_id
-                ),
-                None,
-            )
-            if submission is not None:
-                try:
-                    preflight_deferred_resume(
-                        DeferredToolResume(previous.deferred_requests, submission.results), previous_state=state
-                    )
-                except RunError:
-                    pass  # The pending batch is no longer outstanding in this checkpoint.
-                else:
-                    deferred_requests = previous.deferred_requests
-                    pending_run_id = previous.pending_run_id
         record = InlineSubagentState(
             child_instance_id=child_instance_id,
             subagent_name=child.declaration.name,
             child_definition_id=child.definition.definition_id,
             state=_without_borrowed_environment_state(state),
-            deferred_requests=deferred_requests,
-            pending_run_id=pending_run_id,
         )
         async with self._state_lock:
             children = dict(self._state.children)
@@ -643,7 +576,7 @@ def _create_inline_child_bindings(
         tool_result_directory=parent.tool_result_directory,
         model_resolver=parent.model_resolver,
         toolset_instructions=parent._toolset_instructions_override,
-        deferred_tools_supported=parent.deferred_tools_supported,
+        deferred_tools_supported=False,
         capabilities=(invocation_policy,) if invocation_policy is not None else (),
         metadata=parent.metadata,
     )

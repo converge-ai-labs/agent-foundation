@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from typing import Any
 
 import pytest
 from a13n_harness import (
     AgentContext,
+    AgentDefinition,
     AgentIdentityRef,
     AgentInstanceContext,
+    DeferredToolResume,
     HarnessBuilder,
+    HarnessState,
     RunBindings,
+    SubagentDefinition,
 )
 from a13n_harness.environment.advanced import EmptyEnvironmentRuntime
 from a13n_harness.tools import (
@@ -20,6 +25,7 @@ from a13n_harness.tools import (
     InvocationPolicyDecision,
     ToolOutputPolicy,
 )
+from pydantic import BaseModel
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability, HandleDeferredToolCalls
@@ -76,9 +82,11 @@ def _single_tool_model(tool_name: str) -> FunctionModel:
     return FunctionModel(stream_function=stream)
 
 
+@pytest.mark.parametrize("is_child", [False, True])
 @pytest.mark.parametrize("deferred_error", [CallDeferred, ApprovalRequired])
-async def test_child_denies_dynamic_function_deferral_and_continues_same_run(
+async def test_unsupported_run_denies_dynamic_function_deferral_and_continues_same_run(
     deferred_error: type[CallDeferred] | type[ApprovalRequired],
+    is_child: bool,
 ) -> None:
     calls = 0
 
@@ -94,7 +102,8 @@ async def test_child_denies_dynamic_function_deferral_and_continues_same_run(
         capabilities=(Capability(tools=[dynamic_action], id="dynamic-tools"),),
     )
 
-    result = await executable.run("go", bindings=_child_bindings())
+    bindings = _child_bindings() if is_child else RunBindings.embedded(deferred_tools_supported=False)
+    result = await executable.run("go", bindings=bindings)
 
     assert result.status == "completed"
     assert _DENIAL in result.output_or_raise()
@@ -229,3 +238,84 @@ async def test_child_completes_mixed_ordinary_and_dynamic_deferred_batch() -> No
         {"deferred-1": _DENIAL_RESULT, "ordinary-1": "3"},
         sort_keys=True,
     )
+
+
+@pytest.mark.parametrize("is_child", [False, True])
+@pytest.mark.parametrize("approval", [False, True])
+async def test_host_managed_typed_output_suspends_and_resumes(is_child: bool, approval: bool) -> None:
+    class BusinessOutput(BaseModel):
+        answer: str
+
+    effects: list[int] = []
+
+    def action(ctx: RunContext[AgentContext], value: int) -> str:
+        if approval:
+            if not ctx.tool_call_approved:
+                raise ApprovalRequired({"value": value})
+            effects.append(value)
+            return "approved by host"
+        raise CallDeferred({"value": value})
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        returns = _tool_returns(messages)
+        if not returns:
+            yield {0: DeltaToolCall(name="action", json_args='{"value":7}', tool_call_id="action-1")}
+        else:
+            assert info.output_tools
+            yield {
+                0: DeltaToolCall(
+                    name=info.output_tools[0].name,
+                    json_args=json.dumps({"answer": returns[-1].content}),
+                    tool_call_id="output-1",
+                )
+            }
+
+    # Only the business type is authored, including on recursively built children.
+    child = AgentDefinition(
+        agent=AgentSpec(),
+        output_type=BusinessOutput,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(Capability(tools=[action], id="actions"),),
+    )
+
+    async def unused_parent(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        raise AssertionError("Host-managed child resume must not execute the parent model")
+        yield "unreachable"
+
+    root = HarnessBuilder().build(
+        AgentDefinition(
+            agent=AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=unused_parent),
+            subagents=(SubagentDefinition(name="worker", description="Work", agent=child),),
+        )
+    )
+    executable = root.subagents.require("worker").executable if is_child else HarnessBuilder().build(child)
+    bindings = replace(_child_bindings(), deferred_tools_supported=True) if is_child else RunBindings.embedded()
+    first = await executable.run("go", bindings=bindings)
+
+    assert first.status == "suspended"
+    assert first.output is None
+    assert first.state is not None and first.deferred is not None
+    assert effects == []
+    requests = first.deferred
+    assert requests.metadata["action-1"]["value"] == 7
+    state = HarnessState.model_validate_json(first.state.model_dump_json())
+    feedback = (
+        DeferredToolResults(approvals={"action-1": True})
+        if approval
+        else DeferredToolResults(calls={"action-1": "executed by host"})
+    )
+    # The Host resumes the child directly, without executing the parent model.
+    second = await executable.run(
+        bindings=replace(bindings, environment=EmptyEnvironmentRuntime()),
+        previous_state=state,
+        deferred_resume=DeferredToolResume(requests, feedback),
+    )
+
+    assert second.status == "completed"
+    assert second.thread_id == first.thread_id
+    assert second.run_id != first.run_id
+    assert second.deferred is None
+    assert second.output_or_raise() == BusinessOutput(answer="approved by host" if approval else "executed by host")
+    assert effects == ([7] if approval else [])

@@ -62,7 +62,7 @@ if TYPE_CHECKING:
     from a13n_harness.result import HarnessRunResult, SafeFailure
     from a13n_harness.spec import AgentSpec, HarnessModelCharacteristics, ModelCapability
     from a13n_harness.state import HarnessState
-    from a13n_harness.tools.deferred import DeferredToolResume, InlineSubagentDeferredResults
+    from a13n_harness.tools.deferred import DeferredToolResume
 
 _EXPORTS = {
     "a13n_harness.context": (
@@ -143,7 +143,7 @@ _EXPORTS = {
         "ModelCapability",
     ),
     "a13n_harness.state": ("HarnessState",),
-    "a13n_harness.tools.deferred": ("DeferredToolResume", "InlineSubagentDeferredResults"),
+    "a13n_harness.tools.deferred": ("DeferredToolResume",),
 }
 
 

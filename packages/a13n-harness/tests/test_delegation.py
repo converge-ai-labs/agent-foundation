@@ -441,14 +441,7 @@ async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspe
     assert result.output_or_raise() == "parent-recovered"
     assert result.status == "completed"
     assert child_failures
-    assert "suspended" in child_failures[0]
-    assert result.state is not None
-    saved = InlineSubagentCollectionState.model_validate(
-        result.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
-    )
-    record = next(iter(saved.children.values()))
-    assert record.deferred_requests is not None
-    assert record.pending_run_id is not None
+    assert "deferred_tools_unsupported" in child_failures[0]
 
 
 async def test_inline_delegation_persists_child_thread_and_forwards_events() -> None:
@@ -1086,10 +1079,10 @@ async def test_inline_delegation_cancellation_before_state_commit_leaves_no_chil
     never_release = asyncio.Event()
     original_store = delegation_toolset_module.DelegationToolset._store_child
 
-    async def paused_store(self, child_instance_id, child, state, **kwargs):
+    async def paused_store(self, child_instance_id, child, state):
         state_commit_started.set()
         await never_release.wait()
-        await original_store(self, child_instance_id, child, state, **kwargs)
+        await original_store(self, child_instance_id, child, state)
 
     monkeypatch.setattr(delegation_toolset_module.DelegationToolset, "_store_child", paused_store)
     executable = HarnessBuilder().build(
@@ -1344,7 +1337,7 @@ async def test_inline_delegation_uses_standard_result_policy() -> None:
     assert result.output_or_raise() == "done"
 
 
-@pytest.mark.parametrize("change", ["result_type", "instance", "environment", "policy", "shared_tasks"])
+@pytest.mark.parametrize("change", ["result_type", "instance", "environment", "policy", "shared_tasks", "deferred"])
 async def test_inline_child_binding_factory_preserves_owned_boundaries(change: str) -> None:
     from a13n_harness.capabilities import EmbeddedTaskStateCell, TaskStateBinding
 
@@ -1371,6 +1364,9 @@ async def test_inline_child_binding_factory_preserves_owned_boundaries(change: s
         assert baseline.web is None and baseline.media_reader is None
         assert baseline.skill_selection is None and baseline.client_toolsets is None
         assert baseline.task_state is None
+        assert baseline.deferred_tools_supported is False
+        if change == "deferred":
+            return replace(baseline, deferred_tools_supported=True)
         if change == "result_type":
             return ()
         if change == "instance":
