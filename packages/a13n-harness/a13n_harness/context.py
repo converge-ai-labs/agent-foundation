@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
 from time import monotonic
@@ -23,14 +22,15 @@ from a13n_harness.recovery import ModelRecoveryState
 from a13n_harness.state import AgentContextState, HarnessState
 
 if TYPE_CHECKING:
+    from a13n_harness.builder import AgentDefinition, SubagentDefinition
     from a13n_harness.capabilities.media import MediaReader
     from a13n_harness.capabilities.steering import SteeringBridge
     from a13n_harness.capabilities.web import WebBinding
     from a13n_harness.capabilities.working_state import TaskStateBinding, WorkingStateObserver
     from a13n_harness.environment.providers import BoundEnvironment as Environment
-    from a13n_harness.environment.providers import EnvironmentRuntime, FileScopeSelection
+    from a13n_harness.environment.providers import EnvironmentRuntime
     from a13n_harness.events import HarnessEventEmitter
-    from a13n_harness.execution import AgentDefinition, ExecutableAgent, SubagentDefinition
+    from a13n_harness.execution import ExecutableAgent
     from a13n_harness.model_context import (
         ModelContextMiddleware,
         ModelContextProjection,
@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from a13n_harness.providers.environment.models import EnvironmentPath
     from a13n_harness.recovery import ToolRecoveryPlan
     from a13n_harness.spec import HarnessModelCharacteristics
+    from a13n_harness.tools._output import _ToolResultSpillStore
     from a13n_harness.tools.approval import ToolApprovalContext
     from a13n_harness.tools.client import ClientToolsetDefinition
     from a13n_harness.tools.deferred import DeferredToolResume
@@ -77,7 +78,7 @@ class BuiltSubagent:
 
 
 def _copy_subagent_declaration(declaration: SubagentDefinition) -> SubagentDefinition:
-    from a13n_harness.execution import SubagentDefinition
+    from a13n_harness.builder import SubagentDefinition
 
     return SubagentDefinition(
         name=declaration.name,
@@ -452,6 +453,8 @@ class AgentContext:
         """Write one bounded managed result through the current Environment when possible."""
         store = self._tool_result_spill_store
         if store is None:
+            from a13n_harness.tools._output import _ToolResultSpillStore
+
             store = _ToolResultSpillStore(self)
             object.__setattr__(self, "_tool_result_spill_store", store)
             self._register_run_cleanup("a13n.tool-result-spills", store.close)
@@ -544,83 +547,3 @@ class AgentContext:
             agent_context_state=await self.state.snapshot(),
             environment_states=self.environment.dump_states(),
         )
-
-
-class _ToolResultSpillStore:
-    """Best-effort run-private spill directories pinned to their original selections."""
-
-    def __init__(self, context: AgentContext) -> None:
-        run_digest = hashlib.sha256(context.run_id.encode("utf-8")).hexdigest()[:12]
-        self._environment = context.environment
-        self._directory = context.tool_result_directory
-        self._run_directory_prefix = f"run-{run_digest}"
-        self._directories: dict[tuple[str, str], tuple[FileScopeSelection, str]] = {}
-        self._next_sequence = 1
-        self._closed = False
-        self._lock = asyncio.Lock()
-
-    async def write(self, data: bytes, *, suffix: str) -> str | None:
-        if suffix not in {".json", ".txt"}:
-            raise ValueError("tool result spill suffix is invalid")
-        async with self._lock:
-            if self._closed:
-                return None
-            try:
-                directory = self._new_directory()
-                if directory is None:
-                    return None
-                selection = await self._environment.resolve_files(directory)
-                key = (selection.resolved_path.mount_id, selection.observed_generation)
-                record = self._directories.get(key)
-                if record is not None:
-                    selection, directory = record
-                async with self._environment.open_files(selection) as files:
-                    if record is None:
-                        parent = directory.rsplit("/", 1)[0]
-                        await files.mkdir(parent, parents=True, exist_ok=True)
-                        await files.mkdir(directory, exist_ok=False)
-                        # Own the leaf as soon as it exists, including failed writes.
-                        self._directories[key] = (selection, directory)
-                    path = f"{directory}/tool-result-{self._next_sequence}{suffix}"
-                    self._next_sequence += 1
-                    await files.write_bytes_stream(path, _byte_chunks(data), mode="create")
-                current = self._environment.select_files(directory)
-                if (
-                    current.resolved_path != selection.resolved_path
-                    or current.observed_generation != selection.observed_generation
-                ):
-                    return None
-            except Exception:
-                return None
-            return path
-
-    def _new_directory(self) -> str | None:
-        parent = self._directory
-        if parent is None:
-            snapshot = self._environment.snapshot
-            mount = next((item for item in snapshot.mounts if item.name == snapshot.default_mount), None)
-            if mount is None:
-                return None
-            root = mount.mount_path or f"/environment/{mount.name}"
-            parent = f"{root.rstrip('/')}/.a13n/tmp/tool-results"
-        return f"{parent.rstrip('/')}/{self._run_directory_prefix}-{uuid4().hex[:12]}"
-
-    async def close(self) -> None:
-        async with self._lock:
-            if self._closed:
-                return
-            self._closed = True
-            for selection, directory in self._directories.values():
-                try:
-                    async with self._environment.open_files(selection) as files:
-                        await files.remove(directory, recursive=True)
-                except Exception:
-                    # Retired or unavailable selections may leave files behind. Never
-                    # reselect a replacement or turn completed effects into retries.
-                    continue
-            self._directories.clear()
-
-
-async def _byte_chunks(data: bytes) -> AsyncIterator[bytes]:
-    for offset in range(0, len(data), 64 * 1024):
-        yield data[offset : offset + 64 * 1024]

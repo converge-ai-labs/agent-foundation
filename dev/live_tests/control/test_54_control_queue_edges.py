@@ -185,7 +185,10 @@ async def test_queue_last_slot_has_one_winner_and_released_capacity_accepts_reje
     full = await live.thread(before["id"])
     assert full["version"] == before["version"] and full["queue_version"] == before["queue_version"] + 1
     assert await journey.thread_runs(waiting) == [waiting]
-    assert await journey.post(path, initial_body, key=initial_key, expected=202) == initial
+    assert await journey.post(path, initial_body, key=initial_key, expected=202) == {
+        **initial,
+        "queue_version": full["queue_version"],
+    }
     assert await journey.post(*commands[winner], key=keys[winner], expected=202) == replies[winner].json()
     assert await live.thread(before["id"]) == full
     feedback = None

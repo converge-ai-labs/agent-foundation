@@ -27,9 +27,9 @@ import {
 import { ProviderIcon, ScopeBadge } from "../../shared/identity";
 import { Page, PageActions } from "../../shared/page";
 import { ManageProvidersLink } from "../providers";
-import { modelApi, type ModelScope } from "./api";
+import { mediaDefaultsQuery, modelApi, type ModelScope } from "./api";
 import { ModelEditor } from "./model-editor";
-import { MediaUnderstandingDefaults } from "./media-understanding";
+import { mediaDefaultBadges } from "./media-understanding-fields";
 import { ModelIcon } from "./model-icon";
 import styles from "./models.module.css";
 
@@ -111,6 +111,11 @@ export function Models({ scope }: { scope: ModelScope }) {
     queryFn: ({ signal }) =>
       allPages((cursor) => api.providers(signal, cursor)),
   });
+  // Only a Workspace owns media understanding defaults; the Organization collection marks nothing.
+  const mediaDefaults = useQuery({
+    ...mediaDefaultsQuery(client, scope.id),
+    enabled: scope.kind === "workspace",
+  });
   const rows = useResourceRows<Schema["Model"]>();
   const { selected } = rows;
   const providerById = new Map(providers.data?.map((item) => [item.id, item]));
@@ -131,9 +136,6 @@ export function Models({ scope }: { scope: ModelScope }) {
           />
         )}
       </PageActions>
-      {scope.kind === "workspace" && (
-        <MediaUnderstandingDefaults key={scope.id} />
-      )}
       {selected && (
         <ModelEditor
           key={selected.id}
@@ -290,9 +292,19 @@ export function Models({ scope }: { scope: ModelScope }) {
                 label: t("Capabilities"),
                 render: (item) => {
                   const labels = capabilityLabels(item.declarations);
-                  if (!labels.length) return <span aria-hidden="true">—</span>;
+                  const roles = mediaDefaultBadges(
+                    item.key,
+                    mediaDefaults.data?.value,
+                  );
+                  if (!labels.length && !roles.length)
+                    return <span aria-hidden="true">—</span>;
                   return (
                     <span className={styles.chips}>
+                      {roles.map((label) => (
+                        <span key={label} className={styles.chip} data-role="">
+                          {t(label)}
+                        </span>
+                      ))}
                       {labels.map((label) => (
                         <span key={label} className={styles.chip}>
                           {t(label)}

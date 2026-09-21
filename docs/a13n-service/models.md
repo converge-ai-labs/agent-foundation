@@ -180,11 +180,11 @@ Omitting `settings` or `declarations` preserves that existing field. Changing th
 
 ## Workspace media understanding
 
-On the Workspace **Models** page, use **Media understanding** to choose separate image, video, and audio defaults. Each choice must be an enabled Workspace or Organization Model declaring the corresponding media capability, with an enabled Provider. These defaults belong only to this Workspace; there is no Organization default or Agent/Run override. Readers can view them; `models.manage` permission is required to save.
+On the Workspace **Settings** page, use **Media understanding** to choose separate image, video, and audio defaults. Each choice must be an enabled Workspace or Organization Model declaring the corresponding media capability, with an enabled Provider. These defaults belong only to this Workspace; there is no Organization default. Readers can view them; `models.manage` permission is required to save.
 
-The file `view` tool remains native-first: if the active Agent Model supports that media kind, it receives the media directly. Otherwise the selected auxiliary Model interprets it using its own saved request settings, without the primary Agent's overrides. A configured failure is reported rather than silently switching Providers.
+An Agent and a single Run can choose the same three kinds. Per kind, the Run option wins, then the Agent configuration, then this Workspace default. **Not configured** at one level inherits the next level; no level can turn understanding off.
 
-**Not configured** clears the Workspace selection for that kind and preserves the existing Harness environment fallback. Operators can configure `HARNESS_IMAGE_UNDERSTANDING_MODEL`, `HARNESS_VIDEO_UNDERSTANDING_MODEL`, or `HARNESS_AUDIO_UNDERSTANDING_MODEL` on Workers. These are shared deployment settings, outside Workspace Model management; the Console does not claim whether the selected Worker has a fallback. With neither native support nor a configured or environment model, understanding is unavailable.
+The file `view` tool remains native-first: if the active Agent Model supports that media kind, it receives the media directly. Otherwise the selected auxiliary Model interprets it using its own saved request settings, without the primary Agent's overrides. A selected Model's failure is reported rather than silently switching Providers. With neither native support nor a selected Model at any level, the tool reports that understanding is unavailable for that kind.
 
 Read the current defaults and retain their `ETag`:
 
@@ -206,9 +206,9 @@ Content-Type: application/json
 
 A concurrent edit returns `412 precondition_failed`; reload before replacing it. Reads return the three keys, `workspace_id`, and a version (zero before the first save). Saving validates configuration without invoking a Provider.
 
-New root Run acceptance captures the selected Models and their saved settings for the complete child graph. Retries, waiting continuations that retain effective configuration, Worker recovery, and asynchronous child admission preserve that capture. A new turn after a terminal Run uses a fresh selection and observes current defaults. Changing defaults or Model settings affects later fresh Runs, not already accepted work. Provider credentials, endpoints, and enablement still refresh before each outbound request, and auxiliary requests use the executing root or child's Harness Thread identity for gateway affinity.
+New root Run acceptance resolves each node's selection and captures the chosen Models and their saved settings for the complete child graph. Every node choosing the same Model shares one capture. Retries, waiting continuations that retain effective configuration, Worker recovery, and asynchronous child admission preserve that capture. A new turn after a terminal Run uses a fresh selection and observes current configuration. Changing any level or a Model's settings affects later fresh Runs, not already accepted work. Provider credentials, endpoints, and enablement still refresh before each outbound request, and auxiliary requests use the executing root or child's Harness Thread identity for gateway affinity.
 
-Upgrade control and Worker processes before configuring these defaults. Existing captures without media defaults retain their previous behavior; older Workers cannot consume newly captured media defaults. Clearing current defaults does not remove them from previously accepted Runs.
+A Model chosen explicitly by an Agent or a Run must still be usable when the Run is accepted; otherwise the Run is rejected. A Workspace default that has become unusable is skipped instead, so one stale default cannot block every Run in the Workspace. Clearing a default does not remove it from previously accepted Runs.
 
 ## Parameters and overrides
 

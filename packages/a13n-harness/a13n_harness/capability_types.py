@@ -38,90 +38,6 @@ def first_party_declarative_capability_types() -> tuple[type[AbstractCapability[
     return (ToolPermissionsCapability,)
 
 
-def _reserved_harness_capability_contract() -> tuple[
-    tuple[type[AbstractCapability[AgentContext]], ...], frozenset[str]
-]:
-    from a13n_harness.capabilities.codeact import CODEACT_CAPABILITY_ID, CodeActCapability
-    from a13n_harness.capabilities.lifecycle import (
-        LIFECYCLE_EVENT_CAPABILITY_ID,
-        LifecycleEventCapability,
-    )
-    from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID, SubagentCapability
-    from a13n_harness.capabilities.tool_proxy import (
-        TOOL_PROXY_CAPABILITY_ID,
-        ToolProxyCapability,
-        _ToolProxySurfaceCapability,
-    )
-    from a13n_harness.environment.dynamic import (
-        DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
-        DynamicEnvironmentCapability,
-    )
-    from a13n_harness.filters.integrity import (
-        MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
-        MessageIntegrityFilterCapability,
-    )
-    from a13n_harness.model_context import (
-        MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
-        ModelContextCoordinatorCapability,
-    )
-    from a13n_harness.pricing import (
-        MODEL_COST_CAPABILITY_ID,
-        AbstractModelCostCapability,
-    )
-    from a13n_harness.tools.client import (
-        CLIENT_TOOLS_CAPABILITY_ID,
-        ClientToolsCapability,
-    )
-    from a13n_harness.tools.invocation import (
-        TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
-        ToolExecutionBoundaryCapability,
-    )
-    from a13n_harness.tools.permissions import TOOL_PERMISSIONS_CAPABILITY_ID, ToolPermissionsCapability
-    from a13n_harness.tools.policy import (
-        INVOCATION_POLICY_CAPABILITY_ID,
-        InvocationPolicyCapability,
-    )
-
-    capability_types = (
-        ToolPermissionsCapability,
-        ToolExecutionBoundaryCapability,
-        MessageIntegrityFilterCapability,
-        LifecycleEventCapability,
-        ModelContextCoordinatorCapability,
-        InvocationPolicyCapability,
-        AbstractModelCostCapability,
-        ClientToolsCapability,
-        CodeActCapability,
-        ToolProxyCapability,
-        _ToolProxySurfaceCapability,
-        DynamicEnvironmentCapability,
-        SubagentCapability,
-    )
-    names = frozenset(
-        {
-            *(capability_type.__name__ for capability_type in capability_types),
-            TOOL_PERMISSIONS_CAPABILITY_ID,
-            TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
-            MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
-            LIFECYCLE_EVENT_CAPABILITY_ID,
-            MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
-            INVOCATION_POLICY_CAPABILITY_ID,
-            MODEL_COST_CAPABILITY_ID,
-            CLIENT_TOOLS_CAPABILITY_ID,
-            CODEACT_CAPABILITY_ID,
-            TOOL_PROXY_CAPABILITY_ID,
-            DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
-            SUBAGENT_CAPABILITY_ID,
-        }
-    )
-    return capability_types, names
-
-
-def _is_reserved_harness_capability_type(capability_type: type[AbstractCapability[AgentContext]]) -> bool:
-    reserved_types, _ = _reserved_harness_capability_contract()
-    return issubclass(capability_type, reserved_types)
-
-
 @dataclass(frozen=True, slots=True)
 class CapabilityTypeRegistration:
     """One Host-authorized declarative Capability type and its stable wire name."""
@@ -130,6 +46,8 @@ class CapabilityTypeRegistration:
     capability_type: type[AbstractCapability[AgentContext]]
 
     def __post_init__(self) -> None:
+        from a13n_harness._capability_contract import _reserved_harness_capability_contract
+
         if (
             not isinstance(self.serialization_name, str)
             or not self.serialization_name
@@ -151,13 +69,13 @@ class CapabilityTypeRegistration:
                 code="capability_type_invalid",
                 details={"capability_type": capability_type.__name__},
             )
-        if _is_reserved_harness_capability_type(capability_type):
+        reserved_types, reserved_names = _reserved_harness_capability_contract()
+        if issubclass(capability_type, reserved_types):
             raise DefinitionError(
                 "Reserved Harness Capability types cannot enter the declarative catalog.",
                 code="capability_type_scope_invalid",
                 details={"capability_type": capability_type.__name__},
             )
-        _, reserved_names = _reserved_harness_capability_contract()
         if self.serialization_name in reserved_names:
             raise DefinitionError(
                 "Custom Capability serialization names must not collide with Harness contracts.",

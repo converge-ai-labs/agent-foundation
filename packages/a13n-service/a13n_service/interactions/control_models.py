@@ -20,6 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
@@ -60,15 +61,10 @@ class ThreadInboxRecord(Base):
     __tablename__ = "thread_inbox"
     __table_args__ = (
         CheckConstraint(
-            "(idempotency_actor_type IS NULL AND idempotency_actor_id IS NULL "
-            "AND idempotency_key_digest IS NULL AND idempotency_request_digest IS NULL "
-            "AND idempotency_expires_at IS NULL) OR "
-            "(kind = 'steer' AND idempotency_actor_type IS NOT NULL "
-            "AND idempotency_actor_type IN ('user', 'service_account') "
-            "AND idempotency_actor_id IS NOT NULL AND idempotency_key_digest IS NOT NULL "
-            "AND length(idempotency_key_digest) = 64 AND idempotency_request_digest IS NOT NULL "
-            "AND length(idempotency_request_digest) = 64 AND idempotency_expires_at IS NOT NULL "
-            "AND idempotency_expires_at > created_at)",
+            "(idempotency_actor_type IS NULL AND idempotency_actor_id IS NULL AND idempotency_key_digest IS NULL) OR "
+            "(kind = 'steer' AND idempotency_actor_type IN ('user', 'service_account') "
+            "AND idempotency_actor_type IS NOT NULL AND idempotency_actor_id IS NOT NULL "
+            "AND idempotency_key_digest IS NOT NULL AND length(idempotency_key_digest) = 64)",
             name="steer_idempotency_valid",
         ),
         Index(
@@ -80,12 +76,6 @@ class ThreadInboxRecord(Base):
             "idempotency_key_digest",
             unique=True,
             postgresql_where=text("kind = 'steer' AND idempotency_key_digest IS NOT NULL"),
-        ),
-        Index(
-            "ix_thread_inbox_idempotency_expiry",
-            "idempotency_expires_at",
-            "id",
-            postgresql_where=text("idempotency_expires_at IS NOT NULL"),
         ),
         ForeignKeyConstraint(
             ("organization_id", "thread_id"),
@@ -183,8 +173,6 @@ class ThreadInboxRecord(Base):
     idempotency_actor_type: Mapped[str | None] = mapped_column(String(32))
     idempotency_actor_id: Mapped[str | None] = mapped_column(String(72))
     idempotency_key_digest: Mapped[str | None] = mapped_column(String(64))
-    idempotency_request_digest: Mapped[str | None] = mapped_column(String(64))
-    idempotency_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     target_run_id: Mapped[str | None] = mapped_column(String(72))
     source_waiting_run_id: Mapped[str | None] = mapped_column(String(72))
     origin_run_id: Mapped[str | None] = mapped_column(String(72))
@@ -239,8 +227,9 @@ class ThreadInboxRecord(Base):
         )
 
 
-class QueuedSubmissionRecord(Base):
+class QueuedSubmissionRecord(EntityRequestKey, Base):
     __tablename__ = "thread_queued_submissions"
+    consumption_key: Mapped[str | None] = mapped_column(String(64), unique=True)
     __table_args__ = (
         ForeignKeyConstraint(
             ("organization_id", "thread_id"),

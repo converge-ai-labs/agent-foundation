@@ -22,10 +22,11 @@ export function FailureNotice({
   return (
     <section className={styles.failure}>
       <div className={styles.failureHeading}>
-        <WarningCircleIcon size={15} aria-hidden="true" />
+        <WarningCircleIcon size={14} aria-hidden="true" />
         <h3>
           {t(cancelled ? "The run was stopped" : "The run could not finish")}
         </h3>
+        {action && <div className={styles.failureActions}>{action}</div>}
       </div>
       <p>{t("Your messages are saved. Review the error details.")}</p>
       {failure != null && (
@@ -36,7 +37,6 @@ export function FailureNotice({
           <JsonView value={failure} />
         </DisclosureSection>
       )}
-      {action && <div className={styles.failureActions}>{action}</div>}
     </section>
   );
 }

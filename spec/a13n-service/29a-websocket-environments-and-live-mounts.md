@@ -218,7 +218,7 @@ sequenceDiagram
 
 Both primary selection and live mount acceptance authorize the resource, then obtain fresh Redis evidence of an initialized online connection with an unexpired lease and no pending takeover. Retiring tuples are ineligible even while their local dispatch deadlines have not elapsed. Offline/connecting targets return `409 environment_unavailable` without a new Run, mount or successful receipt. Redis failure returns dependency unavailability.
 
-The subsequent short PG transaction revalidates durable authority, target, applicable lifecycle/concurrency preconditions and the observation deadline. Expired evidence requires leaving the transaction and retrying within a finite deadline. This is not a distributed reservation: disconnect can race commit, so preparation rechecks shared presence and acquires fenced use, while dispatch checks locally confirmed authority. Idempotent replay returns the original receipt, not a fresh availability guarantee.
+The subsequent short PG transaction revalidates durable authority, target, applicable lifecycle/concurrency preconditions and the observation deadline. Expired evidence requires leaving the transaction and retrying within a finite deadline. This is not a distributed reservation: disconnect can race commit, so preparation rechecks shared presence and acquires fenced use, while dispatch checks locally confirmed authority. Idempotent replay projects the existing accepted result and does not acquire a fresh availability guarantee.
 
 ### Selection when starting a Run
 
@@ -283,7 +283,7 @@ Control owns all routes below, relative to `/api/v1`. The shared `POST /api/envd
 
 Mount reads expose observations from the current Attempt while a Run is active. A sealed Run retains its final Attempt's observations as history, not as current availability. Retry and handoff never carry a previous Attempt's ready observation into the next execution; an unapplied association remains pending.
 
-Registration, Run and mount mutations follow their separate [idempotency contracts](../api-conventions.md#mutations-and-retries). Mount replay returns the original receipt before new acceptance checks; changed content under the same key conflicts. It never inserts another association. Ticket issuance is an independent expiring credential operation. Run/mount reads retain resource-read authority and redaction; primary readiness uses ordinary Run/Environment reads.
+Registration, Run and mount mutations follow their separate [idempotency contracts](../api-conventions.md#mutations-and-retries). Mount replay projects the retained mount before new acceptance checks; retry content under the same key is not compared. It never inserts another association. Ticket issuance is an independent expiring credential operation. Run/mount reads retain resource-read authority and redaction; primary readiness uses ordinary Run/Environment reads.
 
 ## Worker Reconciliation and Model Boundary
 

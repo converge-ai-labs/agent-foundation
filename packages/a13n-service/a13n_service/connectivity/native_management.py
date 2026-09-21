@@ -8,12 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.composition import AdapterResolver
-from a13n_service.connectivity.management import CommandReceipt
+from a13n_service.connectivity.management import CommandReference
 from a13n_service.connectivity.management import (
     replay_command as shared_replay_command,
 )
 from a13n_service.durable_operations.idempotency import (
-    IdempotencyConflict,
     InvalidIdempotencyKey,
     digest_visible_ascii_key,
 )
@@ -61,24 +60,17 @@ async def replay_command(
     operation: str,
     scope_id: str,
     idempotency_key_digest: str,
-    fingerprint: str,
     now: datetime,
-) -> CommandReceipt | None:
-    try:
-        return await shared_replay_command(
-            session,
-            actor=actor,
-            workspace_id=workspace_id,
-            operation=operation,
-            scope_id=scope_id,
-            idempotency_key_digest=idempotency_key_digest,
-            fingerprint=fingerprint,
-            now=now,
-        )
-    except IdempotencyConflict as error:
-        raise NativeError(
-            "idempotency_conflict", "Idempotency key was used for another request.", category=ErrorCategory.conflict
-        ) from error
+) -> CommandReference | None:
+    return await shared_replay_command(
+        session,
+        actor=actor,
+        workspace_id=workspace_id,
+        operation=operation,
+        scope_id=scope_id,
+        idempotency_key_digest=idempotency_key_digest,
+        now=now,
+    )
 
 
 def require_version(current: int, expected: int) -> None:

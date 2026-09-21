@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -158,8 +161,11 @@ class ModelUsageRecord(BaseModel):
     request_usage: BoundedRequestUsage
     pricing_revision: str | None = Field(default=None, max_length=256)
     pricing_rule_id: str | None = Field(default=None, max_length=128)
-    cost_source: CostSource
-    pricing_status: PricingStatus
+    cost_source: CostSource = "unknown"
+    pricing_status: PricingStatus = "not_reached"
+    source: str = Field(default="agent", min_length=1, max_length=256)
+    tool_id: str | None = Field(default=None, max_length=256)
+    tool_call_id: str | None = Field(default=None, max_length=1024)
 
 
 class ProviderUsageRecord(BaseModel):
@@ -269,6 +275,9 @@ class RunUsageLedger:
         response: ModelResponse,
         *,
         pricing: _PricingOutcome | None,
+        source: str = "agent",
+        tool_id: str | None = None,
+        tool_call_id: str | None = None,
     ) -> ModelUsageRecord:
         """Append and immediately report one proven native response commit."""
         ordinal = self._model_ordinal
@@ -294,6 +303,9 @@ class RunUsageLedger:
             pricing_rule_id=rule_id,
             cost_source=cost_source,
             pricing_status=status,
+            source=source,
+            tool_id=tool_id,
+            tool_call_id=tool_call_id,
         )
         self._append(record)
         await self._flush(reason="model_request", trigger_record_id=record.record_id)
@@ -365,8 +377,18 @@ class UsageCapability(AbstractCapability[AgentContext]):
 
 @dataclass(init=False)
 class _UsageActiveCapability(UsageCapability):
-    def __init__(self, *, context: AgentContext) -> None:
+    def __init__(
+        self,
+        *,
+        context: AgentContext,
+        source: str = "agent",
+        tool_id: str | None = None,
+        tool_call_id: str | None = None,
+    ) -> None:
         self._context = context
+        self._source = source
+        self._tool_id = tool_id
+        self._tool_call_id = tool_call_id
         self._cost_capability: AbstractModelCostCapability | None = None
         self._request_started_at: dict[str, datetime] = {}
         self._pending_pricing: dict[str, _PricingOutcome] = {}
@@ -437,7 +459,7 @@ class _UsageActiveCapability(UsageCapability):
             quote = None
             calculated_cost = None
             try:
-                await _pricing_diagnostic(ctx, response, revision)
+                await _pricing_diagnostic(self._context, response, revision)
             except Exception:
                 pass
         outcome = _PricingOutcome(
@@ -484,9 +506,12 @@ class _UsageActiveCapability(UsageCapability):
                 response = tail
         if response is None:
             return
-        await ctx.deps.usage_attribution._record_model(
+        await self._context.usage_attribution._record_model(
             response,
             pricing=_pricing_for_committed_response(pricing, response),
+            source=self._source,
+            tool_id=self._tool_id,
+            tool_call_id=self._tool_call_id,
         )
 
     def _resolve_cost_capability(self, ctx: RunContext[AgentContext]) -> AbstractModelCostCapability:
@@ -518,14 +543,79 @@ class _UsageActiveCapability(UsageCapability):
             )
 
 
-async def _pricing_diagnostic(
+@dataclass(frozen=True)
+class _AuxiliaryUsageBinding:
+    context: AgentContext
+    cost: AbstractModelCostCapability
+    source: str
+    tool_id: str | None
+    tool_call_id: str | None
+
+
+_auxiliary_usage: ContextVar[_AuxiliaryUsageBinding | None] = ContextVar("auxiliary_usage", default=None)
+
+
+@contextmanager
+def _auxiliary_usage_scope(
     ctx: RunContext[AgentContext],
+    *,
+    source: str,
+    tool_id: str | None = None,
+) -> Iterator[None]:
+    """Bind auxiliary model attribution to the calling agent, not its native budget."""
+    owner = ctx.deps._run_capability(USAGE_CAPABILITY_ID)
+    if not isinstance(owner, _UsageActiveCapability):
+        # Embedded file-tool use without a Harness Run retains provider receipts.
+        yield
+        return
+    binding = _AuxiliaryUsageBinding(
+        ctx.deps,
+        owner._resolve_cost_capability(ctx),
+        source,
+        tool_id,
+        ctx.tool_call_id,
+    )
+    token = _auxiliary_usage.set(binding)
+    try:
+        yield
+    finally:
+        _auxiliary_usage.reset(token)
+
+
+class _AuxiliaryUsageCapability(_UsageActiveCapability):
+    """Reuse response pricing/commit observation with an independent native accumulator."""
+
+    def __init__(self, binding: _AuxiliaryUsageBinding) -> None:
+        super().__init__(
+            context=binding.context,
+            source=binding.source,
+            tool_id=binding.tool_id,
+            tool_call_id=binding.tool_call_id,
+        )
+        self._cost_capability = binding.cost
+
+    async def for_run(self, ctx: RunContext[Any]) -> AbstractCapability[Any]:
+        return self
+
+    def _require_context(self, ctx: RunContext[Any]) -> None:
+        # This invocation has non-Harness deps and deliberately does not register
+        # itself as the primary Run's Usage owner.
+        pass
+
+
+def _auxiliary_model_usage_capability() -> AbstractCapability[Any] | None:
+    binding = _auxiliary_usage.get()
+    return _AuxiliaryUsageCapability(binding) if binding is not None else None
+
+
+async def _pricing_diagnostic(
+    context: AgentContext,
     response: ModelResponse,
     revision: str | None,
 ) -> None:
     from a13n_harness.events import HarnessExtensionEvent
 
-    await ctx.deps.events.emit(
+    await context.events.emit(
         HarnessExtensionEvent(
             kind="diagnostic",
             payload={

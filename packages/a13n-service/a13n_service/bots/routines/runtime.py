@@ -152,7 +152,7 @@ class RoutineTools:
             for item in (
                 action("propose", ProposeRoutine, propose),
                 action("list", ListRoutines, list_routines),
-                *([action("event_sources", ListRoutines, event_sources)] if context.provider_key == "slack" else []),
+                action("event_sources", ListRoutines, event_sources),
             )
         }
         actions["propose"].definition.description = (
@@ -164,20 +164,16 @@ class RoutineTools:
             "For daily tasks use time_of_day and all weekdays, omitting at. "
             "Never pause or resume an unconfirmed draft. "
             "List tasks first to obtain the routine_id for changes. "
+            "For events, call event_sources first and use only a returned source_target_id; never infer source identity. "
+            "Choose event instead of schedule. Copy an advertised event_type and provide filters matching its filter_schema. "
+            "Set once=true for one accepted occurrence, or once=false for ongoing monitoring. "
+            "Follow the source's setup requirements. Confirm that sharing source information "
+            "to this channel is intended. Event matching is automatic; the prompt describes what to do after a match."
         )
-        if "event_sources" in actions:
-            actions["propose"].definition.description += (
-                "For events, call event_sources first and use only a returned source_target_id; never infer source identity. "
-                "Choose event instead of schedule. Copy an advertised event_type and provide filters matching its filter_schema. "
-                "Set once=true for one accepted occurrence, or once=false for ongoing monitoring. "
-                "Follow the source's setup requirements. Confirm that sharing source information "
-                "to this channel is intended. Event matching is automatic; the prompt describes what to do after a match."
-            )
         actions["list"].definition.description = "List this conversation's tasks and pending changes/status."
-        if "event_sources" in actions:
-            actions[
-                "event_sources"
-            ].definition.description = "List authorized event sources, supported event types, strict filter schemas, and setup requirements. Call before proposing a subscription."
+        actions[
+            "event_sources"
+        ].definition.description = "List authorized event sources, supported event types, strict filter schemas, and setup requirements. Call before proposing a subscription."
 
         async def call(name: str, arguments: JsonObject) -> JsonValue:
             try:

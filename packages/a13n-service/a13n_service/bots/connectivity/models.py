@@ -7,6 +7,7 @@ from sqlalchemy import JSON, BigInteger, CheckConstraint, DateTime, ForeignKey, 
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 
 
 class BotCheckRecord(Base):
@@ -22,7 +23,7 @@ class BotCheckRecord(Base):
     result_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
 
-class BotTestRecord(Base):
+class BotTestRecord(EntityRequestKey, Base):
     """One user-sent setup probe; references survive ingress replay retention."""
 
     __tablename__ = "bot_tests"

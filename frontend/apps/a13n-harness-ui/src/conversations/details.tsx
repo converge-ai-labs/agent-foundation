@@ -15,6 +15,7 @@ import { sourceText } from "./tool-presentation";
 import { useChildControlState } from "./child-controls";
 import styles from "./conversation.module.css";
 import { useThreadUsage, useContextUsage } from "./usage";
+import { UsageDetails } from "./usage-details";
 
 export function ConversationDetails({
   threadId,
@@ -586,48 +587,14 @@ function ContextDetails({ threadId }: { threadId: string }) {
       </section>
       <section>
         <h3>Observed usage</h3>
-        <p>
-          Root and descendants are reported separately. Unknown costs are not
-          zero-cost usage.
-        </p>
+        <UsageDetails usage={usage.data} />
         {usage.data && (
-          <>
-            <dl className={styles.detailGrid}>
-              <div>
-                <dt>Root model cost</dt>
-                <dd>${usage.data.root.model_cost_usd}</dd>
-              </div>
-              <div>
-                <dt>Descendant model cost</dt>
-                <dd>${usage.data.descendants.model_cost_usd}</dd>
-              </div>
-              <div>
-                <dt>Model requests</dt>
-                <dd>{usage.data.combined.model_requests}</dd>
-              </div>
-              <div>
-                <dt>Unknown model / provider costs</dt>
-                <dd>
-                  {usage.data.combined.unknown_model_costs} /{" "}
-                  {usage.data.combined.unknown_provider_costs}
-                </dd>
-              </div>
-            </dl>
-            <dl className={styles.detailGrid}>
-              {usage.data.combined.tokens.map(([name, count]) => (
-                <div key={name}>
-                  <dt>{name}</dt>
-                  <dd>{count.toLocaleString()}</dd>
-                </div>
-              ))}
-            </dl>
-            <details className={styles.activity}>
-              <summary>Models, providers and recent Runs</summary>
-              <pre className={styles.code}>
-                {JSON.stringify(usage.data, null, 2)}
-              </pre>
-            </details>
-          </>
+          <details className={styles.activity}>
+            <summary>Usage records and recent Runs</summary>
+            <pre className={styles.code}>
+              {JSON.stringify(usage.data, null, 2)}
+            </pre>
+          </details>
         )}
       </section>
     </div>

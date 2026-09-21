@@ -10,6 +10,14 @@ from a13n_harness._exports import exported_names, load_export
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 if TYPE_CHECKING:
+    from a13n_harness.builder import (
+        AgentDefinition,
+        DelegationContextPolicy,
+        HarnessBuilder,
+        SubagentDefinition,
+        SubagentIdentityPolicy,
+        derive_child_identity,
+    )
     from a13n_harness.context import AgentContext, RunBindings
     from a13n_harness.environment import (
         Environment,
@@ -34,16 +42,7 @@ if TYPE_CHECKING:
         HarnessRunResultEvent,
         HarnessStreamEvent,
     )
-    from a13n_harness.execution import (
-        AgentDefinition,
-        DelegationContextPolicy,
-        ExecutableAgent,
-        HarnessBuilder,
-        HarnessRunStream,
-        SubagentDefinition,
-        SubagentIdentityPolicy,
-        derive_child_identity,
-    )
+    from a13n_harness.execution import ExecutableAgent, HarnessRunStream
     from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext, AgentInstanceRef
     from a13n_harness.input import (
         NativeRunInput,
@@ -93,15 +92,17 @@ _EXPORTS = {
         "HarnessRunResultEvent",
         "HarnessStreamEvent",
     ),
-    "a13n_harness.execution": (
+    "a13n_harness.builder": (
         "AgentDefinition",
         "DelegationContextPolicy",
-        "ExecutableAgent",
         "HarnessBuilder",
-        "HarnessRunStream",
         "SubagentDefinition",
         "SubagentIdentityPolicy",
         "derive_child_identity",
+    ),
+    "a13n_harness.execution": (
+        "ExecutableAgent",
+        "HarnessRunStream",
     ),
     "a13n_harness.identity": (
         "AgentIdentityRef",

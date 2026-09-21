@@ -112,9 +112,12 @@ export function ErrorPage({
 export function ErrorNotice({
   error,
   retry,
+  description,
 }: {
   error: unknown;
   retry?: () => void;
+  /** Names the recovery when the owner already performed it, such as an autosaved row that reloaded. */
+  description?: ReactNode;
 }) {
   const { t } = useTranslation();
   if (!error) return null;
@@ -124,7 +127,7 @@ export function ErrorNotice({
       <WarningCircleIcon aria-hidden="true" />
       <AlertTitle>{details.title}</AlertTitle>
       <AlertDescription>
-        <p>{details.description}</p>
+        <p>{description ?? details.description}</p>
         {details.requestId && (
           <small>
             {t("Request ID")}: {details.requestId}

@@ -34,7 +34,7 @@ export function useListCosts(
           let cursor: string | undefined;
           results[trace.id] = null;
           try {
-            // At most 2,000 observations per trace. Larger traces remain "-".
+            // At most 2,000 observations per trace. Larger traces stay unknown.
             for (let page = 0; page < 20 && !accessError; page++) {
               signal.throwIfAborted();
               const collection = data(

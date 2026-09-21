@@ -16,10 +16,6 @@ if TYPE_CHECKING:
     from a13n_harness.tools.client import ClientToolsetDefinition
 
 
-class _ClientExternalToolset(InstructionExternalToolset):
-    pass
-
-
 class ClientToolsToolset:
     """Own native model schemas for one effective client-tool surface."""
 
@@ -52,7 +48,7 @@ class ClientToolsToolset:
                 if tool.instruction is not None
             )
             native.append(
-                _ClientExternalToolset(
+                InstructionExternalToolset(
                     definitions,
                     id=toolset.toolset_id,
                     instructions=instructions or None,

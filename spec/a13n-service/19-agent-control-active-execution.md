@@ -119,7 +119,7 @@ Service validates and canonicalizes binary source descriptions, exact Asset IDs,
 - `status` is `accepted` or `running`, in which case the new entry binds directly to that Run; or
 - `status="waiting"` with `current_run_id=head_run_id=run_id`, in which case the entry records that waiting Run as its source and has no active target.
 
-Before checking current-Run selection, status, or capacity, the transaction resolves any unexpired same-scope steer receipt under the Thread lock. A matching replay returns its original receipt even if the Run is no longer current or active; different input conflicts. Only a new command reserves pending count and bytes, allocates the next Thread `delivery_sequence`, and inserts one `pending` steer together with its idempotency metadata. Steering and receipt replay do not validate Memory behavior bindings; Run acceptance and execution preparation own those bindings. It neither creates another Run nor changes Thread head, current-Run selection, `Thread.version`, or `Thread.queue_version`. The exact Run identity and locked current/head precondition make a caller-supplied Run version unnecessary.
+Before checking current-Run selection, status, or capacity, the transaction resolves any retained same-scope steer entry under the Thread lock. A matching key returns a projection of that entry even if the Run is no longer current or active; retry content is not compared. Only a new command reserves pending count and bytes, allocates the next Thread `delivery_sequence`, and inserts one `pending` steer together with its idempotency metadata. Steering and receipt replay do not validate Memory behavior bindings; Run acceptance and execution preparation own those bindings. It neither creates another Run nor changes Thread head, current-Run selection, `Thread.version`, or `Thread.queue_version`. The exact Run identity and locked current/head precondition make a caller-supplied Run version unnecessary.
 
 A successful command returns `202` with this conceptual receipt:
 
@@ -134,7 +134,7 @@ class SteerReceipt:
     accepted_at: datetime
 ```
 
-The same idempotency key and canonical request return the same entry and receipt. Reuse with different input conflicts. `202` proves durable acceptance, not that a Worker, Harness, model, or external tool has incorporated the input. The following authorized read exposes the exact steer status without making the internal Thread inbox a generic public resource:
+The same scoped idempotency key returns a projection of the same entry, regardless of retry content. `202` proves durable acceptance, not that a Worker, Harness, model, or external tool has incorporated the input. The following authorized read exposes the exact steer status without making the internal Thread inbox a generic public resource:
 
 ```http
 GET /api/v1/runs/{run_id}/steers/{steer_id}
@@ -146,25 +146,21 @@ After the relational commit, the control process best-effort appends one busines
 
 ## Steer Idempotency Storage
 
-Public steer owns its replay evidence on `thread_inbox`; other HTTP operations retain the shared `idempotency_evidence` table. Five nullable internal columns form an all-null or all-present group:
+Public steer owns its request identity on `thread_inbox`. Three nullable internal columns form an all-null or all-present group:
 
-| Column                       | Meaning                                                                      |
-| ---------------------------- | ---------------------------------------------------------------------------- |
-| `idempotency_actor_type`     | `user` or `service_account`                                                  |
-| `idempotency_actor_id`       | Authenticated Principal identity                                             |
-| `idempotency_key_digest`     | SHA-256 identity of the caller key                                           |
-| `idempotency_request_digest` | Digest of the submitted semantic input, before canonical payload preparation |
-| `idempotency_expires_at`     | End of the 24-hour replay window established at acceptance                   |
+| Column                   | Meaning                            |
+| ------------------------ | ---------------------------------- |
+| `idempotency_actor_type` | `user` or `service_account`        |
+| `idempotency_actor_id`   | Authenticated Principal identity   |
+| `idempotency_key_digest` | SHA-256 identity of the caller key |
 
 Only steer entries may carry this group. Internal steer without a public idempotency key and asynchronous-result entries leave it null. A partial unique index covers `(organization_id, accepted_against_run_id, idempotency_actor_type, idempotency_actor_id, idempotency_key_digest)` where `kind='steer'` and the key digest is present. The original Run fixes the Workspace scope, which authorization checks before lookup. Neither mutable target binding nor consumption status changes replay identity. These columns are not model input or public response fields. Existing `expires_at` remains the inbox delivery lifetime and is never used for steer idempotency.
 
-An authorized initial lookup is read-only: it takes no advisory or row lock and does not clear expired metadata. Valid evidence returns the original inbox ID, sequence, original Run, and acceptance time directly. If preparation fails while another same-key request succeeds, a fresh lookup under the request’s established authorization may recover that receipt before reporting the preparation error.
+An authorized initial lookup is read-only: it takes no advisory or row lock and does not change metadata. Valid evidence returns the original inbox ID, sequence, original Run, and acceptance time directly. If preparation fails while another same-key request succeeds, a fresh lookup under the request’s established authorization may recover that receipt before reporting the preparation error.
 
 Final acceptance uses PostgreSQL READ COMMITTED isolation, locks Thread before Run, then queries the inbox replay scope with `FOR UPDATE`. Every public steer writer follows this order. The Thread lock serializes same-scope writers even when no inbox row exists; the unique index is a final integrity backstop. No advisory lock or separate Memory-binding query is required. A duplicate never allocates a sequence or changes pending counters. A unique-key failure rolls back the entire attempted mutation before resolving the winning receipt.
 
-Eligibility ends at the exact expiry boundary. Under the Thread lock, acceptance may clear all five expired fields and flush that update before reusing the key on a new entry. Replacement and new admission commit together or both roll back. A bounded retention sweep also clears expired metadata with `FOR UPDATE SKIP LOCKED` without acquiring Thread locks. Clearing metadata never deletes input, changes delivery state, or releases pending capacity. The receipt-bearing entry remains retained throughout its valid replay window.
-
-Schema cutover requires quiescing old steer writers before migration and resuming only the new version; mixed old/new steer writers are unsupported. Migration validates and moves existing unexpired `run.steer` evidence onto its referenced inbox entry with the original Principal, digests, and expiry, then removes the old steer evidence. Other operations are unaffected. Downgrade restores still-valid inbox replay evidence to the shared table before removing the new columns, also with steer writers quiesced. Invalid or ambiguous retained references fail migration rather than silently losing retry protection.
+The key remains with the entry without a separate expiry or lazy replacement. Ordinary inbox retention may delete it when the entry's business dependencies permit; HTTP retry protection does not extend that retention. Deletion ends deduplication.
 
 ## Environment Mount Reconciliation
 

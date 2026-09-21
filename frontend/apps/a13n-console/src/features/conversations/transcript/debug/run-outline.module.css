@@ -1,0 +1,115 @@
+/* The Run tree, in either presentation: the outline panel in the stage's left
+   gutter, and the list the pinned pill opens where there is no gutter. */
+.panel {
+  position: absolute;
+  top: 8px;
+  right: calc(100% + 20px);
+  display: none;
+  width: 212px;
+  max-height: calc(100vh - 140px);
+  padding: 8px;
+  overflow-y: auto;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--a13n-elevated) 88%, transparent);
+  box-shadow: var(--a13n-shadow);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+@media (min-width: 1440px) {
+  .panel {
+    display: block;
+  }
+}
+
+/* One Run ---------------------------------------------------------------- */
+.row {
+  display: grid;
+  grid-template-columns: 6px auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+.menuRow {
+  font-size: 12.5px;
+}
+.menuRow[data-current] {
+  background: var(--a13n-selected);
+}
+.panelRow {
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.panelRow:hover {
+  background: var(--a13n-hover);
+}
+.panelRow[aria-current] {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+}
+.panelRow:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: -2px;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a13n-border);
+}
+.dot[data-state="completed"] {
+  background: var(--a13n-success);
+}
+.dot[data-state="failed"],
+.dot[data-state="cancelled"] {
+  background: var(--a13n-danger);
+}
+.dot[data-state="waiting"] {
+  background: var(--a13n-warning);
+}
+.dot[data-state="running"],
+.dot[data-state="accepted"] {
+  background: var(--a13n-info);
+}
+.name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.excerpt {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--a13n-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta {
+  color: var(--a13n-secondary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A Thread that branched from a Run ------------------------------------- */
+.group {
+  display: grid;
+  min-width: 0;
+}
+.group[data-nested] {
+  margin-left: 12px;
+  padding-left: 10px;
+  border-left: 1px solid var(--a13n-border-soft);
+}
+.groupLabel {
+  padding: 4px 8px 2px;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}

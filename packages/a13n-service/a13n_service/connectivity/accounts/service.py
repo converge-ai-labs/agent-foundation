@@ -15,7 +15,7 @@ from a13n_service.connectivity.adapters import AccountAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterResolver
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.errors import NativeError
-from a13n_service.connectivity.management import canonical_json, clear_credentials, fingerprint, record_command
+from a13n_service.connectivity.management import canonical_json, clear_credentials, record_command
 from a13n_service.connectivity.native_management import (
     audit,
     authorize,
@@ -29,6 +29,7 @@ from a13n_service.connectivity.transports.configuration import connection_key
 from a13n_service.connectivity.transports.configuration import validate_credentials as validate_transport_credentials
 from a13n_service.connectivity.transports.models import EventConnectionRecord
 from a13n_service.digests import digest_request
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
     WorkspaceAction,
@@ -98,23 +99,23 @@ class AccountService:
         try:
             async with transaction(self._sessions) as session:
                 workspace = await authorize(session, actor, workspace_id, WorkspaceAction.application_account_manage)
+                replay = await find_by_key(
+                    session,
+                    AccountRecord,
+                    entity_key(
+                        actor,
+                        operation="application_account.create",
+                        scope_id=workspace_id,
+                        key_digest=key_digest,
+                        workspace_id=workspace_id,
+                    ),
+                )
+                if replay is not None:
+                    return replay.to_resource()
                 adapter = require_adapter(self._adapters, request.provider_key, request.provider_config_version)
                 config = _validate_config(adapter, request.provider_config, request.provider_config_version)
                 credentials = _validate_credentials(adapter, request.credentials, request.provider_config_version)
                 validate_transport_credentials(request.provider_key, config, credentials)
-                request_fingerprint = fingerprint(request, credentials=credentials)
-                replay = await replay_command(
-                    session,
-                    actor=actor,
-                    workspace_id=workspace_id,
-                    operation="application_account.create",
-                    scope_id=workspace_id,
-                    idempotency_key_digest=key_digest,
-                    fingerprint=request_fingerprint,
-                    now=self._clock(),
-                )
-                if replay is not None:
-                    return replay.restore(Account)
                 reception = _parse_reception(request.model_dump(include=set(Reception.model_fields)))
                 await validate_reception(session, actor, workspace_id, reception)
                 validate_batching(
@@ -153,30 +154,37 @@ class AccountService:
                     created_at=now,
                     updated_at=now,
                 )
+                record.request_key = entity_key(
+                    actor,
+                    operation="application_account.create",
+                    scope_id=workspace_id,
+                    key_digest=key_digest,
+                    workspace_id=workspace_id,
+                )
                 record.replace_credential(canonical_json(credentials), self._protector)
                 session.add(record)
                 await session.flush()
-                record_command(
-                    session,
-                    actor=actor,
-                    organization_id=workspace.organization_id,
-                    workspace_id=workspace_id,
-                    operation="application_account.create",
-                    scope_id=workspace_id,
-                    idempotency_key_digest=key_digest,
-                    fingerprint=request_fingerprint,
-                    resource_type="application_account",
-                    resource_id=account_id,
-                    result_version=1,
-                    now=now,
-                    resource=record.to_resource(),
-                )
                 session.add(
                     audit(actor, workspace.organization_id, workspace_id, "application_account.create", account_id, now)
                 )
                 await session.flush()
                 return record.to_resource()
         except IntegrityError as error:
+            async with transaction(self._sessions) as session:
+                await authorize(session, actor, workspace_id, WorkspaceAction.application_account_manage)
+                replay = await find_by_key(
+                    session,
+                    AccountRecord,
+                    entity_key(
+                        actor,
+                        operation="application_account.create",
+                        scope_id=workspace_id,
+                        key_digest=key_digest,
+                        workspace_id=workspace_id,
+                    ),
+                )
+                if replay is not None:
+                    return replay.to_resource()
             raise NativeError(
                 "account_conflict",
                 "Application Account identity or name already exists.",
@@ -353,7 +361,6 @@ class AccountService:
         request: ReplaceAccountCredentialsRequest,
     ) -> Account:
         key_digest = idempotency_key_digest(idempotency_key)
-        request_fingerprint = fingerprint(request, credentials=clear_credentials(request.credentials))
         async with transaction(self._sessions) as session:
             record = await require_account(session, account_id, lock=True)
             await authorize(session, actor, record.workspace_id, WorkspaceAction.application_account_manage)
@@ -364,7 +371,6 @@ class AccountService:
                 operation="application_account.credentials",
                 scope_id=account_id,
                 idempotency_key_digest=key_digest,
-                fingerprint=request_fingerprint,
                 now=self._clock(),
             )
             if replay is not None:
@@ -374,7 +380,7 @@ class AccountService:
                         "Idempotency key was used for another resource.",
                         category=ErrorCategory.conflict,
                     )
-                return replay.restore(Account)
+                return record.to_resource()
             require_version(record.version, request.expected_version)
             adapter = require_adapter(self._adapters, record.provider_key, record.provider_config_version)
             credentials = _validate_credentials(adapter, request.credentials, record.provider_config_version)
@@ -389,7 +395,6 @@ class AccountService:
                 record,
                 "application_account.credentials",
                 key_digest,
-                request_fingerprint,
                 now=self._clock(),
             )
             session.add(
@@ -438,7 +443,6 @@ class AccountService:
         idempotency_key: str,
     ) -> Account:
         key_digest = idempotency_key_digest(idempotency_key)
-        request_fingerprint = digest_request({"expected_version": expected_version, "status": status.value})
         operation = "application_account.enable" if status is AccountStatus.active else "application_account.disable"
         async with transaction(self._sessions) as session:
             record = await require_account(session, account_id, lock=True)
@@ -450,19 +454,16 @@ class AccountService:
                 operation=operation,
                 scope_id=account_id,
                 idempotency_key_digest=key_digest,
-                fingerprint=request_fingerprint,
                 now=self._clock(),
             )
             if replay is not None:
-                return replay.restore(Account)
+                return record.to_resource()
             require_version(record.version, expected_version)
             if record.status != status.value:
                 record.status = status.value
                 record.version += 1
                 record.updated_at = self._clock()
-            _record_account_command(
-                session, actor, record, operation, key_digest, request_fingerprint, now=self._clock()
-            )
+            _record_account_command(session, actor, record, operation, key_digest, now=self._clock())
             session.add(
                 audit(actor, record.organization_id, record.workspace_id, operation, account_id, record.updated_at)
             )
@@ -496,7 +497,6 @@ def _record_account_command(
     record: AccountRecord,
     operation: str,
     key_digest: str,
-    request_fingerprint: str,
     *,
     now: datetime,
 ) -> None:
@@ -508,12 +508,9 @@ def _record_account_command(
         operation=operation,
         scope_id=record.id,
         idempotency_key_digest=key_digest,
-        fingerprint=request_fingerprint,
         resource_type="application_account",
         resource_id=record.id,
-        result_version=record.version,
         now=now,
-        resource=record.to_resource(),
     )
 
 

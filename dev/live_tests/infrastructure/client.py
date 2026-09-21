@@ -108,6 +108,12 @@ class LiveClient:
     async def thread(self, thread_id: str) -> dict:
         return await self.request("GET", f"/api/v1/threads/{thread_id}")
 
+    async def assert_current_acceptance(self, receipt: dict, original: dict) -> None:
+        """Check replay after callers have settled or paused the owning Run and Thread."""
+        run = await self.run(original["run_id"])
+        thread = await self.thread(original["thread_id"])
+        assert receipt == {**original, "run_version": run["version"], "thread_version": thread["version"]}
+
     async def collection(self, path: str) -> list[dict]:
         items, seen, cursor = [], set(), None
         for _ in range(100):

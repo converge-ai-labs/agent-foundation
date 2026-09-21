@@ -21,9 +21,27 @@ from sqlalchemy import delete, event
 from tests.gateway.test_commands import _commands, _complete_run, _request
 from tests.skills.test_runtime import DEPLOY_REVISION_ID, DEPLOY_SKILL_ID, _add_skill, _package
 
-from .conftest import MODEL_ID, WORKSPACE_ID, actor, agent_config
+from .conftest import MODEL_ID, WORKSPACE_ID, actor, add_model, agent_config
 
 pytestmark = pytest.mark.anyio
+
+AGENT_VISION_ID = "mdl_agentvision12345"
+RUN_VISION_ID = "mdl_runvision1234567"
+WORKSPACE_VISION_ID = "mdl_wsvision12345678"
+
+
+async def _media_models(sessions, **models: tuple[str, ...]) -> None:
+    for key, capabilities in models.items():
+        await add_model(
+            sessions,
+            key=key.replace("_", "-"),
+            model_id={
+                "agent_vision": AGENT_VISION_ID,
+                "run_vision": RUN_VISION_ID,
+                "workspace_vision": WORKSPACE_VISION_ID,
+            }[key],
+            capabilities=capabilities,
+        )
 
 
 @pytest.mark.parametrize("operation", ["start", "continue"])
@@ -288,3 +306,153 @@ async def test_media_defaults_follow_fresh_selection_and_retained_retry(
     )
     latest = await RunStateStore(objects).read(created.agent.organization_id, fresh.run_id)
     assert latest.envelope.effective_agent_config.media_understanding == {}
+
+
+async def test_media_selection_prefers_run_override_then_agent_then_workspace(
+    agent_management, agent_invocation_resolver, agent_sessions
+):
+    from a13n_service.agents.domain import AgentRunOverride
+    from a13n_service.models.models import MediaUnderstandingDefaultsRecord
+
+    await _media_models(
+        agent_sessions,
+        agent_vision=("image_understanding", "audio_understanding"),
+        run_vision=("image_understanding",),
+        workspace_vision=("image_understanding", "video_understanding"),
+    )
+    async with transaction(agent_sessions) as session:
+        session.add(
+            MediaUnderstandingDefaultsRecord(
+                workspace_id=WORKSPACE_ID,
+                version=1,
+                image_model_id=WORKSPACE_VISION_ID,
+                video_model_id=WORKSPACE_VISION_ID,
+            )
+        )
+    child = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="media-levels-child",
+        request=CreateAgentRequest(name="Child", config=agent_config()),
+    )
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="media-levels",
+        request=CreateAgentRequest(
+            name="Media",
+            config=agent_config(
+                media_understanding={"image": "agent-vision", "audio": "agent-vision"},
+                subagents={"helper": {"agent_id": child.agent.id}},
+            ),
+        ),
+    )
+
+    def _models(config):
+        return {kind: model.execution.model_id for kind, model in config.media_understanding.items()}
+
+    async def selected(override=None):
+        prepared = await agent_invocation_resolver.preparation.prepare(
+            actor=actor(), agent_id=created.agent.id, config_override=override
+        )
+        return agent_invocation_resolver.freezing.freeze_selected(prepared=prepared).effective_config
+
+    assert _models(await selected()) == {
+        "image": AGENT_VISION_ID,
+        "video": WORKSPACE_VISION_ID,
+        "audio": AGENT_VISION_ID,
+    }
+    # A supplied kind replaces; an omitted kind keeps the Agent, then Workspace, choice.
+    overridden = await selected(AgentRunOverride.model_validate({"media_understanding": {"image": "run-vision"}}))
+    assert _models(overridden) == {
+        "image": RUN_VISION_ID,
+        "video": WORKSPACE_VISION_ID,
+        "audio": AGENT_VISION_ID,
+    }
+    # Neither the root Agent selection nor the root Run override reaches a child Agent.
+    assert _models(next(iter(overridden.child_configs.values())).effective_config) == {
+        "image": WORKSPACE_VISION_ID,
+        "video": WORKSPACE_VISION_ID,
+    }
+
+
+async def test_unusable_workspace_default_is_skipped_but_explicit_selection_rejects(
+    agent_management, agent_invocation_resolver, agent_sessions
+):
+    from a13n_service.agents.domain import AgentRunOverride
+    from a13n_service.models.models import MediaUnderstandingDefaultsRecord
+
+    await _media_models(
+        agent_sessions, agent_vision=("image_understanding",), workspace_vision=("image_understanding",)
+    )
+    async with transaction(agent_sessions) as session:
+        session.add(
+            MediaUnderstandingDefaultsRecord(workspace_id=WORKSPACE_ID, version=1, image_model_id=WORKSPACE_VISION_ID)
+        )
+    inherited = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="inherited-media",
+        request=CreateAgentRequest(name="Inherited", config=agent_config()),
+    )
+    explicit = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="explicit-media",
+        request=CreateAgentRequest(name="Explicit", config=agent_config(media_understanding={"image": "agent-vision"})),
+    )
+    with pytest.raises(AgentError) as incapable:
+        await agent_invocation_resolver.preparation.prepare(
+            actor=actor(),
+            agent_id=inherited.agent.id,
+            config_override=AgentRunOverride.model_validate({"media_understanding": {"audio": "agent-vision"}}),
+        )
+    assert incapable.value.details == {"reason": "model_incompatible"}
+    async with transaction(agent_sessions) as session:
+        for model_id in (WORKSPACE_VISION_ID, AGENT_VISION_ID):
+            (await session.get(ModelRecord, model_id)).enabled = False
+    prepared = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=inherited.agent.id)
+    assert prepared.media_models == {}
+    frozen = agent_invocation_resolver.freezing.freeze_selected(prepared=prepared)
+    assert frozen.effective_config.media_understanding == {}
+    with pytest.raises(AgentError) as failure:
+        await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=explicit.agent.id)
+    assert failure.value.details == {"reason": "model_unavailable"}
+
+
+async def test_shared_media_model_is_read_once_for_the_accepted_graph(
+    agent_management, agent_invocation_resolver, agent_sessions, monkeypatch
+):
+    from a13n_service.models.runtime import AcceptedModelSelector
+
+    await _media_models(agent_sessions, agent_vision=("image_understanding",))
+    selection = {"image": "agent-vision"}
+    child = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="media-child",
+        request=CreateAgentRequest(name="Child", config=agent_config(media_understanding=selection)),
+    )
+    parent = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="media-parent",
+        request=CreateAgentRequest(
+            name="Parent",
+            config=agent_config(media_understanding=selection, subagents={"helper": {"agent_id": child.agent.id}}),
+        ),
+    )
+    keys = []
+    original = AcceptedModelSelector.prepare
+
+    async def counted(self, **kwargs):
+        keys.append(kwargs.get("model_key"))
+        return await original(self, **kwargs)
+
+    monkeypatch.setattr(AcceptedModelSelector, "prepare", counted)
+    prepared = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=parent.agent.id)
+    assert keys.count("agent-vision") == 1
+    assert prepared.media_models["image"] is prepared.subagents[0].invocation.media_models["image"]
+    effective = agent_invocation_resolver.freezing.freeze_selected(prepared=prepared).effective_config
+    child_config = next(iter(effective.child_configs.values())).effective_config
+    assert effective.media_understanding["image"].execution == child_config.media_understanding["image"].execution

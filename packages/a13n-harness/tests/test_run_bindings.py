@@ -41,7 +41,7 @@ def test_passive_bindings_are_not_capabilities() -> None:
         bindings.skill_selection = frozenset({"changed"})
 
 
-async def test_concurrent_runs_keep_fresh_active_capabilities_through_recovery() -> None:
+async def test_concurrent_runs_bind_shared_resource_definitions_to_current_dependencies_through_recovery() -> None:
     current: ContextVar[str] = ContextVar("current-test-run")
     observations = {}
     calls = {}
@@ -75,10 +75,12 @@ async def test_concurrent_runs_keep_fresh_active_capabilities_through_recovery()
             observations.setdefault(run, []).append(
                 (
                     ctx.deps,
-                    tuple(ctx.deps._run_capability(key) for key in ("a13n.web", "a13n.media", "a13n.documents")),
+                    tuple(ctx.capabilities[key] for key in ("a13n.web", "a13n.media", "a13n.documents")),
                     ctx.run_id,
+                    tuple(ctx.capabilities[key]._bind(ctx) for key in ("a13n.web", "a13n.media", "a13n.documents")),
                 )
             )
+            assert all(ctx.deps._run_capability(key) is None for key in ("a13n.web", "a13n.media", "a13n.documents"))
             return request_context
 
     async def model(messages, info):
@@ -124,7 +126,12 @@ async def test_concurrent_runs_keep_fresh_active_capabilities_through_recovery()
     for value in bindings:
         attempts = observations[value.instance.agent_instance_id]
         assert len(attempts) == 2 and attempts[0][2] != attempts[1][2]
-        first_context, first_active, _ = attempts[0]
+        first_context, first_active, _, first_bound = attempts[0]
+        assert all(one is two for one, two in zip(first_bound, attempts[1][3], strict=True))
+        assert all(
+            one is two
+            for one, two in zip(first_bound, (value.web, value.media_reader, value.document_converter), strict=True)
+        )
         assert attempts[1][0] is first_context
         assert all(one is two for one, two in zip(first_active, attempts[1][1], strict=True))
         assert all(item is not None for item in first_active)
@@ -132,11 +139,11 @@ async def test_concurrent_runs_keep_fresh_active_capabilities_through_recovery()
         assert first_context.media_reader is value.media_reader
         assert first_context.document_converter is value.document_converter
         active.append(first_active)
-    assert all(one is not two for one, two in zip(*active, strict=True))
+    assert all(one is two for one, two in zip(*active, strict=True))
     assert not transport.closed and all(not provider.closed for provider in providers)
 
 
-async def test_compaction_reuses_the_current_web_binding_and_active_capability() -> None:
+async def test_compaction_reuses_the_current_web_binding_and_definition_owner() -> None:
     from a13n_harness import HarnessState
     from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
     from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
@@ -156,7 +163,7 @@ async def test_compaction_reuses_the_current_web_binding_and_active_capability()
         id = "test.compaction-bindings"
 
         async def before_model_request(self, ctx, request_context):
-            observed.append((ctx.deps, ctx.deps.web, ctx.deps._run_capability("a13n.web")))
+            observed.append((ctx.deps, ctx.deps.web, ctx.capabilities.get("a13n.web")))
             return request_context
 
     async def model(messages, info):

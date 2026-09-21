@@ -24,7 +24,7 @@ After a conflict, fetch current state and reconsider the change. Do not automati
 
 ## Idempotency and unknown outcomes
 
-Commands that require `Idempotency-Key` document it in the operation parameters. Reuse the same key and canonical request only within that command's scope and replay contract. A key is not a global transaction ID, a permission grant, or a promise of unbounded retention.
+Commands that require `Idempotency-Key` document it in the operation parameters. Reuse the same scoped key to read an accepted result. Retry content is not compared, and the response reflects retained records and current projection logic. Keys have no time-based expiry; deleting their owning data may end deduplication. A key is not a global transaction ID, a permission grant, or a promise of unbounded retention.
 
 If a write may have reached Service but its acknowledgement was lost, reconcile the original operation before submitting a new key. Transport cancellation or an exhausted client timeout does not prove the mutation failed. Client library shutdown stops local delivery; it does not cancel an accepted Run or undo a resource change.
 

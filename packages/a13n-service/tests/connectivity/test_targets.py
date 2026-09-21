@@ -21,11 +21,10 @@ async def test_exact_target_identity_idempotency_and_uniqueness(target_service):
     assert first.agent_id is None
     with pytest.raises(NativeError, match="already configured"):
         await target_service.create(actor=actor(), account_id=ACCOUNT_ID, idempotency_key="another", request=request)
-    with pytest.raises(NativeError) as error:
-        await target_service.create(
-            actor=actor(), account_id=ACCOUNT_ID, idempotency_key="target", request=target_request(agent_id=AGENT_ID)
-        )
-    assert error.value.code == "idempotency_conflict"
+    changed = await target_service.create(
+        actor=actor(), account_id=ACCOUNT_ID, idempotency_key="target", request=target_request(agent_id=AGENT_ID)
+    )
+    assert changed == replay
 
 
 async def test_full_replacement_resets_inheritance_and_checks_version(target_service):

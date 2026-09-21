@@ -22,7 +22,6 @@ from a13n_harness.providers.environment.operations import EnvironmentOperations 
 from a13n_harness.providers.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
-    EnvironmentOutputCapture,
 )
 
 from .providers import (
@@ -108,19 +107,6 @@ def _validate_provider_artifacts(entered: _EnteredMount, value: Any) -> None:
     if isinstance(value, tuple | list):
         for item in value:
             _validate_provider_artifacts(entered, item)
-
-
-def _capture_contiguous_prefix(capture: EnvironmentOutputCapture) -> bytes:
-    if capture.inline is not None:
-        return capture.inline
-    expected = 0
-    chunks: list[bytes] = []
-    for segment in sorted(capture.preview, key=lambda item: item.start_offset):
-        if segment.start_offset != expected:
-            break
-        chunks.append(segment.data)
-        expected += len(segment.data)
-    return b"".join(chunks)
 
 
 def _validate_process_result_identity(expected: BoundProcessHandle, value: Any) -> None:

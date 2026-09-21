@@ -34,6 +34,7 @@ from .persistence import (
     add_command_evidence_and_audit,
     authorize_agent_scope,
     load_replay,
+    load_revision_create_result,
     lock_agent,
     lock_revision,
     request_identity,
@@ -72,7 +73,7 @@ class AgentRevisions:
         request: CreateAgentRevisionRequest,
         if_match: str,
     ) -> AgentRevisionCreateResult:
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
         replay = await self._revision_create_replay(
             actor=actor,
             agent_id=agent_id,
@@ -111,9 +112,7 @@ class AgentRevisions:
         request: SetDefaultAgentRevisionRequest,
         if_match: str,
     ) -> AgentRevisionCreateResult:
-        identity = request_identity(
-            idempotency_key, {"revision_id": revision_id, "request": request.model_dump(mode="json")}
-        )
+        identity = request_identity(idempotency_key)
         replay = await self._revision_create_replay(
             actor=actor,
             agent_id=agent_id,
@@ -151,7 +150,7 @@ class AgentRevisions:
                     now=now,
                 )
                 if replay_ref is not None:
-                    return replay_ref.restore(AgentRevisionCreateResult)
+                    return await load_revision_create_result(session, replay_ref.result_ref)
                 require_custom_mutable(record)
                 require_etag(record, if_match)
                 source = await lock_revision(
@@ -185,7 +184,6 @@ class AgentRevisions:
                     result_kind="agent_revision",
                     result_ref=source.id,
                     now=now,
-                    response=result,
                     audit_details={"from_revision_id": prior_id, "to_revision_id": source.id}
                     if prior_id != source.id
                     else None,
@@ -252,7 +250,7 @@ class AgentRevisions:
                     now=now,
                 )
                 if replay_ref is not None:
-                    return replay_ref.restore(AgentRevisionCreateResult)
+                    return await load_revision_create_result(session, replay_ref.result_ref)
                 require_custom_mutable(record)
                 require_etag(record, if_match)
                 try:
@@ -279,7 +277,6 @@ class AgentRevisions:
                     result_kind="agent_revision",
                     result_ref=revision.id,
                     now=now,
-                    response=AgentRevisionCreateResult(agent=record.to_resource(), revision=revision.to_resource()),
                     audit_details={"from_revision_id": publication.previous_revision_id, "to_revision_id": revision.id}
                     if publication.changed
                     else None,
@@ -324,4 +321,4 @@ class AgentRevisions:
                 identity=identity,
                 now=self._clock(),
             )
-            return None if replay_ref is None else replay_ref.restore(AgentRevisionCreateResult)
+            return None if replay_ref is None else await load_revision_create_result(session, replay_ref.result_ref)

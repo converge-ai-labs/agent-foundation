@@ -7,9 +7,10 @@ from sqlalchemy import JSON, BigInteger, CheckConstraint, DateTime, ForeignKeyCo
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 
 
-class RunEnvironmentMountRecord(Base):
+class RunEnvironmentMountRecord(EntityRequestKey, Base):
     __tablename__ = "run_environment_mounts"
     __table_args__ = (
         ForeignKeyConstraint(("organization_id", "run_id"), ("runs.organization_id", "runs.id"), ondelete="RESTRICT"),

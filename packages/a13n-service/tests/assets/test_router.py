@@ -192,8 +192,8 @@ async def test_asset_http_lifecycle_idempotency_and_cleanup(api: Api) -> None:
     assert replay.status_code == 201
     assert replay.json() == created
     conflict = await upload(api.client, key="asset-create", content=PDF + b"different")
-    assert conflict.status_code == 409
-    assert conflict.json()["error"]["code"] == "asset_idempotency_conflict"
+    assert conflict.status_code == 201
+    assert conflict.json() == created
 
     duplicate = await upload(api.client, key="asset-distinct")
     assert duplicate.status_code == 201
@@ -223,7 +223,7 @@ async def test_asset_http_lifecycle_idempotency_and_cleanup(api: Api) -> None:
         evidence = tuple((await session.scalars(select(IdempotencyEvidenceRecord))).all())
         outbox = await session.scalar(select(OutboxRecord).where(OutboxRecord.source_id == created["id"]))
         audits = tuple((await session.scalars(select(SecurityAuditRecord))).all())
-    assert len(evidence) == 2
+    assert len(evidence) == 0
     assert outbox is not None and outbox.status == "pending"
     assert {(item.action, item.outcome) for item in audits} >= {
         ("asset.create", "success"),

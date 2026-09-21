@@ -8774,16 +8774,6 @@
           }
         }
       },
-      "ModelCapability": {
-        "type": "string",
-        "enum": [
-          "image_understanding",
-          "video_understanding",
-          "audio_understanding"
-        ],
-        "title": "ModelCapability",
-        "description": "Harness-owned capabilities of the active Agent model."
-      },
       "ModelCatalogSnapshot": {
         "properties": {
           "items": {
@@ -9224,6 +9214,63 @@
           "recommended"
         ],
         "title": "ModelToolChoice"
+      },
+      "ModelUsageGroup": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "agent_instance_id": {
+            "type": "string",
+            "title": "Agent Instance Id"
+          },
+          "descendant": {
+            "type": "boolean",
+            "title": "Descendant"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/UsageTotals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "agent_instance_id",
+          "descendant",
+          "source",
+          "totals"
+        ],
+        "title": "ModelUsageGroup"
+      },
+      "ModelUsageView": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "root": {
+            "$ref": "#/components/schemas/UsageTotals"
+          },
+          "descendants": {
+            "$ref": "#/components/schemas/UsageTotals"
+          },
+          "combined": {
+            "$ref": "#/components/schemas/UsageTotals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "root",
+          "descendants",
+          "combined"
+        ],
+        "title": "ModelUsageView"
       },
       "NativeInputMediaKind": {
         "type": "string",
@@ -12876,6 +12923,32 @@
           },
           "other_runs": {
             "$ref": "#/components/schemas/UsageTotals"
+          },
+          "model_scopes": {
+            "items": {
+              "$ref": "#/components/schemas/ModelUsageView"
+            },
+            "type": "array",
+            "title": "Model Scopes",
+            "default": []
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ModelUsageGroup"
+            },
+            "type": "array",
+            "title": "Groups",
+            "default": []
+          },
+          "other_groups": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsageTotals"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -15142,6 +15215,16 @@
           "model_id"
         ],
         "title": "ModelOptionsRequest"
+      },
+      "ModelCapability": {
+        "type": "string",
+        "enum": [
+          "image_understanding",
+          "video_understanding",
+          "audio_understanding"
+        ],
+        "title": "ModelCapability",
+        "description": "Harness-owned capabilities of the active Agent model."
       },
       "ModelRecipeRequest": {
         "properties": {

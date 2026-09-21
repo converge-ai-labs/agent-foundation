@@ -15,10 +15,10 @@ import {
   compareValues,
   type ObservationSort,
 } from "./sorting";
-import { formatCost } from "./cost";
+import { formatCost } from "../../shared/cost";
 import { ObservationGlyph } from "./identity";
 import { Duration, TracePill } from "./values";
-import styles from "./traces.module.css";
+import styles from "./list.module.css";
 
 const sortable = [
   { field: "duration", label: "Duration" },

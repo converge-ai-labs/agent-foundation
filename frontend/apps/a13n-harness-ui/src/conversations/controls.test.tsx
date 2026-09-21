@@ -136,7 +136,9 @@ it("clears a saved default Model with an explicit null versioned patch", async (
   const choice = await screen.findByRole("combobox", { name: "Default model" });
   await waitFor(() => expect(choice.textContent).toBe("Saved model"));
   await user.click(choice);
-  await user.click(screen.getByRole("option", { name: "Follow Agent model" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Follow Agent model" }),
+  );
   await user.click(
     screen.getByRole("button", { name: "Save next Run selections" }),
   );

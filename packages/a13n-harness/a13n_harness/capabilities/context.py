@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from collections import deque
 from collections.abc import Sequence
 from copy import copy, deepcopy
@@ -32,10 +31,18 @@ from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 from pydantic_ai.usage import UsageLimits
 
+from a13n_harness._handoff import (
+    _HANDOFF_STATE_VERSION,
+    _HandoffState,
+    _safe_context_error_code,
+)
+from a13n_harness._handoff import (
+    HANDOFF_CAPABILITY_ID as HANDOFF_CAPABILITY_ID,
+)
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.capabilities.lifecycle import active_model_request_index
 from a13n_harness.context import AgentContext
-from a13n_harness.errors import DefinitionError, HarnessError
+from a13n_harness.errors import DefinitionError
 from a13n_harness.events import (
     ContextOperationCompletedPayload,
     ContextOperationFailedPayload,
@@ -58,13 +65,12 @@ from a13n_harness.observation import observe_operation, observe_output, record_s
 from a13n_harness.providers.environment.files import FileOperator
 from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.tools.invocation import disabled_tool_execution
+from a13n_harness.toolsets.context import HandoffToolset
 
 RUNTIME_CONTEXT_CAPABILITY_ID = "a13n.runtime-context"
 WORKSPACE_OUTLINE_CAPABILITY_ID = "a13n.workspace-outline"
 FILE_CONTEXT_CAPABILITY_ID = "a13n.file-context"
-HANDOFF_CAPABILITY_ID = "a13n.handoff"
 COMPACTION_CAPABILITY_ID = "a13n.compaction"
-_CONTEXT_STATE_VERSION = "1"
 _RUNTIME_OPEN = '<runtime-context source="a13n-harness">'
 _RUNTIME_CLOSE = "</runtime-context>"
 _WORKSPACE_OUTLINE_PREFIX = "Workspace file outline (content not loaded):\n"
@@ -503,35 +509,6 @@ class HandoffConfiguration(BaseModel):
     max_reminder_bytes: int = Field(default=4 * 1024, ge=256, le=64 * 1024)
 
 
-class _HandoffState(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    operation_id: str | None = Field(default=None, min_length=1, max_length=128)
-    summary: str | None = None
-    files: tuple[str, ...] = Field(default=(), max_length=64)
-    kind: Literal["handoff", "compaction"] = Field(default="handoff", exclude=True)
-    preserve_recent_user_turns: int = Field(default=0, ge=0, le=32, exclude=True)
-    target_tokens: int | None = Field(default=None, gt=0, exclude=True)
-
-    @field_validator("files")
-    @classmethod
-    def _validate_files(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if len(set(value)) != len(value):
-            raise ValueError("file references must be unique")
-        if any(not path.strip() or "\x00" in path for path in value):
-            raise ValueError("file reference is invalid")
-        return tuple(value)
-
-    @model_validator(mode="after")
-    def _validate_operation_identity(self) -> _HandoffState:
-        if self.operation_id is None:
-            return self
-        expected_prefix = "compaction-" if self.kind == "compaction" else "handoff-"
-        if not self.operation_id.startswith(expected_prefix):
-            raise ValueError("handoff operation identity is invalid")
-        return self
-
-
 @dataclass(init=False)
 class HandoffCapability(AbstractModelContextCapability):
     """Own handoff lifecycle hooks and compose the run-local summarize Toolset."""
@@ -543,7 +520,7 @@ class HandoffCapability(AbstractModelContextCapability):
             configuration = HandoffConfiguration.model_validate(configuration, strict=True)
         self.configuration = (configuration or HandoffConfiguration()).model_copy(deep=True)
         self._context: AgentContext | None = None
-        self._toolset: Any = None
+        self._toolset: HandoffToolset | None = None
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost")
@@ -554,14 +531,12 @@ class HandoffCapability(AbstractModelContextCapability):
             if not isinstance(existing, HandoffCapability):
                 raise DefinitionError("Handoff has an incompatible run replacement.", code="capability_type_mismatch")
             return existing
-        from a13n_harness.toolsets.context import HandoffToolset
-
         replacement = HandoffCapability(self.configuration)
         replacement._context = ctx.deps
         restored = await ctx.deps.state.read(
             HANDOFF_CAPABILITY_ID,
             _HandoffState,
-            version=_CONTEXT_STATE_VERSION,
+            version=_HANDOFF_STATE_VERSION,
         )
         state = restored or _HandoffState()
         if state.kind == "compaction":
@@ -570,7 +545,7 @@ class HandoffCapability(AbstractModelContextCapability):
             await ctx.deps.state.write(
                 HANDOFF_CAPABILITY_ID,
                 state,
-                version=_CONTEXT_STATE_VERSION,
+                version=_HANDOFF_STATE_VERSION,
             )
         replacement._toolset = HandoffToolset(owner=replacement, context=ctx.deps, state=state)
         ctx.deps._record_run_capability(HANDOFF_CAPABILITY_ID, replacement)
@@ -1000,12 +975,6 @@ async def _emit_context_failure(
     )
 
 
-def _safe_context_error_code(exc: BaseException) -> str:
-    if isinstance(exc, HarnessError) and re.fullmatch(r"[a-z][a-z0-9_]{0,127}", exc.code):
-        return exc.code
-    return "context_operation_failed"
-
-
 def _build_restored_history(
     messages: list[ModelMessage],
     state: _HandoffState,
@@ -1093,11 +1062,6 @@ def _first_system_parts(messages: list[ModelMessage]) -> list[SystemPromptPart]:
             if parts:
                 return parts
     return []
-
-
-def _render_summary(content: str) -> str:
-    stripped = content.strip()
-    return stripped if stripped.startswith("# Context Summary") else f"# Context Summary\n\n{stripped}"
 
 
 def _file_inspection_reminder(paths: tuple[str, ...]) -> str:

@@ -850,6 +850,7 @@ it("updates context from the latest attributed root request, not cumulative or c
     [
       record(10, 999, { run_id: "other" }),
       record(11, 999, { delegation_id: "child" }),
+      record(12, 999, { source: "files.media_understanding" }),
     ],
   ];
   display.accept(snapshot(reports.length));

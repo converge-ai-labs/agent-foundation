@@ -263,6 +263,14 @@ make db-history
 
 Repository database commands use `SERVICE_CONFIG` (default `dev/service/local.toml`). Corresponding executable commands use `a13n-service --config PATH db` followed by `upgrade`, `current --check-heads`, `history`, or `migrate "description"`. There is one process CLI; migration implementation remains in `database/migration.py` rather than introducing a second database-only settings or command layer.
 
+### Request-key schema cutover
+
+Revision `7c46b77d7cf1` moves retained creation and terminal-command keys to their business rows, keeps minimal references for repeated updates and application aliases, and removes HTTP content fingerprints, response snapshots, and expiry columns. Configuration application fields and Connection/Provider outcomes are extracted into their business records. Existing keys survive even when their former expiry deadline has passed; keys already removed by an earlier collector cannot be recovered.
+
+This is a coordinated cutover, with no mixed old/new writer window. Stop Service writers and workers, take a recoverable database backup, migrate with one new-version migration runner, check the schema, then start the new processes. The transaction takes DDL locks, builds ordinary unique indexes, and scans retained references and applications in pages of 500 rows. The pages bound memory, not transaction duration or lock time; allow a maintenance window sized for retained data. The sealed-Run update guard is disabled only inside that transaction for the key backfill and is restored before commit. An interrupted migration rolls back its schema and data together; rerun it after resolving the cause.
+
+Populated downgrade is refused because removed fingerprints and snapshots cannot be reconstructed. Repair forward or restore the pre-upgrade database and matching old binaries. Empty-schema downgrade remains available for migration verification. The isolated Bot-free verification history carries the equivalent conversion in `325eebd6d934`.
+
 ### Add an ORM Model
 
 1. Define the model beside its owning domain using `a13n_service.database.Base`.
@@ -397,9 +405,9 @@ Container-owned integration tests exercise PostgreSQL, Redis, and S3 HTTP behavi
 
 ## HTTP retries and accepted receipts
 
-Ordinary retryable management commands accept `Idempotency-Key` values containing 1–512 visible ASCII bytes. Reuse the same key and semantic request after a lost response: for 24 hours from the original commit, an authorized replay returns the original accepted result before checking mutable version preconditions. A changed request with the same scoped key conflicts. Replaying does not extend expiry; after expiry, inspect the resource and apply its current preconditions before deciding to repeat a mutation. AG-UI/A2A external IDs and durable execution identities have their own retention contracts.
+Ordinary retryable management commands accept `Idempotency-Key` values containing 1–512 visible ASCII bytes. The same scoped key selects the existing business result without comparing request content. Replay reauthorizes access and projects current stored state before new-mutation preconditions, so status and versions may advance. Use a new key for a new intended mutation. Keys have no 24-hour expiry; deleting their business owner may end deduplication. Service stores no original HTTP response snapshot and adds no retention hold for replay. AG-UI/A2A external IDs and durable execution identities have their own contracts.
 
-MCP mutation responses preserve the accepted connection snapshot. Read the connection to observe subsequent discovery readiness. Run overrides select managed resources and reject direct credential fields; the owning resource resolves its current credentials.
+MCP authorization retries read the current authorization and do not repeat credential exchange or discovery. Connection cleanup results use the Connection's current local status and latest recorded external cleanup outcome. Run overrides select managed resources and reject direct credential fields; the owning resource resolves its current credentials.
 
 ## Installed Harness Plugins
 

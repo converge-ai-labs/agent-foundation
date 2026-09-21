@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
+from a13n_service.durable_operations.idempotency import InvalidIdempotencyKey
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction, authorize_workspace
 
@@ -59,13 +59,7 @@ async def require_connection(
     return record
 
 
-def map_management_error(error: IdempotencyConflict | InvalidIdempotencyKey) -> MCPConnectionError:
-    if isinstance(error, IdempotencyConflict):
-        return MCPConnectionError(
-            "idempotency_conflict",
-            "Idempotency key was used for another request.",
-            category=ErrorCategory.conflict,
-        )
+def map_management_error(error: InvalidIdempotencyKey) -> MCPConnectionError:
     return MCPConnectionError("invalid_request", "Idempotency-Key is invalid.", category=ErrorCategory.invalid_request)
 
 

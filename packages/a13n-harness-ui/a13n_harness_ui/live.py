@@ -133,9 +133,9 @@ class RequestContextSample(_StreamModel):
     tokens: int
 
 
-def root_model_usage(event: LiveEvent) -> tuple[ModelUsageRecord, ...]:
-    """Read attributed root model records, excluding children and provider totals."""
-    if event.run_kind != "root" or event.event_type != "CUSTOM" or event.payload is None:
+def model_usage(event: LiveEvent) -> tuple[ModelUsageRecord, ...]:
+    """Read canonical model records for any agent/source in the subscribed family."""
+    if event.event_type != "CUSTOM" or event.payload is None:
         return ()
     value = event.payload.get("value")
     source = value.get("event") if isinstance(value, dict) else None
@@ -151,14 +151,21 @@ def root_model_usage(event: LiveEvent) -> tuple[ModelUsageRecord, ...]:
             model = ModelUsageRecord.model_validate(record)
         except ValidationError:
             continue
-        if (
-            model.run_id != event.run_id
-            or model.parent_agent_instance_id is not None
-            or model.delegation_id is not None
-        ):
-            continue
         samples.append(model)
     return tuple(samples)
+
+
+def root_model_usage(event: LiveEvent) -> tuple[ModelUsageRecord, ...]:
+    """Read only primary root responses, never auxiliary or child model usage."""
+    return tuple(
+        model
+        for model in model_usage(event)
+        if event.run_kind == "root"
+        and model.run_id == event.run_id
+        and model.parent_agent_instance_id is None
+        and model.delegation_id is None
+        and model.source == "agent"
+    )
 
 
 def root_context_samples(event: LiveEvent) -> tuple[RequestContextSample, ...]:

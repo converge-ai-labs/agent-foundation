@@ -48,6 +48,8 @@ button.metric:hover,
   font-size: 13px;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
+  max-height: min(720px, 75dvh);
+  overflow-y: auto;
 }
 .numbers {
   display: grid;
@@ -73,7 +75,7 @@ button.metric:hover,
 .sectionTitle {
   margin: 16px 0 0;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .models {
   list-style: none;
@@ -81,12 +83,54 @@ button.metric:hover,
   padding: 0;
 }
 .models li {
+  padding: 12px 0;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.modelHeader {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(80px, auto);
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
-  padding: 10px 0;
-  border-top: 1px solid var(--a13n-border);
+  align-items: start;
+}
+.usageDetails {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.scopeSelector {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-top: 12px;
+  background: var(--a13n-surface);
+  border-radius: 10px;
+}
+.scopeSelector button {
+  flex: 1;
+}
+.scopeSelector button[aria-pressed="true"] {
+  background: var(--a13n-elevated);
+  color: var(--a13n-text);
+}
+.attribution summary {
+  cursor: pointer;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.attribution summary:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 3px;
+}
+.sourceGroup {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--a13n-surface);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.models .numbers {
+  margin: 8px 0;
+  gap: 3px 16px;
+  font-size: 12px;
 }
 .modelName {
   overflow-wrap: anywhere;

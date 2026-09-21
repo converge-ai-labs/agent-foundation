@@ -267,7 +267,7 @@ async def test_explicit_queue_consumption_accepts_under_retained_authority_and_r
             idempotency_key="consume-first",
         )
     queue_reads = [sql for sql in statements if sql.startswith("SELECT") and "FROM thread_queued_submissions" in sql]
-    assert len(queue_reads) == 2
+    assert len(queue_reads) == 3
     assert any("FOR UPDATE" in sql for sql in queue_reads)
     async with transaction(lifecycle_interaction_sessions) as database:
         thread = await database.get(ThreadRecord, source.thread_id)
@@ -328,7 +328,7 @@ async def test_queue_mutations_are_replayable_with_original_response(
         idempotency_key="update-first",
     )
     assert updated.queue_version == 2
-    await service.update(
+    latest = await service.update(
         actor=_actor(),
         queued_submission_id=entry_id,
         request=UpdateQueuedSubmissionRequest(expected_version=2, submission=_intent("updated again")),
@@ -340,8 +340,8 @@ async def test_queue_mutations_are_replayable_with_original_response(
         request=UpdateQueuedSubmissionRequest(expected_version=1, submission=_intent("updated")),
         idempotency_key="update-first",
     )
-    assert original_update == updated
-    assert original_update.queued_submission.version == 2
+    assert original_update == latest
+    assert original_update.queued_submission.version == 3
 
     deleted = await service.delete(
         actor=_actor(),
@@ -349,13 +349,13 @@ async def test_queue_mutations_are_replayable_with_original_response(
         request=DeleteQueuedSubmissionRequest(expected_version=3),
         idempotency_key="delete-first",
     )
-    replayed_delete = await service.delete(
-        actor=_actor(),
-        queued_submission_id=entry_id,
-        request=DeleteQueuedSubmissionRequest(expected_version=3),
-        idempotency_key="delete-first",
-    )
-    assert replayed_delete == deleted
+    with pytest.raises(InteractionCommandError, match="not found"):
+        await service.delete(
+            actor=_actor(),
+            queued_submission_id=entry_id,
+            request=DeleteQueuedSubmissionRequest(expected_version=3),
+            idempotency_key="delete-first",
+        )
     assert deleted.queue_version == 4
     assert (
         await service.list(
@@ -415,8 +415,8 @@ async def test_reorder_replay_precedes_changed_queue_version(
         idempotency_key="reorder-one",
     )
 
-    assert replayed == reordered
-    assert replayed.queue_version == 3
+    assert replayed.thread_id == reordered.thread_id
+    assert replayed.queue_version == 4
 
 
 @pytest.mark.parametrize("branch", ["queued", "completed", "waiting", "root"])
@@ -471,10 +471,7 @@ async def test_concurrent_thread_submission_owns_one_receipt_and_replays_after_q
     async with short_session(sessions) as database:
         evidence = list(await database.scalars(select(IdempotencyEvidenceRecord)))
         added = [row for row in evidence if row.id not in original_evidence]
-        assert len(added) == 1
-        assert added[0].operation == "thread.submit"
-        assert added[0].scope_id == source.thread_id
-        assert added[0].receipt_json == first.model_dump(mode="json", by_alias=True)
+        assert added == []
         assert len(list(await database.scalars(select(RunRecord)))) == (1 if branch == "queued" else 2)
     monkeypatch.setattr(service, "_submission_admission", admission)
     if first.queued_submission is not None:
@@ -493,16 +490,20 @@ async def test_concurrent_thread_submission_owns_one_receipt_and_replays_after_q
             submission=_intent("later queue item"),
             idempotency_key="enqueue-after-submit",
         )
-    # Replay returns the original queue generation and body, before reclassifying the current Thread.
-    assert await submit() == first
-    with pytest.raises(InteractionCommandError) as conflict:
-        await service.submit(
-            actor=_actor(),
-            thread_id=source.thread_id,
-            idempotency_key="same-thread-submit",
-            request=request.model_copy(update={"input": _request("different request").input}),
-        )
-    assert conflict.value.code == "idempotency_conflict"
+    replay = await submit()
+    assert replay.queue_version == first.queue_version + 1
+    if replay.queued_submission is not None:
+        assert replay.queued_submission.queued_submission_id == first.queued_submission.queued_submission_id
+        assert replay.queued_submission.version == 2
+    else:
+        assert replay.run.run_id == first.run.run_id
+    changed = await service.submit(
+        actor=_actor(),
+        thread_id=source.thread_id,
+        idempotency_key="same-thread-submit",
+        request=request.model_copy(update={"input": _request("different request").input}),
+    )
+    assert changed == replay
 
 
 async def test_thread_submission_retry_after_lost_response_returns_original_receipt(
@@ -535,7 +536,7 @@ async def test_thread_submission_retry_after_lost_response_returns_original_rece
                     )
                 )
             )
-            == 1
+            == 0
         )
 
 
@@ -575,19 +576,18 @@ async def test_delete_http_query_contract_and_empty_replay_after_row_removal(
         stale = await client.delete(path, params={"expected_version": 2}, headers=headers)
         assert stale.status_code == 409
         assert (await service.get(actor=_actor(), queued_submission_id=entry_id)).version == 1
-        # One mutation, including when identical HTTP requests race; both return no content.
+        # The deleting request succeeds; the loser sees the removed resource.
         replies = await asyncio.gather(
             *(client.delete(path, params={"expected_version": 1}, headers=headers) for _ in range(2))
         )
-        for reply in replies:
-            assert reply.status_code == 204, reply.text
-            assert reply.content == b"" and "content-type" not in reply.headers
+        assert sorted(reply.status_code for reply in replies) == [204, 404]
+        successful = next(reply for reply in replies if reply.status_code == 204)
+        assert successful.content == b"" and "content-type" not in successful.headers
         assert (await client.get(path)).status_code == 404
         replay = await client.delete(path, params={"expected_version": 1}, headers=headers)
-        assert replay.status_code == 204 and replay.content == b""
+        assert replay.status_code == 404
         changed = await client.delete(path, params={"expected_version": 2}, headers=headers)
-        assert changed.status_code == 409
-        assert changed.json()["error"]["code"] == "idempotency_conflict"
+        assert changed.status_code == 404
         absent = await client.delete(path, params={"expected_version": 1}, headers={"Idempotency-Key": "new-delete"})
         assert absent.status_code == 404
     remaining = await service.list(actor=_actor(), thread_id=thread_id, state=QueuedSubmissionState.queued, limit=100)
@@ -600,7 +600,7 @@ async def test_delete_http_query_contract_and_empty_replay_after_row_removal(
                 select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation == "queue.delete")
             )
         ).all()
-        assert len(evidence) == 1
+        assert len(evidence) == 0
 
 
 async def test_delete_replays_concurrent_commit_after_preflight(lifecycle_interaction_sessions, tmp_path, monkeypatch):
@@ -638,9 +638,10 @@ async def test_delete_replays_concurrent_commit_after_preflight(lifecycle_intera
     try:
         async with asyncio.timeout(10):
             await reached.wait()
-            committed = await service.delete(**kwargs)
+            await service.delete(**kwargs)
             release.set()
-            assert await pending == committed
+            with pytest.raises(InteractionCommandError, match="not found"):
+                await pending
     finally:
         release.set()
         if not pending.done():

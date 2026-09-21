@@ -174,16 +174,16 @@ async def test_directory_pagination_date_filter_and_request_replay(bot_memory):
             actor(), ACCOUNT_ID, lab.scope_id, limit=2, activity_date=date(2026, 9, 16), cursor=first.next_cursor
         )
     assert mismatch.value.code == "invalid_cursor"
-    with pytest.raises(ApplicationError) as reused:
-        await create(
-            lab.service,
-            actor(),
-            ACCOUNT_ID,
-            lab.scope_id,
-            CreateDocument(kind="semantic", text="changed", title="Topic"),
-            "0",
-        )
-    assert reused.value.code == "idempotency_conflict"
+    replay = await create(
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        lab.scope_id,
+        CreateDocument(kind="semantic", text="changed", title="Topic"),
+        "0",
+    )
+    assert replay.title == "Topic 0"
+    assert len(lab.records) == 3
 
 
 async def test_deleted_document_disappears_and_stale_reference_cannot_read(bot_memory):
@@ -611,9 +611,10 @@ async def test_kind_migration_retains_unclassified_legacy_documents(
 ):
     import anyio
     from a13n_service.bots.memory.models import DocumentRecord
-    from a13n_service.database.migration import DatabaseMigrator
     from sqlalchemy import text
     from sqlalchemy.exc import IntegrityError
+
+    from tests.database.revision_steps import apply_revision_steps
 
     lab = bot_memory
     document = await create(
@@ -631,9 +632,9 @@ async def test_kind_migration_retains_unclassified_legacy_documents(
         stored.metadata_json = {**stored.metadata_json, "kind": legacy_kind}
         original_metadata = dict(stored.metadata_json)
     next(iter(lab.records.values()))["metadata"]["kind"] = legacy_kind
-    migrator = DatabaseMigrator(service_database)
-    await anyio.to_thread.run_sync(migrator.downgrade, "6a336ba34b98")
-    await anyio.to_thread.run_sync(migrator.upgrade)
+    await anyio.to_thread.run_sync(
+        apply_revision_steps, service_database, (("ba435c2961da", "downgrade"), ("ba435c2961da", "upgrade"))
+    )
     read = await lab.service.get(actor(), ACCOUNT_ID, lab.scope_id, document.id)
     assert read.kind is None and read.legacy_kind == legacy_kind
     assert read.text == "Original historical evidence"
@@ -656,7 +657,13 @@ async def test_kind_migration_retains_unclassified_legacy_documents(
             kind,
         )
     with pytest.raises(IntegrityError):
-        await anyio.to_thread.run_sync(migrator.downgrade, "6a336ba34b98")
+        await anyio.to_thread.run_sync(apply_revision_steps, service_database, (("ba435c2961da", "downgrade"),))
     async with transaction(connectivity_sessions) as session:
-        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "ba435c2961da"
+        constraint = await session.scalar(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conrelid = 'bot_memory_documents'::regclass AND conname = 'ck_bot_memory_documents_kind_valid'"
+            )
+        )
+        assert "procedural" in constraint
     assert len((await lab.service.list(actor(), ACCOUNT_ID, lab.scope_id)).items) == 4

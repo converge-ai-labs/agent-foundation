@@ -271,3 +271,47 @@ async def test_cold_start_filter_trims_only_consumed_tool_return_string_leaves()
     assert isinstance(current_request, ModelRequest)
     assert current_request.parts[0].content == current_text
     assert old.content["content"] == old_text
+
+
+@pytest.mark.parametrize("kind", ["integrity", "cold_start", "content"])
+@pytest.mark.parametrize("changed", [False, True])
+async def test_filters_copy_only_changed_history_and_detach_all_nested_values(kind, changed, monkeypatch):
+    from copy import deepcopy
+    from unittest.mock import Mock
+
+    from a13n_harness.filters import cold_start, content, integrity
+    from pydantic_ai import ImageUrl
+
+    modules = {"integrity": integrity, "cold_start": cold_start, "content": content}
+    capabilities = {
+        "integrity": MessageIntegrityFilterCapability(),
+        "cold_start": ColdStartFilterCapability(),
+        "content": content.ContentFilterCapability(),
+    }
+    part = ToolReturnPart(
+        tool_name="lookup",
+        tool_call_id="orphan" if changed and kind == "integrity" else "call-1",
+        content={"value": "x" * 3000 if changed and kind == "cold_start" else "short"},
+    )
+    image = ImageUrl("https://example.com/image.png" + ("?api_key=secret" if changed and kind == "content" else ""))
+    messages = [
+        ModelResponse(parts=[ToolCallPart("lookup", {"nested": [1]}, tool_call_id="call-1")]),
+        ModelRequest(parts=[part, UserPromptPart([image])]),
+        ModelResponse(parts=[TextPart("consumed")], timestamp=datetime.now(UTC) - timedelta(hours=2)),
+    ]
+    original = deepcopy(messages)
+    request = _request_context(messages)
+    copy_spy = Mock(wraps=deepcopy)
+    monkeypatch.setattr(modules[kind], "deepcopy", copy_spy)
+
+    filtered = await capabilities[kind].before_model_request(None, request)
+
+    assert messages == original
+    assert copy_spy.call_count == int(changed)
+    if not changed:
+        assert filtered is request
+        return
+    assert filtered is not request
+    # Even unchanged nested values in a changed request remain detached.
+    filtered.messages[0].parts[0].args["nested"].append(2)
+    assert messages[0].parts[0].args == {"nested": [1]}

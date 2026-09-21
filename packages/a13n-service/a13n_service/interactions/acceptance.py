@@ -120,9 +120,8 @@ class RunAcceptanceService:
     ) -> RunAcceptanceReceipt:
         validate_prepared_run(run, state)
         validate_new_thread(thread, run, session)
-        replay = await self._load_replay(run, state, accepted_thread_version=1)
+        replay = await self._load_replay(run)
         if replay is not None:
-            await self._require_inline_hook_replay(run, hook_subscription)
             publish_run_acceptance(replay.run_id)
             return replay
         if session is None and session_scope is None:
@@ -205,7 +204,7 @@ class RunAcceptanceService:
         try:
             receipt = await self._online.commit(accept)
         except (IntegrityError, EvidenceAlreadyCommitted, EnvironmentManagementError, RunAcceptanceError) as error:
-            replay = await self._reconcile_acceptance_error(run, state, error, accepted_thread_version=1)
+            replay = await self._reconcile_acceptance_error(run, error)
             publish_run_acceptance(replay.run_id)
             return replay
         publish_run_acceptance(receipt.run_id)
@@ -231,11 +230,8 @@ class RunAcceptanceService:
         session_scope: SessionScope | None = None,
     ) -> RunAcceptanceReceipt:
         validate_prepared_run(run, state)
-        accepted_thread_version = expected_thread_version + 1
-        replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
+        replay = await self._load_replay(run)
         if replay is not None:
-            if hook_source_run_id is None:
-                await self._require_inline_hook_replay(run, hook_subscription)
             publish_run_acceptance(replay.run_id)
             return replay
         if session_scope is None:
@@ -351,12 +347,7 @@ class RunAcceptanceService:
         try:
             receipt = await self._online.commit(accept)
         except (IntegrityError, EvidenceAlreadyCommitted, EnvironmentManagementError, RunAcceptanceError) as error:
-            replay = await self._reconcile_acceptance_error(
-                run,
-                state,
-                error,
-                accepted_thread_version=accepted_thread_version,
-            )
+            replay = await self._reconcile_acceptance_error(run, error)
             publish_run_acceptance(replay.run_id)
             return replay
         publish_run_acceptance(receipt.run_id)
@@ -368,6 +359,7 @@ class RunAcceptanceService:
         run: Run,
         state: RunCheckpoint,
         queued: QueuedSubmission,
+        consumption_key: str | None = None,
         accepted_input: AcceptedAgentInput,
         expected_thread_version: int,
         expected_queue_version: int,
@@ -382,8 +374,7 @@ class RunAcceptanceService:
         """Atomically consume the first queue row and accept its prepared Run."""
 
         validate_prepared_run(run, state)
-        accepted_thread_version = expected_thread_version + 1
-        replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
+        replay = await self._load_replay(run)
         if replay is not None:
             consumed = await self._validate_queue_replay(
                 run=run,
@@ -458,6 +449,7 @@ class RunAcceptanceService:
                     submission_digest_sha256=queued.submission_digest_sha256,
                     authority_principal=run.authority_principal,
                     consumed_run_id=run.id,
+                    consumption_key=consumption_key,
                     now=now,
                 )
             except QueueConsumptionConflict as error:
@@ -509,7 +501,7 @@ class RunAcceptanceService:
         try:
             receipt = await self._online.commit(accept)
         except (IntegrityError, EvidenceAlreadyCommitted, EnvironmentManagementError, RunAcceptanceError) as error:
-            replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
+            replay = await self._load_replay(run)
             if replay is not None:
                 consumed = await self._validate_queue_replay(
                     run=run,
@@ -603,9 +595,6 @@ class RunAcceptanceService:
     async def _load_replay(
         self,
         run: Run,
-        state: RunCheckpoint,
-        *,
-        accepted_thread_version: int,
     ) -> RunAcceptanceReceipt | None:
         if run.idempotency_key is None:
             return None
@@ -619,7 +608,7 @@ class RunAcceptanceService:
             if record is None:
                 return None
             await self._bindings.validate(database, record.id)
-            return await _validate_replay(database, record, run, accepted_thread_version=accepted_thread_version)
+            return await _validate_replay(database, record)
 
     async def _publish_initial(self, run: Run, state: RunCheckpoint) -> None:
         try:
@@ -672,30 +661,14 @@ class RunAcceptanceService:
     async def _reconcile_acceptance_error(
         self,
         run: Run,
-        state: RunCheckpoint,
         error: IntegrityError | EvidenceAlreadyCommitted | EnvironmentManagementError | RunAcceptanceError,
-        *,
-        accepted_thread_version: int,
     ) -> RunAcceptanceReceipt:
-        replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
+        replay = await self._load_replay(run)
         if replay is not None:
             return replay
         if not isinstance(error, (IntegrityError, EvidenceAlreadyCommitted)):
             raise error
         raise RunAcceptanceError("run_acceptance_conflict", "Run acceptance lost a concurrent mutation") from error
-
-    async def _require_inline_hook_replay(
-        self,
-        run: Run,
-        expected: InlineHookSubscriptionInput | None,
-    ) -> None:
-        async with short_session(self._sessions) as database:
-            record = await database.get(RunRecord, run.id)
-            if record is None or not await self._inline_hooks.replay_matches(database, run=record, expected=expected):
-                raise RunAcceptanceError(
-                    "run_idempotency_conflict",
-                    "Idempotency key was reused with different inline Hook configuration",
-                )
 
     async def _validate_queue_replay(
         self,
@@ -957,12 +930,7 @@ async def _load_run(database: AsyncSession, organization_id: str, run_id: str | 
 async def _validate_replay(
     database: AsyncSession,
     record: RunRecord,
-    run: Run,
-    *,
-    accepted_thread_version: int,
 ) -> RunAcceptanceReceipt:
-    if record.request_fingerprint != run.request_fingerprint:
-        raise RunAcceptanceError("run_idempotency_conflict", "Idempotency key was reused with different Run intent")
     thread = await database.scalar(
         select(ThreadRecord).where(
             ThreadRecord.organization_id == record.organization_id, ThreadRecord.id == record.thread_id
@@ -978,9 +946,9 @@ async def _validate_replay(
     return RunAcceptanceReceipt(
         session_id=record.session_id,
         thread_id=record.thread_id,
-        thread_version=accepted_thread_version,
+        thread_version=thread.version,
         run_id=record.id,
-        run_version=1,
+        run_version=record.version,
         hook_subscription_id=None if persisted_hook is None else persisted_hook[0].id,
     )
 

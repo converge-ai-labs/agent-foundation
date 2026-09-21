@@ -23,7 +23,7 @@ from a13n_harness.input import RunInputValue
 from a13n_harness.state import HarnessState
 
 if TYPE_CHECKING:
-    from a13n_harness.execution import DelegationContextPolicy
+    from a13n_harness.builder import DelegationContextPolicy
 
 SUBAGENT_CAPABILITY_ID = "a13n.subagents"
 MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS = 32 * 1024

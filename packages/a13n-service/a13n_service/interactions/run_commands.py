@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
-from functools import partial
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -54,8 +53,7 @@ from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
 from .command_evidence import (
-    RunCommandEvidence,
-    fingerprint_request,
+    RunRequest,
     require_idempotency_key,
 )
 from .command_preparation import CommandInput
@@ -114,19 +112,16 @@ class RunCommands:
         if workspace_id != actor.workspace_id:
             raise command_not_found()
         require_idempotency_key(idempotency_key)
-        evidence = RunCommandEvidence(
+        evidence = RunRequest(
             self._sessions,
             actor=actor,
             operation="run.start",
             scope_id=workspace_id,
             supplied_key=idempotency_key,
-            fingerprint=fingerprint_request(request),
             binding=transaction_hook,
-            clock=self._clock,
         )
         replay = await evidence.replay()
         if replay is not None:
-            await self._acceptance.validate_retained(replay.run_id)
             return replay
 
         prepared_input = await self._inputs.prepare(
@@ -189,7 +184,7 @@ class RunCommands:
             thread_id=thread_id,
             parent_run_id=None,
             lineage_kind=RunLineageKind.root,
-            request_fingerprint=evidence.fingerprint,
+            request_key=evidence.key,
             invocation=prepared_input.frozen,
             input=prepared_input.input,
             origin=origin,
@@ -219,7 +214,7 @@ class RunCommands:
                 state=state,
                 hook_subscription=request.hook_subscription,
                 environment=requested_environment(environment, default=EnvironmentDefault.agent),
-                transaction_hook=partial(evidence.commit, now=self._clock()),
+                transaction_hook=evidence.commit,
                 thread_label_overrides=request.thread_labels,
                 run_label_overrides=request.labels,
             )
@@ -240,19 +235,16 @@ class RunCommands:
         origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
         require_idempotency_key(idempotency_key)
-        evidence = RunCommandEvidence(
+        evidence = RunRequest(
             self._sessions,
             actor=actor,
             operation="run.continue_from",
             scope_id=source_run_id,
             supplied_key=idempotency_key,
-            fingerprint=fingerprint_request(request),
             binding=transaction_hook,
-            clock=self._clock,
         )
         replay = await evidence.replay()
         if replay is not None:
-            await self._acceptance.validate_retained(replay.run_id)
             return replay
 
         try:
@@ -260,9 +252,9 @@ class RunCommands:
                 actor=actor,
                 source_run_id=source_run_id,
                 request=request,
-                request_fingerprint=evidence.fingerprint,
+                request_key=evidence.key,
                 inherit_parent_environment=inherit_parent_environment,
-                transaction_hook=partial(evidence.commit, now=self._clock()),
+                transaction_hook=evidence.commit,
                 prepared_assets=prepared_assets,
                 origin=origin,
             )
@@ -276,7 +268,7 @@ class RunCommands:
         actor: AuthenticatedActor,
         observed_source: RunSource | None = None,
         source_run_id: str,
-        request_fingerprint: str,
+        request_key: str,
         request: ContinueRunCommand,
         inherit_parent_environment: bool = True,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
@@ -327,7 +319,7 @@ class RunCommands:
             thread_id=source.thread_id,
             parent_run_id=source.id,
             lineage_kind=RunLineageKind.continue_,
-            request_fingerprint=request_fingerprint,
+            request_key=request_key,
             invocation=prepared_input.frozen,
             input=prepared_input.input,
             origin=origin,
@@ -378,19 +370,16 @@ class RunCommands:
         origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
         require_idempotency_key(idempotency_key)
-        evidence = RunCommandEvidence(
+        evidence = RunRequest(
             self._sessions,
             actor=actor,
             operation="run.continue_empty",
             scope_id=thread_id,
             supplied_key=idempotency_key,
-            fingerprint=fingerprint_request(request),
             binding=transaction_hook,
-            clock=self._clock,
         )
         replay = await evidence.replay()
         if replay is not None:
-            await self._acceptance.validate_retained(replay.run_id)
             return replay
 
         try:
@@ -398,8 +387,8 @@ class RunCommands:
                 actor=actor,
                 thread_id=thread_id,
                 request=request,
-                request_fingerprint=evidence.fingerprint,
-                transaction_hook=partial(evidence.commit, now=self._clock()),
+                request_key=evidence.key,
+                transaction_hook=evidence.commit,
                 prepared_assets=prepared_assets,
                 origin=origin,
             )
@@ -413,7 +402,7 @@ class RunCommands:
         actor: AuthenticatedActor,
         observed_source: ThreadSource | None = None,
         thread_id: str,
-        request_fingerprint: str,
+        request_key: str,
         request: ContinueRunCommand,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
@@ -460,7 +449,7 @@ class RunCommands:
             thread_id=thread.id,
             parent_run_id=None,
             lineage_kind=RunLineageKind.root,
-            request_fingerprint=request_fingerprint,
+            request_key=request_key,
             invocation=prepared_input.frozen,
             input=prepared_input.input,
             origin=origin,
@@ -505,19 +494,16 @@ class RunCommands:
     ) -> RunAcceptanceReceipt:
         environment = request.environment
         require_idempotency_key(idempotency_key)
-        evidence = RunCommandEvidence(
+        evidence = RunRequest(
             self._sessions,
             actor=actor,
             operation="run.fork",
             scope_id=run_id,
             supplied_key=idempotency_key,
-            fingerprint=fingerprint_request(request),
             binding=transaction_hook,
-            clock=self._clock,
         )
         replay = await evidence.replay()
         if replay is not None:
-            await self._acceptance.validate_retained(replay.run_id)
             return replay
 
         source, session_scope = await self._load_fork_source(actor=actor, run_id=run_id)
@@ -587,7 +573,7 @@ class RunCommands:
             thread_id=new_thread_id_value,
             parent_run_id=source.id,
             lineage_kind=RunLineageKind.fork,
-            request_fingerprint=evidence.fingerprint,
+            request_key=evidence.key,
             invocation=invocation,
             input=run_input,
             origin=_USER_INPUT_ORIGIN,
@@ -641,7 +627,7 @@ class RunCommands:
                     environment, default=RetainedRunEnvironment(source.id, source.thread_id)
                 ),
                 final_validator=validate_final,
-                transaction_hook=partial(evidence.commit, now=self._clock()),
+                transaction_hook=evidence.commit,
                 thread_label_overrides=request.thread_labels,
                 run_label_overrides=request.labels,
             )

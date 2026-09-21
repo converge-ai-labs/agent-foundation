@@ -277,7 +277,7 @@ class VirtualFileOperator:
                 written = await destination_file.backend.write_bytes_stream(
                     destination_file.selected.path,
                     stream,
-                    mode="replace" if replace else "create",
+                    mode="upsert" if replace else "create",
                 )
                 destination_file.validate_result(written)
                 result = FileCopyResult(

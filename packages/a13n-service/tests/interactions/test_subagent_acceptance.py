@@ -590,7 +590,6 @@ async def _accept_parent(
         run_id=seed.run_id,
         thread_id=THREAD_ID,
         idempotency_key="parent-start",
-        request_fingerprint="1" * 64,
         config=config,
     ).model_copy(
         update={

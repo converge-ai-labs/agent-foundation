@@ -139,29 +139,5 @@ class InlineHookAcceptance:
         )
         return record.id
 
-    async def replay_matches(
-        self,
-        database: AsyncSession,
-        *,
-        run: RunRecord,
-        expected: InlineHookSubscriptionInput | None,
-    ) -> bool:
-        persisted = await load_inline_hook_subscription(
-            database,
-            organization_id=run.organization_id,
-            run_id=run.id,
-        )
-        if persisted is None:
-            return expected is None
-        if expected is None:
-            return False
-        head, revision = persisted
-        expected_configuration = expected.bind_run_scope(
-            session_id=run.session_id,
-            thread_id=run.thread_id,
-            run_id=run.id,
-        )
-        return revision.configuration() == expected_configuration and head.id == revision.hook_subscription_id
-
 
 __all__ = ["InlineHookAcceptance"]

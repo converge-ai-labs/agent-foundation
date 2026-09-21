@@ -5,12 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import and_, func, literal, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import StrictModel
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.collection_cursors import decode_time_cursor, encode_time_cursor
-from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
+from a13n_service.durable_operations.requests import request_identity
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction
 from a13n_service.iam.authorization import read_principal_permissions
 from a13n_service.iam.models import WorkspaceRecord
@@ -65,71 +67,93 @@ class ConfigurationConversations:
         request: CreateSessionRequest,
         idempotency_key: str,
     ) -> ConfigurationSessionView:
-        identity = request_identity(idempotency_key, request)
-        async with transaction(self._sessions) as session:
-            try:
-                await authorize_target(session, actor=actor, target_agent_id=request.target_agent_id)
-            except AuthorizationError as error:
-                raise not_found() from error
-            replay = await load_replay(
-                session,
-                actor=actor,
-                operation="configuration.session.create",
-                scope_id=actor.workspace_id,
-                identity=identity,
-                now=self._clock(),
-            )
-            if replay is not None:
-                return replay.restore(ConfigurationSessionView)
-            workspace = await session.get(WorkspaceRecord, actor.workspace_id)
-            assert workspace is not None
-            now = self._clock()
-            conversation = SessionRecord(
-                id=new_session_id(),
-                organization_id=workspace.organization_id,
-                workspace_id=workspace.id,
-                configuration_owner_user_id=actor.principal.principal_id,
-                configuration_draft_id=new_draft_id(),
-                labels={},
-                created_at=now,
-                updated_at=now,
-            )
-            session.add(conversation)
-            await session.flush()
-            thread = ThreadRecord(
-                id=new_thread_id(),
-                organization_id=workspace.organization_id,
-                session_id=conversation.id,
-                version=1,
-                queue_version=0,
-                role="root",
-                origin_kind="new",
-                labels={},
-                created_at=now,
-                updated_at=now,
-            )
-            session.add(thread)
-            await session.flush()
-            await create_draft(
-                session, conversation=conversation, target_id=request.target_agent_id, source=request.source, now=now
-            )
-            result = session_view(conversation, root_thread_id=thread.id)
-            session.add(
-                evidence_record(
-                    actor=actor,
+        identity = request_identity(idempotency_key)
+        try:
+            async with transaction(self._sessions) as session:
+                replay = await find_by_key(
+                    session,
+                    SessionRecord,
+                    entity_key(
+                        actor,
+                        operation="configuration.session.create",
+                        scope_id=actor.workspace_id,
+                        key_digest=identity.key_digest,
+                        workspace_id=actor.workspace_id,
+                    ),
+                )
+                if replay is not None:
+                    await authorize_session(
+                        session, actor=actor, session_id=replay.id, write=False, action=WorkspaceAction.session_read
+                    )
+                    row = (await session.execute(session_summary_query().where(SessionRecord.id == replay.id))).one()
+                    return session_view(row[0], root_thread_id=row[1], title=row[2], has_runs=row[3])
+                try:
+                    await authorize_target(session, actor=actor, target_agent_id=request.target_agent_id)
+                except AuthorizationError as error:
+                    raise not_found() from error
+                workspace = await session.get(WorkspaceRecord, actor.workspace_id)
+                assert workspace is not None
+                now = self._clock()
+                conversation = SessionRecord(
+                    id=new_session_id(),
                     organization_id=workspace.organization_id,
                     workspace_id=workspace.id,
+                    configuration_owner_user_id=actor.principal.principal_id,
+                    configuration_draft_id=new_draft_id(),
+                    labels={},
+                    created_at=now,
+                    updated_at=now,
+                )
+                conversation.request_key = entity_key(
+                    actor,
                     operation="configuration.session.create",
                     scope_id=workspace.id,
-                    identity=identity,
-                    result_kind="session",
-                    result_ref=conversation.id,
-                    now=now,
-                    response=result,
+                    key_digest=identity.key_digest,
+                    workspace_id=workspace.id,
                 )
-            )
-            await session.flush()
-            return result
+                session.add(conversation)
+                await session.flush()
+                thread = ThreadRecord(
+                    id=new_thread_id(),
+                    organization_id=workspace.organization_id,
+                    session_id=conversation.id,
+                    version=1,
+                    queue_version=0,
+                    role="root",
+                    origin_kind="new",
+                    labels={},
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(thread)
+                await session.flush()
+                await create_draft(
+                    session,
+                    conversation=conversation,
+                    target_id=request.target_agent_id,
+                    source=request.source,
+                    now=now,
+                )
+                result = session_view(conversation, root_thread_id=thread.id)
+                await session.flush()
+                return result
+        except IntegrityError:
+            async with short_session(self._sessions) as session:
+                replay = await find_by_key(
+                    session,
+                    SessionRecord,
+                    entity_key(
+                        actor,
+                        operation="configuration.session.create",
+                        scope_id=actor.workspace_id,
+                        key_digest=identity.key_digest,
+                        workspace_id=actor.workspace_id,
+                    ),
+                )
+                if replay is None:
+                    raise
+                session_id = replay.id
+            return await self.get_session(actor=actor, session_id=session_id)
 
     async def get_session(self, *, actor: AuthenticatedActor, session_id: str) -> ConfigurationSessionView:
         async with short_session(self._sessions) as session:
@@ -163,22 +187,25 @@ class ConfigurationConversations:
         request: CreateConfigurationThreadRequest,
         idempotency_key: str,
     ) -> ConfigurationThreadView:
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
         async with transaction(self._sessions) as session:
             try:
                 conversation = await authorize_session(session, actor=actor, session_id=session_id, lock=True)
             except AuthorizationError as error:
                 raise not_found() from error
-            replay = await load_replay(
+            replay = await find_by_key(
                 session,
-                actor=actor,
-                operation="configuration.thread.create",
-                scope_id=session_id,
-                identity=identity,
-                now=self._clock(),
+                ThreadRecord,
+                entity_key(
+                    actor,
+                    operation="configuration.thread.create",
+                    scope_id=session_id,
+                    key_digest=identity.key_digest,
+                    workspace_id=actor.workspace_id,
+                ),
             )
             if replay is not None:
-                return replay.restore(ConfigurationThreadView)
+                return await thread_view(session, replay)
             source = await session.get(RunRecord, request.fork_from_run_id)
             if source is None or source.session_id != session_id or source.configuration_context is None:
                 raise not_found()
@@ -201,23 +228,16 @@ class ConfigurationConversations:
                 created_at=now,
                 updated_at=now,
             )
+            thread.request_key = entity_key(
+                actor,
+                operation="configuration.thread.create",
+                scope_id=session_id,
+                key_digest=identity.key_digest,
+                workspace_id=conversation.workspace_id,
+            )
             session.add(thread)
             await session.flush()
             result = await thread_view(session, thread)
-            session.add(
-                evidence_record(
-                    actor=actor,
-                    organization_id=conversation.organization_id,
-                    workspace_id=conversation.workspace_id,
-                    operation="configuration.thread.create",
-                    scope_id=session_id,
-                    identity=identity,
-                    result_kind="thread",
-                    result_ref=thread.id,
-                    now=now,
-                    response=result,
-                )
-            )
             return result
 
     async def list_sessions(

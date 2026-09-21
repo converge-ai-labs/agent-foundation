@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID
 
-import a13n_harness.execution as execution_module
+import a13n_harness.builder as builder_module
 import httpx2
 import pytest
 from a13n_harness import (
@@ -111,7 +111,7 @@ async def _assert_cache_key(monkeypatch: pytest.MonkeyPatch, model_name: str, ex
         assert model_id == "logical:primary"
         return model
 
-    monkeypatch.setattr(execution_module, "infer_model", infer)
+    monkeypatch.setattr(builder_module, "infer_model", infer)
     executable = HarnessBuilder().build(
         AgentSpec(model=None if selection == "concrete" else "logical:primary"),
         model=model if selection == "concrete" else None,

@@ -11,12 +11,13 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from functools import cache
 from importlib.resources import files
-from typing import Literal, Protocol, cast, runtime_checkable
+from typing import Any, Literal, Protocol, cast, runtime_checkable
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_ai import Agent, BinaryContent, ModelRetry, UserContent
 from pydantic_ai.agent import AgentRunResult
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
@@ -26,7 +27,7 @@ from a13n_harness.errors import HarnessError
 from a13n_harness.models.inference import infer_model
 from a13n_harness.observation import _auxiliary_agent_capabilities
 from a13n_harness.providers.environment.models import EnvironmentPath
-from a13n_harness.usage import ProviderUsage, UsageMeasure
+from a13n_harness.usage import ProviderUsage, UsageMeasure, _auxiliary_model_usage_capability
 
 type NativeInputMediaKind = Literal["image", "video", "audio"]
 
@@ -191,33 +192,35 @@ class AgentMediaUnderstandingProvider:
             raise MediaUnderstandingError("media_understanding_unavailable")
         prompt = request.instructions or _default_instruction(request.kind)
         usage = RunUsage()
+        accounting = _auxiliary_model_usage_capability()
         try:
             async with asyncio.timeout(_TIMEOUT_SECONDS_BY_KIND[request.kind]), _enter_agent(agent):
                 result = await _run_with_retry(
                     agent,
                     [prompt, BinaryContent(data=request.source_bytes, media_type=request.media_type)],
                     usage=usage,
+                    accounting=accounting,
                 )
         except TimeoutError as exc:
             raise MediaUnderstandingError(
                 "media_understanding_timeout",
-                usage=_provider_usage_receipts(model, usage),
+                usage=() if accounting is not None else _provider_usage_receipts(model, usage),
             ) from exc
         except HarnessError:
             raise
         except UnexpectedModelBehavior as exc:
             raise MediaUnderstandingError(
                 "media_understanding_response_invalid",
-                usage=_provider_usage_receipts(model, usage),
+                usage=() if accounting is not None else _provider_usage_receipts(model, usage),
             ) from exc
         except Exception as exc:
             raise MediaUnderstandingError(
                 "media_understanding_failed",
-                usage=_provider_usage_receipts(model, usage),
+                usage=() if accounting is not None else _provider_usage_receipts(model, usage),
             ) from exc
         return MediaUnderstandingResult(
             text=result.output,
-            usage=_provider_usage_receipts(model, result.usage),
+            usage=() if accounting is not None else _provider_usage_receipts(model, result.usage),
         )
 
 
@@ -282,10 +285,14 @@ async def _run_with_retry(
     prompt: Sequence[UserContent],
     *,
     usage: RunUsage,
+    accounting: AbstractCapability[Any] | None = None,
 ) -> AgentRunResult[str]:
     for attempt in range(3):
         try:
-            return await agent.run(prompt, usage=usage, capabilities=_auxiliary_agent_capabilities())
+            capabilities = _auxiliary_agent_capabilities()
+            if accounting is not None:
+                capabilities = (*capabilities, accounting)
+            return await agent.run(prompt, usage=usage, capabilities=capabilities)
         except ModelHTTPError as exc:
             if exc.status_code not in {429, 500, 502, 503, 504} or attempt == 2:
                 raise
@@ -309,7 +316,7 @@ def _provider_usage_receipts(model: Model, usage: RunUsage) -> tuple[ProviderUsa
         )
         if value
     )
-    if not measures:
+    if not measures and usage.cost is None:
         return ()
     return (
         ProviderUsage(
@@ -318,6 +325,8 @@ def _provider_usage_receipts(model: Model, usage: RunUsage) -> tuple[ProviderUsa
             product=model.model_name,
             timestamp=datetime.now(UTC),
             measures=measures,
+            cost=usage.cost,
+            currency="USD" if usage.cost is not None else None,
         ),
     )
 

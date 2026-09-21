@@ -5,8 +5,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
-from a13n_service.durable_operations.idempotency import is_evidence_unique_race
-from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key, is_key_conflict
+from a13n_service.durable_operations.requests import request_identity
 from a13n_service.environments.devices import ENVD_PROVIDER_KEYS, capture_device_target
 from a13n_service.environments.domain import ExistingEnvironmentSelection, NewEnvironmentSelection
 from a13n_service.environments.models import EnvironmentProviderRecord
@@ -39,20 +39,28 @@ async def allocate_thread(
     normalized = body.model_dump(mode="json")
     if "environment" not in body.model_fields_set:
         normalized.pop("environment")
-    identity = request_identity(idempotency_key, normalized)
+    identity = request_identity(idempotency_key)
 
     async def accept(session: AsyncSession, online: OnlineEvidence) -> Thread:
         workspace = await authorize_workspace(
             session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.agent_invoke
         )
-        replay = await load_replay(
-            session, actor=actor, operation="thread.create", scope_id=workspace_id, identity=identity, now=now
+        replay = await find_by_key(
+            session,
+            ThreadRecord,
+            entity_key(
+                actor,
+                operation="thread.create",
+                scope_id=workspace_id,
+                key_digest=identity.key_digest,
+                workspace_id=workspace_id,
+            ),
         )
         if replay:
-            row = await session.get(ThreadRecord, replay.result_ref)
+            row = replay
             if row is None:
                 raise ApplicationError("thread_not_found", "Thread is unavailable", category=ErrorCategory.not_found)
-            return replay.restore(Thread)
+            return replay.to_resource()
         selected = body.environment
         if body.agent_id is not None:
             await authorize_agent(
@@ -147,42 +155,46 @@ async def allocate_thread(
             created_at=now,
             updated_at=now,
         )
-        session.add(thread_record(thread))
-        await session.flush()
         session.add(
-            evidence_record(
-                actor=actor,
-                organization_id=workspace.organization_id,
-                workspace_id=workspace_id,
-                operation="thread.create",
-                scope_id=workspace_id,
-                identity=identity,
-                result_kind="thread",
-                result_ref=thread.id,
-                now=now,
-                response=thread,
+            thread_record_with_key(
+                thread,
+                entity_key(
+                    actor,
+                    operation="thread.create",
+                    scope_id=workspace_id,
+                    key_digest=identity.key_digest,
+                    workspace_id=workspace_id,
+                ),
             )
         )
+        await session.flush()
         return thread
 
     try:
         return await (admission or OnlineAdmission(sessions)).commit(accept)
     except IntegrityError as error:
-        if is_evidence_unique_race(error):
+        if is_key_conflict(error, "threads"):
             async with transaction(sessions) as session:
                 await authorize_workspace(
                     session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.agent_invoke
                 )
-                replay = await load_replay(
+                replay = await find_by_key(
                     session,
-                    actor=actor,
-                    operation="thread.create",
-                    scope_id=workspace_id,
-                    identity=identity,
-                    now=utc_now(),
+                    ThreadRecord,
+                    entity_key(
+                        actor,
+                        operation="thread.create",
+                        scope_id=workspace_id,
+                        key_digest=identity.key_digest,
+                        workspace_id=workspace_id,
+                    ),
                 )
                 if replay is not None:
-                    row = await session.get(ThreadRecord, replay.result_ref)
-                    if row is not None:
-                        return replay.restore(Thread)
+                    return replay.to_resource()
         raise
+
+
+def thread_record_with_key(thread: Thread, key: str) -> ThreadRecord:
+    record = thread_record(thread)
+    record.request_key = key
+    return record

@@ -56,8 +56,6 @@ class RoutineService:
             or not is_group(context)
         ):
             raise RoutineInputError("routine_requester_unavailable")
-        if arguments.definition and arguments.definition.event and context.provider_key != "slack":
-            raise RoutineInputError("event_destination_unsupported")
         now = utc_now()
         owner = progress.requester_ids[0]
         account = await session.get(AccountRecord, context.account_id)

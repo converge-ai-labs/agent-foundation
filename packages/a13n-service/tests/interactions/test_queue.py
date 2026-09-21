@@ -101,7 +101,6 @@ def test_existing_thread_submission_admission_order_is_explicit() -> None:
         run_id="run_1010101010101010",
         thread_id="thread-10101010101010101010101010101010",
         idempotency_key="classify",
-        request_fingerprint="1" * 64,
     )
     thread = ThreadRecord(
         id=source.thread_id,
@@ -425,7 +424,6 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         run_id=seed.run_id,
         thread_id=source.thread_id,
         idempotency_key="consume-first",
-        request_fingerprint="6" * 64,
         config=config,
     ).model_copy(update={"input": accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True)})
     service = RunAcceptanceService(

@@ -89,7 +89,6 @@ class DocumentRecord(Base):
     native_id: Mapped[str | None] = mapped_column(String(512))
     state: Mapped[str] = mapped_column(String(16), default="pending")
     request_key: Mapped[str] = mapped_column(String(64))
-    request_digest: Mapped[str] = mapped_column(String(64))
     body_digest: Mapped[str] = mapped_column(String(64))
     title: Mapped[str] = mapped_column(String(160))
     description: Mapped[str] = mapped_column(String(320))

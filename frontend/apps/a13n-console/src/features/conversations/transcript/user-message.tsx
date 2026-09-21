@@ -1,29 +1,85 @@
 import { DisclosureSection } from "a13n-ui";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { JsonView } from "../../../shared/forms";
+import { MarkdownContent } from "../../../shared/markdown";
 import { inputText } from "../input";
 import { isObject } from "../projection";
+import type { RunRequest } from "../request";
 import { AssetAttachment, AttachmentChip } from "./attachment";
 import styles from "./transcript.module.css";
 
-/** What the person sent: a right-aligned bubble, captioned only when it is feedback. */
-export function UserMessage({
-  input,
-  fallback,
-  kind,
-}: {
-  input: unknown;
-  fallback?: string | null;
-  kind?: string | null;
-}) {
+/** What the Run was asked to do: a right-aligned bubble under its caption. */
+export function UserMessage({ request }: { request: RunRequest }) {
   const { t } = useTranslation();
   return (
     <div className={styles.userTurn}>
-      {kind === "feedback" && (
-        <span className={styles.userCaption}>{t("Feedback")}</span>
+      {request.kind !== "message" && (
+        <span className={styles.userCaption}>{requestLabel(request, t)}</span>
       )}
       <article className={styles.userMessage}>
-        <InputContent input={input} fallback={fallback} />
+        <RequestContent request={request} />
+      </article>
+    </div>
+  );
+}
+
+/** The words a resolved request is worth; the decision itself is `request.ts`. */
+export function requestLabel(request: RunRequest, t: TFunction): string {
+  switch (request.kind) {
+    case "feedback":
+      return t("Feedback");
+    case "continue":
+      return t("Continued without feedback");
+    case "subagent_result":
+      return request.subagent
+        ? t("Subagent result · {{name}}", { name: request.subagent })
+        : t("Subagent result");
+    case "delegated_task":
+      return t("Delegated task");
+    default:
+      return t("You");
+  }
+}
+
+/** What the request carried, rendered the same way at either level. */
+export function RequestContent({ request }: { request: RunRequest }) {
+  const { t } = useTranslation();
+  if (request.kind === "subagent_result")
+    return (
+      <>
+        {/* The payload is the child's own reply, so it reads as prose. */}
+        <MarkdownContent text={request.text} />
+        {request.status && (
+          <p className={styles.requestNote}>
+            {t(`state.${request.status}`, { defaultValue: request.status })}
+          </p>
+        )}
+      </>
+    );
+  if (request.kind === "delegated_task")
+    return (
+      <>
+        <div className={styles.prose}>{request.text}</div>
+        {request.parentTask && (
+          <p className={styles.requestNote}>
+            {t("From: {{task}}", { task: request.parentTask })}
+          </p>
+        )}
+      </>
+    );
+  return <InputContent input={request.input} fallback={request.text} />;
+}
+
+/** Guidance arrived while the agent worked: the same bubble, drawn open. */
+export function GuidanceMessage({ text }: { text: string }) {
+  const { t } = useTranslation();
+  if (!text.trim()) return null;
+  return (
+    <div className={styles.userTurn}>
+      <article className={`${styles.userMessage} ${styles.guidanceMessage}`}>
+        <span className={styles.guidanceLabel}>{t("Guidance")}</span>
+        <div className={styles.prose}>{text}</div>
       </article>
     </div>
   );

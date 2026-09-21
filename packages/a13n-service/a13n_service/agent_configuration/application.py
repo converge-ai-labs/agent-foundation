@@ -93,7 +93,7 @@ class ConfigurationApplication:
         idempotency_key: str,
         if_match: str,
     ) -> ConfigurationApplicationReceipt:
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
         async with transaction(self._sessions) as session:
             _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
             retained = await application_replay(
@@ -229,8 +229,21 @@ class ConfigurationApplication:
                 reviewed_version=record.version,
                 agent_revision_id=revision.id,
                 key_hash=identity.key_digest,
-                request_digest=identity.request_digest,
-                receipt=receipt.model_dump(mode="json"),
+                reviewed_digest=receipt.reviewed_digest,
+                reviewed_mode=receipt.reviewed_mode,
+                reviewed_target_agent_id=receipt.reviewed_target_agent_id,
+                reviewed_base_agent_revision_id=receipt.reviewed_base_agent_revision_id,
+                reviewed_creation_metadata=None
+                if receipt.reviewed_creation_metadata is None
+                else receipt.reviewed_creation_metadata.model_dump(mode="json"),
+                agent_id=receipt.agent_id,
+                agent_revision_version=receipt.agent_revision_version,
+                applied_by_user_id=receipt.applied_by_user_id,
+                no_change=receipt.no_change,
+                verification_acknowledgement=None
+                if receipt.verification_acknowledgement is None
+                else receipt.verification_acknowledgement.model_dump(mode="json"),
+                verification_run_ids=list(receipt.verification_run_ids),
                 created_at=now,
             )
             session.add(application)
@@ -243,20 +256,6 @@ class ConfigurationApplication:
             record.evidence_refs = []
             record.updated_at = next_updated_at(record.updated_at, now)
             conversation.updated_at = next_updated_at(conversation.updated_at, now)
-            session.add(
-                evidence_record(
-                    actor=actor,
-                    organization_id=record.organization_id,
-                    workspace_id=record.workspace_id,
-                    operation="configuration.draft.apply",
-                    scope_id=draft_id,
-                    identity=identity,
-                    result_kind="configuration_application",
-                    result_ref=draft_id,
-                    now=now,
-                    response=receipt,
-                )
-            )
             audit_draft(session, actor=actor, record=record, action="configuration.draft.apply", now=now)
             session.add(
                 OutboxRecord(
@@ -311,65 +310,43 @@ async def application_replay(
     identity: IdempotencyIdentity,
     now,
 ) -> ConfigurationApplicationReceipt | None:
-    replay = await load_replay(
+    application = await session.scalar(
+        select(ConfigurationApplicationRecord).where(
+            ConfigurationApplicationRecord.draft_id == record.id,
+            ConfigurationApplicationRecord.key_hash == identity.key_digest,
+        )
+    )
+    if application is not None:
+        return application.to_resource()
+    reference = await load_replay(
         session, actor=actor, operation="configuration.draft.apply", scope_id=record.id, identity=identity, now=now
     )
-    retained = await retained_receipt(
-        session,
-        draft_id=record.id,
-        reviewed_version=request.expected_version,
-        key_digest=identity.key_digest,
-        request_digest=identity.request_digest,
-    )
-    if replay is not None:
-        return replay.restore(ConfigurationApplicationReceipt)
-    if retained is not None:
-        # Bind a semantic replay's key through the shared command retention window.
-        session.add(
-            evidence_record(
-                actor=actor,
-                organization_id=record.organization_id,
-                workspace_id=record.workspace_id,
-                operation="configuration.draft.apply",
-                scope_id=record.id,
-                identity=identity,
-                result_kind="configuration_application",
-                result_ref=record.id,
-                now=now,
-                response=retained,
-            )
-        )
-    return retained
-
-
-async def retained_receipt(
-    session: AsyncSession, *, draft_id: str, reviewed_version: int, key_digest: str, request_digest: str
-) -> ConfigurationApplicationReceipt | None:
-    records = tuple(
-        await session.scalars(
-            select(ConfigurationApplicationRecord).where(
-                ConfigurationApplicationRecord.draft_id == draft_id,
-                or_(
-                    ConfigurationApplicationRecord.reviewed_version == reviewed_version,
-                    ConfigurationApplicationRecord.key_hash == key_digest,
-                ),
-            )
+    if reference is not None:
+        application = await session.get(ConfigurationApplicationRecord, reference.result_ref)
+        return None if application is None else application.to_resource()
+    # A reviewed version has one application, even when a caller supplies a new key.
+    application = await session.scalar(
+        select(ConfigurationApplicationRecord).where(
+            ConfigurationApplicationRecord.draft_id == record.id,
+            ConfigurationApplicationRecord.reviewed_version == request.expected_version,
         )
     )
-    receipt = None
-    for record in records:
-        if record.key_hash == key_digest and record.request_digest != request_digest:
-            raise failure(
-                "idempotency_conflict", "The Idempotency-Key was already used with different request content."
-            )
-        if record.reviewed_version == reviewed_version:
-            if record.request_digest != request_digest:
-                raise failure(
-                    "configuration_application_conflict",
-                    "This draft version already has a different application request.",
-                )
-            receipt = record.to_resource()
-    return receipt
+    if application is None:
+        return None
+    session.add(
+        evidence_record(
+            actor=actor,
+            organization_id=record.organization_id,
+            workspace_id=record.workspace_id,
+            operation="configuration.draft.apply",
+            scope_id=record.id,
+            identity=identity,
+            result_kind="configuration_application",
+            result_ref=application.id,
+            now=now,
+        )
+    )
+    return application.to_resource()
 
 
 def require_review(record: ConfigurationDraftRecord, *, request: ApplyDraftRequest, if_match: str) -> None:

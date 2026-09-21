@@ -53,11 +53,11 @@ export function usageSummary(
   usage?: ThreadUsage,
   context?: Schema<"ContextUsageView">,
 ) {
-  const tokens = tokenCounts(usage?.root);
+  const tokens = tokenCounts(usage?.combined);
   const total =
     (tokens.get("input_tokens") ?? 0) + (tokens.get("output_tokens") ?? 0);
   const totalTokens =
-    usage?.first_observed_at && usage.root.model_requests > 0
+    usage?.first_observed_at && usage.combined.model_requests > 0
       ? total
       : undefined;
   const cache = tokens.get("cache_read_tokens");
@@ -77,7 +77,7 @@ export function usageSummary(
       used != null && window != null && window > 0
         ? `${Math.round((100 * used) / window)}%`
         : "—",
-    cost: modelCost(usage?.first_observed_at ? usage.root : undefined),
+    cost: modelCost(usage?.first_observed_at ? usage.combined : undefined),
     cache:
       usage?.first_observed_at && total > 0 && cache != null
         ? `${((100 * cache) / total).toFixed(1)}%`

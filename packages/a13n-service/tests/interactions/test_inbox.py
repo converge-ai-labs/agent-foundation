@@ -492,7 +492,6 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
         run_id=seed.run_id,
         thread_id=source.thread_id,
         idempotency_key="feedback-successor",
-        request_fingerprint="7" * 64,
     ).model_copy(
         update={
             "authority_principal": source.authority_principal,

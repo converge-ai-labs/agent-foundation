@@ -3002,12 +3002,6 @@ export interface components {
             id: string;
         };
         ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"];
-        /**
-         * ModelCapability
-         * @description Harness-owned capabilities of the active Agent model.
-         * @enum {string}
-         */
-        ModelCapability: "image_understanding" | "video_understanding" | "audio_understanding";
         /** ModelCatalogSnapshot */
         ModelCatalogSnapshot: {
             /** Items */
@@ -3179,6 +3173,26 @@ export interface components {
             } | null;
             /** Replaces Host Operation */
             replaces_host_operation?: ("search" | "scrape") | null;
+        };
+        /** ModelUsageGroup */
+        ModelUsageGroup: {
+            /** Model */
+            model: string;
+            /** Agent Instance Id */
+            agent_instance_id: string;
+            /** Descendant */
+            descendant: boolean;
+            /** Source */
+            source: string;
+            totals: components["schemas"]["UsageTotals"];
+        };
+        /** ModelUsageView */
+        ModelUsageView: {
+            /** Name */
+            name: string;
+            root: components["schemas"]["UsageTotals"];
+            descendants: components["schemas"]["UsageTotals"];
+            combined: components["schemas"]["UsageTotals"];
         };
         /** @enum {string} */
         NativeInputMediaKind: "image" | "video" | "audio";
@@ -4521,6 +4535,17 @@ export interface components {
             /** Recent Runs */
             recent_runs: components["schemas"]["RunUsageView"][];
             other_runs: components["schemas"]["UsageTotals"];
+            /**
+             * Model Scopes
+             * @default []
+             */
+            model_scopes?: components["schemas"]["ModelUsageView"][];
+            /**
+             * Groups
+             * @default []
+             */
+            groups?: components["schemas"]["ModelUsageGroup"][];
+            other_groups?: components["schemas"]["UsageTotals"] | null;
         };
         /**
          * ThreadWork
@@ -5371,6 +5396,12 @@ export interface components {
             /** Base Url */
             base_url?: string | null;
         };
+        /**
+         * ModelCapability
+         * @description Harness-owned capabilities of the active Agent model.
+         * @enum {string}
+         */
+        ModelCapability: "image_understanding" | "video_understanding" | "audio_understanding";
         /** ModelRecipeRequest */
         ModelRecipeRequest: {
             /** Connection */

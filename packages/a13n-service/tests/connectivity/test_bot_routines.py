@@ -535,37 +535,13 @@ async def test_unconfirmed_draft_preserves_pending_definition(routines, operatio
         assert row.state == "active" and row.definition_json == original["definition"]
 
 
-async def test_event_tools_are_limited_to_supported_destinations(routines, monkeypatch):
+async def test_event_tools_are_available_in_supported_groups(routines, monkeypatch):
     from unittest.mock import AsyncMock
 
     from a13n_service.bots.routines import runtime
-    from a13n_service.bots.routines.service import RoutineInputError
-    from a13n_service.connectivity.subscriptions import EventTrigger
 
     monkeypatch.setattr(runtime, "local_capability", AsyncMock(side_effect=lambda **kwargs: SimpleNamespace(**kwargs)))
-    tools = await runtime.RoutineTools(routines.service)(
-        SimpleNamespace(native_tool_contexts=(routines.context,)),
-        AsyncMock(),
-        SimpleNamespace(run_id=routines.task.receipt.run_id),
-    )
-    assert ("event_sources" in tools.allowed) == (routines.context.provider_key == "slack")
-    if routines.context.provider_key == "lark":
-        arguments = ProposeRoutine(
-            request_key="unsupported-event",
-            definition=RoutineDefinition(
-                title="PR notification",
-                prompt="Notify this conversation after the PR merges.",
-                event=EventTrigger(
-                    source_target_id="tgt_example",
-                    event_type="github.pull_request.merged",
-                    filters={"pull_request_number": 1},
-                    once=True,
-                ),
-            ),
-        )
-        async with transaction(routines.task.sessions) as db:
-            with pytest.raises(RoutineInputError, match="event_destination_unsupported"):
-                await routines.service.propose(
-                    db, run_id=routines.task.receipt.run_id, context=routines.context, arguments=arguments
-                )
-            assert await db.scalar(select(func.count()).select_from(RoutineRecord)) == 0
+    scope = SimpleNamespace(native_tool_contexts=(routines.context,))
+    tools = runtime.RoutineTools(routines.service)
+    attempt = SimpleNamespace(run_id=routines.task.receipt.run_id)
+    assert "event_sources" in (await tools(scope, AsyncMock(), attempt)).allowed

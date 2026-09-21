@@ -21,6 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 from a13n_service.iam.domain import ActorRef, PrincipalRef, PrincipalType, SystemActorRef
 from a13n_service.labels import LABELS_SQL_TYPE
 from a13n_service.resource_keys import RESOURCE_KEY_MAX_LENGTH
@@ -44,7 +45,7 @@ _CONNECTION_TOOLS_ADAPTER = TypeAdapter(tuple[ConnectionToolSelection, ...])
 _SUBAGENTS_ADAPTER = TypeAdapter(tuple[ResolvedSubagentEdge, ...])
 
 
-class AgentRecord(Base):
+class AgentRecord(EntityRequestKey, Base):
     __tablename__ = "agents"
     __table_args__ = (
         ForeignKeyConstraint(

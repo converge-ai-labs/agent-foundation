@@ -200,6 +200,10 @@ async def test_agent_spec_limits_apply_unless_one_run_supplies_an_exact_override
         model=_turn_model([]),
     )
 
+    detached_limits = executable.definition_usage_limits()
+    assert detached_limits.request_limit == 0
+    detached_limits.request_limit = 99
+
     limited = await executable.run("blocked")
     overridden = await executable.run(
         "allowed",
@@ -208,6 +212,7 @@ async def test_agent_spec_limits_apply_unless_one_run_supplies_an_exact_override
 
     assert limited.status == "failed"
     assert overridden.output_or_raise() == "turn-1"
+    assert executable.definition_usage_limits().request_limit == 0
 
 
 async def test_stream_is_lazy_and_delivers_one_terminal_result_after_events() -> None:
@@ -513,11 +518,15 @@ async def test_agent_spec_object_schema_becomes_native_structured_dict_output() 
         model=_structured_output_model({"value": 11}, schemas=observed_schemas),
     )
 
+    expected_schema = json.loads(json.dumps(schema))
+    schema["properties"]["value"]["type"] = "string"
+    assert executable.definition.agent.output_schema == expected_schema
+    executable.definition.agent.output_schema["properties"]["value"]["type"] = "boolean"
+
     result = await executable.run("schema", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == {"value": 11}
-    assert observed_schemas == [schema]
-    assert executable.definition.agent.output_schema == schema
+    assert observed_schemas == [expected_schema]
 
 
 async def test_invalid_agent_spec_output_schema_fails_during_build() -> None:

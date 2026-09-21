@@ -119,7 +119,7 @@ The `201` response confirms a durable association, initially `pending`. Worker i
 
 The Agent accesses this example at `/environment/computer`. Without a primary, the first accepted addition becomes the default when installed; a later addition does not take its place if it becomes ready sooner. With a primary, its default remains unchanged. Agent tool restrictions still apply, and acceptance does not enable a disabled file or shell toolset.
 
-Retrying the same request with its original idempotency key returns the original acceptance receipt. Use the list endpoint for fresh loading observations. Mount names and targets are immutable after acceptance; this API does not unmount, replace, or switch defaults. A failed addition leaves other installed mounts usable. Temporary unavailability is retried with bounded backoff at later model boundaries.
+Retrying with the same idempotency key reads the accepted mount and its current loading observations, even if the new body differs. Mount names and targets are immutable after acceptance; this API does not unmount, replace, or switch defaults. A failed addition leaves other installed mounts usable. Temporary unavailability is retried with bounded backoff at later model boundaries.
 
 Retrying a failed or cancelled Run, or continuing its sealed waiting state, copies the accepted additional mounts with their original targets and relative order. Each successor acquires fresh use and reports its own loading status. Ordinary new Runs, forks, and independently scheduled children do not inherit these additions; inline children share the parent’s facade.
 
@@ -196,7 +196,7 @@ curl --fail-with-body \
 
 Download `/api/v1/assets/{asset_id}/content` with the same authorized credential; metadata is at `/api/v1/assets/{asset_id}`. The content response includes length, disposition, and digest ETag. It is not a JSON representation or multipart upload. URL-encode query values and preserve exact binary bytes.
 
-A distinct publication receives a new Asset ID. Within the command's 24-hour replay horizon, the same canonical upload/key returns the original publication rather than creating another Asset. Metadata and content endpoints do not expose internal object keys or public object-store URLs.
+A distinct publication receives a new Asset ID. The same scoped upload key selects the existing Asset without comparing retry content. Its key remains until ordinary business collection removes the owning row. Metadata and content endpoints do not expose internal object keys or public object-store URLs.
 
 Delete tombstones logical access immediately and records asynchronous object cleanup. Cleanup failure does not restore access. Retained cleanup/audit/replay evidence and physical bytes have different lifetimes; inspect authoritative state rather than treating an attempted object deletion as completion.
 

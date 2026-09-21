@@ -75,7 +75,7 @@ async def test_owner_cleanup_is_bounded_idempotent_and_audited(collection_sessio
         assert all(row.actor_type == "system" and row.details == {"reason": "owner_deleted"} for row in audits)
 
 
-async def test_upload_retention_waits_for_receipt_replay_then_progresses(collection_sessions):
+async def test_upload_retention_does_not_pin_results_for_replay(collection_sessions):
     sessions = collection_sessions
     now = utc_now()
     async with transaction(sessions) as database:
@@ -104,24 +104,15 @@ async def test_upload_retention_waits_for_receipt_replay_then_progresses(collect
                 operation="skill.upload",
                 scope_id=WORKSPACE_ID,
                 key_digest="b" * 64,
-                request_digest="c" * 64,
                 result_kind="skill_upload",
                 result_ref=WORKSPACE_ID,
-                receipt_json={"upload_id": "su_pinned"},
                 created_at=now - timedelta(days=2),
-                expires_at=now + timedelta(days=1),
             )
         )
     collector = SkillUploadRetention(sessions, batch_limit=1)
     assert (await collector.scan()).completed == 1
-    assert (await collector.scan()).completed == 0
-    async with transaction(sessions) as database:
-        assert await database.get(SkillUploadRecord, "su_expired") is None
-        assert await database.get(SkillUploadRecord, "su_pinned") is not None
-        assert await database.get(SkillUploadRecord, "su_live") is not None
-        evidence = await database.get(IdempotencyEvidenceRecord, "ide_upload_retention")
-        evidence.expires_at = now - timedelta(hours=1)
     assert (await collector.scan()).completed == 1
+    assert (await collector.scan()).completed == 0
     async with short_session(sessions) as database:
         assert tuple(await database.scalars(select(SkillUploadRecord.id))) == ("su_live",)
 

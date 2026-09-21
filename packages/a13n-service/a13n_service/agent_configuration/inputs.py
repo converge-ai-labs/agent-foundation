@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import partial
 
 from anyio import to_thread
 from pydantic import Field
@@ -16,7 +15,7 @@ from a13n_service.digests import digest_request
 from a13n_service.iam import AuthenticatedActor, AuthorizationError
 from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceReceipt, RunAcceptanceService
-from a13n_service.interactions.command_evidence import RunCommandEvidence, fingerprint_request
+from a13n_service.interactions.command_evidence import RunRequest
 from a13n_service.interactions.command_preparation import CommandInput, PreparedCommandInput
 from a13n_service.interactions.domain import ExecutionBudget, Run, RunLineageKind, RunUsageLimit, Thread, new_run_id
 from a13n_service.interactions.environment_selection import EnvironmentDefault, requested_environment
@@ -112,15 +111,13 @@ class ConfigurationInputs:
     async def submit(
         self, *, actor: AuthenticatedActor, thread_id: str, request: ConfigurationInputRequest, idempotency_key: str
     ) -> RunAcceptanceReceipt:
-        evidence = RunCommandEvidence(
+        evidence = RunRequest(
             self._sessions,
             actor=actor,
             operation="configuration.input",
             scope_id=thread_id,
             supplied_key=idempotency_key,
-            fingerprint=fingerprint_request(request),
             binding=None,
-            clock=self._clock,
         )
         selected = await self._select(actor, thread_id)
         replay = await evidence.replay()
@@ -202,7 +199,7 @@ class ConfigurationInputs:
             else (RunLineageKind.fork if is_fork else RunLineageKind.continue_),
             invocation=prepared.frozen,
             input=prepared.input,
-            request_fingerprint=evidence.fingerprint,
+            request_key=evidence.key,
             origin=SubmissionOrigin(),
             configuration_context=context,
         )
@@ -225,7 +222,7 @@ class ConfigurationInputs:
                 expected_head_run_id=selected.thread.head_run_id,
                 next_head_run_id=None if source is None or is_fork else source.id,
                 final_validator=validate_final,
-                transaction_hook=partial(evidence.commit, now=self._clock()),
+                transaction_hook=evidence.commit,
                 environment=requested_environment(None, default=EnvironmentDefault.thread),
             )
         except RunAcceptanceError as error:

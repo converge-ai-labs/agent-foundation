@@ -12,13 +12,7 @@ from a13n_service.agents.invocation_resolution import (
     AgentInvocationResolver,
 )
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.durable_operations.idempotency import (
-    IdempotencyConflict,
-    IdempotencyIdentity,
-    find_evidence,
-    insert_evidence,
-    new_evidence,
-)
+from a13n_service.durable_operations.entity_keys import scope_key
 from a13n_service.environments.selection import Omitted
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -48,7 +42,7 @@ from a13n_service.interactions.initialization import (
     initialize_start_state,
 )
 from a13n_service.interactions.input import AcceptedAgentInput
-from a13n_service.interactions.models import RunRecord
+from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunStateStore
 from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.queue_validity import permanent_queue_failure
@@ -57,13 +51,13 @@ from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
 from .command_evidence import (
-    fingerprint_request,
     require_idempotency_key,
     run_command_scope,
+    run_receipt,
     scoped_idempotency_key,
 )
 from .command_preparation import CommandInput
-from .errors import InteractionCommandError, command_not_found, idempotency_conflict, map_acceptance_error
+from .errors import InteractionCommandError, command_not_found, map_acceptance_error
 from .initialization import NewRunPolicy
 from .session_scope import SessionScope
 from .sources import load_thread_head, load_thread_source
@@ -159,7 +153,6 @@ class QueuedRunCommands:
     ) -> QueuedSubmissionConsumptionReceipt:
         """Consume the current queue head under its retained authority."""
 
-        request_fingerprint = fingerprint_request(request)
         stored_key = None
         if idempotency_key is not None:
             require_idempotency_key(idempotency_key)
@@ -173,43 +166,31 @@ class QueuedRunCommands:
                 actor=actor,
                 thread_id=thread_id,
                 stored_key=stored_key,
-                request_fingerprint=request_fingerprint,
             )
             if replay is not None:
                 return replay
 
-        current, head, thread, queued, session_scope = await self._load_queued_consumption_source(
-            actor=actor,
-            thread_id=thread_id,
-        )
-        prepared = await self.prepare_queued_run(
-            actor=actor,
-            current=current,
-            head=head,
-            head_state=None if head is None else (await self._states.read_run(head)).envelope,
-            thread=thread,
-            queued=queued,
-            request_fingerprint=request_fingerprint,
-        )
+        try:
+            current, head, thread, queued, session_scope = await self._load_queued_consumption_source(
+                actor=actor,
+                thread_id=thread_id,
+            )
+            prepared = await self.prepare_queued_run(
+                actor=actor,
+                current=current,
+                head=head,
+                head_state=None if head is None else (await self._states.read_run(head)).envelope,
+                thread=thread,
+                queued=queued,
+            )
+        except InteractionCommandError:
+            if stored_key is not None:
+                replay = await self._queued_consumption_replay(actor=actor, thread_id=thread_id, stored_key=stored_key)
+                if replay is not None:
+                    return replay
+            raise
 
         run = prepared.run
-
-        async def record_receipt(database: AsyncSession, receipt: QueuedSubmissionConsumptionReceipt) -> None:
-            # Automatic drain recovers from the queue row, not a synthetic HTTP command.
-            if stored_key is None:
-                return
-            await insert_evidence(
-                database,
-                new_evidence(
-                    organization_id=run.organization_id,
-                    scope=run_command_scope(actor),
-                    identity=IdempotencyIdentity(stored_key.removeprefix("idem_"), request_fingerprint),
-                    result_kind="queue_consumption",
-                    result_ref=run.id,
-                    receipt=receipt.model_dump(mode="json"),
-                    now=self._clock(),
-                ),
-            )
 
         try:
             return await self._acceptance.consume_queued(
@@ -224,7 +205,9 @@ class QueuedRunCommands:
                 expected_head_run_id=None if head is None else head.id,
                 next_head_run_id=None if head is None else head.id,
                 final_validator=prepared.validate,
-                transaction_hook=record_receipt,
+                consumption_key=None
+                if stored_key is None
+                else scope_key(run_command_scope(actor), stored_key.removeprefix("idem_")),
                 label_overrides=queued.submission.labels,
             )
         except RunAcceptanceError as error:
@@ -234,7 +217,6 @@ class QueuedRunCommands:
                 actor=actor,
                 thread_id=thread_id,
                 stored_key=stored_key,
-                request_fingerprint=request_fingerprint,
             )
             if replay is not None:
                 return replay
@@ -250,7 +232,6 @@ class QueuedRunCommands:
         head_state: RunCheckpoint | None,
         thread: Thread,
         queued: QueuedSubmission,
-        request_fingerprint: str,
     ) -> PreparedQueuedRun:
         """Resolve the queue Principal's intent outside its final acceptance transaction."""
         retained_actor = AuthenticatedActor(
@@ -301,7 +282,6 @@ class QueuedRunCommands:
             thread_id=current.thread_id,
             parent_run_id=parent_run_id,
             lineage_kind=lineage_kind,
-            request_fingerprint=request_fingerprint,
             invocation=prepared_input.frozen,
             input=prepared_input.input,
             origin=SubmissionOrigin(trigger_type="queued_submission"),
@@ -335,21 +315,20 @@ class QueuedRunCommands:
         actor: AuthenticatedActor,
         thread_id: str,
         stored_key: str,
-        request_fingerprint: str,
     ) -> QueuedSubmissionConsumptionReceipt | None:
         async with short_session(self._sessions) as database:
             try:
-                evidence = await find_evidence(
-                    database,
-                    scope=run_command_scope(actor),
-                    identity=IdempotencyIdentity(stored_key.removeprefix("idem_"), request_fingerprint),
-                    now=self._clock(),
+                queued = await database.scalar(
+                    select(QueuedSubmissionRecord).where(
+                        QueuedSubmissionRecord.consumption_key
+                        == scope_key(run_command_scope(actor), stored_key.removeprefix("idem_"))
+                    )
                 )
-                if evidence is None:
+                if queued is None or queued.consumed_run_id is None:
                     return None
-                run = await database.get(RunRecord, evidence.result_ref)
-                if run is None or run.thread_id != thread_id or run.organization_id != evidence.organization_id:
-                    raise RuntimeError("Queue command evidence references a missing Run")
+                run = await database.get(RunRecord, queued.consumed_run_id)
+                if run is None or run.thread_id != thread_id:
+                    return None
                 await authorize_agent(
                     database,
                     actor=actor,
@@ -359,11 +338,15 @@ class QueuedRunCommands:
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
-            except IdempotencyConflict as error:
-                raise idempotency_conflict() from error
-            receipt = QueuedSubmissionConsumptionReceipt.model_validate(evidence.receipt_json)
-        if receipt.run is not None:
-            await self._acceptance.validate_retained(receipt.run.run_id)
+            thread = await database.get(ThreadRecord, thread_id)
+            if thread is None:
+                return None
+            receipt = QueuedSubmissionConsumptionReceipt(
+                outcome="run_accepted",
+                queued_submission=queued.to_resource(),
+                queue_version=thread.queue_version,
+                run=await run_receipt(database, run),
+            )
         return receipt
 
     async def _load_queued_consumption_source(

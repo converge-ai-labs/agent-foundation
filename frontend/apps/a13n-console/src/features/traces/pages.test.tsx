@@ -13,6 +13,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
 import { TraceDetail } from "./detail";
 import { TracesPage } from "./page";
+import { UNKNOWN } from "../../shared/unknown";
 
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
@@ -273,13 +274,13 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
     });
   });
   mount(<TraceDetail traceId="trace-1" />);
-  await screen.findByRole("button", { name: /child/ });
-  expect(screen.getAllByRole("button", { name: /^root/ })).toHaveLength(1);
+  await screen.findByRole("treeitem", { name: /child/ });
+  expect(screen.getAllByRole("treeitem", { name: /^root/ })).toHaveLength(1);
   expect(screen.queryByText("Attempt outcome")).toBeNull();
   expect(screen.getByText("Loaded cost")).toBeTruthy();
   expect(
     screen.getByRole("link", { name: "View run" }).getAttribute("href"),
-  ).toContain("/sessions/session/threads/thread/runs/run");
+  ).toContain("/sessions/session/threads/thread/runs/run?view=debug");
   await user.click(
     screen.getByRole("button", { name: "Load more observations" }),
   );
@@ -297,26 +298,23 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
   );
   await screen.findByText("Temporary page failure");
   await user.click(screen.getByRole("button", { name: "Reload" }));
-  await screen.findByRole("button", { name: /^parent/ });
+  await screen.findByRole("treeitem", { name: /^parent/ });
   expect(
     screen.queryByRole("button", { name: "Load more observations" }),
   ).toBeNull();
-  const labels = screen
-    .getAllByRole("button")
-    .map((button) => button.textContent);
+  const labels = screen.getAllByRole("treeitem").map((row) => row.textContent);
   expect(labels.findIndex((label) => label?.startsWith("parent"))).toBeLessThan(
     labels.findIndex((label) => label?.startsWith("child")),
   );
-  await user.click(screen.getByRole("button", { name: /^child/ }));
+  await user.click(screen.getByRole("treeitem", { name: /^child/ }));
   const panel = within(await screen.findByRole("complementary"));
-  await user.click(panel.getByRole("button", { name: "Metadata" }));
   expect(panel.getByText("Diagnostic reason")).toBeTruthy();
   expect(panel.getByText("Requested model")).toBeTruthy();
   expect(panel.getByText("model-alias")).toBeTruthy();
   expect(panel.getByText("model-version")).toBeTruthy();
   expect(panel.getByText("Error")).toBeTruthy();
   expect(panel.getByText("Telemetry status")).toBeTruthy();
-  expect(panel.getAllByText("-").length).toBeGreaterThan(0);
+  expect(panel.getAllByText(UNKNOWN).length).toBeGreaterThan(0);
   expect(
     panel.getByRole("button", { name: "Resource attributes" }),
   ).toBeTruthy();
@@ -335,7 +333,7 @@ it.each(["langfuse", "logfire"] as const)(
     mount(<TraceDetail traceId="trace-1" />);
     const run = await screen.findByRole("link", { name: "View run" });
     expect(run.getAttribute("href")).toBe(
-      "/workspaces/test/sessions/session/threads/thread/runs/run",
+      "/workspaces/test/sessions/session/threads/thread/runs/run?view=debug",
     );
     expect(run.getAttribute("target")).toBeNull();
     const backend = screen.getByRole("link", {
@@ -382,12 +380,12 @@ it("hides cached detail after observation authorization is revoked", async () =>
     });
   });
   mount(<TraceDetail traceId="trace-1" />);
-  await screen.findByRole("button", { name: /private-child/ });
+  await screen.findByRole("treeitem", { name: /private-child/ });
   await user.click(
     screen.getByRole("button", { name: "Load more observations" }),
   );
   await screen.findByText("Trace not found");
-  expect(screen.queryByRole("button", { name: /private-child/ })).toBeNull();
+  expect(screen.queryByRole("treeitem", { name: /private-child/ })).toBeNull();
   expect(screen.queryByRole("link", { name: "View run" })).toBeNull();
 });
 
@@ -507,8 +505,8 @@ it("does not expose root-only or partial list costs when a later page fails or r
   expect(screen.queryByText("$9")).toBeNull();
   for (const row of screen.getAllByRole("row").slice(1)) {
     const cells = within(row).getAllByRole("cell");
-    expect(cells[3].textContent).toBe("-");
-    expect(cells[4].textContent).toBe("-");
+    expect(cells[3].textContent).toBe(UNKNOWN);
+    expect(cells[4].textContent).toBe(UNKNOWN);
   }
   expect(
     http.GET.mock.calls.filter(([path]) => path.endsWith("observations")),
@@ -572,7 +570,7 @@ it("caps advancing cost pagination without exposing a partial total", async () =
   expect(reads).toBe(20);
   expect(
     within(screen.getAllByRole("row")[1]).getAllByRole("cell")[4].textContent,
-  ).toBe("-");
+  ).toBe(UNKNOWN);
 });
 
 it("uses seconds in the detail overview, timeline and observation dialog", async () => {
@@ -586,13 +584,13 @@ it("uses seconds in the detail overview, timeline and observation dialog", async
     ),
   );
   mount(<TraceDetail traceId="trace-1" />);
-  await screen.findByRole("button", { name: /^root/ });
+  await screen.findByRole("treeitem", { name: /^root/ });
   expect(screen.getByText("0 s").parentElement?.textContent).toBe("0 s2.5 s");
   expect(
-    within(screen.getByRole("button", { name: /^root/ })).getByText("2.5 s"),
+    within(screen.getByRole("treeitem", { name: /^root/ })).getByText("2.5 s"),
   ).toBeTruthy();
   expect(screen.queryByText("Root status")).toBeNull();
-  await user.click(screen.getByRole("button", { name: /^root/ }));
+  await user.click(screen.getByRole("treeitem", { name: /^root/ }));
   const panel = within(await screen.findByRole("complementary"));
   expect(panel.getByText("2.5 s")).toBeTruthy();
   expect(panel.queryByText(/\d ms\b/)).toBeNull();
@@ -716,8 +714,8 @@ it("opens the root content tab without substituting child output", async () => {
   ).toBe("true");
   expect(screen.queryByText("Child only output")).toBeNull();
   await user.click(screen.getByRole("tab", { name: "Observations" }));
-  await user.click(await screen.findByRole("button", { name: /^child/ }));
+  await user.click(await screen.findByRole("treeitem", { name: /^child/ }));
   const childPanel = within(await screen.findByRole("complementary"));
-  await user.click(childPanel.getByRole("button", { name: "Output" }));
+  expect(childPanel.getByRole("heading", { name: "Output" })).toBeTruthy();
   expect(childPanel.getByText("Child only output")).toBeTruthy();
 });

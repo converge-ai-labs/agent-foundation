@@ -107,14 +107,15 @@ it("renders a full Session page from collection previews without per-row Thread 
   expect(screen.queryByText("Session detail")).toBeNull();
   await user.click(within(row).getByText("Question 0"));
   expect(
-    await screen.findByText("/workspace/design/sessions/session_0"),
+    await screen.findByText("/workspace/design/sessions/session_0?view=debug"),
   ).toBeTruthy();
   cleanup();
   cache.clear();
 });
 
 function SelectedDetail() {
-  return <p>{useLocation().pathname}</p>;
+  const { pathname, search } = useLocation();
+  return <p>{`${pathname}${search}`}</p>;
 }
 
 it("updates ID search, combines filters, and opens the matched Thread", async () => {
@@ -210,7 +211,7 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
   await user.click(screen.getByText("No request text").closest("tr")!);
   expect(
     await screen.findByText(
-      "/workspace/design/sessions/sess_one/threads/thread_one",
+      "/workspace/design/sessions/sess_one/threads/thread_one?view=debug",
     ),
   ).toBeTruthy();
   cleanup();

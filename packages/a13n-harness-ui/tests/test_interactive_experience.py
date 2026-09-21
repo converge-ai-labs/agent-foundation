@@ -97,7 +97,10 @@ def test_status_keeps_native_cache_counters_decimal_cost_and_unknown_cost() -> N
     assert "cache write 20" in status.usage_details().lower()
     assert "$0.0123" in status.line(80)
     status.record_usage(record("three", None))
-    assert status.usage.cost is None and "Cost: unknown" in status.usage_details()
+    assert status.usage.cost == Decimal("0.012346")
+    assert status.unknown_costs == 1
+    assert "$0.0123+" in status.line()
+    assert "1 unknown-cost responses" in status.usage_details()
     status.reset_usage()
     assert status.usage is None and status.requests == 0
     assert status.total_tokens is None
@@ -122,14 +125,14 @@ def test_status_restores_ledger_cost_coverage_without_provider_costs(cost: Decim
     totals = _usage_totals(cost=Decimal("0.123456") if cost is None else cost, unknown=int(cost is None))
     status.restore_usage(totals)
     assert status.requests == 3
-    assert status.usage.cost == cost
+    assert status.usage.cost == totals.model_cost_usd
     assert status.cache_rate == 50
     assert status.total_tokens == 360
-    assert "Observed root Thread" in status.usage_details()
+    assert "Observed conversation" in status.usage_details()
     # Reconciliation replaces rather than adds the same durable observations.
     status.restore_usage(totals)
     assert status.requests == 3
-    assert status.usage.cost == cost
+    assert status.usage.cost == totals.model_cost_usd
     # A ledger with only provider receipts is not proven zero model usage.
     status.restore_usage(_usage_totals(requests=0))
     assert status.usage is None and status.requests == 0
@@ -340,8 +343,12 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
             raise RuntimeError("wait failed")
         return SimpleNamespace(status=RootOperationStatus(terminal_status), outcome=None, failure=None, goal=None)
 
+    live_totals = replace(
+        _usage_totals(requests=6, cost=Decimal("0.55")),
+        tokens=(("input_tokens", 500), ("output_tokens", 100), ("cache_read_tokens", 180)),
+    )
     final_totals = replace(
-        _usage_totals(requests=6, cost=Decimal("0.5")),
+        _usage_totals(requests=7, cost=Decimal("0.625")),
         tokens=(("input_tokens", 500), ("output_tokens", 100), ("cache_read_tokens", 180)),
     )
     app = SimpleNamespace(
@@ -350,7 +357,13 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
         wait_root_operation=wait,
         get_root_operation=AsyncMock(return_value=SimpleNamespace(goal=None)),
         context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
-        thread_usage=AsyncMock(side_effect=[SimpleNamespace(root=_usage_totals()), SimpleNamespace(root=final_totals)]),
+        thread_usage=AsyncMock(
+            side_effect=[
+                SimpleNamespace(combined=_usage_totals()),
+                SimpleNamespace(combined=live_totals),
+                SimpleNamespace(combined=final_totals),
+            ]
+        ),
     )
     status = Status(state="working", context_window=350000)
     backend = SessionBackend(app, CliRequest(), tmp_path, status)
@@ -367,11 +380,11 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
         await asyncio.wait_for(updated.wait(), 2)
         assert not task.done()
         assert not renderer.gap
-        assert status.requests == 5  # Three historical + two live; duplicate and child excluded.
-        assert status.usage.cost == Decimal("0.425")
-        assert status.cache_rate == 37.5  # Weighted counters, not average percentages.
+        assert status.requests == 6  # Three historical + two root + one child; duplicate excluded.
+        assert status.usage.cost == Decimal("0.55")
+        assert status.cache_rate == 30  # Weighted counters, not average percentages.
         assert status.context_tokens == 0
-        assert "Working" in status.line(60) and "$0.4250" in status.line(60)
+        assert "Working" in status.line(60) and "$0.5500" in status.line(60)
         assert "ctx 0 (0%)" in status.line(60)
         assert "cache" in status.line(120) and "out " not in status.line(120)
     finally:
@@ -385,12 +398,12 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
         finally:
             await hub.close()
     # The terminal ledger also contains a response missed by the live stream.
-    assert status.requests == 6
-    assert status.usage.cost == Decimal("0.5")
+    assert status.requests == 7
+    assert status.usage.cost == Decimal("0.625")
     assert status.cache_rate == 30
     assert status.context_tokens == 0
     assert not status._usage_ids
-    assert app.thread_usage.call_count == 2  # No ledger scans per live report.
+    assert app.thread_usage.call_count == 3  # One cached projection refresh per complete live report.
 
 
 @pytest.mark.anyio
@@ -420,7 +433,7 @@ async def test_recovered_final_answer_keeps_markdown_separate_from_notices(
             return_value=SimpleNamespace(status=RootOperationStatus.completed, outcome=outcome, failure=None, goal=None)
         ),
         context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
-        thread_usage=AsyncMock(return_value=SimpleNamespace(root=_usage_totals())),
+        thread_usage=AsyncMock(return_value=SimpleNamespace(combined=_usage_totals())),
     )
     backend = SessionBackend(app, CliRequest(), tmp_path, renderer.status)
     backend.refresh = AsyncMock(return_value=True)
@@ -474,7 +487,7 @@ async def test_subscription_close_invalidates_outliving_child_process_observatio
             return_value=SimpleNamespace(status=RootOperationStatus.cancelled, outcome=None, failure=None, goal=None)
         ),
         context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
-        thread_usage=AsyncMock(return_value=SimpleNamespace(root=_usage_totals(requests=0))),
+        thread_usage=AsyncMock(return_value=SimpleNamespace(combined=_usage_totals(requests=0))),
     )
     backend = SessionBackend(app, CliRequest(), tmp_path, renderer.status)
     backend.refresh = AsyncMock(return_value=True)

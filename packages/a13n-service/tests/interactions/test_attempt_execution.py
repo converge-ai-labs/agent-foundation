@@ -751,7 +751,6 @@ async def _accept_root(
         attempts_charged=0,
         handoffs_completed=0,
         usage_charged=RunUsage(),
-        request_fingerprint="1" * 64,
         idempotency_key=idempotency_key,
         status=RunStatus.accepted,
         input_kind=RunInputKind.agent_input,

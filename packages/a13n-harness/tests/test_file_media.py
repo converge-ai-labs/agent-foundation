@@ -481,3 +481,15 @@ def _binary_content(messages: list[ModelMessage]) -> BinaryContent:
         for item in part.content
         if isinstance(item, BinaryContent)
     )
+
+
+async def test_standalone_media_receipt_retains_provider_cost_including_cost_only() -> None:
+    from decimal import Decimal
+
+    from pydantic_ai.usage import RunUsage
+
+    model = FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("analysis")]))
+    (receipt,) = file_media_module._provider_usage_receipts(model, RunUsage(cost=Decimal("0.123")))
+    assert receipt.measures == ()
+    assert receipt.cost == Decimal("0.123")
+    assert receipt.currency == "USD"

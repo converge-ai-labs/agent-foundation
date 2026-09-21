@@ -41,7 +41,6 @@ async def create(
     access = None
     native_subject = None
     key = digest(idempotency_key)
-    fingerprint = digest(body.model_dump_json())
     action = WorkspaceAction.bot_memory_create
     async with transaction(service.sessions) as session:
         scope = await service._scope(session, authority, account_id, scope_id, action, lock=True)
@@ -49,10 +48,6 @@ async def create(
             select(DocumentRecord).where(DocumentRecord.scope_id == scope_id, DocumentRecord.request_key == key)
         )
         if existing is not None:
-            if existing.request_digest != fingerprint:
-                raise failure(
-                    "idempotency_conflict", "This request key was used for different content.", ErrorCategory.conflict
-                )
             if existing.state != "active":
                 raise failure(
                     "memory_write_unconfirmed",
@@ -99,7 +94,6 @@ async def create(
                 scope_id=scope_id,
                 state="pending",
                 request_key=key,
-                request_digest=fingerprint,
                 body_digest=digest(body.text),
                 title=body.title,
                 description=body.description,

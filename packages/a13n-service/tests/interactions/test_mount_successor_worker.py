@@ -65,7 +65,6 @@ async def test_retry_worker_installs_inherited_mount_before_first_model_request(
             "id": seed.run_id,
             "retry_of_run_id": source.id,
             "idempotency_key": "retry-worker",
-            "request_fingerprint": "7" * 64,
         }
     )
     state = initialize_retry_state(

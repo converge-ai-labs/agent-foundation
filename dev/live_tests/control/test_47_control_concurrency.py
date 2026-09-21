@@ -88,10 +88,13 @@ async def test_concurrent_same_key_successor_commands_reconcile_one_receipt(cont
         changed = {**body, "resolutions": await journey.approve(source)}
     else:
         changed = {**body, "expected_thread_version": body["expected_thread_version"] + 1}
-    await journey.post(path, changed, expected=409, key=key)
+    assert await journey.post(path, changed, expected=202, key=key) == accepted
     await lab.start_worker()
     await live.finish(receipt["run_id"])
-    assert await journey.post(path, body, expected=202, key=key) == accepted
+    replay = await journey.post(path, body, expected=202, key=key)
+    if "outcome" in accepted:
+        assert replay["outcome"] == accepted["outcome"]
+    await live.assert_current_acceptance(replay.get("run", replay), receipt)
     assert await live.run(source["id"]) == source
     assert len(await lab.attempts(receipt["run_id"])) == 1
 

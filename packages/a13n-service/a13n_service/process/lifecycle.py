@@ -44,7 +44,6 @@ from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.memory.behaviors import MemoryBehaviors
 from a13n_service.memory.composition import build_memory_service
 from a13n_service.memory.ordinary import OrdinaryMemory
-from a13n_service.memory.organization import admit_organization
 from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
 from a13n_service.process.agents import build_agent_resolver, build_agent_resources
@@ -127,11 +126,7 @@ async def open_process_runtime(
                 )
             shared = SharedRuntime(
                 storage=storage,
-                lifecycle=LifecycleWriter(
-                    (append_matching_a2a_push_outbox, admit_organization)
-                    if settings.gateway.a2a_enabled
-                    else (admit_organization,)
-                ),
+                lifecycle=LifecycleWriter((append_matching_a2a_push_outbox,) if settings.gateway.a2a_enabled else ()),
                 secret_protector=protector,
                 memories=build_memory_service(
                     settings.memory,

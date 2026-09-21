@@ -101,20 +101,20 @@ export function ConnectionsPage() {
               {t(
                 cleanup.local_status === "deleted"
                   ? "Connection deleted"
-                  : "Connection revoked",
+                  : cleanup.local_status === "disabled"
+                    ? "Connection revoked"
+                    : "Connection",
               )}
             </h3>
             <p>
               {t(
                 {
-                  not_required:
-                    "Local access is disabled. No external authorization needed cleanup.",
-                  succeeded:
-                    "Local access is disabled and external authorization was removed.",
+                  not_required: "No external authorization needed cleanup.",
+                  succeeded: "External authorization was removed.",
                   failed:
-                    "Local access is disabled, but external cleanup failed. Remove the authorization with your provider.",
+                    "External cleanup failed. Remove the authorization with your provider.",
                   unknown:
-                    "Local access is disabled. External cleanup could not be confirmed; check with your provider.",
+                    "External cleanup could not be confirmed; check with your provider.",
                 }[cleanup.remote_status],
               )}
             </p>

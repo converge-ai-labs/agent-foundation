@@ -4,12 +4,21 @@ import {
   FormField,
   Input,
   SearchPicker,
+  SettingsSection,
 } from "a13n-ui";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
 import { TextAreaField } from "../../../shared/forms";
 import { Section } from "../../../shared/page";
-import { ModelIcon } from "../../models/model-icon";
+import {
+  MediaUnderstandingFields,
+  modelOption,
+  modelPopupWidth,
+  useMediaSummary,
+  useMediaUnderstandingChoices,
+  useWorkspaceMediaDefault,
+} from "../../models/media-understanding-fields";
 import type { useAgentChoices } from "../choices";
 import styles from "./editor.module.css";
 import type { AgentDraft } from "./draft";
@@ -33,6 +42,10 @@ export function ModelSection({
   validation?: Error;
 }) {
   const { t } = useTranslation();
+  const [mediaExpanded, setMediaExpanded] = useState(false);
+  const identity = useMediaUnderstandingChoices();
+  const workspaceDefault = useWorkspaceMediaDefault();
+  const mediaSummary = useMediaSummary();
   return (
     <Section
       title={t("Model")}
@@ -44,26 +57,16 @@ export function ModelSection({
         emptyMessage={t(
           "No models available. Configure a provider and model first.",
         )}
+        popupClassName={modelPopupWidth}
         value={draft.model}
         disabled={readOnly}
         groups={[
           {
             label: t("Available models"),
             options:
-              choices.data?.models.map((item) => ({
-                value: item.key,
-                label: item.name,
-                icon: (
-                  <ModelIcon
-                    upstream={item.upstream_model}
-                    catalogRef={item.catalog_ref}
-                    size={20}
-                  />
-                ),
-                description: [...new Set([item.key, item.upstream_model])]
-                  .filter((value) => value !== item.name)
-                  .join(" · "),
-              })) ?? [],
+              choices.data?.models.map((item) =>
+                modelOption(item, identity.providerName(item.provider_id)),
+              ) ?? [],
           },
         ]}
         onValueChange={draft.setModel}
@@ -109,6 +112,27 @@ export function ModelSection({
           rows={5}
         />
         <ErrorNotice error={validation} />
+      </DisclosureSection>
+      <DisclosureSection
+        title={t("Media understanding")}
+        summary={mediaSummary(
+          draft.mediaUnderstanding,
+          t("Workspace defaults"),
+        )}
+        open={mediaExpanded}
+        onOpenChange={setMediaExpanded}
+      >
+        <SettingsSection variant="plain">
+          <MediaUnderstandingFields
+            value={draft.mediaUnderstanding}
+            onChange={draft.setMediaUnderstanding}
+            inherit={{
+              label: t("Workspace default"),
+              describe: (kind) => workspaceDefault(kind) ?? t("Not configured"),
+            }}
+            disabled={readOnly}
+          />
+        </SettingsSection>
       </DisclosureSection>
     </Section>
   );

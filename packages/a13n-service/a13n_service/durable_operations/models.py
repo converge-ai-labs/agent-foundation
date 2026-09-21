@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import JsonValue
 from sqlalchemy import (
-    JSON,
     BigInteger,
     CheckConstraint,
     DateTime,
@@ -20,8 +18,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from a13n_service.database import Base
 
 
+class EntityRequestKey:
+    """A scoped request identity retained only with its business record."""
+
+    request_key: Mapped[str | None] = mapped_column(String(64), unique=True)
+
+
 class IdempotencyEvidenceRecord(Base):
-    """Bounded replay evidence shared by retry-safe Service commands."""
+    """Minimal key-to-result references for commands that mutate existing resources."""
 
     __tablename__ = "idempotency_evidence"
     __table_args__ = (
@@ -43,9 +47,6 @@ class IdempotencyEvidenceRecord(Base):
         CheckConstraint("boundary_scope_id = coalesce(workspace_id, organization_id)", name="boundary_scope_valid"),
         CheckConstraint("actor_type IN ('user', 'service_account')", name="actor_type_valid"),
         CheckConstraint("length(key_digest) = 64", name="key_digest_sha256"),
-        CheckConstraint("length(request_digest) = 64", name="request_digest_sha256"),
-        CheckConstraint("expires_at > created_at", name="expiry_after_creation"),
-        Index("ix_idempotency_evidence_expiry", "expires_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -57,12 +58,9 @@ class IdempotencyEvidenceRecord(Base):
     operation: Mapped[str] = mapped_column(String(64))
     scope_id: Mapped[str] = mapped_column(String(72))
     key_digest: Mapped[str] = mapped_column(String(64))
-    request_digest: Mapped[str] = mapped_column(String(64))
     result_kind: Mapped[str] = mapped_column(String(32))
     result_ref: Mapped[str] = mapped_column(String(72))
-    receipt_json: Mapped[dict[str, JsonValue] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class OutboxRecord(Base):

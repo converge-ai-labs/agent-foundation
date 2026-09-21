@@ -43,6 +43,17 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
       }),
     },
   ];
+  for (const [kind, key] of Object.entries(config.media_understanding ?? {}))
+    if (key)
+      refs.push({
+        path: `media_understanding.${kind}`,
+        kind: "model",
+        value: key,
+        replace: (value) => ({
+          ...config,
+          media_understanding: { ...config.media_understanding, [kind]: value },
+        }),
+      });
   if (config.default_environment_template_id)
     refs.push({
       path: "default_environment_template_id",

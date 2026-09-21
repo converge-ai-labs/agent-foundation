@@ -40,6 +40,7 @@ from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitte
 from a13n_service.interactions.worker import WorkerCapacitySlot
 from a13n_service.interactions.worker_input import WorkerInputMaterializer, WorkerInputSources
 from a13n_service.interactions.worker_preparation import WorkerAttemptPreparer
+from a13n_service.memory.organization import admit_organization
 from a13n_service.observability import ObservabilityRuntime, RecoveryReason, RunAttemptCorrelation, RunAttemptOutcome
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
@@ -267,6 +268,15 @@ class WorkerAttempts:
             )
             await register(control)
             receipt = await executor.run()
+
+            if isinstance(receipt, AttemptOutcome) and receipt.disposition is AttemptDisposition.completed:
+                # The Run is committed and executor resources are closed. Optional
+                # memory admission cannot keep the Attempt alive or undo its result.
+                try:
+                    with fail_after(min(5.0, context.reconciliation_timeout.total_seconds())):
+                        await admit_organization(sessions, organization_id=run.organization_id, run_id=run.id)
+                except Exception:
+                    logger.warning("memory_organization_admission_failed", extra={"run_id": run.id}, exc_info=True)
 
             if trace is not None:
                 if isinstance(receipt, AttemptOutcome):

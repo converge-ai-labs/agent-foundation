@@ -20,9 +20,9 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import short_session
 
+from .domain import MediaUnderstandingSelection, ModelExecutionSnapshot
 from .domain import Model as ModelResource
-from .domain import ModelExecutionSnapshot
-from .media_defaults import read_media_defaults, require_media_capability
+from .media_defaults import require_media_capability
 from .model_factory import NativeModelFactory
 from .models import ModelProviderRecord, ModelRecord
 from .provider_runtime import LiveProviderResolver
@@ -92,13 +92,13 @@ class AcceptedModelSelector:
                 settings_layers=settings_layers,
             )
 
-    async def prepare_media_defaults(
-        self, *, organization_id: str, workspace_id: str
+    async def prepare_media_selection(
+        self, *, organization_id: str, workspace_id: str, selection: MediaUnderstandingSelection
     ) -> dict[NativeInputMediaKind, PreparedModelExecution]:
-        async with short_session(self._sessions) as session:
-            defaults = await read_media_defaults(session, workspace_id)
+        """Require every explicitly selected auxiliary Model to declare its media capability."""
+
         models: dict[NativeInputMediaKind, PreparedModelExecution] = {}
-        for kind, key in defaults.selections().items():
+        for kind, key in selection.selections().items():
             prepared = await self.prepare(
                 organization_id=organization_id, workspace_id=workspace_id, model_key=key, settings={}
             )

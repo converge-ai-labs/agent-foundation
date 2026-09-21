@@ -10,6 +10,7 @@ import keyword
 import re
 import time
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from functools import partial
 from types import MappingProxyType
@@ -816,15 +817,7 @@ def _truncate_utf8(value: str, limit: int) -> str:
 
 
 def _copy_usage(usage: RunUsage) -> RunUsage:
-    return RunUsage(
-        requests=usage.requests,
-        tool_calls=usage.tool_calls,
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
-        cache_write_tokens=usage.cache_write_tokens,
-        cache_read_tokens=usage.cache_read_tokens,
-        details=dict(usage.details),
-    )
+    return deepcopy(usage)
 
 
 async def _emit(ctx: RunContext[AgentContext], payload: Any) -> None:

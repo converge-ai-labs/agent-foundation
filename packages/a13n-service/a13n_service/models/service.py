@@ -22,6 +22,7 @@ from .connection_test import test_connection
 from .cursors import CursorError, decode_model_cursor, encode_model_cursor
 from .domain import (
     CreateModelRequest,
+    MediaUnderstandingSelection,
     Model,
     ModelCatalogCollection,
     ModelCollection,
@@ -34,7 +35,6 @@ from .domain import (
 from .keys import require_available_key
 from .media_defaults import (
     MediaUnderstandingDefaults,
-    MediaUnderstandingSelection,
     get_media_defaults,
     replace_media_defaults,
 )

@@ -1,0 +1,30 @@
+/* The outcome mark, identical at both disclosure levels. */
+.mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.mark[data-state="done"] {
+  color: var(--a13n-success);
+}
+.mark[data-state="failed"],
+.mark[data-state="interrupted"] {
+  color: var(--a13n-danger);
+}
+.mark[data-state="waiting"] {
+  color: var(--a13n-warning);
+}
+.spinning {
+  animation: entry-spin 0.9s linear infinite;
+}
+@keyframes entry-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
+}

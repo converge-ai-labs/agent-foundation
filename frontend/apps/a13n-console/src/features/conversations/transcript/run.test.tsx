@@ -20,12 +20,30 @@ vi.mock("../../../layout/workspace", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: Record<string, unknown>) =>
+      options
+        ? key.replace(/{{(\w+)}}/g, (_, name) => String(options[name] ?? ""))
+        : key,
     i18n: { resolvedLanguage: "en" },
   }),
 }));
-vi.mock("../live", () => ({
-  useLiveRun: () => ({ items: [], state: "connected" }),
+const stream = vi.hoisted(() => ({ calls: [] as { replay?: boolean }[] }));
+vi.mock("../run-stream", () => ({
+  useRunStream: (_runId: string, options: { replay?: boolean } = {}) => {
+    stream.calls.push(options);
+    return {
+      items: [],
+      state: "connected",
+      execution: {
+        steps: [],
+        observations: [],
+        events: [],
+        usage: { model: [], provider: [], recordIds: [] },
+        contextTokens: {},
+        coverage: "complete",
+      },
+    };
+  },
 }));
 vi.mock("./history", () => ({ HistoryTranscript: () => null }));
 vi.mock("../agents/queries", () => ({ useAgent: () => ({ data: null }) }));
@@ -37,6 +55,7 @@ const receipt = {
 };
 beforeEach(() => {
   requests.length = 0;
+  stream.calls.length = 0;
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -63,6 +82,10 @@ beforeEach(() => {
           current_run_id: "run",
           head_run_id: "run",
         });
+      if (path.endsWith("/threads/thread/runs"))
+        return Response.json({ items: [], next_cursor: null });
+      if (path.endsWith("/sessions/session/threads"))
+        return Response.json({ items: [], next_cursor: null });
       if (path.endsWith("/runs/run"))
         return Response.json({
           id: "run",
@@ -71,7 +94,7 @@ beforeEach(() => {
           session_id: "session",
           agent_id: "agent",
           status: "failed",
-          input_kind: "message",
+          input_kind: "agent_input",
           input: "Build an agent",
           input_text: "Build an agent",
           created_at: "2026-09-16T00:00:00Z",
@@ -88,10 +111,11 @@ afterEach(() => {
 });
 function show(
   configuration?: Parameters<typeof RunContent>[0]["configuration"],
+  entry = "/",
 ) {
   return render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[entry]}>
         <RunContent
           runId="run"
           threadId="thread"
@@ -125,4 +149,22 @@ it("retains assistant composition and retries through the protected conversation
   expect(await request.json()).toEqual({
     expected_thread_version: 7,
   });
+});
+it("reads the level from the URL: chat keeps the snapshot, debug replays", async () => {
+  show();
+  expect(await screen.findByText("Build an agent")).toBeTruthy();
+  expect(stream.calls.at(-1)).toEqual({ replay: false });
+  cleanup();
+  show(undefined, "/?view=debug");
+  // Debug reads one run as a section, with its terminal fact in the timeline.
+  expect(await screen.findByText("Run")).toBeTruthy();
+  expect(stream.calls.at(-1)).toEqual({ replay: true });
+  expect(screen.getByText("Run failed")).toBeTruthy();
+  // The details card stays lazy; only the navigator's lineage read happens.
+  const panels = requests.filter((request) =>
+    ["attempts", "events"].includes(
+      new URL(request.url).pathname.split("/").at(-1) ?? "",
+    ),
+  );
+  expect(panels).toEqual([]);
 });

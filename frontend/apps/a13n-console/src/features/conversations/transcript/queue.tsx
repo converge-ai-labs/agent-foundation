@@ -33,7 +33,7 @@ import { JsonView } from "../../../shared/forms";
 import { useIdempotency } from "../../../shared/idempotency";
 import { conversationQueries, invalidateConversation, runPath } from "../api";
 import { InputContent } from "./user-message";
-import styles from "./transcript.module.css";
+import styles from "./cards.module.css";
 
 /** What is waiting behind the current run, in the order it will be consumed. */
 export function ThreadQueue({

@@ -132,32 +132,6 @@ class MediaCapability(AbstractCapability[AgentContext]):
     def __init__(self, configuration: MediaConfiguration | None = None) -> None:
         self.configuration = (configuration or MediaConfiguration()).model_copy(deep=True)
 
-    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        existing = ctx.deps._run_capability(MEDIA_CAPABILITY_ID)
-        if existing is not None:
-            if not isinstance(existing, _MediaActiveCapability):
-                raise DefinitionError("Media has an incompatible run replacement.", code="capability_type_mismatch")
-            return existing
-        if MEDIA_CAPABILITY_ID not in ctx.deps._capability_provenance.definition_ids:
-            raise DefinitionError(
-                "MediaCapability must originate from the Agent definition.", code="capability_scope_invalid"
-            )
-        replacement = _MediaActiveCapability(self.configuration, context=ctx.deps)
-        ctx.deps._record_run_capability(MEDIA_CAPABILITY_ID, replacement)
-        return replacement
-
-
-@dataclass(init=False)
-class _MediaActiveCapability(MediaCapability):
-    def __init__(self, configuration: MediaConfiguration, *, context: AgentContext) -> None:
-        super().__init__(configuration)
-        self._context = context
-
-    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        if ctx.deps is not self._context:
-            raise DefinitionError("Media run replacement cannot cross logical runs.", code="capability_scope_invalid")
-        return self
-
     def get_toolset(self) -> AbstractToolset[AgentContext]:
         return DynamicToolset(self._toolset_for_run, per_run_step=False, id=_MEDIA_TOOLSET_ID)
 
@@ -165,10 +139,12 @@ class _MediaActiveCapability(MediaCapability):
         return MediaToolset(self._bind(ctx), self.configuration).get_toolset()
 
     def _bind(self, ctx: RunContext[AgentContext]) -> MediaReader:
-        if ctx.deps is not self._context:
-            raise DefinitionError("Media run replacement cannot cross logical runs.", code="capability_scope_invalid")
+        if MEDIA_CAPABILITY_ID not in ctx.deps._capability_provenance.definition_ids:
+            raise DefinitionError(
+                "MediaCapability must originate from the Agent definition.", code="capability_scope_invalid"
+            )
         owner = ctx.capabilities.get(MEDIA_CAPABILITY_ID)
-        if type(owner) is not _MediaActiveCapability or owner is not self:
+        if type(owner) is not MediaCapability or owner is not self:
             raise DefinitionError(
                 "The finalized Media owner has an incompatible identity.", code="capability_scope_invalid"
             )

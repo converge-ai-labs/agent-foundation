@@ -470,6 +470,15 @@ class CliShell:
             except Exception:
                 # Independent inspections must not erase each other's results.
                 pass
+            if not self.busy:
+                try:
+                    usage = await backend.app.thread_usage(thread_id=thread_id)
+                    if backend is self.backend and backend.thread_id == thread_id and not self.busy:
+                        self.status.restore_usage(usage.combined)
+                except Exception:
+                    # Async children can finish while idle; retain the last known
+                    # subtotal if the durable projection is temporarily unavailable.
+                    pass
         if backend is self.backend and (backend is None or backend.thread_id == thread_id):
             self._activity_thread = thread_id
             self._subagent_total = total

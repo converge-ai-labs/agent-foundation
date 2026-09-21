@@ -25,6 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 from a13n_service.labels import LABELS_SQL_TYPE
 from a13n_service.temporal import assume_utc
 
@@ -88,7 +89,7 @@ class EnvironmentProviderRecord(ResourceCredential[str | None], ResourceColumns[
         )
 
 
-class EnvironmentTemplateRecord(ResourceColumns[str | None], Base):
+class EnvironmentTemplateRecord(EntityRequestKey, ResourceColumns[str | None], Base):
     workspace_id: Mapped[str | None] = mapped_column(String(72))
     __tablename__ = "environment_templates"
     __table_args__ = (
@@ -166,7 +167,7 @@ class EnvironmentTemplateRevisionRecord(Base):
         )
 
 
-class EnvironmentRecord(ResourceColumns[str], Base):
+class EnvironmentRecord(EntityRequestKey, ResourceColumns[str], Base):
     __tablename__ = "environments"
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     __table_args__ = (
@@ -272,7 +273,7 @@ class DevicePairingRecord(Base):
     rejected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
-class EnvironmentCommandRecord(Base):
+class EnvironmentCommandRecord(EntityRequestKey, Base):
     """A retained receipt for an explicit target lifecycle request."""
 
     __tablename__ = "environment_commands"

@@ -1,0 +1,15 @@
+/* Additions and removals of an applied edit, read by tint and sign. */
+.diffBadges {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.diffBadges [data-sign="added"] {
+  color: var(--a13n-success);
+}
+.diffBadges [data-sign="removed"] {
+  color: var(--a13n-danger);
+}

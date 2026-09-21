@@ -19,6 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.labels import LABELS_SQL_TYPE
 from a13n_service.temporal import assume_utc, optional_assume_utc
@@ -34,7 +35,7 @@ from .domain import (
 _PROVENANCE_ADAPTER = TypeAdapter(SkillImportProvenance)
 
 
-class SkillRecord(Base):
+class SkillRecord(EntityRequestKey, Base):
     __tablename__ = "skills"
     __table_args__ = (
         ForeignKeyConstraint(
@@ -156,7 +157,7 @@ class SkillRevisionRecord(Base):
         )
 
 
-class SkillUploadRecord(Base):
+class SkillUploadRecord(EntityRequestKey, Base):
     __tablename__ = "skill_uploads"
     __table_args__ = (
         ForeignKeyConstraint(

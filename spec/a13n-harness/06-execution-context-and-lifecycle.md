@@ -56,6 +56,8 @@ The logical Run receives one `run_id`, and each internal `ModelAttempt` receives
 
 ## Usage Limits and Native Retries
 
+`ExecutableAgent.definition_usage_limits()` returns a fresh detached native `UsageLimits` value from the definition, including the Harness default for a plain native `AgentSpec`. It exposes the definition baseline to Hosts and delegation code, not a current Run's override or remaining budget. Mutating the returned value cannot change the definition or another invocation.
+
 Every logical Run passes one native Pydantic AI `UsageLimits` value to each internal `ModelAttempt`. When `ExecutableAgent.run(..., usage_limits=...)` or `stream(..., usage_limits=...)` receives an explicit value, that value exactly replaces the definition baseline for that invocation; fields are not merged. When the argument is omitted, a Harness `AgentSpec` supplies its definition-owned value, whose default is `UsageLimits(request_limit=1000)`. An accepted plain native Pydantic AI `AgentSpec` receives that same Harness default. The Harness makes a fresh copy for every Run, so concurrent invocations never share the mutable upstream value.
 
 A caller can author or invoke `UsageLimits(request_limit=None)` to disable the request-count ceiling while retaining any other explicitly selected fields. `None` as the run argument means “use the definition baseline,” not “disable limits.” Pydantic AI owns request, tool-call, token, and cost counting and raises `UsageLimitExceeded` at its native check boundary. The shared Run accumulator and child narrowing contract are defined by [Delegation and Subagents](11-delegation-and-subagents.md#child-usage-limits).

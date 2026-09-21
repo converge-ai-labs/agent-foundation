@@ -1,11 +1,10 @@
-"""Finite HTTP replay, original receipts, and acceptance rollback."""
+"""Entity-owned request keys and atomic acceptance rollback."""
 
 from __future__ import annotations
 
 from datetime import timedelta
 
 import pytest
-from a13n_service.durable_operations.idempotency import digest_visible_ascii_key
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt
 from a13n_service.interactions.models import RunRecord
@@ -23,7 +22,7 @@ from .test_commands import _actor, _commands, _Freezing, _frozen, _Preparation, 
 pytestmark = pytest.mark.anyio
 
 
-async def test_http_start_replay_expires_without_expiring_execution_identity(
+async def test_http_start_key_survives_twenty_four_hours(
     lifecycle_interaction_sessions,
     tmp_path,
 ) -> None:
@@ -46,7 +45,7 @@ async def test_http_start_replay_expires_without_expiring_execution_identity(
     second = await commands.runs.start(
         actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="expiry", request=request
     )
-    assert second.run_id != first.run_id
+    assert second.run_id == first.run_id
     async with short_session(lifecycle_interaction_sessions) as database:
         assert await database.get(RunRecord, first.run_id) is not None
 
@@ -122,57 +121,11 @@ async def test_concurrent_start_reconciles_to_one_committed_receipt(interaction_
         runs = (await database.scalars(select(RunRecord))).all()
         evidence = (await database.scalars(select(IdempotencyEvidenceRecord))).all()
     assert [run.id for run in runs] == [receipts[0].run_id]
-    assert len(evidence) == 1 and evidence[0].result_ref == receipts[0].run_id
+    assert evidence == []
+    assert runs[0].request_key is not None
 
     binding_count = len(bindings)
     await submit()
     assert receipts[2] == receipts[0]
     assert len(bindings) == binding_count
     assert preparation.calls == 2
-
-
-@pytest.mark.anyio
-async def test_expiry_cleanup_is_bounded_and_does_not_remove_live_evidence(lifecycle_interaction_sessions) -> None:
-    from datetime import timedelta
-
-    from a13n_service.durable_operations.idempotency import (
-        EvidenceScope,
-        IdempotencyIdentity,
-        delete_expired_evidence,
-        load_evidence,
-        new_evidence,
-    )
-    from a13n_service.storage import transaction
-    from sqlalchemy import select
-
-    from tests.hooks.support import seed_hook_actor_access
-    from tests.interactions.conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
-
-    await seed_hook_actor_access(lifecycle_interaction_sessions)
-    scope = EvidenceScope(WORKSPACE_ID, "user", USER_ID, "test.accept", WORKSPACE_ID)
-    async with transaction(lifecycle_interaction_sessions) as database:
-        for index in range(4):
-            database.add(
-                new_evidence(
-                    organization_id=ORGANIZATION_ID,
-                    scope=scope,
-                    identity=IdempotencyIdentity(digest_visible_ascii_key(str(index)), "a" * 64),
-                    result_kind="test",
-                    result_ref="receipt",
-                    now=NOW if index < 3 else NOW + timedelta(hours=1),
-                )
-            )
-    async with transaction(lifecycle_interaction_sessions) as database:
-        assert await delete_expired_evidence(database, now=NOW + timedelta(hours=24), limit=2) == 2
-    async with transaction(lifecycle_interaction_sessions) as database:
-        assert len((await database.scalars(select(IdempotencyEvidenceRecord))).all()) == 2
-        assert (
-            await load_evidence(
-                database,
-                scope=scope,
-                identity=IdempotencyIdentity(digest_visible_ascii_key("3"), "a" * 64),
-                now=NOW + timedelta(hours=24),
-            )
-            is not None
-        )
-        assert await delete_expired_evidence(database, now=NOW + timedelta(hours=24), limit=2) == 1

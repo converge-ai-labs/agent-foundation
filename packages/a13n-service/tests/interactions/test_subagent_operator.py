@@ -10,6 +10,7 @@ from a13n_harness import (
     HarnessBuilder,
     SubagentDefinition,
 )
+from a13n_harness.builder import DelegationContextPolicy
 from a13n_harness.capabilities import (
     AsyncDelegateRequest,
     AsyncResumeRequest,
@@ -23,7 +24,6 @@ from a13n_harness.capabilities import (
     SubagentWaitRequest,
 )
 from a13n_harness.context import BuiltSubagent
-from a13n_harness.execution import DelegationContextPolicy
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.interactions.domain import Run

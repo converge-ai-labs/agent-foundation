@@ -860,7 +860,7 @@ class LocalFileOperator:
         result = await self.write_bytes_stream(
             destination,
             self.read_bytes_stream(source),
-            mode="replace" if replace else "create",
+            mode="upsert" if replace else "create",
         )
         return FileCopyResult(
             path=destination,

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
 from a13n_service.temporal import assume_utc
@@ -28,9 +29,12 @@ from ..connections.models import AuthorizationRecord, ConnectionRecord
 from .domain import ConnectorProvider, ConnectorProviderStatus
 
 
-class ConnectorProviderRecord(ResourceCredential[str | None], Base):
+class ConnectorProviderRecord(EntityRequestKey, ResourceCredential[str | None], Base):
     credential_owner_type = "connector_provider"
     __tablename__ = "connector_providers"
+    tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tested_version: Mapped[int | None] = mapped_column(BigInteger)
+    verified_access: Mapped[list[str] | None] = mapped_column(JSON(none_as_null=True))
     __table_args__ = (
         ForeignKeyConstraint(("organization_id",), ("organizations.id",), ondelete="CASCADE"),
         Index(

@@ -178,7 +178,9 @@ async def test_concurrent_enqueue_allocates_fifo_positions_without_advancing_thr
         *(live.http.post(path, json=body, headers={"Idempotency-Key": key}) for body, key in commands)
     )
     assert all(response.status_code == 202 for response in responses), [response.text for response in responses]
-    assert responses[0].json() == responses[-1].json()
+    first, repeated = responses[0].json(), responses[-1].json()
+    assert first["outcome"] == repeated["outcome"] == "queued"
+    assert first["queued_submission"] == repeated["queued_submission"]
     rows = await journey.queued(waiting)
     assert [row["position"] for row in rows] == [1, 2, 3, 4]
     assert len({row["queued_submission_id"] for row in rows}) == 4
@@ -186,7 +188,8 @@ async def test_concurrent_enqueue_allocates_fifo_positions_without_advancing_thr
     assert after["version"] == before["version"] and after["queue_version"] == before["queue_version"] + 4
     assert after["current_run_id"] == after["head_run_id"] == waiting["id"]
     assert await journey.thread_runs(waiting) == [waiting]
-    await journey.post(path, bodies[1], key=keys[0], expected=409)
+    replay = await journey.post(path, bodies[1], key=keys[0], expected=202)
+    assert replay == {**first, "queue_version": after["queue_version"]}
     successor = await journey.accept(*await journey.command(waiting, "feedback"))
     parent = await live.finish(successor["run_id"])
     for row in rows:

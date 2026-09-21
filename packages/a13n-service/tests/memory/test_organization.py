@@ -131,7 +131,10 @@ async def test_completed_work_is_admitted_once_and_rechecks_organization_policy(
                 },
             )
         )
-    lifecycle = LifecycleWriter((admit_organization,))
+    await admit_organization(sessions, organization_id=ORGANIZATION_ID, run_id=run.id)
+    async with short_session(sessions) as session:
+        assert (await session.scalars(select(MemoryOrganizationRecord))).all() == []
+    lifecycle = LifecycleWriter()
     claim = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=lifecycle).claim(run.id, _worker())
     context = _authority(claim)
     execution = AttemptExecutionService(sessions, clock=lambda: NOW, lifecycle=lifecycle)
@@ -149,8 +152,14 @@ async def test_completed_work_is_admitted_once_and_rechecks_organization_policy(
     await RunOutcomeService(
         sessions, RunPayloadStore(interaction_object_store), clock=lambda: NOW, lifecycle=lifecycle
     ).commit_state_outcome(context, stored)
+    async with short_session(sessions) as session:
+        assert (await session.scalars(select(MemoryOrganizationRecord))).all() == []
+    await admit_organization(sessions, organization_id="org_other", run_id=run.id)
+    async with short_session(sessions) as session:
+        assert (await session.scalars(select(MemoryOrganizationRecord))).all() == []
+    await admit_organization(sessions, organization_id=ORGANIZATION_ID, run_id=run.id)
+    await admit_organization(sessions, organization_id=ORGANIZATION_ID, run_id=run.id)
     async with transaction(sessions) as session:
-        await admit_organization(session, Mock(event_type="run.completed", run_id=run.id))
         work = (await session.scalars(select(MemoryOrganizationRecord))).one()
         work_id = work.id
         if disable is True:

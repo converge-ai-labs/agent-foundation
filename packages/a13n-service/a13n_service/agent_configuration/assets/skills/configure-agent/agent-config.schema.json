@@ -471,6 +471,50 @@
       "title": "ManagedMemoryBackend",
       "type": "object"
     },
+    "MediaUnderstandingSelection": {
+      "additionalProperties": false,
+      "description": "Per-kind auxiliary Model choice shared by Workspace, Agent, and Run levels.",
+      "properties": {
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image"
+        },
+        "video": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video"
+        },
+        "audio": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio"
+        }
+      },
+      "title": "MediaUnderstandingSelection",
+      "type": "object"
+    },
     "MemoryConfiguration": {
       "anyOf": [
         {
@@ -1412,6 +1456,9 @@
         }
       ],
       "default": null
+    },
+    "media_understanding": {
+      "$ref": "#/$defs/MediaUnderstandingSelection"
     },
     "subagent_mode": {
       "default": "inline",

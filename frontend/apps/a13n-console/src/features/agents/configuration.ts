@@ -10,6 +10,7 @@ const commonFields = new Set([
   "toolsets",
   "memory",
   "model",
+  "media_understanding",
   "instructions",
   "skills",
   "connection_tools",
@@ -40,6 +41,7 @@ export function buildConfig(
   common: Pick<
     AgentConfig,
     | "model"
+    | "media_understanding"
     | "instructions"
     | "skills"
     | "connection_tools"

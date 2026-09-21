@@ -11,9 +11,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.durable_operations.entity_keys import find_by_key, scope_key
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
-    IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
 )
@@ -31,7 +31,9 @@ from a13n_service.iam.models import SecurityAuditRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
 
+from .domain import SkillPublicationReceipt
 from .errors import SkillError
+from .models import SkillRecord, SkillRevisionRecord, SkillUploadRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,9 +53,9 @@ class ReplayResult[Result: BaseModel](BaseModel):
     created: StrictBool
 
 
-def idempotency_identity(key: str, request: dict[str, str] | BaseModel) -> IdempotencyIdentity:
+def idempotency_identity(key: str) -> IdempotencyIdentity:
     try:
-        return IdempotencyIdentity.from_request(key, request)
+        return IdempotencyIdentity.from_key(key)
     except InvalidIdempotencyKey as error:
         raise _invalid_idempotency_key() from error
 
@@ -65,24 +67,50 @@ async def load_replay[ResponseModel: BaseModel](
     now: datetime,
     response_model: type[ResponseModel],
 ) -> ReplayResult[ResponseModel] | None:
-    try:
-        receipt = await load_receipt(session, scope=_evidence_scope(scope), identity=scope.identity, now=now)
-    except IdempotencyConflict as error:
-        raise SkillError(
-            "idempotency_conflict",
-            "The Idempotency-Key was already used with different request content.",
-            category=ErrorCategory.conflict,
-        ) from error
-    if receipt is None:
-        return None
-    return receipt.restore(ReplayResult[response_model])
+    key = skill_request_key(scope)
+    if scope.operation == "skill_upload.stage":
+        upload = await find_by_key(session, SkillUploadRecord, key)
+        if upload is None:
+            return None
+        result = upload.to_resource()
+    elif scope.operation == "skill.create":
+        skill = await find_by_key(session, SkillRecord, key)
+        if skill is None:
+            return None
+        revision = await session.scalar(
+            select(SkillRevisionRecord).where(
+                SkillRevisionRecord.skill_id == skill.id, SkillRevisionRecord.version == 1
+            )
+        )
+        if revision is None:
+            return None
+        result = SkillPublicationReceipt(
+            skill=skill.to_resource(), revision=revision.to_resource(), outcome="published"
+        )
+    else:
+        reference = await load_receipt(session, scope=_evidence_scope(scope), identity=scope.identity, now=now)
+        if reference is None:
+            return None
+        revision = await session.get(SkillRevisionRecord, reference.result_ref)
+        skill = await session.get(SkillRecord, scope.resource_scope_id)
+        if revision is None or skill is None:
+            return None
+        result = SkillPublicationReceipt(
+            skill=skill.to_resource(),
+            revision=revision.to_resource(),
+            outcome="already_default" if skill.default_revision_id == revision.id else "published",
+        )
+    return ReplayResult(result=response_model.model_validate(result.model_dump(mode="json")), created=False)
+
+
+def skill_request_key(scope: IdempotencyScope) -> str:
+    return scope_key(_evidence_scope(scope), scope.identity.key_digest)
 
 
 def new_replay_evidence(
     *,
     scope: IdempotencyScope,
-    response: BaseModel,
-    created: bool,
+    response: SkillPublicationReceipt,
     now: datetime,
 ) -> IdempotencyEvidenceRecord:
     return evidence_record(
@@ -92,9 +120,8 @@ def new_replay_evidence(
         operation=scope.operation,
         scope_id=scope.resource_scope_id,
         identity=scope.identity,
-        result_kind="skill_command",
-        result_ref=scope.resource_scope_id,
-        response=ReplayResult(result=response, created=created),
+        result_kind="skill_revision",
+        result_ref=response.revision.id,
         now=now,
     )
 

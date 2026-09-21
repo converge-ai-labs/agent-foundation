@@ -24,16 +24,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.management import (
-    CommandReceipt,
+    CommandReference,
     canonical_json,
-    fingerprint,
     record_command,
     replay_command,
 )
 from a13n_service.credentials import provider_credential_payload
-from a13n_service.digests import digest_request
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
 from a13n_service.durable_operations.idempotency import (
-    IdempotencyConflict,
     InvalidIdempotencyKey,
     digest_visible_ascii_key,
 )
@@ -270,6 +268,19 @@ class ConnectorProviderService:
         try:
             async with transaction(self._sessions) as session:
                 workspace = await authorize(session, actor, workspace_id, WorkspaceAction.connector_provider_manage)
+                replay = await find_by_key(
+                    session,
+                    ConnectorProviderRecord,
+                    entity_key(
+                        actor,
+                        operation="connector_provider.create",
+                        scope_id=workspace.id,
+                        key_digest=key_digest,
+                        workspace_id=workspace_id,
+                    ),
+                )
+                if replay is not None:
+                    return replay.to_resource()
                 adapter = require_implementation(self._connectors, request.type)
                 try:
                     configuration = model_json(adapter.configuration_model.model_validate(request.configuration))
@@ -280,22 +291,6 @@ class ConnectorProviderService:
                         "ConnectorProvider configuration is invalid.",
                         category=ErrorCategory.invalid_request,
                     ) from error
-                request_fingerprint = fingerprint(request, credentials=credentials)
-                try:
-                    replay = await replay_command(
-                        session,
-                        actor=actor,
-                        workspace_id=workspace_id,
-                        operation="connector_provider.create",
-                        scope_id=workspace.id,
-                        idempotency_key_digest=key_digest,
-                        fingerprint=request_fingerprint,
-                        now=self._clock(),
-                    )
-                except IdempotencyConflict as error:
-                    raise map_management_value_error(error) from error
-                if replay is not None:
-                    return replay.restore(ConnectorProvider)
                 record = ConnectorProviderRecord(
                     id=connector_provider_id,
                     organization_id=workspace.organization_id,
@@ -312,26 +307,18 @@ class ConnectorProviderService:
                     created_at=now,
                     updated_at=now,
                 )
+                record.request_key = entity_key(
+                    actor,
+                    operation="connector_provider.create",
+                    scope_id=workspace.id,
+                    key_digest=key_digest,
+                    workspace_id=workspace_id,
+                )
                 record.replace_credential(
                     canonical_json(credentials) if credentials is not None else None, self._protector
                 )
 
                 session.add(record)
-                record_command(
-                    session,
-                    actor=actor,
-                    organization_id=workspace.organization_id,
-                    workspace_id=workspace_id,
-                    operation="connector_provider.create",
-                    scope_id=workspace.id,
-                    idempotency_key_digest=key_digest,
-                    fingerprint=request_fingerprint,
-                    resource_type="connector_provider",
-                    resource_id=connector_provider_id,
-                    result_version=1,
-                    now=now,
-                    resource=record.to_resource(),
-                )
                 session.add(
                     audit(
                         actor,
@@ -346,6 +333,21 @@ class ConnectorProviderService:
                 await session.flush()
                 return record.to_resource()
         except IntegrityError as error:
+            async with transaction(self._sessions) as session:
+                scope = await authorize(session, actor, workspace_id, WorkspaceAction.connector_provider_manage)
+                replay = await find_by_key(
+                    session,
+                    ConnectorProviderRecord,
+                    entity_key(
+                        actor,
+                        operation="connector_provider.create",
+                        scope_id=scope.id,
+                        key_digest=key_digest,
+                        workspace_id=workspace_id,
+                    ),
+                )
+                if replay is not None:
+                    return replay.to_resource()
             raise ConnectorError(
                 "connector_conflict",
                 "ConnectorProvider identity or name already exists.",
@@ -500,7 +502,6 @@ class ConnectorProviderService:
         except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
         credentials = request.credentials
-        request_fingerprint = fingerprint(request, credentials=credentials)
         async with transaction(self._sessions) as session:
             record = await require_connector_provider(
                 session, connector_provider_id, scope=await connector_actor_scope(session, actor), lock=True
@@ -512,11 +513,10 @@ class ConnectorProviderService:
                 record=record,
                 operation="connector_provider.credentials.replace",
                 key_digest=key_digest,
-                request_fingerprint=request_fingerprint,
                 now=self._clock(),
             )
             if replay:
-                return replay.restore(ConnectorProvider)
+                return record.to_resource()
             _require_version(record.version, request.expected_version)
             self._replace_credentials(record, credentials)
 
@@ -530,12 +530,9 @@ class ConnectorProviderService:
                 operation="connector_provider.credentials.replace",
                 scope_id=record.id,
                 idempotency_key_digest=key_digest,
-                fingerprint=request_fingerprint,
                 resource_type="connector_provider",
                 resource_id=record.id,
-                result_version=record.version,
                 now=self._clock(),
-                resource=record.to_resource(),
             )
             session.add(
                 audit(
@@ -562,27 +559,22 @@ class ConnectorProviderService:
             key_digest = digest_visible_ascii_key(idempotency_key)
         except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
-        request_fingerprint = digest_request({"expected_version": expected_version})
         async with transaction(self._sessions) as session:
             record = await require_connector_provider(
                 session, connector_provider_id, scope=await connector_actor_scope(session, actor)
             )
             await authorize_provider(session, actor, record, manage=True)
-            try:
-                replay = await replay_command(
-                    session,
-                    actor=actor,
-                    workspace_id=record.workspace_id,
-                    operation="connector_provider.test",
-                    scope_id=record.id,
-                    idempotency_key_digest=key_digest,
-                    fingerprint=request_fingerprint,
-                    now=self._clock(),
-                )
-            except IdempotencyConflict as error:
-                raise map_management_value_error(error) from error
+            replay = await replay_command(
+                session,
+                actor=actor,
+                workspace_id=record.workspace_id,
+                operation="connector_provider.test",
+                scope_id=record.id,
+                idempotency_key_digest=key_digest,
+                now=self._clock(),
+            )
             if replay is not None:
-                return replay.restore(ConnectorProviderTestResult)
+                return _provider_test_result(record)
             _require_version(record.version, expected_version)
             if record.status != ConnectorProviderStatus.active.value:
                 raise ConnectorError(
@@ -618,11 +610,10 @@ class ConnectorProviderService:
                 record=current,
                 operation="connector_provider.test",
                 key_digest=key_digest,
-                request_fingerprint=request_fingerprint,
                 now=self._clock(),
             )
             if replay is not None:
-                return replay.restore(ConnectorProviderTestResult)
+                return _provider_test_result(current)
             if (
                 current.version != frozen_version
                 or current.credential_generation != frozen_credential_generation
@@ -631,6 +622,9 @@ class ConnectorProviderService:
                 raise ConnectorError(
                     "connector_changed", "ConnectorProvider changed during its test.", category=ErrorCategory.conflict
                 )
+            current.tested_at = tested_at
+            current.tested_version = frozen_version
+            current.verified_access = list(verified_access)
             record_command(
                 session,
                 actor=actor,
@@ -639,17 +633,9 @@ class ConnectorProviderService:
                 operation="connector_provider.test",
                 scope_id=current.id,
                 idempotency_key_digest=key_digest,
-                fingerprint=request_fingerprint,
                 resource_type="connector_provider",
                 resource_id=current.id,
-                result_version=current.version,
                 now=tested_at,
-                resource=ConnectorProviderTestResult(
-                    verified_access=verified_access,
-                    connector_provider_id=current.id,
-                    connector_provider_version=current.version,
-                    tested_at=tested_at,
-                ),
             )
             session.add(
                 audit(
@@ -682,7 +668,6 @@ class ConnectorProviderService:
             key_digest = digest_visible_ascii_key(idempotency_key)
         except InvalidIdempotencyKey as error:
             raise map_management_value_error(error) from error
-        request_fingerprint = digest_request({"expected_version": expected_version, "status": status.value})
         async with transaction(self._sessions) as session:
             record = await require_connector_provider(
                 session, connector_provider_id, scope=await connector_actor_scope(session, actor), lock=True
@@ -694,11 +679,10 @@ class ConnectorProviderService:
                 record=record,
                 operation="connector_provider.status.set",
                 key_digest=key_digest,
-                request_fingerprint=request_fingerprint,
                 now=self._clock(),
             )
             if replay:
-                return replay.restore(ConnectorProvider)
+                return record.to_resource()
             _require_version(record.version, expected_version)
             if record.status != status.value:
                 record.status = status.value
@@ -717,12 +701,9 @@ class ConnectorProviderService:
                 operation="connector_provider.status.set",
                 scope_id=record.id,
                 idempotency_key_digest=key_digest,
-                fingerprint=request_fingerprint,
                 resource_type="connector_provider",
                 resource_id=record.id,
-                result_version=record.version,
                 now=self._clock(),
-                resource=record.to_resource(),
             )
             session.add(
                 audit(
@@ -750,20 +731,28 @@ async def _replay_connector_command(
     record: ConnectorProviderRecord,
     operation: str,
     key_digest: str,
-    request_fingerprint: str,
     now: datetime,
-) -> CommandReceipt | None:
-    try:
-        replay = await replay_command(
-            session,
-            actor=actor,
-            workspace_id=record.workspace_id,
-            operation=operation,
-            scope_id=record.id,
-            idempotency_key_digest=key_digest,
-            fingerprint=request_fingerprint,
-            now=now,
-        )
-    except IdempotencyConflict as error:
-        raise map_management_value_error(error) from error
+) -> CommandReference | None:
+    replay = await replay_command(
+        session,
+        actor=actor,
+        workspace_id=record.workspace_id,
+        operation=operation,
+        scope_id=record.id,
+        idempotency_key_digest=key_digest,
+        now=now,
+    )
     return replay
+
+
+def _provider_test_result(record: ConnectorProviderRecord) -> ConnectorProviderTestResult:
+    if record.tested_at is None or record.tested_version is None or record.verified_access is None:
+        raise RuntimeError("Connector provider test reference has no test result")
+    return ConnectorProviderTestResult.model_validate(
+        dict(
+            connector_provider_id=record.id,
+            connector_provider_version=record.tested_version,
+            tested_at=record.tested_at,
+            verified_access=record.verified_access,
+        )
+    )

@@ -1,158 +1,96 @@
-import { ChoiceField, SettingsRow, SettingsSection } from "a13n-ui";
+import { SettingsSection } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, representation, type Schema } from "../../shared/api";
+import { ApiError } from "../../service-client";
+import { representation } from "../../shared/api";
 import { ErrorNotice, InlineLoading } from "../../shared/feedback";
-import { FormActions } from "../../shared/forms";
-import { modelApi } from "./api";
+import { mediaDefaultsQuery } from "./api";
+import {
+  MediaUnderstandingFields,
+  type MediaKind,
+  type MediaSelection,
+} from "./media-understanding-fields";
+import styles from "./models.module.css";
 
-const kinds = ["image", "video", "audio"] as const;
-const labels = { image: "Image", video: "Video", audio: "Audio" };
-type Selection = Schema["MediaUnderstandingSelection"];
-
+/**
+ * The last level of the Run override → Agent → Workspace precedence: the
+ * Models that read media for Agents whose own Model cannot. Each row is an
+ * independent setting, so a change replaces the whole saved selection under
+ * the current ETag on its own, without a draft to keep or discard.
+ */
 export function MediaUnderstandingDefaults() {
   const { workspace, can } = useWorkspace(),
     client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation();
-  const queryKey = ["media-understanding-defaults", workspace.id];
-  const path = { workspace: workspace.id };
-  const api = modelApi(client, { kind: "workspace", id: workspace.id });
-  const query = useQuery({
-    queryKey,
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace}/media-understanding-defaults", {
-          params: { path },
-          signal,
-        })
-        .then(representation),
-  });
-  const models = useQuery({
-    queryKey: ["models", "media-understanding", workspace.id],
-    queryFn: ({ signal }) => allPages((cursor) => api.models(signal, cursor)),
-  });
-  const providers = useQuery({
-    queryKey: ["model-providers", "media-understanding", workspace.id],
-    queryFn: ({ signal }) =>
-      allPages((cursor) => api.providers(signal, cursor)),
-  });
-  const [draft, setDraft] = useState<{
-    etag: string;
-    selection: Selection;
-  } | null>(null);
+  const defaults = mediaDefaultsQuery(client, workspace.id);
+  const query = useQuery(defaults);
   const save = useMutation({
-    mutationFn: (value: NonNullable<typeof draft>) =>
+    mutationFn: (change: {
+      kind: MediaKind;
+      etag: string;
+      selection: MediaSelection;
+    }) =>
       client.http
         .PUT("/api/v1/workspaces/{workspace}/media-understanding-defaults", {
-          params: { path, header: { "If-Match": value.etag } },
-          body: value.selection,
+          params: {
+            path: { workspace: workspace.id },
+            header: { "If-Match": change.etag },
+          },
+          body: change.selection,
         })
         .then(representation),
-    onSuccess: (result) => {
-      cache.setQueryData(queryKey, result);
-      setDraft(null);
+    onSuccess: (result) => cache.setQueryData(defaults.queryKey, result),
+    onError: (error) => {
+      // Nothing local is worth keeping: reload and show what is actually saved.
+      if (error instanceof ApiError && error.status === 412)
+        void query.refetch();
     },
   });
-  const value = draft?.selection ?? query.data?.value;
-  const eligibleProviders = new Set(
-    providers.data
-      ?.filter((provider) => provider.enabled)
-      .map((provider) => provider.id),
-  );
-  const editable =
-    can("models.manage") && !!query.data?.etag && !save.isPending;
+  const inFlight = save.isPending ? save.variables : undefined;
+  // One save at a time, so the row in flight already carries the whole selection.
+  const value: MediaSelection | undefined =
+    inFlight?.selection ?? query.data?.value;
+  const error = query.error ?? save.error;
+  const conflict =
+    error === save.error && error instanceof ApiError && error.status === 412;
   return (
-    <SettingsSection
-      title={t("Media understanding")}
-      description={t("Workspace defaults")}
-    >
+    <div className={styles.mediaDefaults}>
+      <p className={styles.mediaRule}>
+        {t(
+          "An agent whose own model reads a kind never uses these; an agent or a run can pick a different model.",
+        )}
+      </p>
       <ErrorNotice
-        error={query.error ?? models.error ?? providers.error ?? save.error}
+        error={error}
+        description={
+          conflict
+            ? t(
+                "These defaults changed elsewhere. The saved selection is shown again; choose once more to apply your change.",
+              )
+            : undefined
+        }
       />
       {!value ? (
         <InlineLoading />
       ) : (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (draft) save.mutate(draft);
-          }}
-        >
-          {kinds.map((kind) => {
-            const eligible = (models.data ?? []).filter(
-              (model) =>
-                model.enabled &&
-                eligibleProviders.has(model.provider_id) &&
-                model.declarations?.capabilities?.includes(
-                  `${kind}_understanding`,
-                ),
-            );
-            const selected = value[kind] ?? "";
-            const unavailable =
-              selected && !eligible.some((model) => model.key === selected);
-            return (
-              <SettingsRow key={kind} label={t(labels[kind])}>
-                <ChoiceField
-                  label={t(`${labels[kind]} understanding`)}
-                  hideLabel
-                  value={selected}
-                  disabled={
-                    !editable || models.isPending || providers.isPending
-                  }
-                  options={[
-                    { value: "", label: t("Not configured") },
-                    ...(unavailable
-                      ? [
-                          {
-                            value: selected,
-                            label: `${selected} · ${t("Unavailable")}`,
-                            disabled: true,
-                          },
-                        ]
-                      : []),
-                    ...eligible.map((model) => ({
-                      value: model.key,
-                      label: model.name,
-                    })),
-                  ]}
-                  onValueChange={(selected) => {
-                    const etag = draft?.etag ?? query.data?.etag;
-                    if (!etag) return;
-                    save.reset();
-                    setDraft({
-                      etag,
-                      selection: {
-                        image: value.image ?? null,
-                        video: value.video ?? null,
-                        audio: value.audio ?? null,
-                        [kind]: selected || null,
-                      },
-                    });
-                  }}
-                />
-              </SettingsRow>
-            );
-          })}
-          {draft && (
-            <FormActions
-              pending={save.isPending}
-              disabled={!editable}
-              variant="outline"
-              label={t("Save")}
-              cancelLabel={t("Discard")}
-              onCancel={() => {
-                setDraft(null);
-                save.reset();
-                void query.refetch();
-              }}
-            />
-          )}
-        </form>
+        <SettingsSection>
+          <MediaUnderstandingFields
+            value={value}
+            inherit={{ label: t("Not configured") }}
+            disabled={
+              !can("models.manage") || !query.data?.etag || save.isPending
+            }
+            pendingKind={inFlight?.kind}
+            onChange={(selection, kind) => {
+              const etag = query.data?.etag;
+              if (etag) save.mutate({ kind, etag, selection });
+            }}
+          />
+        </SettingsSection>
       )}
-    </SettingsSection>
+    </div>
   );
 }

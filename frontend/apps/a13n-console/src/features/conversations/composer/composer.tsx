@@ -1,6 +1,6 @@
 import { Button, Textarea } from "a13n-ui";
 import { useMutation } from "@tanstack/react-query";
-import { ArrowUpIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowUpIcon, SquareIcon, XIcon } from "@phosphor-icons/react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
@@ -24,7 +24,8 @@ export function Composer({
   disabled = false,
   agentName,
   options,
-  leading,
+  stop,
+  stopping = false,
 }: {
   initial?: Schema["AgentInput"];
   submit: (input: Schema["AgentInput"], key: string) => Promise<unknown>;
@@ -35,8 +36,9 @@ export function Composer({
   agentName?: string;
   /** Option chips shown beside the attachment control. */
   options?: ReactNode;
-  /** Controls placed immediately before the send button, such as Stop. */
-  leading?: ReactNode;
+  /** Interrupts the active run; the empty-draft send button becomes Stop. */
+  stop?: () => void;
+  stopping?: boolean;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -48,6 +50,7 @@ export function Composer({
       .join("\n\n") ?? "",
   );
   const messageInput = useRef<HTMLTextAreaElement>(null);
+  const form = useRef<HTMLFormElement>(null);
   useLayoutEffect(() => {
     const input = messageInput.current;
     if (!input) return;
@@ -125,6 +128,10 @@ export function Composer({
       setAttachments([]);
       setStructured("");
       changed();
+      // Sending always returns the reader to the live end of the transcript.
+      const stage = form.current?.closest("[data-session-stage]");
+      if (stage instanceof HTMLElement)
+        stage.scrollTo({ top: stage.scrollHeight, behavior: "smooth" });
     },
   });
   function attach(attachment: Schema["BinaryContent"]) {
@@ -134,8 +141,11 @@ export function Composer({
   const busy = mutation.isPending || upload.isPending;
   const action = label ?? t("Send");
   const empty = !text.trim() && !attachments.length && !structured.trim();
+  // A run in flight and nothing to say: the one round button stops it instead.
+  const stopMode = !!stop && empty;
   return (
     <form
+      ref={form}
       className={styles.composer}
       onSubmit={(event) => {
         event.preventDefault();
@@ -161,6 +171,11 @@ export function Composer({
             changed();
           }}
           onKeyDown={(event) => {
+            if (event.key === "Escape" && stopMode) {
+              event.preventDefault();
+              stop?.();
+              return;
+            }
             if (
               event.key !== "Enter" ||
               event.shiftKey ||
@@ -205,50 +220,62 @@ export function Composer({
             ))}
           </div>
         )}
-        <div className={styles.toolbar}>
-          <div className={styles.tools}>
-            <AttachDialog
-              disabled={disabled || busy}
-              structured={structured}
-              onStructuredChange={(value) => {
-                setStructured(value);
-                changed();
-              }}
-              onAttach={attach}
-              onUpload={(file) => {
-                if (!file) {
-                  setUploadFile(undefined);
-                  return;
-                }
-                const selection = { file, key: crypto.randomUUID() };
-                setUploadFile(selection);
-                upload.mutate(selection);
-              }}
-              uploading={upload.isPending}
-              uploadedFile={uploadFile?.file}
-            />
-            {options}
-          </div>
-          <div className={styles.send}>
-            <span className={styles.hint}>
-              {t("Enter to send · Shift+Enter for newline")}
-            </span>
-            {leading}
-            <Button
-              type="submit"
-              size="icon-sm"
-              variant="default"
-              className={styles.sendButton}
-              aria-label={action}
-              title={action}
-              disabled={empty}
-              loading={mutation.isPending}
-            >
-              <ArrowUpIcon size={15} />
-            </Button>
-          </div>
+        <div className={styles.tools}>
+          <AttachDialog
+            disabled={disabled || busy}
+            structured={structured}
+            onStructuredChange={(value) => {
+              setStructured(value);
+              changed();
+            }}
+            onAttach={attach}
+            onUpload={(file) => {
+              if (!file) {
+                setUploadFile(undefined);
+                return;
+              }
+              const selection = { file, key: crypto.randomUUID() };
+              setUploadFile(selection);
+              upload.mutate(selection);
+            }}
+            uploading={upload.isPending}
+            uploadedFile={uploadFile?.file}
+          />
+          {options}
         </div>
       </fieldset>
+      <div className={styles.send}>
+        <span className={styles.hint}>
+          {stopMode ? t("Esc stops") : t("Enter to send")}
+        </span>
+        {stopMode ? (
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="default"
+            className={styles.sendButton}
+            aria-label={t("Stop")}
+            title={t("Stop")}
+            loading={stopping}
+            onClick={stop}
+          >
+            <SquareIcon size={12} weight="fill" />
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            size="icon-sm"
+            variant="default"
+            className={styles.sendButton}
+            aria-label={action}
+            title={action}
+            disabled={empty || disabled || busy}
+            loading={mutation.isPending}
+          >
+            <ArrowUpIcon size={15} />
+          </Button>
+        )}
+      </div>
       <ErrorNotice error={mutation.error} />
       <ErrorNotice
         error={upload.error}

@@ -52,7 +52,7 @@ class ConfigurationDrafts:
         if_match: str | None,
         attempt: AttemptContext | None = None,
     ) -> ConfigurationDraft:
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
         async with transaction(self._sessions) as session:
             _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True)
             await require_attempt(session, record=record, attempt=attempt, now=self._clock())
@@ -65,7 +65,7 @@ class ConfigurationDrafts:
                 now=self._clock(),
             )
             if replay is not None:
-                return replay.restore(ConfigurationDraft)
+                return record.to_resource()
             require_open(record, expected_version=request.expected_version, if_match=if_match)
             if request.expected_digest is not None and record.content_digest != request.expected_digest:
                 raise failure("configuration_draft_conflict", "The expected candidate digest changed.")
@@ -121,7 +121,7 @@ class ConfigurationDrafts:
                 now=self._clock(),
             )
             if replay is not None:
-                return replay.restore(ConfigurationDraft)
+                return record.to_resource()
             require_open(record, expected_version=request.expected_version, if_match=if_match)
             try:
                 resolved = await self._resolver.freeze_in_transaction(session, prepared=prepared)
@@ -154,7 +154,6 @@ class ConfigurationDrafts:
                     result_kind="configuration_draft",
                     result_ref=draft_id,
                     now=self._clock(),
-                    response=result,
                 )
             )
             audit_draft(session, actor=actor, record=record, action="configuration.draft.update", now=self._clock())
@@ -173,7 +172,7 @@ class ConfigurationDrafts:
     ) -> ConfigurationDraft:
         from a13n_service.agents.persistence import lock_agent
 
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
         async with transaction(self._sessions) as session:
             _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True)
             replay = await load_replay(
@@ -185,7 +184,7 @@ class ConfigurationDrafts:
                 now=self._clock(),
             )
             if replay is not None:
-                return replay.restore(ConfigurationDraft)
+                return record.to_resource()
             require_open(record, expected_version=request.expected_version, if_match=if_match)
             current = record.to_resource()
         if current.mode != "update" or current.target_agent_id is None:
@@ -211,7 +210,7 @@ class ConfigurationDrafts:
                 now=self._clock(),
             )
             if replay is not None:
-                return replay.restore(ConfigurationDraft)
+                return record.to_resource()
             require_open(record, expected_version=request.expected_version, if_match=if_match)
             target = await lock_agent(session, record.organization_id, record.workspace_id, current.target_agent_id)
             if resource_etag(target.id, target.updated_at) != request.expected_target_etag:
@@ -245,7 +244,6 @@ class ConfigurationDrafts:
                     result_kind="configuration_draft",
                     result_ref=draft_id,
                     now=self._clock(),
-                    response=result,
                 )
             )
             audit_draft(session, actor=actor, record=record, action="configuration.draft.rebase", now=self._clock())
@@ -261,37 +259,16 @@ class ConfigurationDrafts:
         idempotency_key: str,
         if_match: str,
     ) -> ConfigurationDraft:
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(idempotency_key)
         async with transaction(self._sessions) as session:
             _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
-            replay = await load_replay(
-                session,
-                actor=actor,
-                operation="configuration.draft.discard",
-                scope_id=draft_id,
-                identity=identity,
-                now=self._clock(),
-            )
-            if replay is not None:
-                return replay.restore(ConfigurationDraft)
+            if record.discard_key == identity.key_digest:
+                return record.to_resource()
             require_open(record, expected_version=request.expected_version, if_match=if_match)
+            record.discard_key = identity.key_digest
             record.status, record.terminal_reason = "discarded", "user_discarded"
             record.updated_at = next_updated_at(record.updated_at, self._clock())
             result = record.to_resource()
-            session.add(
-                evidence_record(
-                    actor=actor,
-                    organization_id=record.organization_id,
-                    workspace_id=record.workspace_id,
-                    operation="configuration.draft.discard",
-                    scope_id=draft_id,
-                    identity=identity,
-                    result_kind="configuration_draft",
-                    result_ref=draft_id,
-                    now=self._clock(),
-                    response=result,
-                )
-            )
             audit_draft(session, actor=actor, record=record, action="configuration.draft.discard", now=self._clock())
             await session.flush()
             return result

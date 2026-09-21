@@ -38,7 +38,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import NOW, SERVICE_ACCOUNT_ID, WORKSPACE_ID, actor
-from .connection_helpers import management, mcp_checks
+from .connection_helpers import authenticate_machine, management, mcp_checks, replace_credentials
 
 MCP_ENDPOINT = "https://8.8.8.8/mcp"
 ISSUER = "https://8.8.4.4"
@@ -270,7 +270,9 @@ async def test_bearer_connection_is_pending_until_credentials_then_becomes_ready
     assert created.status == "pending"
     assert created.credential_configured is False
 
-    ready = await connections.replace_credentials(
+    ready = await replace_credentials(
+        connections,
+        _oauth,
         actor=actor(),
         connection_id=created.id,
         idempotency_key="bearer-credentials",
@@ -281,7 +283,9 @@ async def test_bearer_connection_is_pending_until_credentials_then_becomes_ready
     assert ready.credential_configured is True
     assert "bearer-secret" not in repr(ready)
 
-    replay = await connections.replace_credentials(
+    replay = await replace_credentials(
+        connections,
+        _oauth,
         actor=actor(),
         connection_id=created.id,
         idempotency_key="bearer-credentials",
@@ -399,13 +403,14 @@ async def test_static_headers_require_the_complete_immutable_name_set(mcp_servic
         await connections.replace_credentials(
             actor=actor(),
             connection_id=created.id,
-            idempotency_key="invalid-static",
             request=ReplaceMCPCredentialsRequest(
                 expected_version=1,
                 static_headers={"X-Other": "static-secret"},
             ),
         )
-    ready = await connections.replace_credentials(
+    ready = await replace_credentials(
+        connections,
+        _oauth,
         actor=actor(),
         connection_id=created.id,
         idempotency_key="valid-static",
@@ -714,10 +719,12 @@ async def test_client_credentials_acquires_and_renews_without_browser_authorizat
 
     remote.requests.clear()
     remote.verification_unavailable = verification_unavailable
-    authenticated = await machine_oauth.authenticate_client_credentials(
+    authenticated = await authenticate_machine(
+        connections,
+        machine_oauth,
+        idempotency_key="machine-auth",
         actor=actor(),
         connection_id=configured.id,
-        idempotency_key="authenticate-machine-oauth",
         expected_version=configured.version,
     )
     assert remote.requests[0].url.path == "/token"
@@ -748,13 +755,15 @@ async def test_client_credentials_acquires_and_renews_without_browser_authorizat
         assert client.configuration_json["client_id"] == "machine-client"
         assert protected_client["client_secret"] == "machine-secret"
 
-    replayed = await machine_oauth.authenticate_client_credentials(
+    replayed = await authenticate_machine(
+        connections,
+        machine_oauth,
+        idempotency_key="machine-auth",
         actor=actor(),
         connection_id=configured.id,
-        idempotency_key="authenticate-machine-oauth",
         expected_version=configured.version,
     )
-    assert replayed == authenticated
+    assert replayed == ready
     assert remote.machine_token_count == 1
 
     original_generation = await stored_generation(connections, ready.id)
@@ -778,7 +787,6 @@ async def test_client_credentials_acquires_and_renews_without_browser_authorizat
         await machine_oauth.authenticate_client_credentials(
             actor=actor(),
             connection_id=reconfigured.id,
-            idempotency_key="authenticate-rejected-machine-oauth",
             expected_version=reconfigured.version,
         )
     assert rejected.value.code == "mcp_oauth_rejected"
@@ -992,7 +1000,6 @@ async def test_postgresql_cross_pod_authorization_and_single_refresh(
             ready = await pod_b.authenticate_client_credentials(
                 actor=actor(),
                 connection_id=created.id,
-                idempotency_key="authenticate",
                 expected_version=configured.version,
             )
             remote.machine_expires_in = 3600

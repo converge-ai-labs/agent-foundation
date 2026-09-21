@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
+from a13n_service.durable_operations.models import EntityRequestKey
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
 from a13n_service.temporal import assume_utc
@@ -27,7 +28,7 @@ from .domain import Account, AccountStatus
 from .reception import InputBatchingPolicy, ReceptionScope
 
 
-class AccountRecord(ResourceCredential[str], Base):
+class AccountRecord(EntityRequestKey, ResourceCredential[str], Base):
     credential_owner_type = "application_account"
     __tablename__ = "application_accounts"
     __table_args__ = (

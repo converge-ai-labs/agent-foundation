@@ -13,16 +13,15 @@ from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.errors import NativeError
-from a13n_service.connectivity.management import fingerprint, record_command
 from a13n_service.connectivity.native_management import (
     audit,
     authorize,
     idempotency_key_digest,
-    replay_command,
     require_adapter,
     require_limit,
     require_version,
 )
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
@@ -58,24 +57,24 @@ class AccountTargetService:
         self, *, actor: AuthenticatedActor, account_id: str, idempotency_key: str, request: TargetConfig
     ) -> AccountTarget:
         key = idempotency_key_digest(idempotency_key)
-        digest = fingerprint(request)
         try:
             async with transaction(self._sessions) as session:
                 account = await require_account(session, account_id, lock=True)
                 await authorize(session, actor, account.workspace_id, WorkspaceAction.account_target_manage)
-                replay = await replay_command(
+                replay = await find_by_key(
                     session,
-                    actor=actor,
-                    workspace_id=account.workspace_id,
-                    operation="account_target.create",
-                    scope_id=account_id,
-                    idempotency_key_digest=key,
-                    fingerprint=digest,
-                    now=self._clock(),
+                    AccountTargetRecord,
+                    entity_key(
+                        actor,
+                        operation="account_target.create",
+                        scope_id=account_id,
+                        key_digest=key,
+                        workspace_id=account.workspace_id,
+                    ),
                 )
                 if replay is not None:
-                    await require_target(session, account_id, replay.resource_id)
-                    return replay.restore(AccountTarget)
+                    await require_target(session, account_id, replay.id)
+                    return replay.to_resource()
                 candidate = await self._validate(session, actor, account, request)
                 now = self._clock()
                 record = AccountTargetRecord(
@@ -89,23 +88,15 @@ class AccountTargetService:
                     created_at=now,
                     updated_at=now,
                 )
-                _apply(record, candidate)
-                session.add(record)
-                record_command(
-                    session,
-                    actor=actor,
-                    organization_id=account.organization_id,
-                    workspace_id=account.workspace_id,
+                record.request_key = entity_key(
+                    actor,
                     operation="account_target.create",
                     scope_id=account_id,
-                    idempotency_key_digest=key,
-                    fingerprint=digest,
-                    resource_type="account_target",
-                    resource_id=record.id,
-                    result_version=1,
-                    now=now,
-                    resource=record.to_resource(),
+                    key_digest=key,
+                    workspace_id=account.workspace_id,
                 )
+                _apply(record, candidate)
+                session.add(record)
                 session.add(
                     audit(actor, account.organization_id, account.workspace_id, "account_target.create", record.id, now)
                 )

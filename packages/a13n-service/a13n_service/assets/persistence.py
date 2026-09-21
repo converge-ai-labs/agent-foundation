@@ -4,18 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.digests import digest_request
+from a13n_service.durable_operations.entity_keys import entity_key, find_by_key
 from a13n_service.durable_operations.idempotency import (
-    EvidenceScope,
-    IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
     digest_visible_ascii_key,
-    load_evidence,
 )
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -31,7 +28,6 @@ from .domain import (
 )
 from .errors import (
     AssetError,
-    asset_idempotency_conflict,
 )
 from .models import AssetRecord
 
@@ -46,6 +42,7 @@ def add_asset_publication(
     now: datetime,
     run_attempt_id: str | None = None,
     invocation_id: str | None = None,
+    request_key: str | None = None,
 ) -> None:
     """Add the immutable candidate and success audit to the caller's transaction.
 
@@ -58,6 +55,7 @@ def add_asset_publication(
         principal, run_id = None, asset.source.run_id
     session.add(
         AssetRecord(
+            request_key=request_key,
             id=asset.id,
             organization_id=asset.organization_id,
             workspace_id=asset.workspace_id,
@@ -98,37 +96,15 @@ async def load_upload_replay(
     identity: IdempotencyIdentity,
     now: datetime,
 ) -> Asset | None:
-    try:
-        evidence = await load_evidence(
-            session,
-            scope=EvidenceScope(
-                workspace_id=workspace_id,
-                actor_type=actor.principal.principal_type.value,
-                actor_id=actor.principal.principal_id,
-                operation=UPLOAD_OPERATION,
-                scope_id=workspace_id,
-                organization_id=actor.boundary_organization_id,
-            ),
-            identity=identity,
-            now=now,
-        )
-    except IdempotencyConflict as error:
-        raise asset_idempotency_conflict() from error
-    if evidence is None:
-        return None
-    if evidence.result_kind != "asset":
-        raise asset_idempotency_conflict()
-    record = await session.scalar(
-        select(AssetRecord).where(
-            AssetRecord.id == evidence.result_ref,
-            AssetRecord.organization_id == organization_id,
-            AssetRecord.workspace_id == workspace_id,
-            AssetRecord.source_kind == "upload",
-        )
+    key = entity_key(
+        actor,
+        operation=UPLOAD_OPERATION,
+        scope_id=workspace_id,
+        key_digest=identity.key_digest,
+        workspace_id=workspace_id,
     )
-    if record is None:
-        raise asset_idempotency_conflict()
-    return record.to_resource()
+    record = await find_by_key(session, AssetRecord, key)
+    return None if record is None else record.to_resource()
 
 
 async def authorize_asset_workspace(

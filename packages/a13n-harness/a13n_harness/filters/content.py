@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from copy import copy, deepcopy
-from dataclasses import dataclass
-from typing import Any, Literal, cast
+from dataclasses import dataclass, replace
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import (
@@ -59,15 +59,17 @@ class ContentFilterCapability(AbstractCapability[AgentContext]):
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
         del ctx
-        messages = deepcopy(request_context.messages)
+        messages = list(request_context.messages)
         media_items = 0
         binary_bytes = 0
         changed = False
 
-        for message in messages:
+        for message_index, message in enumerate(messages):
             if not isinstance(message, ModelRequest):
                 continue
-            for part in message.parts:
+            parts = list(message.parts)
+            message_changed = False
+            for part_index, part in enumerate(parts):
                 if not isinstance(part, UserPromptPart) and type(part) is not ToolReturnPart:
                     continue
                 content = part.content
@@ -109,18 +111,21 @@ class ContentFilterCapability(AbstractCapability[AgentContext]):
 
                 if not part_changed:
                     continue
-                changed = True
+                changed = message_changed = True
                 if shape == "scalar" and len(filtered) == 1:
-                    cast(Any, part).content = filtered[0]
+                    replacement = filtered[0]
                 elif shape == "tuple":
-                    cast(Any, part).content = tuple(filtered)
+                    replacement = tuple(filtered)
                 else:
-                    cast(Any, part).content = filtered
+                    replacement = filtered
+                parts[part_index] = replace(part, content=replacement)
+            if message_changed:
+                messages[message_index] = replace(message, parts=parts)
 
         if not changed:
             return request_context
         updated = copy(request_context)
-        updated.messages = messages
+        updated.messages = deepcopy(messages)
         return updated
 
 

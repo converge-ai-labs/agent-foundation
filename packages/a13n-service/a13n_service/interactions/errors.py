@@ -22,11 +22,3 @@ def command_not_found() -> InteractionCommandError:
     return InteractionCommandError(
         "resource_not_found", "The requested resource was not found.", category=ErrorCategory.not_found
     )
-
-
-def idempotency_conflict() -> InteractionCommandError:
-    return InteractionCommandError(
-        "idempotency_conflict",
-        "The Idempotency-Key was already used with different request content.",
-        category=ErrorCategory.conflict,
-    )

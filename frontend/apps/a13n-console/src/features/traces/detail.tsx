@@ -1,11 +1,6 @@
-import {
-  Button,
-  ChoiceField,
-  DisclosureSection,
-  SegmentedControl,
-} from "a13n-ui";
+import { Button, ChoiceField, DisclosureSection } from "a13n-ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useId, useState, type CSSProperties, type ReactNode } from "react";
+import { useId, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ApiError } from "../../service-client";
 import { ArrowRightIcon, ArrowSquareOutIcon } from "@phosphor-icons/react";
@@ -22,19 +17,22 @@ import {
   Section,
   useTabParam,
 } from "../../shared/page";
-import { TraceContent, TraceJson } from "./content";
-import { formatCost, observationCost } from "./cost";
+import { CompactNotice, TraceContent } from "./content";
+import { formatCost } from "../../shared/cost";
+import { observationCost } from "./cost";
+import { ObservationGlyph } from "./identity";
+import { MetadataChips } from "./metadata";
 import {
-  isFailed,
-  observationKind,
-  ObservationGlyph,
-  ObservationIcon,
-} from "./identity";
-import { MetadataChips, AttributeValues } from "./metadata";
+  ObservationDiagnostics,
+  ObservationPanelBody,
+  ObservationPayloads,
+  ObservationTitle,
+} from "./observation-panel";
+import { ObservationTree } from "./observation-tree";
 import { compareObservations, type ObservationSort } from "./sorting";
 import { CopyableId, IconTile } from "../../shared/identity";
-import { observationRows } from "./timeline";
-import { Duration, durationMs, TracePill, TelemetryStatus } from "./values";
+import { observationRows, type TimelineRow } from "./timeline";
+import { Duration, Fact, TracePill } from "./values";
 import styles from "./traces.module.css";
 
 const TABS = ["observations", "content", "metadata"] as const;
@@ -125,30 +123,17 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   const duration = Math.max(1, latest - start);
   const source = safeSource(trace.source_url);
   const [field, direction] = order.split(":");
-  const rows =
+  const rows: TimelineRow[] =
     order === "tree"
       ? observationRows(observations)
       : [...observations]
           .sort((a, b) =>
             compareObservations(a, b, { field, direction } as ObservationSort),
           )
-          .map((observation) => ({ observation, depth: 0 }));
+          .map((observation) => ({ observation, depth: 0, childCount: 0 }));
   const selected = selectedId ? byId.get(selectedId) : undefined;
   const provider = trace.provider === "langfuse" ? "Langfuse" : "Logfire";
-  const contentControl = (
-    <ChoiceField
-      label={t("Content")}
-      variant="filter"
-      value={view}
-      onValueChange={(value) => {
-        if (value === "compact" || value === "full") setView(value);
-      }}
-      options={[
-        { value: "full", label: t("Full") },
-        { value: "compact", label: t("Compact") },
-      ]}
-    />
-  );
+  const runPath = `${basePath}/sessions/${correlation.session_id}/threads/${correlation.thread_id}/runs/${correlation.run_id}?view=debug`;
   return (
     <DetailPage
       back={`${basePath}/traces`}
@@ -171,14 +156,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           resourceKey={trace.id}
           actions={
             <>
-              <Button
-                variant="outline"
-                render={
-                  <Link
-                    to={`${basePath}/sessions/${correlation.session_id}/threads/${correlation.thread_id}/runs/${correlation.run_id}`}
-                  />
-                }
-              >
+              <Button variant="outline" render={<Link to={runPath} />}>
                 {t("View run")}
                 <ArrowRightIcon aria-hidden="true" />
               </Button>
@@ -272,85 +250,29 @@ export function TraceDetail({ traceId }: { traceId: string }) {
                     { value: "cost:asc", label: t("Cost · lowest first") },
                   ]}
                 />
-                {contentControl}
+                <ChoiceField
+                  label={t("Content")}
+                  variant="filter"
+                  value={view}
+                  onValueChange={(value) => {
+                    if (value === "compact" || value === "full") setView(value);
+                  }}
+                  options={[
+                    { value: "full", label: t("Full") },
+                    { value: "compact", label: t("Compact") },
+                  ]}
+                />
               </div>
             </div>
-            <div className={styles.timeline}>
-              <div className={styles.timelineHeader}>
-                <span>{t("Observations")}</span>
-                <div className={styles.timelineScale}>
-                  <span>0 s</span>
-                  <span>
-                    {(duration / 1000).toLocaleString(undefined, {
-                      maximumFractionDigits: 6,
-                    })}{" "}
-                    s
-                  </span>
-                </div>
-                <span />
-              </div>
-              {rows.map(({ observation, depth }) => {
-                const left = Math.max(
-                  0,
-                  Math.min(
-                    100,
-                    ((Date.parse(observation.started_at) - start) / duration) *
-                      100,
-                  ),
-                );
-                const elapsed = durationMs(observation);
-                const width =
-                  elapsed === null
-                    ? null
-                    : Math.max(
-                        0.5,
-                        Math.min(100 - left, (elapsed / duration) * 100),
-                      );
-                return (
-                  <button
-                    key={observation.id}
-                    type="button"
-                    className={styles.observation}
-                    data-selected={selectedId === observation.id || undefined}
-                    onClick={() => setSelectedId(observation.id)}
-                  >
-                    <span
-                      className={styles.observationName}
-                      style={
-                        { "--depth": Math.min(depth, 12) } as CSSProperties
-                      }
-                    >
-                      <ObservationIcon observation={observation} />
-                      <span className={styles.observationCopy}>
-                        <span>{observation.name}</span>
-                        <small>
-                          {observation.type}
-                          {(observation.model?.response ??
-                            observation.model?.requested) &&
-                            ` · ${observation.model?.response ?? observation.model?.requested}`}
-                          {observation.parent_id &&
-                            !byId.has(observation.parent_id) &&
-                            ` · ${t("Parent not loaded")}`}
-                        </small>
-                      </span>
-                    </span>
-                    <span className={styles.track}>
-                      {width !== null && (
-                        <span
-                          className={styles.bar}
-                          style={{ left: `${left}%`, width: `${width}%` }}
-                          data-kind={observationKind(observation)}
-                          data-failed={isFailed(observation) || undefined}
-                        />
-                      )}
-                    </span>
-                    <span className={styles.duration}>
-                      <Duration observation={observation} />
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <ObservationTree
+              rows={rows}
+              tree={order === "tree"}
+              start={start}
+              duration={duration}
+              loaded={new Set(byId.keys())}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+            />
             {observationsQuery.isPending && <Loading variant="list" rows={6} />}
             <ErrorNotice
               error={observationsQuery.error}
@@ -360,8 +282,8 @@ export function TraceDetail({ traceId }: { traceId: string }) {
                   : observationsQuery.refetch())
               }
             />
-            {observationsQuery.hasNextPage && (
-              <div className={styles.timelineActions}>
+            <div className={styles.timelineFooter}>
+              {observationsQuery.hasNextPage && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -370,19 +292,19 @@ export function TraceDetail({ traceId }: { traceId: string }) {
                 >
                   {t("Load more observations")}
                 </Button>
-              </div>
-            )}
-            <p className={styles.providerNote}>
-              {t("Costs reported")}: {cost.reported} / {observations.length}.{" "}
-              {!costsComplete &&
-                t("Load all observation pages for the trace cost.")}{" "}
-              {t(
-                "Sampling, export, retention, and unreported costs can leave gaps.",
-              )}{" "}
-              {t(
-                "Ordering applies to loaded observations only. Call tree preserves parent relationships.",
               )}
-            </p>
+              <p className={styles.providerNote}>
+                {t("Costs reported")}: {cost.reported} / {observations.length}.{" "}
+                {!costsComplete &&
+                  t("Load all observation pages for the trace cost.")}{" "}
+                {t(
+                  "Sampling, export, retention, and unreported costs can leave gaps.",
+                )}{" "}
+                {t(
+                  "Ordering applies to loaded observations only. Call tree preserves parent relationships.",
+                )}
+              </p>
+            </div>
           </div>
         )}
         {tab === "content" && (
@@ -411,7 +333,8 @@ export function TraceDetail({ traceId }: { traceId: string }) {
         {tab === "metadata" && (
           <div className={styles.payloads}>
             <CompactNotice view={view} onFull={() => setView("full")} />
-            <ObservationMetadata observation={root} />
+            <ObservationDiagnostics observation={root} />
+            <ObservationPayloads observation={root} />
             <DisclosureSection title={<>{t("Correlation")}</>}>
               <dl className={styles.properties}>
                 {Object.entries(correlation).map(([key, value]) => (
@@ -431,10 +354,10 @@ export function TraceDetail({ traceId }: { traceId: string }) {
         <Panel
           open
           label={t("Observation")}
-          title={<strong title={selected.name}>{selected.name}</strong>}
+          title={<ObservationTitle observation={selected} />}
           onClose={() => setSelectedId(null)}
         >
-          <ObservationDetails
+          <ObservationPanelBody
             observation={selected}
             view={view}
             onFull={() => setView("full")}
@@ -442,168 +365,6 @@ export function TraceDetail({ traceId }: { traceId: string }) {
         </Panel>
       )}
     </DetailPage>
-  );
-}
-
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className={styles.fact}>
-      <dt>{label}</dt>
-      <dd>{children}</dd>
-    </div>
-  );
-}
-
-/** Compact view omits retained content, so it offers its own way back. */
-function CompactNotice({
-  view,
-  onFull,
-}: {
-  view: Schema["TraceView"];
-  onFull: () => void;
-}) {
-  const { t } = useTranslation();
-  if (view !== "compact") return null;
-  return (
-    <p className={styles.providerNote}>
-      {t("Compact omits retained content and diagnostic attributes.")}{" "}
-      <Button variant="ghost" size="sm" type="button" onClick={onFull}>
-        {t("Show full content")}
-      </Button>
-    </p>
-  );
-}
-
-function ObservationDetails({
-  observation,
-  view,
-  onFull,
-}: {
-  observation: Schema["Observation"];
-  view: Schema["TraceView"];
-  onFull: () => void;
-}) {
-  const { t } = useTranslation();
-  const [tab, setTab] = useState("input");
-  return (
-    <div className={styles.panelStack}>
-      <CompactNotice view={view} onFull={onFull} />
-      <dl className={styles.panelFacts}>
-        <Fact label={t("Type")}>
-          <span className={styles.typeIdentity}>
-            <ObservationIcon observation={observation} />
-            {observation.type}
-          </span>
-        </Fact>
-        <Fact label={t("Duration")}>
-          <Duration observation={observation} />
-        </Fact>
-        <Fact label={t("Cost")}>{formatCost(observation.cost_usd)}</Fact>
-      </dl>
-      <SegmentedControl
-        label={t("Observation")}
-        value={tab}
-        onValueChange={setTab}
-        options={[
-          { value: "input", label: t("Input") },
-          { value: "output", label: t("Output") },
-          { value: "metadata", label: t("Metadata") },
-        ]}
-      />
-      {tab === "input" && (
-        <TraceContent
-          content={observation.input}
-          compact={view === "compact"}
-        />
-      )}
-      {tab === "output" && (
-        <TraceContent
-          content={observation.output}
-          compact={view === "compact"}
-        />
-      )}
-      {tab === "metadata" && (
-        <div className={styles.panelStack}>
-          <div className={styles.identifier}>
-            <CopyableId value={observation.id} />
-            {observation.parent_id && (
-              <span>
-                {t("Parent ID")}: <CopyableId value={observation.parent_id} />
-              </span>
-            )}
-          </div>
-          <p className={styles.identifier}>
-            <Timestamp value={observation.started_at} /> —{" "}
-            <Timestamp value={observation.ended_at} />
-          </p>
-          {observation.model && (
-            <dl className={styles.modelIdentity}>
-              <Fact label={t("Requested model")}>
-                {observation.model.requested ?? "-"}
-              </Fact>
-              <Fact label={t("Response model")}>
-                {observation.model.response ?? "-"}
-              </Fact>
-            </dl>
-          )}
-          <MetadataChips observation={observation} />
-          <ObservationMetadata observation={observation} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ObservationMetadata({
-  observation,
-}: {
-  observation: Schema["Observation"];
-}) {
-  const { t } = useTranslation();
-  const sections = [
-    ["usage", "Usage"],
-    ["attributes", "Attributes"],
-    ["resource_attributes", "Resource attributes"],
-    ["scope", "Instrumentation scope"],
-    ["events", "Events"],
-    ["links", "Links"],
-  ] as const;
-  return (
-    <div className={styles.payloads}>
-      <div className={styles.diagnostics}>
-        <p className={styles.providerNote}>
-          {t(
-            "Telemetry status is the span's reported OpenTelemetry status, not the Run outcome. Unset and unavailable do not mean success.",
-          )}
-        </p>
-        <dl className={styles.diagnosticValues}>
-          <Fact label={t("Telemetry status")}>
-            <TelemetryStatus observation={observation} />
-          </Fact>
-          <Fact label={t("Level")}>
-            <TracePill level={observation.level} />
-          </Fact>
-        </dl>
-      </div>
-      {observation.status_message !== null && (
-        <dl className={styles.statusBlock}>
-          <Fact label={t("Status message")}>
-            <pre className={styles.statusMessage}>
-              {observation.status_message}
-            </pre>
-          </Fact>
-        </dl>
-      )}
-      {sections.map(([key, label]) => (
-        <DisclosureSection key={key} title={<>{t(label)}</>}>
-          {key === "attributes" || key === "resource_attributes" ? (
-            <AttributeValues value={observation[key]} />
-          ) : (
-            <TraceJson value={observation[key]} />
-          )}
-        </DisclosureSection>
-      ))}
-    </div>
   );
 }
 

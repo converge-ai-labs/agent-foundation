@@ -16,6 +16,7 @@ class RunSource:
     run: Run
     thread: Thread
     session_scope: SessionScope
+    interrupt_key: str | None = None
 
     def require_scope(self, *, workspace_id: str, run_id: str) -> None:
         if (
@@ -81,7 +82,7 @@ async def load_run_source(database: AsyncSession, *, workspace_id: str, run_id: 
     if row is None:
         raise command_not_found()
     run, thread, conversation = row
-    return RunSource(run.to_resource(), thread.to_resource(), SessionScope.from_record(conversation))
+    return RunSource(run.to_resource(), thread.to_resource(), SessionScope.from_record(conversation), run.interrupt_key)
 
 
 async def load_thread_source(database: AsyncSession, *, workspace_id: str, thread_id: str) -> ThreadSource:

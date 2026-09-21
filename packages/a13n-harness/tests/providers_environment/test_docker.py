@@ -60,6 +60,78 @@ async def test_create_native_container_records_state_and_overrides_entrypoint(na
     container.stop.assert_not_called()
 
 
+async def test_unused_docker_mount_enters_and_closes_without_engine_io(native):
+    from a13n_harness import RunBindings
+    from a13n_harness.environment.advanced import create_environment_runtime
+
+    env, engine, _ = native
+    runtime = create_environment_runtime(mounts={"workspace": env}, default_mount="workspace")
+    async with runtime.bind(
+        thread_id="thread-1", run_id="run-1", instance=RunBindings.embedded().instance, host_refs={}
+    ) as bound:
+        assert bound.snapshot.mounts[0].descriptor.generation == "unprepared"
+        assert env.availability.status == "preparing"
+        assert env.operations.files is None
+        assert engine.client.mock_calls == []
+    assert env.availability.status == "unavailable"
+    assert engine.client.mock_calls == []
+    with pytest.raises(RuntimeError, match="closed"):
+        await env.prepare()
+
+
+@pytest.mark.parametrize("restored", [False, True])
+@pytest.mark.parametrize("eager", [False, True])
+async def test_docker_aggregate_prepares_once_and_preserves_target(native, monkeypatch, restored, eager):
+    from a13n_harness import RunBindings
+    from a13n_harness.environment.advanced import create_environment_runtime
+    from a13n_harness.providers.environment._guest_files import GuestFiles
+    from a13n_harness.providers.environment.files import FileMetadata
+    from a13n_harness.providers.environment.models import EnvironmentState
+
+    env, engine, container = native
+    if restored:
+        env = DockerEnvironment(
+            env.config,
+            env.environment_id,
+            EnvironmentState(
+                provider_key="docker",
+                state_version="1",
+                state={
+                    "environment_id": env.environment_id,
+                    "container_id": container.id,
+                    "configuration_fingerprint": env.fingerprint,
+                },
+            ),
+            env.runtime,
+        )
+    container.status = "running"
+
+    def lookup(_selector):
+        if restored or engine.client.containers.create.called:
+            return container
+        raise NotFound("missing")
+
+    engine.client.containers.get.side_effect = lookup
+    stat = AsyncMock(return_value=FileMetadata(path="/workspace/note.txt", kind="file", size=4, writable=True))
+    monkeypatch.setattr(GuestFiles, "stat", stat)
+    if eager:
+        await env.prepare()
+    before_entry = list(engine.client.mock_calls)
+    runtime = create_environment_runtime(mounts={"workspace": env}, default_mount="workspace")
+    async with runtime.bind(
+        thread_id="thread-1", run_id="run-1", instance=RunBindings.embedded().instance, host_refs={}
+    ) as bound:
+        assert engine.client.mock_calls == before_entry
+        for _ in range(2):
+            assert (await bound.files.stat("note.txt")).size == 4
+        assert env.availability.status == "available"
+        assert engine.client.containers.create.call_count == (0 if restored else 1)
+        assert stat.await_count == 2
+    assert env.availability.status == "unavailable"
+    container.remove.assert_not_called()
+    container.stop.assert_not_called()
+
+
 async def test_missing_image_pulls_once(native):
     env, engine, _ = native
     engine.client.images.get.side_effect = ImageNotFound("absent")

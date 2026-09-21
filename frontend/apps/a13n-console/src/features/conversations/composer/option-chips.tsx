@@ -1,6 +1,7 @@
 import { SlidersHorizontalIcon } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { mediaKinds } from "../../models/media-understanding-fields";
 import {
   RunOptionsDialog,
   type OptionField,
@@ -53,6 +54,17 @@ export function RunOptions({
           value={options.labels.environment ?? options.environment}
         />
       )}
+      {mediaKinds.map(({ kind, label }) => {
+        const key = options.mediaUnderstanding[kind];
+        return key ? (
+          <OptionChip
+            key={kind}
+            onClick={() => edit(kind)}
+            label={t(label)}
+            value={options.labels.media?.[kind] ?? key}
+          />
+        ) : null;
+      })}
       {options.overrideInstructions && (
         <OptionChip
           onClick={() => edit("instructions")}

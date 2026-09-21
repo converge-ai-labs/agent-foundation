@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { expect, it, vi } from "vitest";
 import { RunOptions } from "./option-chips";
 import { useRunOptions } from "./options-dialog";
@@ -8,10 +9,19 @@ import { useRunOptions } from "./options-dialog";
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
 vi.mock("../../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "ws_test" } }),
+  useWorkspace: () => ({
+    workspace: { id: "ws_test" },
+    basePath: "/workspace/design",
+  }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, string>) =>
+      Object.entries(values ?? {}).reduce(
+        (text, [name, value]) => text.replaceAll(`{{${name}}}`, value),
+        key,
+      ),
+  }),
 }));
 
 it("distinguishes new allocation from reuse and submits the selected identity", async () => {
@@ -40,7 +50,9 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   const cache = new QueryClient();
   render(
     <QueryClientProvider client={cache}>
-      <ComposerOptions />
+      <MemoryRouter>
+        <ComposerOptions />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
@@ -105,7 +117,9 @@ it("preserves a captured directory and clears it when switching targets", async 
   }
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <Editor />
+      <MemoryRouter>
+        <Editor />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
@@ -158,7 +172,9 @@ it("submits a Device default as an explicit path without access presets", async 
   }
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <Editor />
+      <MemoryRouter>
+        <Editor />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
@@ -186,4 +202,84 @@ it("submits a Device default as an explicit path without access presets", async 
       },
     }),
   );
+});
+
+it("overrides media understanding per kind and names the choice on its chip", async () => {
+  http.GET.mockImplementation(async (path: string) => ({
+    response: new Response(null, { headers: { ETag: '"v0"' } }),
+    data: path.endsWith("/media-understanding-defaults")
+      ? { image: "vision", video: null, audio: null }
+      : {
+          items: path.endsWith("/model-providers")
+            ? [{ id: "provider", name: "Local", enabled: true }]
+            : path.endsWith("/models")
+              ? [
+                  {
+                    key: "vision",
+                    name: "Vision",
+                    upstream_model: "claude-vision",
+                    enabled: true,
+                    provider_id: "provider",
+                    declarations: { capabilities: ["image_understanding"] },
+                  },
+                ]
+              : [],
+        },
+  }));
+  const submit = vi.fn();
+  function Editor() {
+    const options = useRunOptions({
+      config_override: { media_understanding: { image: "retired" } },
+    });
+    return (
+      <>
+        <RunOptions options={options} />
+        <button onClick={() => submit(options.build())}>Submit</button>
+      </>
+    );
+  }
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>
+        <Editor />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  // The saved key travels on the chip until the dialog can name its model.
+  await user.click(screen.getByRole("button", { name: "Image: retired" }));
+  const image = await screen.findByRole("combobox", {
+    name: "Image understanding",
+  });
+  await waitFor(() => expect(image.hasAttribute("disabled")).toBe(false));
+  await user.click(image);
+  // The inherited option names the workspace default the run would fall back to.
+  expect(
+    (await screen.findByRole("option", { name: /^Inherit/ })).textContent,
+  ).toContain("Vision");
+  await user.click(await screen.findByRole("option", { name: /^Vision/ }));
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  expect(screen.getByRole("button", { name: "Image: Vision" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit.mock.lastCall?.[0].config_override).toEqual({
+    media_understanding: { image: "vision", video: null, audio: null },
+  });
+  // Opened without a media chip, the rows stay behind a summary of the selection.
+  await user.click(screen.getByRole("button", { name: "Options" }));
+  await screen.findByRole("button", {
+    name: /Media understanding Image · Vision, others inherited/,
+  });
+  expect(
+    screen.queryByRole("combobox", { name: "Image understanding" }),
+  ).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await user.click(screen.getByRole("button", { name: "Image: Vision" }));
+  await user.click(
+    await screen.findByRole("combobox", { name: "Image understanding" }),
+  );
+  await user.click(await screen.findByRole("option", { name: /^Inherit/ }));
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  expect(screen.queryByRole("button", { name: /^Image:/ })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit.mock.lastCall?.[0].config_override).toBeUndefined();
 });

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from copy import copy
 from typing import Any, cast
 
-import a13n_harness.execution as execution_module
+import a13n_harness.builder as builder_module
 import pytest
 from a13n_harness import (
     AgentContext,
@@ -109,7 +109,7 @@ async def test_harness_context_window_is_shared_through_native_model_profile(
         profile={"context_window": 1_000, "supports_json_object_output": True},
     )
     if model_source == "inference":
-        monkeypatch.setattr(execution_module, "infer_model", lambda *args, **kwargs: model)
+        monkeypatch.setattr(builder_module, "infer_model", lambda *args, **kwargs: model)
     spec = HarnessAgentSpec(
         model=None if model_source == "definition" else "logical:primary",
         model_characteristics=HarnessModelCharacteristics(context_window_tokens=2_000),
@@ -266,7 +266,7 @@ async def test_builder_uses_harness_model_inference_recursively(
         observed.append((model_id, gateway_provider_factory))
         return model
 
-    monkeypatch.setattr(execution_module, "infer_model", harness_infer_model)
+    monkeypatch.setattr(builder_module, "infer_model", harness_infer_model)
     child = AgentDefinition(
         agent=AgentSpec(model="company@openai:gpt-5"),
         output_type=str,

@@ -107,6 +107,17 @@ def _definition(name: str, *, subagents: tuple[SubagentDefinition, ...] = ()) ->
     )
 
 
+def test_build_context_detaches_shared_json_and_rejects_cycles() -> None:
+    shared: list[object] = [{"value": 1}]
+    context = HarnessBuildContext(extensions={"test": {"left": shared, "right": shared}})
+    shared.append(2)
+    assert context.extensions == {"test": {"left": [{"value": 1}], "right": [{"value": 1}]}}
+
+    shared.append(shared)
+    with pytest.raises(PluginError, match="bounded finite JSON"):
+        HarnessBuildContext(extensions={"test": shared})
+
+
 def test_disabled_environment_ignores_other_sources_and_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(HARNESS_PLUGIN_CONFIG_ENABLED_ENV, "false")
     monkeypatch.setenv(HARNESS_PLUGIN_CONFIG_JSON_ENV, "not-json")

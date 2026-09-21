@@ -245,4 +245,6 @@ class FileOperator(Protocol):
         destination: str,
         *,
         replace: bool = False,
-    ) -> FileCopyResult: ...
+    ) -> FileCopyResult:
+        """Create the destination, permitting replacement of an existing file only when requested."""
+        ...

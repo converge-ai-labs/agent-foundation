@@ -1,6 +1,8 @@
 import { expect, it } from "vitest";
 import type { Schema } from "../../shared/api";
-import { formatCost, observationCost } from "./cost";
+import { formatCost } from "../../shared/cost";
+import { observationCost } from "./cost";
+import { UNKNOWN } from "../../shared/unknown";
 
 function cost(id: string, value: string | null) {
   return { id, cost_usd: value } as Schema["Observation"];
@@ -35,13 +37,13 @@ it("does not silently round tiny costs to zero or coerce malformed values", () =
   );
   expect(formatCost("3e-12")).toBe("$3e-12");
   expect(formatCost("0")).toBe("$0");
-  expect(formatCost(null)).toBe("-");
+  expect(formatCost(null)).toBe(UNKNOWN);
   expect(formatCost("0.30000000000000000001")).toBe("$0.3");
   for (const value of ["NaN", "Infinity", "", "unavailable"]) {
     expect(observationCost([cost("a", value)])).toEqual({
       total: null,
       reported: 0,
     });
-    expect(formatCost(value)).toBe("-");
+    expect(formatCost(value)).toBe(UNKNOWN);
   }
 });

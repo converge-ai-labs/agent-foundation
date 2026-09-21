@@ -234,8 +234,8 @@ async def test_wrong_tab_and_idempotency_binding_cannot_redeem(composio_setup):
     result = await launch(service, connection)
     with pytest.raises(ConnectorError, match="browser authorization context"):
         await complete(service, result.attempt_id, nonce="a" * 64)
-    with pytest.raises(ConnectorError):
-        await launch(service, connection, nonce="a" * 64)
+    replay = await launch(service, connection, nonce="a" * 64)
+    assert replay.attempt_id == result.attempt_id
     assert state["redeem_calls"] == 0 and state["link_calls"] == 1
     assert await complete(service, result.attempt_id) == "/connections"
 

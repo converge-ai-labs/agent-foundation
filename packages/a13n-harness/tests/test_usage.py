@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -479,3 +480,118 @@ async def test_imported_history_is_not_reattributed_on_resume() -> None:
     assert len(second_records) == 1
     assert first_records[0].record_id != second_records[0].record_id
     assert second.usage.requests == 1
+
+
+@pytest.mark.parametrize("outcome", ("success", "failure", "cancelled"))
+@pytest.mark.parametrize("inline", (False, True))
+async def test_auxiliary_model_responses_share_pricing_and_ledger_not_native_budget(outcome: str, inline: bool) -> None:
+    import asyncio
+
+    from a13n_harness.toolsets.file_media import (
+        AgentMediaUnderstandingProvider,
+        MediaUnderstandingError,
+        MediaUnderstandingRequest,
+    )
+    from a13n_harness.usage import _auxiliary_usage_scope
+    from pydantic_ai.messages import TextPart
+
+    inputs: list[ModelCostInput] = []
+    calls = 0
+
+    async def analyze(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 2 and outcome == "cancelled":
+            raise asyncio.CancelledError
+        return ModelResponse(
+            parts=[TextPart("valid" if calls == 2 and outcome == "success" else " ")],
+            model_name="media-actual",
+            provider_name="media-provider",
+            usage=RequestUsage(input_tokens=7, output_tokens=2, cache_read_tokens=3),
+        )
+
+    from a13n_harness import AgentDefinition
+
+    from .test_delegation import _bindings_factory, _parent_definition, _returns_after_latest_user
+
+    provider = AgentMediaUnderstandingProvider(models={"image": FunctionModel(analyze, model_name="media-actual")})
+
+    async def metered_search(ctx: RunContext[AgentContext]) -> str:
+        before = deepcopy(ctx.usage)
+        with _auxiliary_usage_scope(ctx, source="files.media_understanding", tool_id="filesystem.view"):
+            try:
+                result = await provider.understand(
+                    MediaUnderstandingRequest(
+                        kind="image",
+                        media_type="image/png",
+                        source_name="image.png",
+                        source_bytes=b"image",
+                    )
+                )
+            except asyncio.CancelledError:
+                assert outcome == "cancelled"
+            except MediaUnderstandingError as exc:
+                assert outcome == "failure"
+                assert exc.usage == ()
+            else:
+                assert outcome == "success"
+                assert result.usage == ()  # No second provider receipt for the same model response.
+        assert ctx.usage == before
+        return "done"
+
+    definition = AgentDefinition(
+        agent=AgentSpec(),
+        output_type=str,
+        model=_mixed_usage_model(),
+        capabilities=(
+            _FixedCostCapability(inputs=inputs),
+            Capability(tools=[HarnessTool(metered_search, harness_metadata=_metadata())], id="media-tools"),
+        ),
+    )
+    bindings = RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=_allow),))
+    if inline:
+
+        async def parent_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+            if not _returns_after_latest_user(messages):
+                yield {
+                    0: DeltaToolCall(name="delegate", json_args=json.dumps({"subagent": "reviewer", "prompt": "view"}))
+                }
+            else:
+                yield "done"
+
+        definition = _parent_definition(
+            definition,
+            FunctionModel(stream_function=parent_stream),
+            capabilities=(_FixedCostCapability(inputs=inputs),),
+        )
+        bindings = _bindings_factory()
+    executable = HarnessBuilder().build(definition)
+    async with executable.stream("go", bindings=bindings) as stream:
+        items = [item async for item in stream]
+    records = [
+        ModelUsageRecord.model_validate(record)
+        for item in items
+        if isinstance(item, HarnessEvent)
+        and isinstance(item.event, HarnessExtensionEvent)
+        and item.event.kind == "usage"
+        for record in item.event.payload["records"]
+    ]
+    media = [r for r in records if isinstance(r, ModelUsageRecord) and r.source == "files.media_understanding"]
+    expected = {"success": 2, "failure": 3, "cancelled": 1}[outcome]
+    assert len(media) == expected
+    assert all((r.parent_agent_instance_id is not None) == inline for r in media)
+    assert all(r.model_name == "media-actual" and r.provider_name == "media-provider" for r in media)
+    assert all(r.tool_id == "filesystem.view" and r.tool_call_id == "call-1" for r in media)
+    assert all(r.request_usage.cost == Decimal("0.125") and r.pricing_revision == "catalog-7" for r in media)
+    assert all(r.request_usage.input_tokens == 7 for r in media)
+    assert len({r.record_id for r in records}) == len(records)
+    assert not any(isinstance(r, ProviderUsageRecord) for r in records)
+    assert len([value for value in inputs if value.model_name == "media-actual"]) == expected
+    reports = [
+        item.event.payload
+        for item in items
+        if isinstance(item, HarnessEvent)
+        and isinstance(item.event, HarnessExtensionEvent)
+        and item.event.kind == "usage"
+    ]
+    assert reports

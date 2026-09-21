@@ -6,6 +6,7 @@ import { Empty } from "../../shared/collection";
 import { Page } from "../../shared/page";
 import { EnvironmentTemplates } from "../environments/templates";
 import { ProvidersPage } from "../providers/page";
+import { MediaUnderstandingDefaults } from "../models/media-understanding";
 import { Models } from "../models/page";
 import { ServiceAccountDetail, ServiceAccounts } from "./accounts";
 import { Audit } from "./audit";
@@ -45,6 +46,9 @@ export function WorkspaceSettings() {
               )
             }
           />
+        ),
+        "media-understanding": (
+          <MediaUnderstandingDefaults key={workspace.id} />
         ),
         members: <Members scope={scope} />,
         invitations: <Invitations scope={scope} />,

@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
-from functools import partial
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets import Asset
-from a13n_service.digests import digest_request
 from a13n_service.iam import (
     AuthenticatedActor,
     WorkspaceAction,
@@ -52,8 +50,7 @@ from a13n_service.temporal import Clock, utc_now
 
 from .access import authorize_inherited_run, authorize_run_actions
 from .command_evidence import (
-    RunCommandEvidence,
-    fingerprint_request,
+    RunRequest,
     require_idempotency_key,
 )
 from .command_preparation import CommandInput
@@ -98,18 +95,15 @@ class ContinuationCommands:
         request: RetryRunCommand,
     ) -> RunAcceptanceReceipt:
         require_idempotency_key(idempotency_key)
-        evidence = RunCommandEvidence(
+        evidence = RunRequest(
             self._sessions,
             actor=actor,
             operation="run.retry",
             scope_id=run_id,
             supplied_key=idempotency_key,
-            fingerprint=fingerprint_request(request),
-            clock=self._clock,
         )
         replay = await evidence.replay()
         if replay is not None:
-            await self._acceptance.validate_retained(replay.run_id)
             return replay
 
         source, thread, parent, session_scope = await self._load_retry_source(actor=actor, run_id=run_id)
@@ -155,7 +149,7 @@ class ContinuationCommands:
             id=new_run_id_value,
             retry_of_run_id=source.id,
             idempotency_key=None,
-            request_fingerprint=evidence.fingerprint,
+            request_key=evidence.key,
             organization_id=source.organization_id,
             **inherited_run_fields(source),
             session_id=source.session_id,
@@ -202,7 +196,7 @@ class ContinuationCommands:
                 hook_source_run_id=source.id if "hook_subscription" not in request.model_fields_set else None,
                 hook_actor=actor.principal,
                 final_validator=validate_final,
-                transaction_hook=partial(evidence.commit, now=self._clock()),
+                transaction_hook=evidence.commit,
                 label_overrides=request.labels,
                 label_source_run_id=source.id,
             )
@@ -221,6 +215,17 @@ class ContinuationCommands:
         protocol_context: ProtocolInputContext | None = None,
     ) -> RunAcceptanceReceipt:
         require_idempotency_key(idempotency_key)
+        evidence = RunRequest(
+            self._sessions,
+            actor=actor,
+            operation="run.feedback",
+            scope_id=run_id,
+            supplied_key=idempotency_key,
+            binding=transaction_hook,
+        )
+        replay = await evidence.replay()
+        if replay is not None:
+            return replay
         source, thread, source_state, session_scope = await self._prepare_waiting_source(actor=actor, run_id=run_id)
         assert source.pending is not None
         try:
@@ -238,32 +243,6 @@ class ContinuationCommands:
                 str(error),
                 category=ErrorCategory.invalid_request,
             ) from error
-        request_fingerprint = digest_request(
-            {
-                "expected_thread_version": request.expected_thread_version,
-                "feedback": normalized.model_dump(mode="json", by_alias=True),
-                **(
-                    {"protocol_context": protocol_context.model_dump(mode="json")}
-                    if protocol_context is not None
-                    else {}
-                ),
-                **request.model_dump(mode="json", include={"hook_subscription", "labels"}),
-            }
-        )
-        evidence = RunCommandEvidence(
-            self._sessions,
-            actor=actor,
-            operation="run.feedback",
-            scope_id=run_id,
-            supplied_key=idempotency_key,
-            fingerprint=request_fingerprint,
-            binding=transaction_hook,
-            clock=self._clock,
-        )
-        replay = await evidence.replay()
-        if replay is not None:
-            await self._acceptance.validate_retained(replay.run_id)
-            return replay
         try:
             return await self._accept_waiting_successor(
                 actor=actor,
@@ -273,8 +252,8 @@ class ContinuationCommands:
                 session_scope=session_scope,
                 request=request,
                 normalized=normalized,
-                request_fingerprint=evidence.fingerprint,
-                transaction_hook=partial(evidence.commit, now=self._clock()),
+                request_key=evidence.key,
+                transaction_hook=evidence.commit,
                 protocol_context=protocol_context,
             )
         except RunAcceptanceError as error:
@@ -292,30 +271,20 @@ class ContinuationCommands:
         prepared_assets: Mapping[str, Asset] | None = None,
     ) -> RunAcceptanceReceipt:
         require_idempotency_key(idempotency_key)
-        source, thread, source_state, normalized, session_scope = await self._prepare_waiting_continue(
-            actor=actor, run_id=run_id, request=request, prepared_assets=prepared_assets
-        )
-        request_fingerprint = digest_request(
-            {
-                "expected_thread_version": request.expected_thread_version,
-                "waiting_continue": normalized.model_dump(mode="json", by_alias=True),
-                **request.model_dump(mode="json", include={"hook_subscription"}),
-            }
-        )
-        evidence = RunCommandEvidence(
+        evidence = RunRequest(
             self._sessions,
             actor=actor,
             operation="run.waiting_continue",
             scope_id=run_id,
             supplied_key=idempotency_key,
-            fingerprint=request_fingerprint,
             binding=transaction_hook,
-            clock=self._clock,
         )
         replay = await evidence.replay()
         if replay is not None:
-            await self._acceptance.validate_retained(replay.run_id)
             return replay
+        source, thread, source_state, normalized, session_scope = await self._prepare_waiting_continue(
+            actor=actor, run_id=run_id, request=request, prepared_assets=prepared_assets
+        )
         try:
             return await self._accept_waiting_successor(
                 actor=actor,
@@ -325,8 +294,8 @@ class ContinuationCommands:
                 session_scope=session_scope,
                 request=request,
                 normalized=normalized,
-                request_fingerprint=evidence.fingerprint,
-                transaction_hook=partial(evidence.commit, now=self._clock()),
+                request_key=evidence.key,
+                transaction_hook=evidence.commit,
                 protocol_context=request.protocol_context,
             )
         except RunAcceptanceError as error:
@@ -339,7 +308,7 @@ class ContinuationCommands:
         actor: AuthenticatedActor,
         observed_source: RunSource | None = None,
         run_id: str,
-        request_fingerprint: str,
+        request_key: str,
         request: WaitingContinueRunCommand,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
@@ -360,7 +329,7 @@ class ContinuationCommands:
             session_scope=session_scope,
             request=request,
             normalized=normalized,
-            request_fingerprint=request_fingerprint,
+            request_key=request_key,
             transaction_hook=transaction_hook,
             protocol_context=request.protocol_context,
         )
@@ -407,7 +376,7 @@ class ContinuationCommands:
         source_state: StoredRunState,
         request: WaitingRunFeedbackRequest | WaitingContinueRunCommand,
         normalized: WaitingRunFeedback,
-        request_fingerprint: str,
+        request_key: str,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None,
         protocol_context: ProtocolInputContext | None,
     ) -> RunAcceptanceReceipt:
@@ -466,7 +435,7 @@ class ContinuationCommands:
             queue_name=source.queue_name,
             execution_budget=source.execution_budget,
             idempotency_key=None,
-            request_fingerprint=request_fingerprint,
+            request_key=request_key,
             input_kind=RunInputKind.waiting_continue if accepted_input is not None else RunInputKind.waiting_feedback,
             input=normalized.model_dump(mode="json", by_alias=True),
             input_text=input_text(accepted_input) if accepted_input is not None else None,

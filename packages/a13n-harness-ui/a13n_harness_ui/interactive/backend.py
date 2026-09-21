@@ -27,7 +27,7 @@ from a13n_harness_ui.environment_profiles import (
 )
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.goal import GoalMode
-from a13n_harness_ui.live import LiveEvent, root_context_samples, root_model_usage
+from a13n_harness_ui.live import LiveEvent, model_usage, root_context_samples
 from a13n_harness_ui.media_understanding import environment_media_kinds
 from a13n_harness_ui.model_adapters import service_tier_setting
 from a13n_harness_ui.model_fast import FastControl, apply_fast, describe_fast, fast_state
@@ -480,7 +480,7 @@ class SessionBackend:
         # A saved default outranks restored Project memory, not an explicit local choice.
         # All fallible I/O precedes the local selection change.
         self.thread_id = selected
-        self.status.restore_usage(totals.root)
+        self.status.restore_usage(totals.combined)
         self.status.context_tokens = usage.latest_request_tokens
         agent = configuration.agents.get(thread.configuration.agent_source.id)
         self.agent_id = thread.configuration.agent_source.id
@@ -736,13 +736,13 @@ class SessionBackend:
         thread_id = await self.ensure_session()
         last_ordinal = -1
         custom_events = CustomEventAssembler()
-        # Snapshot before admission, then add only this operation's live records.
-        # Never combine an in-flight ledger snapshot with the same live delta.
+        # Snapshot before admission; live notifications refresh this committed
+        # projection rather than adding potentially overlapping child deltas.
         totals = await self.app.thread_usage(thread_id=thread_id)
-        self.status.restore_usage(totals.root)
+        self.status.restore_usage(totals.combined)
         async with self.app.live_events(root_thread_id=thread_id) as subscription:
 
-            def ingest(event: LiveEvent) -> bool:
+            async def ingest(event: LiveEvent) -> bool:
                 nonlocal last_ordinal
                 if event.event_type == "CUSTOM" and event.payload is not None:
                     payload = custom_events.accept(event.payload)
@@ -757,9 +757,12 @@ class SessionBackend:
                     run_id=event.run_id,
                     execution_id=event.execution_id,
                 )
-                records = root_model_usage(event)
-                for record in records:
-                    self.status.record_usage(record)
+                records = model_usage(event)
+                if records:
+                    # Observation commits before publication. Replace from the
+                    # ledger so child replay cannot overlap the saved baseline.
+                    totals = await self.app.thread_usage(thread_id=thread_id)
+                    self.status.restore_usage(totals.combined)
                 for sample in root_context_samples(event):
                     if sample.response_ordinal > last_ordinal:
                         self.status.context_tokens = sample.tokens
@@ -769,7 +772,7 @@ class SessionBackend:
             async def consume() -> None:
                 try:
                     async for event in subscription:
-                        usage_changed = ingest(event)
+                        usage_changed = await ingest(event)
                         if flush is not None and (usage_changed or renderer.should_flush):
                             await flush()
                 except HarnessUiError:
@@ -808,7 +811,7 @@ class SessionBackend:
                 self.receipt_id = None
                 try:
                     for event in subscription.drain_pending():
-                        usage_changed = ingest(event)
+                        usage_changed = await ingest(event)
                         if flush is not None and (usage_changed or renderer.should_flush):
                             await flush()
                 except HarnessUiError:
@@ -821,7 +824,7 @@ class SessionBackend:
                 # The ledger includes terminal/failed/cancelled observations and
                 # repairs live gaps. Replace, rather than add, after draining.
                 totals = await self.app.thread_usage(thread_id=thread_id)
-                self.status.restore_usage(totals.root)
+                self.status.restore_usage(totals.combined)
         usage = await self.app.context_usage(thread_id)
         self.status.context_tokens = usage.latest_request_tokens
         outcome = operation.outcome

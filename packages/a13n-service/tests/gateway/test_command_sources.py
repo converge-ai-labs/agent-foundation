@@ -164,7 +164,7 @@ async def test_forwarded_source_cannot_retarget_continuation(
             actor=_actor(),
             source_run_id=source.run_id if mismatch == "workspace" else "run_other",
             observed_source=observed,
-            request_fingerprint="test",
+            request_key="a" * 64,
             request=ContinueRunCommand(expected_thread_version=request.expected_thread_version, input=request.input),
         )
     assert error.value.code == "resource_not_found"

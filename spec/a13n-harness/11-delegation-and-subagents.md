@@ -253,6 +253,8 @@ Calls for different inline IDs may run concurrently. Competing calls for the sam
 
 ### Child Usage Limits
 
+Hosts obtain each built child's definition baseline through `ExecutableAgent.definition_usage_limits()`. Its detached-copy semantics are defined in [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#usage-limits-and-native-retries).
+
 Harness intersects every non-`None` ceiling from the current parent Run, the current roster child Agent definition, and the authored child edge. Each numeric field uses the smallest present value, and `count_tokens_before_request` is enabled when any contributing limit enables it. Inline execution passes the result directly to the nested child. Async execution places the same detached ceiling in `SubagentDelegationPlan`; when a Host-authorized resume replacement is selected, its definition limits are intersected once more. The Host can narrow but not broaden the result.
 
 ## Context, Identity, and State Authority

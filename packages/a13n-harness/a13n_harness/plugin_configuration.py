@@ -557,37 +557,21 @@ def _clone_json(value: object, *, depth: int, active: set[int]) -> JsonValue:
         if not math.isfinite(value):
             raise ValueError("JSON numbers must be finite")
         return value
-    if isinstance(value, list):
-        return cast(list[JsonValue], _clone_json_container(value, depth=depth, active=active, mapping=False))
-    if isinstance(value, Mapping):
-        return cast(dict[str, JsonValue], _clone_json_container(value, depth=depth, active=active, mapping=True))
-    raise TypeError("value is not JSON")
-
-
-def _clone_json_container(
-    value: list[object] | Mapping[object, object],
-    *,
-    depth: int,
-    active: set[int],
-    mapping: bool,
-) -> list[JsonValue] | dict[str, JsonValue]:
     value_id = id(value)
     if value_id in active:
         raise ValueError("JSON values cannot contain cycles")
     active.add(value_id)
     try:
-        if mapping:
-            if not isinstance(value, Mapping):
-                raise TypeError("value is not a mapping")
+        if isinstance(value, list):
+            return [_clone_json(item, depth=depth + 1, active=active) for item in value]
+        if isinstance(value, Mapping):
             result: dict[str, JsonValue] = {}
             for key, item in value.items():
                 if not isinstance(key, str):
                     raise TypeError("JSON object keys must be strings")
                 result[key] = _clone_json(item, depth=depth + 1, active=active)
             return result
-        if not isinstance(value, list):
-            raise TypeError("value is not a list")
-        return [_clone_json(item, depth=depth + 1, active=active) for item in value]
+        raise TypeError("value is not JSON")
     finally:
         active.remove(value_id)
 

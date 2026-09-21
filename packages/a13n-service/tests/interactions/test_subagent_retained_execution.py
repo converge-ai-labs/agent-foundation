@@ -306,7 +306,6 @@ async def _continue_parent(
         run_id=next_run_id,
         thread_id=completed.thread_id,
         idempotency_key="continue-parent-after-child",
-        request_fingerprint="7" * 64,
         config=next_config,
     ).model_copy(update={"parent_run_id": completed.id, "lineage_kind": RunLineageKind.continue_})
     async with short_session(sessions) as database:
@@ -384,7 +383,6 @@ async def _additional_parent_thread(
         run_id=run_id,
         thread_id=thread_id,
         idempotency_key="other-parent",
-        request_fingerprint="8" * 64,
         config=config,
     ).model_copy(update={"parent_run_id": source.id, "lineage_kind": RunLineageKind.fork})
     await RunAcceptanceService(

@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from a13n_service.digests import digest_request
 from a13n_service.interactions.control_domain import ThreadInboxEntry, ThreadInboxKind, ThreadInboxStatus
 from a13n_service.interactions.domain import (
     Run,
@@ -60,15 +59,6 @@ def prepare_async_result_successor(
         ),
         selected_parent_state,
     )
-    request_fingerprint = digest_request(
-        {
-            "schema_version": "1",
-            "inbox_entry_id": inbox_entry.id,
-            "origin_run_id": origin_run.id,
-            "parent_run_id": selected_parent.id,
-            "input": accepted_input,
-        }
-    )
     run = accepted_run(
         now=created_at,
         id=successor_run_id,
@@ -91,7 +81,6 @@ def prepare_async_result_successor(
         queue_name=selected_parent.queue_name,
         execution_budget=selected_parent.execution_budget,
         idempotency_key=f"async-result:{inbox_entry.id}",
-        request_fingerprint=request_fingerprint,
         input_kind=RunInputKind.async_subagent_result,
         input=accepted_input,
     )

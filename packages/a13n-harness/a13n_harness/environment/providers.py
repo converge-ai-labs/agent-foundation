@@ -87,7 +87,7 @@ class BoundShellOperations(Protocol):
         alias: str | None = None,
         expected_mount_id: str | None = None,
     ) -> ShellExecResult:
-        """Execute and materialize output under one exact mount-incarnation lease."""
+        """Dispatch provider-bounded foreground execution under one exact mount-incarnation lease."""
         ...
 
 

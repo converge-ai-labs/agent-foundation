@@ -46,7 +46,11 @@ it("ticks the exact current receipt and paints live context without waiting for 
   const usageKey = ["thread", "one", "usage"];
   const usage = {
     first_observed_at: "2026-01-01T00:00:00Z",
-    root: {
+    root: { model_requests: 0, tokens: [] },
+    models: [],
+    other_models: { model_requests: 0 },
+    combined: {
+      provider_receipts: 0,
       model_requests: 2,
       unknown_model_costs: 0,
       model_cost_usd: "0.025",
@@ -111,8 +115,8 @@ it("ticks the exact current receipt and paints live context without waiting for 
   act(() =>
     queries.setQueryData(usageKey, {
       ...usage,
-      root: {
-        ...usage.root,
+      combined: {
+        ...usage.combined,
         tokens: [
           ["input_tokens", 11000],
           ["output_tokens", 2345],
@@ -129,12 +133,16 @@ it("ticks the exact current receipt and paints live context without waiting for 
   expect(screen.getByText("11,000")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Context details" }));
   expect(screen.getByRole("heading", { name: "Context usage" })).toBeTruthy();
-  expect(screen.queryByRole("heading", { name: "Token usage" })).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "Conversation usage" }),
+  ).toBeNull();
   expect(screen.getByText("400")).toBeTruthy();
   expect(screen.getByText("1,000")).toBeTruthy();
   expect(screen.getByText("600")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Cache details" }));
-  expect(screen.getByRole("heading", { name: "Token usage" })).toBeTruthy();
+  expect(
+    screen.getByRole("heading", { name: "Conversation usage" }),
+  ).toBeTruthy();
   expect(screen.getByText("13,345")).toBeTruthy();
   fireEvent.keyDown(document.activeElement!, { key: "Escape" });
   expect(screen.getByText("Off")).toBeTruthy();

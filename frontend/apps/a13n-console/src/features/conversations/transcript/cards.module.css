@@ -1,0 +1,182 @@
+/* What sits between the transcript and the composer: the actions a run is
+   waiting on, and the messages queued behind it. */
+
+.cards {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.cardsNote {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.cardsNoteTitle {
+  color: var(--a13n-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+.card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-elevated);
+  box-shadow:
+    var(--a13n-shadow-subtle),
+    0 0 0 1px color-mix(in srgb, var(--a13n-text) 6%, transparent);
+}
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.cardGlyph {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: var(--a13n-radius-tile);
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+}
+.cardHeader h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+.cardTool {
+  color: var(--a13n-secondary);
+  font-family: var(--a13n-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.cardRisk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--a13n-danger) 12%, transparent);
+  color: var(--a13n-danger);
+  font-size: 11px;
+  font-weight: 500;
+}
+.cardCommand {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+}
+.cardCommand code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--a13n-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.cardFacts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.cardFacts dt {
+  color: var(--a13n-secondary);
+}
+.cardFacts dd {
+  margin: 0;
+}
+.cardSwitch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.cardFooter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+.cardsFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.inlineDisclosure {
+  min-width: 0;
+}
+.continuation {
+  display: grid;
+  gap: 16px;
+}
+
+/* Queue ------------------------------------------------------------------ */
+.queue {
+  min-width: 0;
+}
+.queueBody {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.queueToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.queueNote {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.queueItem {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+  font-size: 13px;
+}
+.queueItem header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.queueActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.queueLink {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  justify-self: start;
+}

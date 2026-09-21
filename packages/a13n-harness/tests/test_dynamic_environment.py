@@ -85,7 +85,7 @@ from a13n_harness.toolsets._scoped_files import ScopedFileAccess
 from a13n_harness.toolsets.files import FileToolset
 from a13n_harness.toolsets.process_manager import _fit_stream_prefixes
 from a13n_harness.toolsets.shell import ShellToolset
-from a13n_harness.usage import ProviderUsageRecord
+from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord
 from pydantic_ai import BinaryContent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -970,7 +970,8 @@ async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path
     assert not (tmp_path / "must-not-exist").exists()
 
 
-async def test_copy_streams_across_bindings_when_shell_is_disabled(tmp_path: Path) -> None:
+@pytest.mark.parametrize("overwrite", [False, True])
+async def test_copy_streams_across_bindings_when_shell_is_disabled(tmp_path: Path, overwrite: bool) -> None:
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
     first_root.mkdir()
@@ -1002,7 +1003,7 @@ async def test_copy_streams_across_bindings_when_shell_is_disabled(tmp_path: Pat
                                     "dst": "/environment/shared/copied.txt",
                                 }
                             ],
-                            "overwrite": False,
+                            "overwrite": overwrite,
                         }
                     ),
                     tool_call_id="copy-1",
@@ -1033,6 +1034,39 @@ async def test_copy_streams_across_bindings_when_shell_is_disabled(tmp_path: Pat
 
     assert result.output_or_raise() == "done"
     assert (second_root / "copied.txt").read_text(encoding="utf-8") == "cross-binding"
+
+
+@pytest.mark.parametrize("exists", [False, True])
+@pytest.mark.parametrize("replace", [False, True])
+async def test_cross_mount_copy_overwrite_truth_table_with_copy_only_permissions(tmp_path, exists, replace):
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / "source").write_bytes(b"complete payload")
+    if exists:
+        (second / "destination").write_bytes(b"original")
+    runtime = _two_local_bindings(
+        first,
+        second,
+        first_operations=frozenset({EnvironmentAction.FILE_COPY_SOURCE}),
+        second_operations=frozenset({EnvironmentAction.FILE_COPY_DESTINATION}),
+    )
+    async with runtime.bind(
+        thread_id="thread-1", run_id="run-1", instance=RunBindings.embedded().instance, host_refs={}
+    ) as environment:
+        if exists and not replace:
+            with pytest.raises(EnvironmentError) as error:
+                await environment.files.copy("/workspace/source", "/environment/shared/destination", replace=replace)
+            assert error.value.code == "environment_conflict"
+            assert (second / "destination").read_bytes() == b"original"
+        else:
+            result = await environment.files.copy(
+                "/workspace/source", "/environment/shared/destination", replace=replace
+            )
+            assert result.bytes_copied == len(b"complete payload")
+            assert (second / "destination").read_bytes() == b"complete payload"
+    assert (first / "source").read_bytes() == b"complete payload"
+    assert list(second.iterdir()) == [second / "destination"]
 
 
 async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -> None:
@@ -1256,14 +1290,19 @@ async def test_view_uses_environment_configured_default_understanding_agent(
     assert binary.data == b"\x89PNG"
     assert binary.media_type == "image/png"
     assert tool_returns[0].content == "Environment agent detected: hello"
-    provider_record = next(record for record in result.usage_records if isinstance(record, ProviderUsageRecord))
-    assert provider_record.source == "files.media_understanding"
-    assert provider_record.tool_id == "filesystem.view"
-    assert {measure.unit: measure.quantity for measure in provider_record.usage.measures} == {
-        "requests": 1,
-        "input_tokens": 5,
-        "output_tokens": 3,
-    }
+    media = [
+        record
+        for record in result.usage_records
+        if isinstance(record, ModelUsageRecord) and record.source == "files.media_understanding"
+    ]
+    assert len(media) == 1
+    assert media[0].tool_id == "filesystem.view"
+    assert media[0].tool_call_id == "view-image-default-agent"
+    assert media[0].model_name == understanding_model.model_name
+    assert media[0].request_usage.input_tokens == 5
+    assert media[0].request_usage.output_tokens == 3
+    assert result.usage.requests == 2
+    assert not any(isinstance(record, ProviderUsageRecord) for record in result.usage_records)
 
 
 async def test_view_records_nested_usage_when_understanding_output_retries_exhaust(
@@ -1327,15 +1366,18 @@ async def test_view_records_nested_usage_when_understanding_output_retries_exhau
             "retry_hint": "dependency_change",
         },
     }
-    provider_record = next(record for record in result.usage_records if isinstance(record, ProviderUsageRecord))
-    assert provider_record.source == "files.media_understanding"
-    assert provider_record.tool_id == "filesystem.view"
-    assert provider_record.tool_call_id == "view-image-invalid-output"
-    assert {measure.unit: measure.quantity for measure in provider_record.usage.measures} == {
-        "requests": 3,
-        "input_tokens": 6,
-        "output_tokens": 3,
-    }
+    media = [
+        record
+        for record in result.usage_records
+        if isinstance(record, ModelUsageRecord) and record.source == "files.media_understanding"
+    ]
+    assert len(media) == 3
+    assert all(record.tool_id == "filesystem.view" for record in media)
+    assert all(record.tool_call_id == "view-image-invalid-output" for record in media)
+    assert sum(record.request_usage.input_tokens for record in media) == 6
+    assert sum(record.request_usage.output_tokens for record in media) == 3
+    assert result.usage.requests == 2
+    assert not any(isinstance(record, ProviderUsageRecord) for record in result.usage_records)
 
 
 async def test_view_reports_unavailable_understanding_as_an_ordinary_tool_result(
@@ -1462,6 +1504,7 @@ async def test_media_understanding_releases_mount_scope_before_model_execution()
             deps=SimpleNamespace(
                 model_characteristics=None,
                 record_provider_usage=record_provider_usage,
+                _run_capability=lambda capability_id: None,
             ),
             tool_call_id="view-detached-media",
         ),
@@ -2904,7 +2947,7 @@ async def test_mixed_shell_mounts_dispatch_foreground_and_process_paths_per_alia
 
 
 async def test_spill_tracks_default_changes_and_owns_only_unique_leaves(tmp_path: Path) -> None:
-    from a13n_harness.context import _ToolResultSpillStore
+    from a13n_harness.tools._output import _ToolResultSpillStore
 
     first, second = tmp_path / "first", tmp_path / "second"
     first.mkdir()
@@ -2938,7 +2981,7 @@ async def test_spill_tracks_default_changes_and_owns_only_unique_leaves(tmp_path
 
 
 async def test_spill_cleanup_does_not_follow_replaced_mount(tmp_path: Path) -> None:
-    from a13n_harness.context import _ToolResultSpillStore
+    from a13n_harness.tools._output import _ToolResultSpillStore
 
     first, second = tmp_path / "first", tmp_path / "second"
     first.mkdir()
@@ -3063,7 +3106,7 @@ async def test_existing_edit_requires_byte_read_not_patch_action(tmp_path: Path,
 
 @pytest.mark.parametrize("failure", ["write", "cancel", "cleanup"])
 async def test_spill_failure_keeps_owned_leaf_for_best_effort_cleanup(tmp_path: Path, monkeypatch, failure: str):
-    from a13n_harness.context import _ToolResultSpillStore
+    from a13n_harness.tools._output import _ToolResultSpillStore
 
     runtime = _local_binding(tmp_path, mount_path="/mounted")
     bindings = RunBindings.embedded(environment=runtime)
