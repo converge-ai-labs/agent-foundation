@@ -878,15 +878,17 @@ export function NativeWorkspace({
                   onPointerDown={() => setFocusedArea("native")}
                 >
                   {view === "file" && path && (
-                    <FileView
-                      key={path}
-                      path={path}
-                      line={fileLine}
-                      onBufferChange={renderBuffers}
-                      threadId={threadId}
-                      refresh={refresh}
-                      open={(target) => void open(target)}
-                    />
+                    <OpenHostFile value={(target) => void open(target)}>
+                      <FileView
+                        key={path}
+                        path={path}
+                        line={fileLine}
+                        onBufferChange={renderBuffers}
+                        threadId={threadId}
+                        refresh={refresh}
+                        open={(target) => void open(target)}
+                      />
+                    </OpenHostFile>
                   )}
                   {view === "diff" && selected && (
                     <DiffView

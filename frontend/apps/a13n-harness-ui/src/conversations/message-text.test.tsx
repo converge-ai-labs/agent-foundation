@@ -12,11 +12,31 @@ import { MessageText } from "./message-text";
 import { renderDiagram } from "./mermaid-render";
 import { closedFence } from "./markdown-block";
 import { selectedSource } from "./comment-selection";
+import { OpenHostFile } from "./tool-call";
 vi.mock("./mermaid-render", () => ({ renderDiagram: vi.fn() }));
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
   document.documentElement.classList.remove("dark");
+});
+
+it("opens same-instance Host file links in the workbench and leaves external links separate", () => {
+  const open = vi.fn();
+  render(
+    <OpenHostFile value={open}>
+      <MessageText
+        text={
+          "[Open report](/threads/thread-a?native=files&native_path=%2Ftmp%2Freport.md) [Website](https://example.com/?native=files&native_path=%2Ftmp%2Fother.md)"
+        }
+      />
+    </OpenHostFile>,
+  );
+  const report = screen.getByRole("link", { name: "Open report" });
+  expect(report.getAttribute("target")).toBeNull();
+  fireEvent.click(report);
+  expect(open).toHaveBeenCalledWith("/tmp/report.md");
+  const website = screen.getByRole("link", { name: "Website" });
+  expect(website.getAttribute("target")).toBe("_blank");
 });
 
 it("keeps GFM alignment, wraps wide tables in a keyboard-scrollable region and preserves selection anchors", () => {

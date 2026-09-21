@@ -207,15 +207,16 @@ it("dirty file text survives refresh, conflict and navigation until explicit res
       entry: { ...file.entry, revision: "second" },
     },
   });
-  fireEvent.click(screen.getByText("Refresh disk"));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText("Disk revision changed");
   expect(
     (screen.getByLabelText("File text: /code/file.txt") as HTMLTextAreaElement)
       .value,
   ).toBe("local changes");
-  expect((screen.getByText("Save file") as HTMLButtonElement).disabled).toBe(
-    true,
-  );
+  expect(
+    (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
   view.unmount();
   render(<FileView {...props} />, { wrapper: f.Wrapper });
   await screen.findByText("Disk revision changed");
@@ -240,7 +241,7 @@ it("dirty file text survives refresh, conflict and navigation until explicit res
   expect(f.put).not.toHaveBeenCalled();
   expect(screen.getByRole("status").textContent).toContain("Save explicitly");
   f.put.mockResolvedValue({ data: { ...file.entry, revision: "third" } });
-  fireEvent.click(screen.getByText("Save file"));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await screen.findByText("File saved.");
   expect(f.put).toHaveBeenCalledWith("/api/host/files/text", {
     body: {
@@ -261,7 +262,7 @@ it("binary and oversize views never fabricate editable text or inline context", 
   );
   await screen.findByText("Binary file");
   expect(screen.queryByRole("textbox")).toBeNull();
-  expect(screen.queryByText("Save file")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   expect(screen.queryByLabelText("Choose line range")).toBeNull();
 });
 it("sharing off keeps the page usable and never attempts native reads", async () => {
@@ -384,6 +385,33 @@ it("raw replacement uses the inspected revision and does not replay an unknown w
   expect(done).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText("Confirm replacement"));
   expect(f.transport.fetch).toHaveBeenCalledOnce();
+});
+
+it("reduces compact file capture to one Add to chat button and preserves the editor selection", async () => {
+  const f = fixture();
+  f.post.mockResolvedValue({ data: { attachment } });
+  render(
+    <CaptureContext
+      source={{ file }}
+      threadId="thread-a"
+      selection={{ start_line: 2, end_line: 3 }}
+      compact
+    />,
+    { wrapper: f.Wrapper },
+  );
+  expect(screen.getAllByRole("button")).toHaveLength(1);
+  expect(screen.queryByLabelText("Choose line range")).toBeNull();
+  expect(screen.queryByText(/Adds a saved copy/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Add to chat" }));
+  await waitFor(() =>
+    expect(values(f.a.doc).attachment_ids).toEqual([attachment.attachment_id]),
+  );
+  expect(f.post.mock.calls[0][1].body).toEqual({
+    path: "/code/file.txt",
+    expected_revision: "first",
+    start_line: 2,
+    end_line: 3,
+  });
 });
 
 it("adds the exact editor selection in one deliberate action without sending a message", async () => {

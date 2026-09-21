@@ -16,7 +16,9 @@ Shared instance access is a trusted-team boundary, not per-participant filesyste
 
 ## Host Files
 
-The file surface supports directory browsing, text viewing/editing, upload/download, creation, rename, move, deletion, and deliberate selection of file content as prompt context. It works outside Git repositories. Project roots anchor normal navigation without requiring a fake repository or a live Run.
+The file surface supports directory browsing, text viewing/editing, upload/download, creation, rename, move, deletion, and deliberate selection of file content as prompt context. It works outside Git repositories. Project roots anchor normal navigation without requiring a fake repository or a live Run. Editable Markdown opens in a rendered Preview by default and offers explicit Preview and Text buttons; the preview reflects the current browser buffer while Text retains the ordinary editable source. File operations use compact visible buttons, and the file-context footer presents one Add to chat action, capturing the current text selection when one exists and the whole reviewed file otherwise.
+
+A same-instance Host-file link in rendered assistant Markdown opens the Files drawer in the current workbench instead of navigating to another page. The WebUI root-input surface hint gives the Agent the relative `/threads/{root_thread_id}?native=files&native_path=...` format for this purpose. The browser accepts only same-origin file-view links with an absolute Host path; ordinary and external Markdown links retain their normal navigation behavior. This presentation shortcut does not bypass computer-sharing enablement or the Host Files API authority.
 
 File content, names, paths, and errors are bounded detached values; the API exposes no file descriptors or native object references. Downloads and previews do not execute arbitrary content as workbench-origin scripts. Large or binary content has explicit limits and fallback presentation rather than silent truncation represented as a complete editable file.
 

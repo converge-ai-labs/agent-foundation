@@ -1,11 +1,20 @@
 import { useContext, useEffect, useReducer, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
+import {
+  ArrowClockwise,
+  DownloadSimple,
+  Eye,
+  FloppyDisk,
+  TextAlignLeft,
+  TextT,
+} from "@phosphor-icons/react";
 import { ApiError, result } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { SourceEditor } from "../configuration/editor";
 import { ErrorNotice } from "../shell/ui";
 import { ConfirmAction } from "../shell/confirm-action";
+import { MessageText } from "../conversations/message-text";
 import {
   basename,
   FileBuffer,
@@ -37,6 +46,9 @@ export function FileView({
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState("");
   const [wrap, setWrap] = useState(false);
+  const [mode, setMode] = useState<"preview" | "text">(() =>
+    /\.(?:md|markdown)$/i.test(path) ? "preview" : "text",
+  );
   const [selection, setSelection] = useState<LineRange>();
   const read = useQuery({
     queryKey: ["native", "text", path],
@@ -138,6 +150,7 @@ export function FileView({
     }
   };
   const editable = buffer.base.presentation === "text";
+  const markdown = editable && /\.(?:md|markdown)$/i.test(path);
   return (
     <section className={styles.file} aria-label="File content">
       <header className={styles.fileHeader}>
@@ -164,53 +177,98 @@ export function FileView({
           </Button>
         </div>
       )}
-      <div className={styles.actions}>
-        {editable && (
+      <div className={styles.fileToolbar}>
+        <div className={styles.actions} aria-label="File actions">
+          {editable && (
+            <Button
+              size="sm"
+              disabled={
+                !buffer.dirty ||
+                buffer.saving ||
+                buffer.conflict ||
+                buffer.uncertain ||
+                symlink ||
+                !!read.error
+              }
+              loading={buffer.saving}
+              onClick={() => void save()}
+            >
+              <FloppyDisk />
+              Save
+            </Button>
+          )}
           <Button
+            variant="outline"
             size="sm"
-            disabled={
-              !buffer.dirty ||
-              buffer.saving ||
-              buffer.conflict ||
-              buffer.uncertain ||
-              symlink ||
-              !!read.error
-            }
-            loading={buffer.saving}
-            onClick={() => void save()}
+            onClick={() => void read.refetch()}
+            disabled={buffer.saving}
           >
-            Save file
+            <ArrowClockwise />
+            Refresh
           </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void read.refetch()}
-          disabled={buffer.saving}
-        >
-          Refresh disk
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void download()}
-          disabled={buffer.base.entry.size > 10 * 1024 * 1024}
-        >
-          Download disk file
-        </Button>
-        {editable && (
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            onClick={() =>
-              downloadBlob(
-                new Blob([buffer.value], { type: "text/plain;charset=utf-8" }),
-                basename(path),
-              )
-            }
+            onClick={() => void download()}
+            disabled={buffer.base.entry.size > 10 * 1024 * 1024}
           >
-            Download local text
+            <DownloadSimple />
+            Download
           </Button>
+          {editable && buffer.dirty && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                downloadBlob(
+                  new Blob([buffer.value], {
+                    type: "text/plain;charset=utf-8",
+                  }),
+                  basename(path),
+                )
+              }
+            >
+              <DownloadSimple />
+              Download draft
+            </Button>
+          )}
+        </div>
+        {editable && (
+          <div className={styles.viewControls} aria-label="File view">
+            {markdown && (
+              <>
+                <Button
+                  variant={mode === "preview" ? "secondary" : "outline"}
+                  size="sm"
+                  aria-pressed={mode === "preview"}
+                  onClick={() => setMode("preview")}
+                >
+                  <Eye />
+                  Preview
+                </Button>
+                <Button
+                  variant={mode === "text" ? "secondary" : "outline"}
+                  size="sm"
+                  aria-pressed={mode === "text"}
+                  onClick={() => setMode("text")}
+                >
+                  <TextT />
+                  Text
+                </Button>
+              </>
+            )}
+            {mode === "text" && (
+              <Button
+                size="sm"
+                variant="outline"
+                aria-pressed={wrap}
+                onClick={() => setWrap(!wrap)}
+              >
+                <TextAlignLeft />
+                Wrap
+              </Button>
+            )}
+          </div>
         )}
       </div>
       <ErrorNotice
@@ -314,43 +372,42 @@ export function FileView({
           line-ending style; opening or capturing does not change its bytes.
         </p>
       )}
-      {editable && (
-        <div className={styles.actions}>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-pressed={wrap}
-            onClick={() => setWrap(!wrap)}
-          >
-            Wrap lines
-          </Button>
-          <small>⌘/Ctrl+G: go to line · ⌘/Ctrl+S: save</small>
-        </div>
+      {editable && mode === "text" && (
+        <small>⌘/Ctrl+G: go to line · ⌘/Ctrl+S: save</small>
       )}
       {editable ? (
-        <div className={styles.editor}>
-          <SourceEditor
-            value={buffer.value}
-            language="plain"
-            filename={path}
-            line={line}
-            wrap={wrap}
-            position={buffer.position}
-            onPosition={(position) => {
-              buffer.position = position;
-            }}
-            onSave={() => void save()}
-            label={`File text: ${path}`}
-            fill
-            readOnly={symlink}
-            onSelection={setSelection}
-            onChange={(value) => {
-              buffer.value = value;
-              render();
-              onBufferChange?.();
-            }}
-          />
-        </div>
+        mode === "preview" && markdown ? (
+          <article
+            className={styles.markdownPreview}
+            aria-label="Markdown preview"
+          >
+            <MessageText text={buffer.value} />
+          </article>
+        ) : (
+          <div className={styles.editor}>
+            <SourceEditor
+              value={buffer.value}
+              language="plain"
+              filename={path}
+              line={line}
+              wrap={wrap}
+              position={buffer.position}
+              onPosition={(position) => {
+                buffer.position = position;
+              }}
+              onSave={() => void save()}
+              label={`File text: ${path}`}
+              fill
+              readOnly={symlink}
+              onSelection={setSelection}
+              onChange={(value) => {
+                buffer.value = value;
+                render();
+                onBufferChange?.();
+              }}
+            />
+          </div>
+        )
       ) : (
         <div className={styles.empty}>
           <h3>
@@ -371,7 +428,8 @@ export function FileView({
           file: { ...buffer.base, entry: { ...buffer.base.entry, path } },
         }}
         threadId={threadId}
-        selection={selection}
+        selection={mode === "text" ? selection : undefined}
+        compact
         disabled={
           buffer.dirty ||
           buffer.saving ||

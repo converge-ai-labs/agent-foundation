@@ -250,6 +250,19 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+.fileToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.viewControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
 .check {
   display: flex;
   align-items: center;
@@ -351,7 +364,11 @@
   min-width: 0;
   overflow: hidden;
 }
-.file > :not(.editor) {
+.markdownPreview {
+  min-width: 0;
+  padding: 8px 4px 20px;
+}
+.file > :not(.editor, .markdownPreview) {
   flex-shrink: 0;
 }
 .notice {
@@ -378,6 +395,15 @@
 .capture {
   display: grid;
   gap: 12px;
+}
+.compactCapture {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.compactCapture small {
+  color: var(--a13n-secondary);
 }
 .range {
   display: flex;

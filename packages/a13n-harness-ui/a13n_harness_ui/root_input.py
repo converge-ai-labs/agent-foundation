@@ -24,7 +24,11 @@ _SURFACE_HINTS = {
         "This input was submitted through Harness UI WebUI.\n"
         "For the response to this input, the interface supports Markdown and renders fenced mermaid blocks "
         "as static diagrams. Use them when helpful. Mermaid configuration directives, image assets, and "
-        "interactive callbacks are not supported. Follow the user's explicit output-format preferences."
+        "interactive callbacks are not supported. Follow the user's explicit output-format preferences.\n"
+        "When a Host file should be directly openable by the user, link it as "
+        "`[label](/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path})`, "
+        "using the current root Thread ID supplied in your instructions. The WebUI opens that same-instance "
+        "link in its Files drawer. Do not use a bare Host path or an `/api/host/files/...` URL as the link target."
     ),
     "tui": (
         "This input was submitted through Harness UI TUI.\n"
@@ -41,7 +45,9 @@ def append_surface_hint(prompt: RunInputValue, surface: Literal["tui", "webui"])
     return (
         *parts,
         TextContent(
-            '<surface-context source="a13n-harness-ui">\n' + _SURFACE_HINTS[surface] + "\n</surface-context>",
+            '<surface-context source="a13n-harness-ui">\n<![CDATA[\n'
+            + _SURFACE_HINTS[surface]
+            + "\n]]>\n</surface-context>",
             metadata={"display": False, "source_id": "a13n-harness-ui.surface"},
         ),
     )

@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { useContext, useEffect, type ReactNode } from "react";
 import { ReturnToChat } from "./capture";
 import { ToolCall } from "../conversations/tool-call";
+import { MessageText } from "../conversations/message-text";
 import {
   cleanup,
   fireEvent,
@@ -297,6 +298,24 @@ it("native deep links, file tabs and diff selection update personal focus withou
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
   expect(screen.getByTestId("chat").textContent).toContain("/threads/other");
 });
+it("opens an assistant Host file link in the current conversation drawer", async () => {
+  setup(
+    "/threads/current",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native"],
+    <MessageText text="[Open report](/threads/current?native=files&native_path=%2Fnative%2Freport.txt)" />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+  await screen.findByText("Folder /native");
+  fireEvent.click(screen.getByRole("button", { name: "Close file explorer" }));
+  fireEvent.click(screen.getByRole("link", { name: "Open report" }));
+  await screen.findByText("Editor /native/report.txt");
+  expect(screen.getByTestId("chat").textContent).toContain("/threads/current");
+});
+
 it("a native deep link cannot bypass disabled sharing or trigger metadata requests", async () => {
   const { get } = setup(
     "/?native=files&native_path=%2Fnative%2Ffirst.txt",

@@ -48,6 +48,29 @@ export function pageLink(
   }
   return `${root}?${query}`;
 }
+export function linkedHostFile(
+  href: string,
+  currentHref: string,
+): string | null {
+  let target: URL;
+  let current: URL;
+  try {
+    target = new URL(href, currentHref);
+    current = new URL(currentHref);
+  } catch {
+    return null;
+  }
+  if (
+    target.origin !== current.origin ||
+    !(target.pathname === "/" || /^\/threads\/[^/]+$/.test(target.pathname))
+  )
+    return null;
+  const link = nativeLink(target.search);
+  return link.pane === "files" && /^(?:\/|[A-Za-z]:\\|\\\\)/.test(link.path)
+    ? link.path
+    : null;
+}
+
 export function nativeLink(search: string): {
   pane: "files" | "changes" | null;
   path: string;

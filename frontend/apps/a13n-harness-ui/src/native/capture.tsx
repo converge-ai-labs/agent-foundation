@@ -48,11 +48,13 @@ export function CaptureContext({
   threadId,
   disabled,
   selection,
+  compact = false,
 }: {
   source: CaptureSource;
   threadId?: string;
   disabled?: boolean;
   selection?: LineRange;
+  compact?: boolean;
 }) {
   const transport = useTransport();
   const returnToChat = useContext(ReturnToChat);
@@ -118,13 +120,36 @@ export function CaptureContext({
       );
       draft.addAttachment(attachment.attachment_id);
       if (currentThread.current === threadId)
-        setMessage("Added to the conversation. Review it before sending.");
+        setMessage(
+          compact
+            ? "Added to chat."
+            : "Added to the conversation. Review it before sending.",
+        );
     } catch (failure) {
       if (currentThread.current === threadId) setError(failure);
     } finally {
       setPending(false);
     }
   };
+  if (compact)
+    return (
+      <section
+        className={styles.compactCapture}
+        aria-label="Capture reviewed context"
+      >
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!threadId || disabled || pending}
+          onClick={() => void capture(rangesSupported ? selection : undefined)}
+          loading={pending}
+        >
+          Add to chat
+        </Button>
+        {message && <small role="status">{message}</small>}
+        <ErrorNotice error={error} />
+      </section>
+    );
   return (
     <section className={styles.capture} aria-label="Capture reviewed context">
       <div className={styles.actions}>

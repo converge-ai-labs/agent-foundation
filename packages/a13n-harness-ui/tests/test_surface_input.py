@@ -40,14 +40,19 @@ def test_surface_hint_preserves_native_parts_and_uses_hidden_xml(surface):
     element = ElementTree.fromstring(hint.content)
     assert element.tag == "surface-context"
     assert element.attrib == {"source": "a13n-harness-ui"}
+    assert "<![CDATA[" in hint.content
     assert f"Harness UI {surface.upper() if surface == 'tui' else 'WebUI'}" in element.text
     assert "For the response to this input" in element.text
     if surface == "webui":
         assert "static diagrams" in element.text
         assert "interactive callbacks are not supported" in element.text
+        assert "/threads/{root_thread_id}?native=files&native_path=" in element.text
+        assert "/threads/{root_thread_id}?native=files&native_path=" in hint.content
+        assert "Do not use a bare Host path" in element.text
     else:
         assert "as source text rather than diagrams" in element.text
         assert "does not restrict formats written to files" in element.text
+        assert "native_path" not in element.text
     assert append_surface_hint("hello", surface)[0] == "hello"
 
 

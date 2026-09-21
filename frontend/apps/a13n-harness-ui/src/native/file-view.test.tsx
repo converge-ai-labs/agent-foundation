@@ -25,13 +25,17 @@ vi.mock("./capture", () => ({
 }));
 afterEach(cleanup);
 
-function file(text: string, revision: string): Schema<"FileText"> {
+function file(
+  text: string,
+  revision: string,
+  path = "/code/file",
+): Schema<"FileText"> {
   return {
-    resolved_path: "/code/file",
+    resolved_path: path,
     presentation: "text",
     text,
     entry: {
-      path: "/code/file",
+      path,
       revision,
       kind: "file",
       size: text.length,
@@ -74,6 +78,41 @@ async function openConfirmation(
   await user.click(trigger);
   return screen.findByRole("dialog");
 }
+
+it("opens Markdown in Preview and switches between rendered and Text buttons", async () => {
+  const path = "/code/readme.md";
+  const value = file("# Rendered heading\n\nBody", "one", path);
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const buffers = new Map([[path, new FileBuffer(value)]]);
+  const GET = vi.fn(async () => ({ data: value }));
+  render(
+    <QueryClientProvider client={queries}>
+      <TransportContext
+        value={{ client: { GET, PUT: vi.fn() } } as unknown as Transport}
+      >
+        <FileBuffers value={buffers}>
+          <FileView path={path} refresh={vi.fn()} open={vi.fn()} />
+        </FileBuffers>
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  const preview = screen.getByRole("button", { name: "Preview" });
+  const text = screen.getByRole("button", { name: "Text" });
+  expect(preview.getAttribute("aria-pressed")).toBe("true");
+  expect(text.getAttribute("aria-pressed")).toBe("false");
+  expect(
+    screen.getByRole("heading", { name: "Rendered heading" }),
+  ).toBeTruthy();
+  expect(screen.queryByLabelText(`File text: ${path}`)).toBeNull();
+  await userEvent.click(text);
+  expect(text.getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByLabelText(`File text: ${path}`)).toBeTruthy();
+  expect(
+    screen.queryByRole("heading", { name: "Rendered heading" }),
+  ).toBeNull();
+});
 
 it("keeps local text on cancel and only adopts disk text after confirmation", async () => {
   const { buffer, PUT, user } = setup();
