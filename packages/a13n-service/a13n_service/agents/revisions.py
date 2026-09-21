@@ -24,7 +24,6 @@ from .domain import (
     AgentRevisionCreateResult,
     CreateAgentRevisionRequest,
     SetDefaultAgentRevisionRequest,
-    new_agent_revision_id,
 )
 from .errors import (
     agent_archived,
@@ -37,14 +36,13 @@ from .persistence import (
     load_replay,
     lock_agent,
     lock_revision,
-    new_revision,
-    next_revision_number,
     request_identity,
     require_custom,
     require_custom_mutable,
     require_etag,
     touch_agent,
 )
+from .publication import publish_revision
 from .queries import AgentQueries
 from .resolution import AgentResolver, PreparedRevisionResolution, resolution_error
 
@@ -261,10 +259,9 @@ class AgentRevisions:
                     resolved = await self._resolver.freeze_in_transaction(session, prepared=prepared)
                 except Exception as error:
                     raise resolution_error(error) from error
-                revision = new_revision(
-                    record,
-                    revision_id=new_agent_revision_id(),
-                    version=await next_revision_number(session, record.id),
+                publication = await publish_revision(
+                    session,
+                    locked_agent=record,
                     config=prepared.config,
                     resolved=resolved,
                     source_revision_id=source_revision_id,
@@ -272,20 +269,7 @@ class AgentRevisions:
                     actor=actor,
                     now=now,
                 )
-                assert record.default_revision_id is not None
-                current = await lock_revision(
-                    session,
-                    organization_id=record.organization_id,
-                    workspace_id=record.workspace_id,
-                    agent_id=record.id,
-                    revision_id=record.default_revision_id,
-                )
-                if current.content_digest == revision.content_digest:
-                    revision = current
-                else:
-                    session.add(revision)
-                    record.default_revision_id = revision.id
-                    touch_agent(record, actor=actor, now=now)
+                revision = publication.revision
                 add_command_evidence_and_audit(
                     session,
                     actor=actor,
@@ -296,10 +280,10 @@ class AgentRevisions:
                     result_ref=revision.id,
                     now=now,
                     response=AgentRevisionCreateResult(agent=record.to_resource(), revision=revision.to_resource()),
-                    audit_details={"from_revision_id": current.id, "to_revision_id": revision.id}
-                    if current.id != revision.id
+                    audit_details={"from_revision_id": publication.previous_revision_id, "to_revision_id": revision.id}
+                    if publication.changed
                     else None,
-                    audit=current.id != revision.id,
+                    audit=publication.changed,
                 )
                 await session.flush()
                 return AgentRevisionCreateResult(agent=record.to_resource(), revision=revision.to_resource())

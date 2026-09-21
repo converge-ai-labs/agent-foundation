@@ -10,13 +10,12 @@ from a13n_service.agents.domain import new_agent_id, new_agent_revision_id
 from a13n_service.agents.models import AgentRecord
 from a13n_service.agents.persistence import (
     lock_agent,
-    lock_revision,
     new_agent_audit,
     new_revision,
-    next_revision_number,
     require_custom_mutable,
     touch_agent,
 )
+from a13n_service.agents.publication import publish_revision
 from a13n_service.agents.resolution import AgentResolver, resolution_error
 from a13n_service.collection_cursors import encode_time_cursor
 from a13n_service.durable_operations.idempotency import IdempotencyIdentity
@@ -167,38 +166,42 @@ class ConfigurationApplication:
                 )
             no_change = False
             previous_default_revision_id = None if record.mode == "create" else target.default_revision_id
+            change_summary = (
+                request.change_summary
+                if "change_summary" in request.model_fields_set
+                else candidate.suggested_change_summary
+            )
             if record.mode == "create":
                 await insert_with_key(session, target, prefix="agent")
-            assert target.default_revision_id is not None
-            revision = new_revision(
-                target,
-                revision_id=target.default_revision_id if record.mode == "create" else new_agent_revision_id(),
-                version=1 if record.mode == "create" else await next_revision_number(session, target.id),
-                config=candidate.config,
-                resolved=resolved,
-                source_revision_id=record.source_agent_revision_id,
-                change_summary=(
-                    request.change_summary
-                    if "change_summary" in request.model_fields_set
-                    else candidate.suggested_change_summary
-                ),
-                actor=actor,
-                now=now,
-            )
-            if record.mode == "update":
-                current = await lock_revision(
-                    session,
-                    organization_id=record.organization_id,
-                    workspace_id=record.workspace_id,
-                    agent_id=target.id,
+                assert target.default_revision_id is not None
+                revision = new_revision(
+                    target,
                     revision_id=target.default_revision_id,
+                    version=1,
+                    config=candidate.config,
+                    resolved=resolved,
+                    source_revision_id=record.source_agent_revision_id,
+                    change_summary=change_summary,
+                    actor=actor,
+                    now=now,
                 )
-                if current.content_digest == revision.content_digest:
-                    revision, no_change = current, True
-            if not no_change:
                 session.add(revision)
                 target.default_revision_id = revision.id
                 touch_agent(target, actor=actor, now=now)
+            else:
+                publication = await publish_revision(
+                    session,
+                    locked_agent=target,
+                    config=candidate.config,
+                    resolved=resolved,
+                    source_revision_id=record.source_agent_revision_id,
+                    change_summary=change_summary,
+                    actor=actor,
+                    now=now,
+                )
+                revision = publication.revision
+                previous_default_revision_id = publication.previous_revision_id
+                no_change = not publication.changed
             # Persist the revision before the draft receipt references it.
             await session.flush()
             receipt = ConfigurationApplicationReceipt(
