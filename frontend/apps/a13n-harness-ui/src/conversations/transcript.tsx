@@ -104,7 +104,8 @@ function savedRows(
     const start = rows.length;
     entry.parts.forEach((part, index) => {
       if (part.metadata?.display === false || part.kind === "system") return;
-      const id = `saved:${identity}:${index}`;
+      // Sibling parts can grow at later checkpoints without replacing this part.
+      const id = `saved:${savedEntryIdentity({ ...entry, parts: [part] })}:${index}`;
       const context = part.metadata?.["a13n.context"];
       if (context === "handoff" || context === "compaction") {
         const operation = part.metadata?.operation_id;
@@ -556,8 +557,8 @@ function Turn(props: {
   onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
   continuation?: string | null;
 }) {
-  return props.loadDetails && props.turn ? (
-    <TurnHistory {...props} turn={props.turn} />
+  return props.loadDetails ? (
+    <TurnHistory {...props} />
   ) : (
     <TurnSegments {...props} />
   );
@@ -573,7 +574,7 @@ function TurnHistory({
 }: {
   id: string;
   recovery?: FocusDisplay["recovery"];
-  turn: Schema<"TranscriptTurn">;
+  turn?: Schema<"TranscriptTurn">;
   entries: Schema<"TranscriptEntry">[];
   rows: Row[];
   threadId: string;
@@ -593,6 +594,7 @@ function TurnHistory({
   const byPosition = new Map<number, Schema<"TranscriptEntry">>();
   for (const entry of [...entries, ...(history.data ?? [])]) {
     if (
+      turn &&
       entry.position >= turn.input_position &&
       entry.position < turn.end_position
     )
@@ -618,9 +620,11 @@ function TurnHistory({
     <TurnSegments
       {...props}
       turn={turn}
-      rows={merged}
-      entries={loaded}
-      missing={loaded.length < turn.end_position - turn.input_position}
+      rows={turn ? merged : rows}
+      entries={turn ? loaded : entries}
+      missing={
+        !!turn && loaded.length < turn.end_position - turn.input_position
+      }
       retry={retry}
       loading={history.isFetching}
       failed={history.isError}
@@ -628,10 +632,69 @@ function TurnHistory({
   );
 }
 
+// Presentation identity is separate from source identity. Match only the same
+// text slot within an input boundary when live text becomes saved verbatim.
+// Never deduplicate by text or carry state from changed saved history. The new
+// row (including its exact comment target) always remains authoritative.
+function usePresentedRows(rows: Row[], complete: boolean) {
+  const previous = useRef(new Map<string, { source: Row; presented: Row }>());
+  const next = new Map<string, { source: Row; presented: Row }>();
+  const sourceIds = new Set(rows.map((row) => row.id));
+  let boundary = "turn";
+  const ordinals = new Map<string, number>();
+  const presented = rows.map((row) => {
+    if (row.kind === "input") boundary = row.id;
+    const group = `${boundary}:${row.kind}`;
+    const ordinal = ordinals.get(group) ?? 0;
+    ordinals.set(group, ordinal + 1);
+    const slot = `${group}:${ordinal}`;
+    const old = previous.current.get(slot);
+    const text = (value: Row) =>
+      value.kind === "assistant"
+        ? value.text
+        : value.kind === "thinking"
+          ? value.segments.map((segment) => segment.text).join("\n")
+          : undefined;
+    const cutover =
+      complete &&
+      old &&
+      !sourceIds.has(old.source.id) &&
+      old.source.position === undefined &&
+      row.position !== undefined &&
+      text(row) !== undefined &&
+      text(row) === text(old.source);
+    const retained = old && (old.source.id === row.id || cutover);
+    const result = retained
+      ? {
+          ...row,
+          id: old.presented.id,
+          readingAnchor: old.presented.readingAnchor ?? old.presented.id,
+          ...(row.kind === "thinking" && old.presented.kind === "thinking"
+            ? {
+                segments: row.segments.map((segment, index) => ({
+                  ...segment,
+                  id:
+                    old.presented.kind === "thinking"
+                      ? (old.presented.segments[index]?.id ?? segment.id)
+                      : segment.id,
+                })),
+              }
+            : {}),
+        }
+      : row;
+    next.set(slot, { source: row, presented: result });
+    return result;
+  });
+  useLayoutEffect(() => {
+    previous.current = next;
+  });
+  return presented;
+}
+
 function TurnSegments({
   id,
   turn,
-  rows,
+  rows: sourceRows,
   entries,
   threadId,
   missing,
@@ -651,6 +714,7 @@ function TurnSegments({
   loading?: boolean;
   failed?: boolean;
 }) {
+  const rows = usePresentedRows(sourceRows, !missing);
   const mountedExecution = useRef(new Set<string>());
   const complete =
     turn?.final_position != null &&

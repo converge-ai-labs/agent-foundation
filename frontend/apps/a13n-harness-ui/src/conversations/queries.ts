@@ -315,17 +315,17 @@ export function useHistory(
 export function useTurnHistory(
   threadId: string,
   continuation: string | null | undefined,
-  turn: Schema<"TranscriptTurn">,
+  turn: Schema<"TranscriptTurn"> | undefined,
   enabled: boolean,
 ) {
   const { client } = useTransport();
   return useQuery({
-    queryKey: ["thread", threadId, "turn-history", continuation, turn.turn_id],
-    enabled,
+    queryKey: ["thread", threadId, "turn-history", continuation, turn?.turn_id],
+    enabled: enabled && !!turn,
     staleTime: Infinity,
     retry: false,
     queryFn: ({ signal }) =>
-      readTurnHistory(client, threadId, continuation, turn, signal),
+      readTurnHistory(client, threadId, continuation, turn!, signal),
   });
 }
 
