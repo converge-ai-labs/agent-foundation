@@ -119,9 +119,20 @@ where
             }
         }
     };
+    // Resource TTLs belong to this engine; Session idle/grace expiry stays in the broker.
+    // Keep this future scoped to serve so shutdown cannot leave a detached sweep task.
+    let maintenance = async {
+        let mut interval = tokio::time::interval(Duration::from_millis(100));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            daemon.maintenance().await;
+        }
+    };
     let (result, output_finished) = tokio::select! {
         result = outcome => (result, false),
         result = &mut output => (result.map_err(io::Error::other).and_then(|result| result), true),
+        () = maintenance => unreachable!("maintenance runs until the worker stops"),
     };
     carrier.close();
     drop(incoming);
@@ -190,6 +201,84 @@ mod tests {
             panic!("expected control reply");
         };
         serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn idle_worker_reclaims_expired_writer() {
+        let workspace = std::env::temp_dir()
+            .join(crate::operation::random_selector("worker-expiry-test").unwrap());
+        std::fs::create_dir(&workspace).unwrap();
+        let mut config = Config::for_test("device-framing");
+        config.default_working_directory = workspace.to_str().unwrap().to_owned();
+        let (client, server) = tokio::io::duplex(4096);
+        let (reader, writer) = tokio::io::split(server);
+        let task = tokio::spawn(serve(reader, writer, config, 1, "session-framing-1".into()));
+        let (mut reader, mut writer) = tokio::io::split(client);
+        assert_eq!(received(&mut reader).await.ticket, 0);
+        for (ticket, method, params) in [
+            (
+                1,
+                "environment.readiness",
+                json!({"context":{"operation_id":"op-ready"}}),
+            ),
+            (
+                2,
+                "file.open_writer",
+                json!({
+                    "context":{"operation_id":"op-writer"},
+                    "path":{"path":workspace.join("target")},
+                    "mode":"create", "transfer_timeout_ms":100,
+                }),
+            ),
+        ] {
+            writer
+                .write_all(&request(ticket, method, params))
+                .await
+                .unwrap();
+            let response = received(&mut reader).await;
+            assert!(
+                response.payload.get("result").is_some(),
+                "{:?}",
+                response.payload
+            );
+            writer
+                .write_all(&frame(Command::Finish {
+                    ticket,
+                    delivered: true,
+                }))
+                .await
+                .unwrap();
+        }
+        // No new resource request should be needed to trigger expiration.
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while std::fs::read_dir(&workspace).unwrap().any(|entry| {
+                entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".eip-stage-")
+            }) {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("expired staging file was not reclaimed");
+        writer
+            .write_all(&request(3, "session.keepalive", json!({})))
+            .await
+            .unwrap();
+        assert_eq!(
+            received(&mut reader).await.payload["result"],
+            json!({"alive":true})
+        );
+        drop(writer);
+        drop(reader);
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        std::fs::remove_dir_all(workspace).unwrap();
     }
 
     #[tokio::test]

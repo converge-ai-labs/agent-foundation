@@ -172,7 +172,7 @@ impl Runtime {
         }
         Ok(env)
     }
-    pub async fn close(&self) {
+    pub async fn close(&self) -> bool {
         self.policy.close();
         if let Ok(Ok(true)) =
             tokio::time::timeout(Duration::from_secs(4), self.client.close_worker()).await
@@ -184,9 +184,11 @@ impl Runtime {
         let mut dead = self.dead.clone();
         while !*dead.borrow_and_update() {
             if dead.changed().await.is_err() {
-                break;
+                return false;
             }
         }
+        // Worker death fences execution, but cannot prove persistent staging cleanup.
+        self.clean.load(std::sync::atomic::Ordering::Acquire)
     }
 }
 impl Drop for Runtime {

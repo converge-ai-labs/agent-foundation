@@ -1138,7 +1138,9 @@ impl Session {
         self.transfers.begin_session_close();
         #[cfg(target_os = "linux")]
         if let Some(remote) = &self.remote {
-            return tokio::time::timeout(budget, remote.close()).await.is_ok();
+            return tokio::time::timeout(budget, remote.close())
+                .await
+                .unwrap_or(false);
         }
         // Fence and cancel first. Waiting for an active process before cancelling would deadlock close.
         tokio::time::timeout(budget, async {

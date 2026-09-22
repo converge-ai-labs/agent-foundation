@@ -173,6 +173,29 @@ def network_fixture(device):
         subprocess.run(["ip", "address", "del", address + "/32", "dev", "lo"], check=True)
 
 
+def cleanup_failure(device):
+    device.open({"allow_hosts": []})
+    parent = device.workspace / "cleanup-failure"
+    parent.mkdir()
+    device.call(
+        "file.open_writer",
+        {
+            "context": {"operation_id": "op-cleanup-failure"},
+            "path": {"path": str(parent / "target")},
+            "mode": "create",
+        },
+    )
+    assert list(parent.glob(".eip-stage-*")), "writer did not create staging file"
+    parent.chmod(0o555)
+    try:
+        # Worker death must not hide a failed persistent staging cleanup.
+        device.call("session.close", {}, error="internal_error")
+        assert list(parent.glob(".eip-stage-*")), "expected denied staging cleanup"
+        device.session = None
+    finally:
+        parent.chmod(0o755)
+
+
 def broker_death(device):
     device.open({"allow_hosts": []})
     heartbeat = device.workspace / "heartbeat"
@@ -270,6 +293,7 @@ def run(binary, local_network, http_host):
             for _ in range(3):
                 device.open({"allow_hosts": []})
                 device.close()
+            cleanup_failure(device)
             broker_death(device)
             print(
                 json.dumps(
@@ -282,6 +306,7 @@ def run(binary, local_network, http_host):
                         "replay": True,
                         "filesystem": True,
                         "quota_reuse": True,
+                        "cleanup_failure": True,
                         "broker_death": True,
                         "tcp_udp_fixture": local_network,
                     }
