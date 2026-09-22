@@ -4,12 +4,27 @@ This is standalone Envd configuration, not Harness UI YAML or an `EnvironmentPro
 
 ## Configuration layers
 
-| Layer                    | Holds                                                                                   |
-| ------------------------ | --------------------------------------------------------------------------------------- |
-| Daemon JSON (`--config`) | Device metadata, default cwd, directory discovery, command profiles and resource limits |
-| Bootstrap environment    | Device identity, private runtime, carrier and credential-file paths                     |
-| Device connection        | Negotiated protocol and shared carrier                                                  |
-| EIP Session              | Fixed cwd and independent operations, processes, output, transfers and evidence         |
+Startup precedence, from lowest to highest:
+
+1. Built-in defaults.
+2. Daemon JSON selected by `--config` or `A13N_ENVD_CONFIG`.
+3. `A13N_ENVD_CONFIG_JSON`, using the same strict schema as the file.
+4. Scalar `A13N_ENVD_*` environment variables.
+5. Explicit CLI arguments.
+
+Objects merge recursively; arrays and scalar values replace earlier values. Each JSON layer must be valid even if a later layer overrides it. This lets a sandbox launcher configure Envd entirely through environment variables, including nested limits and shell profiles, without writing a configuration file:
+
+```bash
+export A13N_ENVD_RUNTIME_DIR=/run/a13n-envd-state
+export A13N_ENVD_DEVICE_ID=device-sandbox
+export A13N_ENVD_FULL_CONTROL=true
+export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits":{"max_file_bytes":104857600}}'
+a13n-envd
+```
+
+Scalar shortcuts include `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_ENABLED`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS`, and `A13N_ENVD_DISCONNECT_GRACE_MS`. Booleans accept `true`, `false`, `1`, or `0`.
+
+Device connections negotiate the carrier and protocol. EIP Sessions select a fixed cwd and own operations, processes, output and transfers; they cannot change trusted startup identity or sudo policy.
 
 ## Connect to a Host
 
@@ -60,19 +75,19 @@ The Host creates and protects the runtime parent. Envd creates an unpredictable 
 }
 ```
 
-The working directory must exist. If omitted, the daemon captures its startup cwd. For ordinary Sessions it is **not an access root**: file paths address the whole filesystem available to the daemon account and outer sandbox. Directory discovery is a bounded, one-level read that works before any Session exists.
+The working directory must exist. If omitted, the daemon captures its startup cwd. For ordinary Sessions it is **not an access root**: file paths address the whole filesystem available to the execution account and outer sandbox. Directory discovery is a bounded, one-level read that works before any Session exists.
 
 Explicit Device IDs can come from `--device-id`, JSON `device_id`, or `A13N_ENVD_DEVICE_ID`. Without an explicit ID, an installation state directory retains the generated identity across restart. `--default-working-directory`, `--name` and `--description` override JSON metadata. Set directory discovery through JSON or `A13N_ENVD_DIRECTORY_DISCOVERY`. EIP paths use `/C:/...` and `/UNC/server/share/...` on Windows; daemon bootstrap paths use native OS spelling.
 
 ## Enable commands
 
-For native shell execution with the launching account's authority, use:
+For native shell execution with the configured execution account's authority, use:
 
 ```bash
 A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://host.example.com
 ```
 
-Or set `"full_control": true` in daemon JSON. An explicit JSON value takes precedence over `A13N_ENVD_FULL_CONTROL`; `false` or environment value `0` disables it. Full Control creates the default native shell profile automatically: `/bin/sh` on Unix, or PowerShell on Windows. Commands inherit the launching process's environment and original `PATH` order, excluding daemon bootstrap variables (`A13N_ENVD_*` and `EIP_*`). Command-level environment changes do not modify the daemon or later commands. Shell aliases and unexported variables are not inherited.
+Or set `"full_control": true` in daemon JSON. `A13N_ENVD_FULL_CONTROL` overrides the JSON value; `false` or `0` disables it. Full Control creates the default native shell profile automatically: `/bin/sh` on Unix, or PowerShell on Windows. Commands inherit the launching process's environment and original `PATH` order, excluding daemon bootstrap variables (`A13N_ENVD_*` and `EIP_*`). Command-level environment changes do not modify the daemon or later commands. Shell aliases and unexported variables are not inherited.
 
 Full Control is not a sandbox and is independent of the Host's local execution profile. Do not combine it with manual executable roots or shell profiles. To configure command access explicitly instead, supply trusted executable search roots and optionally fixed shell profiles:
 
@@ -98,6 +113,38 @@ Full Control is not a sandbox and is independent of the Host's local execution p
 No command methods are advertised when Full Control is disabled and both executable roots and shell profiles are empty. Executable roots and profiles are trusted launch configuration, not a Session sandbox. The Host supplies the outer security boundary; optional [controlled Session egress](egress.md) adds per-Session destination restrictions and credential injection. See [outer security and troubleshooting](isolation.md).
 
 Child environments are built from the daemon's supported inherited values plus explicit command inputs. Daemon control variables are not command configuration. Inspect advertised execution features instead of assuming platform support for signals, limits or executable bits.
+
+## Native identity and sudo
+
+**Native sudo is allowed by default.** Envd preserves the original writable sandbox system tree. Installing packages or changing system files through authorized sudo changes that tree and persists across Sessions; no disposable copy of the payload root filesystem is introduced.
+
+On Linux, a root-launched daemon runs commands and file RPCs as native UID/GID `1000:1000` by default. Device directory discovery uses the same identity. Provision that account, home and workspace ownership in the sandbox, or select another nonzero pair using `execution.uid`/`execution.gid`, `A13N_ENVD_EXECUTION_UID`/`A13N_ENVD_EXECUTION_GID`, or `--execution-uid`/`--execution-gid`. Root-launched workers initialize native supplementary groups and account environment defaults. A non-root launcher keeps its current identity and cannot choose a different account.
+
+`allow_sudo` permits native privilege gains; it does not grant authorization. Install sudo and configure sudoers through your image or launcher. Envd does not add passwordless sudo rules, bypass authentication, or override an outer `no_new_privs` setting or `nosuid` mount.
+
+Disable privilege gains in any of these ways:
+
+```bash
+# Environment variable
+A13N_ENVD_ALLOW_SUDO=false a13n-envd
+
+# CLI, including the connect command
+a13n-envd --allow-sudo false
+a13n-envd connect work --allow-sudo false
+
+# Same nested setting without a file
+A13N_ENVD_CONFIG_JSON='{"execution":{"allow_sudo":false}}' a13n-envd
+```
+
+Or use a JSON file:
+
+```json
+{
+  "execution": {"allow_sudo": false}
+}
+```
+
+The normal precedence applies: for example, `--allow-sudo true` overrides an environment value of `false`. Disabling uses Linux `no_new_privs` for the worker and descendants, so direct sudo, setuid binaries and file capabilities cannot regain privilege. A command's own environment cannot turn it back on. Platforms without this implementation reject `false` instead of ignoring it. UID/GID configuration is Linux-only; other platforms retain their native launching identity.
 
 ## Carrier profiles
 
@@ -135,18 +182,21 @@ Device initialization verifies identity and protocol. Session readiness checks t
 
 ## Standalone field reference
 
-| Root field                                   | Default or meaning                                                             |
-| -------------------------------------------- | ------------------------------------------------------------------------------ |
-| `device_id`                                  | Explicit stable identity, otherwise installation identity                      |
-| `installation_state_directory`               | Persistent identity storage when no explicit Device ID is supplied             |
-| `name`, `description`                        | Optional display metadata                                                      |
-| `default_working_directory`                  | Startup cwd if unset                                                           |
-| `directory_discovery`                        | `true`                                                                         |
-| `idle_timeout_ms`                            | Session idle lifetime                                                          |
-| `disconnect_grace_ms`                        | Detached Session attachment grace                                              |
-| `full_control`                               | `false`; automatic native shell and inherited command environment when enabled |
-| `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                 |
-| `limits`                                     | Device aggregates and per-Session limits                                       |
+| Root field                                   | Default or meaning                                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `device_id`                                  | Explicit stable identity, otherwise installation identity                                   |
+| `installation_state_directory`               | Persistent identity storage when no explicit Device ID is supplied                          |
+| `name`, `description`                        | Optional display metadata                                                                   |
+| `default_working_directory`                  | Startup cwd if unset                                                                        |
+| `directory_discovery`                        | `true`                                                                                      |
+| `idle_timeout_ms`                            | Session idle lifetime                                                                       |
+| `disconnect_grace_ms`                        | Detached Session attachment grace                                                           |
+| `execution.uid`, `execution.gid`             | Linux native nonzero IDs; root launch defaults to `1000:1000`, non-root retains current IDs |
+| `execution.allow_sudo`                       | `true`; native sudoers still controls authorization                                         |
+| `egress.enabled`                             | `false`; opt-in controlled-capable management runtime                                       |
+| `full_control`                               | `false`; automatic native shell and inherited command environment when enabled              |
+| `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                              |
+| `limits`                                     | Device aggregates and per-Session limits                                                    |
 
 Important default limits include 128 Sessions, 256 Device concurrent operations, 128 concurrent operations per Session, 4 GiB Device spool capacity, 1 GiB Session spool capacity, 256 MiB output per stream and 2 MiB previews. Configured Session capacities cannot exceed Device aggregates. Output preview cannot exceed stream capacity; spool must reserve both streams.
 
@@ -156,4 +206,4 @@ Required fields are `profile_id`, `display_name`, `native_executable`, `executab
 
 ## Controlled Session egress
 
-Set `"egress": {"enabled": true}` in daemon JSON to permit Linux controlled Sessions. Secret values are submitted through EIP, never this file. See [Session egress](egress.md) for prerequisites, creation, live updates and capacity behavior.
+Set `"egress": {"enabled": true}` in daemon JSON, `A13N_ENVD_EGRESS_ENABLED=true`, or `--egress-enabled true` to permit Linux controlled Sessions. Secret values are submitted through EIP, never this file. See [Session egress](egress.md) for prerequisites, creation, live updates and capacity behavior.

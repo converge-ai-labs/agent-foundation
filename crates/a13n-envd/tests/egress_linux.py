@@ -21,9 +21,13 @@ from pathlib import Path
 
 
 class Device:
-    def __init__(self, binary, root):
+    def __init__(self, binary, root, *, egress=True, execution=None, environment=None, arguments=(), user=None):
         self.workspace = root / "workspace"
         self.workspace.mkdir()
+        if os.geteuid() == 0:
+            root.chmod(0o755)
+            identity = execution or {}
+            os.chown(self.workspace, identity.get("uid", 1000), identity.get("gid", 1000))
         (root / ".a13n").mkdir()
         (root / ".a13n" / ".env").write_text("BROKER_PRIVATE=must-not-be-readable")
         config = root / "envd.json"
@@ -33,13 +37,17 @@ class Device:
                     "device_id": "device-egress-test",
                     "default_working_directory": str(self.workspace),
                     "full_control": True,
-                    "egress": {"enabled": True},
+                    "egress": {"enabled": egress},
+                    **({"execution": execution} if execution is not None else {}),
                 }
             )
         )
         self.log = (root / "stderr").open("wb")
+        if user is not None:
+            for path in [root, *root.rglob("*")]:
+                os.chown(path, user, user)
         self.process = subprocess.Popen(
-            [binary, "--config", str(config)],
+            [binary, "--config", str(config), *arguments],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=self.log,
@@ -50,7 +58,9 @@ class Device:
                 "HOST_ONLY_SECRET": "must-not-be-inherited",
                 "HTTPS_PROXY": "http://invalid.invalid:1",
                 "A13N_ENVD_RUNTIME_DIR": str(root / "runtime"),
+                **(environment or {}),
             },
+            **({"user": user, "group": user, "extra_groups": []} if user is not None else {}),
         )
         self.session = None
         self.sequence = 0
@@ -93,20 +103,21 @@ class Device:
         assert "error" not in response, (response, Path(self.log.name).read_text()[-2000:])
         return response["result"]
 
-    def open(self, policy):
+    def open(self, policy=None):
         result = self.call(
             "session.open",
             {
                 "expected_device_id": self.descriptor["device_id"],
                 "expected_generation": self.descriptor["generation"],
                 "protocol_version": "0.1",
-                "egress": policy,
+                "working_directory": str(self.workspace),
+                **({"egress": policy} if policy is not None else {}),
             },
         )["descriptor"]
         self.session = result["session_id"]
         self.profile = result["shell_profiles"][0]["profile_id"]
         assert self.call("environment.readiness", {"context": {"operation_id": "op-ready"}})["ready"]
-        return result["egress"]
+        return result.get("egress")
 
     def shell(self, script, operation=None, environment=None, error=None):
         request = {"command": {"kind": "shell", "profile_id": self.profile, "script": script}}
@@ -144,8 +155,8 @@ def network_fixture(device):
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     tcp = socket.socket()
     try:
-        udp.bind((address, 19432))
-        tcp.bind((address, 19433))
+        udp.bind((address, 0))
+        tcp.bind((address, 0))
         tcp.listen()
         udp.settimeout(15)
         tcp.settimeout(15)
@@ -162,7 +173,7 @@ def network_fixture(device):
         workers = [threading.Thread(target=echo_udp), threading.Thread(target=echo_tcp)]
         for worker in workers:
             worker.start()
-        script = "import socket\nfor kind,port in [(socket.SOCK_DGRAM,19432),(socket.SOCK_STREAM,19433)]:\n s=socket.socket(socket.AF_INET,kind);s.settimeout(5);s.connect(('93.184.216.34',port));s.sendall(b'egress-echo');assert s.recv(64)==b'egress-echo';s.close()"
+        script = f"import socket\nfor kind,port in [(socket.SOCK_DGRAM,{udp.getsockname()[1]}),(socket.SOCK_STREAM,{tcp.getsockname()[1]})]:\n s=socket.socket(socket.AF_INET,kind);s.settimeout(5);s.connect(('93.184.216.34',port));s.sendall(b'egress-echo');assert s.recv(64)==b'egress-echo';s.close()"
         device.success("python3 -c " + shlex.quote(script))
         for worker in workers:
             worker.join(timeout=15)
@@ -176,7 +187,7 @@ def network_fixture(device):
 def cleanup_failure(device):
     device.open({"allow_hosts": []})
     parent = device.workspace / "cleanup-failure"
-    parent.mkdir()
+    device.success("mkdir " + shlex.quote(str(parent)))
     device.call(
         "file.open_writer",
         {
@@ -236,6 +247,11 @@ def run(binary, local_network, http_host):
             value = "application/json" if github else base64.b64encode(f"{user}:{password}".encode()).decode()
             binding = {"env": "TEST_TOKEN", "value": value, "inject_hosts": [http_host]}
             status = device.open({"allow_hosts": [http_host, "93.184.216.34"], "secrets": [binding]})
+            device.success(
+                "sudo -n --preserve-env=SSL_CERT_FILE,CURL_CA_BUNDLE curl --fail --max-time 20 -sS https://"
+                + http_host
+                + "/ >/dev/null"
+            )
             marker = status["secrets"][0]["sentinel"]
             assert status["revision"] == 1 and value not in json.dumps(status)
             baseline = 'printf \'%s\' "$TEST_TOKEN"; test -z "$HOST_ONLY_SECRET$HTTPS_PROXY"; test ! -w /etc'
@@ -267,7 +283,7 @@ def run(binary, local_network, http_host):
                 },
                 error="denied",
             )
-            socket_check = "import socket\na,b=socket.socketpair();a.send(b'ok');assert b.recv(2)==b'ok'\ntry:\n socket.socket(socket.AF_UNIX)\nexcept PermissionError:\n pass\nelse:\n raise AssertionError('named Unix socket allowed')"
+            socket_check = "import socket,os\na,b=socket.socketpair();a.send(b'ok');assert b.recv(2)==b'ok'\ns=socket.socket(socket.AF_UNIX);s.bind('native.sock');s.close();os.unlink('native.sock')"
             device.success("python3 -c " + shlex.quote(socket_check))
             device.shell("true", environment={"unset": ["TEST_TOKEN"]}, error="invalid_params")
             device.call("egress.update", {"expected_revision": 99}, error="conflict")

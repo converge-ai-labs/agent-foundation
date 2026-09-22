@@ -5,7 +5,10 @@ use std::{
     os::unix::net::UnixStream,
 };
 
-pub(crate) fn send(socket: &UnixStream, descriptors: &[RawFd; 4]) -> io::Result<()> {
+pub(crate) fn send(socket: &UnixStream, descriptors: &[RawFd]) -> io::Result<()> {
+    if descriptors.is_empty() || descriptors.len() > 4 {
+        return Err(io::Error::other("invalid bootstrap descriptor count"));
+    }
     let mut byte = [1u8];
     let mut vector = libc::iovec {
         iov_base: byte.as_mut_ptr().cast(),
@@ -36,7 +39,7 @@ pub(crate) fn send(socket: &UnixStream, descriptors: &[RawFd; 4]) -> io::Result<
     Ok(())
 }
 
-pub(crate) fn receive(socket: &UnixStream) -> io::Result<[OwnedFd; 4]> {
+pub(crate) fn receive<const N: usize>(socket: &UnixStream) -> io::Result<[OwnedFd; N]> {
     let mut byte = [0u8];
     let mut vector = libc::iovec {
         iov_base: byte.as_mut_ptr().cast(),
@@ -68,7 +71,7 @@ pub(crate) fn receive(socket: &UnixStream) -> io::Result<[OwnedFd; 4]> {
             header = libc::CMSG_NXTHDR(&message, header);
         }
     }
-    if message.msg_flags & libc::MSG_CTRUNC != 0 || byte != [1] || descriptors.len() != 4 {
+    if message.msg_flags & libc::MSG_CTRUNC != 0 || byte != [1] || descriptors.len() != N {
         return Err(io::Error::other("invalid namespace bootstrap descriptors"));
     }
     descriptors

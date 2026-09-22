@@ -25,29 +25,34 @@ use tokio::{
 
 pub(crate) struct Runtime {
     pub client: Client,
-    policy: Arc<Policy>,
+    policy: Option<Arc<Policy>>,
     clean: Arc<std::sync::atomic::AtomicBool>,
     stop: Option<oneshot::Sender<()>>,
     dead: watch::Receiver<bool>,
 }
 
 // Own the process across every bootstrap error and cancelled spawn_blocking future.
-struct ChildGuard(Child);
+struct ChildGuard {
+    child: Child,
+    _state: Option<crate::execution::StateDirectory>,
+}
 impl Drop for ChildGuard {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
 impl Runtime {
     pub async fn start(
         mut config: WorkerConfig,
-        input: Policy,
+        input: Option<Policy>,
         hide: Vec<std::path::PathBuf>,
         mut reservation: crate::daemon::egress::Reservation,
     ) -> io::Result<Self> {
-        if let Some(command) = &mut config.command {
+        if input.is_some()
+            && let Some(command) = &mut config.command
+        {
             let safe = |name: &String, _: &mut String| {
                 matches!(
                     name.as_str(),
@@ -66,21 +71,27 @@ impl Runtime {
             }
         }
         namespace::protect_process()?;
-        let policy = Arc::new(input);
-        let authority = Authority::new()?;
-        let plan = Mounts {
+        let policy = input.map(Arc::new);
+        let authority = policy.as_ref().map(|_| Authority::new()).transpose()?;
+        let plan = config.managed.then(|| Mounts {
             workspace: config.working_directory.clone().into(),
             hide,
-            ca_pem: authority.pem(),
-        };
+            network: authority.is_some(),
+            ca_pem: authority.as_ref().map(Authority::pem).unwrap_or_default(),
+        });
+        if policy.is_some() && plan.is_none() {
+            return Err(io::Error::other(
+                "controlled Session requires a managed broker",
+            ));
+        }
         let limits = config.limits.clone();
         let (stop_child, stopped_child) = std::sync::mpsc::channel::<()>();
         let (booted, boot) = oneshot::channel();
         // Linux PDEATHSIG follows the spawning thread, not merely its process.
         // Keep that thread alive for the complete child lifetime.
         let child = tokio::task::spawn_blocking(move || match bootstrap(plan, config) {
-            Ok((child, socket, fds)) => {
-                if booted.send(Ok((socket, fds))).is_ok() {
+            Ok((child, socket, network, death)) => {
+                if booted.send(Ok((socket, network, death))).is_ok() {
                     let _ = stopped_child.recv();
                 }
                 drop(child);
@@ -89,14 +100,8 @@ impl Runtime {
                 let _ = booted.send(Err(error));
             }
         });
-        let (socket, [tcp, udp, dns, death]) = boot.await.map_err(io::Error::other)??;
-        let tcp = std::net::TcpListener::from(tcp);
-        let dns = std::net::UdpSocket::from(dns);
-        tcp.set_nonblocking(true)?;
-        dns.set_nonblocking(true)?;
+        let (socket, network, death) = boot.await.map_err(io::Error::other)??;
         socket.set_nonblocking(true)?;
-        let tcp = tokio::net::TcpListener::from_std(tcp)?;
-        let dns = tokio::net::UdpSocket::from_std(dns)?;
         let death = AsyncFd::new(death)?;
         let socket = tokio::net::UnixStream::from_std(socket)?;
         let client =
@@ -104,12 +109,22 @@ impl Runtime {
                 .await
                 .map_err(io::Error::other)??;
         let mut closed = client.closed();
-        let routes = Arc::new(Routes::default());
-        let proxy = Proxy::new(policy.clone(), authority);
         let mut tasks = JoinSet::new();
-        tasks.spawn(namespace::tcp::serve(tcp, routes.clone(), proxy));
-        tasks.spawn(namespace::udp::serve(udp, routes.clone(), policy.clone()));
-        tasks.spawn(routes.serve(dns, policy.clone()));
+        if let Some([tcp, udp, dns]) = network {
+            let policy = policy.as_ref().expect("network policy");
+            let authority = authority.expect("network authority");
+            let tcp = std::net::TcpListener::from(tcp);
+            let dns = std::net::UdpSocket::from(dns);
+            tcp.set_nonblocking(true)?;
+            dns.set_nonblocking(true)?;
+            let tcp = tokio::net::TcpListener::from_std(tcp)?;
+            let dns = tokio::net::UdpSocket::from_std(dns)?;
+            let routes = Arc::new(Routes::default());
+            let proxy = Proxy::new(policy.clone(), authority);
+            tasks.spawn(namespace::tcp::serve(tcp, routes.clone(), proxy));
+            tasks.spawn(namespace::udp::serve(udp, routes.clone(), policy.clone()));
+            tasks.spawn(routes.serve(dns, policy.clone()));
+        }
         let (stop, stopped) = oneshot::channel();
         let (dead_sender, dead) = watch::channel(false);
         let owned_policy = policy.clone();
@@ -120,9 +135,11 @@ impl Runtime {
                 _ = stopped => {},
                 _ = closed.changed() => {},
                 _ = death.readable() => {},
-                _ = tasks.join_next() => {},
+                _ = tasks.join_next(), if !tasks.is_empty() => {},
             }
-            owned_policy.close();
+            if let Some(policy) = owned_policy {
+                policy.close();
+            }
             tasks.abort_all();
             // unshare --kill-child kills namespace PID 1 when its supervisor dies.
             // The pidfd is the definitive worker-death fence, not the wrapper's exit.
@@ -144,6 +161,8 @@ impl Runtime {
 
     pub fn status(&self) -> io::Result<crate::eip::EgressStatus> {
         self.policy
+            .as_ref()
+            .ok_or_else(|| io::Error::other("Session has no egress policy"))?
             .snapshot()
             .map(|snapshot| snapshot.status())
             .map_err(|_| io::Error::other("closed policy"))
@@ -153,12 +172,16 @@ impl Runtime {
         params: crate::eip::EgressUpdateParams,
     ) -> Result<crate::eip::EgressStatus, super::policy::PolicyError> {
         self.policy
+            .as_ref()
+            .ok_or(super::policy::PolicyError::Closed)?
             .update(params.into())
             .map(|snapshot| snapshot.status())
     }
     pub fn environment(&self) -> io::Result<std::collections::BTreeMap<String, String>> {
-        let mut env = self
-            .policy
+        let Some(policy) = &self.policy else {
+            return Ok(Default::default());
+        };
+        let mut env = policy
             .snapshot()
             .map_err(|_| io::Error::other("closed policy"))?
             .environment();
@@ -173,7 +196,9 @@ impl Runtime {
         Ok(env)
     }
     pub async fn close(&self) -> bool {
-        self.policy.close();
+        if let Some(policy) = &self.policy {
+            policy.close();
+        }
         if let Ok(Ok(true)) =
             tokio::time::timeout(Duration::from_secs(4), self.client.close_worker()).await
         {
@@ -193,51 +218,55 @@ impl Runtime {
 }
 impl Drop for Runtime {
     fn drop(&mut self) {
-        self.policy.close();
+        if let Some(policy) = &self.policy {
+            policy.close();
+        }
         self.stop.take();
     }
 }
 
 fn bootstrap(
-    plan: Mounts,
-    config: WorkerConfig,
-) -> io::Result<(ChildGuard, UnixStream, [OwnedFd; 4])> {
+    plan: Option<Mounts>,
+    mut config: WorkerConfig,
+) -> io::Result<(ChildGuard, UnixStream, Option<[OwnedFd; 3]>, OwnedFd)> {
+    let state = if plan.is_none() {
+        let identity = config
+            .execution
+            .ok_or_else(|| io::Error::other("missing execution identity"))?;
+        let state = crate::execution::StateDirectory::new(identity)?;
+        config.runtime_directory = state.0.clone();
+        Some(state)
+    } else {
+        None
+    };
     let (mut socket, input) = UnixStream::pair()?;
     socket.set_read_timeout(Some(Duration::from_secs(20)))?;
     socket.set_write_timeout(Some(Duration::from_secs(20)))?;
     let parent = unsafe { libc::getpid() };
-    let mut command = Command::new("/usr/bin/unshare");
-    if unsafe { libc::geteuid() } == 0 {
-        // Container runtimes can reject procfs mounted by a nested user namespace.
-        // Mount procfs in the new PID namespace first; the inner unshare still
-        // gives the worker its own user, mount, and network namespaces.
-        command.args([
-            "--mount",
-            "--pid",
-            "--fork",
-            "--kill-child",
-            "--mount-proc",
-            "/usr/bin/unshare",
-            "--user",
-            "--map-root-user",
-            "--mount",
-            "--net",
-        ]);
+    let mut command = if plan.is_some() {
+        Command::new("/usr/bin/unshare")
     } else {
+        Command::new(std::env::current_exe()?)
+    };
+    if let Some(plan) = &plan {
         command.args([
-            "--user",
-            "--map-root-user",
-            "--net",
             "--mount",
             "--pid",
+            "--ipc",
             "--fork",
             "--kill-child",
             "--mount-proc",
         ]);
+        if plan.network {
+            command.arg("--net");
+        }
+        command
+            .arg(std::env::current_exe()?)
+            .arg("--internal-egress-worker");
+    } else {
+        command.arg("--internal-session-worker");
     }
     command
-        .arg(std::env::current_exe()?)
-        .arg("--internal-egress-worker")
         .stdin(Stdio::from(OwnedFd::from(input)))
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
@@ -252,13 +281,30 @@ fn bootstrap(
             Ok(())
         });
     }
-    let child = ChildGuard(command.spawn()?);
-    write(&mut socket, &plan)?;
-    let fds = namespace::fds::receive(&socket)?;
-    write(&mut socket, &config)?;
+    let child = ChildGuard {
+        child: command.spawn()?,
+        _state: state,
+    };
+    let (network, death) = if let Some(plan) = plan {
+        write(&mut socket, &plan)?;
+        write(&mut socket, &config)?;
+        let result = if plan.network {
+            let [tcp, udp, dns, death] = namespace::fds::receive(&socket)?;
+            (Some([tcp, udp, dns]), death)
+        } else {
+            let [death] = namespace::fds::receive(&socket)?;
+            (None, death)
+        };
+        write(&mut socket, &config)?;
+        result
+    } else {
+        write(&mut socket, &config)?;
+        let [death] = namespace::fds::receive(&socket)?;
+        (None, death)
+    };
     socket.set_read_timeout(None)?;
     socket.set_write_timeout(None)?;
-    Ok((child, socket, fds))
+    Ok((child, socket, network, death))
 }
 fn write(socket: &mut UnixStream, value: &impl serde::Serialize) -> io::Result<()> {
     let bytes = serde_json::to_vec(value).map_err(io::Error::other)?;

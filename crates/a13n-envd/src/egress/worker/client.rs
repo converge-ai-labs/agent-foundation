@@ -44,6 +44,7 @@ impl Shared {
 }
 
 pub(crate) struct Client {
+    pub working_directory: String,
     shared: Arc<Shared>,
     next_ticket: AtomicU64,
     data: mpsc::Sender<DataFrame>,
@@ -125,14 +126,18 @@ impl Client {
             }
             input_state.fail();
         });
-        let client = Self {
+        let mut client = Self {
+            working_directory: String::new(),
             shared,
             next_ticket: AtomicU64::new(1),
             data,
             route,
             tasks: vec![input, output],
         };
-        booted.await.map_err(|_| broken())?;
+        let response = booted.await.map_err(|_| broken())?;
+        client.working_directory =
+            serde_json::from_slice::<String>(&response.payload).map_err(|_| broken())?;
+        response.handoff.complete();
         Ok(client)
     }
 
@@ -297,7 +302,11 @@ mod tests {
     async fn reply(socket: &mut UnixStream, ticket: u64) {
         let body = serde_json::to_vec(&Reply {
             ticket,
-            payload: serde_json::json!({"ok":true}),
+            payload: if ticket == 0 {
+                serde_json::json!("/workspace")
+            } else {
+                serde_json::json!({"ok":true})
+            },
         })
         .unwrap();
         socket

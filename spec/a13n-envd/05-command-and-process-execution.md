@@ -111,7 +111,7 @@ class ShellProfileDescriptor(BaseModel):
 
 ### Working directory and environment
 
-Omitted/null `cwd` uses the Session's fixed working directory; an explicit Device path overrides it for this command only. The directory must exist and be accessible. Commands have the daemon account's access within the Host-provided outer boundary, including paths outside cwd. Native pathname launch does not promise an immutable directory against concurrent native replacement.
+Omitted/null `cwd` uses the Session's fixed working directory; an explicit Device path overrides it for this command only. The directory must exist and be accessible. Commands start with the configured native execution account's access within the Host-provided outer boundary, including paths outside cwd. Native sudo and other privilege gains follow the trusted [startup policy](01-daemon-lifecycle-and-configuration.md#execution-identity-and-native-sudo), native OS authorization and any controlled Session boundary. Native pathname launch does not promise an immutable directory against concurrent native replacement.
 
 The payload uses its configured ordinary execution environment and shell profile plus request changes. Transport credentials and daemon control values/descriptors are not inherited. HOME, PATH and toolchain behavior follow the Host's execution configuration rather than a second envd security policy.
 

@@ -4,7 +4,7 @@
 //! the execution boundary before admitting payloads or exposing its proxy sockets.
 mod address;
 mod dns;
-mod namespace;
+pub(crate) mod namespace;
 pub(crate) mod policy;
 mod proxy;
 mod redact;

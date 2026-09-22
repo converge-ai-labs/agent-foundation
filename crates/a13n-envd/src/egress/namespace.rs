@@ -3,7 +3,7 @@
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-pub(super) use linux::*;
+pub(crate) use linux::*;
 #[cfg(target_os = "linux")]
 pub(super) mod fds;
 #[cfg(target_os = "linux")]

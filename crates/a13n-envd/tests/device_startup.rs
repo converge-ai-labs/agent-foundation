@@ -148,16 +148,73 @@ fn startup_arguments_override_file_metadata_without_materializing_mounts() {
 }
 
 #[test]
+fn environment_overrides_file_and_cli_overrides_environment() {
+    let fixture = Fixture::new();
+    let config = fixture.0.join("layers.json");
+    fs::write(
+        &config,
+        json!({
+            "device_id":"device-file", "name":"File", "description":"Retained file description",
+            "directory_discovery":false, "idle_timeout_ms":60000, "disconnect_grace_ms":1000
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let layered = || {
+        let mut command = fixture.command();
+        command
+            .arg("--config")
+            .arg(&config)
+            .env(
+                "A13N_ENVD_CONFIG_JSON",
+                json!({"device_id":"device-json", "name":"JSON", "idle_timeout_ms":90000})
+                    .to_string(),
+            )
+            .env("A13N_ENVD_DEVICE_ID", "device-env")
+            .env("A13N_ENVD_NAME", "Environment")
+            .env("A13N_ENVD_DIRECTORY_DISCOVERY", "1");
+        command
+    };
+    let descriptor = fixture.initialize(layered());
+    assert_eq!(descriptor["device_id"], "device-env");
+    assert_eq!(descriptor["display_name"], "Environment");
+    assert_eq!(descriptor["description"], "Retained file description");
+    assert_eq!(descriptor["directory_discovery"], true);
+    let mut command = layered();
+    command.args(["--device-id", "device-cli", "--name", "CLI"]);
+    let descriptor = fixture.initialize(command);
+    assert_eq!(descriptor["device_id"], "device-cli");
+    assert_eq!(descriptor["display_name"], "CLI");
+}
+
+#[test]
+fn malformed_environment_configuration_is_not_silently_ignored() {
+    let fixture = Fixture::new();
+    for (name, value) in [
+        ("A13N_ENVD_CONFIG_JSON", "[]"),
+        (
+            "A13N_ENVD_CONFIG_JSON",
+            r#"{"execution":{"allow_sudoo":false}}"#,
+        ),
+        ("A13N_ENVD_ALLOW_SUDO", "yes"),
+        ("A13N_ENVD_EXECUTION_UID", "-1"),
+        ("A13N_ENVD_EGRESS_ENABLED", ""),
+        ("A13N_ENVD_IDLE_TIMEOUT_MS", "0"),
+        ("A13N_ENVD_DISCONNECT_GRACE_MS", "not-a-number"),
+    ] {
+        let mut command = fixture.command();
+        command.env(name, value);
+        fixture.reject(command);
+    }
+}
+
+#[test]
 fn removed_isolation_command_and_configuration_fields_are_rejected() {
     let fixture = Fixture::new();
     let mut command = fixture.command();
     command.args(["isolation", "probe", "--json"]);
     fixture.reject(command);
     for (field, value) in [
-        (
-            "execution",
-            json!({"isolation":"required","network":"deny","uid":12345,"gid":12346}),
-        ),
         ("environment_id", json!("old-environment")),
         ("mounts", json!([])),
         ("root_mount_id", json!("workspace")),
@@ -170,6 +227,25 @@ fn removed_isolation_command_and_configuration_fields_are_rejected() {
         assert!(
             String::from_utf8_lossy(&output.stderr).contains(&format!("unknown field `{field}`"))
         );
+    }
+}
+
+#[test]
+fn execution_configuration_rejects_obsolete_isolation_and_invalid_identity() {
+    let fixture = Fixture::new();
+    for execution in [
+        json!({"isolation":"required","network":"deny","uid":12345,"gid":12346}),
+        json!({"uid":0,"gid":1000}),
+        json!({"uid":1000,"gid":0}),
+        json!({"uid":1000}),
+        json!({"uid":-1,"gid":1000}),
+    ] {
+        let config = fixture.0.join("invalid-execution.json");
+        fs::write(&config, json!({"execution":execution}).to_string()).unwrap();
+        let mut command = fixture.command();
+        command.arg("--config").arg(&config);
+        let output = fixture.reject(command);
+        assert!(String::from_utf8_lossy(&output.stderr).contains("a13n-envd failed"));
     }
 }
 

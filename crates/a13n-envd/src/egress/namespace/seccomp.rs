@@ -1,5 +1,5 @@
-//! Remove filesystem and abstract Unix-socket access from controlled workers.
-//! Bootstrap sockets must be CLOEXEC and must never be passed to payloads.
+//! Preserve native processes and Unix sockets without permitting namespace or
+//! network-boundary reconfiguration. Bootstrap sockets stay out of payloads.
 use std::io;
 
 const LOAD: u16 = 0x20;
@@ -53,24 +53,52 @@ pub(super) fn install() -> io::Result<()> {
         libc::SYS_io_uring_setup,
         libc::SYS_io_uring_enter,
         libc::SYS_io_uring_register,
+        libc::SYS_mount,
+        libc::SYS_umount2,
+        libc::SYS_pivot_root,
+        libc::SYS_open_tree,
+        libc::SYS_move_mount,
+        libc::SYS_mount_setattr,
+        libc::SYS_fsopen,
+        libc::SYS_fsconfig,
+        libc::SYS_fsmount,
+        libc::SYS_fspick,
+        libc::SYS_setns,
+        libc::SYS_unshare,
+        libc::SYS_open_by_handle_at,
+        libc::SYS_bpf,
+        libc::SYS_perf_event_open,
     ] {
         filter.extend([equal(syscall as u32, 0, 1), instruction(RETURN, DENY)]);
     }
     filter.extend([
-        // Other families (notably VSOCK) are outside the private IP namespace.
-        equal(libc::SYS_socket as u32, 0, 5),
+        // Pointer-based clone3 arguments cannot be inspected by classic BPF.
+        // ENOSYS permits libc's ordinary thread/process clone fallback.
+        equal(libc::SYS_clone3 as u32, 0, 1),
+        instruction(RETURN, 0x00050000 | libc::ENOSYS as u32),
+        equal(libc::SYS_clone as u32, 0, 4),
         instruction(LOAD, 16),
-        equal(libc::AF_INET as u32, 2, 0),
-        equal(libc::AF_INET6 as u32, 1, 0),
+        instruction(
+            AND,
+            (libc::CLONE_NEWNS
+                | libc::CLONE_NEWCGROUP
+                | libc::CLONE_NEWUTS
+                | libc::CLONE_NEWIPC
+                | libc::CLONE_NEWUSER
+                | libc::CLONE_NEWPID
+                | libc::CLONE_NEWNET) as u32,
+        ),
+        equal(0, 1, 0),
         instruction(RETURN, DENY),
-        instruction(RETURN, ALLOW),
-        equal(libc::SYS_socketpair as u32, 0, 8),
+        instruction(LOAD, 0),
+        // Unix sockets are native Session IPC. Deployment must not expose an
+        // external privileged daemon or network proxy through shared paths.
+        equal(libc::SYS_socket as u32, 0, 7),
         instruction(LOAD, 16),
-        equal(libc::AF_UNIX as u32, 0, 4),
-        instruction(LOAD, 24),
-        instruction(AND, !(libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK) as u32),
-        equal(libc::SOCK_STREAM as u32, 2, 0),
-        equal(libc::SOCK_SEQPACKET as u32, 1, 0),
+        equal(libc::AF_INET as u32, 4, 0),
+        equal(libc::AF_INET6 as u32, 3, 0),
+        equal(libc::AF_UNIX as u32, 2, 0),
+        equal(libc::AF_NETLINK as u32, 1, 0),
         instruction(RETURN, DENY),
         instruction(RETURN, ALLOW),
         instruction(RETURN, ALLOW),
@@ -80,9 +108,7 @@ pub(super) fn install() -> io::Result<()> {
         filter: filter.as_mut_ptr(),
     };
     unsafe {
-        if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0
-            || libc::prctl(libc::PR_SET_SECCOMP, 2, &program) != 0
-        {
+        if libc::prctl(libc::PR_SET_SECCOMP, 2, &program) != 0 {
             return Err(io::Error::last_os_error());
         }
     }
@@ -123,16 +149,19 @@ mod tests {
             return;
         }
         let (listener, address, address_len) = named_seqpacket();
+        crate::execution::disable_privilege_gain().unwrap();
         install().unwrap();
         seqpacket_cannot_retarget(listener, address, address_len);
-        for family in [libc::AF_VSOCK, libc::AF_NETLINK, libc::AF_PACKET] {
+        for family in [libc::AF_VSOCK, libc::AF_PACKET] {
             assert_eq!(unsafe { libc::socket(family, libc::SOCK_STREAM, 0) }, -1);
             assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EPERM));
         }
         for kind in [libc::SOCK_STREAM, libc::SOCK_DGRAM, libc::SOCK_SEQPACKET] {
             let fd = unsafe { libc::socket(libc::AF_UNIX, kind, 0) };
-            assert_eq!(fd, -1);
-            assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EPERM));
+            assert!(fd >= 0);
+            unsafe {
+                libc::close(fd);
+            }
         }
         let (mut left, mut right) = UnixStream::pair().unwrap();
         left.write_all(b"ok").unwrap();
@@ -142,9 +171,28 @@ mod tests {
         let mut pair = [-1; 2];
         assert_eq!(
             unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_DGRAM, 0, pair.as_mut_ptr()) },
-            -1
+            0
         );
-        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EPERM));
+        for fd in pair {
+            unsafe {
+                libc::close(fd);
+            }
+        }
+        for syscall in [
+            libc::SYS_unshare,
+            libc::SYS_setns,
+            libc::SYS_mount,
+            libc::SYS_open_tree,
+            libc::SYS_open_by_handle_at,
+        ] {
+            assert_eq!(unsafe { libc::syscall(syscall, 0, 0, 0, 0, 0, 0) }, -1);
+            assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EPERM));
+        }
+        assert_eq!(unsafe { libc::syscall(libc::SYS_clone3, 0, 0) }, -1);
+        assert_eq!(
+            io::Error::last_os_error().raw_os_error(),
+            Some(libc::ENOSYS)
+        );
         for syscall in [
             libc::SYS_io_uring_setup,
             libc::SYS_io_uring_enter,

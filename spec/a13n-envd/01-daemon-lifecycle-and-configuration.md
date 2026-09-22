@@ -2,7 +2,7 @@
 
 ## Design Position
 
-One envd daemon normally serves one machine or outer sandbox, with many Host-created Sessions. The authenticated Host is trusted to choose any folder the daemon account can access. Envd does not maintain a startup filesystem allowlist, protected-root subtraction engine, per-Session sandbox or payload identity policy.
+One envd daemon normally serves one machine or outer sandbox, with many Host-created Sessions. The authenticated Host is trusted to choose any folder the execution account can access. Envd does not maintain a general filesystem allowlist. Trusted startup configuration selects a native execution identity and whether native privilege gains are allowed; EIP callers cannot change that policy.
 
 The Host chooses the POSIX UID, sandbox, Docker container, VM or equivalent boundary before launching envd. Different security boundaries require separate launches. [Execution Boundary](07-execution-isolation.md) defines launch isolation.
 
@@ -22,21 +22,30 @@ Bootstrap contains only what the daemon needs to run:
 - installation-state and disposable-runtime directories;
 - stdio, HTTP or reverse-WebSocket transport settings and credentials;
 - `default_working_directory` and `directory_discovery` (default `true`);
+- native execution UID/GID and `allow_sudo` policy;
 - explicit Full Control or shell profiles and executable search configuration;
 - generous finite per-Session and aggregate resource limits;
 - inactivity, short disconnect grace, completed-history retention and collection settings.
 
 An omitted default working directory uses the daemon's startup cwd. An explicit value is an absolute native path. Envd resolves it to an absolute Device path and returns it in Device info. The default is a working starting point, not an access boundary. No discovery-entry list or filesystem allowlist is configured. Unavailable defaults remain visible but fail Session opening; they do not prevent clients from selecting another path.
 
-`full_control: true`, or `A13N_ENVD_FULL_CONTROL=1` when the file does not select it, enables native command execution without shell-profile declarations. It selects a platform shell and preserves inherited `PATH` order and command environment, excluding daemon bootstrap variables. Full Control uses the daemon account's authority, not a daemon-owned sandbox. Explicit shell profiles and executable roots are an alternative to Full Control, not an additional policy layered over it. The flag does not alter an outer container, account or sandbox.
+`full_control: true`, or `A13N_ENVD_FULL_CONTROL=1`, enables native command execution without shell-profile declarations. It selects a platform shell and preserves inherited `PATH` order and command environment, excluding daemon bootstrap variables. Full Control uses the execution account's authority and native sudoers, not a daemon-owned command allowlist. Explicit shell profiles and executable roots are an alternative to Full Control, not an additional policy layered over it. The flag does not alter an outer container, account or sandbox.
 
 Clients may override the default at `session.open`. Existing Sessions retain their resolved working directory. Disabling directory discovery removes only Device-level enumeration; known paths and ordinary Session file access remain usable. No EIP method changes launch identity or networking.
 
-An explicit configuration file, non-secret CLI inputs and documented environment fallbacks supply bootstrap. Explicit values take precedence over fallbacks. Configuration requires valid types, required transport fields and positive finite bounds. Transport credentials stay out of command arguments, URLs, logs and child environment values. Native permissions protect configuration and runtime files within the chosen deployment boundary; envd does not claim to hide them from arbitrary code running as the same account.
+Configuration precedence is defaults, JSON file, `A13N_ENVD_CONFIG_JSON`, scalar `A13N_ENVD_*` variables, then explicit CLI arguments. The JSON environment layer accepts the same strict schema as the file, including nested limits and shell profiles. Objects merge recursively; arrays and scalar values replace earlier values. Every supplied JSON layer is validated even if a later layer overrides it. UID/GID pairing is validated after merging. Configuration requires valid types, required transport fields and positive finite bounds. Transport credentials stay out of command arguments, URLs, logs and child environment values. Native permissions protect configuration and runtime files within the chosen deployment boundary; envd does not claim to hide them from arbitrary code running as the same account.
 
 `DaemonLimits` bounds concurrent Sessions, operations, commands, transfers, output records/bytes and staging bytes. Per-Session limits prevent one owner from accidentally consuming all capacity, while aggregate limits apply across every Session. Protocol messages, queues and individual transfers remain bounded. Capacity is reserved before allocation or native dispatch and released only after actual cleanup. Exhaustion triggers collection of eligible resources before returning `busy` or `quota_exceeded`; it does not terminate healthy sibling work.
 
 Client-actionable bounds and lifecycle timings appear in the descriptor. Specific default sizes and collection intervals are implementation tuning, not additional wire protocols. [Resource Lifetime](09-resource-lifetime-and-reclamation.md) owns eligibility and cleanup semantics.
+
+## Execution Identity and Native Sudo
+
+On Linux, a root launcher defaults Session commands, Session file operations, working-directory access and Device directory discovery to native UID/GID `1000:1000`. A non-root launcher retains its current UID/GID. Trusted `execution.uid` and `execution.gid` may select another provisioned account; both must be present and nonzero, and an unprivileged launcher cannot switch accounts. Root-launched workers initialize native supplementary groups and account defaults for `HOME`, `USER`, `LOGNAME`, and `SHELL`. Ordinary same-account execution retains the launcher's environment and groups. Identity and privilege policy are not per-command parameters.
+
+`execution.allow_sudo` defaults to `true`. This permits native setuid/file-capability privilege gains, including sudo authorized by existing sudoers. Envd does not install sudo, grant passwordless access, or override outer-platform restrictions. The launcher provisions the account, home, workspace ownership and sudoers.
+
+Setting `execution.allow_sudo: false`, `A13N_ENVD_ALLOW_SUDO=false`, or `--allow-sudo false` disables privilege gains for the execution worker and its descendants using Linux `no_new_privs`. It covers direct sudo, setuid executables and file capabilities; payload environment values cannot re-enable it. Unsupported platforms reject this disabling request instead of silently ignoring it. Linux UID/GID selection is likewise rejected on unsupported platforms. Enabling sudo never overrides a parent-imposed `no_new_privs` or a `nosuid` mount.
 
 ## Generation-Private Runtime State
 
@@ -46,7 +55,7 @@ Each generation gets fresh runtime storage. Nothing in it is a recovery checkpoi
 
 ## Startup and Readiness
 
-Startup loads configuration, establishes identity/generation and runtime ownership, initializes the Session registry and aggregate accounting, then admits its configured transport. It does not probe or construct a command sandbox.
+Startup loads configuration, establishes identity/generation and runtime ownership, initializes the Session registry and aggregate accounting, then admits its configured transport. Ordinary launches do not construct a command sandbox. Enabling controlled Sessions additionally prepares the private management runtime before any Session is admitted, as defined by [Execution Boundary](07-execution-isolation.md#controlled-session-egress).
 
 Three observations are distinct:
 
@@ -76,4 +85,4 @@ Useful observations are Device/generation, transport state, Session counts, char
 
 Malformed requests, stale selectors and quota exhaustion fail at the relevant boundary. One Session's failure is not a device-wide failure. Cleanup uncertainty remains charged and is retried boundedly; forgetting ownership is not reclamation. Authentication and framing remain necessary even though the Host is trusted for all folders.
 
-Daemon JSON `egress.enabled` defaults to false and enables [controlled Session preparation](07-execution-isolation.md#controlled-session-egress). It carries no secret values. Ordinary Session launch policy remains unchanged.
+`egress.enabled` defaults to false and enables [controlled Session preparation](07-execution-isolation.md#controlled-session-egress). It carries no injected secret values. The environment and CLI can override it using the same startup precedence.

@@ -16,6 +16,7 @@ mod device_path;
 )]
 mod egress;
 pub mod eip;
+mod execution;
 mod filesystem;
 mod http;
 mod operation;
@@ -51,8 +52,34 @@ pub fn run_internal_egress_worker(ready: bool) -> std::io::Result<()> {
     }
 }
 
+/// Runs an ordinary Session under its trusted startup identity.
+#[doc(hidden)]
+pub fn run_internal_session_worker() -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        egress::worker::run_session()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(std::io::Error::other("identity workers require Linux"))
+    }
+}
+
+/// Runs a one-shot directory observation under the execution identity.
+#[doc(hidden)]
+pub fn run_internal_directory_worker() -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        execution::discovery::run()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(std::io::Error::other("identity workers require Linux"))
+    }
+}
+
 /// Runs one a13n-envd instance from trusted process configuration.
-pub async fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     if arguments.as_slice() == [std::ffi::OsString::from("--help")]
         || arguments.as_slice()
@@ -68,10 +95,38 @@ pub async fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> 
         .first()
         .is_some_and(|argument| argument == "connect")
     {
-        connect::prepare(arguments.into_iter().skip(1).collect()).await?
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let config = runtime.block_on(connect::prepare(arguments.into_iter().skip(1).collect()))?;
+        drop(runtime);
+        config
+    } else if arguments.as_slice() == [std::ffi::OsString::from("--internal-managed-broker")] {
+        #[cfg(target_os = "linux")]
+        {
+            execution::management::restore()?
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            return Err("managed broker requires Linux".into());
+        }
     } else {
         config::Config::from_environment()?
     };
+    #[cfg(target_os = "linux")]
+    if config.egress.enabled && !config.managed {
+        execution::management::enter(config)?;
+        unreachable!("management bootstrap reexecs or fails");
+    }
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let result = runtime.block_on(serve(config));
+    runtime.shutdown_timeout(std::time::Duration::from_secs(1));
+    result
+}
+
+async fn serve(config: config::Config) -> Result<(), Box<dyn Error + Send + Sync>> {
     let daemon = Arc::new(daemon::Daemon::new(&config)?);
     match &config.transport {
         config::TransportConfig::Stdio => stdio::serve(daemon, &config).await?,

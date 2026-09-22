@@ -1,6 +1,6 @@
 # Outer security and troubleshooting
 
-Envd is an execution service for its operating-system account. It does not create a filesystem or network sandbox around each command. The Host or operator must place the **entire daemon** inside any selected container, VM, account boundary or OS sandbox before connecting it to an Agent.
+Envd is an execution service using a trusted native execution account, which can differ from a root broker's account. It does not create a filesystem or network sandbox around each command. The Host or operator must place the **entire daemon** inside any selected container, VM, account boundary or OS sandbox before connecting it to an Agent.
 
 ## Isolation behavior
 
@@ -17,7 +17,7 @@ There is no per-command `required`/`disabled` isolation setting, mount policy, n
 
 Windows Job ownership is not filesystem or network confinement. Supported execution features report what is available; force kill is separate from graceful signal support. Use exact executable names, including `.exe` on Windows. Shell profiles are trusted startup configuration and must match the selected shell. PTY/ConPTY is not part of the command plane.
 
-File paths address the Device namespace: POSIX `/work/file`, Windows `/C:/work/file` or `/UNC/server/share/file`. Windows `/` is a virtual directory-discovery root for volumes, not a command cwd. For ordinary Sessions, filesystem permissions, symlinks, links and platform access rules remain those of the daemon account. Controlled Sessions resolve paths inside their private mount namespace.
+File paths address the Device namespace: POSIX `/work/file`, Windows `/C:/work/file` or `/UNC/server/share/file`. Windows `/` is a virtual directory-discovery root for volumes, not a command cwd. For ordinary Sessions, filesystem permissions, symlinks, links and platform access rules remain those of the execution account; native sudo is authorized by existing sudoers. Controlled Sessions resolve paths inside their private mount namespace.
 
 ## Validate from this repository
 
@@ -34,6 +34,8 @@ The checks cover real daemon operation, Device/Session framing, native resource 
 - **Release mismatch**: use the exact matching native daemon and Python client release. Do not confuse the release version with EIP's wire version.
 - **Unknown bootstrap variable**: strip Host-only `A13N_ENVD_*` settings before launching the child. Use only variables documented in [configuration](configuration.md).
 - **No command methods**: configure trusted executable roots or shell profiles and inspect `available_methods`.
+- **Sudo fails**: `allow_sudo` defaults to true, but the image must provide sudo, a provisioned execution account and appropriate sudoers. Check outer `no_new_privs` and `nosuid` restrictions; Envd cannot override them. Root-launched Linux Sessions default to UID/GID `1000:1000`, not root. Use [trusted startup settings](configuration.md#native-identity-and-sudo) to select another account or disable privilege gains.
+- **Root HTTPS fails in a controlled Session**: native sudo may discard the Session CA environment. Preserve the relevant CA variables according to sudoers or configure the client trust store; see [Session egress](egress.md).
 - **Invalid working directory**: choose an existing Device path, not a path on the requesting Host. Discovery requires no Session and can help select a directory.
 - **A Session fails while others work**: inspect that Session's typed error and native evidence. Do not restart a healthy shared Device to repair one adapter.
 - **Carrier loss**: pending effects can have unknown outcomes. Explicit same-Session attachment is limited by generation and disconnect grace; never replay mutations automatically.

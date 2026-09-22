@@ -56,21 +56,25 @@ impl Daemon {
         })
     }
 
-    pub(super) async fn open_controlled(
+    pub(super) async fn open_worker(
         &self,
         carrier: &Carrier,
         cwd: String,
-        policy: eip::EgressPolicy,
+        policy: Option<eip::EgressPolicy>,
     ) -> Result<eip::SessionOpenResult, EIPError> {
-        if !self.config.egress.enabled {
+        if policy.is_some() && !self.config.egress.enabled {
             return Err(protocol_error(
                 ErrorType::Unsupported,
                 "egress is not enabled",
             ));
         }
-        let policy = crate::egress::policy::Policy::from_request(policy).map_err(policy_error)?;
+        let policy = policy
+            .map(crate::egress::policy::Policy::from_request)
+            .transpose()
+            .map_err(policy_error)?;
+        let controlled = policy.is_some();
         let reservation = self.reserve_worker().ok_or_else(|| {
-            protocol_error(ErrorType::Busy, "controlled Session capacity is exhausted")
+            protocol_error(ErrorType::Busy, "Session worker capacity is exhausted")
         })?;
         let id = self.ids.next("session").map_err(map_ledger_error)?;
         let mut session =
@@ -78,24 +82,30 @@ impl Daemon {
                 protocol_error(ErrorType::InternalError, "session initialization failed")
             })?;
         let mut hide = self.config.bootstrap_files.clone();
-        match &self.config.transport {
-            crate::config::TransportConfig::Http(http) => {
-                hide.push(http.credential_file.clone());
-                hide.extend(http.tls_private_key_file.iter().cloned());
+        if !self.config.managed {
+            match &self.config.transport {
+                crate::config::TransportConfig::Http(http) => {
+                    hide.push(http.credential_file.clone());
+                    hide.extend(http.tls_private_key_file.iter().cloned());
+                }
+                crate::config::TransportConfig::ReverseWebSocket(ws) => {
+                    hide.push(ws.credential_file.clone())
+                }
+                crate::config::TransportConfig::Stdio => {}
             }
-            crate::config::TransportConfig::ReverseWebSocket(ws) => {
-                hide.push(ws.credential_file.clone())
-            }
-            crate::config::TransportConfig::Stdio => {}
-        }
 
-        if let Some(runtime) = &self.config.runtime {
-            hide.push(runtime.generation().to_path_buf());
-        }
-        if let Some(home) = std::env::var_os("HOME") {
-            hide.push(std::path::PathBuf::from(home).join(".a13n"));
+            if let Some(runtime) = &self.config.runtime {
+                hide.push(runtime.generation().to_path_buf());
+            }
+            if let Some(home) = std::env::var_os("HOME") {
+                hide.push(std::path::PathBuf::from(home).join(".a13n"));
+            }
         }
         let worker = WorkerConfig {
+            managed: self.config.managed,
+            execution: self.config.execution,
+            allow_sudo: self.config.allow_sudo,
+            runtime_directory: "/run/a13n-session-state".into(),
             device_id: self.config.device_id.clone(),
             generation: self.descriptor.generation,
             session_id: id.clone(),
@@ -110,19 +120,21 @@ impl Daemon {
             .map_err(|_| {
                 protocol_error(
                     ErrorType::Unsupported,
-                    "egress isolation initialization failed",
+                    "Session worker initialization failed",
                 )
             })?;
+        session.descriptor.working_directory = runtime.client.working_directory.clone();
         runtime.client.attach(carrier.outbound.clone());
-        session.descriptor.egress = Some(
-            runtime
-                .status()
-                .map_err(|_| protocol_error(ErrorType::InternalError, "egress broker closed"))?,
-        );
-        session
-            .descriptor
-            .available_methods
-            .push("egress.update".to_owned());
+        if controlled {
+            session.descriptor.egress =
+                Some(runtime.status().map_err(|_| {
+                    protocol_error(ErrorType::InternalError, "egress broker closed")
+                })?);
+            session
+                .descriptor
+                .available_methods
+                .push("egress.update".to_owned());
+        }
         session.remote = Some(runtime);
         let descriptor = session.descriptor.clone();
         let session = Arc::new(session);
@@ -166,7 +178,7 @@ impl Session {
         carrier: &Carrier,
         request: &JsonRpcRequest,
     ) -> Result<CarrierResponse, EIPError> {
-        let remote = self.remote.as_ref().expect("controlled Session");
+        let remote = self.remote.as_ref().expect("Session worker");
         if request.method == "session.attach" {
             remote.client.attach(carrier.outbound.clone());
         }

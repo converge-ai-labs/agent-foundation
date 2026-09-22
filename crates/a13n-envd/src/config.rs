@@ -24,6 +24,15 @@ const DEFAULT_MAX_COMMAND_ENVIRONMENT_ENTRIES: usize = 1024;
 const DEFAULT_MAX_COMMAND_ENVIRONMENT_BYTES: usize = 2 * 1024 * 1024;
 
 const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
+    "A13N_ENVD_CONFIG_JSON",
+    "A13N_ENVD_ALLOW_SUDO",
+    "A13N_ENVD_EXECUTION_UID",
+    "A13N_ENVD_EXECUTION_GID",
+    "A13N_ENVD_EGRESS_ENABLED",
+    "A13N_ENVD_NAME",
+    "A13N_ENVD_DESCRIPTION",
+    "A13N_ENVD_IDLE_TIMEOUT_MS",
+    "A13N_ENVD_DISCONNECT_GRACE_MS",
     "A13N_ENVD_TRANSPORT",
     "A13N_ENVD_HTTP_BIND",
     "A13N_ENVD_HTTP_CREDENTIAL_FILE",
@@ -82,7 +91,7 @@ pub(crate) struct CommandConfig {
     pub(crate) max_environment_bytes: usize,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct EgressConfig {
     pub(crate) enabled: bool,
@@ -91,6 +100,8 @@ pub(crate) struct EgressConfig {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FileConfig {
+    #[serde(default)]
+    execution: crate::execution::Options,
     #[serde(default)]
     egress: EgressConfig,
     device_id: Option<String>,
@@ -171,14 +182,14 @@ impl DaemonLimits {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) enum TransportConfig {
     Stdio,
     Http(HttpConfig),
     ReverseWebSocket(ReverseWebSocketConfig),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct HttpConfig {
     pub(crate) bind: std::net::SocketAddr,
     pub(crate) credential_file: PathBuf,
@@ -186,7 +197,7 @@ pub(crate) struct HttpConfig {
     pub(crate) tls_private_key_file: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct ReverseWebSocketConfig {
     pub(crate) endpoint: String,
     pub(crate) credential_file: PathBuf,
@@ -200,8 +211,12 @@ pub(crate) struct ConnectionBootstrap {
     pub(crate) transport: ReverseWebSocketConfig,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Config {
+    #[serde(skip)]
+    pub(crate) managed: bool,
+    pub(crate) execution: Option<crate::execution::Identity>,
+    pub(crate) allow_sudo: bool,
     pub(crate) egress: EgressConfig,
     #[cfg_attr(
         not(target_os = "linux"),
@@ -222,6 +237,7 @@ pub(crate) struct Config {
     pub(crate) session_idle_timeout: Duration,
     pub(crate) disconnect_grace: Duration,
     pub(crate) command: Option<CommandConfig>,
+    #[serde(skip)]
     pub(crate) runtime: Option<RuntimeState>,
 }
 
@@ -254,7 +270,14 @@ impl Config {
             .map(fs::canonicalize)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| ConfigError::new("cannot resolve configuration file"))?;
-        let mut file = load_file_config(arguments.config.clone())?;
+        let mut value = load_file_config(arguments.config.clone())?;
+        if let Some(json) = optional_unicode("A13N_ENVD_CONFIG_JSON")? {
+            let overlay = parse_config_json(json.as_bytes(), "A13N_ENVD_CONFIG_JSON")?;
+            merge_config(&mut value, overlay);
+        }
+        apply_environment(&mut value)?;
+        let mut file: FileConfig = serde_json::from_value(value)
+            .map_err(|error| ConfigError::new(format!("invalid merged configuration: {error}")))?;
         arguments.apply(&mut file)?;
 
         let transport_name =
@@ -298,12 +321,11 @@ impl Config {
             ));
         }
 
-        let device_id = match file.device_id.or(optional_unicode("A13N_ENVD_DEVICE_ID")?) {
+        let device_id = match file.device_id {
             Some(identity) => identity,
             None => {
                 let state_dir = file
                     .installation_state_directory
-                    .or(optional_unicode("A13N_ENVD_STATE_DIR")?.map(PathBuf::from))
                     .unwrap_or_else(|| runtime_dir.with_extension("state"));
                 crate::runtime::installation_identity(&state_dir).map_err(ConfigError::new)?
             }
@@ -311,7 +333,6 @@ impl Config {
         validate_identity(&device_id, "device_id")?;
         let default_native = file
             .default_working_directory
-            .or(optional_unicode("A13N_ENVD_DEFAULT_WORKING_DIRECTORY")?.map(PathBuf::from))
             .map(Ok)
             .unwrap_or_else(env::current_dir)
             .map_err(|error| ConfigError::new(format!("cannot resolve startup cwd: {error}")))?;
@@ -320,17 +341,7 @@ impl Config {
             crate::device_path::from_native(&default_native).map_err(|_| {
                 ConfigError::new("default_working_directory must be an absolute native path")
             })?;
-        let directory_discovery = match file.directory_discovery {
-            Some(value) => value,
-            None => optional_unicode("A13N_ENVD_DIRECTORY_DISCOVERY")?
-                .map(|value| {
-                    value.parse::<bool>().map_err(|_| {
-                        ConfigError::new("A13N_ENVD_DIRECTORY_DISCOVERY must be true or false")
-                    })
-                })
-                .transpose()?
-                .unwrap_or(true),
-        };
+        let directory_discovery = file.directory_discovery.unwrap_or(true);
         validate_presentation(file.name.as_deref(), "name", 256)?;
         validate_presentation(file.description.as_deref(), "description", 4096)?;
 
@@ -344,13 +355,14 @@ impl Config {
                 "Session lifecycle durations must be positive and disconnect grace shorter than idle timeout",
             ));
         }
+        let execution =
+            crate::execution::resolve(file.execution.identity().map_err(ConfigError::new)?)
+                .map_err(ConfigError::new)?;
+        let allow_sudo = file.execution.allow_sudo().map_err(ConfigError::new)?;
         let limits = file.limits;
         validate_limits(&limits)?;
         let runtime = Some(RuntimeState::prepare(&runtime_dir).map_err(ConfigError::new)?);
-        let full_control = match file.full_control {
-            Some(value) => value,
-            None => parse_full_control(optional_unicode("A13N_ENVD_FULL_CONTROL")?.as_deref())?,
-        };
+        let full_control = file.full_control.unwrap_or(false);
         let command = if full_control {
             if !file.trusted_executable_roots.is_empty() || !file.shell_profiles.is_empty() {
                 return Err(ConfigError::new(
@@ -362,6 +374,9 @@ impl Config {
             prepare_command_config(file.trusted_executable_roots, file.shell_profiles)?
         };
         Ok(Self {
+            managed: false,
+            execution,
+            allow_sudo,
             egress: file.egress,
             bootstrap_files,
             device_id,
@@ -382,6 +397,9 @@ impl Config {
     #[cfg(test)]
     pub(crate) fn for_test(device_id: &str) -> Self {
         Self {
+            managed: false,
+            execution: None,
+            allow_sudo: true,
             egress: EgressConfig::default(),
             bootstrap_files: Vec::new(),
             device_id: device_id.to_owned(),
@@ -707,16 +725,6 @@ fn prepare_command_config(
     }))
 }
 
-fn parse_full_control(value: Option<&str>) -> Result<bool, ConfigError> {
-    match value {
-        None | Some("0" | "false") => Ok(false),
-        Some("1" | "true") => Ok(true),
-        _ => Err(ConfigError::new(
-            "A13N_ENVD_FULL_CONTROL must be 1, 0, true, or false",
-        )),
-    }
-}
-
 fn full_control_commands() -> Result<CommandConfig, ConfigError> {
     let base_environment = inherited_command_environment();
     let cwd = env::current_dir().map_err(|error| ConfigError::new(error.to_string()))?;
@@ -886,6 +894,10 @@ struct StartupArguments {
     device_id: Option<String>,
     name: Option<String>,
     description: Option<String>,
+    allow_sudo: Option<bool>,
+    execution_uid: Option<u32>,
+    execution_gid: Option<u32>,
+    egress_enabled: Option<bool>,
 }
 
 impl StartupArguments {
@@ -904,6 +916,10 @@ impl StartupArguments {
                     | "--device-id"
                     | "--name"
                     | "--description"
+                    | "--allow-sudo"
+                    | "--execution-uid"
+                    | "--execution-gid"
+                    | "--egress-enabled"
             ) {
                 return Err(ConfigError::new(format!("unknown argument: {flag}")));
             }
@@ -932,6 +948,18 @@ impl StartupArguments {
                 "--device-id" => result.device_id = Some(value),
                 "--name" => result.name = Some(value),
                 "--description" => result.description = Some(value),
+                "--allow-sudo" => result.allow_sudo = Some(parse_bool(&value, &flag)?),
+                "--egress-enabled" => result.egress_enabled = Some(parse_bool(&value, &flag)?),
+                "--execution-uid" | "--execution-gid" => {
+                    let value = value.parse().map_err(|_| {
+                        ConfigError::new(format!("{flag} must be an unsigned 32-bit integer"))
+                    })?;
+                    if flag == "--execution-uid" {
+                        result.execution_uid = Some(value);
+                    } else {
+                        result.execution_gid = Some(value);
+                    }
+                }
                 _ => unreachable!(),
             }
         }
@@ -939,6 +967,12 @@ impl StartupArguments {
     }
 
     fn apply(self, file: &mut FileConfig) -> Result<(), ConfigError> {
+        file.execution.allow_sudo = self.allow_sudo.or(file.execution.allow_sudo);
+        file.execution.uid = self.execution_uid.or(file.execution.uid);
+        file.execution.gid = self.execution_gid.or(file.execution.gid);
+        if let Some(enabled) = self.egress_enabled {
+            file.egress.enabled = enabled;
+        }
         file.device_id = self.device_id.or(file.device_id.take());
         file.name = self.name.or(file.name.take());
         file.description = self.description.or(file.description.take());
@@ -977,9 +1011,9 @@ fn validate_presentation(
     Ok(())
 }
 
-fn load_file_config(path: Option<PathBuf>) -> Result<FileConfig, ConfigError> {
+fn load_file_config(path: Option<PathBuf>) -> Result<serde_json::Value, ConfigError> {
     let Some(path) = path else {
-        return Ok(FileConfig::default());
+        return Ok(serde_json::json!({}));
     };
     let metadata = fs::symlink_metadata(&path)
         .map_err(|error| ConfigError::new(format!("cannot inspect config file: {error}")))?;
@@ -990,8 +1024,93 @@ fn load_file_config(path: Option<PathBuf>) -> Result<FileConfig, ConfigError> {
     }
     let bytes = fs::read(&path)
         .map_err(|error| ConfigError::new(format!("cannot read config file: {error}")))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|error| ConfigError::new(format!("invalid config file JSON: {error}")))
+    parse_config_json(&bytes, "config file")
+}
+
+fn parse_config_json(bytes: &[u8], source: &str) -> Result<serde_json::Value, ConfigError> {
+    let value: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|error| ConfigError::new(format!("invalid {source} JSON: {error}")))?;
+    // Validate each source before overlaying it; an override must not hide typos.
+    serde_json::from_value::<FileConfig>(value.clone())
+        .map_err(|error| ConfigError::new(format!("invalid {source} JSON: {error}")))?;
+    Ok(value)
+}
+
+/// Objects merge recursively; arrays and scalar values replace the lower layer.
+fn merge_config(base: &mut serde_json::Value, overlay: serde_json::Value) {
+    match (base, overlay) {
+        (serde_json::Value::Object(base), serde_json::Value::Object(overlay)) => {
+            for (key, value) in overlay {
+                merge_config(base.entry(key).or_insert(serde_json::Value::Null), value);
+            }
+        }
+        (base, overlay) => *base = overlay,
+    }
+}
+
+fn parse_bool(value: &str, name: &str) -> Result<bool, ConfigError> {
+    match value {
+        "true" | "1" => Ok(true),
+        "false" | "0" => Ok(false),
+        _ => Err(ConfigError::new(format!(
+            "{name} must be true, false, 1, or 0"
+        ))),
+    }
+}
+
+fn apply_environment(value: &mut serde_json::Value) -> Result<(), ConfigError> {
+    for (name, field) in [
+        ("A13N_ENVD_DEVICE_ID", "device_id"),
+        ("A13N_ENVD_NAME", "name"),
+        ("A13N_ENVD_DESCRIPTION", "description"),
+        ("A13N_ENVD_STATE_DIR", "installation_state_directory"),
+        (
+            "A13N_ENVD_DEFAULT_WORKING_DIRECTORY",
+            "default_working_directory",
+        ),
+    ] {
+        if let Some(text) = optional_unicode(name)? {
+            value[field] = text.into();
+        }
+    }
+    for (name, path) in [
+        ("A13N_ENVD_ALLOW_SUDO", &["execution", "allow_sudo"][..]),
+        ("A13N_ENVD_EGRESS_ENABLED", &["egress", "enabled"][..]),
+        (
+            "A13N_ENVD_DIRECTORY_DISCOVERY",
+            &["directory_discovery"][..],
+        ),
+        ("A13N_ENVD_FULL_CONTROL", &["full_control"][..]),
+    ] {
+        if let Some(text) = optional_unicode(name)? {
+            set_config_field(value, path, parse_bool(&text, name)?.into());
+        }
+    }
+    for (name, path) in [
+        ("A13N_ENVD_EXECUTION_UID", &["execution", "uid"][..]),
+        ("A13N_ENVD_EXECUTION_GID", &["execution", "gid"][..]),
+        ("A13N_ENVD_IDLE_TIMEOUT_MS", &["idle_timeout_ms"][..]),
+        (
+            "A13N_ENVD_DISCONNECT_GRACE_MS",
+            &["disconnect_grace_ms"][..],
+        ),
+    ] {
+        if let Some(text) = optional_unicode(name)? {
+            let number: u64 = text
+                .parse()
+                .map_err(|_| ConfigError::new(format!("{name} must be an unsigned integer")))?;
+            set_config_field(value, path, number.into());
+        }
+    }
+    Ok(())
+}
+
+fn set_config_field(value: &mut serde_json::Value, path: &[&str], field: serde_json::Value) {
+    let mut target = value;
+    for key in path {
+        target = &mut target[*key];
+    }
+    *target = field;
 }
 
 fn default_limits() -> DaemonLimits {
@@ -1093,14 +1212,75 @@ mod tests {
     };
 
     #[test]
-    fn full_control_is_an_explicit_opt_in() {
-        for value in [None, Some("0"), Some("false")] {
-            assert!(!super::parse_full_control(value).unwrap());
+    fn startup_booleans_accept_only_explicit_values() {
+        for value in ["0", "false"] {
+            assert!(!super::parse_bool(value, "flag").unwrap());
         }
-        for value in [Some("1"), Some("true")] {
-            assert!(super::parse_full_control(value).unwrap());
+        for value in ["1", "true"] {
+            assert!(super::parse_bool(value, "flag").unwrap());
         }
-        assert!(super::parse_full_control(Some("yes")).is_err());
+        for value in ["", "yes", "False", " true", "2"] {
+            assert!(super::parse_bool(value, "flag").is_err());
+        }
+    }
+
+    #[test]
+    fn startup_layers_merge_nested_fields_then_apply_cli() {
+        use serde_json::json;
+        let mut value = json!({
+            "execution": {"uid":1000,"gid":1001,"allow_sudo":true},
+            "limits": {"max_sessions":8, "max_processes":4},
+            "trusted_executable_roots":["/bin"]
+        });
+        super::merge_config(
+            &mut value,
+            json!({
+                "execution": {"allow_sudo":false},
+                "limits": {"max_sessions":2},
+                "trusted_executable_roots":["/usr/bin"]
+            }),
+        );
+        super::set_config_field(&mut value, &["execution", "gid"], json!(1002));
+        let mut file: super::FileConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(file.execution.uid, Some(1000));
+        assert_eq!(file.execution.gid, Some(1002));
+        assert_eq!(file.execution.allow_sudo, Some(false));
+        assert_eq!(file.limits.max_sessions, 2);
+        assert_eq!(file.limits.max_processes, 4);
+        assert_eq!(
+            file.trusted_executable_roots,
+            [std::path::PathBuf::from("/usr/bin")]
+        );
+        super::StartupArguments::parse(
+            ["--allow-sudo", "true", "--execution-gid", "1003"].map(Into::into),
+        )
+        .unwrap()
+        .apply(&mut file)
+        .unwrap();
+        assert_eq!(file.execution.allow_sudo, Some(true));
+        assert_eq!(file.execution.gid, Some(1003));
+        assert_eq!(file.execution.uid, Some(1000));
+    }
+
+    #[test]
+    fn json_environment_uses_the_strict_file_schema() {
+        for text in [
+            r#"[]"#,
+            r#"null"#,
+            r#"{"execution":{"allow_sudoo":false}}"#,
+            r#"{"limits":{"max_sessions":"8"}}"#,
+            r#"{"egress":{"enabled":1}}"#,
+        ] {
+            assert!(super::parse_config_json(text.as_bytes(), "environment").is_err());
+        }
+        let value =
+            super::parse_config_json(br#"{"execution":{"allow_sudo":false}}"#, "environment")
+                .unwrap();
+        let file: super::FileConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(file.execution.allow_sudo, Some(false));
+        assert!(file.execution.identity().unwrap().is_none());
+        assert!(super::FileConfig::default().execution.allow_sudo().unwrap());
+        assert!(!super::FileConfig::default().full_control.unwrap_or(false));
     }
 
     #[test]

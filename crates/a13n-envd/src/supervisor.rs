@@ -179,6 +179,15 @@ impl StreamClosures {
 }
 
 pub(crate) async fn run_internal() -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        crate::egress::namespace::protect_process()?;
+        // Reap orphaned group members ourselves, including sudo's root children.
+        // A sandbox PID 1 need not be a service manager or a reliable reaper.
+        if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
     let stdin = tokio::io::stdin();
     let mut requests = BufReader::new(stdin);
     let mut stdout = tokio::io::stdout();
@@ -793,6 +802,8 @@ async fn spawn_command_tree(command: &mut Command) -> io::Result<(Child, Command
 fn configure_command_tree(command: &mut Command) {
     unsafe {
         command.pre_exec(|| {
+            #[cfg(target_os = "linux")]
+            crate::execution::clear_payload_capabilities()?;
             if libc::setpgid(0, 0) == 0 {
                 Ok(())
             } else {
@@ -865,6 +876,10 @@ async fn cleanup_tree(tree: &CommandTree, child: &mut Child) -> bool {
     let _ = child.start_kill();
     let deadline = tokio::time::Instant::now() + CLEANUP_GRACE;
     loop {
+        #[cfg(target_os = "linux")]
+        // The initial child has already been awaited. These are now our adopted
+        // descendants, not Tokio-owned direct children or sibling commands.
+        while unsafe { libc::waitpid(group, std::ptr::null_mut(), libc::WNOHANG) } > 0 {}
         let result = unsafe { libc::kill(group, 0) };
         if result != 0 && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
             return true;

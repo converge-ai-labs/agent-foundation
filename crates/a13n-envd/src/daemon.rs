@@ -808,6 +808,20 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                 "directory discovery is disabled",
             ));
         }
+        #[cfg(target_os = "linux")]
+        if self.daemon.config.managed
+            || self
+                .daemon
+                .config
+                .execution
+                .is_some_and(crate::execution::needs_worker)
+        {
+            return crate::execution::discovery::list(&self.daemon.config, params)
+                .await
+                .map_err(|_| {
+                    protocol_error(ErrorType::InternalError, "directory discovery failed")
+                })?;
+        }
         let bytes = self.daemon.config.limits.max_response_bytes;
         tokio::task::spawn_blocking(move || {
             device_path::list_directory(&params.path, params.offset, params.limit, bytes)
@@ -845,8 +859,20 @@ impl EipDeviceHandler for DeviceRequest<'_> {
         let path = params
             .working_directory
             .unwrap_or_else(|| self.daemon.config.default_working_directory.clone());
+        #[cfg(target_os = "linux")]
+        let worker = self.daemon.config.managed
+            || self.daemon.config.execution.is_some_and(|identity| {
+                crate::execution::needs_worker(identity) || !self.daemon.config.allow_sudo
+            });
+        #[cfg(not(target_os = "linux"))]
+        let worker = false;
         let cwd = tokio::task::spawn_blocking(move || {
-            device_path::from_native(&device_path::resolve_directory(&path)?)
+            if worker {
+                device_path::to_native(&path)?;
+                Ok(path)
+            } else {
+                device_path::from_native(&device_path::resolve_directory(&path)?)
+            }
         })
         .await
         .map_err(|_| protocol_error(ErrorType::InternalError, "cwd resolution failed"))?
@@ -858,7 +884,10 @@ impl EipDeviceHandler for DeviceRequest<'_> {
         })?;
         if let Some(policy) = params.egress {
             #[cfg(target_os = "linux")]
-            return self.daemon.open_controlled(self.carrier, cwd, policy).await;
+            return self
+                .daemon
+                .open_worker(self.carrier, cwd, Some(policy))
+                .await;
             #[cfg(not(target_os = "linux"))]
             {
                 let _ = policy;
@@ -867,6 +896,10 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                     "egress requires Linux",
                 ));
             }
+        }
+        #[cfg(target_os = "linux")]
+        if worker {
+            return self.daemon.open_worker(self.carrier, cwd, None).await;
         }
         if self.daemon.sessions().len() >= self.daemon.config.limits.max_sessions {
             self.daemon.maintenance().await;
@@ -1085,7 +1118,9 @@ impl Session {
         #[cfg(target_os = "linux")]
         let descriptor = {
             let mut descriptor = descriptor;
-            if let Some(remote) = &self.remote {
+            if descriptor.egress.is_some()
+                && let Some(remote) = &self.remote
+            {
                 descriptor.egress = Some(remote.status().map_err(|_| {
                     protocol_error(ErrorType::NotInitialized, "egress broker is closed")
                 })?);
@@ -1377,7 +1412,9 @@ impl EipSessionHandler for Session {
         params: eip::EgressUpdateParams,
     ) -> Result<eip::EgressUpdateResult, EIPError> {
         #[cfg(target_os = "linux")]
-        if let Some(remote) = &self.remote {
+        if self.descriptor.egress.is_some()
+            && let Some(remote) = &self.remote
+        {
             return remote
                 .update(params)
                 .map(|egress| eip::EgressUpdateResult { egress })
@@ -2836,7 +2873,7 @@ async fn inspect_port(target: &eip::PortTarget, deadline: Instant) -> eip::PortO
     }
 }
 
-fn map_resource_error(error: ResourceError) -> EIPError {
+pub(crate) fn map_resource_error(error: ResourceError) -> EIPError {
     let error = match error {
         ResourceError::PartialRemove {
             removed_entries,

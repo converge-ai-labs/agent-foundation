@@ -42,7 +42,14 @@ Options:
   --ca-file PATH               Additional trusted TLS certificates
   --config PATH                Daemon JSON configuration
   --default-working-directory PATH
+  --execution-uid UID           Non-root native execution account
+  --execution-gid GID           Native primary group (paired with UID)
+  --allow-sudo BOOL             Permit native privilege gains (default: true)
+  --egress-enabled BOOL         Enable controlled Session egress
 
+Daemon settings also accept A13N_ENVD_CONFIG_JSON and scalar environment overrides.
+Set A13N_ENVD_ALLOW_SUDO=false to disable sudo/setuid privilege gains on Linux.
+Enabling sudo does not grant sudoers permission or configure passwordless access.
 Set A13N_ENVD_FULL_CONTROL=1 to enable native shell execution without profiles.
 Run separate envd processes to connect to different Hosts. No service is installed.";
 
@@ -93,6 +100,10 @@ impl Arguments {
                     result
                         .daemon
                         .push(absolute(PathBuf::from(value))?.into_os_string());
+                }
+                "--allow-sudo" | "--execution-uid" | "--execution-gid" | "--egress-enabled" => {
+                    result.daemon.push(argument);
+                    result.daemon.push(value);
                 }
                 _ => return Err(invalid("unknown connect option; use connect --help")),
             }

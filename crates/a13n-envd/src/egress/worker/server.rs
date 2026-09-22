@@ -51,7 +51,12 @@ where
     ));
     let mut requests = JoinSet::<(u64, CarrierResponse)>::new();
     let mut deliveries = BTreeMap::new();
-    reply(&controls, 0, serde_json::Value::Null).await?;
+    reply(
+        &controls,
+        0,
+        config.default_working_directory.clone().into(),
+    )
+    .await?;
     let mut next = Box::pin(read_next(reader, max_control, max_data));
     let outcome = async {
         loop {

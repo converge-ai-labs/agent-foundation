@@ -4,7 +4,7 @@
 
 `a13n-envd` is a device daemon for files, shells, processes and their output. One daemon per machine or outer sandbox is the normal deployment. A trusted Host connection represents a Device and carries multiple independent Sessions, rather than starting another daemon for each folder or Run.
 
-The Host may choose any folder accessible to the daemon account. A Session has a fixed default working directory and owns its operations, processes, output and transfers. For ordinary Sessions, its working directory restricts neither file nor shell access. POSIX identity, containers, VMs or other Host-provided launch boundaries supply security for the entire daemon and its children.
+The Host may choose any folder accessible to the configured native execution account. A Session has a fixed default working directory and owns its operations, processes, output and transfers. For ordinary Sessions, its working directory restricts neither file nor shell access. POSIX identity, containers, VMs or other Host-provided launch boundaries supply security for the entire daemon and its children.
 
 Envd is not an Agent runtime, product authorization service, provisioner, scheduler or durable execution database. Harness consumes fresh provider-neutral Environment adapters; it does not select Devices or own their sockets. Direct Local, Docker and native cloud Providers use their own operation and lifecycle contracts.
 
