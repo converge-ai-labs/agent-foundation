@@ -15,8 +15,9 @@ from a13n_harness.mcp import ContextualMCP
 from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
+from fastmcp.server.middleware import Middleware
 from pydantic_ai.capabilities import WrapperCapability
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
 pytestmark = pytest.mark.anyio
@@ -50,14 +51,38 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
 ) -> None:
     server = FastMCP("proxy-context")
     invocations: list[dict[str, str]] = []
+    discoveries: list[tuple[str, str]] = []
     headers_calls: list[tuple[str, str]] = []
     attempts: dict[str, int] = {}
     results: dict[str, list] = {}
+
+    class TenantDiscovery(Middleware):
+        async def on_list_tools(self, context, call_next):
+            headers = get_http_headers()
+            assert headers["x-static"] == "static"
+            run, tenant = headers["x-run"], headers["x-tenant"]
+            assert (run, tenant) in headers_calls
+            discoveries.append((run, tenant))
+            tools = await call_next(context)
+            return [tool for tool in tools if tool.name in {"identity", f"{tenant}_identity"}]
+
+    server.add_middleware(TenantDiscovery())
+
+    @server.tool()
+    def alpha_identity() -> str:
+        """Return the alpha tenant identity."""
+        return "alpha"
+
+    @server.tool()
+    def beta_identity() -> str:
+        """Return the beta tenant identity."""
+        return "beta"
 
     @server.tool()
     def identity() -> dict[str, str]:
         """Return the authenticated run and tenant headers."""
         headers = get_http_headers()
+        assert headers["x-static"] == "static"
         value = {"run": headers["x-run"], "tenant": headers["x-tenant"]}
         invocations.append(value)
         return value
@@ -68,8 +93,15 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
         return {"X-Run": context.run_id, "X-Tenant": tenant}
 
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        first = next(message for message in messages if isinstance(message, ModelRequest))
-        tenant = str(first.parts[-1].content)
+        tenant = next(
+            text
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, UserPromptPart)
+            for text in ([part.content] if isinstance(part.content, str) else part.content)
+            if isinstance(text, str) and text in {"alpha", "beta"}
+        )
         # Inspect the live projection, while the server genuinely discovers and executes MCP tools.
         expected = {"search_proxy_tools", "call_proxy_tool"}
         if codeact:
@@ -119,7 +151,14 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
             return CodeActPolicyToolset(source, CodeActToolPolicy(tools={"identity": True}))
 
     async with _http_mcp(server) as url:
-        capability = ContextualMCP(url, id="context-mcp", headers_factory=headers_factory, native=False, local=True)
+        capability = ContextualMCP(
+            url,
+            id="context-mcp",
+            headers_factory=headers_factory,
+            headers={"X-Static": "static"},
+            native=False,
+            local=True,
+        )
         source = MCPCodeActPolicy(capability) if codeact else capability
         capabilities = (ToolProxyCapability(groups={"context": ToolProxyGroup(source, "Current identity")}),)
         if codeact:
@@ -143,11 +182,13 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
     assert len(headers_calls) == 2
     assert len({run for run, _tenant in headers_calls}) == 2
     assert sorted((item["run"], item["tenant"]) for item in invocations) == sorted(headers_calls)
-    assert len(results) == 2
-    for returned in results.values():
-        assert returned[0]["tools"][0]["tool"] == "identity"
-        assert returned[0]["tools"][0]["parameters_json_schema"]["type"] == "object"
-        assert returned[0]["tools"][0]["codeact_eligible"] is codeact
+    assert set(discoveries) == set(headers_calls)
+    assert set(results) == {"alpha", "beta"}
+    for tenant, returned in results.items():
+        tools = {tool["tool"]: tool for tool in returned[0]["tools"]}
+        assert set(tools) == {"identity", f"{tenant}_identity"}
+        assert tools["identity"]["parameters_json_schema"]["type"] == "object"
+        assert tools["identity"]["codeact_eligible"] is codeact
 
 
 async def test_contextual_mcp_native_path_is_rejected_by_proxy() -> None:
