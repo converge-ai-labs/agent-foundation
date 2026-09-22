@@ -267,10 +267,19 @@ mod tests {
         assert_eq!(
             sandbox,
             Sandbox::Restricted {
-                grants: vec![grant.clone()]
+                grants: vec![Grant {
+                    path: std::fs::canonicalize(&path).unwrap(),
+                    access: Access::ReadWrite,
+                }]
             }
         );
-        assert!(sandbox.validate(std::slice::from_ref(&path)).is_err());
+        // Config supplies canonical bootstrap paths, including on macOS where
+        // the temporary directory may be reached through /var -> /private/var.
+        assert!(
+            sandbox
+                .validate(&[std::fs::canonicalize(&path).unwrap()])
+                .is_err()
+        );
         let mut conflict = Sandbox::Restricted {
             grants: vec![
                 grant,

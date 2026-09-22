@@ -54,10 +54,101 @@ All six cloud providers use the same configuration, backend, and private-credent
 
 One fixed-cwd Session selection; never a daemon launch policy.
 
-| Field               | Required | Type / choices  | Constraints and default  |
-| ------------------- | -------- | --------------- | ------------------------ |
-| `working_directory` | false    | string or null  | default=null             |
-| `required_methods`  | false    | array of string | maxItems=128; default=[] |
+| Field               | Required | Type / choices                  | Constraints and default  |
+| ------------------- | -------- | ------------------------------- | ------------------------ |
+| `egress`            | false    | EnvdEgressConfiguration or null | default=null             |
+| `expected_boundary` | false    | EnvdBoundaryRequirement or null | default=null             |
+| `working_directory` | false    | string or null                  | default=null             |
+| `required_methods`  | false    | array of string                 | maxItems=128; default=[] |
+
+## `AllowlistDestinations`
+
+| Field   | Required | Type / choices  | Constraints and default  |
+| ------- | -------- | --------------- | ------------------------ |
+| `mode`  | true     | "allowlist"     | —                        |
+| `hosts` | false    | array of string | maxItems=256; default=[] |
+
+## `DisabledSandbox`
+
+| Field  | Required | Type / choices | Constraints and default |
+| ------ | -------- | -------------- | ----------------------- |
+| `mode` | true     | "disabled"     | —                       |
+
+## `EgressDestinations`
+
+Choices: `PublicDestinations or AllowlistDestinations`.
+
+## `EgressMode`
+
+Choices: `"inherit", "deny", "controlled"`.
+
+## `EnvdBoundaryRequirement`
+
+A selected remote boundary, not authority to change that Device.
+
+| Field                    | Required | Type / choices                  | Constraints and default |
+| ------------------------ | -------- | ------------------------------- | ----------------------- |
+| `sandbox`                | true     | SandboxPolicy                   | —                       |
+| `egress`                 | true     | "inherit", "deny", "controlled" | —                       |
+| `identity`               | false    | ExecutionIdentity or null       | default=null            |
+| `privilege_gain_blocked` | false    | boolean or null                 | default=null            |
+
+## `EnvdEgressConfiguration`
+
+| Field          | Required | Type / choices               | Constraints and default |
+| -------------- | -------- | ---------------------------- | ----------------------- |
+| `destinations` | true     | EgressDestinations           | —                       |
+| `secrets`      | false    | array of EnvdSecretReference | maxItems=64; default=[] |
+
+## `EnvdSecretReference`
+
+| Field          | Required | Type / choices              | Constraints and default                             |
+| -------------- | -------- | --------------------------- | --------------------------------------------------- |
+| `env`          | true     | string                      | maxLength=128; `pattern="^[A-Za-z_][A-Za-z0-9_]*$"` |
+| `source`       | true     | EnvironmentCredentialSource | —                                                   |
+| `inject_hosts` | true     | array of string             | minItems=1; maxItems=256                            |
+
+## `EnvironmentCredentialSource`
+
+| Field  | Required | Type / choices | Constraints and default              |
+| ------ | -------- | -------------- | ------------------------------------ |
+| `kind` | true     | "environment"  | —                                    |
+| `name` | true     | string         | `pattern="^[A-Za-z_][A-Za-z0-9_]*$"` |
+
+## `ExecutionIdentity`
+
+| Field | Required | Type / choices | Constraints and default       |
+| ----- | -------- | -------------- | ----------------------------- |
+| `uid` | true     | integer        | minimum=0; maximum=4294967295 |
+| `gid` | true     | integer        | minimum=0; maximum=4294967295 |
+
+## `GrantAccess`
+
+Choices: `"read_only", "read_write"`.
+
+## `PublicDestinations`
+
+| Field  | Required | Type / choices | Constraints and default |
+| ------ | -------- | -------------- | ----------------------- |
+| `mode` | true     | "public"       | —                       |
+
+## `RestrictedSandbox`
+
+| Field    | Required | Type / choices        | Constraints and default |
+| -------- | -------- | --------------------- | ----------------------- |
+| `mode`   | true     | "restricted"          | —                       |
+| `grants` | false    | array of SandboxGrant | default=[]              |
+
+## `SandboxGrant`
+
+| Field    | Required | Type / choices            | Constraints and default    |
+| -------- | -------- | ------------------------- | -------------------------- |
+| `path`   | true     | string                    | format="eip-absolute-path" |
+| `access` | true     | "read_only", "read_write" | —                          |
+
+## `SandboxPolicy`
+
+Choices: `DisabledSandbox or RestrictedSandbox`.
 
 ## `LocalEnvdLaunchConfiguration`
 
@@ -65,6 +156,9 @@ Host-selected daemon recipe, shared by every Session on this runtime.
 
 | Field                         | Required | Type / choices                 | Constraints and default                             |
 | ----------------------------- | -------- | ------------------------------ | --------------------------------------------------- |
+| `execution`                   | false    | EnvdExecutionConfiguration     | —; default from model factory                       |
+| `sandbox`                     | false    | SandboxPolicy                  | —; default from model factory                       |
+| `egress`                      | false    | EnvdNetworkConfiguration       | —; default from model factory                       |
 | `default_working_directory`   | false    | string or null                 | default=null                                        |
 | `directory_discovery`         | false    | boolean                        | default=true                                        |
 | `trusted_executable_roots`    | false    | array of string                | default=[]                                          |
@@ -74,6 +168,20 @@ Host-selected daemon recipe, shared by every Session on this runtime.
 | `max_output_bytes_per_stream` | false    | integer                        | exclusiveMinimum=0; default=268435456               |
 | `max_spool_bytes`             | false    | integer                        | exclusiveMinimum=0; default=1073741824              |
 | `max_device_spool_bytes`      | false    | integer                        | exclusiveMinimum=0; default=4294967296              |
+
+## `EnvdExecutionConfiguration`
+
+| Field        | Required | Type / choices  | Constraints and default |
+| ------------ | -------- | --------------- | ----------------------- |
+| `uid`        | false    | integer or null | default=null            |
+| `gid`        | false    | integer or null | default=null            |
+| `allow_sudo` | false    | boolean         | default=true            |
+
+## `EnvdNetworkConfiguration`
+
+| Field  | Required | Type / choices                  | Constraints and default |
+| ------ | -------- | ------------------------------- | ----------------------- |
+| `mode` | true     | "inherit", "deny", "controlled" | —                       |
 
 ## `LocalEnvdShellProfile`
 
@@ -211,10 +319,12 @@ Host-selected daemon recipe, shared by every Session on this runtime.
 
 ## `RemoteEnvdEnvironmentConfiguration`
 
-| Field               | Required | Type / choices  | Constraints and default  |
-| ------------------- | -------- | --------------- | ------------------------ |
-| `working_directory` | false    | string or null  | default=null             |
-| `required_methods`  | false    | array of string | maxItems=128; default=[] |
+| Field               | Required | Type / choices                  | Constraints and default  |
+| ------------------- | -------- | ------------------------------- | ------------------------ |
+| `egress`            | false    | EnvdEgressConfiguration or null | default=null             |
+| `expected_boundary` | false    | EnvdBoundaryRequirement or null | default=null             |
+| `working_directory` | false    | string or null                  | default=null             |
+| `required_methods`  | false    | array of string                 | maxItems=128; default=[] |
 
 ## `HostLocalProviderConfiguration`
 

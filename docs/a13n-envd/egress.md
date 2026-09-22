@@ -12,6 +12,8 @@ Select controlled egress with `A13N_ENVD_EGRESS_MODE=controlled`, `--egress-mode
 
 This enables controlled Sessions on Linux. Launch the daemon as root with native mount/PID/IPC/network namespace permissions. Envd requires Linux 6.1.2 or newer, seccomp, pidfds, mount-tree cloning, `/usr/bin/unshare`, `/usr/sbin/ip`, `/usr/sbin/nft`, `/usr/bin/ldd`, and a system CA bundle. It uses native accounts, not a single-UID user namespace. Without execution UID/GID settings, Sessions retain the root launcher's identity. To run them under another provisioned account, explicitly configure its UID/GID and native sudoers as described in [configuration](configuration.md#native-identity-and-sudo). No account is assumed or created; root execution remains subject to the same egress boundary. Missing privileges or facilities fail startup or Session preparation without fallback.
 
+The [sandbox image](sandbox.md) includes the userspace prerequisites and a root launcher, but defaults to `egress.mode: inherit`. Selecting controlled mode still requires outer-runtime permissions and an explicit policy for every Session; the image does not auto-elevate or bypass the platform's restrictions.
+
 Controlled mode prepares a private management runtime before accepting work. Every Session uses an isolated worker and must supply an explicit destination policy. Omitting it fails Session creation. Inherit and deny Devices reject Session egress policies. Sandbox grants are independent of egress mode: restricted workers expose only the granted directories and a minimal read-only system view, while disabled Sandbox retains native filesystem access.
 
 ## Create a controlled Session
@@ -115,6 +117,55 @@ The launcher must provide trusted artifacts for every daemon start. The private 
 Detach retains the worker and policy during the ordinary Session grace period. Reattach returns current policy metadata. Close, expiry, broker failure and daemon death stop controlled execution and networking. Real secrets and the Session CA private key remain in broker memory.
 
 Each controlled Session reserves its configured Session budgets against Device totals at creation. This conservative allocation can admit fewer idle Sessions than `max_sessions`; increase the corresponding Device totals when needed. Capacity is released after confirmed worker death. If staged workspace files cannot be proven cleaned, their reservation remains charged until daemon teardown; repeated failed cleanup cannot bypass Device accounting.
+
+## Provider validation record
+
+The following results were recorded by **2026-09-22**. All five cloud platforms used the same Linux x86_64 binary and generated dummy credentials. Provider credentials stayed outside the Session. These are envd runtime probes on disposable sandboxes, not validation of a Provider/Service egress integration or every vendor image.
+
+**These results predate the native identity and sudo changes introduced on 2026-09-22.** Current egress requires a root launcher, native accounts and the prerequisites at the top of this page. The old non-root launch results below do not establish current non-root launcher support. Read-only system-tree and named-Unix-socket denial checks belonged to the old implementation; current writable-system and native-socket behavior is described in [files, sockets and lifetime](#files-sockets-and-lifetime). The cloud matrix has not been rerun against that implementation.
+
+### Cloud results for the tested binary
+
+| Platform / runtime   | Observed kernel          | Tested envd launch identity | Result and coverage                                                                                                         |
+| -------------------- | ------------------------ | --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| E2B                  | `6.1.158+`               | Default account, UID 1000   | Full HTTPS fixture and controlled Session lifecycle passed.                                                                 |
+| Runloop              | `6.18.32`                | Default account, UID 1000   | Full HTTPS fixture and controlled Session lifecycle passed.                                                                 |
+| Vercel Sandbox       | `6.18.49`                | Root through `sudo`         | Full HTTPS fixture and controlled Session lifecycle passed.                                                                 |
+| Daytona              | `6.8.0-138-generic`      | Root through `sudo`         | GitHub header fixture and controlled Session lifecycle passed; external echo sites were blocked.                            |
+| Modal default gVisor | Reported `4.19.0-gvisor` | Root                        | Ordinary Session/readiness, shell execution and file read/write passed. Controlled Session creation returned `unsupported`. |
+| Modal VM Sandbox     | `7.2.6`                  | Root                        | Ordinary envd flow, full HTTPS fixture, controlled Session lifecycle and in-VM TCP/UDP echo passed.                         |
+
+The **full HTTPS fixture** verifies Basic Auth using a substituted header, exact secret redaction from the echo response, and absence of the real secret from Session metadata. The **controlled Session lifecycle** checks policy hot updates, replay, the tested version's filesystem/socket restrictions, quota reuse and cleanup of a detached `setsid` descendant after broker death. The probes exercise the public EIP interface. Separate ordinary Session shell/file smoke checks were run on both Modal runtimes; the other cloud runs used the controlled Session fixture.
+
+TCP/UDP echo passed in a disposable privileged local Linux container and in Modal VM using `--local-network-fixture`. The echo services ran inside the outer test environment; these results do not claim external Internet TCP/UDP interoperability. TCP/UDP echo was not tested on E2B, Runloop, Vercel or Daytona. Sprites and other unlisted platforms were not covered by this validation campaign.
+
+### Daytona network restrictions
+
+Direct requests outside envd to `httpbin.org`, `httpbingo.org` and `example.com` failed, while `api.github.com` remained reachable. This is consistent with Daytona's [organization-tier network restrictions](https://www.daytona.io/docs/en/network-limits/); the tested organization's tier was not independently verified and its network policy was not changed. An envd allowlist cannot override an outer platform restriction.
+
+The `--http-host api.github.com` fixture first receives HTTP 415 for an unsupported `Accept` value. Substituting the sentinel with `application/json` produces HTTP 200, and the same value is redacted from the response `Content-Type`. This proves header substitution and response-header redaction, not the blocked Basic Auth/body-echo scenario.
+
+### Modal runtime selection
+
+Default gVisor rejected the tested controlled `session.open` with `unsupported` and `unshare: Operation not permitted`. A separate `nft list ruleset` probe returned `Protocol not supported`. Running as root did not supply the required facilities.
+
+The [VM Sandbox runtime (Beta)](https://modal.com/docs/guide/vm-sandboxes) passed the test. Select it when creating the sandbox through the Modal SDK:
+
+```python
+sandbox = modal.Sandbox.create(
+    app=app,
+    image=image,
+    experimental_options={"vm_runtime": True},
+)
+```
+
+This SDK setting selects the outer runtime; it is not an envd configuration field or an option added to the built-in Modal Provider by this validation. Provision the current envd prerequisites and rerun the tests below before deploying a new binary or image.
+
+### Test preparation and limits
+
+Test images were prepared with missing networking tools and CA certificates. Temporary launch probes used a Vercel timeout accepted by the account and omitted Daytona resource overrides incompatible with its default snapshot. Modal's local SDK client needed proxy-support dependencies and an explicit CA bundle path for the host Python installation; these were client connection settings, not payload proxy configuration. None of these probe adjustments changed production Provider code.
+
+All temporary cloud sandboxes were terminated; native-provider instances were reconciled absent and all five Modal instances, including connection-diagnostic attempts, were confirmed stopped. For a new validation run, record the validation date, image, runtime, kernel, launch identity and fixture coverage together, including any behavior changes that have not been retested. A pass on one image or a previous envd binary is not a platform-wide support guarantee.
 
 ## Verify a sandbox image
 

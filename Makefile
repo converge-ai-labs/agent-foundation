@@ -569,11 +569,16 @@ image-check-a13n-service: ## Smoke-check the existing a13n-service container ima
 	@docker run --rm --entrypoint sh "$(A13N_SERVICE_IMAGE)" -c '! command -v node'
 
 .PHONY: image-check-sandbox
-image-check-sandbox: ## Smoke-check the existing sandbox container image
-	@test "$$(docker image inspect --format '{{.Config.User}}' "$(SANDBOX_IMAGE)")" = "sandbox"
-	@docker run --rm \
-		--env A13N_ENVD_DEVICE_ID=image-check \
-		--entrypoint a13n-envd "$(SANDBOX_IMAGE)"
+image-check-sandbox: ## Smoke-check sandbox defaults, development account, sudo and daemon startup
+	@test "$$(docker image inspect --format '{{.Config.User}}' "$(SANDBOX_IMAGE)")" = "root"
+	@docker run --rm --user sandbox --entrypoint sh "$(SANDBOX_IMAGE)" -ec '\
+		test "$$(id -u):$$(id -g)" = "1000:1000"; \
+		test "$$A13N_ENVD_EXECUTION_UID:$$A13N_ENVD_EXECUTION_GID" = "1000:1000"; \
+		test "$$A13N_ENVD_FULL_CONTROL" = "true"; \
+		test "$${A13N_ENVD_EGRESS_MODE:-inherit}" = "inherit"; \
+		test -w /workspace && test -w /home/sandbox; \
+		test "$$(sudo -n id -u)" = "0"'
+	@docker run --rm "$(SANDBOX_IMAGE)"
 
 .PHONY: image-check
 image-check: images ## Build and smoke-check all container images

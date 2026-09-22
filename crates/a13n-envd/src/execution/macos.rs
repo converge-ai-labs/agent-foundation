@@ -34,6 +34,9 @@ pub(crate) fn command(
         "(allow signal (target same-sandbox))".into(),
         "(allow process-info* (target same-sandbox))".into(),
         "(allow sysctl-read)".into(),
+        // Native process startup opens the root directory. This literal rule
+        // permits that handle, not recursive access to ungranted file contents.
+        "(allow file-read-data (literal \"/\"))".into(),
         "(allow file-read* file-write* (literal \"/dev/null\") (literal \"/dev/zero\") (literal \"/dev/random\") (literal \"/dev/urandom\"))".into(),
     ];
     let mut index = 0;

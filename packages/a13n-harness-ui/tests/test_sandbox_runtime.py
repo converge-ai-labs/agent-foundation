@@ -20,8 +20,8 @@ pytestmark = pytest.mark.anyio
 
 @pytest.fixture
 def binary():
-    if sys.platform != "linux":
-        pytest.skip("Linux outer boundary integration")
+    if sys.platform not in {"linux", "darwin"}:
+        pytest.skip("Native Sandbox integration requires Linux or macOS")
     configured = os.environ.get("A13N_ENVD_TEST_BINARY")
     if configured is None:
         pytest.skip("Set A13N_ENVD_TEST_BINARY for the real Sandbox tests")

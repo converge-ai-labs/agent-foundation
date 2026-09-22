@@ -55,7 +55,7 @@ def verify_sandbox(binary, mode):
             observed = device.call("environment.describe", {"context": context("describe")})["descriptor"]
             assert observed["boundary"] == boundary
             device.success(
-                'test -w "$HOME"; test -w "$TMPDIR"; test -z "$HOST_ONLY_SECRET"; test -z "$HTTPS_PROXY"; mkdir visible; printf persisted > written'
+                'test -w "$HOME" && test -w "$TMPDIR" && test -z "$HOST_ONLY_SECRET" && test -z "$HTTPS_PROXY" && mkdir visible && printf persisted > written'
             )
             assert (device.workspace / "written").read_text() == "persisted"
             device.call(
@@ -66,7 +66,7 @@ def verify_sandbox(binary, mode):
                     "line_limit": 10,
                     "max_line_length": 1024,
                 },
-                error="not_found_or_denied",
+                error="denied",
             )
             result = device.call(
                 "file.read_text",
@@ -111,7 +111,7 @@ def verify_sandbox(binary, mode):
                 "limit": 100,
             }
             assert "visible" in json.dumps(device.call("directory.list", discovery))
-            device.call("directory.list", {**discovery, "path": str(root / ".a13n")}, error="not_found_or_denied")
+            device.call("directory.list", {**discovery, "path": str(root / ".a13n")}, error="denied")
             device.open()
             assert device.success("cat written rpc") == "persistedrpc"
             device.close()

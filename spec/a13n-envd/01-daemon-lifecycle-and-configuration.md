@@ -48,6 +48,10 @@ On Linux, omitting trusted `execution.uid` and `execution.gid` retains the launc
 
 Setting `execution.allow_sudo: false`, `A13N_ENVD_ALLOW_SUDO=false`, or `--allow-sudo false` disables privilege gains for the execution worker and its descendants using Linux `no_new_privs`. It covers additional privilege gains through direct sudo, setuid executables and file capabilities; payload environment values cannot re-enable them. This policy does not change the selected identity or revoke existing root authority. Unsupported platforms reject this disabling request instead of silently ignoring it. Linux UID/GID selection is likewise rejected on unsupported platforms. Enabling sudo never overrides a parent-imposed `no_new_privs` or a `nosuid` mount.
 
+### Reference Sandbox Image
+
+The repository's sandbox image provisions the `sandbox` account (`1000:1000`) and launches the daemon as root with that explicit execution identity. It enables native shell commands and authorizes passwordless sudo for the sandbox account. These are image defaults, not changes to the standalone daemon defaults. The image defaults to `egress.mode: inherit`. Selecting `controlled` requires deployment support and an explicit egress policy for every Session. The image relies on the outer container or VM for isolation; its non-root execution identity is not a boundary against workloads intentionally invoking sudo. Deployments can disable commands or privilege gains through the existing trusted startup settings.
+
 ## Generation-Private Runtime State
 
 Runtime state contains Session bookkeeping, spool files and daemon-owned temporary data, separate from workspace files and persistent installation identity. A lifetime lock prevents two daemon processes from using the same runtime directory. On startup, remove only recognized daemon-owned stale generation data without following links into user data; unexpected content or failed deletion is reported rather than recursively treating an arbitrary directory as disposable.

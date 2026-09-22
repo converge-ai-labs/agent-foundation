@@ -34,7 +34,7 @@ Grants must be existing absolute directories without overlaps. Changing grants r
 | Linux    | bubblewrap, private process/filesystem view, capability dropping and privilege-gain blocking | inherit/deny work rootlessly with usable user namespaces; controlled requires the privileged backend |
 | macOS    | Seatbelt via `sandbox-exec`, canonical path rules and inherited process restrictions         | inherit or deny; controlled is unsupported                                                           |
 
-macOS does not provide Linux mount/PID namespaces or advertise `no_new_privs`: `privilege_gain_blocked` is false. Parent metadata may remain visible for path resolution. Keep grant paths stable while workers run. Linux binds checked directory handles. Unsupported combinations fail preparation.
+macOS does not provide Linux mount/PID namespaces or advertise `no_new_privs`: `privilege_gain_blocked` is false. Parent metadata may remain visible for path resolution, and the root directory itself is readable for native process startup; neither permits reading ungranted file contents. Keep grant paths stable while workers run. Linux binds checked directory handles. Unsupported combinations fail preparation.
 
 ### Native process ownership
 
