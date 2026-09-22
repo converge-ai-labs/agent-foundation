@@ -131,13 +131,13 @@ Initial setup and new-Model creation offer these explicit subscription routes:
 | Codex    | `gpt-6-astra`              | Most demanding end-to-end reasoning and coding  |
 | Codex    | `gpt-5.6-sol`              | Default; strong coding and reasoning            |
 | Codex    | `gpt-5.6-terra`            | Everyday work with lower model cost             |
-| Grok     | `grok-4.6`                 | Default; current coding and agentic model       |
+| Grok     | `grok-4.7`                 | Default; current coding and agentic model       |
 | Grok     | `grok-4.5`                 | Previous generation with configurable reasoning |
 | Grok     | `grok-4.20-0309-reasoning` | Earlier reasoning model with long context       |
 
-Reviewed against the official [Codex model guide](https://developers.openai.com/codex/models), [xAI release notes](https://docs.x.ai/developers/release-notes), and [Grok 4.20 model page](https://docs.x.ai/developers/models/grok-4.20-beta-0309-reasoning) on September 7, 2026. These choices do not query entitlement or promise that all subscription accounts can access every model. Grok choices are model generations, not three verified subscription price tiers. API-key setup offers provider-specific suggestions plus custom IDs. Lists expand to the terminal's available space and scroll with the focused choice. Suggestions are bundled starter choices, not live availability checks.
+Reviewed against the official [Codex model guide](https://developers.openai.com/codex/models), [xAI release notes](https://docs.x.ai/developers/release-notes), and [Grok 4.20 model page](https://docs.x.ai/developers/models/grok-4.20-beta-0309-reasoning) on September 7, 2026. The Grok 4.7 default was reviewed against the official [Grok 4.7 guide](https://docs.x.ai/developers/grok-4-7) on September 22, 2026. These choices do not query entitlement or promise that all subscription accounts can access every model. Grok choices are model generations, not three verified subscription price tiers. API-key setup offers provider-specific suggestions plus custom IDs. Lists expand to the terminal's available space and scroll with the focused choice. Suggestions are bundled starter choices, not live availability checks.
 
-Auxiliary Models are named **Codex shell review** or **Grok shell review**. They are not selectable root Agents. Codex review uses Luna with low reasoning; Grok review uses 4.6 with low reasoning. Existing user-edited reviewer resources are preserved.
+Auxiliary Models are named **Codex shell review** or **Grok shell review**. They are not selectable root Agents. Codex review uses Luna with low reasoning; Grok review uses 4.7 with low reasoning. Existing user-edited reviewer resources are preserved.
 
 ## API context defaults and readable names
 

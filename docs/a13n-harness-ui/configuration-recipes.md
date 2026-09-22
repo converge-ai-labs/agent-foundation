@@ -146,6 +146,34 @@ Ordinary UI authoring uses this root mapping. Advanced Agent configuration can u
 
 `on_flagged` accepts `deny` or `approval_required`; `on_error` additionally accepts `allow`. Non-timeout reviewer errors follow the effective `on_error` policy; the default `allow` continues through all remaining checks. Reviewer timeout always denies execution. Human decisions use the separate Host `tools.interaction_timeout_seconds` (default 120). Risk/reason rendering is best effort; `/review request-id` opens details. History is advisory, not permission, and review is not filesystem or network isolation. Validate with `a13n-harness-ui config validate`; an enabled shortcut with a missing Model or invalid merged policy is an error. Accepted edits affect later Runs, never already captured execution.
 
+### Use TypeSafe Jev for review
+
+Jev is a normal API-key Model, not a subagent or a separate review service. Create `models/jev-review.yaml`:
+
+```yaml
+schema_version: "1"
+kind: model
+id: model-jev-review
+name: Jev tool review
+route: typesafe:jev-latest
+authentication:
+  kind: api_key
+  env: TYPESAFE_API_KEY
+```
+
+Set `security.shell_review.model: model-jev-review` in the root document and export `TYPESAFE_API_KEY` before starting Harness UI. Keep your conversational Agent on a text-capable Model. You can replace `jev-latest` with a tested versioned Jev ID for reproducible evaluations.
+
+To use a TypeSafe-compatible gateway instead of the default `https://api.typesafe.ai`, add this to the Model document (the endpoint must speak the native TypeSafe protocol, not OpenAI Chat Completions):
+
+```yaml
+model_configuration:
+  base_url: https://jev-gateway.example
+```
+
+Jev grades a described severity rubric: 0 = `low`, 1 = `medium`, 2 = `high`, 3 = `extra_high`. Harness maps the native grade to the existing risk policy. Confidence is not severity and does not change the decision. Jev does not generate text, so its assessment has no reason; the UI shows risk without an explanation. Text-capable reviewers still provide a reason when available. There is no automatic second-Model fallback or explanatory request.
+
+Existing risk thresholds, permission checks, timeouts, and error policy still apply. Evaluate representative commands, including adversarial input, before switching an existing reviewer; native adapter compatibility is not evidence of classification accuracy.
+
 ## Enable an MCP server
 
 **File: `mcp/docs.yaml`**

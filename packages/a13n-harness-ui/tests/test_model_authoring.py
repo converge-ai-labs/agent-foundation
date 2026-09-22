@@ -28,13 +28,17 @@ def test_subscription_defaults_are_native_and_independent_of_api_presets() -> No
     }
     assert codex.model_configuration == {}
     assert codex.model_characteristics.context_window_tokens == 350000
-    grok = prepare_model(ModelRecipeRequest(connection="grok-subscription", model_id="grok-4.6"))
+    grok = prepare_model(ModelRecipeRequest(connection="grok-subscription", model_id="grok-4.7"))
     assert grok.authentication.kind == "grok_subscription"
+    assert grok.route == "grok:grok-4.7"
     assert grok.settings == {} and grok.model_configuration == {}
     assert grok.model_characteristics.context_window_tokens is None
     choices = ModelChoices()
     assert next(c for c in choices.connections if c.id == "grok").authentication == "api_key"
-    assert next(c for c in choices.connections if c.id == "grok-subscription").authentication == "grok_subscription"
+    subscription = next(c for c in choices.connections if c.id == "grok-subscription")
+    assert subscription.authentication == "grok_subscription"
+    assert subscription.default_model == "grok-4.7"
+    assert subscription.models[0].value == subscription.default_model
 
 
 def test_prepare_preserves_explicit_native_mappings_and_empty_capabilities() -> None:

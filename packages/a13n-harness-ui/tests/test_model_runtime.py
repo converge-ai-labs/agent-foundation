@@ -183,3 +183,38 @@ def test_adapter_accepts_presets_and_custom_headers_but_rejects_static_values(he
         )
     with pytest.raises(CompositionError):
         adapter.validate(route="xai:test", settings={}, model_cfg=validated.model_cfg)
+
+
+@pytest.mark.parametrize("base_url", [None, "https://jev-gateway.example/custom", "http://localhost:8080"])
+async def test_jev_is_resolved_as_a_normal_api_key_model(monkeypatch, base_url):
+    from a13n_harness.providers.model import routes
+    from a13n_harness_ui.configuration import ApiKeyAuthentication
+    from a13n_harness_ui.model_adapters import PydanticAiModelAdapter
+    from pydantic_ai.models.typesafe import TypeSafeModel
+
+    async def validate(self, endpoint, *, resolve_dns=True):
+        return endpoint
+
+    monkeypatch.setattr(routes.EndpointPolicy, "validate", validate)
+    monkeypatch.setenv("TEST_TYPESAFE_KEY", "fixture")
+    configuration = PydanticAiModelAdapter().validate(
+        route="typesafe:jev-latest", settings={}, model_cfg={"base_url": base_url} if base_url else {}
+    )
+    recipe = ResolvedModelRecipe(
+        model_id="model-jev",
+        route="typesafe:jev-latest",
+        authentication=ApiKeyAuthentication(kind="api_key", env="TEST_TYPESAFE_KEY"),
+        model_configuration=configuration.model_cfg,
+    )
+    resolver = HarnessUiModelResolver({recipe.model_id: recipe})
+    model = await resolver(_CONTEXT, recipe.model_id)
+    assert isinstance(model, TypeSafeModel)
+    async with model:
+        assert model.model_name == "jev-latest"
+        assert model.profile["supports_text_output"] is False
+        assert model.provider is not None
+        assert str(model.provider.base_url).rstrip("/") == (base_url or "https://api.typesafe.ai")
+    # A subsequent Run reconstructs its own native client.
+    fresh = await resolver.fresh()(_CONTEXT, recipe.model_id)
+    async with fresh:
+        assert fresh is not model and fresh.provider is not model.provider

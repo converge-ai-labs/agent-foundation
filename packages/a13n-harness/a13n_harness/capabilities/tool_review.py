@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import AsyncIterable
 from datetime import UTC, datetime
 from decimal import Decimal
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 from functools import cache
 from html import escape
 from importlib.resources import files
@@ -14,7 +14,7 @@ from typing import Literal, Protocol, cast, runtime_checkable
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
-from pydantic_ai import Agent, RunContext, ToolOutput
+from pydantic_ai import Agent, RunContext, ToolOutput, UseEnumMemberDocstrings
 from pydantic_ai.messages import AgentStreamEvent
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
@@ -107,14 +107,40 @@ class ToolReviewAssessment(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     risk: ToolRiskLevel
-    reason: str = Field(min_length=1, max_length=2000)
+    reason: str | None = Field(default=None, min_length=1, max_length=2000)
 
     @field_validator("reason")
     @classmethod
-    def _validate_reason(cls, value: str) -> str:
-        if not value.strip() or "\x00" in value:
+    def _validate_reason(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or "\x00" in value):
             raise ValueError("review reason must be nonblank text without NUL")
         return value
+
+
+class _RiskGrade(UseEnumMemberDocstrings, IntEnum):
+    """Severity of the proposed invocation, using the supplied risk criteria."""
+
+    low = 0
+    """Ordinary read-only inspection and low-risk verification within the supplied scope."""
+
+    medium = 1
+    """Bounded reversible development changes or ordinary external access without sensitive disclosure."""
+
+    high = 2
+    """Destructive, sensitive, privileged, or consequential external operations under the supplied criteria."""
+
+    extra_high = 3
+    """Clearly catastrophic or hostile operations, including credential exfiltration or critical-resource deletion."""
+
+
+class _ScoredToolReview(BaseModel):
+    """Assess one proposed tool invocation's risk, without granting execution authority."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    severity: _RiskGrade = Field(
+        description="How severe is the risk of this invocation under the supplied profile and risk criteria?"
+    )
 
 
 class ToolReviewResult(BaseModel):
@@ -181,19 +207,25 @@ class AgentToolReviewer:
     def __init__(self, model: Model, config: ToolReviewConfig) -> None:
         self._model = model
         self._config = config.model_copy(deep=True)
-        self._agent: Agent[ToolReviewRequest, ToolReviewAssessment] = Agent(
+        self._scored = not model.profile.get("supports_text_output", True)
+        output_type = _ScoredToolReview if self._scored else ToolReviewAssessment
+        self._agent: Agent[ToolReviewRequest, ToolReviewAssessment | _ScoredToolReview] = Agent(
             StructuredOutputAutoToolChoiceModel(model),
             deps_type=ToolReviewRequest,
             output_type=ToolOutput(
-                ToolReviewAssessment,
+                output_type,
                 name="submit_tool_review",
                 description=(
-                    "Call this tool exactly once with risk and a brief reason. "
-                    "This does not execute or authorize the command or tool call. "
+                    (
+                        "Submit the severity grade. "
+                        if self._scored
+                        else "Submit risk and a brief reason when available. "
+                    )
+                    + "This does not execute or authorize the command or tool call. "
                     "Plain text or JSON text is not a valid submission."
                 ),
             ),
-            system_prompt=_review_prompt(),
+            system_prompt=() if self._scored else _review_prompt(),
             instructions=self._instructions,
             model_settings=cast(ModelSettings, config.model_settings),
             retries=0,
@@ -207,7 +239,9 @@ class AgentToolReviewer:
             if ctx.deps.profile == "shell" and self._config.shell_instruction is not None
             else self._config.instruction
         )
-        return render_review_instruction(instruction) or ""
+        custom = render_review_instruction(instruction) or ""
+        # Non-generative models receive questions as instructions, not as material to judge.
+        return "\n\n".join(filter(None, (_review_prompt(), custom))) if self._scored else custom
 
     async def review(self, request: ToolReviewRequest, *, context: AgentContext) -> ToolReviewResult:
         del context
@@ -230,7 +264,13 @@ class AgentToolReviewer:
             raise ToolReviewError("tool_review_timeout", usage=_provider_usage_receipts(self._model, usage)) from exc
         except Exception as exc:
             raise ToolReviewError("tool_review_failed", usage=_provider_usage_receipts(self._model, usage)) from exc
-        return ToolReviewResult(assessment=result.output, usage=_provider_usage_receipts(self._model, result.usage))
+        output = result.output
+        assessment = (
+            ToolReviewAssessment(risk=ToolRiskLevel(output.severity.name))
+            if isinstance(output, _ScoredToolReview)
+            else output
+        )
+        return ToolReviewResult(assessment=assessment, usage=_provider_usage_receipts(self._model, result.usage))
 
 
 async def _drain_review_events(ctx: RunContext[object], events: AsyncIterable[AgentStreamEvent]) -> None:

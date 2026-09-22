@@ -24,6 +24,7 @@ IMAGE = frozenset({ModelCapability.IMAGE_UNDERSTANDING})
         ("openai-chat:gpt-5.4", IMAGE),
         ("openai-codex:gpt-5.6-sol", IMAGE),
         ("anthropic:claude-sonnet-4-6", IMAGE),
+        ("grok:grok-4.7", IMAGE),
         ("grok:grok-4.6", IMAGE),
         ("moonshotai:kimi-k2.5", IMAGE),
         ("google:gemini-2.5-pro", frozenset(ModelCapability)),
@@ -137,7 +138,7 @@ async def test_all_creation_flows_persist_known_native_image_support(
     connection = {
         "api": ["api", "anthropic", "", "new", "env:TEST_KEY", "claude-sonnet-4-6", "", ""],
         "codex": ["codex", "later", "gpt-5.6-sol", ""],
-        "grok": ["grok", "later", "grok-4.6"],
+        "grok": ["grok", "later", ""],
     }[provider]
     answers = deque([*connection, "full-control"])
     notices = []
@@ -146,6 +147,8 @@ async def test_all_creation_flows_persist_known_native_image_support(
         if question.key == "tools" or question.text == "Model saved. Configure tools on a new Agent?":
             return question.default
         assert answers, question
+        if provider == "grok" and question.key == "model":
+            assert question.default == "grok-4.7"
         if question.key == "name":
             assert question.default.isascii() and question.default.isprintable()
             assert " - " in question.default
@@ -180,6 +183,10 @@ async def test_all_creation_flows_persist_known_native_image_support(
             assert chosen_name in names
         # Includes generated subscription shell-review models, not just the coding model.
         assert all(model.model_characteristics.capabilities == IMAGE for model in source.models.values())
+        if provider == "grok":
+            assert all(model.route == "grok:grok-4.7" for model in source.models.values())
+            assert all(model.authentication.kind == "grok_subscription" for model in source.models.values())
+            assert source.models["model-grok-shell-review"].settings == {"thinking": "low"}
         assert any("Native media input: image." in notice for notice in notices)
 
 

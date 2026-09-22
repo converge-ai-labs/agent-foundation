@@ -470,7 +470,7 @@ class SetupWizard:
             "gpt-6-astra": "Most capable · complex, end-to-end work",
             "gpt-5.6-sol": "Recommended · strong coding and reasoning",
             "gpt-5.6-terra": "Lighter · balance capability and cost",
-            "grok-4.6": "Recommended · latest coding and agentic model",
+            "grok-4.7": "Recommended · latest coding and agentic model",
             "grok-4.5": "Previous generation · configurable reasoning",
             "grok-4.20-0309-reasoning": "Earlier reasoning model · long-context work",
             "api": "Choose a provider, base URL, API key, model ID and settings",

@@ -32,6 +32,7 @@ _SUPPORTED_PROVIDERS = frozenset(API_PROVIDER_BY_ROUTE) | frozenset(
         "openai",
         "openai-codex",
         "openai-responses",
+        "typesafe",
     }
 )
 
@@ -96,7 +97,8 @@ class PydanticAiModelAdapter:
             configuration = _ModelConfiguration.model_validate(dict(model_cfg), strict=True)
             if configuration.base_url is not None and (
                 provider == "xai"
-                or ROUTE_ALIASES.get(provider, provider) not in {*API_PROVIDER_BY_ROUTE, "openai", "google-cloud"}
+                or ROUTE_ALIASES.get(provider, provider)
+                not in {*API_PROVIDER_BY_ROUTE, "openai", "google-cloud", "typesafe"}
             ):
                 raise ValueError("This route does not support an API-key base URL override")
             if configuration.session_affinity_header is not None:

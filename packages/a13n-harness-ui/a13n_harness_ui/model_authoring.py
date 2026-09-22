@@ -79,9 +79,9 @@ SUBSCRIPTION_CONNECTIONS = (
         authentication="grok_subscription",
         models=tuple(
             ModelChoice(value=value, label=model_name("grok-subscription", value))
-            for value in ("grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning")
+            for value in ("grok-4.7", "grok-4.5", "grok-4.20-0309-reasoning")
         ),
-        default_model="grok-4.6",
+        default_model="grok-4.7",
     ),
 )
 

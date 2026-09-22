@@ -145,13 +145,15 @@ async def test_setup_available_grok_is_default_even_with_broken_codex(
         )
     )
     original = grok.read_bytes()
-    answers = deque(["grok", "grok-4.6", "", "full-control"])
+    answers = deque(["grok", "", "", "full-control"])
     output = []
 
     async def ask(question, selection):
         if question.key == "provider":
             assert question.default == "grok"
             assert "existing login" in selection.choices[1].description
+        if question.key == "model":
+            assert question.default == "grok-4.7"
         return answers.popleft()
 
     async with open_harness_ui_app(

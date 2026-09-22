@@ -21,12 +21,14 @@ STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID = "a13n.model.structured-output
 class StructuredOutputAutoToolChoiceModel(WrapperModel):
     """Make output tools optional to providers while preserving local validation."""
 
-    @staticmethod
-    def _provider_settings(model_settings: ModelSettings | None) -> ModelSettings:
+    def _provider_settings(self, model_settings: ModelSettings | None) -> ModelSettings | None:
+        if not self.profile.get("supports_text_output", True):
+            return model_settings
         return cast(ModelSettings, {**(model_settings or {}), "tool_choice": "auto"})
 
-    @staticmethod
-    def _provider_parameters(parameters: ModelRequestParameters) -> ModelRequestParameters:
+    def _provider_parameters(self, parameters: ModelRequestParameters) -> ModelRequestParameters:
+        if not self.profile.get("supports_text_output", True):
+            return parameters
         return replace(parameters, allow_text_output=True)
 
     async def request(

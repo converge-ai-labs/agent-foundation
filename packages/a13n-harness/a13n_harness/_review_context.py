@@ -32,7 +32,7 @@ class ReviewEvidence(BaseModel):
     target: str = Field(default="", max_length=240)
     kind: Literal["review", "action", "approval"]
     decision: Literal["allow", "deny", "approval_required"] | None = None
-    reason: str = Field(default="", max_length=400)
+    reason: str | None = Field(default=None, max_length=400)
     risk: Literal["low", "medium", "high", "extra_high"] | None = None
     approved_sources: tuple[Literal["permission", "reviewer", "tool"], ...] = ()
     denied_sources: tuple[Literal["permission", "reviewer", "tool"], ...] = ()

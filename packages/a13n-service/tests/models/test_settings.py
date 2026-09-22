@@ -123,7 +123,7 @@ def test_thinking_uses_ordinary_model_agent_run_precedence(api):
             else ["thinking", "output_config"]
             if api == "anthropic.messages"
             else []
-            if api in {"google.generate_content", "bedrock.converse"}
+            if api in {"google.generate_content", "bedrock.converse", "typesafe.system_one"}
             else ["reasoning", "reasoning_effort", "thinking", "enable_thinking"]
         )
     ]
@@ -170,6 +170,9 @@ def test_missing_source_documentation_does_not_disable_parameter_validation(monk
         ("anthropic.messages", {"output_config": "replace"}),
         ("openrouter.chat_completions", {"models": ["different"]}),
         ("bedrock.converse", {"toolConfig": {}}),
+        ("typesafe.system_one", {"state": "replacement evidence"}),
+        ("typesafe.system_one", {"questions": {}}),
+        ("typesafe.system_one", {"model": "other"}),
     ],
 )
 def test_only_explicit_protocol_paths_are_protected(api, body):

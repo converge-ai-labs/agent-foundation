@@ -456,7 +456,8 @@ def test_shell_review_timeout_renders_observed_denial_without_a_frontend_timer(m
 
 
 @pytest.mark.parametrize("decision", ["deny", "approval_required", "allow"])
-def test_unified_shell_review_result_uses_existing_custom_event_renderer(decision) -> None:
+@pytest.mark.parametrize("reason", ["Review reason", None])
+def test_unified_shell_review_result_uses_existing_custom_event_renderer(decision, reason) -> None:
     renderer = StreamRenderer(Status(mode="concise"))
     try:
         _start(renderer, name="shell_exec")
@@ -476,7 +477,7 @@ def test_unified_shell_review_result_uses_existing_custom_event_renderer(decisio
                             "result": {
                                 "assessment": {
                                     "risk": "high",
-                                    "reason": "Review reason",
+                                    "reason": reason,
                                 },
                                 "usage": [],
                             },
@@ -486,9 +487,11 @@ def test_unified_shell_review_result_uses_existing_custom_event_renderer(decisio
             },
         )
         visible = _visible(renderer)
-        assert ("Review reason" in visible) is (decision != "allow")
+        assert ("Review reason" in visible) is (decision != "allow" and reason is not None)
+        assert "None" not in visible
         if decision != "allow":
             assert "call-one" in visible
+            assert "Risk: high" in visible
     finally:
         renderer.transcript.close()
 

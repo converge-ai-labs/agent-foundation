@@ -97,6 +97,14 @@ MODEL_APIS = MappingProxyType(
             "pydantic_ai.models.openrouter",
             "OpenRouterModelSettings",
         ),
+        "typesafe.system_one": ModelApi(
+            "typesafe.system_one",
+            "TypeSafe System One",
+            "pydantic_ai.models.typesafe",
+            "TypeSafeModel",
+            "pydantic_ai.models.typesafe",
+            "TypeSafeModelSettings",
+        ),
         "ollama.chat_completions": ModelApi(
             "ollama.chat_completions",
             "Ollama Chat Completions",

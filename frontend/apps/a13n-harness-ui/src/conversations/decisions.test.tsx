@@ -87,6 +87,28 @@ it("shows shell evidence, hides environment values and authorizes only the exact
   await screen.findByText(/execution has not been confirmed/);
 });
 
+it.each([null, undefined])(
+  "shows risk without inventing a missing review reason (%s)",
+  (reason) => {
+    setup([
+      {
+        ...shell,
+        metadata: {
+          ...shell.metadata,
+          "a13n.harness.tool-review": { risk: "high", reason },
+          "a13n.harness.approval-presentation": {
+            reason: "Tool reviewer requires approval.",
+          },
+        },
+      },
+    ]);
+    expect(screen.getByText("Risk: high")).toBeTruthy();
+    expect(screen.queryByText("Tool reviewer requires approval.")).toBeNull();
+    expect(screen.queryByText("Writes to the workspace")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/null|undefined/);
+  },
+);
+
 it("renders generic review context as text and denies with a reason", async () => {
   const { POST } = setup([
     {

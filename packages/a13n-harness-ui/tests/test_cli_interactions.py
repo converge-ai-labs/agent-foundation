@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -606,6 +607,24 @@ def test_approval_panel_handles_missing_assessment_and_generic_metadata(metadata
         assert "Operator confirmation required" in text
     else:
         assert "Tool review could not complete." in text
+
+
+@pytest.mark.parametrize("review", [{"risk": "high"}, {"risk": "high", "reason": None}])
+def test_approval_panel_omits_absent_reviewer_reason(review) -> None:
+    interaction = _shell_approval(
+        metadata={
+            "a13n.harness.tool-approval": {"tool_id": "environment.shell_exec"},
+            "a13n.harness.tool-review": review,
+            "reason": "Tool reviewer requires approval.",
+        }
+    )
+    content = json.loads(interaction.display_prompt())
+    assert content["risk"] == "high"
+    assert "reason" not in content
+    text = interaction.prompt()
+    assert "Risk: high" in text and "Command:" in text
+    assert "Reason:" not in text and "None" not in text
+    assert "Tool reviewer requires approval." not in text
 
 
 def test_approval_panel_discloses_bounded_and_source_omissions() -> None:

@@ -231,14 +231,17 @@ async def _review(
                 binding=binding,
                 kind="review",
                 decision=decision,
-                reason=reason[:400],
+                reason=reason[:400] if reason is not None else None,
                 risk=result.assessment.risk.value,
                 approved_sources=tuple(sorted(approval.approved_sources)),
                 target=compact_target(arguments),
             ),
         )
     if decision == "deny":
-        raise ToolFailed(f"Tool review denied the invocation: {reason}")
+        message = "Tool review denied the invocation."
+        if reason is not None:
+            message = f"Tool review denied the invocation: {reason}"
+        raise ToolFailed(message)
     if decision == "approval_required" and "reviewer" not in approval.approved_sources:
         raise approval_required(
             ctx,

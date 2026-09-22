@@ -10,7 +10,7 @@ dependencies = [
     "httpx2>=2,<3",
     "pydantic>=2.12,<3",
     "openai>=3.8,<4",
-    "pydantic-ai>=2.41,<3",
+    "pydantic-ai>=2.46.0,<3",
 ]
 
 [dependency-groups]

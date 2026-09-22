@@ -62,6 +62,7 @@ MODEL_API_POLICIES = MappingProxyType(
         "openai.chat_completions": ModelApiPolicy(_paths(*_CHAT_FIELDS), supports_extra_body=True),
         "anthropic.messages": ModelApiPolicy(_paths(*_ANTHROPIC_FIELDS), supports_extra_body=True),
         "google.generate_content": ModelApiPolicy((), supports_extra_body=False),
+        "typesafe.system_one": ModelApiPolicy(_paths("model", "state", "questions"), supports_extra_body=True),
         "bedrock.converse": ModelApiPolicy(
             _paths(
                 *_ANTHROPIC_FIELDS,

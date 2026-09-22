@@ -158,7 +158,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
         reviewer = "codex-review" if codex else "grok-shell-review"
         review = ModelRecipe.model_validate(
             {
-                "route": "openai-codex:gpt-5.6-luna" if codex else "grok:grok-4.6",
+                "route": "openai-codex:gpt-5.6-luna" if codex else "grok:grok-4.7",
                 "authentication": {"kind": kind},
                 "settings": {"thinking": "low"},
             }

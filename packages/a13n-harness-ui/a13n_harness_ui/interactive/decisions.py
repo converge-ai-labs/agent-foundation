@@ -305,7 +305,9 @@ def _approval_content(request: ApprovalRequestView, index: int, total: int) -> d
     if isinstance(review, dict):
         risk, reason = review.get("risk"), review.get("reason")
         content["risk"] = preview(risk, 80) if isinstance(risk, str) and risk else "unavailable"
-        content["reason"] = preview(reason, 2000) if isinstance(reason, str) and reason else "unavailable"
+        content.pop("reason", None)
+        if isinstance(reason, str) and reason:
+            content["reason"] = preview(reason, 2000)
     elif review is not None:
         content["error"] = "Shell review unavailable (invalid review metadata)"
     arguments = _display_arguments(request.arguments)

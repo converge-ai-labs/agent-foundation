@@ -15,6 +15,7 @@ from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.models.openrouter import OpenRouterModel
+from pydantic_ai.models.typesafe import TypeSafeModel
 
 
 class AllowEndpoints:
@@ -34,6 +35,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
         "bedrock_mantle.chat_completions": BedrockMantleChatModel,
         "openrouter.chat_completions": OpenRouterModel,
         "ollama.chat_completions": OllamaModel,
+        "typesafe.system_one": TypeSafeModel,
     }
     configurations = {
         "aws_bedrock": {"region": "us-east-1"},
@@ -72,7 +74,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
                             assert model.client.max_retries == 0
                         if isinstance(model, BedrockConverseModel):
                             assert model.client.meta.config.retries["total_max_attempts"] == 1
-    assert len(BUILT_IN_MODEL_PROVIDERS) == 13
+    assert len(BUILT_IN_MODEL_PROVIDERS) == 14
 
 
 class Configuration(BaseModel):

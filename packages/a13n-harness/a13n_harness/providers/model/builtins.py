@@ -15,6 +15,7 @@ from . import (
     ollama,
     openai,
     openrouter,
+    typesafe,
     zhipu,
 )
 from .definition import ModelProviderDefinition
@@ -33,4 +34,5 @@ BUILT_IN_MODEL_PROVIDERS: tuple[ModelProviderDefinition, ...] = (
     moonshot.DEFINITION,
     minimax.DEFINITION,
     zhipu.DEFINITION,
+    typesafe.DEFINITION,
 )

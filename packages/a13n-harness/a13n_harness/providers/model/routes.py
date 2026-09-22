@@ -43,6 +43,7 @@ ROUTES = {
     "openai-responses": RouteSpec("openai", "openai.responses"),
     "openai-chat": RouteSpec("openai", "openai.chat_completions"),
     "anthropic": RouteSpec("anthropic", "anthropic.messages"),
+    "typesafe": RouteSpec("typesafe", "typesafe.system_one"),
     "google": RouteSpec("google_gemini", "google.generate_content"),
     "openrouter": RouteSpec("openrouter", "openrouter.chat_completions"),
     "deepseek": RouteSpec("deepseek", "openai.chat_completions"),

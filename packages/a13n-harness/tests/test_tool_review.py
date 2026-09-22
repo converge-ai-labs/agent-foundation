@@ -294,8 +294,10 @@ async def test_shell_review_model_uses_builder_gateway_provider_factory(
 
 
 @pytest.mark.parametrize("risk", list(ToolRiskLevel))
+@pytest.mark.parametrize("include_reason", [False, True])
 async def test_default_reviewer_uses_only_output_tool_with_auto_choice_and_records_one_request_usage(
     risk: ToolRiskLevel,
+    include_reason: bool,
 ) -> None:
     seen_info: list[AgentInfo] = []
     seen_prompts: list[str] = []
@@ -312,7 +314,9 @@ async def test_default_reviewer_uses_only_output_tool_with_auto_choice_and_recor
         yield {
             0: DeltaToolCall(
                 name=info.output_tools[0].name,
-                json_args=json.dumps({"risk": risk.value, "reason": "concrete command risk signal"}),
+                json_args=json.dumps(
+                    {"risk": risk.value, **({"reason": "concrete command risk signal"} if include_reason else {})}
+                ),
             )
         }
 
@@ -334,15 +338,16 @@ async def test_default_reviewer_uses_only_output_tool_with_auto_choice_and_recor
     )
 
     assert result.assessment.risk == risk
+    assert result.assessment.reason == ("concrete command risk signal" if include_reason else None)
     assert len(seen_info) == 1
     assert seen_info[0].function_tools == []
     assert len(seen_info[0].output_tools) == 1
     output_tool = seen_info[0].output_tools[0]
     assert output_tool.name == "submit_tool_review"
-    assert "Call this tool exactly once with risk and a brief reason" in output_tool.description
+    assert "Submit risk and a brief reason when available" in output_tool.description
     assert "does not execute or authorize the command" in output_tool.description
     assert "Plain text or JSON text is not a valid submission" in output_tool.description
-    assert set(output_tool.parameters_json_schema["required"]) == {"risk", "reason"}
+    assert set(output_tool.parameters_json_schema["required"]) == {"risk"}
     assert len(seen_prompts) == 1
     assert "provided output tool" in seen_prompts[0]
     assert "Plain text is not an assessment" in seen_prompts[0]

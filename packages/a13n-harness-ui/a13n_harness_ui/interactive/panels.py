@@ -55,10 +55,19 @@ def capability_panel(
         decision = payload.get("decision")
         if decision == "allow":
             return None
-        reason = assessment.get("reason") if isinstance(assessment, dict) else "AI review could not complete."
+        lines = []
+        if isinstance(assessment, dict):
+            risk, reason = assessment.get("risk"), assessment.get("reason")
+            if isinstance(risk, str):
+                lines.append(f"Risk: {risk.replace('_', ' ')}")
+            if isinstance(reason, str) and reason:
+                lines.append(reason)
+        else:
+            lines.append("AI review could not complete.")
+        lines.append(f"Tool: {payload.get('tool_id')} · Request: {payload.get('tool_call_id')}")
         return CapabilityPanel(
             "Tool review · approval required" if decision == "approval_required" else "Tool review · denied",
-            f"{reason}\nTool: {payload.get('tool_id')} · Request: {payload.get('tool_call_id')}",
+            "\n".join(lines),
             "warning",
         )
     if name == "a13n.filesystem.edit_applied":

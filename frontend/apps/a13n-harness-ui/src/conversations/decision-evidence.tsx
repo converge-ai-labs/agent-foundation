@@ -33,8 +33,9 @@ export function decisionEvidence(request: Request) {
     ? record(metadata["a13n.harness.tool-review"])
     : undefined;
   const risk = text(review?.risk) ?? text(presentation?.risk);
-  const reason =
-    text(review?.reason) ?? text(metadata.reason) ?? text(presentation?.reason);
+  const reason = review
+    ? text(review.reason)
+    : (text(metadata.reason) ?? text(presentation?.reason));
   const context = Object.fromEntries(
     Object.entries(metadata).filter(
       ([key]) =>
