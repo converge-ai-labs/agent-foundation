@@ -235,8 +235,8 @@ fn execution_configuration_rejects_obsolete_isolation_and_invalid_identity() {
     let fixture = Fixture::new();
     for execution in [
         json!({"isolation":"required","network":"deny","uid":12345,"gid":12346}),
-        json!({"uid":0,"gid":1000}),
-        json!({"uid":1000,"gid":0}),
+        json!({"uid":4294967295_u32,"gid":1000}),
+        json!({"uid":1000,"gid":4294967295_u32}),
         json!({"uid":1000}),
         json!({"uid":-1,"gid":1000}),
     ] {

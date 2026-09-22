@@ -39,6 +39,11 @@ impl Drop for StateDirectory {
 /// engine. Native sudoers remains the sole source of sudo authorization.
 pub(crate) fn enter(identity: Identity, command: &mut Option<CommandConfig>) -> io::Result<()> {
     identity.validate().map_err(io::Error::other)?;
+    // A root launcher retaining its identity needs neither account discovery nor
+    // a privilege transition. Preserve its groups and native administration caps.
+    if identity.uid == 0 && !needs_worker(identity) {
+        return Ok(());
+    }
     let mut size = 16 * 1024;
     let (name, home, shell) = loop {
         let mut buffer = vec![0_u8; size];
@@ -99,8 +104,14 @@ pub(crate) fn enter(identity: Identity, command: &mut Option<CommandConfig>) -> 
     let name = CString::new(name).map_err(io::Error::other)?;
     unsafe {
         if libc::initgroups(name.as_ptr(), identity.gid) != 0
-            || libc::prctl(libc::PR_SET_KEEPCAPS, 1, 0, 0, 0) != 0
             || libc::setresgid(identity.gid, identity.gid, identity.gid) != 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        if identity.uid == 0 {
+            return Ok(());
+        }
+        if libc::prctl(libc::PR_SET_KEEPCAPS, 1, 0, 0, 0) != 0
             || libc::setresuid(identity.uid, identity.uid, identity.uid) != 0
         {
             return Err(io::Error::last_os_error());
@@ -130,8 +141,8 @@ pub(crate) fn disable_privilege_gain() -> io::Result<()> {
 
 /// Async-signal-safe: called in the supervisor's payload pre_exec closure.
 pub(crate) fn clear_payload_capabilities() -> io::Result<()> {
-    // Do not change legacy root execution in internal unit fixtures. Production
-    // Linux Sessions enter their configured nonzero identity before admission.
+    // Root execution deliberately retains native administration capabilities.
+    // Managed workers have already removed capabilities that could break egress.
     if unsafe { libc::geteuid() } == 0 {
         return Ok(());
     }

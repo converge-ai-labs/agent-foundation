@@ -6,6 +6,7 @@ utilities, and apt. It installs a package and creates a service account.
 
 import argparse
 import os
+import pwd
 import shlex
 import shutil
 import subprocess
@@ -76,6 +77,17 @@ def verify_native_execution(binary, *, controlled=False):
                 f"sudo -n -u {service} cat native.txt"
             )
             assert (device.workspace / "native.txt").stat().st_uid == 0
+            # An earlier sudo command does not elevate subsequent file RPCs.
+            device.call(
+                "file.read_text",
+                {
+                    "context": context(),
+                    "path": {"path": str(device.workspace / "native.txt")},
+                    "line_limit": 10,
+                    "max_line_length": 1024,
+                },
+                error="denied",
+            )
             device.success("sudo -n apt-get install -y -qq hello; /usr/bin/hello")
             device.success("sudo -n update-ca-certificates; sudo -n ldconfig")
             device.success("sudo -n -i sh -c 'test $(id -u) = 0'; sudo -n -s sh -c 'test $(id -u) = 0'")
@@ -135,7 +147,7 @@ def verify_privilege_configuration(binary):
                     binary,
                     root,
                     egress=False,
-                    execution=execution,
+                    execution={**({"uid": 1000, "gid": 1000} if user is None else {}), **execution},
                     environment=environment,
                     arguments=arguments,
                     user=user,
@@ -164,6 +176,117 @@ def verify_privilege_configuration(binary):
                 finally:
                     device.shutdown()
     print("default sudo, all startup layers, precedence, and inherited no-privilege-gain passed")
+
+
+def verify_root_identity(binary, *, controlled=False):
+    assert os.geteuid() == 0
+    for execution in [{}, {"uid": 0, "gid": 0}, {"allow_sudo": False}, {"uid": 0, "gid": 65534}]:
+        with tempfile.TemporaryDirectory(prefix="envd-root-identity-") as temporary:
+            root = Path(temporary)
+            device = Device(binary, root, egress=controlled, execution=execution)
+            gid = execution.get("gid", os.getegid())
+            private = device.workspace / "other-account"
+            private.mkdir(mode=0o700)
+            os.chown(private, 1000, 1000)
+            source = private / "source"
+            source.write_text("native-root-access")
+            source.chmod(0o600)
+            os.chown(source, 1000, 1000)
+            try:
+                device.call(
+                    "directory.list",
+                    {
+                        "expected_device_id": device.descriptor["device_id"],
+                        "expected_generation": device.descriptor["generation"],
+                        "path": str(private),
+                        "offset": 0,
+                        "limit": 100,
+                    },
+                )
+                device.open({"allow_hosts": []} if controlled else None)
+                assert device.success("id -u; id -ru; id -g; id -rg").splitlines() == ["0", "0", str(gid), str(gid)]
+                read = {"context": context(), "path": {"path": str(source)}, "line_limit": 10, "max_line_length": 1024}
+                assert device.call("file.read_text", read)["text"] == "native-root-access"
+                target = private / "written"
+                device.call(
+                    "file.write_text",
+                    {"context": context(), "path": {"path": str(target)}, "mode": "create", "text": "root-rpc"},
+                )
+                assert (target.stat().st_uid, target.stat().st_gid) == (0, gid)
+                if execution.get("allow_sudo") is False:
+                    # no_new_privs does not demote an existing root identity.
+                    assert "NoNewPrivs:\t1" in device.success("cat /proc/self/status")
+                if controlled and not execution:
+                    verify_controlled_boundary(device)
+                device.close()
+            finally:
+                device.shutdown()
+    print(f"unconfigured/explicit root retains native command and file authority (controlled={controlled})")
+
+
+def verify_file_rpc_identity(binary, *, controlled=False):
+    # A provisioned account distinct from 1000, with a distinct primary GID,
+    # verifies that all startup layers select the actual native identity.
+    account = "a13n" + uuid.uuid4().hex[:8]
+    subprocess.run(["useradd", "--system", "--gid", "nogroup", account], check=True)
+    entry = pwd.getpwnam(account)
+    uid, gid = entry.pw_uid, entry.pw_gid
+    assert uid != 1000 and uid != gid
+    cases = [
+        ({"uid": uid, "gid": gid}, {}, ()),
+        (None, {"A13N_ENVD_EXECUTION_UID": str(uid), "A13N_ENVD_EXECUTION_GID": str(gid)}, ()),
+        (None, {}, ("--execution-uid", str(uid), "--execution-gid", str(gid))),
+    ]
+    for execution, environment, arguments in cases:
+        with tempfile.TemporaryDirectory(prefix="envd-rpc-identity-") as temporary:
+            root = Path(temporary)
+            device = Device(
+                binary, root, egress=controlled, execution=execution, environment=environment, arguments=arguments
+            )
+            os.chown(device.workspace, uid, gid)
+            device.workspace.chmod(0o700)
+            try:
+                verify_discovery(device, root)
+                device.open({"allow_hosts": []} if controlled else None)
+                assert device.success("id -u; id -g").splitlines() == [str(uid), str(gid)]
+                path = device.workspace / "written.txt"
+                device.call(
+                    "file.write_text",
+                    {"context": context(), "path": {"path": str(path)}, "mode": "create", "text": "native-rpc"},
+                )
+                assert (path.stat().st_uid, path.stat().st_gid) == (uid, gid)
+                read = {"path": {"path": str(path)}, "line_limit": 10, "max_line_length": 1024}
+                assert device.call("file.read_text", {"context": context(), **read})["text"] == "native-rpc"
+                writer = device.call(
+                    "file.open_writer",
+                    {"context": context(), "path": {"path": str(device.workspace / "upload.bin")}, "mode": "create"},
+                )["writer"]
+                staging = list(device.workspace.glob(".eip-stage-*"))
+                assert staging and all((p.stat().st_uid, p.stat().st_gid) == (uid, gid) for p in staging)
+                device.call("file.abort_writer", {"context": context(), "writer": writer})
+                # Even though the broker is root, file RPCs cannot read root-only
+                # files or open upload/download handles across native permissions.
+                private = device.workspace / "root-only.txt"
+                private.write_text("root-only")
+                private.chmod(0o600)
+                device.call(
+                    "file.read_text", {"context": context(), **read, "path": {"path": str(private)}}, error="denied"
+                )
+                device.call("file.open_reader", {"context": context(), "path": {"path": str(private)}}, error="denied")
+                blocked = device.workspace / "root-only-directory"
+                blocked.mkdir(mode=0o700)
+                denied = blocked / "target"
+                for method in ["file.write_text", "file.open_writer"]:
+                    params = {"context": context(), "path": {"path": str(denied)}, "mode": "create"}
+                    if method == "file.write_text":
+                        params["text"] = "must fail"
+                    device.call(method, params, error="denied")
+                device.close()
+            finally:
+                device.shutdown()
+    print(
+        f"file/env/CLI identity applies to commands, discovery, file reads/writes and transfer handles (controlled={controlled})"
+    )
 
 
 def verify_discovery(device, root):
@@ -366,7 +489,10 @@ enum nss_status _nss_a13n_handoff_getpwuid_r(
 
 
 def verify_managed_privilege_policy(binary):
-    for execution, enabled in [({"allow_sudo": False}, False), ({"uid": 65534, "gid": 65534}, True)]:
+    for execution, enabled in [
+        ({"uid": 1000, "gid": 1000, "allow_sudo": False}, False),
+        ({"uid": 65534, "gid": 65534}, True),
+    ]:
         with tempfile.TemporaryDirectory(prefix="envd-managed-policy-") as temporary:
             root = Path(temporary)
             device = Device(binary, root, execution=execution)
@@ -394,10 +520,14 @@ if __name__ == "__main__":
         "--controlled", action="store_true", help="also test managed Sessions with native namespace permissions"
     )
     args = parser.parse_args()
+    verify_root_identity(args.binary)
     verify_native_execution(args.binary)
     verify_privilege_configuration(args.binary)
+    verify_file_rpc_identity(args.binary)
     if args.controlled:
+        verify_root_identity(args.binary, controlled=True)
         verify_native_execution(args.binary, controlled=True)
+        verify_file_rpc_identity(args.binary, controlled=True)
         verify_managed_privilege_policy(args.binary)
         verify_management_snapshot(args.binary)
         verify_nss_bootstrap_handoff(args.binary)

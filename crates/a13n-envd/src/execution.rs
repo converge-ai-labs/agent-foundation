@@ -46,26 +46,21 @@ impl Options {
 
 impl Identity {
     pub(crate) fn validate(self) -> Result<Self, &'static str> {
-        if self.uid == 0 || self.gid == 0 || self.uid == u32::MAX || self.gid == u32::MAX {
-            return Err("execution.uid and execution.gid must be nonzero native IDs");
+        if self.uid == u32::MAX || self.gid == u32::MAX {
+            return Err("execution.uid and execution.gid must be valid native IDs");
         }
         Ok(self)
     }
 }
 
-/// Non-root launchers retain their account; root launchers default to the usual
-/// sandbox account. The launcher provisions the account, home, and sudoers.
+/// With no configured identity, retain the launcher's account, including root.
+/// Only the launcher can select a different provisioned account.
 pub(crate) fn resolve(configured: Option<Identity>) -> Result<Option<Identity>, &'static str> {
     #[cfg(target_os = "linux")]
     {
         let uid = unsafe { libc::geteuid() };
         let gid = unsafe { libc::getegid() };
-        let identity = configured
-            .unwrap_or(Identity {
-                uid: if uid == 0 { 1000 } else { uid },
-                gid: if uid == 0 { 1000 } else { gid },
-            })
-            .validate()?;
+        let identity = configured.unwrap_or(Identity { uid, gid }).validate()?;
         if uid != 0 && (identity.uid != uid || identity.gid != gid) {
             return Err("changing execution identity requires a root launcher");
         }
@@ -85,20 +80,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn identity_requires_two_nonzero_native_ids() {
-        for (uid, gid) in [(0, 1000), (1000, 0), (u32::MAX, 1000), (1000, u32::MAX)] {
+    fn identity_accepts_root_and_rejects_native_sentinel_ids() {
+        for (uid, gid) in [(0, 0), (0, 1000), (1000, 0), (12345, 12346)] {
+            let identity = Identity { uid, gid };
+            assert_eq!(identity.validate(), Ok(identity));
+        }
+        for (uid, gid) in [(u32::MAX, 1000), (1000, u32::MAX)] {
             assert!(Identity { uid, gid }.validate().is_err());
         }
-        assert_eq!(
-            Identity {
-                uid: 1000,
-                gid: 1001
-            }
-            .validate()
-            .unwrap()
-            .gid,
-            1001
-        );
     }
 
     #[test]
@@ -115,21 +104,18 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn default_identity_is_nonroot_and_retains_nonroot_launcher() {
-        let identity = resolve(None).unwrap().unwrap();
-        assert_ne!(identity.uid, 0);
-        assert_ne!(identity.gid, 0);
+    fn unconfigured_identity_never_guesses_an_account() {
         let uid = unsafe { libc::geteuid() };
-        if uid != 0 {
-            assert_eq!(identity.uid, uid);
-            assert_eq!(identity.gid, unsafe { libc::getegid() });
-            assert!(
-                resolve(Some(Identity {
-                    uid: uid + 1,
-                    gid: identity.gid
-                }))
-                .is_err()
-            );
+        let gid = unsafe { libc::getegid() };
+        assert_eq!(resolve(None), Ok(Some(Identity { uid, gid })));
+        if uid == 0 {
+            let configured = Identity {
+                uid: 12345,
+                gid: 12346,
+            };
+            assert_eq!(resolve(Some(configured)), Ok(Some(configured)));
+        } else {
+            assert!(resolve(Some(Identity { uid: uid + 1, gid })).is_err());
         }
     }
 }

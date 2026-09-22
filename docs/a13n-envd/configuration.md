@@ -118,7 +118,18 @@ Child environments are built from the daemon's supported inherited values plus e
 
 **Native sudo is allowed by default.** Envd preserves the original writable sandbox system tree. Installing packages or changing system files through authorized sudo changes that tree and persists across Sessions; no disposable copy of the payload root filesystem is introduced.
 
-On Linux, a root-launched daemon runs commands and file RPCs as native UID/GID `1000:1000` by default. Device directory discovery uses the same identity. Provision that account, home and workspace ownership in the sandbox, or select another nonzero pair using `execution.uid`/`execution.gid`, `A13N_ENVD_EXECUTION_UID`/`A13N_ENVD_EXECUTION_GID`, or `--execution-uid`/`--execution-gid`. Root-launched workers initialize native supplementary groups and account environment defaults. A non-root launcher keeps its current identity and cannot choose a different account.
+On Linux, **omitting execution UID/GID preserves the launching process's identity, including root**. Envd does not assume `1000:1000`, scan for a likely user, create an account, or require identity configuration merely because the launcher is root. To select a different provisioned account, set the paired `execution.uid`/`execution.gid`, `A13N_ENVD_EXECUTION_UID`/`A13N_ENVD_EXECUTION_GID`, or `--execution-uid`/`--execution-gid`. Root (`0:0`) is also a valid explicit identity. The provider or deployment owns account provisioning, home and workspace permissions. For example, a root launcher can select its provisioned sandbox account:
+
+```bash
+# Replace sandbox with the account provisioned by your image or deployment.
+export A13N_ENVD_EXECUTION_UID="$(id -u sandbox)"
+export A13N_ENVD_EXECUTION_GID="$(id -g sandbox)"
+a13n-envd
+```
+
+Commands, Session file RPCs (including reads, writes and transfers), working-directory access and Device directory discovery all use this execution identity and its native permissions. File RPCs never implicitly sudo; insufficient access returns a permission error. Explicit sudo affects only the command that invokes it and its descendants, not later file RPCs. Daemon credential loading and broker management remain separate from execution identity.
+
+Switching accounts initializes native supplementary groups and account environment defaults. Retaining the launcher's root identity preserves its groups and native administration capabilities, subject to the outer platform and any controlled-egress boundary. An unprivileged launcher cannot choose a different identity.
 
 `allow_sudo` permits native privilege gains; it does not grant authorization. Install sudo and configure sudoers through your image or launcher. Envd does not add passwordless sudo rules, bypass authentication, or override an outer `no_new_privs` setting or `nosuid` mount.
 
@@ -144,7 +155,7 @@ Or use a JSON file:
 }
 ```
 
-The normal precedence applies: for example, `--allow-sudo true` overrides an environment value of `false`. Disabling uses Linux `no_new_privs` for the worker and descendants, so direct sudo, setuid binaries and file capabilities cannot regain privilege. A command's own environment cannot turn it back on. Platforms without this implementation reject `false` instead of ignoring it. UID/GID configuration is Linux-only; other platforms retain their native launching identity.
+The normal precedence applies: for example, `--allow-sudo true` overrides an environment value of `false`. Disabling uses Linux `no_new_privs` for the worker and descendants, so direct sudo, setuid binaries and file capabilities cannot gain additional privilege. This does not demote an already-root execution identity or revoke its existing authority. A command's own environment cannot turn it back on. Platforms without this implementation reject `false` instead of ignoring it. UID/GID configuration is Linux-only; other platforms retain their native launching identity.
 
 ## Carrier profiles
 
@@ -182,21 +193,21 @@ Device initialization verifies identity and protocol. Session readiness checks t
 
 ## Standalone field reference
 
-| Root field                                   | Default or meaning                                                                          |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `device_id`                                  | Explicit stable identity, otherwise installation identity                                   |
-| `installation_state_directory`               | Persistent identity storage when no explicit Device ID is supplied                          |
-| `name`, `description`                        | Optional display metadata                                                                   |
-| `default_working_directory`                  | Startup cwd if unset                                                                        |
-| `directory_discovery`                        | `true`                                                                                      |
-| `idle_timeout_ms`                            | Session idle lifetime                                                                       |
-| `disconnect_grace_ms`                        | Detached Session attachment grace                                                           |
-| `execution.uid`, `execution.gid`             | Linux native nonzero IDs; root launch defaults to `1000:1000`, non-root retains current IDs |
-| `execution.allow_sudo`                       | `true`; native sudoers still controls authorization                                         |
-| `egress.enabled`                             | `false`; opt-in controlled-capable management runtime                                       |
-| `full_control`                               | `false`; automatic native shell and inherited command environment when enabled              |
-| `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                              |
-| `limits`                                     | Device aggregates and per-Session limits                                                    |
+| Root field                                   | Default or meaning                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------ |
+| `device_id`                                  | Explicit stable identity, otherwise installation identity                      |
+| `installation_state_directory`               | Persistent identity storage when no explicit Device ID is supplied             |
+| `name`, `description`                        | Optional display metadata                                                      |
+| `default_working_directory`                  | Startup cwd if unset                                                           |
+| `directory_discovery`                        | `true`                                                                         |
+| `idle_timeout_ms`                            | Session idle lifetime                                                          |
+| `disconnect_grace_ms`                        | Detached Session attachment grace                                              |
+| `execution.uid`, `execution.gid`             | Optional paired Linux native IDs; omitted retains the launcher, including root |
+| `execution.allow_sudo`                       | `true`; native sudoers still controls authorization                            |
+| `egress.enabled`                             | `false`; opt-in controlled-capable management runtime                          |
+| `full_control`                               | `false`; automatic native shell and inherited command environment when enabled |
+| `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                 |
+| `limits`                                     | Device aggregates and per-Session limits                                       |
 
 Important default limits include 128 Sessions, 256 Device concurrent operations, 128 concurrent operations per Session, 4 GiB Device spool capacity, 1 GiB Session spool capacity, 256 MiB output per stream and 2 MiB previews. Configured Session capacities cannot exceed Device aggregates. Output preview cannot exceed stream capacity; spool must reserve both streams.
 

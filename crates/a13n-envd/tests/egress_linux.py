@@ -22,6 +22,10 @@ from pathlib import Path
 
 class Device:
     def __init__(self, binary, root, *, egress=True, execution=None, environment=None, arguments=(), user=None):
+        # This disposable test image provisions UID/GID 1000. The production
+        # daemon no longer assumes any account when launched as root.
+        if execution is None and user is None and os.geteuid() == 0:
+            execution = {"uid": 1000, "gid": 1000}
         self.workspace = root / "workspace"
         self.workspace.mkdir()
         if os.geteuid() == 0:
