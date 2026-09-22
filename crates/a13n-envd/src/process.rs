@@ -490,6 +490,7 @@ impl ExecutionManager {
         }
         Ok(PreparedCommand {
             plan: LaunchPlan {
+                drop_supervisor_capabilities: self.inner.command.drop_supervisor_capabilities,
                 executable,
                 arguments,
                 cwd: cwd.native_path,

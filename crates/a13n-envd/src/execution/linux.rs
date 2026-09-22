@@ -85,7 +85,7 @@ pub(crate) fn enter(identity: Identity, command: &mut Option<CommandConfig>) -> 
             owned(entry.pw_shell)?,
         );
     };
-    if let Some(command) = command {
+    if let Some(command) = command.as_mut() {
         for (key, value) in [
             ("HOME", &home),
             ("USER", &name),
@@ -127,6 +127,9 @@ pub(crate) fn enter(identity: Identity, command: &mut Option<CommandConfig>) -> 
             return Err(io::Error::last_os_error());
         }
     }
+    if let Some(command) = command {
+        command.drop_supervisor_capabilities = true;
+    }
     Ok(())
 }
 
@@ -139,13 +142,9 @@ pub(crate) fn disable_privilege_gain() -> io::Result<()> {
     Ok(())
 }
 
-/// Async-signal-safe: called in the supervisor's payload pre_exec closure.
+/// Drop only the supervisor authority envd retained during an identity switch.
+/// Never called for an unchanged launcher identity. Async-signal-safe for pre_exec.
 pub(crate) fn clear_payload_capabilities() -> io::Result<()> {
-    // Root execution deliberately retains native administration capabilities.
-    // Managed workers have already removed capabilities that could break egress.
-    if unsafe { libc::geteuid() } == 0 {
-        return Ok(());
-    }
     capabilities(0)?;
     if unsafe {
         libc::prctl(

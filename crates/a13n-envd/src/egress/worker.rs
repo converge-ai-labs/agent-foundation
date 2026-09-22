@@ -113,6 +113,15 @@ pub(crate) fn run_internal(ready: bool) -> io::Result<()> {
     namespace::protect_process()?;
     let mut bootstrap: WorkerConfig = read_bootstrap(&mut socket)?;
     enter(&mut bootstrap)?;
+    // Managed workers already switched from their required root launcher before
+    // re-exec. The fresh bootstrap must retain that supervisor-only provenance.
+    if bootstrap
+        .execution
+        .is_some_and(|identity| identity.uid != 0)
+        && let Some(command) = &mut bootstrap.command
+    {
+        command.drop_supervisor_capabilities = true;
+    }
     serve(socket, bootstrap)
 }
 

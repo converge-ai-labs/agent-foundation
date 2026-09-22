@@ -16,6 +16,8 @@ const OUTPUT_CHUNK_BYTES: usize = 16 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LaunchPlan {
+    #[serde(default)]
+    pub(crate) drop_supervisor_capabilities: bool,
     pub(crate) executable: PathBuf,
     pub(crate) arguments: Vec<String>,
     pub(crate) cwd: PathBuf,
@@ -232,6 +234,12 @@ async fn run_payload(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     configure_command_tree(&mut command);
+    #[cfg(target_os = "linux")]
+    if plan.drop_supervisor_capabilities {
+        unsafe {
+            command.pre_exec(crate::execution::clear_payload_capabilities);
+        }
+    }
 
     let (mut child, tree) = match spawn_command_tree(&mut command).await {
         Ok(started) => started,
@@ -802,8 +810,6 @@ async fn spawn_command_tree(command: &mut Command) -> io::Result<(Child, Command
 fn configure_command_tree(command: &mut Command) {
     unsafe {
         command.pre_exec(|| {
-            #[cfg(target_os = "linux")]
-            crate::execution::clear_payload_capabilities()?;
             if libc::setpgid(0, 0) == 0 {
                 Ok(())
             } else {

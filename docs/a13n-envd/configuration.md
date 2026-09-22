@@ -129,7 +129,7 @@ a13n-envd
 
 Commands, Session file RPCs (including reads, writes and transfers), working-directory access and Device directory discovery all use this execution identity and its native permissions. File RPCs never implicitly sudo; insufficient access returns a permission error. Explicit sudo affects only the command that invokes it and its descendants, not later file RPCs. Daemon credential loading and broker management remain separate from execution identity.
 
-Switching accounts initializes native supplementary groups and account environment defaults. Retaining the launcher's root identity preserves its groups and native administration capabilities, subject to the outer platform and any controlled-egress boundary. An unprivileged launcher cannot choose a different identity.
+Switching accounts initializes native supplementary groups and account environment defaults. Retaining the launcher's identity preserves native capability inheritance for both root and non-root users; Envd does not unconditionally clear command capabilities. Only the supervisor signaling capability retained by Envd during a root-to-user switch is removed before executing commands. The outer platform and any explicitly enabled controlled-egress boundary still apply. An unprivileged launcher cannot choose a different identity.
 
 `allow_sudo` permits native privilege gains; it does not grant authorization. Install sudo and configure sudoers through your image or launcher. Envd does not add passwordless sudo rules, bypass authentication, or override an outer `no_new_privs` setting or `nosuid` mount.
 

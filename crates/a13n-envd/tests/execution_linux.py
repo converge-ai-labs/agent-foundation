@@ -22,6 +22,51 @@ def context():
     return {"operation_id": "op-" + uuid.uuid4().hex[:12]}
 
 
+def verify_inherited_capabilities(binary):
+    assert os.geteuid() == 0
+    for execution in [{}, {"uid": 1000, "gid": 1000}, {"allow_sudo": False}]:
+        with tempfile.TemporaryDirectory(prefix="envd-inherited-caps-") as temporary:
+            root = Path(temporary)
+            os.chown(root, 1000, 1000)
+            launcher = root / "launch"
+            # Include CAP_KILL: its presence alone must not be mistaken for
+            # signaling authority retained by envd during an identity switch.
+            launcher.write_text(
+                "#!/bin/sh\nexec setpriv --reuid=1000 --regid=1000 --clear-groups "
+                "--inh-caps=+kill,+dac_override --ambient-caps=+kill,+dac_override " + shlex.quote(binary) + ' "$@"\n'
+            )
+            launcher.chmod(0o755)
+            device = Device(str(launcher), root, egress=False, execution=execution)
+            try:
+                device.open()
+                assert device.success("id -u; id -g").splitlines() == ["1000", "1000"]
+                status = dict(line.split(":", 1) for line in device.success("cat /proc/self/status").splitlines())
+                for field in ["CapEff", "CapPrm", "CapInh", "CapAmb"]:
+                    assert int(status[field].strip(), 16) == (1 << 5) | (1 << 1), status
+                assert int(status["NoNewPrivs"]) == (execution.get("allow_sudo") is False), status
+                # Native capabilities belong to file RPCs as well as commands.
+                private = device.workspace / "root-only.txt"
+                private.write_text("inherited-native-authority")
+                private.chmod(0o600)
+                assert (
+                    device.call(
+                        "file.read_text",
+                        {
+                            "context": context(),
+                            "path": {"path": str(private)},
+                            "line_limit": 10,
+                            "max_line_length": 1024,
+                        },
+                    )["text"]
+                    == "inherited-native-authority"
+                )
+                assert device.success("cat " + shlex.quote(str(private))).strip() == "inherited-native-authority"
+                device.close()
+            finally:
+                device.shutdown()
+    print("unchanged non-root launcher retains capabilities in commands and file RPCs, including with NNP")
+
+
 def verify_native_execution(binary, *, controlled=False):
     assert os.geteuid() == 0, "run this test in a disposable root-launched sandbox"
     with tempfile.TemporaryDirectory(prefix="envd-identity-") as temporary:
@@ -520,6 +565,7 @@ if __name__ == "__main__":
         "--controlled", action="store_true", help="also test managed Sessions with native namespace permissions"
     )
     args = parser.parse_args()
+    verify_inherited_capabilities(args.binary)
     verify_root_identity(args.binary)
     verify_native_execution(args.binary)
     verify_privilege_configuration(args.binary)

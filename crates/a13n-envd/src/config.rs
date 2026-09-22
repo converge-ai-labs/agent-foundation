@@ -81,6 +81,9 @@ pub(crate) struct TrustedShellProfileConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct CommandConfig {
+    // Set only after envd retains CAP_KILL for a root-to-user transition.
+    #[serde(skip)]
+    pub(crate) drop_supervisor_capabilities: bool,
     pub(crate) full_control: bool,
     pub(crate) base_environment: BTreeMap<String, String>,
     pub(crate) trusted_executable_roots: Vec<PathBuf>,
@@ -714,6 +717,7 @@ fn prepare_command_config(
     prepared_profiles.sort_by(|left, right| left.profile_id.cmp(&right.profile_id));
 
     Ok(Some(CommandConfig {
+        drop_supervisor_capabilities: false,
         full_control: false,
         base_environment: inherited_command_environment(),
         trusted_executable_roots: canonical_roots,
@@ -772,6 +776,7 @@ fn full_control_commands() -> Result<CommandConfig, ConfigError> {
     };
     let executable = canonical_regular_file(&executable, "Full Control shell")?;
     Ok(CommandConfig {
+        drop_supervisor_capabilities: false,
         full_control: true,
         base_environment,
         trusted_executable_roots: roots.clone(),
