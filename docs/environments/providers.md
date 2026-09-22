@@ -74,6 +74,8 @@ There are two operation routes: **Native** uses the host OS or vendor APIs direc
 
 Direct Local shares the Host account. Docker uses native Engine operations; all six cloud providers use native vendor transports. None requires Envd. Local and remote Envd Providers use EIP for Agent operations.
 
+For separately deployed envd, see the [sandbox validation record](../a13n-envd/egress.md#provider-validation-record) for E2B, Runloop, Vercel, Daytona and both Modal runtimes. It records the tested binary, launch identities, egress coverage and platform limits; it does not imply that these native Providers bootstrap envd or configure its egress policy.
+
 Multi-tenant authorization and container allocation remain Host responsibilities. One Device supports concurrent independent Sessions; Sessions are not tenant partitions. Hosts share the Device connection and select a fixed cwd for each adapter, closing the shared runtime only at Host shutdown.
 
 Start with the [built-in examples](examples.md) or [run both remote transports locally](remote-envd.md). HTTP/WebSocket Providers require external state, declare `supports_managed=False`, and do not provision or destroy infrastructure. The WebSocket SDK receives authenticated connections from your Host; it never opens a listener.
