@@ -119,7 +119,3 @@ Egress requires **both** a prepared deployment and a per-Session request:
 3. Have the trusted Host include an `egress` policy in `session.open`.
 
 The image does not grant itself Docker capabilities, auto-elevate or silently fall back. Missing facilities can fail daemon startup or Session preparation. A Session requesting egress on the default disabled daemon is rejected, not executed without its policy. No general-purpose `--privileged` launch is required for the default non-egress image.
-
-### Migrating older images
-
-Older source images launched the whole daemon as `sandbox` (`10001:10001`), used `/home/sandbox/.local/state/a13n-envd` for standalone runtime, and did not enable shell commands by default. This image instead launches as root, executes work as `1000:1000`, and grants passwordless sudo. Review existing volume ownership and any custom `--user`/command settings before switching. Preserve old Device registration state separately if needed; do not treat old generation-private runtime files as persistent identity. Disable sudo or commands explicitly when the new defaults are not appropriate for your deployment.
