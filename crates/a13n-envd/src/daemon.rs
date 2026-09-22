@@ -831,11 +831,11 @@ impl EipDeviceHandler for DeviceRequest<'_> {
         }
         let methods = session_methods(&self.daemon.config);
         if params.required_methods.iter().any(|method| {
-            !methods.contains(method)
-                && !(method == "egress.update"
+            !(methods.contains(method)
+                || (method == "egress.update"
                     && params.egress.is_some()
                     && self.daemon.config.egress.enabled
-                    && cfg!(target_os = "linux"))
+                    && cfg!(target_os = "linux")))
         }) {
             return Err(protocol_error(
                 ErrorType::Unsupported,
