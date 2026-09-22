@@ -11,12 +11,18 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+from a13n_envd_client.eip.v1 import GrantAccess, RestrictedSandbox
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.envd_policy import EnvdNetworkConfiguration
+from a13n_harness.providers.environment.local_envd.configuration import (
+    LocalEnvdEnvironmentConfiguration,
+    LocalEnvdLaunchConfiguration,
+)
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness.providers.environment.management import Environment
 from a13n_harness.providers.environment.models import EnvironmentState
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.environment_profiles import (
     FULL_CONTROL_PROFILE,
@@ -129,6 +135,32 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         )
 
 
+class LocalEnvdProfileConfiguration(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    launch: LocalEnvdLaunchConfiguration = Field(
+        default_factory=lambda: LocalEnvdLaunchConfiguration(
+            sandbox=RestrictedSandbox(mode="restricted", grants=()),
+            egress=EnvdNetworkConfiguration(mode="deny"),
+        )
+    )
+    session: LocalEnvdEnvironmentConfiguration = Field(default_factory=LocalEnvdEnvironmentConfiguration)
+
+    @model_validator(mode="after")
+    def _consistent_policy(self) -> LocalEnvdProfileConfiguration:
+        if (self.launch.egress.mode == "controlled") != (self.session.egress is not None):
+            raise ValueError("controlled egress requires an explicit Session policy; other modes reject it")
+        if self.session.working_directory is not None:
+            raise ValueError("The Project adapter selects the Session working directory")
+        return self
+
+
+class LocalEnvdProjectConfiguration(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    project_access: GrantAccess = GrantAccess.READ_WRITE
+
+
 class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
     key = LOCAL_ENVD_ADAPTER_KEY
     provider_key = LOCAL_ENVD_PROVIDER_KEY
@@ -142,8 +174,10 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         provider: EnvironmentProviderDefinition,
     ) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
         _require_provider(provider, LOCAL_ENVD)
-        _require_empty(provider_configuration, adapter_configuration)
-        return {}, {}
+        return (
+            LocalEnvdProfileConfiguration.model_validate(dict(provider_configuration)).model_dump(mode="json"),
+            LocalEnvdProjectConfiguration.model_validate(dict(adapter_configuration)).model_dump(mode="json"),
+        )
 
     async def bind(
         self,
@@ -155,8 +189,8 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         runtime: object | None,
     ) -> Environment:
         _require_provider(provider, LOCAL_ENVD)
-        value: dict[str, JsonValue] = {"working_directory": root.as_posix()}
-        configuration = provider.validate_environment(value)
+        selected = LocalEnvdProfileConfiguration.model_validate(profile.provider_configuration)
+        configuration = selected.session.model_copy(update={"working_directory": root.as_posix()})
         return provider.construct(
             configuration=configuration,
             environment_id=_environment_id(self.key, root),

@@ -28,7 +28,7 @@ const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
     "A13N_ENVD_ALLOW_SUDO",
     "A13N_ENVD_EXECUTION_UID",
     "A13N_ENVD_EXECUTION_GID",
-    "A13N_ENVD_EGRESS_ENABLED",
+    "A13N_ENVD_EGRESS_MODE",
     "A13N_ENVD_NAME",
     "A13N_ENVD_DESCRIPTION",
     "A13N_ENVD_IDLE_TIMEOUT_MS",
@@ -94,11 +94,7 @@ pub(crate) struct CommandConfig {
     pub(crate) max_environment_bytes: usize,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
-pub(crate) struct EgressConfig {
-    pub(crate) enabled: bool,
-}
+use crate::execution::boundary::{Egress, Sandbox};
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -106,7 +102,9 @@ struct FileConfig {
     #[serde(default)]
     execution: crate::execution::Options,
     #[serde(default)]
-    egress: EgressConfig,
+    egress: Egress,
+    #[serde(default)]
+    sandbox: Sandbox,
     device_id: Option<String>,
     name: Option<String>,
     description: Option<String>,
@@ -220,7 +218,9 @@ pub(crate) struct Config {
     pub(crate) managed: bool,
     pub(crate) execution: Option<crate::execution::Identity>,
     pub(crate) allow_sudo: bool,
-    pub(crate) egress: EgressConfig,
+    pub(crate) egress: Egress,
+    pub(crate) sandbox: Sandbox,
+    pub(crate) grant_sources: Vec<crate::execution::boundary::GrantSource>,
     #[cfg_attr(
         not(target_os = "linux"),
         allow(
@@ -267,7 +267,7 @@ impl Config {
         arguments: StartupArguments,
         connection: Option<ConnectionBootstrap>,
     ) -> Result<Self, ConfigError> {
-        let bootstrap_files = arguments
+        let mut bootstrap_files = arguments
             .config
             .iter()
             .map(fs::canonicalize)
@@ -365,6 +365,37 @@ impl Config {
         let limits = file.limits;
         validate_limits(&limits)?;
         let runtime = Some(RuntimeState::prepare(&runtime_dir).map_err(ConfigError::new)?);
+        bootstrap_files.push(runtime_dir.clone());
+        match &transport {
+            TransportConfig::Http(http) => {
+                bootstrap_files.push(http.credential_file.clone());
+                bootstrap_files.extend(http.tls_private_key_file.iter().cloned());
+            }
+            TransportConfig::ReverseWebSocket(ws) => {
+                bootstrap_files.push(ws.credential_file.clone())
+            }
+            TransportConfig::Stdio => {}
+        }
+        for path in &mut bootstrap_files {
+            *path = fs::canonicalize(&*path)
+                .map_err(|_| ConfigError::new("cannot resolve protected bootstrap path"))?;
+        }
+        file.sandbox
+            .validate(&bootstrap_files)
+            .map_err(|error| ConfigError::new(error.to_string()))?;
+        if !cfg!(target_os = "linux")
+            && ((file.sandbox.restricted() && !cfg!(target_os = "macos"))
+                || file.egress.controlled()
+                || (!file.sandbox.restricted() && file.egress != Egress::Inherit {}))
+        {
+            return Err(ConfigError::new(
+                "execution boundary is unavailable on this platform",
+            ));
+        }
+        let grant_sources = file
+            .sandbox
+            .sources()
+            .map_err(|error| ConfigError::new(error.to_string()))?;
         let full_control = file.full_control.unwrap_or(false);
         let command = if full_control {
             if !file.trusted_executable_roots.is_empty() || !file.shell_profiles.is_empty() {
@@ -381,6 +412,8 @@ impl Config {
             execution,
             allow_sudo,
             egress: file.egress,
+            sandbox: file.sandbox,
+            grant_sources,
             bootstrap_files,
             device_id,
             default_working_directory,
@@ -403,7 +436,9 @@ impl Config {
             managed: false,
             execution: None,
             allow_sudo: true,
-            egress: EgressConfig::default(),
+            egress: Egress::default(),
+            sandbox: Sandbox::default(),
+            grant_sources: Vec::new(),
             bootstrap_files: Vec::new(),
             device_id: device_id.to_owned(),
             default_working_directory: crate::device_path::from_native(
@@ -902,7 +937,7 @@ struct StartupArguments {
     allow_sudo: Option<bool>,
     execution_uid: Option<u32>,
     execution_gid: Option<u32>,
-    egress_enabled: Option<bool>,
+    egress_mode: Option<Egress>,
 }
 
 impl StartupArguments {
@@ -924,7 +959,7 @@ impl StartupArguments {
                     | "--allow-sudo"
                     | "--execution-uid"
                     | "--execution-gid"
-                    | "--egress-enabled"
+                    | "--egress-mode"
             ) {
                 return Err(ConfigError::new(format!("unknown argument: {flag}")));
             }
@@ -954,7 +989,7 @@ impl StartupArguments {
                 "--name" => result.name = Some(value),
                 "--description" => result.description = Some(value),
                 "--allow-sudo" => result.allow_sudo = Some(parse_bool(&value, &flag)?),
-                "--egress-enabled" => result.egress_enabled = Some(parse_bool(&value, &flag)?),
+                "--egress-mode" => result.egress_mode = Some(parse_egress(&value)?),
                 "--execution-uid" | "--execution-gid" => {
                     let value = value.parse().map_err(|_| {
                         ConfigError::new(format!("{flag} must be an unsigned 32-bit integer"))
@@ -975,8 +1010,8 @@ impl StartupArguments {
         file.execution.allow_sudo = self.allow_sudo.or(file.execution.allow_sudo);
         file.execution.uid = self.execution_uid.or(file.execution.uid);
         file.execution.gid = self.execution_gid.or(file.execution.gid);
-        if let Some(enabled) = self.egress_enabled {
-            file.egress.enabled = enabled;
+        if let Some(mode) = self.egress_mode {
+            file.egress = mode;
         }
         file.device_id = self.device_id.or(file.device_id.take());
         file.name = self.name.or(file.name.take());
@@ -1063,7 +1098,15 @@ fn parse_bool(value: &str, name: &str) -> Result<bool, ConfigError> {
     }
 }
 
+fn parse_egress(value: &str) -> Result<Egress, ConfigError> {
+    serde_json::from_value(serde_json::json!({"mode": value}))
+        .map_err(|_| ConfigError::new("egress mode must be inherit, deny, or controlled"))
+}
+
 fn apply_environment(value: &mut serde_json::Value) -> Result<(), ConfigError> {
+    if let Some(mode) = optional_unicode("A13N_ENVD_EGRESS_MODE")? {
+        value["egress"] = serde_json::to_value(parse_egress(&mode)?).expect("egress serialization");
+    }
     for (name, field) in [
         ("A13N_ENVD_DEVICE_ID", "device_id"),
         ("A13N_ENVD_NAME", "name"),
@@ -1080,7 +1123,6 @@ fn apply_environment(value: &mut serde_json::Value) -> Result<(), ConfigError> {
     }
     for (name, path) in [
         ("A13N_ENVD_ALLOW_SUDO", &["execution", "allow_sudo"][..]),
-        ("A13N_ENVD_EGRESS_ENABLED", &["egress", "enabled"][..]),
         (
             "A13N_ENVD_DIRECTORY_DISCOVERY",
             &["directory_discovery"][..],

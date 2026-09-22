@@ -4,7 +4,7 @@ use rcgen::{BasicConstraints, CertificateParams, CertifiedIssuer, IsCa, KeyPair,
 use rustls::{ClientConfig, RootCertStore, ServerConfig, pki_types::PrivatePkcs8KeyDer};
 
 /// The private key never leaves the proxy process. Only the PEM certificate is mounted.
-pub(super) struct Authority {
+pub(crate) struct Authority {
     issuer: CertifiedIssuer<'static, KeyPair>,
     upstream: Arc<ClientConfig>,
 }
@@ -92,7 +92,9 @@ mod tests {
     async fn session_ca_is_trusted_and_revocation_closes_existing_tls_connection() {
         let policy = Arc::new(
             Policy::new(PolicyInput {
-                allow_hosts: Some(vec!["example.com".into()]),
+                destinations: crate::egress::policy::allowlist_destinations(vec![
+                    "example.com".into(),
+                ]),
                 secrets: vec![],
             })
             .unwrap(),
@@ -122,8 +124,7 @@ mod tests {
         policy
             .update(Update {
                 expected_revision: 1,
-                allow_hosts: Some(vec![]),
-                unrestricted: false,
+                destinations: Some(crate::egress::policy::allowlist_destinations(vec![])),
                 set_secrets: vec![],
                 remove_secrets: vec![],
             })

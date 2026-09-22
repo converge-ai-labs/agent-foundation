@@ -15,6 +15,7 @@ from ..attachments import DeviceEIPSessionSource
 from ..definition import EnvironmentProviderDefinition
 from ..eip import EIPEnvironmentSession, open_eip_environment
 from ..eip.binding import configured_descriptor
+from ..envd_policy import resolve_egress
 from ..errors import EnvironmentProviderError, provider_error
 from ..errors import EnvironmentProviderErrorCategory as Category
 from ..management import Environment, HostLocalProviderConfiguration
@@ -149,6 +150,8 @@ class LocalEnvdEnvironment(Environment):
                 device_id=device.descriptor.device_id,
                 working_directory=self._configuration.working_directory,
                 required_methods=frozenset(self._configuration.required_methods),
+                egress=await resolve_egress(self._configuration.egress, self._runtime.credential_resolver),
+                expected_boundary=self._configuration.expected_boundary,
             )
             self._bound = await scope.__aenter__()
             self._eip_scope = scope
@@ -157,7 +160,11 @@ class LocalEnvdEnvironment(Environment):
                 local_backing_identity,
                 provider_key=self.provider_key,
                 roots=(_native_directory(self._bound.descriptor.working_directory), *launch.trusted_executable_roots),
-                policy={"executable": str(self._runtime.executable), "launch": launch.model_dump(mode="json")},
+                policy={
+                    "executable": str(self._runtime.executable),
+                    "launch": launch.model_dump(mode="json"),
+                    "boundary": device.descriptor.boundary.policy_digest,
+                },
             )
             self._descriptor = self._bound.descriptor.model_copy(update={"backing_identity": identity})
             self._operations = self._bound.operations

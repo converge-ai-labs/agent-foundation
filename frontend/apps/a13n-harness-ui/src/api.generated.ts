@@ -1651,6 +1651,19 @@ export interface components {
             /** Sources */
             sources: components["schemas"]["ToolProxySourceView"][];
         };
+        /** AllowlistDestinations */
+        AllowlistDestinations: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "allowlist";
+            /**
+             * Hosts
+             * @default []
+             */
+            hosts?: string[];
+        };
         /** ApiKeyAuthentication */
         ApiKeyAuthentication: {
             /**
@@ -2495,6 +2508,14 @@ export interface components {
             /** Next Offset */
             next_offset: number | null;
         };
+        /** DisabledSandbox */
+        DisabledSandbox: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "disabled";
+        };
         /** DraftSummary */
         DraftSummary: {
             /** Thread Id */
@@ -2506,6 +2527,40 @@ export interface components {
              * Format: date-time
              */
             unsent_since: string;
+        };
+        EgressDestinations: components["schemas"]["PublicDestinations"] | components["schemas"]["AllowlistDestinations"];
+        /**
+         * EgressMode
+         * @enum {string}
+         */
+        EgressMode: "inherit" | "deny" | "controlled";
+        /**
+         * EnvdBoundaryRequirement
+         * @description A selected remote boundary, not authority to change that Device.
+         */
+        EnvdBoundaryRequirement: {
+            sandbox: components["schemas"]["SandboxPolicy"];
+            egress: components["schemas"]["EgressMode"];
+            identity?: components["schemas"]["ExecutionIdentity"] | null;
+            /** Privilege Gain Blocked */
+            privilege_gain_blocked?: boolean | null;
+        };
+        /** EnvdEgressConfiguration */
+        EnvdEgressConfiguration: {
+            destinations: components["schemas"]["EgressDestinations"];
+            /**
+             * Secrets
+             * @default []
+             */
+            secrets?: components["schemas"]["EnvdSecretReference"][];
+        };
+        /** EnvdSecretReference */
+        EnvdSecretReference: {
+            /** Env */
+            env: string;
+            source: components["schemas"]["EnvironmentCredentialSource"];
+            /** Inject Hosts */
+            inject_hosts: string[];
         };
         /**
          * EnvironmentAction
@@ -2522,9 +2577,21 @@ export interface components {
              * Format: eip-absolute-path
              */
             working_directory: string;
+            egress?: components["schemas"]["EnvdEgressConfiguration"] | null;
+            expected_boundary?: components["schemas"]["EnvdBoundaryRequirement"] | null;
             /** Alias */
             alias: string;
             permission_ceiling?: components["schemas"]["EnvironmentPermissionSet"];
+        };
+        /** EnvironmentCredentialSource */
+        EnvironmentCredentialSource: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "environment";
+            /** Name */
+            name: string;
         };
         /** EnvironmentOutcomeView */
         EnvironmentOutcomeView: {
@@ -2591,6 +2658,13 @@ export interface components {
              * @default https://agent-foundation-docs.converge.ai/a13n-envd/
              */
             documentation_url?: string;
+        };
+        /** ExecutionIdentity */
+        ExecutionIdentity: {
+            /** Uid */
+            uid: number;
+            /** Gid */
+            gid: number;
         };
         /**
          * ExpiryStatus
@@ -2889,6 +2963,11 @@ export interface components {
              */
             output_tokens?: number;
         };
+        /**
+         * GrantAccess
+         * @enum {string}
+         */
+        GrantAccess: "read_only" | "read_write";
         /** GrokSubscriptionAuthentication */
         GrokSubscriptionAuthentication: {
             /**
@@ -3519,6 +3598,14 @@ export interface components {
          * @enum {string}
          */
         Provider: "codex" | "grok";
+        /** PublicDestinations */
+        PublicDestinations: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "public";
+        };
         /** PushConfiguration */
         PushConfiguration: {
             /** Public Key */
@@ -3575,6 +3662,19 @@ export interface components {
             resource_kind: "model" | "agent" | "subagent" | "harness_plugin" | "environment_profile" | "environment_run_extension" | "mcp_server" | "content_plugin";
             /** Resource Id */
             resource_id: string;
+        };
+        /** RestrictedSandbox */
+        RestrictedSandbox: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "restricted";
+            /**
+             * Grants
+             * @default []
+             */
+            grants?: components["schemas"]["SandboxGrant"][];
         };
         /** ReviewView */
         ReviewView: {
@@ -3743,6 +3843,16 @@ export interface components {
             descendant: boolean;
             totals: components["schemas"]["UsageTotals"];
         };
+        /** SandboxGrant */
+        SandboxGrant: {
+            /**
+             * Path
+             * Format: eip-absolute-path
+             */
+            path: string;
+            access: components["schemas"]["GrantAccess"];
+        };
+        SandboxPolicy: components["schemas"]["DisabledSandbox"] | components["schemas"]["RestrictedSandbox"];
         /** SavedChildOutputPage */
         SavedChildOutputPage: {
             /** Source Id */

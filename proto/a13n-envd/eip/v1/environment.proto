@@ -55,6 +55,63 @@ enum PathStyle {
   PATH_STYLE_WINDOWS = 2 [(eip_enum_value).json_name = "windows"];
 }
 
+message ExecutionIdentity {
+  uint32 uid = 1;
+  uint32 gid = 2;
+}
+
+enum GrantAccess {
+  GRANT_ACCESS_UNSPECIFIED = 0;
+  GRANT_ACCESS_READ_ONLY = 1 [(eip_enum_value).json_name = "read_only"];
+  GRANT_ACCESS_READ_WRITE = 2 [(eip_enum_value).json_name = "read_write"];
+}
+
+message SandboxGrant {
+  string path = 1 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
+  GrantAccess access = 2;
+}
+
+message DisabledSandbox {
+  string mode = 1 [(eip_field).const_string = "disabled"];
+}
+
+message RestrictedSandbox {
+  string mode = 1 [(eip_field).const_string = "restricted"];
+  repeated SandboxGrant grants = 2;
+}
+
+message SandboxPolicy {
+  option (eip_message).discriminated_union = true;
+  oneof sandbox {
+    DisabledSandbox disabled = 1;
+    RestrictedSandbox restricted = 2;
+  }
+}
+
+enum EgressMode {
+  EGRESS_MODE_UNSPECIFIED = 0;
+  EGRESS_MODE_INHERIT = 1 [(eip_enum_value).json_name = "inherit"];
+  EGRESS_MODE_DENY = 2 [(eip_enum_value).json_name = "deny"];
+  EGRESS_MODE_CONTROLLED = 3 [(eip_enum_value).json_name = "controlled"];
+}
+
+enum ExecutionBackend {
+  EXECUTION_BACKEND_UNSPECIFIED = 0;
+  EXECUTION_BACKEND_NATIVE = 1 [(eip_enum_value).json_name = "native"];
+  EXECUTION_BACKEND_LINUX_MANAGED = 2 [(eip_enum_value).json_name = "linux_managed"];
+  EXECUTION_BACKEND_LINUX_BUBBLEWRAP = 3 [(eip_enum_value).json_name = "linux_bubblewrap"];
+  EXECUTION_BACKEND_MACOS_SEATBELT = 4 [(eip_enum_value).json_name = "macos_seatbelt"];
+}
+
+message ExecutionBoundary {
+  optional ExecutionIdentity identity = 1;
+  SandboxPolicy sandbox = 2;
+  EgressMode egress = 3;
+  bool privilege_gain_blocked = 4;
+  ExecutionBackend backend = 5;
+  string policy_digest = 6 [(eip_field).string_format = EIP_STRING_FORMAT_SHA256];
+}
+
 message DeviceDescriptor {
   string device_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
   uint64 generation = 2 [(eip_field).minimum = 1];
@@ -66,6 +123,7 @@ message DeviceDescriptor {
   repeated string available_methods = 8;
   EIPLimits limits = 9;
   SessionLifecyclePolicy lifecycle = 10;
+  ExecutionBoundary boundary = 11;
 }
 
 message SessionDescriptor {
@@ -79,6 +137,7 @@ message SessionDescriptor {
   ExecutionFeatures execution_features = 8;
   SessionLifecyclePolicy lifecycle = 9;
   optional EgressStatus egress = 10;
+  ExecutionBoundary boundary = 11;
 }
 
 message InitializeResult {
@@ -139,10 +198,21 @@ message SessionCloseResult {
   bool closed = 1 [(eip_field).const_bool = true];
 }
 
-// Presence distinguishes unrestricted public domains from an empty deny-all list.
-message EgressHosts {
-  option (eip_message).transparent = true;
-  repeated string hosts = 1 [(eip_field).max_length = 256];
+message PublicDestinations {
+  string mode = 1 [(eip_field).const_string = "public"];
+}
+
+message AllowlistDestinations {
+  string mode = 1 [(eip_field).const_string = "allowlist"];
+  repeated string hosts = 2 [(eip_field).max_length = 256];
+}
+
+message EgressDestinations {
+  option (eip_message).discriminated_union = true;
+  oneof destinations {
+    PublicDestinations public = 1;
+    AllowlistDestinations allowlist = 2;
+  }
 }
 
 message EgressSecret {
@@ -153,7 +223,7 @@ message EgressSecret {
 }
 
 message EgressPolicy {
-  optional EgressHosts allow_hosts = 1;
+  EgressDestinations destinations = 1;
   repeated EgressSecret secrets = 2 [(eip_field).max_length = 64];
 }
 
@@ -165,14 +235,13 @@ message EgressSecretStatus {
 
 message EgressStatus {
   uint64 revision = 1 [(eip_field).minimum = 1];
-  optional EgressHosts allow_hosts = 2;
+  EgressDestinations destinations = 2;
   repeated EgressSecretStatus secrets = 3;
 }
 
 message EgressUpdateParams {
   uint64 expected_revision = 1 [(eip_field).minimum = 1];
-  optional EgressHosts allow_hosts = 2;
-  optional bool unrestricted = 3 [(eip_field).default_bool = false];
+  optional EgressDestinations destinations = 2;
   repeated EgressSecret set_secrets = 4 [(eip_field).max_length = 64];
   repeated string remove_secrets = 5 [(eip_field).max_length = 64];
 }

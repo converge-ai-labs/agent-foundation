@@ -153,6 +153,13 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
             working_directory="/",
             available_methods=("file.stat",),
             limits=limits,
+            boundary=eip.ExecutionBoundary(
+                sandbox=eip.DisabledSandbox(mode="disabled"),
+                egress="inherit",
+                privilege_gain_blocked=False,
+                backend="native",
+                policy_digest="0" * 64,
+            ),
         ),
         readiness=readiness,
         client=SimpleNamespace(file_stat=stat),

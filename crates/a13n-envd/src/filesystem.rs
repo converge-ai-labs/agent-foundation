@@ -208,20 +208,20 @@ impl Drop for StagingReservation {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) struct SessionStagingReservation {
     quota: StagingQuota,
     bytes: u64,
     objects: u64,
     retained: bool,
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl SessionStagingReservation {
     pub(crate) fn retain(&mut self) {
         self.retained = true;
     }
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl Drop for SessionStagingReservation {
     fn drop(&mut self) {
         if !self.retained {
@@ -231,7 +231,7 @@ impl Drop for SessionStagingReservation {
 }
 
 impl DeviceFilesystem {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub(crate) fn reserve_session_staging(
         &self,
         bytes: u64,
@@ -536,11 +536,20 @@ pub(crate) struct CommitDirectory {
 impl CommitDirectory {
     pub(crate) fn open(path: &EIPPath) -> Result<Self, PathError> {
         let native = device_path::to_native(&path.path)?;
+        let existing = native
+            .ancestors()
+            .find(|path| path.is_dir())
+            .ok_or(PathError::Denied)?;
         fs::create_dir_all(&native).map_err(PathError::from_io)?;
+        // Persist newly created entries and their first existing parent. Opening
+        // an existing granted directory must not require access up to Host /.
         for ancestor in native.ancestors() {
             let directory =
                 Dir::open_ambient_dir(ancestor, ambient_authority()).map_err(PathError::from_io)?;
             sync_directory(&directory).map_err(PathError::from_io)?;
+            if ancestor == existing {
+                break;
+            }
         }
         Ok(Self {
             root: Dir::open_ambient_dir(native, ambient_authority()).map_err(PathError::from_io)?,

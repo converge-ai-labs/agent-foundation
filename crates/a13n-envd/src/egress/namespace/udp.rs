@@ -46,11 +46,7 @@ pub(super) fn socket() -> io::Result<OwnedFd> {
     Ok(fd)
 }
 
-pub(in crate::egress) async fn serve(
-    fd: OwnedFd,
-    routes: Arc<Routes>,
-    policy: Arc<Policy>,
-) -> io::Result<()> {
+pub(crate) async fn serve(fd: OwnedFd, routes: Arc<Routes>, policy: Arc<Policy>) -> io::Result<()> {
     let socket = Arc::new(AsyncFd::new(fd)?);
     let mut flows = BTreeMap::<Flow, mpsc::Sender<Vec<u8>>>::new();
     let mut tasks = JoinSet::new();

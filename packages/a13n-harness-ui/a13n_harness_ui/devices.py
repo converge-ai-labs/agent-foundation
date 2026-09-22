@@ -243,7 +243,11 @@ class DeviceConnections:
         self, binding: ResolvedEnvironmentBinding, *, environment_id: str, state: EnvironmentState | None = None
     ) -> Environment:
         resource = binding.device
-        configuration = RemoteEnvdEnvironmentConfiguration(working_directory=binding.selection.working_directory)
+        configuration = RemoteEnvdEnvironmentConfiguration(
+            working_directory=binding.selection.working_directory,
+            egress=binding.selection.egress,
+            expected_boundary=binding.selection.expected_boundary,
+        )
         if isinstance(resource.transport, HttpDeviceTransport):
             return await HTTP_ENVD.create(
                 environment=configuration,

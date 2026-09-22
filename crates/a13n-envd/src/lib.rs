@@ -43,7 +43,7 @@ pub async fn run_internal_supervisor() -> Result<(), Box<dyn Error + Send + Sync
 pub fn run_internal_egress_worker(ready: bool) -> std::io::Result<()> {
     #[cfg(target_os = "linux")]
     {
-        egress::worker::run_internal(ready)
+        execution::worker::run_internal(ready)
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -52,29 +52,46 @@ pub fn run_internal_egress_worker(ready: bool) -> std::io::Result<()> {
     }
 }
 
-/// Runs an ordinary Session under its trusted startup identity.
+/// Runs the immutable restricted bootstrap before loading payload-tree code.
 #[doc(hidden)]
-pub fn run_internal_session_worker() -> std::io::Result<()> {
+pub fn run_internal_restricted_worker() -> std::io::Result<()> {
     #[cfg(target_os = "linux")]
     {
-        egress::worker::run_session()
+        execution::worker::run_restricted()
     }
     #[cfg(not(target_os = "linux"))]
     {
-        Err(std::io::Error::other("identity workers require Linux"))
+        Err(std::io::Error::other("restricted bootstrap requires Linux"))
+    }
+}
+
+/// Runs an ordinary Session under its trusted startup identity.
+#[doc(hidden)]
+pub fn run_internal_session_worker() -> std::io::Result<()> {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        execution::worker::run_session()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        Err(std::io::Error::other(
+            "Session workers are unavailable on this platform",
+        ))
     }
 }
 
 /// Runs a one-shot directory observation under the execution identity.
 #[doc(hidden)]
 pub fn run_internal_directory_worker() -> std::io::Result<()> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         execution::discovery::run()
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
-        Err(std::io::Error::other("identity workers require Linux"))
+        Err(std::io::Error::other(
+            "Session workers are unavailable on this platform",
+        ))
     }
 }
 
@@ -114,7 +131,7 @@ pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
         config::Config::from_environment()?
     };
     #[cfg(target_os = "linux")]
-    if config.egress.enabled && !config.managed {
+    if execution::boundary::managed(&config.sandbox, config.egress) && !config.managed {
         execution::management::enter(config)?;
         unreachable!("management bootstrap reexecs or fails");
     }

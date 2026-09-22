@@ -40,7 +40,7 @@ impl DeviceCapacity {
 }
 
 impl ResourceCapacity {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub(crate) fn reserve_session(&self, active: u64, records: u64) -> Option<ResourcePermit> {
         Some(ResourcePermit {
             active: Some(

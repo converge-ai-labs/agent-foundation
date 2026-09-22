@@ -1,15 +1,10 @@
-//! Linux bootstrap runs before constructing Tokio or executing any payload.
-//! The Session worker owns PID 1; exiting it kills even detached descendants.
+//! Controlled network setup and broker-side socket forwarding.
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
 pub(crate) use linux::*;
 #[cfg(target_os = "linux")]
-pub(super) mod fds;
-#[cfg(target_os = "linux")]
-mod seccomp;
-#[cfg(target_os = "linux")]
-pub(super) mod tcp;
+pub(crate) mod tcp;
 
 #[cfg(target_os = "linux")]
-pub(super) mod udp;
+pub(crate) mod udp;

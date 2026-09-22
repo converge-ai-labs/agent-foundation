@@ -25,6 +25,7 @@ from a13n_envd_client.eip.v1 import (
     EIPCallContext,
     EIPLimits,
     EnvironmentReadinessParams,
+    ExecutionBoundary,
     ExecutionFeatures,
     JsonRpcRequest,
     PathStyle,
@@ -35,6 +36,16 @@ from a13n_envd_client.eip.v1 import (
     decode_model,
 )
 from a13n_envd_client.eip.v1.methods import DEVICE_DESCRIBE, ENVIRONMENT_READINESS, SESSION_CLOSE, SESSION_KEEPALIVE
+
+BOUNDARY = ExecutionBoundary.model_validate(
+    {
+        "sandbox": {"mode": "disabled"},
+        "egress": "inherit",
+        "privilege_gain_blocked": False,
+        "backend": "native",
+        "policy_digest": "a" * 64,
+    }
+)
 
 
 class FakeTransport:
@@ -89,6 +100,7 @@ def limits() -> EIPLimits:
 
 def descriptor(session_id: str = "ses-a", *, idle_timeout_ms: int = 30_000) -> SessionDescriptor:
     return SessionDescriptor(
+        boundary=BOUNDARY,
         device_id="device-test",
         generation=1,
         session_id=session_id,
@@ -108,6 +120,7 @@ def descriptor(session_id: str = "ses-a", *, idle_timeout_ms: int = 30_000) -> S
 
 def device_descriptor() -> DeviceDescriptor:
     return DeviceDescriptor(
+        boundary=BOUNDARY,
         device_id="device-test",
         generation=1,
         path_style=PathStyle.POSIX,

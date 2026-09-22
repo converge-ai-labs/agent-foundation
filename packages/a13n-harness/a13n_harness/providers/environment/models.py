@@ -210,6 +210,7 @@ class EnvironmentDescriptor(BaseModel):
 
     generation: str
     backing_identity: str | None = Field(default=None, min_length=1, max_length=256)
+    execution_boundary: Mapping[str, JsonValue] = Field(default_factory=dict)
     working_directory: str = Field(default="/", pattern=r"^/[^\x00]*$")
     operation_families: frozenset[EnvironmentOperationFamily]
     permissions: EnvironmentPermissionSet
@@ -221,12 +222,12 @@ class EnvironmentDescriptor(BaseModel):
     def _valid_generation(cls, value: str) -> str:
         return _require_identifier(value, "generation")
 
-    @field_validator("limits", mode="after")
+    @field_validator("limits", "execution_boundary", mode="after")
     @classmethod
     def _immutable_limits(cls, value: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
         return MappingProxyType({str(key): _freeze_json(item) for key, item in value.items()})
 
-    @field_serializer("limits")
+    @field_serializer("limits", "execution_boundary")
     def _serialize_limits(self, value: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
         return {key: _thaw_json(item) for key, item in value.items()}
 

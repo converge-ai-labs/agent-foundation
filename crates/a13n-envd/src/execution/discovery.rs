@@ -11,8 +11,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Deserialize, Serialize)]
 struct Request {
-    identity: Identity,
+    identity: Option<Identity>,
     managed: bool,
+    restricted: bool,
+    groups: Option<Vec<u32>>,
     path: String,
     offset: u64,
     limit: u64,
@@ -22,17 +24,40 @@ struct Request {
 type Reply = Result<DirectoryListResult, EIPError>;
 
 pub(crate) async fn list(config: &Config, params: DirectoryListParams) -> io::Result<Reply> {
+    #[cfg(target_os = "linux")]
+    let identity = config
+        .execution
+        .ok_or_else(|| io::Error::other("missing execution identity"))?;
+    #[cfg(target_os = "linux")]
+    let groups = if config.sandbox.restricted() {
+        super::restricted_groups(identity)?
+    } else {
+        None
+    };
+    #[cfg(target_os = "macos")]
+    let groups = None;
     let request = Request {
-        identity: config
-            .execution
-            .ok_or_else(|| io::Error::other("missing execution identity"))?,
+        identity: config.execution,
         managed: config.managed,
+        restricted: config.sandbox.restricted(),
+        groups,
         path: params.path,
         offset: params.offset,
         limit: params.limit,
         max_bytes: config.limits.max_response_bytes,
     };
-    let mut command = if config.managed {
+    #[cfg(target_os = "linux")]
+    let mut command = if config.sandbox.restricted() {
+        tokio::process::Command::from(super::sandbox::command(
+            &config.sandbox,
+            &config.grant_sources,
+            super::boundary::Egress::Deny {},
+            None,
+            identity,
+            config.managed,
+            None,
+        )?)
+    } else if config.managed {
         let mut command = tokio::process::Command::new("/usr/bin/unshare");
         command.args([
             "--mount",
@@ -48,6 +73,15 @@ pub(crate) async fn list(config: &Config, params: DirectoryListParams) -> io::Re
     } else {
         tokio::process::Command::new(std::env::current_exe()?)
     };
+    #[cfg(target_os = "macos")]
+    let state = super::StateDirectory::new(None)?;
+    #[cfg(target_os = "macos")]
+    let mut command = tokio::process::Command::from(super::macos::command(
+        &config.sandbox,
+        &config.grant_sources,
+        super::boundary::Egress::Deny {},
+        &state.0,
+    )?);
     let mut child = command
         .arg("--internal-directory-worker")
         .env_clear()
@@ -89,16 +123,8 @@ pub(crate) fn run() -> io::Result<()> {
     use std::io::Read;
     let request: Request =
         serde_json::from_reader(io::stdin().take(16 * 1024 * 1024)).map_err(io::Error::other)?;
-    if request.managed {
-        crate::egress::namespace::prepare_discovery()?;
-    }
-    super::enter(request.identity, &mut None)?;
-    if request.managed && unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // No command execution in this helper; do not retain the worker's CAP_KILL.
-    super::clear_payload_capabilities()?;
-    super::disable_privilege_gain()?;
+    #[cfg(target_os = "linux")]
+    enter(&request)?;
     let reply = crate::device_path::list_directory(
         &request.path,
         request.offset,
@@ -107,4 +133,27 @@ pub(crate) fn run() -> io::Result<()> {
     )
     .map_err(|error| crate::daemon::map_resource_error(crate::resource::map_path_error(error)));
     serde_json::to_writer(io::stdout(), &reply).map_err(io::Error::other)
+}
+
+#[cfg(target_os = "linux")]
+fn enter(request: &Request) -> io::Result<()> {
+    let identity = request
+        .identity
+        .ok_or_else(|| io::Error::other("missing execution identity"))?;
+    if request.restricted {
+        super::enter_restricted(identity, request.groups.as_deref())?;
+    } else if request.managed {
+        crate::execution::namespace::prepare_discovery()?;
+    }
+    let switched_from_root = unsafe { libc::geteuid() } == 0 && identity.uid != 0;
+    super::enter(identity, &mut None)?;
+    if request.managed && unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // Drop only envd-retained supervisor authority, not native root or an
+    // unchanged launcher's capabilities. Discovery has the same identity as files.
+    if request.restricted || switched_from_root {
+        super::clear_payload_capabilities()?;
+    }
+    super::disable_privilege_gain()
 }

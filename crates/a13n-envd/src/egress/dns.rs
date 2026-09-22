@@ -11,7 +11,7 @@ const MAX_NAMES: usize = 4096;
 const FIRST_ADDRESS: u32 = 0x7f400001; // 127.64.0.1, reserved for intercepted traffic.
 
 #[derive(Default)]
-pub(super) struct Routes(Mutex<Vec<String>>);
+pub(crate) struct Routes(Mutex<Vec<String>>);
 
 impl Routes {
     pub fn host(&self, address: Ipv4Addr) -> Option<String> {
@@ -142,8 +142,7 @@ mod tests {
         let denied = policy
             .update(Update {
                 expected_revision: 1,
-                allow_hosts: Some(vec![]),
-                unrestricted: false,
+                destinations: Some(crate::egress::policy::allowlist_destinations(vec![])),
                 set_secrets: vec![],
                 remove_secrets: vec![],
             })

@@ -21,7 +21,18 @@ from pathlib import Path
 
 
 class Device:
-    def __init__(self, binary, root, *, egress=True, execution=None, environment=None, arguments=(), user=None):
+    def __init__(
+        self,
+        binary,
+        root,
+        *,
+        egress="controlled",
+        execution=None,
+        environment=None,
+        arguments=(),
+        user=None,
+        sandbox=None,
+    ):
         # This disposable test image provisions UID/GID 1000. The production
         # daemon no longer assumes any account when launched as root.
         if execution is None and user is None and os.geteuid() == 0:
@@ -41,7 +52,8 @@ class Device:
                     "device_id": "device-egress-test",
                     "default_working_directory": str(self.workspace),
                     "full_control": True,
-                    "egress": {"enabled": egress},
+                    "egress": {"mode": egress},
+                    **({"sandbox": sandbox} if sandbox is not None else {}),
                     **({"execution": execution} if execution is not None else {}),
                 }
             )
@@ -189,7 +201,7 @@ def network_fixture(device):
 
 
 def cleanup_failure(device):
-    device.open({"allow_hosts": []})
+    device.open({"destinations": {"mode": "allowlist", "hosts": []}})
     parent = device.workspace / "cleanup-failure"
     device.success("mkdir " + shlex.quote(str(parent)))
     device.call(
@@ -212,7 +224,7 @@ def cleanup_failure(device):
 
 
 def broker_death(device):
-    device.open({"allow_hosts": []})
+    device.open({"destinations": {"mode": "allowlist", "hosts": []}})
     heartbeat = device.workspace / "heartbeat"
     script = (
         "import os,time; os.setsid(); "
@@ -250,7 +262,9 @@ def run(binary, local_network, http_host):
             github = http_host == "api.github.com"
             value = "application/json" if github else base64.b64encode(f"{user}:{password}".encode()).decode()
             binding = {"env": "TEST_TOKEN", "value": value, "inject_hosts": [http_host]}
-            status = device.open({"allow_hosts": [http_host, "93.184.216.34"], "secrets": [binding]})
+            status = device.open(
+                {"destinations": {"mode": "allowlist", "hosts": [http_host, "93.184.216.34"]}, "secrets": [binding]}
+            )
             device.success(
                 "sudo -n --preserve-env=SSL_CERT_FILE,CURL_CA_BUNDLE curl --fail --max-time 20 -sS https://"
                 + http_host
@@ -305,13 +319,17 @@ def run(binary, local_network, http_host):
                 network_fixture(device)
             device.call(
                 "egress.update",
-                {"expected_revision": 2, "allow_hosts": [], "remove_secrets": ["TEST_TOKEN", "NEW_TOKEN"]},
+                {
+                    "expected_revision": 2,
+                    "destinations": {"mode": "allowlist", "hosts": []},
+                    "remove_secrets": ["TEST_TOKEN", "NEW_TOKEN"],
+                },
             )
             device.success(f"curl --max-time 2 -sS https://{http_host}/headers >/dev/null 2>&1; test $? -ne 0")
             device.close()
             # Repeated successful closes must return reservations to Device capacity.
             for _ in range(3):
-                device.open({"allow_hosts": []})
+                device.open({"destinations": {"mode": "allowlist", "hosts": []}})
                 device.close()
             cleanup_failure(device)
             broker_death(device)

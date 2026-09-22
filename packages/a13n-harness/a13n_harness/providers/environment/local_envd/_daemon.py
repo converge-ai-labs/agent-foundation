@@ -7,16 +7,17 @@ import re
 import signal
 import stat
 import subprocess
-from collections.abc import Callable, Mapping
+import sys
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from a13n_envd_client import EIPDeviceConnection, StdioTransport
 from a13n_envd_client import __version__ as envd_client_version
+from a13n_envd_client.eip.v1 import EgressMode, ExecutionIdentity, RestrictedSandbox
 from anyio import CancelScope
 
+from ..envd_policy import EnvdBoundaryRequirement
 from ..errors import EnvironmentProviderError, provider_error
 from ..errors import EnvironmentProviderErrorCategory as Category
 from ..errors import EnvironmentProviderOutcomeCertainty as Certainty
@@ -31,17 +32,6 @@ _PROCESS_POLL_SECONDS = 0.01
 _SUBPROCESS_TIMEOUT_SECONDS = 30.0
 _TERMINATE_GRACE_SECONDS = 5.0
 _PYTHON_RELEASE_VERSION = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?:rc(?P<rc>[1-9][0-9]*))?$")
-
-
-@dataclass(frozen=True, slots=True)
-class LocalEnvdProcessLaunch:
-    """Host-owned native launch envelope; never serialized as Provider configuration."""
-
-    arguments: tuple[str, ...]
-    environment: Mapping[str, str]
-
-
-type LocalEnvdLaunchFactory = Callable[[Path, Path, Path, Mapping[str, str]], LocalEnvdProcessLaunch]
 
 
 class LocalDaemon:
@@ -60,7 +50,6 @@ class LocalDaemon:
         configuration: LocalEnvdLaunchConfiguration,
         *,
         device_id: str,
-        launch_factory: LocalEnvdLaunchFactory | None = None,
     ) -> EIPDeviceConnection:
         try:
             await validate_local_envd_runtime(executable)
@@ -90,18 +79,15 @@ class LocalDaemon:
                     poll_seconds=_PROCESS_POLL_SECONDS,
                 )
                 options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | job.creation_flags
-            environment = _daemon_environment(device_id=device_id, runtime_dir=runtime_dir)
-            launch = (
-                LocalEnvdProcessLaunch((str(executable), "--config", str(config_path)), environment)
-                if launch_factory is None
-                else await asyncio.to_thread(launch_factory, executable, config_path, runtime_dir, environment)
-            )
+            environment = _daemon_environment(device_id=device_id, runtime_dir=runtime_dir, configuration=configuration)
             process = await asyncio.create_subprocess_exec(
-                *launch.arguments,
+                str(executable),
+                "--config",
+                str(config_path),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=stderr,
-                env=launch.environment,
+                env=environment,
                 **options,
             )
             self._stack.push_async_callback(_terminate_process_tree, process)
@@ -114,6 +100,19 @@ class LocalDaemon:
                 request_timeout=30,
             )
             self._stack.push_async_callback(self.device.close)
+            execution = configuration.execution
+            EnvdBoundaryRequirement(
+                sandbox=configuration.sandbox,
+                egress=EgressMode(configuration.egress.mode),
+                identity=(
+                    ExecutionIdentity(uid=execution.uid, gid=execution.gid)
+                    if execution.uid is not None and execution.gid is not None
+                    else None
+                ),
+                privilege_gain_blocked=(
+                    sys.platform == "linux" and (configuration.sandbox.mode == "restricted" or not execution.allow_sudo)
+                ),
+            ).check(self.device.descriptor.boundary)
             return self.device
         except BaseException as error:
             try:
@@ -153,8 +152,16 @@ def _canonical_configuration(configuration: LocalEnvdLaunchConfiguration) -> Loc
         )
         for profile in configuration.shell_profiles
     )
+    sandbox = configuration.sandbox
+    if isinstance(sandbox, RestrictedSandbox):
+        grants = tuple(
+            grant.model_copy(update={"path": _canonical_directory(Path(grant.path), "Sandbox grant").as_posix()})
+            for grant in sandbox.grants
+        )
+        sandbox = sandbox.model_copy(update={"grants": tuple(sorted(set(grants), key=lambda grant: grant.path))})
     return configuration.model_copy(
         update={
+            "sandbox": sandbox,
             "default_working_directory": directory,
             "trusted_executable_roots": roots,
             "shell_profiles": profiles,
@@ -210,6 +217,9 @@ def _write_private_bootstrap(root: Path, configuration: LocalEnvdLaunchConfigura
         for profile in configuration.shell_profiles
     ]
     payload = {
+        "execution": configuration.execution.model_dump(mode="json", exclude_none=True),
+        "sandbox": configuration.sandbox.model_dump(mode="json"),
+        "egress": configuration.egress.model_dump(mode="json"),
         "default_working_directory": str(configuration.default_working_directory),
         "directory_discovery": configuration.directory_discovery,
         "limits": {
@@ -226,8 +236,15 @@ def _write_private_bootstrap(root: Path, configuration: LocalEnvdLaunchConfigura
     return runtime_dir, config_path, root / "a13n-envd.stderr.log"
 
 
-def _daemon_environment(*, device_id: str, runtime_dir: Path) -> dict[str, str]:
-    environment = {name: value for name, value in os.environ.items() if not name.startswith("A13N_ENVD_")}
+def _daemon_environment(
+    *, device_id: str, runtime_dir: Path, configuration: LocalEnvdLaunchConfiguration
+) -> dict[str, str]:
+    # A controlled/restricted worker must not inherit Host credential sources,
+    # even when the source variable differs from the injected payload variable.
+    if configuration.sandbox.mode == "restricted" or configuration.egress.mode == "controlled":
+        environment = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C.UTF-8"}
+    else:
+        environment = {name: value for name, value in os.environ.items() if not name.startswith("A13N_ENVD_")}
     environment.update(
         {
             "A13N_ENVD_DEVICE_ID": device_id,

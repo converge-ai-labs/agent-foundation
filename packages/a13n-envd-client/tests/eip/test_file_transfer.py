@@ -15,6 +15,7 @@ from a13n_envd_client.eip.v1 import (
     DeviceDescriptor,
     EIPLimits,
     EIPPath,
+    ExecutionBoundary,
     ExecutionFeatures,
     FileByteRange,
     FileInfo,
@@ -44,6 +45,16 @@ from a13n_envd_client.eip.v1 import (
 )
 from a13n_envd_client.errors import EIPProtocolError, EIPSessionStateError, EIPTransportClosedError
 from pydantic import BaseModel
+
+BOUNDARY = ExecutionBoundary.model_validate(
+    {
+        "sandbox": {"mode": "disabled"},
+        "egress": "inherit",
+        "privilege_gain_blocked": False,
+        "backend": "native",
+        "policy_digest": "a" * 64,
+    }
+)
 
 
 class FakeTypedTransport:
@@ -120,6 +131,7 @@ def decode_params(request: JsonRpcRequest, model_type: type[BaseModel]) -> Any:
 
 def descriptor() -> SessionDescriptor:
     return SessionDescriptor(
+        boundary=BOUNDARY,
         device_id="device-transfer",
         session_id="ses-transfer",
         generation=1,
@@ -185,6 +197,7 @@ def test_high_level_reader_withholds_ack_until_iteration_drains_and_verifies() -
         connection = EIPDeviceConnection(
             device,
             DeviceDescriptor(
+                boundary=BOUNDARY,
                 device_id="device-transfer",
                 generation=1,
                 path_style="posix",
@@ -271,6 +284,7 @@ def test_high_level_reader_rejects_unverified_completion_and_closes_only_session
         connection = EIPDeviceConnection(
             device,
             DeviceDescriptor(
+                boundary=BOUNDARY,
                 device_id="device-transfer",
                 generation=1,
                 path_style="posix",
@@ -367,6 +381,7 @@ def test_high_level_reader_rejects_bytes_beyond_requested_maximum(
         connection = EIPDeviceConnection(
             device,
             DeviceDescriptor(
+                boundary=BOUNDARY,
                 device_id="device-transfer",
                 generation=1,
                 path_style="posix",
@@ -433,6 +448,7 @@ def test_repeated_writer_abandonment_consumes_reset_acknowledgements() -> None:
         connection = EIPDeviceConnection(
             device,
             DeviceDescriptor(
+                boundary=BOUNDARY,
                 device_id="device-transfer",
                 generation=1,
                 path_style="posix",
@@ -505,6 +521,7 @@ def test_reader_abandonment_joins_retirement_or_reports_closed_owner(exit_mode: 
         connection = EIPDeviceConnection(
             device,
             DeviceDescriptor(
+                boundary=BOUNDARY,
                 device_id="device-transfer",
                 generation=1,
                 path_style="posix",
@@ -590,6 +607,7 @@ def test_queued_peer_reader_reset_does_not_consume_retired_capacity() -> None:
         connection = EIPDeviceConnection(
             device,
             DeviceDescriptor(
+                boundary=BOUNDARY,
                 device_id="device-transfer",
                 generation=1,
                 path_style="posix",
@@ -654,6 +672,7 @@ def test_high_level_writer_frames_chunks_and_commits_local_digest() -> None:
         connection = EIPDeviceConnection(
             device,
             DeviceDescriptor(
+                boundary=BOUNDARY,
                 device_id="device-transfer",
                 generation=1,
                 path_style="posix",

@@ -27,7 +27,7 @@ use super::{
 type Body = BoxBody<Bytes, io::Error>;
 const IO_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub(super) struct Proxy {
+pub(crate) struct Proxy {
     pub policy: Arc<Policy>,
     pub authority: Authority,
 }
@@ -345,7 +345,7 @@ mod tests {
     #[tokio::test]
     async fn response_redacts_headers_chunks_and_trailers_using_request_revision() {
         let policy = Policy::new(PolicyInput {
-            allow_hosts: None,
+            destinations: crate::egress::policy::public_destinations(),
             secrets: vec![SecretInput {
                 env: "TOKEN".into(),
                 value: "old-secret".into(),
@@ -358,8 +358,7 @@ mod tests {
         policy
             .update(Update {
                 expected_revision: 1,
-                allow_hosts: None,
-                unrestricted: false,
+                destinations: None,
                 remove_secrets: vec![],
                 set_secrets: vec![SecretInput {
                     env: "TOKEN".into(),
@@ -414,7 +413,7 @@ mod tests {
     #[test]
     fn secret_in_response_header_name_is_rejected() {
         let policy = Policy::new(PolicyInput {
-            allow_hosts: None,
+            destinations: crate::egress::policy::public_destinations(),
             secrets: vec![SecretInput {
                 env: "TOKEN".into(),
                 value: "secret".into(),

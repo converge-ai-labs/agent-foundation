@@ -13,6 +13,7 @@ from a13n_envd_client.eip.v1 import (
     DeviceDescriptor,
     DirectoryListParams,
     DirectoryListResult,
+    EgressMode,
     EgressPolicy,
     EIPCallContext,
     EIPClient,
@@ -110,6 +111,9 @@ class EIPDeviceConnection:
         if (observed.device_id, observed.generation) != (self._descriptor.device_id, self._descriptor.generation):
             await self.close()
             raise EIPProtocolError("Device identity or generation changed on its connection")
+        if observed.boundary != self._descriptor.boundary:
+            await self.close()
+            raise EIPProtocolError("Device execution boundary changed on its connection")
         _validate_methods(observed.available_methods)
         self._descriptor = observed
         return observed
@@ -128,6 +132,9 @@ class EIPDeviceConnection:
     ) -> EIPSession:
         self._ensure_open()
         _finite_timeout_ms(readiness_timeout, name="readiness_timeout")
+        controlled = self._descriptor.boundary.egress == EgressMode.CONTROLLED
+        if (egress is not None) != controlled:
+            raise ValueError("Session egress policy is required exactly for controlled Devices")
         required = tuple(
             dict.fromkeys(
                 (*required_methods, "environment.readiness", *(("egress.update",) if egress is not None else ()))
@@ -152,8 +159,7 @@ class EIPDeviceConnection:
                 await self.close()
             raise
         try:
-            if egress is not None and session.descriptor.egress is None:
-                raise EIPProtocolError("Session omitted requested egress policy")
+            self._validate_session_boundary(session.descriptor)
             missing = set(required) - set(session.descriptor.available_methods)
             if missing:
                 raise EIPProtocolError(f"Session omitted required method: {min(missing)}")
@@ -170,12 +176,20 @@ class EIPDeviceConnection:
         try:
             result = await session._client.session_attach(SessionAttachParams())
             _validate_descriptor_refresh(descriptor, result.descriptor)
+            self._validate_session_boundary(result.descriptor)
             session._descriptor = result.descriptor
             await session._become_ready(readiness_timeout)
             return session
         except BaseException:
             session._finish(EIPSessionStateError("Session attachment failed"))
             raise
+
+    def _validate_session_boundary(self, descriptor: SessionDescriptor) -> None:
+        if descriptor.boundary != self._descriptor.boundary:
+            raise EIPProtocolError("Session execution boundary differs from its Device")
+        controlled = descriptor.boundary.egress == EgressMode.CONTROLLED
+        if (descriptor.egress is not None) != controlled:
+            raise EIPProtocolError("Session egress status differs from its Device network mode")
 
     def _bind(self, descriptor: SessionDescriptor) -> EIPSession:
         self._ensure_open()
@@ -459,6 +473,7 @@ def _validate_descriptor_refresh(previous: SessionDescriptor, observed: SessionD
         "generation",
         "session_id",
         "working_directory",
+        "boundary",
         "shell_profiles",
         "execution_features",
         "lifecycle",

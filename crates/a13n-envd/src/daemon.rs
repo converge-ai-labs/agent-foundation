@@ -40,9 +40,9 @@ use crate::{
 };
 
 const MAX_STRING_REQUEST_ID_BYTES: usize = 128;
-#[cfg(target_os = "linux")]
-pub(crate) mod egress;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) mod execution;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod isolated;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionState {
@@ -79,8 +79,8 @@ pub(crate) enum ResponseHandoff {
         operation: Option<ActiveResponseHandoff>,
         _history: OwnedRwLockReadGuard<()>,
     },
-    #[cfg(target_os = "linux")]
-    Remote(crate::egress::worker::client::Handoff),
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    Remote(crate::execution::worker::client::Handoff),
 }
 
 impl ResponseHandoff {
@@ -91,7 +91,7 @@ impl ResponseHandoff {
                     operation.complete();
                 }
             }
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             Self::Remote(handoff) => handoff.complete(),
         }
     }
@@ -185,7 +185,7 @@ impl Daemon {
                 .filter(|method| method.name != "directory.list" || config.directory_discovery)
                 .map(|method| method.name.to_owned()),
         );
-        if config.egress.enabled && cfg!(target_os = "linux") {
+        if config.egress.controlled() && cfg!(target_os = "linux") {
             available_methods.push("egress.update".to_owned());
         }
         available_methods.sort();
@@ -198,6 +198,8 @@ impl Daemon {
                 config.limits.max_device_concurrent_operations as usize,
             )),
             descriptor: DeviceDescriptor {
+                boundary: crate::execution::boundary::descriptor(config)
+                    .map_err(|_| DaemonInitError::new("invalid execution boundary"))?,
                 device_id: config.device_id.clone(),
                 generation,
                 display_name: config.display_name.clone(),
@@ -391,7 +393,7 @@ impl Daemon {
             .session
             .admit_work()
             .ok_or(TransferError::Protocol)?;
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         if let Some(remote) = &session.remote {
             return remote
                 .client
@@ -419,7 +421,7 @@ impl Daemon {
             detaching.spawn(async move {
                 let clean = tokio::time::timeout(Duration::from_secs(5), async {
                     let _cleanup = session.cleanup.lock().await;
-                    #[cfg(target_os = "linux")]
+                    #[cfg(any(target_os = "linux", target_os = "macos"))]
                     if let Some(remote) = &session.remote {
                         let _ = remote.client.detach().await;
                     }
@@ -638,7 +640,7 @@ impl Daemon {
                 Err(error) => return error_response(error),
             }
         };
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         if let Some(session) = &session
             && session.remote.is_some()
             && !matches!(request.method.as_str(), "egress.update" | "session.close")
@@ -808,8 +810,15 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                 "directory discovery is disabled",
             ));
         }
+        #[cfg(target_os = "macos")]
+        if self.daemon.config.sandbox.restricted() {
+            return crate::execution::discovery::list(&self.daemon.config, params)
+                .await
+                .map_err(|_| protocol_error(ErrorType::Unsupported, "directory worker failed"))?;
+        }
         #[cfg(target_os = "linux")]
         if self.daemon.config.managed
+            || self.daemon.config.sandbox.restricted()
             || self
                 .daemon
                 .config
@@ -843,12 +852,18 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                 "session protocol does not match",
             ));
         }
+        if params.egress.is_some() != self.daemon.config.egress.controlled() {
+            return Err(protocol_error(
+                ErrorType::InvalidParams,
+                "Session egress policy is required exactly for controlled Devices",
+            ));
+        }
         let methods = session_methods(&self.daemon.config);
         if params.required_methods.iter().any(|method| {
             !(methods.contains(method)
                 || (method == "egress.update"
                     && params.egress.is_some()
-                    && self.daemon.config.egress.enabled
+                    && self.daemon.config.egress.controlled()
                     && cfg!(target_os = "linux")))
         }) {
             return Err(protocol_error(
@@ -861,10 +876,13 @@ impl EipDeviceHandler for DeviceRequest<'_> {
             .unwrap_or_else(|| self.daemon.config.default_working_directory.clone());
         #[cfg(target_os = "linux")]
         let worker = self.daemon.config.managed
+            || self.daemon.config.sandbox.restricted()
             || self.daemon.config.execution.is_some_and(|identity| {
                 crate::execution::needs_worker(identity) || !self.daemon.config.allow_sudo
             });
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        let worker = self.daemon.config.sandbox.restricted();
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         let worker = false;
         let cwd = tokio::task::spawn_blocking(move || {
             if worker {
@@ -897,7 +915,7 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                 ));
             }
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         if worker {
             return self.daemon.open_worker(self.carrier, cwd, None).await;
         }
@@ -953,8 +971,8 @@ impl Daemon {
 }
 
 pub(crate) struct Session {
-    #[cfg(target_os = "linux")]
-    remote: Option<crate::egress::runtime::Runtime>,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    remote: Option<crate::execution::runtime::Runtime>,
     descriptor: SessionDescriptor,
     filesystem: Arc<DeviceFilesystem>,
     cleanup: tokio::sync::Mutex<()>,
@@ -1058,6 +1076,7 @@ impl Session {
         )
         .map_err(|_| DaemonInitError::new("transfer initialization failed"))?;
         let descriptor = SessionDescriptor {
+            boundary: daemon.descriptor.boundary.clone(),
             egress: None,
             device_id: config.device_id.clone(),
             generation: daemon.descriptor.generation,
@@ -1080,7 +1099,7 @@ impl Session {
         };
         let (closed, _) = watch::channel(false);
         Ok(Self {
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             remote: None,
             closed,
             descriptor,
@@ -1171,7 +1190,7 @@ impl Session {
         self.closed.send_replace(true);
         self.operations.begin_drain();
         self.transfers.begin_session_close();
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         if let Some(remote) = &self.remote {
             return tokio::time::timeout(budget, remote.close())
                 .await
@@ -1418,7 +1437,7 @@ impl EipSessionHandler for Session {
             return remote
                 .update(params)
                 .map(|egress| eip::EgressUpdateResult { egress })
-                .map_err(egress::policy_error);
+                .map_err(execution::policy_error);
         }
         #[cfg(not(target_os = "linux"))]
         let _ = params;
@@ -2254,15 +2273,15 @@ impl EipSessionHandler for Session {
             BeginOutcome::ReplayFailure(error) => return Err(*error),
             BeginOutcome::New(operation) => operation,
         };
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         let request =
-            crate::egress::worker::request_environment(&params.request).map_err(|()| {
+            crate::execution::worker::request_environment(&params.request).map_err(|()| {
                 protocol_error(
                     ErrorType::InvalidParams,
                     "command cannot override egress environment variables",
                 )
             })?;
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         let request = std::borrow::Cow::Borrowed(&params.request);
         let started = match execution
             .start(&filesystem, &request, true, || {
@@ -2591,15 +2610,15 @@ impl EipSessionHandler for Session {
         let filesystem = self.filesystem.clone();
         let hard_deadline =
             effective_deadline(params.context.timeout_ms, self.max_operation_duration)?;
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         let request =
-            crate::egress::worker::request_environment(&params.request).map_err(|()| {
+            crate::execution::worker::request_environment(&params.request).map_err(|()| {
                 protocol_error(
                     ErrorType::InvalidParams,
                     "command cannot override egress environment variables",
                 )
             })?;
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         let request = std::borrow::Cow::Borrowed(&params.request);
         let started = match execution
             .start(&filesystem, &request, true, || {

@@ -1,6 +1,6 @@
 # Daemon configuration and transports
 
-This is standalone Envd configuration, not Harness UI YAML or an `EnvironmentProviderSpec`. The Host owns deployment, account selection, any outer sandbox, credentials and the daemon lifetime. An adapter configuration selects only a working directory and required methods.
+This is standalone Envd configuration, not Harness UI YAML or an `EnvironmentProviderSpec`. The Host owns deployment, account selection, any outer sandbox, credentials and the daemon lifetime. An adapter configuration selects a working directory, required methods and optional reference-only Session egress policy; the Device launch configuration separately fixes execution, Sandbox and network mode.
 
 ## Configuration layers
 
@@ -22,7 +22,7 @@ export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits"
 a13n-envd
 ```
 
-Scalar shortcuts include `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_ENABLED`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS`, and `A13N_ENVD_DISCONNECT_GRACE_MS`. Booleans accept `true`, `false`, `1`, or `0`.
+Scalar shortcuts include `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS`, and `A13N_ENVD_DISCONNECT_GRACE_MS`. Booleans accept `true`, `false`, `1`, or `0`.
 
 Device connections negotiate the carrier and protocol. EIP Sessions select a fixed cwd and own operations, processes, output and transfers; they cannot change trusted startup identity or sudo policy.
 
@@ -204,7 +204,8 @@ Device initialization verifies identity and protocol. Session readiness checks t
 | `disconnect_grace_ms`                        | Detached Session attachment grace                                              |
 | `execution.uid`, `execution.gid`             | Optional paired Linux native IDs; omitted retains the launcher, including root |
 | `execution.allow_sudo`                       | `true`; native sudoers still controls authorization                            |
-| `egress.enabled`                             | `false`; opt-in controlled-capable management runtime                          |
+| `sandbox`                                    | `{"mode":"disabled"}`; or `restricted` with directory `grants`                 |
+| `egress`                                     | `{"mode":"inherit"}`; or `deny` / `controlled`                                 |
 | `full_control`                               | `false`; automatic native shell and inherited command environment when enabled |
 | `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                 |
 | `limits`                                     | Device aggregates and per-Session limits                                       |
@@ -217,4 +218,4 @@ Required fields are `profile_id`, `display_name`, `native_executable`, `executab
 
 ## Controlled Session egress
 
-Set `"egress": {"enabled": true}` in daemon JSON, `A13N_ENVD_EGRESS_ENABLED=true`, or `--egress-enabled true` to permit Linux controlled Sessions. Secret values are submitted through EIP, never this file. See [Session egress](egress.md) for prerequisites, creation, live updates and capacity behavior.
+Set `"egress": {"mode": "controlled"}` in daemon JSON, `A13N_ENVD_EGRESS_MODE=controlled`, or `--egress-mode controlled` to require Linux controlled Sessions. Every Session must provide explicit tagged destinations; inherit and deny reject Session egress policy. Secret values are submitted through EIP, never this file. See [Session egress](egress.md) for prerequisites, creation, live updates and capacity behavior.

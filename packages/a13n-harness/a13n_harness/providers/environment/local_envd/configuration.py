@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Self
 
+from a13n_envd_client.eip.v1 import DisabledSandbox, SandboxPolicy
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ..envd_policy import EnvdExecutionConfiguration, EnvdNetworkConfiguration
 from ..remote_envd.configuration import RemoteEnvdEnvironmentConfiguration
 
 _MIB = 1024 * 1024
@@ -54,6 +56,9 @@ class LocalEnvdLaunchConfiguration(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    execution: EnvdExecutionConfiguration = Field(default_factory=EnvdExecutionConfiguration)
+    sandbox: SandboxPolicy = Field(default_factory=lambda: DisabledSandbox(mode="disabled"))
+    egress: EnvdNetworkConfiguration = Field(default_factory=lambda: EnvdNetworkConfiguration(mode="inherit"))
     default_working_directory: Path | None = None
     directory_discovery: bool = True
     trusted_executable_roots: tuple[Path, ...] = ()
@@ -76,6 +81,8 @@ class LocalEnvdLaunchConfiguration(BaseModel):
 
     @model_validator(mode="after")
     def _consistent_configuration(self) -> Self:
+        if (self.execution.uid is None) != (self.execution.gid is None):
+            raise ValueError("execution.uid and execution.gid must be configured together")
         profile_ids = tuple(profile.profile_id for profile in self.shell_profiles)
         if len(profile_ids) != len(set(profile_ids)):
             raise ValueError("shell profile IDs must be unique")

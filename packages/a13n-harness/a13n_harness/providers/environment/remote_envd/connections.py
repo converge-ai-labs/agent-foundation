@@ -13,6 +13,13 @@ from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, Direc
 from a13n_envd_client.websocket import WebSocketConnection
 
 from ..attachments import DeviceEIPSessionSource
+from ..envd_policy import (
+    EnvdBoundaryRequirement,
+    EnvdCredentialResolver,
+    EnvdEgressConfiguration,
+    EnvironmentEnvdCredentialResolver,
+    resolve_egress,
+)
 from ..errors import EnvironmentProviderErrorCategory as Category
 from ..errors import provider_error
 from .configuration import RemoteEnvdConnectionConfiguration, RemoteEnvdStateData
@@ -43,11 +50,13 @@ class WebSocketEnvdConnections:
         *,
         configuration: RemoteEnvdConnectionConfiguration | None = None,
         max_connections: int = 128,
+        credential_resolver: EnvdCredentialResolver | None = None,
     ) -> None:
         if not isinstance(max_connections, int) or isinstance(max_connections, bool) or max_connections < 1:
             raise ValueError("max_connections must be a positive integer")
         if configuration is not None and not isinstance(configuration, RemoteEnvdConnectionConfiguration):
             raise TypeError("WebSocket SDK requires RemoteEnvdConnectionConfiguration")
+        self.credential_resolver = credential_resolver or EnvironmentEnvdCredentialResolver()
         self._configuration = configuration or RemoteEnvdConnectionConfiguration()
         self._max_connections = max_connections
         self._attachments: dict[str, _Attachment] = {}
@@ -162,12 +171,16 @@ class WebSocketEnvdConnections:
         required_methods: frozenset[str],
         working_directory: str | None = None,
         timeout: float = 10,
+        egress: EnvdEgressConfiguration | None = None,
+        expected_boundary: EnvdBoundaryRequirement | None = None,
     ) -> AsyncIterator[EIPSession]:
         device = await self.acquire_device(expected_device_id=expected_device_id, timeout=timeout)
         async with DeviceEIPSessionSource(device).open_session(
             expected_device_id=expected_device_id,
             required_methods=required_methods,
             working_directory=working_directory,
+            egress=await resolve_egress(egress, self.credential_resolver),
+            expected_boundary=expected_boundary,
         ) as session:
             yield session
 

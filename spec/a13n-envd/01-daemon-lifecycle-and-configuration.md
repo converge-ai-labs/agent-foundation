@@ -2,9 +2,9 @@
 
 ## Design Position
 
-One envd daemon normally serves one machine or outer sandbox, with many Host-created Sessions. The authenticated Host is trusted to choose any folder the execution account can access. Envd does not maintain a general filesystem allowlist. Trusted startup configuration selects a native execution identity and whether native privilege gains are allowed; EIP callers cannot change that policy.
+One envd daemon normally serves one machine or outer sandbox, with many Host-created Sessions. The authenticated Host chooses folders within the Device's execution boundary. Trusted startup configuration independently selects native execution identity, Sandbox grants and egress mode; EIP callers cannot change those Device policies.
 
-The Host chooses the POSIX UID, sandbox, Docker container, VM or equivalent boundary before launching envd. Different security boundaries require separate launches. [Execution Boundary](07-execution-isolation.md) defines launch isolation.
+The Host chooses the Device policy and any outer Docker container, VM or equivalent deployment before launching envd. Envd owns preparation and cleanup of Session workers inside that policy. Different Device boundaries require separate launches. [Execution Boundary](07-execution-isolation.md) defines launch isolation.
 
 ## Device Identity and Generation
 
@@ -23,11 +23,12 @@ Bootstrap contains only what the daemon needs to run:
 - stdio, HTTP or reverse-WebSocket transport settings and credentials;
 - `default_working_directory` and `directory_discovery` (default `true`);
 - native execution UID/GID and `allow_sudo` policy;
+- tagged `sandbox` (`disabled` or `restricted` with directory grants) and `egress` (`inherit`, `deny` or `controlled`);
 - explicit Full Control or shell profiles and executable search configuration;
 - generous finite per-Session and aggregate resource limits;
 - inactivity, short disconnect grace, completed-history retention and collection settings.
 
-An omitted default working directory uses the daemon's startup cwd. An explicit value is an absolute native path. Envd resolves it to an absolute Device path and returns it in Device info. The default is a working starting point, not an access boundary. No discovery-entry list or filesystem allowlist is configured. Unavailable defaults remain visible but fail Session opening; they do not prevent clients from selecting another path.
+An omitted default working directory uses the daemon's startup cwd. An explicit value is an absolute native path. Envd resolves it to an absolute Device path and returns it in Device info. The default is a working starting point, not an access boundary. Restricted Sandbox supplies a fixed grant list, independent of the default directory; disabled Sandbox adds no filesystem ceiling. Unavailable defaults remain visible but fail Session opening; they do not prevent clients from selecting another path.
 
 `full_control: true`, or `A13N_ENVD_FULL_CONTROL=1`, enables native command execution without shell-profile declarations. It selects a platform shell and preserves inherited `PATH` order and command environment, excluding daemon bootstrap variables. Full Control uses the execution account's authority and native sudoers, not a daemon-owned command allowlist. Explicit shell profiles and executable roots are an alternative to Full Control, not an additional policy layered over it. The flag does not alter an outer container, account or sandbox.
 
@@ -55,7 +56,7 @@ Each generation gets fresh runtime storage. Nothing in it is a recovery checkpoi
 
 ## Startup and Readiness
 
-Startup loads configuration, establishes identity/generation and runtime ownership, initializes the Session registry and aggregate accounting, then admits its configured transport. Ordinary launches do not construct a command sandbox. Enabling controlled Sessions additionally prepares the private management runtime before any Session is admitted, as defined by [Execution Boundary](07-execution-isolation.md#controlled-session-egress).
+Startup loads configuration, establishes identity/generation and runtime ownership, initializes the Session registry and aggregate accounting, then admits its configured transport. Disabled-Sandbox/inherit launches retain native execution. Restricted Sandbox prepares its platform boundary for each Session worker. Controlled egress additionally prepares the private management runtime before any Session is admitted, as defined by [Execution Boundary](07-execution-isolation.md#controlled-session-egress).
 
 Three observations are distinct:
 
@@ -83,6 +84,6 @@ Drain stops new admission, closes Sessions through the same cleanup path, waits 
 
 Useful observations are Device/generation, transport state, Session counts, charged resource totals, collection counts and cleanup failures. Do not include credentials, full command text, output or native paths in ordinary diagnostics.
 
-Malformed requests, stale selectors and quota exhaustion fail at the relevant boundary. One Session's failure is not a device-wide failure. Cleanup uncertainty remains charged and is retried boundedly; forgetting ownership is not reclamation. Authentication and framing remain necessary even though the Host is trusted for all folders.
+Malformed requests, stale selectors and quota exhaustion fail at the relevant boundary. One Session's failure is not a device-wide failure. Cleanup uncertainty remains charged and is retried boundedly; forgetting ownership is not reclamation. Authentication and framing remain necessary even though the Host is trusted to select folders within the Device boundary.
 
-`egress.enabled` defaults to false and enables [controlled Session preparation](07-execution-isolation.md#controlled-session-egress). It carries no injected secret values. The environment and CLI can override it using the same startup precedence.
+Omitted `sandbox` defaults to `{"mode":"disabled"}` and omitted `egress` to `{"mode":"inherit"}`. Present objects require an explicit mode. `egress.mode: controlled` requires [controlled Session preparation](07-execution-isolation.md#controlled-session-egress) and an explicit EIP destination policy for every Session; inherit and deny reject such policy. Device configuration carries no injected secret values. `A13N_ENVD_EGRESS_MODE` and `--egress-mode` select the network mode using the same startup precedence. Grants are trusted structured configuration, not command-level parameters.

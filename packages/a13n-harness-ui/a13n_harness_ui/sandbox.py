@@ -1,4 +1,4 @@
-"""Host-owned outer isolation for the complete local envd Device."""
+"""Host grant selection; Envd owns the complete Session execution boundary."""
 
 from __future__ import annotations
 
@@ -7,12 +7,11 @@ import os
 import shlex
 import sys
 import tempfile
-from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 
+from a13n_envd_client.eip.v1 import GrantAccess, RestrictedSandbox, SandboxGrant
 from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
-from a13n_harness.providers.environment.local_envd._daemon import LocalEnvdProcessLaunch
+from a13n_harness.providers.environment.envd_policy import EnvdNetworkConfiguration
 from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
@@ -28,95 +27,6 @@ from anyio import CancelScope, to_thread
 
 from a13n_harness_ui.errors import EnvironmentLifecycleError
 
-_LINUX_SYSTEM = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ld.so.cache", "/etc/localtime")
-_MACOS_SYSTEM = ("/System", "/usr/bin", "/usr/lib", "/bin", "/sbin", "/private/var/db/timezone")
-
-
-@dataclass(frozen=True, slots=True)
-class SandboxLaunch:
-    """One immutable filesystem grant set; cwd never changes this authority."""
-
-    roots: tuple[Path, ...]
-
-    def __call__(
-        self, executable: Path, config: Path, runtime: Path, environment: Mapping[str, str]
-    ) -> LocalEnvdProcessLaunch:
-        home = runtime.parent / "home"
-        temporary = runtime.parent / "tmp"
-        home.mkdir(mode=0o700)
-        temporary.mkdir(mode=0o700)
-        clean = {
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-            "HOME": str(home),
-            "TMPDIR": str(temporary),
-            "LANG": "C.UTF-8",
-            **{
-                key: environment[key] for key in ("A13N_ENVD_DEVICE_ID", "A13N_ENVD_RUNTIME_DIR", "A13N_ENVD_TRANSPORT")
-            },
-        }
-        writable = (*self.roots, runtime, home, temporary)
-        if sys.platform == "linux":
-            launcher = Path("/usr/bin/bwrap")
-            if not launcher.is_file():
-                raise _unavailable("Sandbox requires /usr/bin/bwrap.")
-            arguments = [
-                str(launcher),
-                "--unshare-user",
-                "--unshare-pid",
-                "--unshare-ipc",
-                "--unshare-uts",
-                "--unshare-net",
-                "--disable-userns",
-                "--assert-userns-disabled",
-                "--new-session",
-                "--die-with-parent",
-                "--as-pid-1",
-                "--cap-drop",
-                "ALL",
-                "--clearenv",
-            ]
-            for raw in _LINUX_SYSTEM:
-                path = Path(raw)
-                if path.is_symlink():
-                    arguments.extend(("--symlink", os.readlink(path), raw))
-                elif path.exists():
-                    arguments.extend(("--ro-bind", raw, raw))
-            arguments.extend(("--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"))
-            for path in sorted(set(writable), key=lambda item: len(item.parts)):
-                arguments.extend(("--bind", str(path), str(path)))
-            for path in (executable.resolve(), config):
-                arguments.extend(("--ro-bind", str(path), str(path)))
-            for key, value in clean.items():
-                arguments.extend(("--setenv", key, value))
-            arguments.extend(("--chdir", str(self.roots[0]), "--", str(executable.resolve()), "--config", str(config)))
-            return LocalEnvdProcessLaunch(tuple(arguments), clean)
-        if sys.platform == "darwin":
-            launcher = Path("/usr/bin/sandbox-exec")
-            if not launcher.is_file():
-                raise _unavailable("Sandbox requires /usr/bin/sandbox-exec.")
-            profile = [
-                "(version 1)",
-                "(deny default)",
-                "(allow process-exec process-fork)",
-                "(allow signal (target same-sandbox))",
-                "(allow process-info* (target same-sandbox))",
-                "(allow sysctl-read)",
-                '(allow file-read* file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/random") (literal "/dev/urandom"))',
-            ]
-            arguments = [str(launcher)]
-            for index, path in enumerate((*map(Path, _MACOS_SYSTEM), executable.resolve(), config)):
-                name = f"READ_{index}"
-                arguments.extend(("-D", f"{name}={path}"))
-                kind = "subpath" if path.is_dir() else "literal"
-                profile.append(f'(allow file-read* ({kind} (param "{name}")))')
-            for index, path in enumerate(writable):
-                name = f"WRITE_{index}"
-                arguments.extend(("-D", f"{name}={path}"))
-                profile.append(f'(allow file-read* file-write* (subpath (param "{name}")))')
-            arguments.extend(("-p", "\n".join(profile), str(executable.resolve()), "--config", str(config)))
-            return LocalEnvdProcessLaunch(tuple(arguments), clean)
-        raise _unavailable("Local Sandbox is not available on this platform.")
-
 
 def create_sandbox_runtime(
     executable: Path,
@@ -125,6 +35,8 @@ def create_sandbox_runtime(
     runtime_parent: Path | None = None,
     protected_roots: tuple[Path, ...] = (),
     thread_files_root: Path | None = None,
+    launch: LocalEnvdLaunchConfiguration | None = None,
+    project_access: GrantAccess = GrantAccess.READ_WRITE,
 ) -> LocalEnvdProviderRuntime:
     """Build an inert Device owner; broad roots cannot expose Host private state."""
     if sys.platform not in {"linux", "darwin"}:
@@ -132,21 +44,46 @@ def create_sandbox_runtime(
     canonical = tuple(dict.fromkeys(root.resolve(strict=True) for root in roots))
     if not canonical or any(not root.is_dir() for root in canonical):
         raise _unavailable("Sandbox roots must be existing directories.")
-    for root in canonical:
-        if thread_files_root is not None and root == thread_files_root.resolve():
-            continue
-        if any(root.is_relative_to(path.resolve()) or path.resolve().is_relative_to(root) for path in protected_roots):
-            raise _unavailable("A Sandbox Project root overlaps Host configuration or application state.")
+    launch = launch or LocalEnvdLaunchConfiguration(
+        sandbox=RestrictedSandbox(mode="restricted", grants=()),
+        egress=EnvdNetworkConfiguration(mode="deny"),
+    )
+    grants = []
+    thread_root = None if thread_files_root is None else thread_files_root.resolve(strict=True)
+    if isinstance(launch.sandbox, RestrictedSandbox):
+        # Only the adapter's own Thread directories bypass the protected-state
+        # check. Explicit grants cannot authorize arbitrary application state.
+        for root in (*canonical, *(Path(grant.path) for grant in launch.sandbox.grants)):
+            root = root.resolve(strict=True)
+            if root == thread_root and root in canonical:
+                continue
+            if any(
+                root.is_relative_to(path.resolve()) or path.resolve().is_relative_to(root) for path in protected_roots
+            ):
+                raise _unavailable("A Sandbox grant overlaps Host configuration or application state.")
+        grants.extend(launch.sandbox.grants)
+        for root in canonical:
+            if root == thread_root:
+                for name, access in (("attachments", GrantAccess.READ_ONLY), ("tmp", GrantAccess.READ_WRITE)):
+                    child = root / name
+                    child.mkdir(exist_ok=True)
+                    grants.append(SandboxGrant(path=child.as_posix(), access=access))
+            else:
+                grants.append(SandboxGrant(path=root.as_posix(), access=project_access))
+        launch = launch.model_copy(update={"sandbox": RestrictedSandbox(mode="restricted", grants=tuple(grants))})
     shell = Path("/bin/bash").resolve(strict=True)
+    launch = launch.model_copy(
+        update={
+            "default_working_directory": launch.default_working_directory or canonical[0],
+            "trusted_executable_roots": launch.trusted_executable_roots or (Path("/usr/bin"), Path("/bin")),
+            "shell_profiles": launch.shell_profiles
+            or (LocalEnvdShellProfile(profile_id="default", executable=shell, fixed_arguments=("-c",)),),
+        }
+    )
     return LocalEnvdProviderRuntime(
         executable=executable,
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=runtime_parent),
-        configuration=LocalEnvdLaunchConfiguration(
-            default_working_directory=canonical[0],
-            trusted_executable_roots=(Path("/usr/bin"), Path("/bin")),
-            shell_profiles=(LocalEnvdShellProfile(profile_id="default", executable=shell, fixed_arguments=("-c",)),),
-        ),
-        launch_factory=SandboxLaunch(canonical),
+        configuration=launch,
     )
 
 

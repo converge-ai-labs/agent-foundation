@@ -359,14 +359,27 @@ def render_models(index: SchemaIndex, options: OptionReader) -> str:
             oneofs = real_oneofs(message)
             if len(oneofs) != 1:
                 raise ValueError(f"discriminated union {message.name} must contain exactly one oneof")
-            variants = [short_name(field.type_name) for field in next(iter(oneofs.values()))]
+            variant_fields = next(iter(oneofs.values()))
+            variants = [short_name(field.type_name) for field in variant_fields]
+            tags = [
+                {
+                    field.name
+                    for field in index.messages[variant.type_name].field
+                    if (option := options.field(field)) is not None and option.HasField("const_string")
+                }
+                for variant in variant_fields
+            ]
+            common_tags = set.intersection(*tags)
+            if len(common_tags) != 1:
+                raise ValueError(f"discriminated union {message.name} must share one constant tag field")
+            discriminator = common_tags.pop()
             public_names.append(message.name)
             lines.extend(
                 [
                     "",
                     f"type {message.name} = Annotated[",
                     f"    {' | '.join(variants)},",
-                    "    Field(discriminator='kind'),",
+                    f"    Field(discriminator={discriminator!r}),",
                     "]",
                 ]
             )

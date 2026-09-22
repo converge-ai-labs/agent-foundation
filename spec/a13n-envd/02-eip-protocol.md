@@ -31,6 +31,7 @@ class DeviceDescriptor(BaseModel):
     path_style: Literal["posix", "windows"]
     default_working_directory: str
     directory_discovery: bool
+    boundary: ExecutionBoundary
     available_methods: tuple[str, ...]
     limits: EIPLimits
     lifecycle: SessionLifecyclePolicy
@@ -52,6 +53,7 @@ class SessionOpenParams(BaseModel):
 
 
 class SessionDescriptor(BaseModel):
+    boundary: ExecutionBoundary
     egress: EgressStatus | None = None
     device_id: str
     generation: int
@@ -72,7 +74,7 @@ class SessionOpenResult(BaseModel):
 
 `session.open` checks the observed identity/generation/version and required methods, resolves its working directory and reserves one Session. Omitted/null `working_directory` selects the advertised Device default; an explicit path overrides it. Missing or inaccessible directories fail without creation or fallback. The result contains the exact resolved working directory, immutable for that Session. A working directory is not a filesystem access boundary.
 
-The Host is trusted for all daemon-account-accessible folders; admission does not intersect a startup filesystem ceiling. `required_methods` is a compatibility assertion, not a grant. Host/Harness tool policy controls what the model may invoke. Limits describe actual finite operation capacity, not a separate security policy.
+The Host selects folders within the Device's immutable execution boundary. Cwd validation, directory discovery, commands and file operations use the same grants and identity. Device and Session descriptors expose `boundary`; Session publication follows successful worker preparation. Controlled Devices require explicit `egress.destinations` on Session open; inherit and deny reject Session policy. The [execution contract](07-execution-isolation.md) owns the tagged policies and descriptor digest. `required_methods` is a compatibility assertion, not a grant. Host/Harness tool policy controls what the model may invoke. Limits describe actual finite operation capacity, not a separate security policy.
 
 Device methods and Session lifecycle controls are bounded and ledger-external. An uncertain open is not automatically retried; an unclaimed Session expires. Changing the Session default requires a new Session. Per-command cwd overrides do not mutate it. Host Run acceptance captures an explicit directory before execution; retries and recovery never reselect a mutable Device default.
 
@@ -80,7 +82,7 @@ Device methods and Session lifecycle controls are bounded and ledger-external. A
 
 Before initial readiness, a Session admits readiness, keepalive and close only. `environment.readiness` returns `ready`, `device_id`, `generation` and `session_id`; the requester checks them before publishing operations. `environment.describe` returns the Session descriptor. Readiness proves the current operation scope works, not future capacity or sandbox enforcement.
 
-`session.keepalive` maintains the one owning scope during quiet periods. `session.attach`, on a newly initialized framed carrier, reattaches that same Host's detached Session before its deadline and returns its unchanged descriptor. HTTP ownership is independent of TCP connections and needs no reattachment. `session.close` begins cleanup of that Session only. Once cleanup starts, attach/keepalive fail rather than revive it.
+`session.keepalive` maintains the one owning scope during quiet periods. `session.attach`, on a newly initialized framed carrier, reattaches that same Host's detached Session before its deadline and returns its fixed boundary and current nonsecret policy descriptor. HTTP ownership is independent of TCP connections and needs no reattachment. `session.close` begins cleanup of that Session only. Once cleanup starts, attach/keepalive fail rather than revive it.
 
 [Resource Lifetime](09-resource-lifetime-and-reclamation.md) owns inactivity, disconnect grace and collection. No cross-Session resource import, resource-retain method or command lease exists. A client never sends keepalive for a scope whose owner has ended.
 

@@ -12,7 +12,7 @@ Envd owns one Device generation with multiple independent Sessions. Operators ma
 
 The admitted Session idle TTL defaults to 30 minutes. Keepalive, disconnect grace, and exact same-Session attachment follow the advertised lifecycle. Reconnecting a carrier does not create or recover an operation's authority.
 
-Session admission and aggregate Device quotas bound concurrency. Closing one Session cleans up only its resources and preserves its siblings. A fixed working directory is not a filesystem security boundary: Sessions can access other Device paths allowed by the daemon account. Mutually untrusted workloads need separate outer account, container, or sandbox boundaries.
+Session admission and aggregate Device quotas bound concurrency. Closing one Session cleans up only its resources and preserves its siblings. A fixed working directory is not a filesystem security boundary: Sessions can access other Device paths allowed by the execution account and fixed Sandbox grants. Mutually untrusted workloads need separate outer account, container, or sandbox boundaries.
 
 Use the [Python EIP client](python-client.md) for Device ownership, scoped Sessions, exact method tables, timeout handling, and descriptor narrowing. The client and daemon can have different timeout defaults.
 

@@ -92,17 +92,10 @@
           }
         },
         {
-          "name": "allow_hosts",
+          "name": "destinations",
           "required": false,
           "schema": {
-            "$ref": "schema.json#/$defs/EgressUpdateParams/properties/allow_hosts"
-          }
-        },
-        {
-          "name": "unrestricted",
-          "required": false,
-          "schema": {
-            "$ref": "schema.json#/$defs/EgressUpdateParams/properties/unrestricted"
+            "$ref": "schema.json#/$defs/EgressUpdateParams/properties/destinations"
           }
         },
         {

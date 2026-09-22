@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Envd exposes Session-owned filesystem operations over the Device filesystem and bounded observation of listening ports. An ordinary Session's working directory supplies defaults, not an access boundary. Native account permissions and the Host's outer deployment boundary apply to every path.
+Envd exposes Session-owned filesystem operations over the Device filesystem and bounded observation of listening ports. An ordinary Session's working directory supplies defaults, not an access boundary. Native account permissions, Device Sandbox grants and the outer deployment boundary apply to every path.
 
 ## Boundaries
 
@@ -27,7 +27,7 @@ Paths are absolute in the Device namespace and use `/` separators. POSIX paths r
 
 The daemon resolves its native startup cwd and configured default into this format. Discovery and Session descriptors return Device paths. Hosts retain Device identity with every path and translate aggregate aliases before EIP dispatch. A path on a remote Device never implicitly names a Host file. Relative Host tool inputs resolve against the captured Session working directory; EIP file operands are explicit absolute paths.
 
-Ordinary Sessions may address paths outside their working directory. There is no Session folder allowlist, mount selector or path-based Session sharing. Host action ceilings can disable file mutations or shell execution without changing native filesystem ownership.
+Ordinary Sessions may address paths outside their working directory. There is no per-Session grant override, mount selector or path-based Session sharing. Restricted Device grants apply equally to file RPCs, transfers and command execution. Host action ceilings can disable file mutations or shell execution without changing native filesystem ownership.
 
 `max_file_bytes` bounds complete mutation candidates. It does not reject metadata, bounded range reads or incremental search merely because the source is larger. Those operations have their own transfer, response, work and duration bounds. Atomic publication is supported only where the target filesystem supplies the required native primitive; unsupported requests fail without a copy/delete fallback.
 
@@ -528,7 +528,7 @@ class PortWaitResult(BaseModel):
 
 When the platform can attribute a listener to a process owned by the current Session, `managed_process` can be returned. A sibling Session's process handle is never disclosed. An unmanaged listener is reported only as policy permits and never reveals a PID or identity. `unknown` is used when namespace, platform, or permission prevents trustworthy observation.
 
-Port observations occur in the network boundary where envd runs. The Host's outer sandbox determines connectivity; EIP has no per-command network-denial mode. Listening locally does not prove reachability outside that boundary.
+Port observations occur inside the selected Session worker's network boundary. Device egress mode and the outer deployment determine connectivity; EIP has no per-command network-denial mode. Listening locally does not prove reachability outside that boundary.
 
 Provider adapters own the mapping from a successfully observed local port to a public, tunneled, or container-exposed endpoint. EIP never treats listening status as proof that an external route exists or is authorized.
 
@@ -565,7 +565,7 @@ Providers can expose narrower limits and omit unsupported methods. A client neve
 
 01. Every filesystem operand identifies a Device path; a multi-path operation validates each operand independently.
 02. Lexical validation and native canonicalization apply independently of cwd; selected symlinks and reparse points follow native permissions.
-03. Host action ceilings constrain exposed operations; cwd supplies no confinement, and the Host supplies the whole-daemon security boundary.
+03. Host action ceilings constrain exposed operations; cwd supplies no confinement, and Envd applies the Host-selected Device boundary to the complete worker.
 04. Every text result, traversal, query, patch, data frame, file, staged candidate, transfer, result, and duration has a finite bound.
 05. Text convenience operations are strict UTF-8 and bounded; arbitrary complete content uses a raw binary reader or writer rather than JSON/base64.
 06. One binary reader carries one opened file interval sequentially; only terminal consumer acceptance reports a complete count and digest, while no file-version or snapshot-isolation claim is fabricated.

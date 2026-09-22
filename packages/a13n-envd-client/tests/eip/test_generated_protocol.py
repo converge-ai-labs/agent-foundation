@@ -422,13 +422,17 @@ def test_output_read_requires_an_explicit_offset() -> None:
 
 
 def test_egress_presence_bounds_and_secret_repr() -> None:
-    from a13n_envd_client.eip.v1 import EgressPolicy, EgressSecret
+    from a13n_envd_client.eip.v1 import EgressPolicy, EgressSecret, PublicDestinations
 
-    assert EgressPolicy.model_validate({}).allow_hosts is None
-    denied = EgressPolicy.model_validate({"allow_hosts": []})
-    assert denied.model_dump(mode="json")["allow_hosts"] == []
+    for value in [{}, {"allow_hosts": []}, {"destinations": {}}, {"destinations": {"mode": "public", "hosts": []}}]:
+        with pytest.raises(ValidationError):
+            EgressPolicy.model_validate(value)
+    public = EgressPolicy(destinations=PublicDestinations(mode="public"))
+    assert public.destinations.mode == "public"
+    denied = EgressPolicy.model_validate({"destinations": {"mode": "allowlist", "hosts": []}})
+    assert denied.model_dump(mode="json")["destinations"] == {"mode": "allowlist", "hosts": []}
     with pytest.raises(ValidationError):
-        EgressPolicy.model_validate({"allow_hosts": ["example.com"] * 257})
+        EgressPolicy.model_validate({"destinations": {"mode": "allowlist", "hosts": ["example.com"] * 257}})
     secret = EgressSecret(env="TEST_TOKEN", value="private-test-value", inject_hosts=("example.com",))
     assert "private-test-value" not in repr(secret)
-    assert "private-test-value" not in repr(EgressPolicy(secrets=(secret,)))
+    assert "private-test-value" not in repr(EgressPolicy(destinations=public.destinations, secrets=(secret,)))

@@ -11,7 +11,7 @@ const MAX_SECRET_BYTES: usize = 8192;
 
 /// Write-only input. Deliberately has neither Serialize nor a value-bearing Debug.
 #[derive(Clone)]
-pub(super) struct SecretInput {
+pub(crate) struct SecretInput {
     pub env: String,
     pub value: String,
     pub inject_hosts: Vec<String>,
@@ -23,20 +23,28 @@ impl fmt::Debug for SecretInput {
     }
 }
 
-#[derive(Debug, Default)]
-pub(super) struct PolicyInput {
-    /// None permits public destinations; an empty list denies external access.
-    pub allow_hosts: Option<Vec<String>>,
+#[derive(Debug)]
+pub(crate) struct PolicyInput {
+    pub destinations: crate::eip::EgressDestinations,
     pub secrets: Vec<SecretInput>,
+}
+
+#[cfg(test)]
+impl Default for PolicyInput {
+    fn default() -> Self {
+        Self {
+            destinations: public_destinations(),
+            secrets: Vec::new(),
+        }
+    }
 }
 
 /// One atomic update, with revision checking to prevent lost concurrent changes.
 #[derive(Debug)]
-pub(super) struct Update {
+pub(crate) struct Update {
     pub expected_revision: u64,
-    /// Omitted leaves policy unchanged; an empty list denies external access.
-    pub allow_hosts: Option<Vec<String>>,
-    pub unrestricted: bool,
+    /// Omitted leaves policy unchanged; an explicit object replaces it.
+    pub destinations: Option<crate::eip::EgressDestinations>,
     pub set_secrets: Vec<SecretInput>,
     pub remove_secrets: Vec<String>,
 }
@@ -71,7 +79,7 @@ impl Drop for Secret {
 
 /// A request retains this snapshot through response scrubbing, including rotation.
 #[derive(Clone)]
-pub(super) struct Snapshot {
+pub(crate) struct Snapshot {
     pub revision: u64,
     hosts: Option<BTreeSet<String>>,
     secrets: BTreeMap<String, Arc<Secret>>,
@@ -95,7 +103,7 @@ pub(crate) struct Policy {
 impl From<crate::eip::EgressPolicy> for PolicyInput {
     fn from(input: crate::eip::EgressPolicy) -> Self {
         Self {
-            allow_hosts: input.allow_hosts.map(|hosts| hosts.0),
+            destinations: input.destinations,
             secrets: input.secrets.into_iter().map(SecretInput::from).collect(),
         }
     }
@@ -113,8 +121,7 @@ impl From<crate::eip::EgressUpdateParams> for Update {
     fn from(input: crate::eip::EgressUpdateParams) -> Self {
         Self {
             expected_revision: input.expected_revision,
-            allow_hosts: input.allow_hosts.map(|hosts| hosts.0),
-            unrestricted: input.unrestricted,
+            destinations: input.destinations,
             set_secrets: input
                 .set_secrets
                 .into_iter()
@@ -125,17 +132,38 @@ impl From<crate::eip::EgressUpdateParams> for Update {
     }
 }
 
+fn destination_hosts(
+    input: crate::eip::EgressDestinations,
+) -> Result<Option<BTreeSet<String>>, PolicyError> {
+    match input {
+        crate::eip::EgressDestinations::Public(_) => Ok(None),
+        crate::eip::EgressDestinations::Allowlist(input) => {
+            hosts(input.hosts, destination).map(Some)
+        }
+    }
+}
+
+pub(crate) fn public_destinations() -> crate::eip::EgressDestinations {
+    crate::eip::EgressDestinations::Public(crate::eip::PublicDestinations {
+        mode: "public".into(),
+    })
+}
+
+pub(crate) fn allowlist_destinations(hosts: Vec<String>) -> crate::eip::EgressDestinations {
+    crate::eip::EgressDestinations::Allowlist(crate::eip::AllowlistDestinations {
+        mode: "allowlist".into(),
+        hosts,
+    })
+}
+
 impl Policy {
     pub(crate) fn from_request(input: crate::eip::EgressPolicy) -> Result<Self, PolicyError> {
         Self::new(input.into())
     }
-    pub(super) fn new(input: PolicyInput) -> Result<Self, PolicyError> {
+    pub(crate) fn new(input: PolicyInput) -> Result<Self, PolicyError> {
         let mut snapshot = Snapshot {
             revision: 1,
-            hosts: input
-                .allow_hosts
-                .map(|values| hosts(values, destination))
-                .transpose()?,
+            hosts: destination_hosts(input.destinations)?,
             secrets: BTreeMap::new(),
             retired: BTreeSet::new(),
         };
@@ -148,7 +176,7 @@ impl Policy {
         })
     }
 
-    pub(super) fn snapshot(&self) -> Result<Arc<Snapshot>, PolicyError> {
+    pub(crate) fn snapshot(&self) -> Result<Arc<Snapshot>, PolicyError> {
         self.current
             .read()
             .map_err(|_| PolicyError::Closed)?
@@ -156,25 +184,20 @@ impl Policy {
             .ok_or(PolicyError::Closed)
     }
 
-    pub(super) fn subscribe(&self) -> watch::Receiver<u64> {
+    pub(crate) fn subscribe(&self) -> watch::Receiver<u64> {
         self.changes.subscribe()
     }
 
-    pub(super) fn update(&self, update: Update) -> Result<Arc<Snapshot>, PolicyError> {
+    pub(crate) fn update(&self, update: Update) -> Result<Arc<Snapshot>, PolicyError> {
         let mut guard = self.current.write().map_err(|_| PolicyError::Closed)?;
         let current = guard.as_ref().ok_or(PolicyError::Closed)?;
         if current.revision != update.expected_revision {
             return Err(PolicyError::Conflict);
         }
-        if update.unrestricted && update.allow_hosts.is_some() {
-            return Err(PolicyError::Invalid);
-        }
         let mut next = (**current).clone();
         next.revision = next.revision.checked_add(1).ok_or(PolicyError::Invalid)?;
-        if update.unrestricted {
-            next.hosts = None;
-        } else if let Some(allowed) = update.allow_hosts {
-            next.hosts = Some(hosts(allowed, destination)?);
+        if let Some(destinations) = update.destinations {
+            next.hosts = destination_hosts(destinations)?;
         }
         let removed: BTreeSet<_> = update.remove_secrets.iter().collect();
         if removed.len() != update.remove_secrets.len()
@@ -205,7 +228,7 @@ impl Policy {
         Ok(next)
     }
 
-    pub(super) fn close(&self) {
+    pub(crate) fn close(&self) {
         if let Ok(mut current) = self.current.write() {
             *current = None;
         }
@@ -217,10 +240,10 @@ impl Snapshot {
     pub fn status(&self) -> crate::eip::EgressStatus {
         crate::eip::EgressStatus {
             revision: self.revision,
-            allow_hosts: self
-                .hosts
-                .as_ref()
-                .map(|hosts| crate::eip::EgressHosts(hosts.iter().cloned().collect())),
+            destinations: match &self.hosts {
+                Some(hosts) => allowlist_destinations(hosts.iter().cloned().collect()),
+                None => public_destinations(),
+            },
             secrets: self
                 .secrets
                 .iter()
@@ -307,7 +330,7 @@ impl Snapshot {
         Ok(result)
     }
 
-    pub fn scrubber(&self) -> super::redact::Scrubber {
+    pub(super) fn scrubber(&self) -> super::redact::Scrubber {
         super::redact::Scrubber::new(
             self.secrets
                 .values()
@@ -424,7 +447,7 @@ fn destination(value: &str) -> Result<String, PolicyError> {
     }
 }
 
-pub(super) fn hostname(value: &str) -> Result<String, PolicyError> {
+pub(crate) fn hostname(value: &str) -> Result<String, PolicyError> {
     let value = value.strip_suffix('.').unwrap_or(value);
     if value.is_empty()
         || value.len() > 253
@@ -457,26 +480,25 @@ mod tests {
     fn update(revision: u64) -> Update {
         Update {
             expected_revision: revision,
-            allow_hosts: None,
-            unrestricted: false,
+            destinations: None,
             set_secrets: vec![],
             remove_secrets: vec![],
         }
     }
 
     #[test]
-    fn absent_and_empty_allowlists_are_distinct() {
+    fn public_and_empty_allowlists_are_distinct() {
         let public = Policy::new(PolicyInput::default()).unwrap();
         assert!(public.snapshot().unwrap().permits("example.com"));
         let denied = Policy::new(PolicyInput {
-            allow_hosts: Some(vec![]),
+            destinations: crate::egress::policy::allowlist_destinations(vec![]),
             secrets: vec![],
         })
         .unwrap();
         assert!(!denied.snapshot().unwrap().permits("example.com"));
         assert!(
             Policy::new(PolicyInput {
-                allow_hosts: Some(vec![]),
+                destinations: crate::egress::policy::allowlist_destinations(vec![]),
                 secrets: vec![secret("real-token")]
             })
             .is_err()
@@ -488,7 +510,7 @@ mod tests {
         let unrestricted = Policy::new(PolicyInput::default()).unwrap();
         assert!(!unrestricted.snapshot().unwrap().permits("1.1.1.1"));
         let explicit = Policy::new(PolicyInput {
-            allow_hosts: Some(vec!["1.1.1.1".into()]),
+            destinations: crate::egress::policy::allowlist_destinations(vec!["1.1.1.1".into()]),
             secrets: vec![],
         })
         .unwrap();
@@ -496,7 +518,9 @@ mod tests {
         assert!(!explicit.snapshot().unwrap().permits("1.0.0.1"));
         assert!(
             Policy::new(PolicyInput {
-                allow_hosts: Some(vec!["127.0.0.1".into()]),
+                destinations: crate::egress::policy::allowlist_destinations(vec![
+                    "127.0.0.1".into()
+                ]),
                 secrets: vec![]
             })
             .is_err()
@@ -544,7 +568,7 @@ mod tests {
         })
         .unwrap();
         let mut invalid = update(1);
-        invalid.allow_hosts = Some(vec![]);
+        invalid.destinations = Some(allowlist_destinations(vec![]));
         assert_eq!(policy.update(invalid).unwrap_err(), PolicyError::Invalid);
         assert_eq!(policy.snapshot().unwrap().revision, 1);
         policy.update(update(1)).unwrap();

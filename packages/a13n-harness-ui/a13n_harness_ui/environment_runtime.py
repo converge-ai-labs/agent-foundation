@@ -48,7 +48,12 @@ from a13n_harness_ui.extensions import (
     EnvironmentProjectAdapter,
     HarnessUiExtensionCatalog,
 )
-from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProjectAdapter, NativeProjectAdapter
+from a13n_harness_ui.extensions.environment_adapters import (
+    LocalEnvdProfileConfiguration,
+    LocalEnvdProjectAdapter,
+    LocalEnvdProjectConfiguration,
+    NativeProjectAdapter,
+)
 from a13n_harness_ui.managed_runtime import ManagedEnvdRuntime
 from a13n_harness_ui.sandbox import create_sandbox_runtime
 from a13n_harness_ui.settings import EnvdRuntimeSettings
@@ -112,7 +117,7 @@ class EnvironmentSnapshotReconstructor:
         self._runtime_factories = MappingProxyType(dict(runtime_factories or {}))
         self._local_runtime_parent = local_runtime_parent
         self._protected_roots = protected_roots
-        self._local_runtimes: dict[tuple[Path, ...], LocalEnvdProviderRuntime] = {}
+        self._local_runtimes: dict[tuple[tuple[Path, ...], str], LocalEnvdProviderRuntime] = {}
         self._local_lock = Lock()
         self._managed_envd = (
             None
@@ -143,7 +148,7 @@ class EnvironmentSnapshotReconstructor:
         local_runtime: LocalEnvdProviderRuntime | None = None,
     ) -> Environment:
         collaborator = (
-            local_runtime or await self.sandbox_runtime((root,))
+            local_runtime or await self.sandbox_runtime((root,), profile=reconstructed.profile)
             if reconstructed.provider.type == LOCAL_ENVD_PROVIDER_KEY
             else await self._runtime_collaborator(reconstructed.provider)
         )
@@ -198,14 +203,30 @@ class EnvironmentSnapshotReconstructor:
         return await self._managed_envd.resolve()
 
     async def sandbox_runtime(
-        self, roots: tuple[Path, ...], *, thread_files_root: Path | None = None
+        self,
+        roots: tuple[Path, ...],
+        *,
+        thread_files_root: Path | None = None,
+        profile: ResolvedEnvironmentProfile | None = None,
     ) -> LocalEnvdProviderRuntime:
         # Each immutable grant set gets its own Device; Sessions share only that
         # Device, never a union of grants from different Threads or Projects.
+        selected = LocalEnvdProfileConfiguration.model_validate(
+            {} if profile is None else profile.provider_configuration
+        )
+        adapter = LocalEnvdProjectConfiguration.model_validate({} if profile is None else profile.adapter_configuration)
+        roots = tuple(root.resolve(strict=True) for root in roots)
+        # Destinations and credential references are Session inputs, not Device identity.
+        key = (
+            roots,
+            canonical_digest(
+                {"launch": selected.launch.model_dump(mode="json"), "adapter": adapter.model_dump(mode="json")}
+            ),
+        )
         async with self._local_lock:
-            if roots not in self._local_runtimes:
+            if key not in self._local_runtimes:
                 executable = await self.resolve_sandbox_executable()
-                self._local_runtimes[roots] = await to_thread.run_sync(
+                self._local_runtimes[key] = await to_thread.run_sync(
                     partial(
                         create_sandbox_runtime,
                         executable,
@@ -213,9 +234,11 @@ class EnvironmentSnapshotReconstructor:
                         runtime_parent=self._local_runtime_parent,
                         protected_roots=self._protected_roots,
                         thread_files_root=thread_files_root,
+                        launch=selected.launch,
+                        project_access=adapter.project_access,
                     )
                 )
-            return self._local_runtimes[roots]
+            return self._local_runtimes[key]
 
     async def close(self) -> None:
         async with AsyncExitStack() as stack:
@@ -389,7 +412,9 @@ class EnvironmentRunService:
         )
         thread_root = await self._thread_files.touch(composition.thread_id)
         local_runtime = (
-            await self._reconstructor.sandbox_runtime((*roots, thread_root), thread_files_root=thread_root)
+            await self._reconstructor.sandbox_runtime(
+                (*roots, thread_root), thread_files_root=thread_root, profile=profile
+            )
             if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
             else None
         )

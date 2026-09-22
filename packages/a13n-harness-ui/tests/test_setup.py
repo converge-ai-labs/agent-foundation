@@ -863,7 +863,8 @@ async def test_sandbox_adapter_selects_only_the_session_directory(
     )
     configuration = create.call_args.kwargs["configuration"]
     assert configuration.working_directory == tmp_path.as_posix()
-    assert set(configuration.model_dump()) == {"working_directory", "required_methods"}
+    assert configuration.egress is None and configuration.expected_boundary is None
+    assert set(configuration.model_dump()) == {"working_directory", "required_methods", "egress", "expected_boundary"}
 
 
 @pytest.mark.anyio

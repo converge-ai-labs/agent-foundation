@@ -306,7 +306,7 @@ class EnvironmentProfileSummary:
     canonical_host_paths: bool
 ```
 
-The release-owned descriptions state their material authority difference: Full Control commands have ambient Host-user filesystem and network access, while Sandbox commands run with the whole daemon inside the Host-provided filesystem/process boundary and denied networking. `canonical_host_paths` describes aggregate path presentation only and never implies Full Control. Surfaces select and persist `profile_id`; display names and mode labels do not become Thread identity.
+The release-owned descriptions state their material authority difference: Full Control commands have ambient Host-user filesystem and network access, while Sandbox commands run inside Envd-managed restricted Session workers with explicit grants and denied networking. `canonical_host_paths` describes aggregate path presentation only and never implies Full Control. Surfaces select and persist `profile_id`; display names and mode labels do not become Thread identity.
 
 Configuration-source queries expose an accepted-generation view for the root YAML or an approved immediate resource source. The conceptual projection includes `relative_path`, `resource_kind`, `resource_ids`, `source_digest`, `generation_digest`, `writable`, `content_available`, and nullable `content`. It does not expose the current invalid on-disk candidate or promise candidate diagnostics; MCP bodies are unavailable (`content_available: false`, `content: null`). A repair caller supplies complete replacement content through the validated mutation operation.
 

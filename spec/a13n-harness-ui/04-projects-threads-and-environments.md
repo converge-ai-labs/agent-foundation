@@ -186,10 +186,10 @@ A Thread selects one local-root Environment profile defined by [Extension Discov
 
 Harness UI owns two built-in modes:
 
-| Mode             | Stable profile ID     | Project Provider    | Execution semantics                                                                                        |
-| ---------------- | --------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Full Control** | `environment-native`  | Direct Local        | Commands run directly as the Host user with ambient filesystem and Host networking                         |
-| **Sandbox**      | `environment-sandbox` | Local Envd over EIP | Host launches the whole daemon in an outer filesystem/process boundary with denied networking; no fallback |
+| Mode             | Stable profile ID     | Project Provider    | Execution semantics                                                                              |
+| ---------------- | --------------------- | ------------------- | ------------------------------------------------------------------------------------------------ |
+| **Full Control** | `environment-native`  | Direct Local        | Commands run directly as the Host user with ambient filesystem and Host networking               |
+| **Sandbox**      | `environment-sandbox` | Local Envd over EIP | Envd applies restricted grants and denied networking to the complete Session worker; no fallback |
 
 Full Control is the omission fallback only while creating a root Thread for compatibility. A later missing or failed selected profile never falls back. Both built-in modes are fixed release-owned recipes and cannot be shadowed by configured profile resources.
 
@@ -212,9 +212,9 @@ The Provider configuration and adapter do not own the Project root list. The ada
 
 The Full Control and Sandbox adapters preserve Host paths. Harness UI assigns each Project mount an explicit Harness `mount_path` equal to the captured root's canonical Host path. The first and later roots are therefore addressed by their real paths in model context, file tools, returned file results, explicit shell working directories, File Context, and Skill sources. They do not also publish `/workspace` or `/environment/workspace-N` routes.
 
-This shared spelling does not merge execution authority. Full Control translates the aggregate suffix to a Project-root-confined Direct Local file operation or initial command working directory; after a Host command starts, the ordinary Host shell and descendants remain unrestricted and can use `cd ..`, absolute paths, Host networking, and other ambient Host-user authority. Sandbox translates the same aggregate suffix to a Provider-local EIP path; Local Envd resolves it inside the Host-launched outer sandbox. The Host preserves the mapped path spelling and denies networking at launch; the Session working directory restricts neither file nor shell access.
+This shared spelling does not merge execution authority. Full Control translates the aggregate suffix to a Project-root-confined Direct Local file operation or initial command working directory; after a Host command starts, the ordinary Host shell and descendants remain unrestricted and can use `cd ..`, absolute paths, Host networking, and other ambient Host-user authority. Sandbox translates the same aggregate suffix to a Provider-local EIP path; Local Envd resolves it inside the Envd-managed Session worker. The Host supplies fixed directory grants and `egress.mode: deny`; Envd preserves path spelling and enforces those grants for files and commands alike. The Session working directory supplies defaults, not confinement.
 
-An explicit shell `cwd` is an aggregate mount selector in both modes. It must resolve within an available route and cannot contain `..` traversal segments. Relative or omitted `cwd` starts from the selected mount's working directory: the Project root for a Project mount, or `tmp/` for the Thread file mount. This selector rule does not claim to confine a Full Control command after launch: a script such as `cd .. && pwd` runs with ordinary Host semantics. In Sandbox the same script remains subject to the Host's outer launch boundary, not an envd per-command policy.
+An explicit shell `cwd` is an aggregate mount selector in both modes. It must resolve within an available route and cannot contain `..` traversal segments. Relative or omitted `cwd` starts from the selected mount's working directory: the Project root for a Project mount, or `tmp/` for the Thread file mount. This selector rule does not claim to confine a Full Control command after launch: a script such as `cd .. && pwd` runs with ordinary Host semantics. In Sandbox the same script remains subject to the Device's fixed grants and network mode, not a per-command policy.
 
 An approved custom adapter that explicitly preserves Host paths receives the same aggregate layout. Other adapters omit `mount_path`, so Harness compatibility routing presents the first root at `/workspace` and later roots at `/environment/workspace-N`. A canonical-looking aggregate route is presentation and routing metadata, never proof of Provider authority.
 
@@ -295,7 +295,7 @@ Acquisition uses HTTPS from the repository-owned release location. Download and 
 
 This is version-based selection, not byte-level identity verification. Harness UI trusts the release source and does not detect replacement bytes that report the same version. Checksums published alongside native releases remain available to standalone installers and other consumers; Harness UI does not embed or require them.
 
-The App lazily owns a Local Envd runtime and reuses its stdio Device connection across roots and Runs with the same Host launch boundary. Each adapter opens an independent Session. For Sandbox, the App launcher contains the entire daemon and its children, exposes the intended native roots and denies networking. Changing that outer boundary requires a separately prepared launch; it is not a Session permission change. Unsupported Hosts or failed prerequisites make Sandbox unavailable without Full Control fallback.
+The App lazily owns a Local Envd runtime and reuses its stdio Device connection across roots and Runs with the same Host launch boundary. Each adapter opens an independent Session. For Sandbox, the App supplies fixed grants for the intended native roots and denied networking; Envd contains the complete Session worker and its children. The Thread file worker grants attachments read-only and tmp read-write. Changing grants or network mode requires a separately prepared launch; Session destinations or credential revisions do not change the daemon cache identity. Unsupported Hosts or failed prerequisites make Sandbox unavailable without Full Control fallback.
 
 Run cleanup closes Sessions, not the shared daemon. App shutdown joins/cancels Runs, closes remaining Sessions and then shuts down its owned local runtimes. There is no cross-App daemon adoption or persisted process recovery. The executable cache carries no Thread, Project, root or Environment authority; connections, generations, process handles and output references remain process-local.
 
@@ -336,5 +336,5 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 12. Steering never changes an active Run's captured composition.
 13. Destructive Provider lifecycle remains outside ordinary Run cleanup.
 14. A selected Skills Capability adds only Environment-routed Skill sources and, unless an exact Host-path-preserving Project mount already covers it, the dedicated user Skill mount; it does not broaden a Project Provider's Host paths.
-15. Full Control and Sandbox preserve the same canonical Host path spelling while retaining Direct Local versus Host-sandboxed whole-daemon execution authority.
+15. Full Control and Sandbox preserve the same canonical Host path spelling while retaining Direct Local versus Envd-managed restricted Session execution authority.
 16. Sandbox failure never falls back to Full Control or disabled isolation.

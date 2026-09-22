@@ -1,5 +1,29 @@
 {
   "$defs": {
+    "AllowlistDestinations": {
+      "additionalProperties": false,
+      "properties": {
+        "hosts": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Hosts",
+          "type": "array"
+        },
+        "mode": {
+          "const": "allowlist",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "AllowlistDestinations",
+      "type": "object"
+    },
     "ArgvCommand": {
       "additionalProperties": false,
       "properties": {
@@ -258,6 +282,9 @@
           "title": "Available Methods",
           "type": "array"
         },
+        "boundary": {
+          "$ref": "#/$defs/ExecutionBoundary"
+        },
         "default_working_directory": {
           "format": "eip-absolute-path",
           "title": "Default Working Directory",
@@ -321,7 +348,8 @@
         "default_working_directory",
         "directory_discovery",
         "limits",
-        "lifecycle"
+        "lifecycle",
+        "boundary"
       ],
       "title": "DeviceDescriptor",
       "type": "object"
@@ -436,6 +464,21 @@
         "path"
       ],
       "title": "DirectoryListResult",
+      "type": "object"
+    },
+    "DisabledSandbox": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "disabled",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "DisabledSandbox",
       "type": "object"
     },
     "DispatchStage": {
@@ -841,27 +884,37 @@
       "title": "EIPServerInfo",
       "type": "object"
     },
-    "EgressHosts": {
-      "items": {
-        "type": "string"
+    "EgressDestinations": {
+      "discriminator": {
+        "mapping": {
+          "allowlist": "#/$defs/AllowlistDestinations",
+          "public": "#/$defs/PublicDestinations"
+        },
+        "propertyName": "mode"
       },
-      "maxItems": 256,
-      "title": "EgressHosts",
-      "type": "array"
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PublicDestinations"
+        },
+        {
+          "$ref": "#/$defs/AllowlistDestinations"
+        }
+      ]
+    },
+    "EgressMode": {
+      "enum": [
+        "inherit",
+        "deny",
+        "controlled"
+      ],
+      "title": "EgressMode",
+      "type": "string"
     },
     "EgressPolicy": {
       "additionalProperties": false,
       "properties": {
-        "allow_hosts": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/EgressHosts"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+        "destinations": {
+          "$ref": "#/$defs/EgressDestinations"
         },
         "secrets": {
           "default": [],
@@ -873,6 +926,9 @@
           "type": "array"
         }
       },
+      "required": [
+        "destinations"
+      ],
       "title": "EgressPolicy",
       "type": "object"
     },
@@ -939,16 +995,8 @@
     "EgressStatus": {
       "additionalProperties": false,
       "properties": {
-        "allow_hosts": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/EgressHosts"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+        "destinations": {
+          "$ref": "#/$defs/EgressDestinations"
         },
         "revision": {
           "maximum": 18446744073709551615,
@@ -966,7 +1014,8 @@
         }
       },
       "required": [
-        "revision"
+        "revision",
+        "destinations"
       ],
       "title": "EgressStatus",
       "type": "object"
@@ -974,10 +1023,10 @@
     "EgressUpdateParams": {
       "additionalProperties": false,
       "properties": {
-        "allow_hosts": {
+        "destinations": {
           "anyOf": [
             {
-              "$ref": "#/$defs/EgressHosts"
+              "$ref": "#/$defs/EgressDestinations"
             },
             {
               "type": "null"
@@ -1008,11 +1057,6 @@
           "maxItems": 64,
           "title": "Set Secrets",
           "type": "array"
-        },
-        "unrestricted": {
-          "default": false,
-          "title": "Unrestricted",
-          "type": "boolean"
         }
       },
       "required": [
@@ -1215,6 +1259,59 @@
         }
       ]
     },
+    "ExecutionBackend": {
+      "enum": [
+        "native",
+        "linux_managed",
+        "linux_bubblewrap",
+        "macos_seatbelt"
+      ],
+      "title": "ExecutionBackend",
+      "type": "string"
+    },
+    "ExecutionBoundary": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/ExecutionBackend"
+        },
+        "egress": {
+          "$ref": "#/$defs/EgressMode"
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "policy_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Policy Digest",
+          "type": "string"
+        },
+        "privilege_gain_blocked": {
+          "title": "Privilege Gain Blocked",
+          "type": "boolean"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/SandboxPolicy"
+        }
+      },
+      "required": [
+        "sandbox",
+        "egress",
+        "privilege_gain_blocked",
+        "backend",
+        "policy_digest"
+      ],
+      "title": "ExecutionBoundary",
+      "type": "object"
+    },
     "ExecutionFeatures": {
       "additionalProperties": false,
       "properties": {
@@ -1247,6 +1344,29 @@
         "signal_terminate"
       ],
       "title": "ExecutionFeatures",
+      "type": "object"
+    },
+    "ExecutionIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "gid": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Gid",
+          "type": "integer"
+        },
+        "uid": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Uid",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "uid",
+        "gid"
+      ],
+      "title": "ExecutionIdentity",
       "type": "object"
     },
     "FileByteRange": {
@@ -2561,6 +2681,14 @@
       "title": "FileWriterOpenResult",
       "type": "object"
     },
+    "GrantAccess": {
+      "enum": [
+        "read_only",
+        "read_write"
+      ],
+      "title": "GrantAccess",
+      "type": "string"
+    },
     "InitializeParams": {
       "additionalProperties": false,
       "properties": {
@@ -3494,6 +3622,21 @@
       "title": "ProcessWriteStdinResult",
       "type": "object"
     },
+    "PublicDestinations": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "public",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "PublicDestinations",
+      "type": "object"
+    },
     "ReceiptGetParams": {
       "additionalProperties": false,
       "properties": {
@@ -3557,6 +3700,29 @@
       "title": "RequestedProcessSignal",
       "type": "string"
     },
+    "RestrictedSandbox": {
+      "additionalProperties": false,
+      "properties": {
+        "grants": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SandboxGrant"
+          },
+          "title": "Grants",
+          "type": "array"
+        },
+        "mode": {
+          "const": "restricted",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "RestrictedSandbox",
+      "type": "object"
+    },
     "RetryHint": {
       "enum": [
         "never",
@@ -3567,6 +3733,42 @@
       ],
       "title": "RetryHint",
       "type": "string"
+    },
+    "SandboxGrant": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/GrantAccess"
+        },
+        "path": {
+          "format": "eip-absolute-path",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "access"
+      ],
+      "title": "SandboxGrant",
+      "type": "object"
+    },
+    "SandboxPolicy": {
+      "discriminator": {
+        "mapping": {
+          "disabled": "#/$defs/DisabledSandbox",
+          "restricted": "#/$defs/RestrictedSandbox"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/DisabledSandbox"
+        },
+        {
+          "$ref": "#/$defs/RestrictedSandbox"
+        }
+      ]
     },
     "SearchMode": {
       "enum": [
@@ -3613,6 +3815,9 @@
           },
           "title": "Available Methods",
           "type": "array"
+        },
+        "boundary": {
+          "$ref": "#/$defs/ExecutionBoundary"
         },
         "device_id": {
           "minLength": 1,
@@ -3671,7 +3876,8 @@
         "working_directory",
         "limits",
         "execution_features",
-        "lifecycle"
+        "lifecycle",
+        "boundary"
       ],
       "title": "SessionDescriptor",
       "type": "object"

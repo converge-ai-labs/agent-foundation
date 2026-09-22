@@ -4,7 +4,7 @@
 
 `a13n-envd` is a device daemon for files, shells, processes and their output. One daemon per machine or outer sandbox is the normal deployment. A trusted Host connection represents a Device and carries multiple independent Sessions, rather than starting another daemon for each folder or Run.
 
-The Host may choose any folder accessible to the configured native execution account. A Session has a fixed default working directory and owns its operations, processes, output and transfers. For ordinary Sessions, its working directory restricts neither file nor shell access. POSIX identity, containers, VMs or other Host-provided launch boundaries supply security for the entire daemon and its children.
+The Host selects an immutable Device execution identity, Sandbox and egress mode. A Session has a fixed default working directory and owns its operations, processes, output and transfers. Its working directory supplies defaults, not confinement: restricted grants constrain the complete worker, while disabled Sandbox retains native filesystem authority. Envd owns the worker lifecycle; the Host owns the outer account, container or VM and product authorization.
 
 Envd is not an Agent runtime, product authorization service, provisioner, scheduler or durable execution database. Harness consumes fresh provider-neutral Environment adapters; it does not select Devices or own their sockets. Direct Local, Docker and native cloud Providers use their own operation and lifecycle contracts.
 
@@ -39,7 +39,7 @@ HTTP, reverse WebSocket and stdio implement the same Session semantics. HTTP req
 | Device paths, directory discovery and file publication             | [Resources](04-resource-operations.md)                         |
 | Command start, process controls and cleanup evidence               | [Commands](05-command-and-process-execution.md)                |
 | Output bytes, offsets and release                                  | [Output](06-output-retention.md)                               |
-| Host-provided security and native cleanup limits                   | [Execution Boundary](07-execution-isolation.md)                |
+| Device execution boundary and native cleanup limits                | [Execution Boundary](07-execution-isolation.md)                |
 | IDL, generation and shared client                                  | [Protocol Source](08-protocol-source-client-and-generation.md) |
 | Session inactivity, disconnect grace and resource collection       | [Resource Lifetime](09-resource-lifetime-and-reclamation.md)   |
 
@@ -70,7 +70,7 @@ A lost response does not prove non-dispatch. Receipts describe observed native e
 2. Session resources have one owner; no resource-import or cross-Session retention system exists.
 3. Session close, expiry and cancellation do not affect healthy siblings.
 4. An owned quiet process is not classified as abandoned because it emits no output.
-5. The Host, not an envd startup filesystem policy engine, supplies the security boundary.
+5. The Host selects the Device boundary; Envd applies it to commands, file RPCs, transfers and directory discovery without per-command policy overrides.
 6. All carriers use the same Session and cleanup contracts.
 
-Controlled Sessions use the opt-in [egress boundary](07-execution-isolation.md#controlled-session-egress), including filesystem operations.
+Sandbox (`disabled` or `restricted`) composes with egress (`inherit`, `deny` or `controlled`). Every controlled Session requires an explicit destination policy. [Execution Boundary](07-execution-isolation.md) owns platform support and enforcement.

@@ -33,7 +33,7 @@ fn equal(k: u32, yes: u8, no: u8) -> libc::sock_filter {
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(super) fn install() -> io::Result<()> {
+pub(crate) fn install() -> io::Result<()> {
     // seccomp_data: nr at 0, arch at 4, args[0] at 16, args[1] at 24.
     let mut filter = vec![
         instruction(LOAD, 4),
@@ -116,7 +116,7 @@ pub(super) fn install() -> io::Result<()> {
 }
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-pub(super) fn install() -> io::Result<()> {
+pub(crate) fn install() -> io::Result<()> {
     Err(io::Error::other(
         "egress syscall isolation is unsupported on this architecture",
     ))
@@ -139,7 +139,7 @@ mod tests {
             let status = Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "egress::namespace::seccomp::tests::socket_isolation",
+                    "execution::namespace::seccomp::tests::socket_isolation",
                     "--nocapture",
                 ])
                 .env(CHILD, "1")

@@ -1,4 +1,4 @@
-"""The UI Host contains the whole Device, including its file and process APIs."""
+"""UI selects grants; Envd enforces them across file and process APIs."""
 
 import os
 import sys
@@ -13,7 +13,7 @@ from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvi
 from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import EnvironmentLifecycleError
-from a13n_harness_ui.sandbox import SandboxLaunch, create_sandbox_runtime, validate_sandbox_runtime
+from a13n_harness_ui.sandbox import create_sandbox_runtime, validate_sandbox_runtime
 
 pytestmark = pytest.mark.anyio
 
@@ -45,7 +45,12 @@ def test_protected_host_state_is_not_granted_by_a_broad_project_root(tmp_path):
     runtime = create_sandbox_runtime(
         tmp_path / "envd", roots=(thread_files,), protected_roots=(state,), thread_files_root=thread_files
     )
-    assert isinstance(runtime.launch_factory, SandboxLaunch)
+    assert runtime.configuration.sandbox.mode == "restricted"
+    assert runtime.configuration.egress.mode == "deny"
+    assert [(grant.path, grant.access) for grant in runtime.configuration.sandbox.grants] == [
+        ((thread_files / "attachments").as_posix(), "read_only"),
+        ((thread_files / "tmp").as_posix(), "read_write"),
+    ]
 
 
 async def test_production_sandbox_preflight_probes_real_boundaries(binary, tmp_path):
@@ -217,3 +222,69 @@ async def test_root_runs_use_captured_sandbox_with_fresh_sessions(binary, tmp_pa
             await app.get_thread(thread.thread_id)
         ).thread.configuration.environment_profile_id == "environment-native"
     assert secret.read_text() == "Host-only fixture"
+
+
+async def test_runtime_cache_separates_launch_policy_but_not_session_destinations(tmp_path, monkeypatch):
+    from a13n_harness_ui.composition.models import ResolvedEnvironmentProfile
+    from a13n_harness_ui.environment_runtime import EnvironmentSnapshotReconstructor
+
+    root = tmp_path / "project"
+    root.mkdir()
+    reconstructor = EnvironmentSnapshotReconstructor()
+
+    async def executable():
+        return tmp_path / "envd"
+
+    monkeypatch.setattr(reconstructor, "resolve_sandbox_executable", executable)
+
+    def profile(mode, hosts=()):
+        return ResolvedEnvironmentProfile(
+            profile_id="environment-test",
+            behavior_digest="a" * 64,
+            provider_key="local_envd",
+            adapter_key="local_envd_project",
+            provider_configuration={
+                "launch": {"sandbox": {"mode": "restricted", "grants": []}, "egress": {"mode": mode}},
+                "session": {"egress": {"destinations": {"mode": "allowlist", "hosts": list(hosts)}}}
+                if mode == "controlled"
+                else {},
+            },
+        )
+
+    try:
+        denied = await reconstructor.sandbox_runtime((root,), profile=profile("deny"))
+        inherited = await reconstructor.sandbox_runtime((root,), profile=profile("inherit"))
+        controlled = await reconstructor.sandbox_runtime((root,), profile=profile("controlled", ("a.example.com",)))
+        assert denied is not inherited and controlled not in (denied, inherited)
+        assert controlled is await reconstructor.sandbox_runtime(
+            (root,), profile=profile("controlled", ("b.example.com",))
+        )
+        assert denied is await reconstructor.sandbox_runtime((root,), profile=profile("deny"))
+    finally:
+        await reconstructor.close()
+
+
+async def test_thread_attachment_grant_is_read_only(binary, tmp_path):
+    thread = tmp_path / "thread"
+    (thread / "attachments").mkdir(parents=True)
+    (thread / "tmp").mkdir()
+    attachment = thread / "attachments/input"
+    attachment.write_text("submitted input")
+    owner = create_sandbox_runtime(binary, roots=(thread,), thread_files_root=thread)
+    environment = LocalEnvdEnvironment(
+        LocalEnvdEnvironmentConfiguration(working_directory=thread.as_posix()), owner, environment_id="thread-files"
+    )
+    async with owner:
+        try:
+            await environment.prepare()
+            files = environment.operations.files
+            assert files is not None
+            assert (await files.read_text(attachment.as_posix())).text == "submitted input"
+            with pytest.raises(EnvironmentError):
+                await files.write_text(attachment.as_posix(), "overwritten", mode="replace")
+            await files.write_text((thread / "tmp/result").as_posix(), "output", mode="create")
+            assert environment.descriptor.execution_boundary["egress"] == "deny"
+        finally:
+            await environment.close()
+    assert attachment.read_text() == "submitted input"
+    assert (thread / "tmp/result").read_text() == "output"

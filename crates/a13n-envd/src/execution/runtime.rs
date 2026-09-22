@@ -1,30 +1,29 @@
 //! One outer broker supervises one disposable Session worker and its network sockets.
-use super::{
-    dns::Routes,
-    namespace::{self, Mounts},
-    policy::Policy,
-    proxy::Proxy,
-    tls::Authority,
-    worker::{WorkerConfig, client::Client},
-};
+#[cfg(target_os = "linux")]
+use super::namespace::{self, Mounts};
+use super::worker::{WorkerConfig, client::Client};
+#[cfg(target_os = "linux")]
+use crate::egress::{dns::Routes, policy::Policy, proxy::Proxy, tls::Authority};
 use std::{
-    io::{self, Write},
-    os::{
-        fd::OwnedFd,
-        unix::{net::UnixStream, process::CommandExt},
-    },
-    process::{Child, Command, Stdio},
+    io,
+    os::{fd::OwnedFd, unix::net::UnixStream},
+    process::Stdio,
     sync::Arc,
     time::Duration,
 };
-use tokio::{
-    io::unix::AsyncFd,
-    sync::{oneshot, watch},
-    task::JoinSet,
+#[cfg(target_os = "linux")]
+use std::{
+    io::Write,
+    os::unix::process::CommandExt,
+    process::{Child, Command},
 };
+use tokio::sync::{oneshot, watch};
+#[cfg(target_os = "linux")]
+use tokio::{io::unix::AsyncFd, task::JoinSet};
 
 pub(crate) struct Runtime {
     pub client: Client,
+    #[cfg(target_os = "linux")]
     policy: Option<Arc<Policy>>,
     clean: Arc<std::sync::atomic::AtomicBool>,
     stop: Option<oneshot::Sender<()>>,
@@ -32,10 +31,12 @@ pub(crate) struct Runtime {
 }
 
 // Own the process across every bootstrap error and cancelled spawn_blocking future.
+#[cfg(target_os = "linux")]
 struct ChildGuard {
     child: Child,
     _state: Option<crate::execution::StateDirectory>,
 }
+#[cfg(target_os = "linux")]
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -44,37 +45,30 @@ impl Drop for ChildGuard {
 }
 
 impl Runtime {
+    #[cfg(target_os = "linux")]
     pub async fn start(
         mut config: WorkerConfig,
         input: Option<Policy>,
         hide: Vec<std::path::PathBuf>,
-        mut reservation: crate::daemon::egress::Reservation,
+        mut reservation: crate::daemon::execution::Reservation,
     ) -> io::Result<Self> {
-        if input.is_some()
+        if (input.is_some() || config.sandbox.restricted())
             && let Some(command) = &mut config.command
         {
-            let safe = |name: &String, _: &mut String| {
-                matches!(
-                    name.as_str(),
-                    "PATH" | "LANG" | "LC_ALL" | "LC_CTYPE" | "TERM" | "COLORTERM"
-                )
-            };
-            command.base_environment.retain(safe);
+            sanitize_environment(command);
             command
                 .base_environment
                 .insert("HOME".into(), config.working_directory.clone());
             command
                 .base_environment
                 .insert("TMPDIR".into(), "/tmp".into());
-            for profile in &mut command.shell_profiles {
-                profile.safe_base_environment.retain(safe);
-            }
         }
         namespace::protect_process()?;
         let policy = input.map(Arc::new);
         let authority = policy.as_ref().map(|_| Authority::new()).transpose()?;
         let plan = config.managed.then(|| Mounts {
             workspace: config.working_directory.clone().into(),
+            state: None,
             hide,
             network: authority.is_some(),
             ca_pem: authority.as_ref().map(Authority::pem).unwrap_or_default(),
@@ -121,8 +115,16 @@ impl Runtime {
             let dns = tokio::net::UdpSocket::from_std(dns)?;
             let routes = Arc::new(Routes::default());
             let proxy = Proxy::new(policy.clone(), authority);
-            tasks.spawn(namespace::tcp::serve(tcp, routes.clone(), proxy));
-            tasks.spawn(namespace::udp::serve(udp, routes.clone(), policy.clone()));
+            tasks.spawn(crate::egress::namespace::tcp::serve(
+                tcp,
+                routes.clone(),
+                proxy,
+            ));
+            tasks.spawn(crate::egress::namespace::udp::serve(
+                udp,
+                routes.clone(),
+                policy.clone(),
+            ));
             tasks.spawn(routes.serve(dns, policy.clone()));
         }
         let (stop, stopped) = oneshot::channel();
@@ -159,6 +161,94 @@ impl Runtime {
         })
     }
 
+    #[cfg(target_os = "macos")]
+    pub async fn start(
+        mut config: WorkerConfig,
+        mut reservation: crate::daemon::execution::Reservation,
+    ) -> io::Result<Self> {
+        use tokio::io::AsyncWriteExt;
+        let state = super::StateDirectory::new(None)?;
+        config.runtime_directory = state.0.join("state");
+        let home = state.0.join("home");
+        let temporary = state.0.join("tmp");
+        std::fs::create_dir(&home)?;
+        std::fs::create_dir(&temporary)?;
+        if let Some(command) = &mut config.command {
+            sanitize_environment(command);
+            command
+                .base_environment
+                .insert("HOME".into(), home.to_string_lossy().into_owned());
+            command
+                .base_environment
+                .insert("TMPDIR".into(), temporary.to_string_lossy().into_owned());
+        }
+        let (socket, input) = UnixStream::pair()?;
+        socket.set_nonblocking(true)?;
+        let mut socket = tokio::net::UnixStream::from_std(socket)?;
+        let mut command = tokio::process::Command::from(super::macos::command(
+            &config.sandbox,
+            &config.grant_sources,
+            config.egress,
+            &state.0,
+        )?);
+        let mut child = command
+            .arg("--internal-session-worker")
+            .env_clear()
+            .stdin(Stdio::from(OwnedFd::from(input)))
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true)
+            .spawn()?;
+        let bytes = serde_json::to_vec(&config).map_err(io::Error::other)?;
+        let connected = tokio::time::timeout(Duration::from_secs(15), async {
+            socket
+                .write_all(&(bytes.len() as u32).to_be_bytes())
+                .await?;
+            socket.write_all(&bytes).await?;
+            Client::connect(socket, &config.limits).await
+        })
+        .await
+        .map_err(io::Error::other)
+        .and_then(|result| result);
+        let client = match connected {
+            Ok(client) => client,
+            Err(error) => {
+                let _ = child.kill().await;
+                return Err(error);
+            }
+        };
+        let mut closed = client.closed();
+        let (stop, stopped) = oneshot::channel();
+        let (dead_sender, dead) = watch::channel(false);
+        let clean = reservation.clean.clone();
+        reservation.started = true;
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = stopped => {},
+                _ = closed.changed() => {},
+                _ = child.wait() => {},
+            }
+            // EOF lets the worker drain its supervisors first. Unlike a Linux PID
+            // namespace, child exit alone is not evidence of command-tree cleanup.
+            if tokio::time::timeout(Duration::from_secs(4), child.wait())
+                .await
+                .is_err()
+            {
+                let _ = child.kill().await;
+            }
+            drop(state);
+            drop(reservation);
+            dead_sender.send_replace(true);
+        });
+        Ok(Self {
+            client,
+            clean,
+            stop: Some(stop),
+            dead,
+        })
+    }
+
+    #[cfg(target_os = "linux")]
     pub fn status(&self) -> io::Result<crate::eip::EgressStatus> {
         self.policy
             .as_ref()
@@ -167,16 +257,23 @@ impl Runtime {
             .map(|snapshot| snapshot.status())
             .map_err(|_| io::Error::other("closed policy"))
     }
+    #[cfg(target_os = "linux")]
     pub fn update(
         &self,
         params: crate::eip::EgressUpdateParams,
-    ) -> Result<crate::eip::EgressStatus, super::policy::PolicyError> {
+    ) -> Result<crate::eip::EgressStatus, crate::egress::policy::PolicyError> {
         self.policy
             .as_ref()
-            .ok_or(super::policy::PolicyError::Closed)?
+            .ok_or(crate::egress::policy::PolicyError::Closed)?
             .update(params.into())
             .map(|snapshot| snapshot.status())
     }
+    #[cfg(target_os = "macos")]
+    pub fn environment(&self) -> io::Result<std::collections::BTreeMap<String, String>> {
+        Ok(Default::default())
+    }
+
+    #[cfg(target_os = "linux")]
     pub fn environment(&self) -> io::Result<std::collections::BTreeMap<String, String>> {
         let Some(policy) = &self.policy else {
             return Ok(Default::default());
@@ -196,6 +293,7 @@ impl Runtime {
         Ok(env)
     }
     pub async fn close(&self) -> bool {
+        #[cfg(target_os = "linux")]
         if let Some(policy) = &self.policy {
             policy.close();
         }
@@ -218,6 +316,7 @@ impl Runtime {
 }
 impl Drop for Runtime {
     fn drop(&mut self) {
+        #[cfg(target_os = "linux")]
         if let Some(policy) = &self.policy {
             policy.close();
         }
@@ -225,16 +324,43 @@ impl Drop for Runtime {
     }
 }
 
+fn sanitize_environment(command: &mut crate::config::CommandConfig) {
+    let safe = |name: &String, _: &mut String| {
+        matches!(
+            name.as_str(),
+            "PATH" | "LANG" | "LC_ALL" | "LC_CTYPE" | "TERM" | "COLORTERM"
+        )
+    };
+    command.base_environment.retain(safe);
+    for profile in &mut command.shell_profiles {
+        profile.safe_base_environment.retain(safe);
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn bootstrap(
-    plan: Option<Mounts>,
+    mut plan: Option<Mounts>,
     mut config: WorkerConfig,
 ) -> io::Result<(ChildGuard, UnixStream, Option<[OwnedFd; 3]>, OwnedFd)> {
-    let state = if plan.is_none() {
+    let identity = config
+        .execution
+        .ok_or_else(|| io::Error::other("missing execution identity"))?;
+    if config.sandbox.restricted() {
+        config.groups = super::restricted_groups(identity)?;
+    }
+    let state = if plan.is_none() || config.sandbox.restricted() {
         let identity = config
             .execution
             .ok_or_else(|| io::Error::other("missing execution identity"))?;
-        let state = crate::execution::StateDirectory::new(identity)?;
-        config.runtime_directory = state.0.clone();
+        let state = crate::execution::StateDirectory::new(Some(identity))?;
+        config.runtime_directory = if config.sandbox.restricted() {
+            super::sandbox::STATE.into()
+        } else {
+            state.0.clone()
+        };
+        if let Some(plan) = &mut plan {
+            plan.state = Some(state.0.clone());
+        }
         Some(state)
     } else {
         None
@@ -243,21 +369,33 @@ fn bootstrap(
     socket.set_read_timeout(Some(Duration::from_secs(20)))?;
     socket.set_write_timeout(Some(Duration::from_secs(20)))?;
     let parent = unsafe { libc::getpid() };
-    let mut command = if plan.is_some() {
+    let mut command = if config.sandbox.restricted() && plan.is_none() {
+        super::sandbox::command(
+            &config.sandbox,
+            &config.grant_sources,
+            config.egress,
+            state.as_ref().map(|state| state.0.as_path()),
+            identity,
+            false,
+            None,
+        )?
+    } else if plan.is_some() {
         Command::new("/usr/bin/unshare")
     } else {
         Command::new(std::env::current_exe()?)
     };
-    if let Some(plan) = &plan {
-        command.args([
-            "--mount",
-            "--pid",
-            "--ipc",
-            "--fork",
-            "--kill-child",
-            "--mount-proc",
-        ]);
-        if plan.network {
+    if plan.is_some() {
+        if !config.sandbox.restricted() {
+            command.args([
+                "--mount",
+                "--pid",
+                "--ipc",
+                "--fork",
+                "--kill-child",
+                "--mount-proc",
+            ]);
+        }
+        if config.egress != (super::boundary::Egress::Inherit {}) {
             command.arg("--net");
         }
         command
@@ -288,7 +426,16 @@ fn bootstrap(
     let (network, death) = if let Some(plan) = plan {
         write(&mut socket, &plan)?;
         write(&mut socket, &config)?;
-        let result = if plan.network {
+        let result = if config.sandbox.restricted() {
+            let network = if plan.network {
+                Some(namespace::fds::receive(&socket)?)
+            } else {
+                None
+            };
+            write(&mut socket, &config)?;
+            let [death] = namespace::fds::receive(&socket)?;
+            (network, death)
+        } else if plan.network {
             let [tcp, udp, dns, death] = namespace::fds::receive(&socket)?;
             (Some([tcp, udp, dns]), death)
         } else {
@@ -306,6 +453,7 @@ fn bootstrap(
     socket.set_write_timeout(None)?;
     Ok((child, socket, network, death))
 }
+#[cfg(target_os = "linux")]
 fn write(socket: &mut UnixStream, value: &impl serde::Serialize) -> io::Result<()> {
     let bytes = serde_json::to_vec(value).map_err(io::Error::other)?;
     socket.write_all(&(bytes.len() as u32).to_be_bytes())?;

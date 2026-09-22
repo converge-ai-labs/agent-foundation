@@ -15,6 +15,13 @@ from pydantic import BaseModel
 from ...authentication import Authentication, CredentialMode
 from ..attachments import DeviceEIPSessionSource
 from ..definition import EnvironmentProviderDefinition
+from ..envd_policy import (
+    EnvdBoundaryRequirement,
+    EnvdCredentialResolver,
+    EnvdEgressConfiguration,
+    EnvironmentEnvdCredentialResolver,
+    resolve_egress,
+)
 from ..errors import EnvironmentProviderErrorCategory as Category
 from ..errors import provider_error
 from ..management import Environment
@@ -38,6 +45,8 @@ class HttpEnvdProviderRuntime:
     configuration: HttpEnvdConnectionConfiguration
     credential: HttpEnvdCredential = field(repr=False)
     verify: ssl.SSLContext | str | bool = field(default=True, repr=False)
+
+    credential_resolver: EnvdCredentialResolver = field(default_factory=EnvironmentEnvdCredentialResolver, repr=False)
 
     _device: EIPDeviceConnection | None = field(default=None, init=False, repr=False)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
@@ -102,12 +111,16 @@ class HttpEnvdProviderRuntime:
         expected_device_id: str,
         required_methods: frozenset[str],
         working_directory: str | None = None,
+        egress: EnvdEgressConfiguration | None = None,
+        expected_boundary: EnvdBoundaryRequirement | None = None,
     ) -> AsyncIterator[EIPSession]:
         device = await self.acquire_device(expected_device_id=expected_device_id)
         async with DeviceEIPSessionSource(device).open_session(
             expected_device_id=expected_device_id,
             required_methods=required_methods,
             working_directory=working_directory,
+            egress=await resolve_egress(egress, self.credential_resolver),
+            expected_boundary=expected_boundary,
         ) as session:
             yield session
 
@@ -166,6 +179,8 @@ def _construct(
             expected_device_id=data.device_id,
             working_directory=configuration.working_directory,
             required_methods=REQUIRED_METHODS | frozenset(configuration.required_methods),
+            egress=configuration.egress,
+            expected_boundary=configuration.expected_boundary,
         ),
     )
 

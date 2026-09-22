@@ -14,6 +14,7 @@ from pathlib import Path
 from a13n_envd_client import EIPDeviceConnection
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
 
+from ..envd_policy import EnvdCredentialResolver, EnvironmentEnvdCredentialResolver
 from ..errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
@@ -21,7 +22,7 @@ from ..errors import (
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from ._daemon import LocalDaemon, LocalEnvdLaunchFactory
+from ._daemon import LocalDaemon
 from .configuration import LocalEnvdLaunchConfiguration
 
 A13N_ENVD_EXECUTABLE = "A13N_ENVD_EXECUTABLE"
@@ -40,7 +41,7 @@ class LocalEnvdProviderRuntime:
         executable: Path,
         allocate_private_runtime: LocalEnvdRuntimeAllocator,
         configuration: LocalEnvdLaunchConfiguration | None = None,
-        launch_factory: LocalEnvdLaunchFactory | None = None,
+        credential_resolver: EnvdCredentialResolver | None = None,
     ) -> None:
         executable = executable.expanduser()
         if "\x00" in str(executable) or not executable.is_absolute():
@@ -50,7 +51,7 @@ class LocalEnvdProviderRuntime:
         self.executable = executable
         self.allocate_private_runtime = allocate_private_runtime
         self.configuration = configuration or LocalEnvdLaunchConfiguration()
-        self.launch_factory = launch_factory
+        self.credential_resolver = credential_resolver or EnvironmentEnvdCredentialResolver()
         self._device_id = "device-" + secrets.token_hex(16)
         self._owner: LocalDaemon | None = None
         self._lock = asyncio.Lock()
@@ -74,7 +75,6 @@ class LocalEnvdProviderRuntime:
                     self.allocate_private_runtime,
                     self.configuration,
                     device_id=self._device_id,
-                    launch_factory=self.launch_factory,
                 )
                 self._owner = owner
             assert self._owner.device is not None

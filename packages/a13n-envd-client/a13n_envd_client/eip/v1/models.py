@@ -137,6 +137,12 @@ class DispatchStage(StrEnum):
     UNKNOWN = "unknown"
 
 
+class EgressMode(StrEnum):
+    INHERIT = "inherit"
+    DENY = "deny"
+    CONTROLLED = "controlled"
+
+
 class ErrorType(StrEnum):
     PARSE_ERROR = "parse_error"
     INVALID_REQUEST = "invalid_request"
@@ -166,6 +172,13 @@ class ErrorType(StrEnum):
     INTEGRITY_MISMATCH = "integrity_mismatch"
 
 
+class ExecutionBackend(StrEnum):
+    NATIVE = "native"
+    LINUX_MANAGED = "linux_managed"
+    LINUX_BUBBLEWRAP = "linux_bubblewrap"
+    MACOS_SEATBELT = "macos_seatbelt"
+
+
 class FileKind(StrEnum):
     FILE = "file"
     DIRECTORY = "directory"
@@ -185,6 +198,11 @@ class FileWriterAbortStatus(StrEnum):
     ALREADY_ABORTED = "already_aborted"
     COMMIT_IN_PROGRESS = "commit_in_progress"
     ALREADY_COMMITTED = "already_committed"
+
+
+class GrantAccess(StrEnum):
+    READ_ONLY = "read_only"
+    READ_WRITE = "read_write"
 
 
 class OperationCancelStatus(StrEnum):
@@ -306,6 +324,11 @@ EIP_ERROR_CODES: Final[Mapping[ErrorType, int]] = MappingProxyType(
 )
 
 
+class AllowlistDestinations(EIPModel):
+    mode: Literal["allowlist"]
+    hosts: Annotated[tuple[StrictStr, ...], Field(max_length=256)] = ()
+
+
 class CommandEnvironment(EIPModel):
     set: dict[StrictStr, StrictStr] = Field(default_factory=dict)
     unset: tuple[StrictStr, ...] = ()
@@ -348,6 +371,10 @@ class DirectoryListResult(EIPModel):
     next_offset: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
 
 
+class DisabledSandbox(EIPModel):
+    mode: Literal["disabled"]
+
+
 class EIPCallContext(EIPModel):
     operation_id: Annotated[Identifier, Field(max_length=128)]
     timeout_ms: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)] | None = None
@@ -387,11 +414,6 @@ class EIPServerInfo(EIPModel):
     version: StrictStr
 
 
-class EgressHosts(RootModel[Annotated[tuple[StrictStr, ...], Field(max_length=256)]]):
-    model_config = ConfigDict(frozen=True)
-    root: Annotated[tuple[StrictStr, ...], Field(max_length=256)]
-
-
 class EgressSecret(EIPModel):
     env: Annotated[StrictStr, Field(min_length=1, max_length=128)]
     value: Annotated[StrictStr, Field(min_length=1, max_length=8192)]
@@ -405,24 +427,6 @@ class EgressSecretStatus(EIPModel):
     env: StrictStr
     sentinel: StrictStr
     inject_hosts: tuple[StrictStr, ...] = ()
-
-
-class EgressStatus(EIPModel):
-    revision: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
-    allow_hosts: EgressHosts | None = None
-    secrets: tuple[EgressSecretStatus, ...] = ()
-
-
-class EgressUpdateParams(EIPModel):
-    expected_revision: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
-    allow_hosts: EgressHosts | None = None
-    unrestricted: StrictBool = False
-    set_secrets: Annotated[tuple[EgressSecret, ...], Field(max_length=64)] = ()
-    remove_secrets: Annotated[tuple[StrictStr, ...], Field(max_length=64)] = ()
-
-
-class EgressUpdateResult(EIPModel):
-    egress: EgressStatus
 
 
 class EncodedBytes(EIPModel):
@@ -467,6 +471,11 @@ class ExecutionFeatures(EIPModel):
     cpu_time_limit: StrictBool
     signal_interrupt: StrictBool
     signal_terminate: StrictBool
+
+
+class ExecutionIdentity(EIPModel):
+    uid: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    gid: Annotated[StrictInt, Field(ge=0, le=4294967295)]
 
 
 class FileByteRange(EIPModel):
@@ -798,6 +807,10 @@ class ProcessWriteStdinResult(EIPModel):
     receipt: OperationReceipt
 
 
+class PublicDestinations(EIPModel):
+    mode: Literal["public"]
+
+
 class ReceiptGetParams(EIPModel):
     context: EIPCallContext
     operation_id: Annotated[Identifier, Field(max_length=128)]
@@ -805,6 +818,11 @@ class ReceiptGetParams(EIPModel):
 
 class ReceiptGetResult(EIPModel):
     receipt: OperationReceipt
+
+
+class SandboxGrant(EIPModel):
+    path: AbsoluteEIPPath
+    access: GrantAccess
 
 
 class SessionAttachParams(EIPModel):
@@ -857,23 +875,32 @@ type CommandSpec = Annotated[
     Field(discriminator="kind"),
 ]
 
-
-class DeviceDescriptor(EIPModel):
-    device_id: Identifier
-    generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
-    display_name: Annotated[StrictStr, Field(max_length=256)] | None = None
-    description: Annotated[StrictStr, Field(max_length=4096)] | None = None
-    path_style: PathStyle
-    default_working_directory: AbsoluteEIPPath
-    directory_discovery: StrictBool
-    available_methods: tuple[StrictStr, ...] = ()
-    limits: EIPLimits
-    lifecycle: SessionLifecyclePolicy
+type EgressDestinations = Annotated[
+    PublicDestinations | AllowlistDestinations,
+    Field(discriminator="mode"),
+]
 
 
 class EgressPolicy(EIPModel):
-    allow_hosts: EgressHosts | None = None
+    destinations: EgressDestinations
     secrets: Annotated[tuple[EgressSecret, ...], Field(max_length=64)] = ()
+
+
+class EgressStatus(EIPModel):
+    revision: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    destinations: EgressDestinations
+    secrets: tuple[EgressSecretStatus, ...] = ()
+
+
+class EgressUpdateParams(EIPModel):
+    expected_revision: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    destinations: EgressDestinations | None = None
+    set_secrets: Annotated[tuple[EgressSecret, ...], Field(max_length=64)] = ()
+    remove_secrets: Annotated[tuple[StrictStr, ...], Field(max_length=64)] = ()
+
+
+class EgressUpdateResult(EIPModel):
+    egress: EgressStatus
 
 
 class FileCommitParams(EIPModel):
@@ -955,12 +982,6 @@ class FileWriterCommitResult(EIPModel):
     receipt: OperationReceipt
 
 
-class InitializeResult(EIPModel):
-    protocol_version: ProtocolVersion
-    server: EIPServerInfo
-    descriptor: DeviceDescriptor
-
-
 class OutputInfo(EIPModel):
     reference: OutputReference
     producer_complete: StrictBool
@@ -1018,17 +1039,15 @@ class ProcessOutput(EIPModel):
     stderr: OutputInfo
 
 
-class SessionDescriptor(EIPModel):
-    device_id: Identifier
-    generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
-    session_id: Identifier
-    working_directory: AbsoluteEIPPath
-    available_methods: tuple[StrictStr, ...] = ()
-    limits: EIPLimits
-    shell_profiles: tuple[ShellProfileDescriptor, ...] = ()
-    execution_features: ExecutionFeatures
-    lifecycle: SessionLifecyclePolicy
-    egress: EgressStatus | None = None
+class RestrictedSandbox(EIPModel):
+    mode: Literal["restricted"]
+    grants: tuple[SandboxGrant, ...] = ()
+
+
+type SandboxPolicy = Annotated[
+    DisabledSandbox | RestrictedSandbox,
+    Field(discriminator="mode"),
+]
 
 
 class SessionOpenParams(EIPModel):
@@ -1038,10 +1057,6 @@ class SessionOpenParams(EIPModel):
     working_directory: AbsoluteEIPPath | None = None
     required_methods: tuple[StrictStr, ...] = ()
     egress: EgressPolicy | None = None
-
-
-class SessionOpenResult(EIPModel):
-    descriptor: SessionDescriptor
 
 
 class ShellExecResult(EIPModel):
@@ -1059,12 +1074,13 @@ class CommandRequest(EIPModel):
     keep_stdin_open: StrictBool = False
 
 
-class DeviceDescribeResult(EIPModel):
-    descriptor: DeviceDescriptor
-
-
-class EnvironmentDescribeResult(EIPModel):
-    descriptor: SessionDescriptor
+class ExecutionBoundary(EIPModel):
+    identity: ExecutionIdentity | None = None
+    sandbox: SandboxPolicy
+    egress: EgressMode
+    privilege_gain_blocked: StrictBool
+    backend: ExecutionBackend
+    policy_digest: Sha256Digest
 
 
 class PortInspectResult(EIPModel):
@@ -1110,9 +1126,41 @@ class ProcessWaitResult(EIPModel):
     process: ProcessInfo
 
 
+class SessionDescriptor(EIPModel):
+    device_id: Identifier
+    generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    session_id: Identifier
+    working_directory: AbsoluteEIPPath
+    available_methods: tuple[StrictStr, ...] = ()
+    limits: EIPLimits
+    shell_profiles: tuple[ShellProfileDescriptor, ...] = ()
+    execution_features: ExecutionFeatures
+    lifecycle: SessionLifecyclePolicy
+    egress: EgressStatus | None = None
+    boundary: ExecutionBoundary
+
+
+class SessionOpenResult(EIPModel):
+    descriptor: SessionDescriptor
+
+
 class ShellExecParams(EIPModel):
     context: EIPCallContext
     request: CommandRequest
+
+
+class DeviceDescriptor(EIPModel):
+    device_id: Identifier
+    generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    display_name: Annotated[StrictStr, Field(max_length=256)] | None = None
+    description: Annotated[StrictStr, Field(max_length=4096)] | None = None
+    path_style: PathStyle
+    default_working_directory: AbsoluteEIPPath
+    directory_discovery: StrictBool
+    available_methods: tuple[StrictStr, ...] = ()
+    limits: EIPLimits
+    lifecycle: SessionLifecyclePolicy
+    boundary: ExecutionBoundary
 
 
 class EIPErrorData(EIPModel):
@@ -1135,6 +1183,20 @@ class EIPErrorData(EIPModel):
     output: ProcessOutput | None = None
 
 
+class EnvironmentDescribeResult(EIPModel):
+    descriptor: SessionDescriptor
+
+
+class InitializeResult(EIPModel):
+    protocol_version: ProtocolVersion
+    server: EIPServerInfo
+    descriptor: DeviceDescriptor
+
+
+class DeviceDescribeResult(EIPModel):
+    descriptor: DeviceDescriptor
+
+
 class EIPError(EIPModel):
     code: Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)]
     message: StrictStr
@@ -1147,6 +1209,7 @@ class EIPError(EIPModel):
         return self
 
 
+AllowlistDestinations.model_rebuild()
 CommandEnvironment.model_rebuild()
 CommandLimits.model_rebuild()
 ContentDigest.model_rebuild()
@@ -1154,17 +1217,14 @@ DeviceDescribeParams.model_rebuild()
 DirectoryEntry.model_rebuild()
 DirectoryListParams.model_rebuild()
 DirectoryListResult.model_rebuild()
+DisabledSandbox.model_rebuild()
 EIPCallContext.model_rebuild()
 EIPClientInfo.model_rebuild()
 EIPLimits.model_rebuild()
 EIPPath.model_rebuild()
 EIPServerInfo.model_rebuild()
-EgressHosts.model_rebuild()
 EgressSecret.model_rebuild()
 EgressSecretStatus.model_rebuild()
-EgressStatus.model_rebuild()
-EgressUpdateParams.model_rebuild()
-EgressUpdateResult.model_rebuild()
 EncodedBytes.model_rebuild()
 EnvironmentDescribeParams.model_rebuild()
 EnvironmentReadinessParams.model_rebuild()
@@ -1172,6 +1232,7 @@ EnvironmentReadinessResult.model_rebuild()
 ExecutableName.model_rebuild()
 ExecutablePath.model_rebuild()
 ExecutionFeatures.model_rebuild()
+ExecutionIdentity.model_rebuild()
 FileByteRange.model_rebuild()
 FileCommitCondition.model_rebuild()
 FileCommitWrite.model_rebuild()
@@ -1218,8 +1279,10 @@ ProcessStatus.model_rebuild()
 ProcessWaitParams.model_rebuild()
 ProcessWriteStdinParams.model_rebuild()
 ProcessWriteStdinResult.model_rebuild()
+PublicDestinations.model_rebuild()
 ReceiptGetParams.model_rebuild()
 ReceiptGetResult.model_rebuild()
+SandboxGrant.model_rebuild()
 SessionAttachParams.model_rebuild()
 SessionCloseParams.model_rebuild()
 SessionCloseResult.model_rebuild()
@@ -1229,8 +1292,10 @@ SessionLifecyclePolicy.model_rebuild()
 ShellCommand.model_rebuild()
 ShellProfileDescriptor.model_rebuild()
 ArgvCommand.model_rebuild()
-DeviceDescriptor.model_rebuild()
 EgressPolicy.model_rebuild()
+EgressStatus.model_rebuild()
+EgressUpdateParams.model_rebuild()
+EgressUpdateResult.model_rebuild()
 FileCommitParams.model_rebuild()
 FileCommitResult.model_rebuild()
 FileCopyResult.model_rebuild()
@@ -1244,7 +1309,6 @@ FileWriteTextResult.model_rebuild()
 FileWriterAbortParams.model_rebuild()
 FileWriterCommitParams.model_rebuild()
 FileWriterCommitResult.model_rebuild()
-InitializeResult.model_rebuild()
 OutputInfo.model_rebuild()
 OutputReadParams.model_rebuild()
 OutputReadResult.model_rebuild()
@@ -1253,13 +1317,11 @@ PortObservation.model_rebuild()
 PortWaitResult.model_rebuild()
 ProcessCloseStdinParams.model_rebuild()
 ProcessOutput.model_rebuild()
-SessionDescriptor.model_rebuild()
+RestrictedSandbox.model_rebuild()
 SessionOpenParams.model_rebuild()
-SessionOpenResult.model_rebuild()
 ShellExecResult.model_rebuild()
 CommandRequest.model_rebuild()
-DeviceDescribeResult.model_rebuild()
-EnvironmentDescribeResult.model_rebuild()
+ExecutionBoundary.model_rebuild()
 PortInspectResult.model_rebuild()
 ProcessInfo.model_rebuild()
 ProcessInspectResult.model_rebuild()
@@ -1268,12 +1330,19 @@ ProcessSignalResult.model_rebuild()
 ProcessStartParams.model_rebuild()
 ProcessStartResult.model_rebuild()
 ProcessWaitResult.model_rebuild()
+SessionDescriptor.model_rebuild()
+SessionOpenResult.model_rebuild()
 ShellExecParams.model_rebuild()
+DeviceDescriptor.model_rebuild()
 EIPErrorData.model_rebuild()
+EnvironmentDescribeResult.model_rebuild()
+InitializeResult.model_rebuild()
+DeviceDescribeResult.model_rebuild()
 EIPError.model_rebuild()
 
 __all__ = [
     "EIP_ERROR_CODES",
+    "AllowlistDestinations",
     "ArgvCommand",
     "CleanupOutcome",
     "CommandEnvironment",
@@ -1288,6 +1357,7 @@ __all__ = [
     "DirectoryEntry",
     "DirectoryListParams",
     "DirectoryListResult",
+    "DisabledSandbox",
     "DispatchStage",
     "EIPCallContext",
     "EIPClientInfo",
@@ -1296,7 +1366,8 @@ __all__ = [
     "EIPLimits",
     "EIPPath",
     "EIPServerInfo",
-    "EgressHosts",
+    "EgressDestinations",
+    "EgressMode",
     "EgressPolicy",
     "EgressSecret",
     "EgressSecretStatus",
@@ -1312,7 +1383,10 @@ __all__ = [
     "ExecutableName",
     "ExecutablePath",
     "ExecutableSpec",
+    "ExecutionBackend",
+    "ExecutionBoundary",
     "ExecutionFeatures",
+    "ExecutionIdentity",
     "FileByteRange",
     "FileCommitCondition",
     "FileCommitParams",
@@ -1359,6 +1433,7 @@ __all__ = [
     "FileWriterHandle",
     "FileWriterOpenParams",
     "FileWriterOpenResult",
+    "GrantAccess",
     "InitializeParams",
     "InitializeResult",
     "OperationCancelParams",
@@ -1403,12 +1478,16 @@ __all__ = [
     "ProcessWaitResult",
     "ProcessWriteStdinParams",
     "ProcessWriteStdinResult",
+    "PublicDestinations",
     "ReceiptGetParams",
     "ReceiptGetResult",
     "ReceiptOutcome",
     "ReceiptStage",
     "RequestedProcessSignal",
+    "RestrictedSandbox",
     "RetryHint",
+    "SandboxGrant",
+    "SandboxPolicy",
     "SearchMode",
     "SessionAttachParams",
     "SessionCloseParams",

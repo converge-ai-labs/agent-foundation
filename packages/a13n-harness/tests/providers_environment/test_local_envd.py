@@ -78,11 +78,12 @@ def owners(monkeypatch):
             self.closed = False
             owners.append(self)
 
-        async def launch(self, executable, allocator, configuration, *, device_id, launch_factory):
-            assert launch_factory is None
+        async def launch(self, executable, allocator, configuration, *, device_id):
             await asyncio.sleep(0)
             self.configuration = configuration
-            self.device = SimpleNamespace(descriptor=SimpleNamespace(device_id=device_id))
+            self.device = SimpleNamespace(
+                descriptor=SimpleNamespace(device_id=device_id, boundary=SimpleNamespace(policy_digest="test-boundary"))
+            )
             return self.device
 
         async def close(self):

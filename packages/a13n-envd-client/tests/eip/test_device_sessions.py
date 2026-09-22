@@ -324,3 +324,43 @@ def test_slow_transfer_backpressures_without_stalling_sibling(tmp_path: Path, ca
                 await alpha.close()
 
     asyncio.run(scenario())
+
+
+def test_session_boundary_mismatch_closes_unpublished_session(tmp_path, monkeypatch):
+    from a13n_envd_client import EIPProtocolError
+
+    async def scenario():
+        async with running_device(tmp_path, "stdio") as device:
+            original = device._bind
+
+            def tampered(descriptor):
+                boundary = descriptor.boundary.model_copy(update={"policy_digest": "0" * 64})
+                return original(descriptor.model_copy(update={"boundary": boundary}))
+
+            monkeypatch.setattr(device, "_bind", tampered)
+            for _ in range(3):
+                with pytest.raises(EIPProtocolError, match="boundary"):
+                    await device.open_session()
+                assert not device._sessions
+            monkeypatch.setattr(device, "_bind", original)
+            async with await device.open_session() as session:
+                assert session.descriptor.boundary == device.descriptor.boundary
+
+    asyncio.run(scenario())
+
+
+def test_session_policy_presence_must_match_device_mode_before_dispatch(tmp_path, monkeypatch):
+    from a13n_envd_client.eip.v1 import EgressMode, EgressPolicy, PublicDestinations
+
+    async def scenario():
+        async with running_device(tmp_path, "stdio") as device:
+            policy = EgressPolicy(destinations=PublicDestinations(mode="public"))
+            with pytest.raises(ValueError, match="exactly for controlled"):
+                await device.open_session(egress=policy)
+            boundary = device.descriptor.boundary.model_copy(update={"egress": EgressMode.CONTROLLED})
+            monkeypatch.setattr(device, "_descriptor", device.descriptor.model_copy(update={"boundary": boundary}))
+            with pytest.raises(ValueError, match="exactly for controlled"):
+                await device.open_session()
+            assert not device._sessions
+
+    asyncio.run(scenario())

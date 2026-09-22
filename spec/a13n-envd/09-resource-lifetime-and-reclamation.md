@@ -2,7 +2,7 @@
 
 ## Design Position
 
-The Session is the unit of native resource ownership and abandonment cleanup. It owns commands, output, transfers and operation history. Resources are not imported into other Sessions or kept alive through independent resource leases. The daemon retains only aggregate accounting and the Session registry.
+The Session is the unit of native resource ownership and abandonment cleanup. It owns commands, output, transfers and operation history. Resources are not imported into other Sessions or kept alive through independent resource leases. The daemon retains aggregate accounting, the Session registry and any required worker/broker ownership. Isolated workers use the same Session engine, not a second lifecycle implementation; the outer Session owns attachment and expiry.
 
 A long-lived daemon collects abandoned Sessions and completed history periodically and when resource usage reaches a high watermark. Per-Session and global limits are generous but finite. Collection does not delete workspace files, replay operations or evict healthy active work merely to admit new work.
 

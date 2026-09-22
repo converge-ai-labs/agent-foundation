@@ -16,6 +16,9 @@ from a13n_envd_client import (
     StdioTransport,
     WebSocketConnection,
 )
+from a13n_envd_client.eip.v1 import EgressPolicy
+
+from .envd_policy import EnvdBoundaryRequirement
 
 
 class EIPSessionSource(ABC):
@@ -31,6 +34,8 @@ class EIPSessionSource(ABC):
         expected_device_id: str,
         required_methods: frozenset[str],
         working_directory: str | None = None,
+        egress: EgressPolicy | None = None,
+        expected_boundary: EnvdBoundaryRequirement | None = None,
     ) -> AbstractAsyncContextManager[EIPSession]: ...
 
     @abstractmethod
@@ -57,13 +62,18 @@ class DeviceEIPSessionSource(EIPSessionSource):
         expected_device_id: str,
         required_methods: frozenset[str],
         working_directory: str | None = None,
+        egress: EgressPolicy | None = None,
+        expected_boundary: EnvdBoundaryRequirement | None = None,
     ) -> AsyncGenerator[EIPSession]:
         self._claim()
         if self._device.descriptor.device_id != expected_device_id:
             raise EIPSessionStateError("Session source belongs to another Device")
+        if expected_boundary is not None:
+            expected_boundary.check(self._device.descriptor.boundary)
         session = await self._device.open_session(
             working_directory=working_directory,
             required_methods=tuple(sorted(required_methods)),
+            egress=egress,
         )
         async with session:
             yield session
@@ -96,6 +106,8 @@ class _OwnedTransportSessionSource(EIPSessionSource):
         expected_device_id: str,
         required_methods: frozenset[str],
         working_directory: str | None = None,
+        egress: EgressPolicy | None = None,
+        expected_boundary: EnvdBoundaryRequirement | None = None,
     ) -> AsyncGenerator[EIPSession]:
         self._claim()
         device = await EIPDeviceConnection.initialize(
@@ -110,6 +122,8 @@ class _OwnedTransportSessionSource(EIPSessionSource):
                 expected_device_id=expected_device_id,
                 required_methods=required_methods,
                 working_directory=working_directory,
+                egress=egress,
+                expected_boundary=expected_boundary,
             ) as session:
                 yield session
 

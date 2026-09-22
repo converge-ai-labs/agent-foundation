@@ -2,37 +2,11 @@ use super::Identity;
 use crate::config::CommandConfig;
 use std::{
     ffi::{CStr, CString},
-    fs, io,
-    os::{fd::AsRawFd, unix::fs::DirBuilderExt},
-    path::PathBuf,
+    io,
 };
 
 pub(crate) fn needs_worker(identity: Identity) -> bool {
     unsafe { libc::geteuid() != identity.uid || libc::getegid() != identity.gid }
-}
-
-pub(crate) struct StateDirectory(pub PathBuf);
-
-impl StateDirectory {
-    pub fn new(identity: Identity) -> io::Result<Self> {
-        let mut random = [0_u8; 16];
-        getrandom::fill(&mut random).map_err(|error| io::Error::other(error.to_string()))?;
-        let path =
-            std::env::temp_dir().join(format!("a13n-session-{:032x}", u128::from_ne_bytes(random)));
-        fs::DirBuilder::new().mode(0o700).create(&path)?;
-        let directory = Self(path);
-        let file = fs::File::open(&directory.0)?;
-        if unsafe { libc::fchown(file.as_raw_fd(), identity.uid, identity.gid) } != 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(directory)
-    }
-}
-
-impl Drop for StateDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
 }
 
 /// Run only in the single-threaded worker, before constructing its filesystem
@@ -44,14 +18,29 @@ pub(crate) fn enter(identity: Identity, command: &mut Option<CommandConfig>) -> 
     if identity.uid == 0 && !needs_worker(identity) {
         return Ok(());
     }
+    let (name, home, shell) = account(identity.uid)?;
+    if let Some(command) = command.as_mut() {
+        for (key, value) in [
+            ("HOME", &home),
+            ("USER", &name),
+            ("LOGNAME", &name),
+            ("SHELL", &shell),
+        ] {
+            command.base_environment.insert(key.into(), value.clone());
+        }
+    }
+    switch(identity, &name, command)
+}
+
+fn account(uid: u32) -> io::Result<(String, String, String)> {
     let mut size = 16 * 1024;
-    let (name, home, shell) = loop {
+    loop {
         let mut buffer = vec![0_u8; size];
         let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
         let mut result = std::ptr::null_mut();
         let code = unsafe {
             libc::getpwuid_r(
-                identity.uid,
+                uid,
                 &mut entry,
                 buffer.as_mut_ptr().cast(),
                 size,
@@ -79,22 +68,15 @@ pub(crate) fn enter(identity: Identity, command: &mut Option<CommandConfig>) -> 
                 .map(str::to_owned)
                 .map_err(io::Error::other)
         };
-        break (
+        return Ok((
             owned(entry.pw_name)?,
             owned(entry.pw_dir)?,
             owned(entry.pw_shell)?,
-        );
-    };
-    if let Some(command) = command.as_mut() {
-        for (key, value) in [
-            ("HOME", &home),
-            ("USER", &name),
-            ("LOGNAME", &name),
-            ("SHELL", &shell),
-        ] {
-            command.base_environment.insert(key.into(), value.clone());
-        }
+        ));
     }
+}
+
+fn switch(identity: Identity, name: &str, command: &mut Option<CommandConfig>) -> io::Result<()> {
     if unsafe { libc::geteuid() } != 0 {
         if needs_worker(identity) {
             return Err(io::Error::other("execution identity is unavailable"));
@@ -131,6 +113,64 @@ pub(crate) fn enter(identity: Identity, command: &mut Option<CommandConfig>) -> 
         command.drop_supervisor_capabilities = true;
     }
     Ok(())
+}
+
+/// Resolve supplementary groups only in the trusted launcher view. The restricted
+/// bootstrap applies these numeric IDs before native NSS or payload code runs.
+pub(crate) fn restricted_groups(identity: Identity) -> io::Result<Option<Vec<u32>>> {
+    if !needs_worker(identity) {
+        return Ok(None);
+    }
+    let (name, _, _) = account(identity.uid)?;
+    let name = CString::new(name).map_err(io::Error::other)?;
+    let mut groups = vec![0; 16];
+    loop {
+        let mut count = groups.len() as libc::c_int;
+        if unsafe {
+            libc::getgrouplist(name.as_ptr(), identity.gid, groups.as_mut_ptr(), &mut count)
+        } >= 0
+        {
+            groups.truncate(count as usize);
+            return Ok(Some(groups));
+        }
+        if count <= 0 || count as usize <= groups.len() {
+            return Err(io::Error::other("cannot resolve execution groups"));
+        }
+        groups.resize(count as usize, 0);
+    }
+}
+
+pub(crate) fn enter_restricted(identity: Identity, groups: Option<&[u32]>) -> io::Result<()> {
+    // Rootful bubblewrap clears active capabilities, not the bounding set.
+    // SETPCAP exists only until this bootstrap removes all future authority.
+    for capability in 0..64 {
+        let present = unsafe { libc::prctl(libc::PR_CAPBSET_READ, capability, 0, 0, 0) };
+        if present < 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::EINVAL) {
+                break;
+            }
+            return Err(error);
+        }
+        if present == 1 && unsafe { libc::prctl(libc::PR_CAPBSET_DROP, capability, 0, 0, 0) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    if let Some(groups) = groups
+        && unsafe {
+            libc::setgroups(groups.len(), groups.as_ptr()) != 0
+                || libc::setresgid(identity.gid, identity.gid, identity.gid) != 0
+                || libc::setresuid(identity.uid, identity.uid, identity.uid) != 0
+        }
+    {
+        return Err(io::Error::last_os_error());
+    }
+    if needs_worker(identity) {
+        return Err(io::Error::other("Sandbox identity was not applied"));
+    }
+    clear_payload_capabilities()?;
+    disable_privilege_gain()?;
+    crate::execution::namespace::seccomp::install()
 }
 
 /// Irreversible and inherited across fork/exec, including native setuid binaries

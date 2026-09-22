@@ -8,13 +8,13 @@ Every command is structured, runs inside the Host-provided deployment boundary, 
 
 ## Boundaries
 
-| Concern                                                         | Owner                                            | Contract                                                |
-| --------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------- |
-| Command request, process handle, status, controls, and lifetime | This document                                    | Stable EIP behavior                                     |
-| Filesystem/network containment                                  | [Execution Isolation](07-execution-isolation.md) | Host boundary and optional controlled Session isolation |
-| stdout/stderr spool, references, reads, and release             | [Command Output Spool](06-output-retention.md)   | Separate append-only byte streams                       |
-| Provider ingress for a listening process                        | Provider adapter                                 | Outside command start and port observation              |
-| Model-facing policy and durable Agent completion                | Harness and Host                                 | Never inferred from process exit                        |
+| Concern                                                         | Owner                                            | Contract                                          |
+| --------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------- |
+| Command request, process handle, status, controls, and lifetime | This document                                    | Stable EIP behavior                               |
+| Filesystem/network containment                                  | [Execution Isolation](07-execution-isolation.md) | Device Sandbox/egress policy and outer deployment |
+| stdout/stderr spool, references, reads, and release             | [Command Output Spool](06-output-retention.md)   | Separate append-only byte streams                 |
+| Provider ingress for a listening process                        | Provider adapter                                 | Outside command start and port observation        |
+| Model-facing policy and durable Agent completion                | Harness and Host                                 | Never inferred from process exit                  |
 
 ## Command Request
 
@@ -111,13 +111,13 @@ class ShellProfileDescriptor(BaseModel):
 
 ### Working directory and environment
 
-Omitted/null `cwd` uses the Session's fixed working directory; an explicit Device path overrides it for this command only. The directory must exist and be accessible. Commands start with the configured native execution account's access within the Host-provided outer boundary, including paths outside cwd. Native sudo and other privilege gains follow the trusted [startup policy](01-daemon-lifecycle-and-configuration.md#execution-identity-and-native-sudo), native OS authorization and any controlled Session boundary. Native pathname launch does not promise an immutable directory against concurrent native replacement.
+Omitted/null `cwd` uses the Session's fixed working directory; an explicit Device path overrides it for this command only. The directory must exist and be accessible. Commands start with the configured native execution account's access within the Device Sandbox and outer deployment, including permitted paths outside cwd. Native sudo and other privilege gains follow the trusted [startup policy](01-daemon-lifecycle-and-configuration.md#execution-identity-and-native-sudo), native OS authorization and any controlled Session boundary. Native pathname launch does not promise an immutable directory against concurrent native replacement.
 
 The payload uses its configured ordinary execution environment and shell profile plus request changes. Transport credentials and daemon control values/descriptors are not inherited. HOME, PATH and toolchain behavior follow the Host's execution configuration rather than a second envd security policy.
 
 ### Network and resource limits
 
-Networking is supplied by the Host's outer boundary, not a per-command EIP option.
+Networking follows the Device's immutable inherit/deny/controlled mode and the outer deployment, not a per-command EIP option.
 
 Requested limits narrow finite daemon/provider bounds. The descriptor's `execution_features` reports whether process-count, memory, CPU-time, interrupt and terminate semantics are enforceable. Requesting an unsupported optional limit fails before payload execution. Wall time, stdin bytes, command admission, and output are always finite.
 

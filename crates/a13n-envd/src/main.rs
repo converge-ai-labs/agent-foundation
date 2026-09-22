@@ -13,6 +13,13 @@ fn main() {
         }
         return;
     }
+    if arguments.as_slice() == [OsString::from("--internal-restricted-worker")] {
+        if let Err(error) = a13n_envd::run_internal_restricted_worker() {
+            eprintln!("a13n-envd failed: restricted bootstrap unavailable: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if arguments.as_slice() == [OsString::from("--internal-session-worker")] {
         if let Err(error) = a13n_envd::run_internal_session_worker() {
             eprintln!("a13n-envd failed: Session worker unavailable: {error}");

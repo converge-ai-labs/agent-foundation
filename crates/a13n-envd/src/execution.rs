@@ -1,12 +1,27 @@
 //! Trusted startup identity, shared by command execution and filesystem workers.
 use serde::{Deserialize, Serialize};
 
-#[cfg(target_os = "linux")]
+pub(crate) mod boundary;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) mod discovery;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(target_os = "linux")]
 pub(crate) mod management;
+#[cfg(target_os = "linux")]
+pub(crate) mod namespace;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) mod runtime;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod state;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) use state::StateDirectory;
+#[cfg(target_os = "linux")]
+pub(crate) mod sandbox;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) mod worker;
 #[cfg(target_os = "linux")]
 pub(crate) use linux::*;
 
@@ -45,6 +60,7 @@ impl Options {
 }
 
 impl Identity {
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn validate(self) -> Result<Self, &'static str> {
         if self.uid == u32::MAX || self.gid == u32::MAX {
             return Err("execution.uid and execution.gid must be valid native IDs");

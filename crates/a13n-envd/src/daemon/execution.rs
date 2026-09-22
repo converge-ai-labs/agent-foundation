@@ -4,7 +4,7 @@
     reason = "generated EIP errors are the public protocol contract"
 )]
 use super::*;
-use crate::egress::{runtime::Runtime, worker::WorkerConfig};
+use crate::execution::{runtime::Runtime, worker::WorkerConfig};
 
 pub(crate) struct Reservation {
     _operations: tokio::sync::OwnedSemaphorePermit,
@@ -19,6 +19,12 @@ impl Drop for Reservation {
     fn drop(&mut self) {
         if self.started && !self.clean.load(Ordering::Acquire) {
             self.staging.retain();
+            #[cfg(target_os = "macos")]
+            if let Some(active) = self._processes.active.take() {
+                // Seatbelt has no PID namespace death fence. Keep the charge
+                // until Device restart when command cleanup is unconfirmed.
+                active.forget();
+            }
         }
     }
 }
@@ -62,16 +68,18 @@ impl Daemon {
         cwd: String,
         policy: Option<eip::EgressPolicy>,
     ) -> Result<eip::SessionOpenResult, EIPError> {
-        if policy.is_some() && !self.config.egress.enabled {
+        if policy.is_some() != self.config.egress.controlled() {
             return Err(protocol_error(
-                ErrorType::Unsupported,
-                "egress is not enabled",
+                ErrorType::InvalidParams,
+                "Session egress policy is required exactly for controlled Devices",
             ));
         }
+        #[cfg(target_os = "linux")]
         let policy = policy
             .map(crate::egress::policy::Policy::from_request)
             .transpose()
             .map_err(policy_error)?;
+        #[cfg(target_os = "linux")]
         let controlled = policy.is_some();
         let reservation = self.reserve_worker().ok_or_else(|| {
             protocol_error(ErrorType::Busy, "Session worker capacity is exhausted")
@@ -81,7 +89,9 @@ impl Daemon {
             Session::new(self, carrier.id, id.clone(), cwd.clone()).map_err(|_| {
                 protocol_error(ErrorType::InternalError, "session initialization failed")
             })?;
+        #[cfg(target_os = "linux")]
         let mut hide = self.config.bootstrap_files.clone();
+        #[cfg(target_os = "linux")]
         if !self.config.managed {
             match &self.config.transport {
                 crate::config::TransportConfig::Http(http) => {
@@ -103,7 +113,11 @@ impl Daemon {
         }
         let worker = WorkerConfig {
             managed: self.config.managed,
+            sandbox: self.config.sandbox.clone(),
+            grant_sources: self.config.grant_sources.clone(),
+            egress: self.config.egress,
             execution: self.config.execution,
+            groups: None,
             allow_sudo: self.config.allow_sudo,
             runtime_directory: "/run/a13n-session-state".into(),
             device_id: self.config.device_id.clone(),
@@ -115,16 +129,19 @@ impl Daemon {
             idle_timeout_ms: self.config.session_idle_timeout.as_millis() as u64,
             disconnect_grace_ms: self.config.disconnect_grace.as_millis() as u64,
         };
-        let runtime = Runtime::start(worker, policy, hide, reservation)
-            .await
-            .map_err(|_| {
-                protocol_error(
-                    ErrorType::Unsupported,
-                    "Session worker initialization failed",
-                )
-            })?;
+        #[cfg(target_os = "linux")]
+        let runtime = Runtime::start(worker, policy, hide, reservation).await;
+        #[cfg(target_os = "macos")]
+        let runtime = Runtime::start(worker, reservation).await;
+        let runtime = runtime.map_err(|_| {
+            protocol_error(
+                ErrorType::Unsupported,
+                "Session worker initialization failed",
+            )
+        })?;
         session.descriptor.working_directory = runtime.client.working_directory.clone();
         runtime.client.attach(carrier.outbound.clone());
+        #[cfg(target_os = "linux")]
         if controlled {
             session.descriptor.egress =
                 Some(runtime.status().map_err(|_| {
@@ -161,6 +178,7 @@ impl Daemon {
     }
 }
 
+#[cfg(target_os = "linux")]
 pub(super) fn policy_error(error: crate::egress::policy::PolicyError) -> EIPError {
     use crate::egress::policy::PolicyError;
     match error {

@@ -4,7 +4,7 @@
 //! into a mount clone of the ORIGINAL tree; package installs are not overlays.
 use crate::{
     config::{Config, TransportConfig},
-    egress::namespace::{bind_fd, mount, protect_process},
+    execution::namespace::{bind_fd, mount, protect_process},
     runtime::RuntimeState,
 };
 use std::{
@@ -57,8 +57,28 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
     }
     let mut image = Image::default();
     image.executable(&std::env::current_exe()?, Path::new(EXECUTABLE))?;
-    for executable in ["/usr/bin/unshare", "/usr/sbin/ip", "/usr/sbin/nft"] {
-        image.executable(Path::new(executable), Path::new(executable))?;
+    if config.sandbox.restricted() {
+        // Only executable dependencies enter this public readonly bootstrap
+        // image. Credentials, broker state and the original tree never do.
+        let mut worker = Image::default();
+        worker.executable(&std::env::current_exe()?, Path::new(EXECUTABLE))?;
+        let program = serde_json::to_vec(&worker.program).map_err(io::Error::other)?;
+        for (path, contents) in worker.files {
+            image.files.insert(
+                Path::new(WORKER_IMAGE).join(path.strip_prefix("/").map_err(io::Error::other)?),
+                contents,
+            );
+        }
+        image
+            .files
+            .insert(Path::new(WORKER_IMAGE).join("program.json"), program);
+        image.executable(Path::new("/usr/bin/bwrap"), Path::new("/usr/bin/bwrap"))?;
+    }
+    image.executable(Path::new("/usr/bin/unshare"), Path::new("/usr/bin/unshare"))?;
+    if config.egress.controlled() {
+        for executable in ["/usr/sbin/ip", "/usr/sbin/nft"] {
+            image.executable(Path::new(executable), Path::new(executable))?;
+        }
     }
     for path in [
         "/etc/resolv.conf",
@@ -74,17 +94,21 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
         PathBuf::from("/etc/nsswitch.conf"),
         b"passwd: files\ngroup: files\nhosts: files dns\n".to_vec(),
     );
-    let bundle = [
-        "/etc/ssl/certs/ca-certificates.crt",
-        "/etc/pki/tls/certs/ca-bundle.crt",
-    ]
-    .into_iter()
-    .find(|path| Path::new(path).is_file())
-    .ok_or_else(|| io::Error::other("system CA bundle unavailable"))?;
-    image.file(
-        Path::new(bundle),
-        Path::new("/etc/ssl/certs/ca-certificates.crt"),
-    )?;
+    if config.egress.controlled()
+        || matches!(config.transport, TransportConfig::ReverseWebSocket(_))
+    {
+        let bundle = [
+            "/etc/ssl/certs/ca-certificates.crt",
+            "/etc/pki/tls/certs/ca-bundle.crt",
+        ]
+        .into_iter()
+        .find(|path| Path::new(path).is_file())
+        .ok_or_else(|| io::Error::other("system CA bundle unavailable"))?;
+        image.file(
+            Path::new(bundle),
+            Path::new("/etc/ssl/certs/ca-certificates.crt"),
+        )?;
+    }
     // Native TLS and reconnects only read these private copies, never mutable
     // original credential files. Preserve the original paths solely for masking.
     match &mut config.transport {
@@ -142,7 +166,7 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
     // FDs used as bind sources must refer to this mount namespace, not the
     // launcher's mounts retained by an FD opened before unshare.
     let state = fs::File::open(runtime_parent)?;
-    let devices = ["null", "zero", "random", "urandom", "tty"]
+    let devices = ["null", "zero", "full", "random", "urandom", "tty"]
         .into_iter()
         .map(|name| {
             use std::os::unix::fs::OpenOptionsExt;
@@ -226,10 +250,7 @@ pub(crate) fn enter(mut config: Config) -> io::Result<()> {
         libc::MS_REMOUNT | libc::MS_RDONLY | libc::MS_NOSUID | libc::MS_NODEV,
         None,
     )?;
-    if unsafe { libc::chroot(c"/run".as_ptr()) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    std::env::set_current_dir("/")?;
+    pivot(Path::new("/run"))?;
     Err(Command::new(EXECUTABLE)
         .arg("--internal-managed-broker")
         .env_clear()
@@ -242,7 +263,7 @@ pub(crate) fn restore() -> io::Result<Config> {
     protect_process()?;
     let mut config: Config =
         serde_json::from_slice(&fs::read(BOOTSTRAP)?).map_err(io::Error::other)?;
-    if !config.egress.enabled {
+    if !super::boundary::managed(&config.sandbox, config.egress) {
         return Err(io::Error::other("invalid management configuration"));
     }
     config.managed = true;
@@ -287,10 +308,45 @@ pub(crate) fn attach_tree(tree: OwnedFd, target: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Resolve bind sources inside the original tree, including absolute symlinks.
+/// A mutable original path must never resolve into broker credentials or state.
+pub(crate) fn open_original(path: &Path) -> io::Result<fs::File> {
+    let root = fs::File::open(ORIGINAL)?;
+    let path = CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
+    #[repr(C)]
+    struct OpenHow {
+        flags: u64,
+        mode: u64,
+        resolve: u64,
+    }
+    let how = OpenHow {
+        flags: libc::O_CLOEXEC as u64,
+        mode: 0,
+        resolve: 0x10 | 0x02,
+    }; // IN_ROOT | NO_MAGICLINKS
+    let fd = unsafe {
+        libc::syscall(
+            libc::SYS_openat2,
+            root.as_raw_fd(),
+            path.as_ptr(),
+            &how,
+            std::mem::size_of::<OpenHow>(),
+        )
+    };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(unsafe { fs::File::from_raw_fd(fd as _) })
+}
+
 pub(crate) fn enter_original() -> io::Result<()> {
     let tree = clone_tree(Path::new(ORIGINAL))?;
     attach_tree(tree, Path::new("/payload"))?;
-    std::env::set_current_dir("/payload")?;
+    pivot(Path::new("/payload"))
+}
+
+fn pivot(root: &Path) -> io::Result<()> {
+    std::env::set_current_dir(root)?;
     // Stack the old root on the new root, detach it, and leave no management
     // root or mount-namespace handles behind. A mere chroot would not suffice.
     if unsafe { libc::syscall(libc::SYS_pivot_root, c".".as_ptr(), c".".as_ptr()) } != 0
@@ -301,9 +357,42 @@ pub(crate) fn enter_original() -> io::Result<()> {
     std::env::set_current_dir("/")
 }
 
+pub(crate) const WORKER_IMAGE: &str = "/worker-image";
+pub(crate) const WORKER_BOOTSTRAP: &str = "/run/a13n-bootstrap";
+
+#[derive(Default, serde::Deserialize, serde::Serialize)]
+struct Program {
+    interpreter: Option<PathBuf>,
+    libraries: std::collections::BTreeSet<PathBuf>,
+}
+
+/// Invoke the copied loader explicitly: the payload tree's ELF interpreter must
+/// not run while the worker still has its temporary identity-switch capabilities.
+pub(crate) fn worker_argv() -> io::Result<Vec<std::ffi::OsString>> {
+    let program: Program =
+        serde_json::from_slice(&fs::read(format!("{WORKER_IMAGE}/program.json"))?)
+            .map_err(io::Error::other)?;
+    let mapped = |path: &Path| {
+        Path::new(WORKER_BOOTSTRAP).join(path.strip_prefix("/").expect("absolute image path"))
+    };
+    let mut args = Vec::new();
+    if let Some(interpreter) = program.interpreter {
+        args.push(mapped(&interpreter).into_os_string());
+        args.push("--inhibit-cache".into());
+        args.push("--library-path".into());
+        args.push(
+            std::env::join_paths(program.libraries.iter().map(|path| mapped(path)))
+                .map_err(io::Error::other)?,
+        );
+    }
+    args.push(mapped(Path::new(EXECUTABLE)).into_os_string());
+    Ok(args)
+}
+
 #[derive(Default)]
 struct Image {
     files: BTreeMap<PathBuf, Vec<u8>>,
+    program: Program,
 }
 impl Image {
     fn file(&mut self, source: &Path, target: &Path) -> io::Result<()> {
@@ -332,8 +421,17 @@ impl Image {
                 "cannot resolve management executable dependencies",
             ));
         }
-        for path in text.split_whitespace().filter(|part| part.starts_with('/')) {
-            self.file(Path::new(path), Path::new(path))?;
+        for line in text.lines() {
+            for path in line.split_whitespace().filter(|part| part.starts_with('/')) {
+                let path = Path::new(path);
+                self.file(path, path)?;
+                if let Some(parent) = path.parent() {
+                    self.program.libraries.insert(parent.to_path_buf());
+                }
+                if !line.contains("=>") {
+                    self.program.interpreter = Some(path.to_path_buf());
+                }
+            }
         }
         Ok(())
     }

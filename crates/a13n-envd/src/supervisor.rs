@@ -183,7 +183,7 @@ impl StreamClosures {
 pub(crate) async fn run_internal() -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {
-        crate::egress::namespace::protect_process()?;
+        crate::execution::namespace::protect_process()?;
         // Reap orphaned group members ourselves, including sudo's root children.
         // A sandbox PID 1 need not be a service manager or a reliable reaper.
         if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
@@ -220,7 +220,7 @@ pub(crate) async fn run_internal() -> io::Result<()> {
 
 async fn run_payload(
     plan: LaunchPlan,
-    mut requests: BufReader<tokio::io::Stdin>,
+    requests: BufReader<tokio::io::Stdin>,
     mut stdout: tokio::io::Stdout,
 ) -> io::Result<()> {
     let mut command = Command::new(&plan.executable);
@@ -254,6 +254,24 @@ async fn run_payload(
             return Ok(());
         }
     };
+    let result = supervise_payload(plan, requests, stdout, &mut child, &tree).await;
+    if result.is_err() {
+        // The worker can disappear during any event write, not only while
+        // reading control EOF. An I/O failure must still terminate the group.
+        force_tree(&tree, &mut child).await;
+        let _ = child.wait().await;
+        cleanup_tree(&tree, &mut child).await;
+    }
+    result
+}
+
+async fn supervise_payload(
+    plan: LaunchPlan,
+    mut requests: BufReader<tokio::io::Stdin>,
+    mut stdout: tokio::io::Stdout,
+    child: &mut Child,
+    tree: &CommandTree,
+) -> io::Result<()> {
     let tree_id = child.id();
     let mut payload_stdin = child.stdin.take();
     let payload_stdout = child
@@ -312,7 +330,7 @@ async fn run_payload(
             request = read_optional_request(&mut requests) => {
                 match request? {
                     Some(SupervisorRequest::Signal { signal }) => {
-                        let accepted = signal_tree(tree_id, signal, &mut child).await;
+                        let accepted = signal_tree(tree_id, signal, child).await;
                         write_event(&mut stdout, &SupervisorEvent::SignalResult { accepted }).await?;
                     }
                     Some(SupervisorRequest::Kill { reason }) => {
@@ -320,7 +338,7 @@ async fn run_payload(
                         let _ = initial_delivery.await;
                         stop_reason = Some(reason);
                         start_allowed = false;
-                        forced_cleanup_proven |= force_tree(&tree, &mut child).await;
+                        forced_cleanup_proven |= force_tree(tree, child).await;
                         break StdinDeliveryResult {
                             stdin: None,
                             accepted_bytes: 0,
@@ -332,7 +350,7 @@ async fn run_payload(
                         let _ = initial_delivery.await;
                         stop_reason = Some(StopReason::Shutdown);
                         start_allowed = false;
-                        forced_cleanup_proven |= force_tree(&tree, &mut child).await;
+                        forced_cleanup_proven |= force_tree(tree, child).await;
                         break StdinDeliveryResult {
                             stdin: None,
                             accepted_bytes: 0,
@@ -349,7 +367,7 @@ async fn run_payload(
                         let _ = initial_delivery.await;
                         stop_reason = Some(StopReason::Shutdown);
                         start_allowed = false;
-                        forced_cleanup_proven |= force_tree(&tree, &mut child).await;
+                        forced_cleanup_proven |= force_tree(tree, child).await;
                         write_event(&mut stdout, &SupervisorEvent::ProtocolError {
                             message: "invalid request during initial stdin delivery".to_owned(),
                         }).await?;
@@ -366,7 +384,7 @@ async fn run_payload(
                 let _ = initial_delivery.await;
                 stop_reason = Some(StopReason::Timeout);
                 start_allowed = false;
-                forced_cleanup_proven |= force_tree(&tree, &mut child).await;
+                forced_cleanup_proven |= force_tree(tree, child).await;
                 break StdinDeliveryResult {
                     stdin: None,
                     accepted_bytes: 0,
@@ -418,7 +436,7 @@ async fn run_payload(
                 stop_reason = Some(StopReason::Timeout);
                 abort_stdin_delivery(&mut stdin_delivery).await;
                 close_payload_stdin(&mut payload_stdin).await;
-                forced_cleanup_proven |= force_tree(&tree, &mut child).await;
+                forced_cleanup_proven |= force_tree(tree, child).await;
             }
             stream = stream_rx.recv() => {
                 if let Some(stream) = stream {
@@ -451,14 +469,14 @@ async fn run_payload(
                         }).await?;
                     }
                     Some(SupervisorRequest::Signal { signal }) => {
-                        let accepted = signal_tree(tree_id, signal, &mut child).await;
+                        let accepted = signal_tree(tree_id, signal, child).await;
                         write_event(&mut stdout, &SupervisorEvent::SignalResult { accepted }).await?;
                     }
                     Some(SupervisorRequest::Kill { reason }) => {
                         stop_reason = Some(reason);
                         abort_stdin_delivery(&mut stdin_delivery).await;
                         close_payload_stdin(&mut payload_stdin).await;
-                        forced_cleanup_proven |= force_tree(&tree, &mut child).await;
+                        forced_cleanup_proven |= force_tree(tree, child).await;
                     }
                     Some(SupervisorRequest::Prepare { .. } | SupervisorRequest::Start) => {
                         write_event(&mut stdout, &SupervisorEvent::ProtocolError {
@@ -469,7 +487,7 @@ async fn run_payload(
                         stop_reason = Some(StopReason::Shutdown);
                         abort_stdin_delivery(&mut stdin_delivery).await;
                         close_payload_stdin(&mut payload_stdin).await;
-                        forced_cleanup_proven |= force_tree(&tree, &mut child).await;
+                        forced_cleanup_proven |= force_tree(tree, child).await;
                     }
                 }
             }
@@ -490,7 +508,7 @@ async fn run_payload(
     )
     .await?;
 
-    let cleanup_complete = forced_cleanup_proven || cleanup_tree(&tree, &mut child).await;
+    let cleanup_complete = forced_cleanup_proven || cleanup_tree(tree, child).await;
     let drain_deadline = tokio::time::sleep(CLEANUP_GRACE);
     tokio::pin!(drain_deadline);
     while !stream_closures.complete() {

@@ -30,13 +30,13 @@ The accepted Project/Thread selection stores an explicit Device and working dire
 
 ## Bindings and Defaults
 
-A Thread retains `environment_profile_id` for local Project roots and Thread files. Its ordered `environment_bindings` collection contains `device_id`, `working_directory`, a unique Run-local alias and an action ceiling. Selecting a Device and path requires no separate Environment-definition resource.
+A Thread retains `environment_profile_id` for local Project roots and Thread files. Its ordered `environment_bindings` collection contains `device_id`, `working_directory`, a unique Run-local alias, an action ceiling, optional reference-only Session `egress`, and an optional `expected_boundary` requirement. Selecting a Device and path requires no separate Environment-definition resource.
 
 `default_environment` names one alias in the complete mount set. Local-only selections retain their workspace or projectless Thread-files default. Remote-only and mixed sets record the default explicitly. Local workspace and Host auxiliary aliases are reserved against collision. An explicit empty collection removes added bindings; a Run-only local-profile override preserves them.
 
 Project creation defaults and Thread patches use existing precedence and expected-version rules. Deferred-response admission retains the selected continuation's bindings and default unless explicitly patched. A Project may have no local roots when it selects remote bindings; CLI cwd matching considers only actual local roots. Projectless Threads may also use a remote default while retaining Host-managed Thread files.
 
-A working directory supplies relative-path and omitted-cwd defaults. File operations may address other paths on the same Device under the action ceiling and native permissions. Selecting a working directory creates no filesystem sandbox.
+A working directory supplies relative-path and omitted-cwd defaults. File operations may address other paths on the same Device under the action ceiling, native permissions and Device Sandbox grants. Selecting a working directory creates no filesystem sandbox.
 
 ## Admission and Execution
 
@@ -46,9 +46,10 @@ Before returning an admission receipt or scheduling preparation, the App capture
 - Project roots and local profile;
 - selected Device identities and connection configurations without credential bytes;
 - explicit working directories, aliases, effective action ceilings and default;
+- Session destinations, credential source references and expected Device boundaries, never resolved secret values;
 - selected Run Extensions.
 
-Preparation uses only captured selections. Current credentials resolve through captured credential references at use time. Each envd binding opens a fresh Session with its captured working directory. Repeated operations reuse that Session within the same execution owner. Concurrent Runs, independent children and identical directory paths do not share initialized Sessions.
+Preparation uses only captured selections. Current credentials resolve through captured credential references at use time. Each envd binding verifies the captured boundary requirement and opens a fresh Session with its captured working directory and freshly resolved egress policy. Repeated operations reuse that Session within the same execution owner. Concurrent Runs, independent children and identical directory paths do not share initialized Sessions.
 
 Short same-runtime reattachment may reuse the same live Session and generation. Expired Sessions, replacement execution owners and application restarts require fresh Sessions; native handles and uncertain effects are not recovered or replayed. Session close preserves the shared Device connection and working files.
 

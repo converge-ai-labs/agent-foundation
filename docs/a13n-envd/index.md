@@ -64,7 +64,7 @@ async with LocalEnvdProviderRuntime(
 
 The Host runtime lazily launches one daemon and shares its Device connection. Every adapter opens an independent Session. Harness close ends that Session, not the daemon; Host runtime close shuts down the owned daemon and removes only its private runtime. Create a fresh adapter for each independent Run, but reuse the compatible Host runtime.
 
-The example selects an existing Device directory and enables file operations. Configure `LocalEnvdLaunchConfiguration` on the runtime for executable roots, shell profiles and limits. The Host must supply any outer sandbox; the Provider does not construct per-command isolation.
+The example selects an existing Device directory and enables file operations. Configure `LocalEnvdLaunchConfiguration` on the runtime for execution identity, Sandbox grants, egress mode, executable roots, shell profiles and limits. Envd owns Session worker isolation and cleanup; the Host still owns any outer container or VM. See [execution boundaries](isolation.md) and [reference-only Session credentials](../environments/remote-envd.md#session-egress-and-credential-references).
 
 ## Lifecycle and ownership
 

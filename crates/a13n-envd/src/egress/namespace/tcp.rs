@@ -14,7 +14,7 @@ use tokio::{
 const MAX_CONNECTIONS: usize = 128;
 const SO_ORIGINAL_DST: libc::c_int = 80;
 
-pub(in crate::egress) async fn serve(
+pub(crate) async fn serve(
     listener: TcpListener,
     routes: Arc<Routes>,
     proxy: Arc<Proxy>,

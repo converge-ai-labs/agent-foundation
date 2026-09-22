@@ -1125,7 +1125,7 @@ pub(crate) fn canonical_request_digest<P: Serialize>(
 }
 
 impl ShortIdAllocator {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub(crate) fn for_session(session_id: &str) -> Self {
         Self {
             namespace: session_id

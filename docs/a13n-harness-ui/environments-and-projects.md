@@ -4,7 +4,7 @@
 
 **Full Control** runs as your host account with ambient filesystem and network authority. It does not download or launch a13n-envd. Direct Local executes natively on Linux, macOS, and Windows without WSL. Windows uses PowerShell (`pwsh`, then Windows PowerShell), UTF-8 text streams, and a Job Object that owns the command's descendants. Cancellation, timeout, and exit clean up that owned tree. Portable interrupt signals are unavailable on Windows; cancellation uses tree termination instead. Full Control remains host-account execution, not a sandbox.
 
-**Sandbox** launches the local Envd Device inside a Harness UI-owned filesystem/process boundary with denied networking. The daemon itself does not implement a per-command sandbox. Setup checks Sandbox readiness before saving. Outside setup, readiness is checked when execution needs it rather than on the initial landing view. A failure is explicit and does not fall back to Full Control. Fix the prerequisite and retry, or intentionally select `/environment full-control` before sending a new prompt. Harness UI never runs `sudo`, changes sysctls, or disables required isolation for you. Windows production Sandbox isolation is not supported. See the [outer security guide](../a13n-envd/isolation.md).
+**Sandbox** asks Envd to prepare restricted Session workers with explicit directory grants and denied networking. Envd owns the complete worker boundary, including file RPCs and commands; Harness UI does not wrap the whole daemon. Project roots are writable, while the Thread file worker exposes attachments read-only and tmp read-write. Setup checks Sandbox readiness before saving. Outside setup, readiness is checked when execution needs it rather than on the initial landing view. A failure is explicit and does not fall back to Full Control. Fix the prerequisite and retry, or intentionally select `/environment full-control` before sending a new prompt. Harness UI never runs `sudo`, changes sysctls, or disables required isolation for you. Windows production Sandbox isolation is not supported. See the [outer security guide](../a13n-envd/isolation.md).
 
 ### Native command environment
 
@@ -179,6 +179,8 @@ defaults:
   default_environment: build
 ```
 
+For a controlled-egress Device, authored bindings can additionally include `egress.destinations`, secret source references and `expected_boundary`. These use the same [Provider recipe](../environments/remote-envd.md#session-egress-and-credential-references). Harness UI captures the references with the Run and resolves values only during preparation; never place token values in Project YAML. The Device's launch policy is configured on its own computer, not by the local Full Control/Sandbox selector.
+
 A mixed Project keeps its local `roots` alongside these defaults. Local mounts use `workspace`, `workspace-2`, and so on; `thread-files` is available without a Project. These and other Host-owned mount names cannot be reused as Device aliases. Added environments require an explicit default selected from the resulting mounts. The local execution profile controls local mounts only; it does not sandbox an external Device. A Device directory is a working-directory default, not a filesystem access boundary. Run mutually untrusted workloads behind separate Host-managed security boundaries.
 
 For Project defaults, an unspecified binding collection leaves an existing Thread's collection unchanged when defaults are applied; an explicitly empty collection removes its added environments. The editor offers separate actions for these cases. Editing only the default does not silently turn an unspecified collection into an empty override. Saved Threads retain their selections until explicitly edited or updated through **Apply Project defaults**. Active and historical Runs retain their captured selections.
@@ -219,3 +221,23 @@ adapter_configuration: {}
 Beyond the common resource envelope, all fields are shown above. The provider owns `provider_configuration`; the adapter owns `adapter_configuration` and Project-to-Environment mapping. Empty mappings are defaults, not a universal configuration for every provider. A provider package alone does not imply that every Project adapter is installed or compatible.
 
 Use `defaults.environment_profile: environment-team` or the explicit launch option, then run `config validate` and `doctor`. Never treat a profile label as proof of isolation. Provider readiness and the actual execution contract determine that behavior.
+
+Local Envd profiles separate immutable Device `launch` configuration from reference-only `session` configuration. For example, filesystem-restricted execution with inherited networking:
+
+```yaml
+schema_version: "1"
+kind: environment_profile
+id: environment-restricted-network
+name: Restricted files with native networking
+provider_key: local_envd
+provider_configuration:
+  launch:
+    sandbox: {mode: restricted, grants: []}
+    egress: {mode: inherit}
+  session: {}
+adapter_key: a13n.local-envd-project-root
+adapter_configuration:
+  project_access: read_write
+```
+
+The adapter adds each captured Project root to the grant set with `project_access`. Additional grants belong to `launch.sandbox.grants`. Inherited networking is deliberately different from built-in Sandbox's denied networking. For controlled egress, select `launch.egress.mode: controlled` and provide `session.egress` with the destination/reference recipe above; this requires the privileged Linux backend and is not a rootless desktop default. Changing Session policy does not rebuild a compatible daemon; changing the launch boundary does.

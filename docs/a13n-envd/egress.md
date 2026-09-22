@@ -1,18 +1,18 @@
 # Session egress
 
-Enable egress with `A13N_ENVD_EGRESS_ENABLED=true`, `--egress-enabled true`, or daemon JSON stored outside the workspace:
+Select controlled egress with `A13N_ENVD_EGRESS_MODE=controlled`, `--egress-mode controlled`, or daemon JSON stored outside the workspace:
 
 ```json
 {
   "full_control": true,
   "default_working_directory": "/workspace",
-  "egress": {"enabled": true}
+  "egress": {"mode": "controlled"}
 }
 ```
 
 This enables controlled Sessions on Linux. Launch the daemon as root with native mount/PID/IPC/network namespace permissions. Envd requires Linux 6.1.2 or newer, seccomp, pidfds, mount-tree cloning, `/usr/bin/unshare`, `/usr/sbin/ip`, `/usr/sbin/nft`, `/usr/bin/ldd`, and a system CA bundle. It uses native accounts, not a single-UID user namespace. Without execution UID/GID settings, Sessions retain the root launcher's identity. To run them under another provisioned account, explicitly configure its UID/GID and native sudoers as described in [configuration](configuration.md#native-identity-and-sudo). No account is assumed or created; root execution remains subject to the same egress boundary. Missing privileges or facilities fail startup or Session preparation without fallback.
 
-Enabling egress prepares a private management runtime before accepting work. All Sessions on that daemon use a worker to protect the broker. Only Sessions with an explicit EIP egress policy receive a private network and destination enforcement; omitting the policy does not silently enable filtering.
+Controlled mode prepares a private management runtime before accepting work. Every Session uses an isolated worker and must supply an explicit destination policy. Omitting it fails Session creation. Inherit and deny Devices reject Session egress policies. Sandbox grants are independent of egress mode: restricted workers expose only the granted directories and a minimal read-only system view, while disabled Sandbox retains native filesystem access.
 
 ## Create a controlled Session
 
@@ -25,7 +25,7 @@ After `initialize`, add `egress` to `session.open.params`:
   "protocol_version": "0.1",
   "working_directory": "/workspace",
   "egress": {
-    "allow_hosts": ["api.github.com"],
+    "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
     "secrets": [
       {
         "env": "GH_TOKEN",
@@ -59,13 +59,13 @@ Response header values, body bytes and trailers redact exact secret values, incl
 
 ## Destination policy
 
-| `allow_hosts` | Behavior                                                                    |
-| ------------- | --------------------------------------------------------------------------- |
-| Omitted       | Permit public DNS names. Direct IP connections still need explicit entries. |
-| `[]`          | Deny external access.                                                       |
-| Nonempty      | Permit only these exact DNS names or explicit public IP entries.            |
+| Required `destinations`                           | Behavior                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------- |
+| `{"mode":"public"}`                               | Permit public DNS names, not direct IP connections.                 |
+| `{"mode":"allowlist","hosts":[]}`                 | Deny external access.                                               |
+| `{"mode":"allowlist","hosts":["api.github.com"]}` | Permit only exact listed DNS names or explicitly listed public IPs. |
 
-Wildcards, suffix matching and URL patterns are not supported. `inject_hosts` must be nonempty and, for a restricted allowlist, a subset of `allow_hosts`. Without an allowlist, injection is still restricted to `inject_hosts`.
+Wildcards, suffix matching and URL patterns are not supported. `inject_hosts` must be nonempty and, in allowlist mode, a subset of `hosts`. Public mode still restricts injection to `inject_hosts`. There is no second daemon-level destination list.
 
 The broker rejects private, loopback, link-local, metadata and other nonpublic upstream addresses, including DNS answers containing any nonpublic address. Direct IP access never grants credential injection. The current interception path uses IPv4 inside the Session; DNS names may resolve to IPv4 or IPv6 upstream. Native IPv6 connections from payloads have no external route.
 
@@ -83,7 +83,7 @@ Send `egress.update` with the Session selector and its current revision:
   "method": "egress.update",
   "params": {
     "expected_revision": 1,
-    "allow_hosts": ["api.github.com", "example.com"],
+    "destinations": {"mode": "allowlist", "hosts": ["api.github.com", "example.com"]},
     "set_secrets": [
       {"env":"GH_TOKEN","value":"<replacement token>","inject_hosts":["api.github.com"]}
     ],
@@ -92,7 +92,7 @@ Send `egress.update` with the Session selector and its current revision:
 }
 ```
 
-Each successful atomic update increments `revision`. A stale revision returns `conflict`; read current metadata through `environment.describe` or `session.attach` before deciding what to retry. Omitted update fields stay unchanged. `allow_hosts: []` denies external access; `unrestricted: true` restores public-domain access and cannot accompany `allow_hosts`.
+Each successful atomic update increments `revision`. A stale revision returns `conflict`; read current metadata through `environment.describe` or `session.attach` before deciding what to retry. Omitted update fields stay unchanged. `destinations: {"mode":"allowlist","hosts":[]}` denies external access; `destinations: {"mode":"public"}` restores public-domain access. Updates cannot change the Device's Sandbox, identity or network mode.
 
 `set_secrets` adds or replaces bindings. Rotation preserves the sentinel, so an existing process using `$GH_TOKEN` gets the new value on its next HTTPS request. `remove_secrets` deletes bindings; delete then re-add allocates a new sentinel. Old deleted sentinels are rejected in intercepted request headers. When denying a host, remove or change its secret injection bindings in the same update.
 
@@ -100,11 +100,11 @@ New commands receive current bindings. Running processes keep their original env
 
 ## Files, sockets and lifetime
 
-Controlled commands and file operations run in the same native-identity worker. The **original sandbox system tree stays writable**: authorized sudo package installs, service users, permissions, ACLs, linker/CA updates and system-file changes persist across Sessions and are visible from the outer sandbox. `/tmp`, `/run`, device/kernel views and shared memory have private mounts; a workspace under `/tmp` is rebound to its original backing directory. The small immutable management runtime is only for the broker and bootstrap, not a substitute payload image.
+Controlled commands and file operations run in the same native-identity worker. With `sandbox.mode: disabled`, the **original sandbox system tree stays writable**: authorized sudo package installs, service users, permissions, ACLs, linker/CA updates and system-file changes persist across Sessions and are visible from the outer sandbox. `/tmp`, `/run`, device/kernel views and shared memory have private mounts; a workspace under `/tmp` is rebound to its original backing directory. The small immutable management runtime is only for the broker and bootstrap, not a substitute payload image.
 
 Envd hides its configuration, transport credentials, broker runtime and the launching account's `.a13n` directory. Masks are attached before worker views are cloned, so renaming an ancestor does not reveal protected files to a later Session. Protected files with extra hardlinks or workspaces overlapping protected paths reject preparation. Keep unrelated credentials out of the workspace and image; this is not a general filesystem secrecy policy.
 
-Native sudo is enabled by default and uses existing sudoers. Session-local Unix sockets, socketpairs, PTYs and low-port services work. Namespace/mount reconfiguration, raw/packet/VSOCK networking, network-administration capabilities, unsafe devices/kernel controls and io_uring bypasses are unavailable, including after sudo. These restrictions protect explicit egress and broker credentials rather than making ordinary system administration read-only. The Host still owns CPU/memory limits and the outer sandbox lifecycle.
+With disabled Sandbox, native sudo is enabled by default and uses existing sudoers. Restricted Linux Sandbox instead drops capabilities and blocks privilege gain, including for UID 0. Session-local Unix sockets, socketpairs, PTYs and low-port services work. Namespace/mount reconfiguration, raw/packet/VSOCK networking, network-administration capabilities, unsafe devices/kernel controls and io_uring bypasses are unavailable, including after sudo. These restrictions protect explicit egress and broker credentials rather than making ordinary system administration read-only. The Host still owns CPU/memory limits and the outer sandbox lifecycle.
 
 ### Deployment prerequisites
 

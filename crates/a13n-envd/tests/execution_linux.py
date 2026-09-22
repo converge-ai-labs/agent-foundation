@@ -36,7 +36,7 @@ def verify_inherited_capabilities(binary):
                 "--inh-caps=+kill,+dac_override --ambient-caps=+kill,+dac_override " + shlex.quote(binary) + ' "$@"\n'
             )
             launcher.chmod(0o755)
-            device = Device(str(launcher), root, egress=False, execution=execution)
+            device = Device(str(launcher), root, egress="inherit", execution=execution)
             try:
                 device.open()
                 assert device.success("id -u; id -g").splitlines() == ["1000", "1000"]
@@ -72,8 +72,10 @@ def verify_native_execution(binary, *, controlled=False):
     with tempfile.TemporaryDirectory(prefix="envd-identity-") as temporary:
         root = Path(temporary)
         root.chmod(0o755)
-        device = Device(binary, root, egress=controlled, execution={"uid": 1000, "gid": 1000})
-        policy = {} if controlled else None
+        device = Device(
+            binary, root, egress="controlled" if controlled else "inherit", execution={"uid": 1000, "gid": 1000}
+        )
+        policy = {"destinations": {"mode": "public"}} if controlled else None
         os.chown(device.workspace, 1000, 1000)
         try:
             verify_discovery(device, root)
@@ -191,7 +193,7 @@ def verify_privilege_configuration(binary):
                 device = Device(
                     binary,
                     root,
-                    egress=False,
+                    egress="inherit",
                     execution={**({"uid": 1000, "gid": 1000} if user is None else {}), **execution},
                     environment=environment,
                     arguments=arguments,
@@ -228,7 +230,7 @@ def verify_root_identity(binary, *, controlled=False):
     for execution in [{}, {"uid": 0, "gid": 0}, {"allow_sudo": False}, {"uid": 0, "gid": 65534}]:
         with tempfile.TemporaryDirectory(prefix="envd-root-identity-") as temporary:
             root = Path(temporary)
-            device = Device(binary, root, egress=controlled, execution=execution)
+            device = Device(binary, root, egress="controlled" if controlled else "inherit", execution=execution)
             gid = execution.get("gid", os.getegid())
             private = device.workspace / "other-account"
             private.mkdir(mode=0o700)
@@ -248,7 +250,7 @@ def verify_root_identity(binary, *, controlled=False):
                         "limit": 100,
                     },
                 )
-                device.open({"allow_hosts": []} if controlled else None)
+                device.open({"destinations": {"mode": "allowlist", "hosts": []}} if controlled else None)
                 assert device.success("id -u; id -ru; id -g; id -rg").splitlines() == ["0", "0", str(gid), str(gid)]
                 read = {"context": context(), "path": {"path": str(source)}, "line_limit": 10, "max_line_length": 1024}
                 assert device.call("file.read_text", read)["text"] == "native-root-access"
@@ -286,13 +288,18 @@ def verify_file_rpc_identity(binary, *, controlled=False):
         with tempfile.TemporaryDirectory(prefix="envd-rpc-identity-") as temporary:
             root = Path(temporary)
             device = Device(
-                binary, root, egress=controlled, execution=execution, environment=environment, arguments=arguments
+                binary,
+                root,
+                egress="controlled" if controlled else "inherit",
+                execution=execution,
+                environment=environment,
+                arguments=arguments,
             )
             os.chown(device.workspace, uid, gid)
             device.workspace.chmod(0o700)
             try:
                 verify_discovery(device, root)
-                device.open({"allow_hosts": []} if controlled else None)
+                device.open({"destinations": {"mode": "allowlist", "hosts": []}} if controlled else None)
                 assert device.success("id -u; id -g").splitlines() == [str(uid), str(gid)]
                 path = device.workspace / "written.txt"
                 device.call(
@@ -420,7 +427,7 @@ def verify_controlled_boundary(device):
     )
     # PTYs are usable by native sudo/PAM, not globally disabled by the boundary.
     device.success("python3 -c " + shlex.quote("import pty,os; a,b=pty.openpty(); os.close(a); os.close(b)"))
-    device.call("egress.update", {"expected_revision": 1, "allow_hosts": []})
+    device.call("egress.update", {"expected_revision": 1, "destinations": {"mode": "allowlist", "hosts": []}})
     assert device.shell("sudo -n curl --max-time 2 -sS http://example.com/")["status"]["exit_code"] != 0
 
 
@@ -435,7 +442,7 @@ def verify_management_snapshot(binary):
     device = None
     try:
         device = Device(binary, root)
-        device.open({"allow_hosts": []})
+        device.open({"destinations": {"mode": "allowlist", "hosts": []}})
         for path, _, _ in saved:
             device.success(
                 "sudo -n python3 -c "
@@ -446,7 +453,7 @@ def verify_management_snapshot(binary):
         device.log.close()
         device.log = (moved / "stderr").open("ab")
         device.close()
-        for policy in [{"allow_hosts": []}, None, {"allow_hosts": []}]:
+        for policy in [{"destinations": {"mode": "allowlist", "hosts": []}}] * 3:
             device.open(policy)
             device.success(
                 "sudo -n sh -c "
@@ -519,7 +526,7 @@ enum nss_status _nss_a13n_handoff_getpwuid_r(
                 + "\n"
             )
             for _ in range(3):
-                device.open()
+                device.open({"destinations": {"mode": "allowlist", "hosts": []}})
                 assert marker.read_text() == "1", "native NSS ran before the kernel-handle handoff"
                 # The NSS hook returns UNAVAIL so the native files backend still
                 # resolves the account. Subsequent NSS calls leave the marker alone.
@@ -542,7 +549,7 @@ def verify_managed_privilege_policy(binary):
             root = Path(temporary)
             device = Device(binary, root, execution=execution)
             try:
-                device.open({"allow_hosts": []})
+                device.open({"destinations": {"mode": "allowlist", "hosts": []}})
                 assert device.shell("sudo -n id -u")["status"]["exit_code"] != 0
                 status = device.success("cat /proc/self/status")
                 assert f"NoNewPrivs:\t{0 if enabled else 1}" in status, status

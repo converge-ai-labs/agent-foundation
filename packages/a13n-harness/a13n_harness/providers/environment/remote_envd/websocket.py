@@ -68,6 +68,8 @@ def _construct(
             expected_device_id=data.device_id,
             working_directory=configuration.working_directory,
             required_methods=REQUIRED_METHODS | frozenset(configuration.required_methods),
+            egress=configuration.egress,
+            expected_boundary=configuration.expected_boundary,
             timeout=runtime.configuration.connection_timeout,
         ),
     )

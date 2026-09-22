@@ -7,6 +7,7 @@ from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
 
 from ..attachments import EIPSessionSource
+from ..envd_policy import EnvdBoundaryRequirement
 from ..models import (
     EnvironmentAction,
     EnvironmentAvailability,
@@ -61,10 +62,14 @@ async def open_eip_environment(
     device_id: str,
     working_directory: str | None = None,
     required_methods: frozenset[str] = frozenset(),
+    egress: eip.EgressPolicy | None = None,
+    expected_boundary: EnvdBoundaryRequirement | None = None,
 ) -> AsyncGenerator[EIPEnvironmentSession]:
     """Open one provider-owned EIP session and expose semantic operation facets."""
     async with session_source.open_session(
         expected_device_id=device_id,
+        egress=egress,
+        expected_boundary=expected_boundary,
         working_directory=working_directory,
         required_methods=required_methods
         | frozenset({"environment.describe", "environment.readiness", "session.close"}),
@@ -213,6 +218,7 @@ def _convert_descriptor(descriptor: eip.SessionDescriptor) -> EnvironmentDescrip
     limits = descriptor.limits
     return EnvironmentDescriptor(
         generation=f"{descriptor.generation}:{descriptor.session_id}",
+        execution_boundary=descriptor.boundary.model_dump(mode="json"),
         working_directory=descriptor.working_directory,
         operation_families=frozenset(families),
         permissions=EnvironmentPermissionSet(operations=frozenset(actions)),

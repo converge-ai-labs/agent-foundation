@@ -78,6 +78,34 @@ This writes `provider-example.txt` under the selected Device cwd and reads it th
 
 Public network endpoints require verified HTTPS. HTTP is accepted on loopback; a trusted provider-private link needs an explicit `allow_plaintext_private_link=True`. The runtime also accepts an SSL context or CA file through `verify`; disabling TLS verification is rejected.
 
+## Session egress and credential references
+
+Local, HTTP and WebSocket Envd share the same reference-only Session recipe. The operator selects the Device's Sandbox and network mode at launch. A controlled Device requires explicit destinations on every Session; inherit and deny Devices reject Session policy.
+
+For example, pass this recipe to the Provider rather than placing a token value in configuration:
+
+```python
+recipe = {
+    "working_directory": "/work/project",
+    "egress": {
+        "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
+        "secrets": [{
+            "env": "GH_TOKEN",
+            "source": {"kind": "environment", "name": "HOST_GITHUB_TOKEN"},
+            "inject_hosts": ["api.github.com"],
+        }],
+    },
+    "expected_boundary": {
+        "sandbox": {"mode": "disabled"},
+        "egress": "controlled",
+    },
+}
+```
+
+The runtime resolves `HOST_GITHUB_TOKEN` freshly before Session opening. A missing or empty source fails preparation. Saved recipes contain only references; descriptors contain nonsecret boundary and policy metadata. Local launch excludes the referenced source variables from the daemon's inherited child environment. An embedding Host can provide an `EnvdCredentialResolver` runtime collaborator instead of using process environment sources.
+
+`expected_boundary` checks the selected remote Device, not permission to reconfigure it. For restricted Devices, specify the exact canonical grants. Session destination changes and secret rotation do not change the fixed launch boundary or local daemon cache identity. Commands receive sentinel values, not real credentials; see [controlled egress](../a13n-envd/egress.md) for request-header injection and live policy updates.
+
 ## Integrate your own WebSocket Host
 
 The connection direction is **envd to Host**; your Host still sends every EIP request. The library does not open a listener. It provides a process-local `WebSocketEnvdConnections` instance that you own during application lifespan.

@@ -4,7 +4,7 @@
 
 `a13n-envd` is a client-neutral device daemon for files, shells, processes, output and transfers. One daemon normally serves a machine or outer sandbox. Its trusted Host connection carries multiple independent Sessions, each with a Host-selected working directory and Session-owned resources.
 
-HTTP, reverse WebSocket and stdio share EIP 0.1 semantics. Device connection lifetime is independent of individual Sessions. The Host supplies security through the account or outer sandbox used to launch the entire daemon; cwd is not filesystem or shell isolation. Periodic and high-water collection reclaim abandoned Sessions and completed history under generous finite resource bounds.
+HTTP, reverse WebSocket and stdio share EIP 0.1 semantics. Device connection lifetime is independent of individual Sessions. The Host selects immutable Device identity, Sandbox grants and egress mode; Envd applies them to complete Session workers and directory discovery. The Host owns the outer deployment; cwd is not filesystem or shell isolation. Periodic and high-water collection reclaim abandoned Sessions and completed history under generous finite resource bounds.
 
 Harness is one consumer through the provider-neutral [Environment integration](../a13n-harness/08-environment-integration.md). The [Environment Providers](../a13n-harness/08a-environment-providers.md) construct fresh adapters/Sessions while Host runtimes can reuse Device connections. Direct Local, native Docker and E2B do not require envd. The low-level client does not discover, install or launch daemons.
 
