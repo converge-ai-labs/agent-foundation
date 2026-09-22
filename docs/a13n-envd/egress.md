@@ -12,6 +12,8 @@ Enable egress with `A13N_ENVD_EGRESS_ENABLED=true`, `--egress-enabled true`, or 
 
 This enables controlled Sessions on Linux. Launch the daemon as root with native mount/PID/IPC/network namespace permissions. Envd requires Linux 6.1.2 or newer, seccomp, pidfds, mount-tree cloning, `/usr/bin/unshare`, `/usr/sbin/ip`, `/usr/sbin/nft`, `/usr/bin/ldd`, and a system CA bundle. It uses native accounts, not a single-UID user namespace. Without execution UID/GID settings, Sessions retain the root launcher's identity. To run them under another provisioned account, explicitly configure its UID/GID and native sudoers as described in [configuration](configuration.md#native-identity-and-sudo). No account is assumed or created; root execution remains subject to the same egress boundary. Missing privileges or facilities fail startup or Session preparation without fallback.
 
+The [sandbox image](sandbox.md) includes the userspace prerequisites and a root launcher, but leaves egress disabled by default. Enabling it still requires outer-runtime permissions and an explicit Session policy; the image does not auto-elevate or bypass the platform's restrictions.
+
 Enabling egress prepares a private management runtime before accepting work. All Sessions on that daemon use a worker to protect the broker. Only Sessions with an explicit EIP egress policy receive a private network and destination enforcement; omitting the policy does not silently enable filtering.
 
 ## Create a controlled Session
@@ -118,9 +120,9 @@ Each controlled Session reserves its configured Session budgets against Device t
 
 ## Provider validation record
 
-The following results were recorded by 2026-09-22 for the implementation in [PR #656](https://github.com/converge-ai-labs/agent-foundation/pull/656). All five cloud platforms used the same Linux x86_64 binary, with SHA-256 `8aeccbf0f525f4712707ee86c0813952018f846e26856e42013ded26d3e08778`, and generated dummy credentials. Provider credentials stayed outside the Session. These are envd runtime probes on disposable sandboxes, not validation of a Provider/Service egress integration or every vendor image.
+The following results were recorded by **2026-09-22**. All five cloud platforms used the same Linux x86_64 binary and generated dummy credentials. Provider credentials stayed outside the Session. These are envd runtime probes on disposable sandboxes, not validation of a Provider/Service egress integration or every vendor image.
 
-**These results predate the native identity and sudo implementation in [PR #660](https://github.com/converge-ai-labs/agent-foundation/pull/660).** Current egress requires a root launcher, native accounts and the prerequisites at the top of this page. The old non-root launch results below do not establish current non-root launcher support. Read-only system-tree and named-Unix-socket denial checks belonged to the old implementation; current writable-system and native-socket behavior is described in [files, sockets and lifetime](#files-sockets-and-lifetime). The cloud matrix has not been rerun against that implementation.
+**These results predate the native identity and sudo changes introduced on 2026-09-22.** Current egress requires a root launcher, native accounts and the prerequisites at the top of this page. The old non-root launch results below do not establish current non-root launcher support. Read-only system-tree and named-Unix-socket denial checks belonged to the old implementation; current writable-system and native-socket behavior is described in [files, sockets and lifetime](#files-sockets-and-lifetime). The cloud matrix has not been rerun against that implementation.
 
 ### Cloud results for the tested binary
 
@@ -163,7 +165,7 @@ This SDK setting selects the outer runtime; it is not an envd configuration fiel
 
 Test images were prepared with missing networking tools and CA certificates. Temporary launch probes used a Vercel timeout accepted by the account and omitted Daytona resource overrides incompatible with its default snapshot. Modal's local SDK client needed proxy-support dependencies and an explicit CA bundle path for the host Python installation; these were client connection settings, not payload proxy configuration. None of these probe adjustments changed production Provider code.
 
-All temporary cloud sandboxes were terminated; native-provider instances were reconciled absent and all five Modal instances, including connection-diagnostic attempts, were confirmed stopped. For a new validation run, record the binary revision/digest, image, runtime, kernel, launch identity and fixture coverage together. A pass on one image or a previous envd binary is not a platform-wide support guarantee.
+All temporary cloud sandboxes were terminated; native-provider instances were reconciled absent and all five Modal instances, including connection-diagnostic attempts, were confirmed stopped. For a new validation run, record the validation date, image, runtime, kernel, launch identity and fixture coverage together, including any behavior changes that have not been retested. A pass on one image or a previous envd binary is not a platform-wide support guarantee.
 
 ## Verify a sandbox image
 

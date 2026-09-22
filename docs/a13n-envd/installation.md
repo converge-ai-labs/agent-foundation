@@ -67,6 +67,10 @@ The installers support x86_64 and ARM64 on Linux, macOS, and Windows. They verif
 
 Re-run the script with another exact version to replace the binary. This is an explicit install operation, not a self-updater. No release automation or Harness UI acquisition code invokes these scripts. Installing the binary does not create an outer account, container, or sandbox boundary.
 
+## Run the sandbox image
+
+For a ready-to-use Agent development container, use the [sandbox image](sandbox.md). It runs envd as root while commands and file operations use the provisioned `1000:1000` account, with passwordless sudo available. Shell commands are enabled and controlled egress is opt-in. The guide covers local builds, stdio and outbound Host connections, persistence and overrides.
+
 ## Next step
 
 Use the [Local Envd Provider](index.md#recommended-harness-path), or [configure a standalone daemon](configuration.md) when you own the transport and lifecycle. Select the [Host security boundary](isolation.md) before running untrusted work.

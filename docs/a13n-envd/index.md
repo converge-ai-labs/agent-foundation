@@ -11,6 +11,7 @@ It does not run an Agent, store conversations, or provide a browser API. Use [Ha
 | Using the terminal product                                | [Harness UI execution permissions](../a13n-harness-ui/environments-and-projects.md) |
 | Embedding an Agent with local EIP                         | [Local Envd Provider example](#recommended-harness-path)                            |
 | Installing a matching native executable                   | [Installation](installation.md)                                                     |
+| Running an Agent development container                    | [Sandbox image](sandbox.md)                                                         |
 | Operating your own daemon or EIP transport                | [Configuration and transports](configuration.md)                                    |
 | Diagnosing access or missing methods                      | [Outer security and troubleshooting](isolation.md)                                  |
 | Connecting through an Environment Provider                | [Remote Envd](../environments/remote-envd.md)                                       |

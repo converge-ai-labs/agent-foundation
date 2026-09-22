@@ -1,0 +1,125 @@
+# Sandbox image
+
+The `a13n-sandbox` image is a ready-to-use Linux development environment for Agents using Envd. The daemon starts as root; Session commands and file operations run as the provisioned `sandbox` account (`1000:1000`). That account has passwordless sudo for installing packages and administering the disposable container. The outer container or VM supplies isolation; the default UID is not a barrier against intentional root access.
+
+**Controlled egress is off by default.** Ordinary use requires no `--privileged`, extra capabilities, or disabled Docker security profiles. Envd still requires a Linux runtime supporting its native process operations; a custom runtime or reduced capability set can reject them.
+
+## Build and check
+
+From the repository root:
+
+```bash
+make image-sandbox
+make image-check-sandbox
+```
+
+The local tag is `a13n-sandbox:local`. The image smoke check verifies startup defaults, the development account's directory permissions and passwordless sudo, and daemon startup under Docker's default permissions. Protocol and execution-isolation tests remain in the envd test suite.
+
+Published images use `ghcr.io/converge-ai-labs/a13n-sandbox`. Select the envd release tag matching your EIP client; `dev` tracks main, stable releases use `X.Y.Z`, and RCs use `X.Y.Z-rc.N` without advancing `latest`. These instructions describe the source image in this checkout, not a promise that an older published tag already has these defaults.
+
+## Run with a Host
+
+### Stdio
+
+Have your EIP Host launch this command with piped stdin and stdout:
+
+```bash
+docker run --rm -i a13n-sandbox:local
+```
+
+Keep `-i`, and do not add `-t`: stdin/stdout carry framed EIP traffic, not an interactive terminal. The default command is `tini -- a13n-envd`; it is not a shell, HTTP listener or idle container. It waits for an EIP client while stdin remains open and exits when stdin closes. Running it without `-i` and seeing a clean exit is expected.
+
+The default working directory is `/workspace`. To preserve work in a Docker-managed volume:
+
+```bash
+docker volume create agent-workspace
+docker run --rm -i \
+  --mount type=volume,source=agent-workspace,target=/workspace \
+  a13n-sandbox:local
+```
+
+A new empty volume inherits the image directory's ownership. Existing volumes and bind mounts retain their ownership; arrange write access for `1000:1000` yourself. The image does not recursively chown mounted files at startup. Closing a Session does not delete workspace files, but removing a container discards files not stored in a volume or bind mount.
+
+### Connect to Harness UI or Service
+
+Use an outbound connection when the Host supports Device registration:
+
+```bash
+docker volume create agent-envd-state
+docker volume create agent-workspace
+docker run --rm --name agent-sandbox \
+  --mount type=volume,source=agent-envd-state,target=/var/lib/a13n-envd \
+  --mount type=volume,source=agent-workspace,target=/workspace \
+  a13n-sandbox:local \
+  a13n-envd connect https://host.example.com --host work
+```
+
+Replace the Host URL with one reachable **from inside the container**. Container `localhost` is not the host computer. Approve the printed verification code at the Host, then leave the container running. This outbound mode needs no Docker port publishing. Subsequent starts reuse the saved Device identity and credential from the state volume. Treat that volume as a credential; do not mount it into another unrelated sandbox. See [registration and saved Hosts](configuration.md#connect-to-a-host).
+
+The persistent installation directory is `/var/lib/a13n-envd`. Standalone generation-private runtime data uses `/run/a13n-envd-state`; `connect` manages its Host-specific runtime under the installation directory. Neither runtime directory is a workspace or a Session recovery checkpoint.
+
+## Everyday development
+
+The image includes Bash, Git, curl, SSH client, jq, ripgrep, patch, zip/unzip, Python with pip/venv, process tools, sudo and CA certificates. It also installs the userspace namespace/network tools needed by opt-in egress; installing them does not grant kernel privileges. Compilers, Node.js and project-specific runtimes can be added with sudo or in a derived image rather than forcing one version on every project.
+
+Commands executed through EIP start as `sandbox`, with `HOME=/home/sandbox`. For example:
+
+```bash
+id -u                         # 1000
+sudo -n id -u                 # 0
+sudo -n apt-get update
+sudo -n apt-get install -y build-essential
+python3 -m venv .venv
+.venv/bin/python -m pip install requests
+```
+
+System-package changes persist across Sessions in the same container, but not after that container is removed. Use a derived image for repeatable dependencies. Git author identity and SSH credentials are not supplied by the image; configure them for your own workload.
+
+File RPCs remain unprivileged even after a command uses sudo. A root-owned file created by sudo may require an explicit permission/ownership change before a later file RPC can modify it.
+
+For a human debugging an already running container, select the execution account explicitly:
+
+```bash
+docker exec -it --user sandbox agent-sandbox bash
+```
+
+Docker exec does not pass through envd: omitting `--user sandbox` uses the image's root launch account, and envd's identity, sudo and egress policies do not constrain these direct Docker operations.
+
+## Defaults and overrides
+
+| Setting            | Image behavior                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| Launcher           | Root, supervised by tini                                                                         |
+| Execution identity | `A13N_ENVD_EXECUTION_UID=1000`, `A13N_ENVD_EXECUTION_GID=1000`                                   |
+| Commands           | `A13N_ENVD_FULL_CONTROL=true` enables the native shell                                           |
+| Sudo               | Existing daemon default allows privilege gains; image sudoers grants `sandbox` passwordless sudo |
+| Egress             | Existing daemon default is disabled; no network policy is implied                                |
+| Working directory  | `/workspace`                                                                                     |
+| Installation state | `A13N_ENVD_STATE_DIR=/var/lib/a13n-envd`                                                         |
+| Standalone runtime | `A13N_ENVD_RUNTIME_DIR=/run/a13n-envd-state`                                                     |
+
+Environment overrides work without replacing the default command. For example, disable privilege gains for envd workers and their descendants:
+
+```bash
+docker run --rm -i \
+  -e A13N_ENVD_ALLOW_SUDO=false \
+  a13n-sandbox:local
+```
+
+This blocks worker setuid/file-capability privilege gains, including native sudo; it does not change the daemon's root launch identity or restrict a Docker administrator. Set `A13N_ENVD_FULL_CONTROL=false` for file-only use. To run as another account, provision that account in a derived image, set both execution UID/GID values, and arrange its filesystem permissions. Do not use Docker `--user` to change only the daemon identity while leaving incompatible execution IDs or root-owned state paths.
+
+Image environment values take precedence over daemon JSON. Override the corresponding environment variables or use CLI options when changing these defaults. See [configuration precedence and native identity](configuration.md).
+
+### Opt-in egress
+
+Egress requires **both** a prepared deployment and a per-Session request:
+
+1. Select a compatible Linux runtime and grant the [required namespace/kernel facilities](egress.md). Root inside an ordinary Docker container is not sufficient.
+2. Set `A13N_ENVD_EGRESS_ENABLED=true` at daemon startup.
+3. Have the trusted Host include an `egress` policy in `session.open`.
+
+The image does not grant itself Docker capabilities, auto-elevate or silently fall back. Missing facilities can fail daemon startup or Session preparation. A Session requesting egress on the default disabled daemon is rejected, not executed without its policy. No general-purpose `--privileged` launch is required for the default non-egress image.
+
+### Migrating older images
+
+Older source images launched the whole daemon as `sandbox` (`10001:10001`), used `/home/sandbox/.local/state/a13n-envd` for standalone runtime, and did not enable shell commands by default. This image instead launches as root, executes work as `1000:1000`, and grants passwordless sudo. Review existing volume ownership and any custom `--user`/command settings before switching. Preserve old Device registration state separately if needed; do not treat old generation-private runtime files as persistent identity. Disable sudo or commands explicitly when the new defaults are not appropriate for your deployment.
