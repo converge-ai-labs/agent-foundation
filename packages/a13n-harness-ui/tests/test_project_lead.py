@@ -106,6 +106,19 @@ async def test_role_is_captured_each_run_and_old_compositions_default_false(tmp_
             assert ref is not None
             composition = await app._store.objects.read_model(ref, ResolvedRunComposition)
             assert composition.is_project_lead is expected
+            if expected:
+                from a13n_harness_ui.thread_capability import ThreadCollaborationCapability
+
+                from .test_thread_collaboration import controller
+
+                capability = ThreadCollaborationCapability(
+                    controller=controller(app), source_thread_id=thread.thread_id, composition=composition
+                )
+                assert "You are this Project's Lead" in capability.get_instructions()
+                capability.composition = composition.model_copy(update={"webui_sidekick": None})
+                assert "You are this Project's Lead" not in capability.get_instructions()
+                assert "compact coordination note" not in capability.get_instructions()
+                assert capability.composition.is_project_lead
             historical = composition.model_dump(mode="json", exclude={"is_project_lead"})
             assert not ResolvedRunComposition.model_validate(historical).is_project_lead
 

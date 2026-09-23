@@ -512,6 +512,11 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
             if thread_id == requester_id:
                 if project_lead:
                     assert "You are this Project's Lead" in info.instructions
+                    assert "At the start of each Run" in info.instructions
+                    assert "get_thread(thread_id=...)" in info.instructions
+                    assert "compact coordination note" in info.instructions
+                    assert "Before summarize, reconcile tasks and notes" in info.instructions
+                    assert "no background monitoring" in info.instructions
                     assert "Create a separate Thread only" not in info.instructions
                 if step == 0:
                     assert "Which format should I use?" in str(messages)

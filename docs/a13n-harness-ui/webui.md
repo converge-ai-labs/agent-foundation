@@ -18,11 +18,11 @@ Markdown files open with **Preview** selected and expose **Preview** and **Text*
 
 ## Work with a Project Lead
 
-Expand a Project in the sidebar and select **Lead** to focus on its coordinator conversation. **Open Project Lead** creates that Project's Lead once and opens it without starting a model request. Share your goal in the ordinary composer; the Lead can split authorized work into independent Threads, answer their questions, and bring results back. A compass icon distinguishes the Lead from other conversations.
+With Sidekick enabled, expand a Project in the sidebar and open its fixed **Project Lead** entry. On first use, **Open Project Lead** creates that Project's Lead once and opens it without starting a model request. Share your goal in the ordinary composer; the Lead can split authorized work into independent Threads, answer their questions, and bring results back. A compass icon distinguishes the Lead from other conversations.
 
-**Conversations / Lead** is a preference in this browser, not a Project mode. **Other conversations** includes all the Project's ordinary conversations, not only work created by the Lead. Direct links still open their selected conversation. Renaming does not change Lead identity; archiving retains it and requires explicit Restore before further work.
+There is no mode to switch: the Lead sits above the ordinary conversation list, and opening another conversation works as before. Direct links still open their selected conversation. Renaming does not change Lead identity; archiving retains it and requires explicit Restore before further work.
 
-New Leads require Sidekick to be enabled in General settings. The Lead itself starts with normal Project defaults; its workers use the existing Sidekick Agent and Model preferences. Disabling Sidekick does not remove an existing Lead or its history. Coordination uses best-effort Thread messages, not a background scheduler: admission is not completion, and stopping the Lead does not stop workers. Existing question and approval deadlines still apply; ordinary messages cannot reverse a denied approval.
+New Leads require Sidekick to be enabled in General settings. The Lead itself starts with normal Project defaults; its workers use the existing Sidekick Agent and Model preferences. Disabling Sidekick hides the dedicated Lead entry and hints, but keeps its conversation and history accessible as an ordinary Thread. Re-enabling Sidekick restores the same fixed entry. Coordination uses best-effort Thread messages, not a background scheduler: admission is not completion, and stopping the Lead does not stop workers. Existing question and approval deadlines still apply; ordinary messages cannot reverse a denied approval.
 
 ## Find unfinished input
 

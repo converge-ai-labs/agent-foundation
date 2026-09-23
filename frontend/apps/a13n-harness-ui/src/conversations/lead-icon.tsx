@@ -12,11 +12,15 @@ export function LeadIcon({ size = 20 }: { size?: number }) {
   );
 }
 
-export function LeadBadge() {
+export function LeadMark() {
   return (
-    <span className={styles.badge}>
-      <LeadIcon size={16} />
-      Project Lead
+    <span
+      className={styles.mark}
+      role="img"
+      aria-label="Project Lead"
+      title="Project Lead"
+    >
+      <LeadIcon size={18} />
     </span>
   );
 }

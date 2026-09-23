@@ -12,7 +12,6 @@ import { Button, ModalFrame } from "a13n-ui";
 import { ArrowDown } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useProjects, useSelectors, useTransport } from "../transport/context";
-import { LeadIcon } from "./lead-icon";
 import leadStyles from "./project-lead.module.css";
 import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
@@ -62,16 +61,16 @@ function Conversation({
   const queries = useQueryClient();
   const detail = useThread(threadId);
   const projects = useProjects();
+  const selectors = useSelectors();
   const isLead =
-    projects.data?.some((project) => project.lead_thread_id === threadId) ??
-    false;
+    selectors.data?.sidekick_enabled === true &&
+    projects.data?.some((project) => project.lead_thread_id === threadId);
   const results = useResults();
   const tracker = results.tracker;
   useEffect(() => {
     if (detail.data)
       void tracker?.follow(detail.data.thread, detail.dataUpdatedAt);
   }, [detail.data, detail.dataUpdatedAt, tracker]);
-  const selectors = useSelectors();
   const agentSelection = useMutation({
     mutationFn: async (agentId: string) => {
       if (!detail.data)
@@ -740,12 +739,10 @@ function Conversation({
                   >
                     {isLead ? (
                       <>
-                        <LeadIcon size={48} />
-                        <h2>Bring your project into focus.</h2>
+                        <h2>What are we working on?</h2>
                         <p>
-                          Share a goal. Your Lead can plan the work, coordinate
-                          separate conversations, and bring the results back
-                          here.
+                          Share a goal. I’ll help plan the work and bring
+                          results back here.
                         </p>
                       </>
                     ) : (

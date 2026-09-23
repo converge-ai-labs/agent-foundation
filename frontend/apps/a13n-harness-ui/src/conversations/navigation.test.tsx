@@ -1068,21 +1068,22 @@ it("keeps discovery failure inside the popup and supports retry without an empty
   await screen.findByRole("link", { name: /old-draft/ });
 });
 
-it("switches Lead presentation without writes and ensures only on explicit open", async () => {
+it("offers one Lead entry beside ordinary conversations and ensures only on explicit open", async () => {
   sidekickEnabled = true;
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   const group = screen.getByRole("region", { name: "One" });
-  fireEvent.click(await within(group).findByRole("button", { name: "Lead" }));
-  expect(writes).toHaveLength(0);
-  expect(screen.queryByRole("link", { name: "Recent 1" })).toBeNull();
-  expect(localStorage.getItem("a13n-harness-ui.project-view.project-one")).toBe(
-    '"lead"',
+  await within(group).findByRole("button", { name: "Open Project Lead" });
+  const recent = await within(group).findByRole("link", { name: "Recent 1" });
+  expect(within(group).queryByRole("button", { name: "Lead" })).toBeNull();
+  expect(
+    within(group).queryByRole("button", { name: "Other conversations" }),
+  ).toBeNull();
+  expect(screen.getByLabelText("Current route").textContent).toBe("/");
+  fireEvent.click(recent);
+  expect(screen.getByLabelText("Current route").textContent).toBe(
+    "/threads/Recent%201",
   );
-  fireEvent.click(
-    within(group).getByRole("button", { name: "Other conversations" }),
-  );
-  await within(group).findByRole("link", { name: "Recent 1" });
   expect(writes).toHaveLength(0);
   fireEvent.click(
     within(group).getByRole("button", { name: "Open Project Lead" }),
@@ -1099,12 +1100,12 @@ it("switches Lead presentation without writes and ensures only on explicit open"
 });
 
 it("pins the canonical Lead outside pagination, preserves archived identity and respects a direct worker link", async () => {
+  sidekickEnabled = true;
   leadThread = {
     ...thread("archived-lead"),
     title: "Old Lead",
     archived: true,
   };
-  localStorage.setItem("a13n-harness-ui.project-view.project-one", '"lead"');
   mount("/threads/selected-old");
   await screen.findByRole("link", { name: /Old Lead.*Project Lead.*Archived/ });
   expect(screen.getByRole("button", { name: "Restore Old Lead" })).toBeTruthy();
@@ -1122,14 +1123,42 @@ it("does not offer a new Lead when Sidekick is disabled", async () => {
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   await screen.findByRole("link", { name: "Recent 1" });
-  expect(screen.queryByRole("button", { name: "Lead" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Open Project Lead" }),
+  ).toBeNull();
   expect(writes).toHaveLength(0);
 });
 
-it("counts an unread Lead in its collapsed Project without duplicating it in Other conversations", async () => {
+it("hides Lead presentation when Sidekick is disabled and restores the same entry when re-enabled", async () => {
+  leadThread = thread("canonical-lead");
+  recentTitle = "canonical-lead";
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const group = screen.getByRole("region", { name: "One" });
+  await within(group).findByRole("link", { name: "canonical-lead" });
+  expect(within(group).queryByText("Project Lead")).toBeNull();
+  expect(
+    within(group).queryByRole("button", { name: "Open Project Lead" }),
+  ).toBeNull();
+  sidekickEnabled = true;
+  await act(() => queryClient.invalidateQueries({ queryKey: ["selectors"] }));
+  await within(group).findByRole("link", {
+    name: /canonical-lead.*Project Lead/,
+  });
+  expect(
+    within(group).getAllByRole("link", { name: /canonical-lead/ }),
+  ).toHaveLength(1);
+  sidekickEnabled = false;
+  await act(() => queryClient.invalidateQueries({ queryKey: ["selectors"] }));
+  await within(group).findByRole("link", { name: "canonical-lead" });
+  expect(within(group).queryByText("Project Lead")).toBeNull();
+  expect(writes).toHaveLength(0);
+});
+
+it("counts an unread Lead in its collapsed Project without duplicating it in the conversation list", async () => {
+  sidekickEnabled = true;
   vi.stubGlobal("indexedDB", new IDBFactory());
   leadThread = thread("canonical-lead");
-  localStorage.setItem("a13n-harness-ui.project-view.project-one", '"lead"');
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
   const unread = {
@@ -1152,9 +1181,6 @@ it("counts an unread Lead in its collapsed Project without duplicating it in Oth
     within(group).getByRole("button", { name: /^One/, expanded: false }),
   );
   await within(group).findByRole("link", { name: /canonical-lead/ });
-  fireEvent.click(
-    within(group).getByRole("button", { name: "Other conversations" }),
-  );
   expect(
     within(group).getAllByRole("link", { name: /canonical-lead/ }),
   ).toHaveLength(1);
@@ -1163,7 +1189,6 @@ it("counts an unread Lead in its collapsed Project without duplicating it in Oth
 
 it("learns a Lead created in another client from a Project summary hint without ensuring again", async () => {
   sidekickEnabled = true;
-  localStorage.setItem("a13n-harness-ui.project-view.project-one", '"lead"');
   mount("/", true);
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   await screen.findByRole("button", { name: "Open Project Lead" });

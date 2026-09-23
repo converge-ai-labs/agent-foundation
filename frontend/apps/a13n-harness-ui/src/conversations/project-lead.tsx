@@ -1,4 +1,3 @@
-import { ArrowUpRight } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Button } from "a13n-ui";
@@ -67,26 +66,24 @@ export function ProjectLeadEntry({
           >
             <LeadIcon />
             <span>Project Lead</span>
-            <ArrowUpRight size={14} />
           </Button>
         )}
         <ErrorNotice error={lead.error} retry={() => void lead.refetch()} />
       </>
     );
   return (
-    <div className={styles.start}>
+    <>
       <Button
         variant="ghost"
         className={styles.entry}
+        title="Open your project's coordinator conversation"
         loading={ensure.isPending}
         onClick={() => ensure.mutate()}
       >
         <LeadIcon />
         <span>Open Project Lead</span>
-        <ArrowUpRight size={14} />
       </Button>
-      <p>One place to plan, delegate, and bring results together.</p>
       <ErrorNotice error={ensure.error} />
-    </div>
+    </>
   );
 }

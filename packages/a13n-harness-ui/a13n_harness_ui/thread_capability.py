@@ -184,7 +184,11 @@ class ThreadToolController:
             "Sending a message does not wait for an answer; do not invent a reply. "
             "Do not send acknowledgement-only replies or delegate the same task back to its requester."
         )
-        if source_composition is not None and source_composition.is_project_lead:
+        if (
+            source_composition is not None
+            and source_composition.is_project_lead
+            and source_composition.webui_sidekick is not None
+        ):
             context += (
                 " The requester is the Project Lead coordinating this work. "
                 "Use ordinary send_thread_message messages for coordination questions, not ask_user_question. "
@@ -274,17 +278,37 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
             "A positive result means acceptance only, not processing or saved delivery. A rejected or uncertain send "
             "must be reconciled, not blindly retried. Do not create acknowledgement loops or delegate a task back to its requester."
         )
-        is_lead = self.composition is not None and self.composition.is_project_lead
+        is_lead = (
+            self.composition is not None
+            and self.composition.is_project_lead
+            and self.composition.webui_sidekick is not None
+        )
         if is_lead:
             instructions += (
                 "\nYou are this Project's Lead: an ordinary root Thread that helps the user plan work, "
                 "coordinate independent worker Threads, and integrate verified results. "
-                "Keep the user's objective and authorization in view; inspect existing work before creating duplicates. "
+                "Keep the user's objective and authorization in view. At the start of each Run, recover relevant "
+                "open work from the continuation summary and projected tasks and notes; use note_get for omitted "
+                "notes when available. Before planning new work or reporting progress, use get_thread(thread_id=...) "
+                "to check the known workers' current status and saved results. Use list_threads filtered to the "
+                "captured Project when you need to rediscover relevant conversations; do not assume every Project "
+                "Thread is your worker. Reuse existing work rather than creating duplicates. An inactive worker "
+                "is not necessarily successful: inspect its outcome, blockers, and validation before marking work done. "
+                "When notes tools are available, maintain a compact coordination note with each delegated objective, "
+                "worker Thread ID, last verified status, blocker, and next action. Treat it as an index, not live truth; "
+                "refresh stale observations with get_thread. Use task tools when available to track meaningful "
+                "deliverables and reconcile their status after verification, without copying whole worker transcripts. "
+                "Before summarize, reconcile tasks and notes. Use the summary for the user's objective, decisions, "
+                "verified outcomes, unresolved work, and immediate next step; do not duplicate the separately "
+                "projected notes and tasks. Never assume an unsaved plan will survive a handoff. "
                 "Answer workers through send_thread_message, using their source Thread IDs. "
                 "Ask ordinary coordination questions in text, not ask_user_question. When waiting for an answer, "
                 "state what is blocked and finish the turn; an incoming message can start another Run. "
-                "There is no durable worker queue, automatic completion notification, or guaranteed delivery. "
-                "Inspect progress explicitly and do not claim a worker finished from an admission receipt. "
+                "There is no background monitoring, durable worker queue, automatic completion notification, "
+                "or guaranteed delivery. Check progress at meaningful points while executing, not in a busy polling loop. "
+                "If only waiting remains, record the pending work and end the turn; do not promise an automatic "
+                "wake-up. A worker's explicit report or a new user message can start another Run. "
+                "Do not claim a worker finished from an admission receipt. "
                 "Existing tool approvals and pending-decision restrictions still apply; messages do not override denial. "
                 "Stopping this Thread does not stop other Threads."
             )

@@ -29,14 +29,8 @@ import { useProjects, useSelectors } from "../transport/context";
 import type { Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { useThread, useThreads } from "./queries";
-import {
-  useProjectExpansion,
-  useProjectOrder,
-  useProjectView,
-} from "./project-order";
+import { useProjectExpansion, useProjectOrder } from "./project-order";
 import { ProjectLeadEntry } from "./project-lead";
-import { LeadIcon } from "./lead-icon";
-import leadStyles from "./project-lead.module.css";
 import { NewProject } from "./new-project";
 import { RenameProject } from "../configuration/rename-project";
 import { newConversationPath } from "./new-conversation";
@@ -277,15 +271,7 @@ function ProjectGroup({
   const project = projects.data?.find(
     (item) => item.project_id === group.projectId,
   );
-  const hasLead =
-    !!project &&
-    (!!project.lead_thread_id || selectors.data?.sidekick_enabled === true);
-  const [view, setView] = useProjectView(group.id);
-  const leadView = hasLead && view === "lead";
-  const [otherOpen, setOtherOpen] = useState(false);
-  const selectedOther =
-    !!selected && selected.thread_id !== project?.lead_thread_id;
-  const showOthers = !leadView || otherOpen || selectedOther;
+  const hasLead = !!project && selectors.data?.sidekick_enabled === true;
   const belongs = (thread: Schema<"ThreadSummary">) => {
     const project = thread.configuration.project_id;
     return group.scope === "projectless"
@@ -363,7 +349,7 @@ function ProjectGroup({
     if (row.thread.archived) continue;
     const unread = results.tracker?.isUnread(row.thread.thread_id);
     if (unread) unreadCount++;
-    if (leadView && row.thread.thread_id === project?.lead_thread_id) continue;
+    if (hasLead && row.thread.thread_id === project?.lead_thread_id) continue;
     (row.thread.root_activity.state !== "inactive"
       ? activeRows
       : unread
@@ -492,52 +478,14 @@ function ProjectGroup({
         </div>
       </div>
       <div hidden={!expanded} className={styles.groupThreads}>
-        {hasLead && (
-          <div
-            className={leadStyles.switcher}
-            role="group"
-            aria-label={`View for ${group.name}`}
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-pressed={!leadView}
-              onClick={() => setView("conversations")}
-            >
-              Conversations
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-pressed={leadView}
-              onClick={() => setView("lead")}
-            >
-              <LeadIcon size={15} />
-              Lead
-            </Button>
-          </div>
+        {hasLead && project && (
+          <ProjectLeadEntry
+            project={project}
+            presence={presence}
+            enabled={enabled && expanded}
+          />
         )}
-        {leadView && project && (
-          <>
-            <ProjectLeadEntry
-              project={project}
-              presence={presence}
-              enabled={enabled && expanded}
-            />
-            <button
-              className={leadStyles.other}
-              aria-expanded={showOthers}
-              onClick={() => setOtherOpen(!otherOpen)}
-              disabled={selectedOther}
-            >
-              <CaretRight
-                className={showOthers ? styles.expandedChevron : undefined}
-              />
-              Other conversations
-            </button>
-          </>
-        )}
-        <div hidden={!showOthers}>
+        <div>
           {rows.map((row, index) => (
             <Fragment key={row.thread.thread_id}>
               {activeRows.length > 0 && index === 0 && (
@@ -555,11 +503,7 @@ function ProjectGroup({
                 index === activeRows.length + unreadRows.length && (
                   <small className={styles.emptyGroup}>Recent</small>
                 )}
-              <ThreadRow
-                row={row}
-                presence={presence}
-                projectLead={row.thread.thread_id === project?.lead_thread_id}
-              />
+              <ThreadRow row={row} presence={presence} />
             </Fragment>
           ))}
           {expanded && !rows.length && !list.data && list.isPending && (
@@ -575,7 +519,7 @@ function ProjectGroup({
           {list.isSuccess &&
             !list.isPreviousData &&
             !rows.length &&
-            !activeRows.length && (
+            !project?.lead_thread_id && (
               <small className={styles.emptyGroup}>No conversations yet</small>
             )}
           <ErrorNotice error={list.error} retry={() => void list.refetch()} />
