@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
-import { X, Plus, ArrowClockwise } from "@phosphor-icons/react";
+import { X, Plus, ArrowClockwise, Trash } from "@phosphor-icons/react";
+import { TerminalAction } from "./terminal-action";
+import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -39,6 +41,8 @@ export function TerminalPanel({
   openFile?: (path: string, line?: number) => void;
 }) {
   const { client } = useTransport();
+  const shortcuts = terminalShortcutLabels();
+  const panel = useRef<HTMLElement>(null);
   const queries = useQueryClient();
   const currentProject = useRef(projectId);
   currentProject.current = projectId;
@@ -88,6 +92,12 @@ export function TerminalPanel({
         [...items.filter((id) => id !== activeId), activeId].slice(-3),
       );
   }, [activeId]);
+  useEffect(() => {
+    if (visible && !activeId)
+      panel.current
+        ?.querySelector<HTMLElement>('[aria-label="New terminal"]')
+        ?.focus();
+  }, [visible, activeId]);
   useEffect(() => {
     onActive?.(visible ? activeId : "");
   }, [activeId, visible, onActive]);
@@ -170,6 +180,24 @@ export function TerminalPanel({
   };
   return (
     <section
+      ref={panel}
+      onKeyDownCapture={(event) => {
+        if (!visible || event.defaultPrevented) return;
+        const action = terminalShortcut(event.nativeEvent);
+        if (action !== "previous" && action !== "next") return;
+        if (!projectSessions.length) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const index = projectSessions.findIndex(
+          (item) => item.terminal_id === activeId,
+        );
+        const next =
+          index < 0
+            ? 0
+            : (index + (action === "next" ? 1 : -1) + projectSessions.length) %
+              projectSessions.length;
+        select(projectSessions[next].terminal_id);
+      }}
       hidden={!visible}
       className={styles.panel}
       style={{ flexBasis: `${height}%` }}
@@ -231,11 +259,11 @@ export function TerminalPanel({
       <header className={styles.header}>
         <strong>Terminal{projectName ? ` · ${projectName}` : ""}</strong>
         <div className={styles.actions}>
-          <Button
-            size="sm"
-            variant="ghost"
+          <TerminalAction
+            label="New terminal"
+            shortcut={shortcuts.create}
             disabled={pending || attempted || !projectId || !directory}
-            title={
+            description={
               directory
                 ? `Start in ${directory}`
                 : "Open a project conversation first"
@@ -243,12 +271,9 @@ export function TerminalPanel({
             onClick={() => void create()}
           >
             <Plus />
-            New terminal
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="Refresh terminal sessions"
+          </TerminalAction>
+          <TerminalAction
+            label="Refresh terminal sessions"
             onClick={() => {
               refresh();
               setAttempted(false);
@@ -256,15 +281,27 @@ export function TerminalPanel({
             }}
           >
             <ArrowClockwise />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="Collapse terminal panel"
+          </TerminalAction>
+          {active && (
+            <TerminalAction
+              label="End session"
+              description="Closes this terminal for everyone"
+              onClick={() => {
+                setError(null);
+                setAttempted(false);
+                setClosing(active);
+              }}
+            >
+              <Trash />
+            </TerminalAction>
+          )}
+          <TerminalAction
+            label="Collapse terminal panel"
+            shortcut={shortcuts.toggle}
             onClick={collapse}
           >
             <X />
-          </Button>
+          </TerminalAction>
         </div>
       </header>
       <ErrorNotice
@@ -278,7 +315,7 @@ export function TerminalPanel({
             size="sm"
             variant={selected === item.terminal_id ? "outline" : "ghost"}
             aria-pressed={selected === item.terminal_id}
-            title={`${item.cwd} · ${item.terminal_id}`}
+            title={`${item.cwd} · ${item.terminal_id} · Switch sessions: ${shortcuts.previous} / ${shortcuts.next}`}
             onClick={() => select(item.terminal_id)}
           >
             {item.cwd.split(/[\\/]/).filter(Boolean).at(-1) || "Terminal"}
@@ -298,19 +335,6 @@ export function TerminalPanel({
                 ? active.cwd
                 : "This terminal is no longer listed. Refresh to check its status."}
             </span>
-            {active && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setError(null);
-                  setAttempted(false);
-                  setClosing(active);
-                }}
-              >
-                End session
-              </Button>
-            )}
           </div>
         </>
       ) : (

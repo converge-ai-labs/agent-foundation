@@ -46,7 +46,8 @@
 }
 .sessionBar {
   flex-shrink: 0;
-  max-height: 72px;
+  max-height: 36px;
+  flex-wrap: nowrap;
   overflow: auto;
 }
 .identity,
@@ -68,10 +69,21 @@
   min-width: 0;
 }
 .controlBar {
+  justify-content: space-between;
   font-size: 12px;
 }
-.controlBar > small {
-  flex: 1;
+.connectionStatus {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.actions {
+  gap: 2px;
+  flex-shrink: 0;
+}
+.actions button[aria-pressed="true"] {
+  background: var(--a13n-selected);
 }
 .message {
   margin: 0;
@@ -133,7 +145,7 @@
 .search {
   display: flex;
   align-items: end;
-  gap: 8px;
+  gap: 4px;
   flex-wrap: wrap;
 }
 .search > :first-child {

@@ -9,7 +9,23 @@ import { TextField } from "../shell/ui";
 import { ReturnToChat } from "./capture";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { Button } from "a13n-ui";
+import {
+  MagnifyingGlass,
+  Copy,
+  ClipboardText,
+  ChatText,
+  Plug,
+  Plugs,
+  Hand,
+  HandPalm,
+  CircleNotch,
+  ArrowUp,
+  ArrowDown,
+  X,
+  ArrowBendUpLeft,
+} from "@phosphor-icons/react";
+import { TerminalAction } from "./terminal-action";
+import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
 import { useTransport } from "../transport/context";
 import { TerminalConnection, type TerminalState } from "./terminal-connection";
 import "@xterm/xterm/css/xterm.css";
@@ -40,6 +56,9 @@ export default function TerminalScreen({
   openFile?: (path: string, line?: number) => void;
 }) {
   const transport = useTransport();
+  const shortcuts = terminalShortcutLabels();
+  const shown = useRef(visible);
+  shown.current = visible;
   const queries = useQueryClient();
   const drafts = useContext(ComposerDrafts);
   const returnToChat = useContext(ReturnToChat);
@@ -124,16 +143,7 @@ export default function TerminalScreen({
             : `${resultIndex + 1} / ${resultCount}`,
         ),
     );
-    term.attachCustomKeyEventHandler((event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
-        if (event.type === "keydown") {
-          event.preventDefault();
-          setFinding(true);
-        }
-        return false;
-      }
-      return true;
-    });
+
     terminal.current = term;
     const paintTheme = () => {
       const dark = document.documentElement.classList.contains("dark");
@@ -197,7 +207,7 @@ export default function TerminalScreen({
           );
         }
         term.options.disableStdin = !session.controls;
-        if (session.controls && !controlled) term.focus();
+        if (shown.current && session.controls && !controlled) term.focus();
         controlled = session.controls;
         // A confirmed control/size change, not output volume, drives fitting.
         const layout = `${session.controls}:${next.frame?.terminal.rows}:${next.frame?.terminal.columns}`;
@@ -254,6 +264,9 @@ export default function TerminalScreen({
     }
   }, [visible, state, transport]);
   useEffect(() => {
+    if (visible) terminal.current?.focus();
+  }, [visible]);
+  useEffect(() => {
     setFeedback("");
   }, [threadId]);
   useEffect(() => {
@@ -300,109 +313,174 @@ export default function TerminalScreen({
     draft.undo.stopCapturing();
     setFeedback("Added to this conversation's input. Review before sending.");
   };
+  const copySelection = async () => {
+    const text = terminal.current?.getSelection();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setFeedback("Selection copied.");
+    } catch {
+      setFeedback("Copy unavailable. Use your browser's copy action.");
+    }
+  };
+  const pasteClipboard = async () => {
+    const session = connection.current;
+    const term = terminal.current;
+    if (!session?.controls || !term) return;
+    const epoch = session.state.frame?.terminal.control_epoch;
+    try {
+      const text = await navigator.clipboard.readText();
+      // Clipboard permission can resolve after a detach or control transfer.
+      if (
+        !shown.current ||
+        connection.current !== session ||
+        !session.controls ||
+        session.state.frame?.terminal.control_epoch !== epoch
+      )
+        return;
+      term.paste(text);
+      term.focus();
+    } catch {
+      setFeedback("Paste unavailable. Use your browser's paste action.");
+    }
+  };
+  const openSearch = () => {
+    setFinding(true);
+    searchElement.current?.querySelector("input")?.focus();
+  };
+  const closeSearch = () => {
+    setFinding(false);
+    terminal.current?.focus();
+  };
   const session = connection.current;
   const view = state.frame?.terminal;
+  const controlLabel = state.pendingControl
+    ? "Confirming…"
+    : session?.controls
+      ? "Release control"
+      : view?.controller
+        ? "Take over input"
+        : "Take control";
   return (
-    <div className={styles.screen}>
+    <div
+      className={styles.screen}
+      onKeyDownCapture={(event) => {
+        if (!visible || event.defaultPrevented) return;
+        const action = terminalShortcut(event.nativeEvent);
+        if (action === "find") {
+          event.preventDefault();
+          event.stopPropagation();
+          openSearch();
+        } else if (
+          element.current?.contains(event.target as Node) &&
+          (action === "copy" || action === "paste")
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!event.repeat)
+            void (action === "copy" ? copySelection() : pasteClipboard());
+        }
+      }}
+    >
       <div className={styles.controlBar}>
-        <span role="status">
-          {state.connection === "Connecting"
-            ? "Connecting…"
-            : state.connection === "Detached"
-              ? "Disconnected"
-              : session?.controls
-                ? "You have control"
-                : "Viewing only"}
-        </span>
-        {view && (
-          <small
-            title={`Session ${id} · ${view.columns} × ${view.rows} · control epoch ${view.control_epoch}`}
+        <div className={styles.connectionStatus}>
+          <span role="status">
+            {state.connection === "Connecting"
+              ? "Connecting…"
+              : state.connection === "Detached"
+                ? "Disconnected"
+                : state.pendingControl
+                  ? "Confirming control…"
+                  : session?.controls
+                    ? "You have control"
+                    : "Viewing only"}
+          </span>
+          {view && (
+            <small
+              title={`Session ${id} · ${view.columns} × ${view.rows} · control epoch ${view.control_epoch}`}
+            >
+              {view.participants.length} connected
+              {view.state === "exited"
+                ? ` · Exited (${view.exit_code ?? "unknown"})`
+                : ""}
+            </small>
+          )}
+        </div>
+        <div className={styles.actions}>
+          <TerminalAction
+            label="Find in output"
+            shortcut={shortcuts.find}
+            aria-pressed={finding}
+            onClick={openSearch}
           >
-            {view.participants.length} connected
-            {view.state === "exited"
-              ? ` · Exited (${view.exit_code ?? "unknown"})`
-              : ""}
-          </small>
-        )}
-        {state.connection === "Detached" ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={session?.draining}
-            onClick={() =>
-              session?.connect(window.location.origin, transport.key)
+            <MagnifyingGlass />
+          </TerminalAction>
+          <TerminalAction
+            label="Copy selection"
+            shortcut={shortcuts.copy}
+            disabled={!selection}
+            onClick={() => void copySelection()}
+          >
+            <Copy />
+          </TerminalAction>
+          <TerminalAction
+            label="Paste"
+            shortcut={shortcuts.paste}
+            disabled={!session?.controls}
+            onClick={() => void pasteClipboard()}
+          >
+            <ClipboardText />
+          </TerminalAction>
+          <TerminalAction
+            label="Add selection to message"
+            disabled={!selection || !threadId}
+            onClick={addSelection}
+          >
+            <ChatText />
+          </TerminalAction>
+          {state.connection === "Detached" ? (
+            <TerminalAction
+              label="Reconnect"
+              disabled={session?.draining}
+              onClick={() =>
+                session?.connect(window.location.origin, transport.key)
+              }
+            >
+              <Plug />
+            </TerminalAction>
+          ) : (
+            <TerminalAction
+              label="Disconnect"
+              onClick={() => {
+                resumeOnShow.current = false;
+                session?.detach();
+              }}
+            >
+              <Plugs />
+            </TerminalAction>
+          )}
+          <TerminalAction
+            label={controlLabel}
+            aria-pressed={!!session?.controls}
+            disabled={
+              state.connection !== "Live" ||
+              state.pendingControl ||
+              view?.state !== "running"
             }
-          >
-            Reconnect
-          </Button>
-        ) : (
-          <Button
-            size="sm"
-            variant="ghost"
             onClick={() => {
-              resumeOnShow.current = false;
-              session?.detach();
+              session?.control(!!session.controls);
+              terminal.current?.focus();
             }}
           >
-            Disconnect
-          </Button>
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={
-            state.connection !== "Live" ||
-            state.pendingControl ||
-            view?.state !== "running"
-          }
-          onClick={() => {
-            session?.control(!!session.controls);
-            terminal.current?.focus();
-          }}
-        >
-          {state.pendingControl
-            ? "Confirming…"
-            : session?.controls
-              ? "Release control"
-              : view?.controller
-                ? "Take over input"
-                : "Take control"}
-        </Button>
-      </div>
-
-      <div className={styles.actions}>
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-pressed={finding}
-          onClick={() => setFinding(!finding)}
-        >
-          Find in output
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={!selection}
-          onClick={() => {
-            void navigator.clipboard.writeText(selection).then(
-              () => setFeedback("Selection copied."),
-              () =>
-                setFeedback(
-                  "Copy unavailable. Use your browser's copy action.",
-                ),
-            );
-          }}
-        >
-          Copy selection
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!selection || !threadId}
-          onClick={addSelection}
-        >
-          Add selection to message
-        </Button>
+            {state.pendingControl ? (
+              <CircleNotch />
+            ) : session?.controls ? (
+              <HandPalm />
+            ) : (
+              <Hand />
+            )}
+          </TerminalAction>
+        </div>
       </div>
       {finding && (
         <div
@@ -411,8 +489,8 @@ export default function TerminalScreen({
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();
-              setFinding(false);
-              terminal.current?.focus();
+              event.stopPropagation();
+              closeSearch();
             }
             if (event.key === "Enter") {
               event.preventDefault();
@@ -427,23 +505,30 @@ export default function TerminalScreen({
             value={query}
             onChange={setQuery}
           />
-          <Button
-            size="sm"
-            variant="ghost"
+          <small role="status">{matches}</small>
+          <TerminalAction
+            label="Previous match"
+            shortcut="Shift+Enter"
             disabled={!query}
             onClick={() => search.current?.findPrevious(query, searchOptions)}
           >
-            Previous match
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
+            <ArrowUp />
+          </TerminalAction>
+          <TerminalAction
+            label="Next match"
+            shortcut="Enter"
             disabled={!query}
             onClick={() => search.current?.findNext(query, searchOptions)}
           >
-            Next match
-          </Button>
-          <small role="status">{matches}</small>
+            <ArrowDown />
+          </TerminalAction>
+          <TerminalAction
+            label="Close search"
+            shortcut="Escape"
+            onClick={closeSearch}
+          >
+            <X />
+          </TerminalAction>
         </div>
       )}
       {feedback && (
@@ -452,9 +537,12 @@ export default function TerminalScreen({
             {feedback}
           </p>
           {feedback.startsWith("Added") && (
-            <Button size="sm" variant="ghost" onClick={returnToChat}>
-              Return to conversation
-            </Button>
+            <TerminalAction
+              label="Return to conversation"
+              onClick={returnToChat}
+            >
+              <ArrowBendUpLeft />
+            </TerminalAction>
           )}
         </div>
       )}

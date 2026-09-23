@@ -21,6 +21,8 @@ import * as Y from "yjs";
 const emulator = vi.hoisted(() => ({
   input: (_: string) => {},
   disposed: vi.fn(),
+  focused: vi.fn(),
+  pasted: vi.fn(),
   resized: vi.fn(),
   selection: "",
   select: () => {},
@@ -32,7 +34,8 @@ vi.mock("@xterm/xterm", () => ({
     options = { disableStdin: true, theme: {} };
     loadAddon() {}
     open() {}
-    focus() {}
+    focus = emulator.focused;
+    paste = emulator.pasted;
     reset() {}
     buffer = { active: { getLine: () => undefined } };
     registerLinkProvider() {
@@ -45,7 +48,6 @@ vi.mock("@xterm/xterm", () => ({
       emulator.select = fn;
       return { dispose() {} };
     }
-    attachCustomKeyEventHandler() {}
     resize = emulator.resized;
     onData(fn: (text: string) => void) {
       emulator.input = fn;
@@ -536,4 +538,135 @@ it("searches retained output and appends selection only to the currently selecte
     "hello",
     expect.objectContaining({ decorations: expect.any(Object) }),
   );
+});
+
+it("handles find and clipboard shortcuts only in their terminal context, leaving shell controls untouched", async () => {
+  const f = setup();
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  const readText = vi.fn().mockResolvedValue("echo pasted\n");
+  vi.stubGlobal("navigator", {
+    platform: "Linux",
+    clipboard: { writeText, readText },
+  });
+  render(<TerminalScreen id="terminal-one" visible unauthorized={vi.fn()} />, {
+    wrapper: f.Wrapper,
+  });
+  act(() => emit(Socket.all[0], "participant-me", 1));
+  const output = screen.getByLabelText("Native terminal output and input");
+  const nativeKey = vi.fn();
+  output.addEventListener("keydown", nativeKey);
+  fireEvent.keyDown(output, { key: "c", ctrlKey: true });
+  fireEvent.keyDown(output, { key: "d", ctrlKey: true });
+  expect(nativeKey).toHaveBeenCalledTimes(2);
+  fireEvent.keyDown(output, { key: "f", ctrlKey: true });
+  const input = screen.getByLabelText("Find in retained terminal output");
+  expect(document.activeElement).toBe(input);
+  expect(nativeKey).toHaveBeenCalledTimes(2);
+  fireEvent.change(input, { target: { value: "hello" } });
+  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+  expect(emulator.findPrevious).toHaveBeenCalledWith(
+    "hello",
+    expect.any(Object),
+  );
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(emulator.findNext).toHaveBeenCalledWith("hello", expect.any(Object));
+  fireEvent.keyDown(input, { key: "v", ctrlKey: true, shiftKey: true });
+  expect(readText).not.toHaveBeenCalled();
+  output.focus();
+  fireEvent.keyDown(output, { key: "f", ctrlKey: true });
+  expect(document.activeElement).toBe(input);
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(
+    screen.queryByLabelText("Find in retained terminal output"),
+  ).toBeNull();
+  expect(emulator.focused).toHaveBeenCalled();
+  act(() => {
+    emulator.selection = "selected output";
+    emulator.select();
+  });
+  fireEvent.keyDown(output, { key: "C", ctrlKey: true, shiftKey: true });
+  await waitFor(() =>
+    expect(writeText).toHaveBeenCalledWith("selected output"),
+  );
+  fireEvent.keyDown(output, { key: "V", ctrlKey: true, shiftKey: true });
+  await waitFor(() =>
+    expect(emulator.pasted).toHaveBeenCalledWith("echo pasted\n"),
+  );
+  expect(nativeKey).toHaveBeenCalledTimes(2);
+  readText.mockRejectedValue(new Error("denied"));
+  fireEvent.click(screen.getByRole("button", { name: "Paste" }));
+  await screen.findByText(
+    "Paste unavailable. Use your browser's paste action.",
+  );
+});
+
+it.each(["hide", "transfer", "disconnect"])(
+  "does not deliver a pending clipboard read after %s",
+  async (change) => {
+    const f = setup();
+    let resolve!: (value: string) => void;
+    const readText = vi.fn(
+      () =>
+        new Promise<string>((done) => {
+          resolve = done;
+        }),
+    );
+    vi.stubGlobal("navigator", { platform: "Linux", clipboard: { readText } });
+    const unauthorized = vi.fn();
+    const component = render(
+      <TerminalScreen id="terminal-one" visible unauthorized={unauthorized} />,
+      { wrapper: f.Wrapper },
+    );
+    act(() => emit(Socket.all[0], null, 0));
+    expect(
+      screen.getByRole("button", { name: "Paste" }).hasAttribute("disabled"),
+    ).toBe(true);
+    act(() => emit(Socket.all[0], "participant-me", 1));
+    fireEvent.click(screen.getByRole("button", { name: "Paste" }));
+    if (change === "hide")
+      component.rerender(
+        <TerminalScreen
+          id="terminal-one"
+          visible={false}
+          unauthorized={unauthorized}
+        />,
+      );
+    else if (change === "transfer")
+      act(() => {
+        emit(Socket.all[0], "participant-other", 2);
+        emit(Socket.all[0], "participant-me", 3);
+      });
+    else fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    await act(async () => resolve("never send"));
+    expect(emulator.pasted).not.toHaveBeenCalled();
+  },
+);
+
+it("cycles only the current Project's sessions without creating or ending them", async () => {
+  const f = setup([
+    view,
+    { ...view, terminal_id: "terminal-two" },
+    { ...view, terminal_id: "other", project_id: "other-project" },
+  ]);
+  const select = vi.fn();
+  render(
+    <TerminalPanel
+      visible
+      directory="/native"
+      projectId="project-one"
+      selected="terminal-one"
+      select={select}
+      collapse={vi.fn()}
+      unauthorized={vi.fn()}
+    />,
+    { wrapper: f.Wrapper },
+  );
+  await screen.findByRole("button", { name: "End session" });
+  const panel = screen.getByRole("region", { name: "Shared native terminals" });
+  fireEvent.keyDown(panel, { key: "PageDown", ctrlKey: true });
+  expect(select).toHaveBeenLastCalledWith("terminal-two");
+  fireEvent.keyDown(panel, { key: "PageUp", ctrlKey: true });
+  expect(select).toHaveBeenLastCalledWith("terminal-two");
+  expect(f.post).not.toHaveBeenCalled();
+  expect(f.remove).not.toHaveBeenCalled();
 });

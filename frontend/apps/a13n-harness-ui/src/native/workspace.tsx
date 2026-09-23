@@ -38,6 +38,8 @@ import { FileView } from "./file-view";
 import { Changes, DiffView, type DiffSelection } from "./changes";
 import styles from "./native.module.css";
 import { TerminalPanel, type TerminalRequest } from "./terminal";
+import { TerminalAction } from "./terminal-action";
+import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
 import { usePanelSize } from "./panel-size";
 import { ReturnToChat } from "./capture";
 import { useThread } from "../conversations/queries";
@@ -390,6 +392,36 @@ export function NativeWorkspace({
     setFocusedArea("terminal");
     if (window.matchMedia("(max-width: 999px)").matches) setPane(null);
   };
+  const toggleTerminal = () => {
+    cancelOpening();
+    setTerminalOpen(!terminalOpen);
+    if (!terminalOpen) {
+      setFocusedArea("terminal");
+      if (window.matchMedia("(max-width: 999px)").matches) setPane(null);
+    } else focusCenter();
+    setTerminalOpened(true);
+    refresh();
+  };
+  useEffect(() => {
+    if (!isWorkspace || projectLoading || !status.data?.features?.host_terminal)
+      return;
+    const keydown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || document.querySelector('[role="dialog"]'))
+        return;
+      const action = terminalShortcut(event);
+      if (action !== "toggle" && action !== "create") return;
+      const cwd = localRoots.includes(root) ? root : projectRoot;
+      if (action === "create" && (!projectId || !cwd)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat) return;
+      if (action === "create") openTerminal(cwd);
+      else toggleTerminal();
+    };
+    // Capture before xterm or an editor can translate this into input.
+    window.addEventListener("keydown", keydown, true);
+    return () => window.removeEventListener("keydown", keydown, true);
+  });
   const title = threadId
     ? conversationTitle(
         thread.data?.thread,
@@ -514,28 +546,16 @@ export function NativeWorkspace({
                 </Button>
               )}
               {status.data?.features?.host_terminal && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Terminal"
-                  aria-label="Terminal"
+                <TerminalAction
+                  label="Terminal"
+                  shortcut={terminalShortcutLabels().toggle}
                   aria-pressed={terminalOpen}
-                  onClick={() => {
-                    cancelOpening();
-                    setTerminalOpen(!terminalOpen);
-                    if (!terminalOpen) {
-                      setFocusedArea("terminal");
-                      if (window.matchMedia("(max-width: 999px)").matches)
-                        setPane(null);
-                    } else focusCenter();
-                    setTerminalOpened(true);
-                    refresh();
-                  }}
+                  onClick={toggleTerminal}
                 >
                   <TerminalWindow
                     weight={terminalOpen ? "duotone" : "regular"}
                   />
-                </Button>
+                </TerminalAction>
               )}
             </div>
           )}

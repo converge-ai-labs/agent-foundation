@@ -94,7 +94,9 @@ vi.mock("./terminal", () => ({
     selected,
     select,
     onActive,
+    request,
   }: {
+    request?: { cwd: string; projectId: string };
     visible: boolean;
     directory: string;
     projectId: string;
@@ -112,6 +114,11 @@ vi.mock("./terminal", () => ({
         <p>
           Terminal context {projectId} · {directory}
         </p>
+        {request && (
+          <p>
+            New terminal request {request.projectId} · {request.cwd}
+          </p>
+        )}
         <button onClick={() => select("")}>Close selected terminal</button>
       </section>
     );
@@ -861,5 +868,59 @@ it.each(["Message", "Shared prompt"])(
         screen.getByRole("textbox", { name: label }),
       ),
     );
+  },
+);
+
+it("terminal shortcuts toggle the panel, ignore repeat/modal/composition, and create with the current Project root", async () => {
+  setup("/threads/current");
+  const toggle = await screen.findByRole("button", {
+    name: "Terminal",
+  });
+  const chord = { code: "Backquote", key: "`", ctrlKey: true };
+  fireEvent.keyDown(window, { ...chord, repeat: true });
+  fireEvent.keyDown(window, { ...chord, isComposing: true });
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  fireEvent.keyDown(window, chord);
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  fireEvent.keyDown(window, { ...chord, repeat: true });
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  fireEvent.keyDown(window, chord);
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  document.body.append(dialog);
+  fireEvent.keyDown(window, { ...chord, shiftKey: true });
+  expect(screen.queryByText(/New terminal request/)).toBeNull();
+  dialog.remove();
+  fireEvent.keyDown(window, { ...chord, shiftKey: true });
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  expect(
+    screen.getByText("New terminal request project-one · /native"),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
+  await screen.findByText(/Chat remains mounted \/settings/);
+  expect(fireEvent.keyDown(window, chord)).toBe(true);
+});
+
+it.each([false, true])(
+  "terminal creation shortcut respects sharing=%s and missing Project context",
+  async (sharing) => {
+    setup("/threads/current", sharing, undefined, null);
+    await screen.findByText("Chat remains mounted /threads/current");
+    if (sharing) await screen.findByRole("button", { name: "Terminal" });
+    expect(
+      fireEvent.keyDown(window, {
+        code: "Backquote",
+        ctrlKey: true,
+        shiftKey: true,
+      }),
+    ).toBe(true);
+    expect(screen.queryByText(/New terminal request/)).toBeNull();
+    if (!sharing) {
+      expect(
+        fireEvent.keyDown(window, { code: "Backquote", ctrlKey: true }),
+      ).toBe(true);
+      expect(screen.queryByText(/Terminal context/)).toBeNull();
+    }
   },
 );
