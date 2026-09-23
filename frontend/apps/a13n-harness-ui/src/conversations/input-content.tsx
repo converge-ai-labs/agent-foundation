@@ -279,6 +279,7 @@ export function InputContent({
   threadId?: string;
   renderText: (text: string) => ReactNode;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const visible = parts.filter((part) => part.metadata?.display !== false);
   const seen = new Set<string>();
   const copyText = inputCopyText(parts);
@@ -311,39 +312,57 @@ export function InputContent({
           </span>
         )}
       </header>
-      {visible.map((part, index) => {
-        const attachment = inputAttachment(part.metadata);
-        if (attachment && threadId) {
-          const identity = composerIdentity(part) ?? attachment.attachment_id;
-          if (seen.has(identity)) return null;
-          seen.add(identity);
-          const related = visible.filter(
-            (item) =>
-              (composerIdentity(item) ??
-                inputAttachment(item.metadata)?.attachment_id) === identity,
-          );
-          return (
-            <Attachment
-              key={`${threadId}:${identity}`}
-              threadId={threadId}
-              attachment={attachment}
-              related={related}
-            />
-          );
-        }
-        if (composerIdentity(part) && part.kind !== "media")
-          return (
-            <span key={index} className={styles.inputText}>
-              {part.text || ""}
-            </span>
-          );
-        return part.kind === "media" ? (
-          <Media key={index} part={part} />
-        ) : (
-          <div key={index}>{renderText(part.text || "")}</div>
-        );
-      })}
-      {copyText.trim() && <CopyMessage text={copyText} />}
+      {source && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className={styles.threadMessageToggle}
+          aria-label="Thread message details"
+          aria-expanded={expanded}
+          title={expanded ? "Hide details" : "Show details"}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? "Hide details" : "…"}
+        </Button>
+      )}
+      {(!source || expanded) && (
+        <>
+          {visible.map((part, index) => {
+            const attachment = inputAttachment(part.metadata);
+            if (attachment && threadId) {
+              const identity =
+                composerIdentity(part) ?? attachment.attachment_id;
+              if (seen.has(identity)) return null;
+              seen.add(identity);
+              const related = visible.filter(
+                (item) =>
+                  (composerIdentity(item) ??
+                    inputAttachment(item.metadata)?.attachment_id) === identity,
+              );
+              return (
+                <Attachment
+                  key={`${threadId}:${identity}`}
+                  threadId={threadId}
+                  attachment={attachment}
+                  related={related}
+                />
+              );
+            }
+            if (composerIdentity(part) && part.kind !== "media")
+              return (
+                <span key={index} className={styles.inputText}>
+                  {part.text || ""}
+                </span>
+              );
+            return part.kind === "media" ? (
+              <Media key={index} part={part} />
+            ) : (
+              <div key={index}>{renderText(part.text || "")}</div>
+            );
+          })}
+          {copyText.trim() && <CopyMessage text={copyText} />}
+        </>
+      )}
     </div>
   );
 }

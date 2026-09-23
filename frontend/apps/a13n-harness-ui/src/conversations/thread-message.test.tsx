@@ -67,7 +67,17 @@ it.each(["live", "saved"])(
         </Routes>
       </MemoryRouter>,
     );
+    expect(screen.queryByText(parts[1].text!)).toBeNull();
+    const disclosure = screen.getByRole("button", {
+      name: "Thread message details",
+      expanded: false,
+    });
+    expect(disclosure.textContent).toBe("…");
+    await user.click(disclosure);
     expect(screen.getByText(parts[1].text!)).toBeTruthy();
+    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+    await user.click(disclosure);
+    expect(screen.queryByText(parts[1].text!)).toBeNull();
     expect(screen.queryByText(parts[0].text!)).toBeNull();
     expect(screen.queryByText("User")).toBeNull();
     const link = screen.getByRole("link", {
@@ -106,5 +116,8 @@ it("uses the source ID without a title and does not infer provenance from ordina
   expect(screen.getByText("User")).toBeTruthy();
   expect(screen.getByText(legacy.text!)).toBeTruthy();
   expect(screen.queryByRole("link")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Thread message details" }),
+  ).toBeNull();
   expect(inputCopyText([legacy])).toBe(legacy.text);
 });

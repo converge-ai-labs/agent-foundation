@@ -172,6 +172,34 @@ function inlineEditor() {
   };
 }
 
+it("moves by Chinese words in the composer without entering attachment tokens or changing the draft", async () => {
+  const { draft, editor, textbox } = inlineEditor();
+  act(() => {
+    draft.doc.getText("text").insert(0, "我们今天讨论中文输入");
+    draft.addAttachment("attachment-file", 6);
+  });
+  await screen.findByText("notes.txt");
+  const token = attachmentSelections(draft.doc)[0];
+  const original = draft.doc.getText("text").toString();
+  act(() => editor.current!.dispatch({ selection: { anchor: 0 } }));
+  fireEvent.keyDown(textbox, { key: "ArrowRight", ctrlKey: true });
+  expect(editor.current!.state.selection.main.head).toBe(2);
+  act(() => editor.current!.dispatch({ selection: { anchor: token.from! } }));
+  fireEvent.keyDown(textbox, { key: "ArrowRight", ctrlKey: true });
+  expect(editor.current!.state.selection.main.head).toBe(token.to);
+  fireEvent.keyDown(textbox, {
+    key: "ArrowRight",
+    ctrlKey: true,
+    shiftKey: true,
+  });
+  expect(editor.current!.state.selection.main.anchor).toBe(token.to);
+  expect(editor.current!.state.selection.main.head).toBe(token.to! + 2);
+  act(() => editor.current!.dispatch({ selection: { anchor: token.to! } }));
+  fireEvent.keyDown(textbox, { key: "ArrowLeft", ctrlKey: true });
+  expect(editor.current!.state.selection.main.head).toBe(token.from);
+  expect(draft.doc.getText("text").toString()).toBe(original);
+});
+
 it("uses actual CodeMirror atomic deletion and Yjs undo without exposing registry tokens", async () => {
   const { draft, editor, textbox } = inlineEditor();
   act(() => {

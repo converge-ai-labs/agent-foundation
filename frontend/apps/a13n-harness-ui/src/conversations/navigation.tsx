@@ -272,7 +272,8 @@ function ProjectGroup({
   const project = projects.data?.find(
     (item) => item.project_id === group.projectId,
   );
-  const hasLead = !!project && selectors.data?.sidekick_enabled === true;
+  const canEnableLead = !!project && selectors.data?.sidekick_enabled === true;
+  const hasLead = canEnableLead && project.lead_enabled === true;
   const leadMode = useProjectLeadMode(group.projectId);
   const belongs = (thread: Schema<"ThreadSummary">) => {
     const project = thread.configuration.project_id;
@@ -351,7 +352,8 @@ function ProjectGroup({
     if (row.thread.archived) continue;
     const unread = results.tracker?.isUnread(row.thread.thread_id);
     if (unread) unreadCount++;
-    if (hasLead && row.thread.thread_id === project?.lead_thread_id) continue;
+    if (canEnableLead && row.thread.thread_id === project?.lead_thread_id)
+      continue;
     (row.thread.root_activity.state !== "inactive"
       ? activeRows
       : unread
@@ -441,7 +443,7 @@ function ProjectGroup({
                 <DotsThree />
               </MenuTrigger>
               <MenuPopup align="start" side="right">
-                {hasLead && project && (
+                {canEnableLead && project && (
                   <MenuItem
                     disabled={leadMode.isPending}
                     onClick={() => leadMode.mutate(!project.lead_enabled)}
@@ -496,7 +498,6 @@ function ProjectGroup({
             project={project}
             presence={presence}
             enabled={enabled && expanded}
-            mode={leadMode}
           />
         )}
         <ErrorNotice error={leadMode.error} />
@@ -534,7 +535,7 @@ function ProjectGroup({
           {list.isSuccess &&
             !list.isPreviousData &&
             !rows.length &&
-            !project?.lead_thread_id && (
+            !(hasLead && project?.lead_thread_id) && (
               <small className={styles.emptyGroup}>No conversations yet</small>
             )}
           <ErrorNotice error={list.error} retry={() => void list.refetch()} />

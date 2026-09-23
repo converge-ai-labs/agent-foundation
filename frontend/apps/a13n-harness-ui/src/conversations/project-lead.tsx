@@ -37,12 +37,10 @@ export function ProjectLeadEntry({
   project,
   presence,
   enabled,
-  mode,
 }: {
   project: Schema<"ProjectSummary">;
   presence: Schema<"PresenceFrame"> | null;
   enabled: boolean;
-  mode: ReturnType<typeof useProjectLeadMode>;
 }) {
   const navigate = useNavigate();
   const lead = useThread(enabled ? (project.lead_thread_id ?? "") : "");
@@ -78,18 +76,5 @@ export function ProjectLeadEntry({
         <ErrorNotice error={lead.error} retry={() => void lead.refetch()} />
       </>
     );
-  return (
-    <>
-      <Button
-        variant="ghost"
-        className={styles.entry}
-        title="Enable coordination and notify the Lead when project conversations finish"
-        loading={mode.isPending}
-        onClick={() => mode.mutate(true)}
-      >
-        <LeadIcon />
-        <span>Enable Project Lead</span>
-      </Button>
-    </>
-  );
+  return null;
 }

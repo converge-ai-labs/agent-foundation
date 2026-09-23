@@ -471,6 +471,10 @@
   outline-offset: 4px;
   border-radius: 4px;
 }
+.threadMessageToggle {
+  color: var(--a13n-secondary);
+  margin-bottom: 4px;
+}
 .inputStatus {
   display: inline;
   font-size: 11px;

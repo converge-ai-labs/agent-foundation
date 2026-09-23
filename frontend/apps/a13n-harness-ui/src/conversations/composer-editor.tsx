@@ -9,6 +9,7 @@ import {
   completionStatus,
 } from "@codemirror/autocomplete";
 import { skillCompletion, type LoadSkills } from "./skill-references";
+import { composerWordKeymap } from "./composer-word-motion";
 import { defaultKeymap, insertNewline } from "@codemirror/commands";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
@@ -177,6 +178,7 @@ export function ComposerEditor({
           })),
           { key: "Shift-Enter", run: insertNewline },
           ...yUndoManagerKeymap,
+          ...composerWordKeymap,
           ...defaultKeymap,
         ]),
         yCollab(doc.getText("text"), awareness, { undoManager: draft.undo }),
