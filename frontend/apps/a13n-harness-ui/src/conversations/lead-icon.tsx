@@ -1,9 +1,9 @@
-import { Compass } from "@phosphor-icons/react";
+import { Graph } from "@phosphor-icons/react";
 import styles from "./project-lead.module.css";
 
 export function LeadIcon({ size = 20 }: { size?: number }) {
   return (
-    <Compass
+    <Graph
       size={size}
       weight="duotone"
       className={styles.icon}
@@ -17,8 +17,8 @@ export function LeadMark() {
     <span
       className={styles.mark}
       role="img"
-      aria-label="Project Lead"
-      title="Project Lead"
+      aria-label="Coordinator"
+      title="Coordinator"
     >
       <LeadIcon size={18} />
     </span>

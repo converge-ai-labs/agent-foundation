@@ -44,6 +44,7 @@ def configuration(tmp_path: Path) -> Path:
 
 def controller(app) -> ThreadToolController:
     return ThreadToolController(
+        threads=app._store.threads,
         projections=app._projections,
         root_runs=app._root_runs,
         create_thread=app.create_thread,
@@ -96,7 +97,9 @@ async def test_create_selects_project_defaults_without_copying_source_tools(
         assert (await app.wait_root_operation(result["receipt"]["receipt_id"])).status is RootOperationStatus.completed
         project = await tools.get_project("project-other")
         assert project["project"]["roots"] == [str(tmp_path / "other")]
-        listed = await tools.list_threads(query=None, cursor=None, limit=20, project_id="project-main")
+        listed = await tools.list_threads(
+            source_thread_id=source.thread_id, query=None, cursor=None, limit=20, project_id="project-main"
+        )
         assert all(item["configuration"]["project_id"] == "project-main" for item in listed["threads"])
         with pytest.raises(ThreadError):
             await tools.create_thread(
@@ -407,7 +410,7 @@ async def test_host_applies_sidekick_defaults_to_creation_and_later_turns(
         assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
         assert (await app.inspect_operation_configuration(receipt)).agent.model_id == expected_model
         inspected = await controller(app).get_thread(
-            thread_id=result["thread_id"], history_cursor=None, history_limit=1
+            source_thread_id=source.thread_id, thread_id=result["thread_id"], history_cursor=None, history_limit=1
         )
         assert inspected["configuration"]["next_model_id"] == expected_model
         assert inspected["configuration"]["captured"]["agent"]["model_id"] == expected_model
@@ -511,7 +514,7 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
                         returned[part.tool_call_id] = part.content
             if thread_id == requester_id:
                 if project_lead:
-                    assert "You are this Project's Lead" in info.instructions
+                    assert "You are this Project's Coordinator" in info.instructions
                     assert "At the start of each Run" in info.instructions
                     assert "get_thread(thread_id=...)" in info.instructions
                     assert "compact coordination note" in info.instructions
@@ -529,8 +532,8 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
                 worker_id = thread_id
                 if project_lead:
                     assert self._recipes[model_id].model_id == "model-secondary"
-                    assert "You are this Project's Lead" not in info.instructions
-                    assert "requester is the Project Lead" in str(messages)
+                    assert "You are this Project's Coordinator" not in info.instructions
+                    assert "requester is the Coordinator" in str(messages)
                 if step == 0:
                     assert "Requesting Project: project-main" in str(messages)
                     assert f"send_thread_message(thread_id={requester_id!r}" in str(messages)
@@ -596,7 +599,11 @@ async def test_requester_identity_uses_run_capture_not_future_thread_selections(
 ) -> None:
     root = configuration(tmp_path)
     captured = SimpleNamespace(
-        project_id=project_id, project_roots=("/captured/root",), webui_sidekick=None, is_project_lead=False
+        project_id=project_id,
+        project_roots=("/captured/root",),
+        webui_sidekick=None,
+        is_project_lead=False,
+        lead_thread_id=None,
     )
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
         source = await app.create_thread()

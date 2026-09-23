@@ -157,6 +157,7 @@ async def test_create_returns_durable_thread_identity_when_navigation_write_fail
         source = await app.create_thread()
         monkeypatch.setattr(app._root_runs, "_touch_thread", fail_touch)
         controller = ThreadToolController(
+            threads=app._store.threads,
             projections=app._projections,
             root_runs=app._root_runs,
             create_thread=app.create_thread,

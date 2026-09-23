@@ -4657,6 +4657,11 @@ export interface components {
             /** Thread Id */
             thread_id: string;
             /**
+             * Lead Thread Id
+             * @default null
+             */
+            lead_thread_id?: string | null;
+            /**
              * Parent Thread Id
              * @default null
              */
@@ -8500,6 +8505,8 @@ export interface operations {
                 include_archived?: boolean;
                 archived_only?: boolean;
                 include_active?: boolean;
+                lead_thread_id?: string | null;
+                independent_only?: boolean;
                 cursor?: string | null;
                 limit?: number;
             };

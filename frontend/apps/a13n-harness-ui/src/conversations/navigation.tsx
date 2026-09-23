@@ -273,7 +273,9 @@ function ProjectGroup({
     (item) => item.project_id === group.projectId,
   );
   const canEnableLead = !!project && selectors.data?.sidekick_enabled === true;
-  const hasLead = canEnableLead && project.lead_enabled === true;
+  const hasLead =
+    canEnableLead && (!project.lead_thread_id || project.lead_enabled === true);
+  const groupsWorkers = !!project?.lead_thread_id;
   const leadMode = useProjectLeadMode(group.projectId);
   const belongs = (thread: Schema<"ThreadSummary">) => {
     const project = thread.configuration.project_id;
@@ -290,6 +292,7 @@ function ProjectGroup({
     enabled: enabled && expanded,
     limit: 5,
     includeActive: true,
+    independentOnly: groupsWorkers,
   });
   // The selected detail can arrive before a slower sidebar refresh. Use that
   // observation for this row, without replacing other Projects or page cursors.
@@ -352,7 +355,11 @@ function ProjectGroup({
     if (row.thread.archived) continue;
     const unread = results.tracker?.isUnread(row.thread.thread_id);
     if (unread) unreadCount++;
-    if (canEnableLead && row.thread.thread_id === project?.lead_thread_id)
+    if (
+      groupsWorkers &&
+      (row.thread.thread_id === project?.lead_thread_id ||
+        row.thread.lead_thread_id)
+    )
       continue;
     (row.thread.root_activity.state !== "inactive"
       ? activeRows
@@ -450,8 +457,8 @@ function ProjectGroup({
                   >
                     <LeadIcon size={16} />
                     {project.lead_enabled
-                      ? "Disable Project Lead"
-                      : "Enable Project Lead"}
+                      ? "Disable Coordinator"
+                      : "Enable Coordinator"}
                   </MenuItem>
                 )}
                 <MenuItem onClick={rename}>
@@ -498,6 +505,9 @@ function ProjectGroup({
             project={project}
             presence={presence}
             enabled={enabled && expanded}
+            mode={leadMode}
+            selected={selected}
+            selectedUpdatedAt={selectedUpdatedAt}
           />
         )}
         <ErrorNotice error={leadMode.error} />
@@ -582,7 +592,10 @@ function SearchResults({
       </small>
       {rows.map((row) => (
         <div key={row.thread.thread_id}>
-          <small className={styles.emptyGroup}>{row.project_name}</small>
+          <small className={styles.emptyGroup}>
+            {row.project_name}
+            {row.thread.lead_thread_id ? " · Coordinator worker" : ""}
+          </small>
           <ThreadRow row={row} presence={presence} />
         </div>
       ))}

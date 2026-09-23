@@ -50,12 +50,16 @@ export function useThreads(
     limit = 30,
     archivedOnly = false,
     includeActive = false,
+    leadThreadId,
+    independentOnly = false,
   }: {
     scope?: "all" | "projectless" | "unavailable";
     enabled?: boolean;
     limit?: number;
     archivedOnly?: boolean;
     includeActive?: boolean;
+    leadThreadId?: string;
+    independentOnly?: boolean;
   } = {},
 ) {
   const { client } = useTransport();
@@ -69,6 +73,8 @@ export function useThreads(
       limit,
       archivedOnly,
       includeActive,
+      leadThreadId,
+      independentOnly,
     ],
     enabled,
     initialPageParam: undefined as string | undefined,
@@ -83,6 +89,8 @@ export function useThreads(
               include_archived: archived,
               archived_only: archivedOnly,
               include_active: includeActive,
+              lead_thread_id: leadThreadId,
+              independent_only: independentOnly,
               cursor: pageParam,
               limit,
             },
@@ -109,6 +117,8 @@ export function useThreads(
     limit,
     archivedOnly,
     includeActive,
+    leadThreadId,
+    independentOnly,
   ]);
   useEffect(() => {
     if (list.isSuccess)

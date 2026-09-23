@@ -1331,6 +1331,8 @@ def create_webui(
         include_archived: bool = False,
         archived_only: bool = False,
         include_active: bool = False,
+        lead_thread_id: Annotated[str | None, Query(max_length=80)] = None,
+        independent_only: bool = False,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadActivityPage:
@@ -1341,6 +1343,8 @@ def create_webui(
             include_archived=include_archived,
             archived_only=archived_only,
             include_active=include_active,
+            lead_thread_id=lead_thread_id,
+            independent_only=independent_only,
             cursor=cursor,
             limit=limit,
         )

@@ -294,6 +294,7 @@ async def test_explicit_null_project_overrides_default_and_collaboration_inherit
         assert projectless.configuration.project_id is None
         await app.skill_catalog(defaults=NewThreadDefaults(project_id=None))
         controller = ThreadToolController(
+            threads=app._store.threads,
             projections=app._projections,
             root_runs=app._root_runs,
             create_thread=app.create_thread,

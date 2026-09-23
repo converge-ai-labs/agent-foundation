@@ -34,3 +34,33 @@
   flex: 1;
   text-align: start;
 }
+
+.heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+}
+.toggle {
+  flex-shrink: 0;
+  margin-top: 4px;
+  color: var(--a13n-secondary);
+}
+.toggle svg {
+  transition: transform 120ms ease;
+}
+.expandedChevron {
+  transform: rotate(90deg);
+}
+.conversation {
+  flex: 1;
+  min-width: 0;
+}
+.workers {
+  margin-left: 48px;
+  padding-bottom: 8px;
+}
+.workers > small {
+  display: block;
+  padding: 6px 10px;
+  color: var(--a13n-secondary);
+}

@@ -124,8 +124,8 @@ export function ThreadRow({
           {projectLead ? <LeadIcon size={18} /> : <ThreadStateIcon row={row} />}
           <span>
             <strong title={title}>{title}</strong>
-            {projectLead && title !== "Project Lead" && (
-              <small>Project Lead</small>
+            {projectLead && title !== "Coordinator" && (
+              <small>Coordinator</small>
             )}
             {showProject && (
               <small>

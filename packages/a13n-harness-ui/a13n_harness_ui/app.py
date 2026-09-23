@@ -812,6 +812,8 @@ class HarnessUiApp:
         include_archived: bool = False,
         archived_only: bool = False,
         include_active: bool = False,
+        lead_thread_id: str | None = None,
+        independent_only: bool = False,
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadActivityPage:
@@ -823,6 +825,8 @@ class HarnessUiApp:
                 include_archived=include_archived,
                 archived_only=archived_only,
                 include_active=include_active,
+                lead_thread_id=lead_thread_id,
+                independent_only=independent_only,
                 cursor=cursor,
                 limit=limit,
             )
@@ -998,6 +1002,7 @@ class HarnessUiApp:
         defaults: NewThreadDefaults | RootThreadDefaults | None = None,
         title: str | None = None,
         thread_id: str | None = None,
+        lead_thread_id: str | None = None,
     ) -> ThreadSummary:
         async with self._operation():
             selected = (
@@ -1005,7 +1010,9 @@ class HarnessUiApp:
                 if isinstance(defaults, NewThreadDefaults)
                 else defaults
             )
-            thread = await self._threads.create(defaults=selected, title=title, thread_id=thread_id)
+            thread = await self._threads.create(
+                defaults=selected, title=title, thread_id=thread_id, lead_thread_id=lead_thread_id
+            )
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
@@ -2768,6 +2775,7 @@ async def open_harness_ui_app(
             )
             if host_mode == "webui":
                 thread_tools = ThreadToolController(
+                    threads=store.threads,
                     projections=projections,
                     root_runs=root_runs,
                     create_thread=app.create_thread,

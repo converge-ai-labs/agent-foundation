@@ -1661,6 +1661,7 @@ async def test_webui_create_thread_preserves_project_and_returns_before_completi
         app._root_runs._executor._agents = _CompletedReconstructor()
         source = await app.create_thread(title="Source")
         controller = ThreadToolController(
+            threads=app._store.threads,
             projections=app._projections,
             root_runs=app._root_runs,
             create_thread=app.create_thread,
@@ -1695,6 +1696,7 @@ async def test_webui_create_reports_created_identity_when_admission_fails(tmp_pa
 
         monkeypatch.setattr(app._root_runs, "submit_prompt", fail_submit)
         controller = ThreadToolController(
+            threads=app._store.threads,
             projections=app._projections,
             root_runs=app._root_runs,
             create_thread=app.create_thread,

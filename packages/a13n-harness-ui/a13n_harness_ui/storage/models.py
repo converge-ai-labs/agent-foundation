@@ -111,6 +111,19 @@ class ProjectLeadRecord(Base):
     )
 
 
+class ProjectLeadWorkerRecord(Base):
+    """A managed root conversation; unrelated to subagent execution lineage."""
+
+    __tablename__ = "project_lead_worker"
+
+    worker_thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    lead_thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("project_lead.thread_id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+
+
 class ThreadRecord(Base):
     __tablename__ = "thread"
 

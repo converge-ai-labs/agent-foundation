@@ -162,6 +162,7 @@ class ResolvedRunComposition(CompositionModel):
     project_roots: tuple[str, ...] = Field(default=(), max_length=64)
     webui_sidekick: SidekickConfiguration | None = None
     is_project_lead: bool = False
+    lead_thread_id: str | None = None
     media_understanding: dict[NativeInputMediaKind, ResolvedModelRecipe] = Field(
         default_factory=dict, exclude_if=lambda value: not value
     )

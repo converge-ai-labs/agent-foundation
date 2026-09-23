@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.errors import StoreConflictError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.storage import ThreadConfigurationMutation
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus, ThreadMetadataMutation
@@ -25,7 +26,7 @@ async def test_lead_mode_persists_without_running_and_ensure_does_not_enable(tmp
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
         lead = await app.ensure_project_lead("project-main")
         assert not (await app.projects())[0].lead_enabled
-        assert not (
+        assert (
             await app._root_runs._executor.capture(thread_id=lead.thread_id, prompt="Check")
         ).published.value.is_project_lead
         await app.set_project_lead_enabled("project-main", True)
@@ -76,7 +77,7 @@ async def test_terminal_notice_runs_or_steers_lead_and_never_notifies_itself(
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:
         lead = await app.set_project_lead_enabled("project-main", True)
         lead_id = lead.thread_id
-        worker = await app.create_thread(defaults=NewThreadDefaults(project_id="project-main"))
+        worker = await app.create_thread(defaults=NewThreadDefaults(project_id="project-main"), lead_thread_id=lead_id)
         settled, lead_settled = Event(), Event()
         original = app._root_runs._on_settled
         assert original is not None
@@ -116,7 +117,9 @@ async def test_terminal_notice_runs_or_steers_lead_and_never_notifies_itself(
         assert len(notice_parts) == 1 and notice_parts[0].metadata.display is False
 
 
-@pytest.mark.parametrize("case", ["mode_off", "sidekick_off", "other_project", "no_project", "archived", "terminal"])
+@pytest.mark.parametrize(
+    "case", ["mode_off", "sidekick_off", "other_project", "no_project", "archived", "terminal", "independent"]
+)
 async def test_terminal_notice_respects_project_and_current_host_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:
@@ -154,7 +157,10 @@ async def test_terminal_notice_respects_project_and_current_host_state(
         settings, configuration_path=root, host_mode="local" if case == "terminal" else "webui", instrumentation=None
     ) as app:
         project_id = "project-other" if case == "other_project" else None if case == "no_project" else "project-main"
-        worker = await app.create_thread(defaults=NewThreadDefaults(project_id=project_id))
+        worker = await app.create_thread(
+            defaults=NewThreadDefaults(project_id=project_id),
+            lead_thread_id=lead.thread_id if project_id == "project-main" and case != "independent" else None,
+        )
         settled = Event()
         original = app._root_runs._on_settled
         if original is not None:
@@ -196,7 +202,7 @@ async def test_explicit_report_and_terminal_notice_are_distinct_inputs(
     settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:
         lead_id = (await app.set_project_lead_enabled("project-main", True)).thread_id
-        worker = await app.create_thread(defaults=NewThreadDefaults(project_id="project-main"))
+        worker = await app.create_thread(defaults=NewThreadDefaults(project_id="project-main"), lead_thread_id=lead_id)
         with fail_after(15):
             report = await controller(app).send_thread_message(
                 source_thread_id=worker.thread_id, thread_id=lead_id, message="Tests passed; here is my report."
@@ -211,7 +217,7 @@ async def test_explicit_report_and_terminal_notice_are_distinct_inputs(
         assert "Host notification:" in seen[1]
 
 
-async def test_restarted_worker_notifies_its_captured_project_after_configuration_move(
+async def test_restarted_worker_keeps_owner_and_rejects_configuration_move(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = lead_configuration(tmp_path)
@@ -250,17 +256,20 @@ async def test_restarted_worker_notifies_its_captured_project_after_configuratio
     ):
         lead = await app.set_project_lead_enabled("project-main", True)
         other = await app.set_project_lead_enabled("project-other", True)
-        worker = await app.create_thread(defaults=NewThreadDefaults(project_id="project-main"))
+        worker = await app.create_thread(
+            defaults=NewThreadDefaults(project_id="project-main"), lead_thread_id=lead.thread_id
+        )
         worker_id = worker.thread_id
         await app.submit_thread(thread_id=worker_id, prompt="Work across restart")
         with fail_after(15):
             await started.wait()
-        await app.update_thread_configuration(
-            thread_id=worker_id,
-            mutation=ThreadConfigurationMutation.model_validate(
-                {"expected_version": worker.configuration.version, "patch": {"project_id": "project-other"}}
-            ),
-        )
+        with pytest.raises(StoreConflictError, match="cannot move"):
+            await app.update_thread_configuration(
+                thread_id=worker_id,
+                mutation=ThreadConfigurationMutation.model_validate(
+                    {"expected_version": worker.configuration.version, "patch": {"project_id": "project-other"}}
+                ),
+            )
         group.start_soon(release_during_shutdown, app, release)
     assert not notified_threads
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:

@@ -3657,6 +3657,33 @@
             }
           },
           {
+            "name": "lead_thread_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lead Thread Id"
+            }
+          },
+          {
+            "name": "independent_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Independent Only"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,
@@ -13257,6 +13284,20 @@
             "minLength": 1,
             "title": "Thread Id",
             "type": "string"
+          },
+          "lead_thread_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lead Thread Id"
           },
           "parent_thread_id": {
             "anyOf": [

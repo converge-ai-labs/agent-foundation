@@ -139,6 +139,7 @@ class RootActivityView(SurfaceModel):
 
 class ThreadSummary(SurfaceModel):
     thread_id: str = Field(min_length=1, max_length=80)
+    lead_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     parent_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     created_at: datetime
     updated_at: datetime
