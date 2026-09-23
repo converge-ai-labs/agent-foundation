@@ -20,6 +20,7 @@ from .contracts import (
     EnvironmentBindingKey,
     ExecutionStatus,
     MarkdownSubagentSource,
+    ProjectLead,
     ResourceIndexEntry,
     SafeFailure,
     Thread,
@@ -233,16 +234,28 @@ class ThreadRepository:
             await session.flush()
             return _thread_value(record, configuration)
 
-    async def project_leads(self) -> dict[str, str]:
+    async def project_leads(self) -> dict[str, ProjectLead]:
         async with short_session(self._sessions) as session:
             records = await session.scalars(select(ProjectLeadRecord))
-            return {record.project_id: record.thread_id for record in records}
+            return {
+                record.project_id: ProjectLead(thread_id=record.thread_id, enabled=record.enabled) for record in records
+            }
+
+    async def set_project_lead_enabled(self, project_id: str, enabled: bool) -> None:
+        async with transaction(self._sessions) as session:
+            record = await session.get(ProjectLeadRecord, project_id)
+            if record is None:
+                raise StoreIntegrityError("Project Lead does not exist.", code="project_lead_missing")
+            record.enabled = enabled
 
     async def is_project_lead(self, thread_id: str) -> bool:
+        """Capture the enabled role, independently of the retained canonical binding."""
         async with short_session(self._sessions) as session:
             return (
                 await session.scalar(
-                    select(ProjectLeadRecord.project_id).where(ProjectLeadRecord.thread_id == thread_id)
+                    select(ProjectLeadRecord.project_id).where(
+                        ProjectLeadRecord.thread_id == thread_id, ProjectLeadRecord.enabled.is_(True)
+                    )
                 )
                 is not None
             )

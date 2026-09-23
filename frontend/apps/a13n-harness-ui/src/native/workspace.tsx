@@ -515,7 +515,8 @@ export function NativeWorkspace({
           {threadId &&
             selectors.data?.sidekick_enabled === true &&
             projects.data?.some(
-              (project) => project.lead_thread_id === threadId,
+              (project) =>
+                project.lead_thread_id === threadId && project.lead_enabled,
             ) && <LeadMark />}
           <h1 className={styles.workspaceTitle}>
             {threadId

@@ -8,7 +8,9 @@ from typing import Any, Literal, Protocol, cast
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.input import RunInputValue
 from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
+from a13n_logging import get_logger
 from pydantic import Field
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
@@ -20,7 +22,7 @@ from a13n_harness_ui.configuration.discovery import ResourceKind, resource_page
 from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError, ThreadError
 from a13n_harness_ui.root_run import RootRunCoordinator
-from a13n_harness_ui.surfaces import NewThreadDefaults, RunModelOverrides, ThreadSummary
+from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationView, RunModelOverrides, ThreadSummary
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 
 _THREAD_CAPABILITY_ID = "a13n.harness-ui.thread-collaboration"
@@ -207,14 +209,46 @@ class ThreadToolController:
             return {**_failure(exc, "thread_run_failed"), "thread_id": created.thread_id}
         return {"ok": True, "thread_id": created.thread_id, "receipt": receipt.model_dump(mode="json")}
 
+    async def notify_project_lead(self, project_id: str | None, operation: RootOperationView) -> None:
+        """Route one settled root operation, without a queue, retries or worker ownership."""
+        source = await self._configurations.current()
+        if project_id is None or source is None or source.document.webui.sidekick is None:
+            return
+        project = next((item for item in await self._projections.projects() if item.project_id == project_id), None)
+        if (
+            project is None
+            or not project.lead_enabled
+            or project.lead_thread_id is None
+            or project.lead_thread_id == operation.receipt.thread_id
+        ):
+            return
+        message = (
+            f"Host notification: Thread {operation.receipt.thread_id} ended a root operation "
+            f"in Project {project_id}. Receipt: {operation.receipt.receipt_id}. "
+            f"Run: {operation.run_id or 'not started'}. Status: {operation.status.value}. "
+            "Use get_thread to inspect its saved results and reconcile your tasks and notes. "
+            "This lifecycle notice is separate from any worker report; an ended operation does not prove "
+            "the task succeeded. Do not send an acknowledgement or repeat an already integrated report."
+        )
+        result = await self._run_or_steer(
+            thread_id=project.lead_thread_id,
+            prompt=[TextContent(message, metadata={"display": False})],
+        )
+        if not result["ok"]:
+            get_logger(__name__).info(
+                "Project Lead did not accept terminal notification: %s", operation.receipt.receipt_id
+            )
+
     async def send_thread_message(self, *, source_thread_id: str, thread_id: str, message: str) -> dict[str, Any]:
+        source = await self._projections.detail(source_thread_id)
+        return await self._run_or_steer(thread_id=thread_id, prompt=_thread_input(source.thread, message))
+
+    async def _run_or_steer(self, *, thread_id: str, prompt: RunInputValue) -> dict[str, Any]:
         detail = await self._projections.detail(thread_id)
         if detail.thread.parent_thread_id is not None:
             raise ThreadError("Child Threads use parent-scoped delegation controls.", code="child_thread_scoped")
         if detail.thread.archived:
             raise ThreadError("An archived Thread cannot receive messages.", code="thread_archived")
-        source = await self._projections.detail(source_thread_id)
-        prompt = _thread_input(source.thread, message)
         operation = await self._root_runs.active(thread_id)
         if operation is not None:
             # Resolve once. A rejected steer never falls through into a different operation.
@@ -304,10 +338,14 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 "Answer workers through send_thread_message, using their source Thread IDs. "
                 "Ask ordinary coordination questions in text, not ask_user_question. When waiting for an answer, "
                 "state what is blocked and finish the turn; an incoming message can start another Run. "
-                "There is no background monitoring, durable worker queue, automatic completion notification, "
-                "or guaranteed delivery. Check progress at meaningful points while executing, not in a busy polling loop. "
-                "If only waiting remains, record the pending work and end the turn; do not promise an automatic "
-                "wake-up. A worker's explicit report or a new user message can start another Run. "
+                "While Project Lead and Sidekick are enabled, the Host attempts to run or steer this Thread "
+                "when another root Thread in this Project ends an operation, including failure, cancellation "
+                "or suspension. These lifecycle notices are separate from worker reports. On receipt, inspect "
+                "the worker's saved results and reconcile tasks and notes; do not acknowledge the notice or "
+                "repeat an already integrated report. There is no background polling, durable notification queue, "
+                "retry or guaranteed delivery. Check progress at meaningful points while executing. "
+                "If only waiting remains, record the pending work and end the turn. A Host notification, "
+                "worker report or new user message may start another Run; do not promise a guaranteed wake-up. "
                 "Do not claim a worker finished from an admission receipt. "
                 "Existing tool approvals and pending-decision restrictions still apply; messages do not override denial. "
                 "Stopping this Thread does not stop other Threads."

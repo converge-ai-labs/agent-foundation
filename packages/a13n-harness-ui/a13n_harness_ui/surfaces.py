@@ -318,6 +318,7 @@ class ProjectSummary(SurfaceModel):
     roots: tuple[str, ...] = Field(max_length=64)
     last_active_at: datetime | None = None
     lead_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
+    lead_enabled: bool = False
     defaults: ProjectDefaults = Field(default_factory=ProjectDefaults)
 
     @field_validator("last_active_at")

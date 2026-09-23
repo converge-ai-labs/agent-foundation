@@ -64,7 +64,9 @@ function Conversation({
   const selectors = useSelectors();
   const isLead =
     selectors.data?.sidekick_enabled === true &&
-    projects.data?.some((project) => project.lead_thread_id === threadId);
+    projects.data?.some(
+      (project) => project.lead_thread_id === threadId && project.lead_enabled,
+    );
   const results = useResults();
   const tracker = results.tracker;
   useEffect(() => {

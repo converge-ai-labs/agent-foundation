@@ -87,11 +87,29 @@ class ThreadService:
             raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
         existing = (await self._store.threads.project_leads()).get(project_id)
         if existing is not None:
-            return await self.get(existing)
+            return await self.get(existing.thread_id)
         if source.document.webui.sidekick is None:
             raise ThreadError("Enable Sidekick before creating a Project Lead.", code="project_lead_disabled")
         configuration = resolve_thread_configuration(source, RootThreadDefaults(project_id=project_id))
         return await self._create(configuration=configuration, title="Project Lead", project_lead=True)
+
+    async def set_project_lead_enabled(self, project_id: str, enabled: bool) -> Thread:
+        source = await self._required_configuration()
+        if project_id not in source.projects:
+            raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
+        if enabled and source.document.webui.sidekick is None:
+            raise ThreadError("Enable Sidekick before enabling a Project Lead.", code="project_lead_disabled")
+        if enabled:
+            thread = await self.ensure_project_lead(project_id)
+        else:
+            existing = (await self._store.threads.project_leads()).get(project_id)
+            if existing is None:
+                raise ThreadError("Project Lead does not exist.", code="project_lead_missing")
+            thread = await self.get(existing.thread_id)
+        if enabled and thread.archived:
+            raise ThreadError("Restore the Project Lead before enabling it.", code="thread_archived")
+        await self._store.threads.set_project_lead_enabled(project_id, enabled)
+        return thread
 
     async def _create(
         self,

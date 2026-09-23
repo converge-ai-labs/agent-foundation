@@ -60,7 +60,7 @@ Each explicit selection atomically replaces one Project's preference; reset dele
 
 ## Project Lead Binding
 
-`project_lead` contains only `project_id` (primary key) and `thread_id` (unique, non-null foreign key to `thread.thread_id`, restricted deletion). Projects are file-defined resources, so their IDs have no database foreign key. The additive migration starts with no bindings and does not promote existing conversations. Downgrade drops bindings without deleting Threads or rewriting history.
+`project_lead` contains `project_id` (primary key), `thread_id` (unique, non-null foreign key to `thread.thread_id`, restricted deletion), and non-null `enabled` (default false). Enablement is durable Project state, not a browser preference. Explicit mode updates are last-write-wins and retain the binding and conversation history. Projects are file-defined resources, so their IDs have no database foreign key. The additive migration starts with no bindings and does not promote existing conversations. Downgrade drops bindings without deleting Threads or rewriting history.
 
 The ordinary initial-state object is published before the short writer transaction. Inside one transaction, ensure reads the binding and either returns its existing Thread or inserts the ordinary Thread, configuration head, and binding together. SQLite writer arbitration covers independent App connections; uniqueness is not implemented as a process-local lock alone. An unsuccessful candidate may leave an unselected immutable object, never an orphan relational Thread. Bound Lead configuration updates enforce the Project invariant in the same transaction as the configuration head mutation.
 

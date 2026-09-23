@@ -1009,6 +1009,14 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
+    async def set_project_lead_enabled(self, project_id: str, enabled: bool) -> ThreadSummary:
+        """Persist Project coordination independently of browser navigation."""
+        async with self._operation():
+            thread = await self._threads.set_project_lead_enabled(project_id, enabled)
+            await self._summary_hub.publish(kind="project")
+            await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
+            return await self._projections.get_thread(thread.thread_id)
+
     async def ensure_project_lead(self, project_id: str) -> ThreadSummary:
         """Resolve the canonical Lead identity without admitting a Run."""
         async with self._operation():
@@ -2683,6 +2691,9 @@ async def open_harness_ui_app(
                 root_executor,
                 restart_coordinator=restart_coordinator,
                 notify=web_push.enqueue if web_push is not None else None,
+                on_settled=(lambda project_id, operation: thread_tools.notify_project_lead(project_id, operation))
+                if host_mode == "webui"
+                else None,
                 summary_hub=summary_hub,
                 observation=observation,
                 touch_thread=store.threads.touch,

@@ -30,7 +30,8 @@ import type { Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { useThread, useThreads } from "./queries";
 import { useProjectExpansion, useProjectOrder } from "./project-order";
-import { ProjectLeadEntry } from "./project-lead";
+import { ProjectLeadEntry, useProjectLeadMode } from "./project-lead";
+import { LeadIcon } from "./lead-icon";
 import { NewProject } from "./new-project";
 import { RenameProject } from "../configuration/rename-project";
 import { newConversationPath } from "./new-conversation";
@@ -272,6 +273,7 @@ function ProjectGroup({
     (item) => item.project_id === group.projectId,
   );
   const hasLead = !!project && selectors.data?.sidekick_enabled === true;
+  const leadMode = useProjectLeadMode(group.projectId);
   const belongs = (thread: Schema<"ThreadSummary">) => {
     const project = thread.configuration.project_id;
     return group.scope === "projectless"
@@ -439,6 +441,17 @@ function ProjectGroup({
                 <DotsThree />
               </MenuTrigger>
               <MenuPopup align="start" side="right">
+                {hasLead && project && (
+                  <MenuItem
+                    disabled={leadMode.isPending}
+                    onClick={() => leadMode.mutate(!project.lead_enabled)}
+                  >
+                    <LeadIcon size={16} />
+                    {project.lead_enabled
+                      ? "Disable Project Lead"
+                      : "Enable Project Lead"}
+                  </MenuItem>
+                )}
                 <MenuItem onClick={rename}>
                   <PencilSimpleIcon />
                   Rename project
@@ -483,8 +496,10 @@ function ProjectGroup({
             project={project}
             presence={presence}
             enabled={enabled && expanded}
+            mode={leadMode}
           />
         )}
+        <ErrorNotice error={leadMode.error} />
         <div>
           {rows.map((row, index) => (
             <Fragment key={row.thread.thread_id}>

@@ -23,6 +23,7 @@ def upgrade() -> None:
         "project_lead",
         sa.Column("project_id", sa.String(length=128), nullable=False),
         sa.Column("thread_id", sa.String(length=80), nullable=False),
+        sa.Column("enabled", sa.Boolean(), server_default=sa.text("0"), nullable=False),
         sa.ForeignKeyConstraint(
             ["thread_id"], ["thread.thread_id"], name=op.f("fk_project_lead_thread_id_thread"), ondelete="RESTRICT"
         ),

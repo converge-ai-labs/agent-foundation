@@ -69,6 +69,7 @@ let activity: URL[];
 let activeThreads: ReturnType<typeof thread>[];
 let writes: Request[];
 let sidekickEnabled: boolean;
+let leadEnabled: boolean;
 let leadThread: ReturnType<typeof thread> | null;
 let failMore: boolean;
 let failSave: boolean;
@@ -86,6 +87,7 @@ beforeEach(() => {
   activeThreads = [];
   writes = [];
   sidekickEnabled = false;
+  leadEnabled = true;
   leadThread = null;
   failMore = false;
   failSave = false;
@@ -127,7 +129,11 @@ beforeEach(() => {
       if (request.method !== "GET") {
         writes.push(request.clone());
         if (url.pathname === "/api/projects/project-one/lead") {
-          leadThread = thread("canonical-lead");
+          if (failSave)
+            return json({ error: { message: "Lead update failed" } }, 500);
+          if (request.method === "PATCH")
+            leadEnabled = (await request.json()).enabled;
+          leadThread ??= thread("canonical-lead");
           return json(leadThread);
         }
         if (request.method === "PUT") {
@@ -154,6 +160,10 @@ beforeEach(() => {
         return json(
           projects.map((project) => ({
             ...project,
+            lead_enabled:
+              project.project_id === "project-one" &&
+              !!leadThread &&
+              leadEnabled,
             lead_thread_id:
               project.project_id === "project-one"
                 ? (leadThread?.thread_id ?? null)
@@ -1073,7 +1083,7 @@ it("offers one Lead entry beside ordinary conversations and ensures only on expl
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   const group = screen.getByRole("region", { name: "One" });
-  await within(group).findByRole("button", { name: "Open Project Lead" });
+  await within(group).findByRole("button", { name: "Enable Project Lead" });
   const recent = await within(group).findByRole("link", { name: "Recent 1" });
   expect(within(group).queryByRole("button", { name: "Lead" })).toBeNull();
   expect(
@@ -1086,7 +1096,7 @@ it("offers one Lead entry beside ordinary conversations and ensures only on expl
   );
   expect(writes).toHaveLength(0);
   fireEvent.click(
-    within(group).getByRole("button", { name: "Open Project Lead" }),
+    within(group).getByRole("button", { name: "Enable Project Lead" }),
   );
   await waitFor(() =>
     expect(screen.getByLabelText("Current route").textContent).toBe(
@@ -1115,7 +1125,7 @@ it("pins the canonical Lead outside pagination, preserves archived identity and 
   );
   expect(writes).toHaveLength(0);
   expect(
-    screen.queryByRole("button", { name: "Open Project Lead" }),
+    screen.queryByRole("button", { name: "Enable Project Lead" }),
   ).toBeNull();
 });
 
@@ -1124,7 +1134,7 @@ it("does not offer a new Lead when Sidekick is disabled", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   await screen.findByRole("link", { name: "Recent 1" });
   expect(
-    screen.queryByRole("button", { name: "Open Project Lead" }),
+    screen.queryByRole("button", { name: "Enable Project Lead" }),
   ).toBeNull();
   expect(writes).toHaveLength(0);
 });
@@ -1138,7 +1148,7 @@ it("hides Lead presentation when Sidekick is disabled and restores the same entr
   await within(group).findByRole("link", { name: "canonical-lead" });
   expect(within(group).queryByText("Project Lead")).toBeNull();
   expect(
-    within(group).queryByRole("button", { name: "Open Project Lead" }),
+    within(group).queryByRole("button", { name: "Enable Project Lead" }),
   ).toBeNull();
   sidekickEnabled = true;
   await act(() => queryClient.invalidateQueries({ queryKey: ["selectors"] }));
@@ -1191,7 +1201,7 @@ it("learns a Lead created in another client from a Project summary hint without 
   sidekickEnabled = true;
   mount("/", true);
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
-  await screen.findByRole("button", { name: "Open Project Lead" });
+  await screen.findByRole("button", { name: "Enable Project Lead" });
   leadThread = thread("remote-lead");
   act(() =>
     vi.mocked(watchSummary).mock.calls.at(-1)![1]({
@@ -1202,7 +1212,64 @@ it("learns a Lead created in another client from a Project summary hint without 
   );
   await screen.findByRole("link", { name: /remote-lead/ });
   expect(
-    screen.queryByRole("button", { name: "Open Project Lead" }),
+    screen.queryByRole("button", { name: "Enable Project Lead" }),
   ).toBeNull();
   expect(writes).toHaveLength(0);
+});
+
+it("persists Project Lead mode through project actions and follows server updates", async () => {
+  sidekickEnabled = true;
+  leadThread = thread("canonical-lead");
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  await screen.findByRole("link", { name: /canonical-lead.*Project Lead/ });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for One" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Disable Project Lead" }),
+  );
+  await screen.findByRole("link", { name: "canonical-lead" });
+  expect(writes).toHaveLength(1);
+  expect(writes[0].method).toBe("PATCH");
+  expect(await writes[0].json()).toEqual({ enabled: false });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for One" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Enable Project Lead" }),
+  );
+  await screen.findByRole("link", { name: /canonical-lead.*Project Lead/ });
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current route").textContent).toBe(
+      "/threads/canonical-lead",
+    ),
+  );
+  expect(writes).toHaveLength(2);
+  expect(await writes[1].json()).toEqual({ enabled: true });
+  // A different browser changes the backend mode; navigation does not own it.
+  leadEnabled = false;
+  await act(() => queryClient.invalidateQueries({ queryKey: ["projects"] }));
+  await screen.findByRole("link", { name: "canonical-lead" });
+  expect(writes).toHaveLength(2);
+});
+
+it("keeps the server's Lead mode when an update fails", async () => {
+  sidekickEnabled = true;
+  leadThread = thread("canonical-lead");
+  failSave = true;
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  await screen.findByRole("link", { name: /canonical-lead.*Project Lead/ });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for One" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Disable Project Lead" }),
+  );
+  await screen.findByText("Lead update failed");
+  expect(
+    screen.getByRole("link", { name: /canonical-lead.*Project Lead/ }),
+  ).toBeTruthy();
+  expect(writes).toHaveLength(1);
 });

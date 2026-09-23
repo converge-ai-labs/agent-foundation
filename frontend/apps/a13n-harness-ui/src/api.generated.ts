@@ -1135,7 +1135,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Set Project Lead Enabled */
+        patch: operations["set_project_lead_enabled_api_projects__project_id__lead_patch"];
         trace?: never;
     };
     "/api/threads/{thread_id}/decisions": {
@@ -3590,6 +3591,11 @@ export interface components {
             current: components["schemas"]["ThreadConfiguration"];
             replacement: components["schemas"]["ThreadConfiguration"];
         };
+        /** ProjectLeadUpdate */
+        ProjectLeadUpdate: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** ProjectPage */
         ProjectPage: {
             /**
@@ -3614,6 +3620,11 @@ export interface components {
             last_active_at?: string | null;
             /** Lead Thread Id */
             lead_thread_id?: string | null;
+            /**
+             * Lead Enabled
+             * @default false
+             */
+            lead_enabled?: boolean;
             defaults?: components["schemas"]["ProjectDefaults"];
         };
         /**
@@ -8288,6 +8299,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_project_lead_enabled_api_projects__project_id__lead_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectLeadUpdate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

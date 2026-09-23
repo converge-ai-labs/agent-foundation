@@ -183,6 +183,10 @@ class ListenerStatus(SurfaceModel):
     access: Literal["api_key", "dangerous_bypass"]
 
 
+class ProjectLeadUpdate(SurfaceModel):
+    enabled: bool
+
+
 class CreateThreadRequest(SurfaceModel):
     thread_id: str | None = Field(default=None, pattern=r"^thread[-_][0-9a-f]{32}$")
     defaults: NewThreadDefaults | None = None
@@ -1288,6 +1292,10 @@ def create_webui(
     @server.get("/api/projects", response_model=tuple[ProjectSummary, ...])
     async def projects() -> tuple[ProjectSummary, ...]:
         return await app().projects()
+
+    @server.patch("/api/projects/{project_id}/lead", response_model=ThreadSummary)
+    async def set_project_lead_enabled(project_id: str, body: ProjectLeadUpdate) -> ThreadSummary:
+        return await app().set_project_lead_enabled(project_id, body.enabled)
 
     @server.post("/api/projects/{project_id}/lead", response_model=ThreadSummary)
     async def ensure_project_lead(project_id: str) -> ThreadSummary:

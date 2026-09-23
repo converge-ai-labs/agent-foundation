@@ -6,7 +6,7 @@ An Harness UI Agent is a file-defined reusable Agent configuration. A runnable A
 
 Agent resources and Thread selections remain mutable between Runs. The App captures one immutable resolved Run composition before execution, then continues the existing `HarnessState` with that composition. Changing an Agent, Plugin, MCP server, Capability selection, or subagent roster affects later captures and never mutates an active Run.
 
-Root admission captures `is_project_lead` from the canonical Project binding into each immutable Run composition. Missing historical values mean false; child compositions do not inherit the role. Lead instructions are injected on every applicable WebUI root Run, including follow-up messages, rather than only the first input. Changing browser presentation does not change the captured role.
+Root admission captures `is_project_lead` from the enabled canonical Project binding into each immutable Run composition. Disabling the Project's Lead mode suppresses the role on subsequent admissions while retaining its canonical identity. Missing historical values mean false; child compositions do not inherit the role. Lead instructions are injected on every applicable WebUI root Run, including follow-up messages, rather than only the first input. Changing browser presentation does not change the captured role.
 
 ## Models
 

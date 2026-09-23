@@ -97,7 +97,7 @@ async def test_role_is_captured_each_run_and_old_compositions_default_false(tmp_
     root = lead_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         app._root_runs._executor._agents = _CompletedReconstructor()
-        lead = await app.ensure_project_lead("project-main")
+        lead = await app.set_project_lead_enabled("project-main", True)
         ordinary = await app.create_thread()
         for thread, expected in ((lead, True), (lead, True), (ordinary, False)):
             receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Work")
@@ -137,6 +137,7 @@ async def test_http_ensure_is_authenticated_and_does_not_run(tmp_path: Path) -> 
         AsyncClient(transport=ASGITransport(app=server), base_url="http://localhost") as client,
     ):
         assert (await client.post("/api/projects/project-main/lead")).status_code == 401
+        assert (await client.patch("/api/projects/project-main/lead", json={"enabled": True})).status_code == 401
         client.headers["Authorization"] = "Bearer lead-test-key"
         first = await client.post("/api/projects/project-main/lead")
         assert first.status_code == 200, first.text
@@ -146,6 +147,13 @@ async def test_http_ensure_is_authenticated_and_does_not_run(tmp_path: Path) -> 
         assert first.json()["root_activity"]["state"] == "inactive"
         assert (await client.get("/api/projects")).json()[0]["lead_thread_id"] == first.json()["thread_id"]
         assert (await client.get("/api/selectors")).json()["sidekick_enabled"] is True
+        for enabled in (True, False, True):
+            changed = await client.patch("/api/projects/project-main/lead", json={"enabled": enabled})
+            assert changed.status_code == 200
+            assert changed.json()["thread_id"] == first.json()["thread_id"]
+            assert changed.json()["root_activity"]["state"] == "inactive"
+            assert (await client.get("/api/projects")).json()[0]["lead_enabled"] is enabled
+        assert (await client.patch("/api/projects/project-main/lead", json={})).status_code == 422
 
 
 async def test_independent_database_writers_ensure_one_lead(tmp_path: Path) -> None:

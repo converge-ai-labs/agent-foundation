@@ -444,7 +444,8 @@ class ThreadProjectionService:
                 position=project.position,
                 roots=tuple(root.path for root in project.roots),
                 last_active_at=recency.get(project.id),
-                lead_thread_id=leads.get(project.id),
+                lead_thread_id=leads[project.id].thread_id if project.id in leads else None,
+                lead_enabled=leads[project.id].enabled if project.id in leads else False,
                 defaults=project.defaults,
             )
             for project in sorted(source.projects.values(), key=lambda item: (item.position, item.id))

@@ -516,7 +516,7 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
                     assert "get_thread(thread_id=...)" in info.instructions
                     assert "compact coordination note" in info.instructions
                     assert "Before summarize, reconcile tasks and notes" in info.instructions
-                    assert "no background monitoring" in info.instructions
+                    assert "no background polling" in info.instructions
                     assert "Create a separate Thread only" not in info.instructions
                 if step == 0:
                     assert "Which format should I use?" in str(messages)
@@ -555,8 +555,10 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:
+        # Explicit question/report protocol is independent of best-effort lifecycle notices.
+        monkeypatch.setattr(app._root_runs, "_on_settled", None)
         requester_id = (
-            await app.ensure_project_lead("project-main") if project_lead else await app.create_thread()
+            await app.set_project_lead_enabled("project-main", True) if project_lead else await app.create_thread()
         ).thread_id
         admission = await app._root_runs._executor.capture(thread_id=requester_id, prompt="Coordinate")
         with fail_after(15):

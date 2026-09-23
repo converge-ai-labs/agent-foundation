@@ -10,28 +10,20 @@ import styles from "./project-lead.module.css";
 
 import { LeadIcon } from "./lead-icon";
 
-export function ProjectLeadEntry({
-  project,
-  presence,
-  enabled,
-}: {
-  project: Schema<"ProjectSummary">;
-  presence: Schema<"PresenceFrame"> | null;
-  enabled: boolean;
-}) {
+export function useProjectLeadMode(projectId?: string) {
   const { client } = useTransport();
   const queries = useQueryClient();
   const navigate = useNavigate();
-  const lead = useThread(enabled ? (project.lead_thread_id ?? "") : "");
-  const ensure = useMutation({
-    mutationFn: () =>
+  return useMutation({
+    mutationFn: (enabled: boolean) =>
       result(
-        client.POST("/api/projects/{project_id}/lead", {
-          params: { path: { project_id: project.project_id } },
+        client.PATCH("/api/projects/{project_id}/lead", {
+          params: { path: { project_id: projectId! } },
+          body: { enabled },
         }),
       ),
-    onSuccess: (thread) => {
-      navigate(`/threads/${encodeURIComponent(thread.thread_id)}`);
+    onSuccess: (thread, enabled) => {
+      if (enabled) navigate(`/threads/${encodeURIComponent(thread.thread_id)}`);
     },
     onSettled: () => {
       void queries.invalidateQueries({ queryKey: ["projects"] });
@@ -39,6 +31,21 @@ export function ProjectLeadEntry({
     },
     retry: false,
   });
+}
+
+export function ProjectLeadEntry({
+  project,
+  presence,
+  enabled,
+  mode,
+}: {
+  project: Schema<"ProjectSummary">;
+  presence: Schema<"PresenceFrame"> | null;
+  enabled: boolean;
+  mode: ReturnType<typeof useProjectLeadMode>;
+}) {
+  const navigate = useNavigate();
+  const lead = useThread(enabled ? (project.lead_thread_id ?? "") : "");
   if (project.lead_thread_id)
     return (
       <>
@@ -51,7 +58,7 @@ export function ProjectLeadEntry({
                 : null,
             }}
             presence={presence}
-            projectLead
+            projectLead={project.lead_enabled}
             showRestore
           />
         ) : (
@@ -76,14 +83,13 @@ export function ProjectLeadEntry({
       <Button
         variant="ghost"
         className={styles.entry}
-        title="Open your project's coordinator conversation"
-        loading={ensure.isPending}
-        onClick={() => ensure.mutate()}
+        title="Enable coordination and notify the Lead when project conversations finish"
+        loading={mode.isPending}
+        onClick={() => mode.mutate(true)}
       >
         <LeadIcon />
-        <span>Open Project Lead</span>
+        <span>Enable Project Lead</span>
       </Button>
-      <ErrorNotice error={ensure.error} />
     </>
   );
 }

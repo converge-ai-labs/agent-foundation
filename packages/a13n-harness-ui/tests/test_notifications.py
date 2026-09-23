@@ -12,7 +12,7 @@ from a13n_harness_ui.notifications import reply_brief
 from a13n_harness_ui.root_execution import RootContinuationSelection, RootRunOutcome
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import ObjectRef
-from anyio import fail_after
+from anyio import Event, fail_after
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage
@@ -115,8 +115,27 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
 
     from .test_root_run import capture
 
+    settled = []
+    delivered = Event()
+
+    async def capture_project(**kwargs):
+        admission = await capture(**kwargs)
+        admission.published.value = SimpleNamespace(project_id="project-captured")
+        return admission
+
+    async def on_settled(project_id, operation):
+        assert await coordinator.active(operation.receipt.thread_id) is None
+        assert (await coordinator.get(operation.receipt.receipt_id)).status == operation.status
+        settled.append((project_id, operation))
+        delivered.set()
+        if notify_raises:
+            raise RuntimeError("Lifecycle delivery must not change settlement")
+
     coordinator = RootRunCoordinator(
-        cast(Any, SimpleNamespace(capture=capture, execute=execute)), summary_hub=hub, notify=notify
+        cast(Any, SimpleNamespace(capture=capture_project, execute=execute)),
+        summary_hub=hub,
+        notify=notify,
+        on_settled=on_settled,
     )
     await coordinator.start()
     try:
@@ -124,6 +143,11 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
             cursor = subscription.cursor
             receipt = await coordinator.submit_prompt(thread_id="thread_test", prompt="Work")
             operation = await coordinator.wait(receipt.receipt_id)
+            with fail_after(3):
+                await delivered.wait()
+            assert len(settled) == 1
+            assert settled[0][0] == "project-captured"
+            assert settled[0][1].status == operation.status
             if scenario == "cancelled":
                 assert operation.status == "cancelled"
             else:

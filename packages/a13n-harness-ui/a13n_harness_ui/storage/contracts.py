@@ -25,6 +25,11 @@ class StoredContract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
 
+class ProjectLead(StoredContract):
+    thread_id: str
+    enabled: bool
+
+
 class AgentResourceSource(StoredContract):
     kind: Literal["agent"] = "agent"
     id: str = Field(min_length=1, max_length=128)
