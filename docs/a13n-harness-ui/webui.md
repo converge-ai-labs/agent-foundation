@@ -16,6 +16,14 @@ WebUI enables native file browsing, editing, transfer, creation, move, deletion,
 
 Markdown files open with **Preview** selected and expose **Preview** and **Text** as explicit buttons; the preview renders the current local buffer, so unsaved edits can be checked before saving. File operations are compact buttons, and **Add to chat** is the single file-context action: it adds the selected source lines when the text editor has a selection, otherwise the complete reviewed file. It does not send the composer. Same-instance Host-file links in assistant Markdown open the Files drawer on the current page. WebUI root Agents receive the supported relative link shape in their per-input surface guidance: `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}`. Bare Host paths and direct Files API URLs are not browser file links; external Markdown links continue to open separately.
 
+## Work with a Project Lead
+
+Expand a Project in the sidebar and select **Lead** to focus on its coordinator conversation. **Open Project Lead** creates that Project's Lead once and opens it without starting a model request. Share your goal in the ordinary composer; the Lead can split authorized work into independent Threads, answer their questions, and bring results back. A compass icon distinguishes the Lead from other conversations.
+
+**Conversations / Lead** is a preference in this browser, not a Project mode. **Other conversations** includes all the Project's ordinary conversations, not only work created by the Lead. Direct links still open their selected conversation. Renaming does not change Lead identity; archiving retains it and requires explicit Restore before further work.
+
+New Leads require Sidekick to be enabled in General settings. The Lead itself starts with normal Project defaults; its workers use the existing Sidekick Agent and Model preferences. Disabling Sidekick does not remove an existing Lead or its history. Coordination uses best-effort Thread messages, not a background scheduler: admission is not completion, and stopping the Lead does not stop workers. Existing question and approval deadlines still apply; ordinary messages cannot reverse a denied approval.
+
 ## Find unfinished input
 
 **Unsent (N)** at the top of the conversation sidebar links to saved conversations with unfinished shared input, even when their Projects are collapsed or they are outside the recent list. Each shortcut includes its Project name. A pencil marker labeled **Unsent input** also appears beside the conversation in ordinary lists, without replacing running or unread-result indicators. The shortcut section stays visible while searching or filtering the lists below it.

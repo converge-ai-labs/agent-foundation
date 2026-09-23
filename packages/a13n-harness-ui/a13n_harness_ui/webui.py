@@ -1289,6 +1289,10 @@ def create_webui(
     async def projects() -> tuple[ProjectSummary, ...]:
         return await app().projects()
 
+    @server.post("/api/projects/{project_id}/lead", response_model=ThreadSummary)
+    async def ensure_project_lead(project_id: str) -> ThreadSummary:
+        return await app().ensure_project_lead(project_id)
+
     @server.get("/api/threads/{thread_id}/decisions", response_model=DecisionBatchView | None)
     async def decision_batch(
         thread_id: str, expected_continuation_id: Annotated[str | None, Query(max_length=80)] = None

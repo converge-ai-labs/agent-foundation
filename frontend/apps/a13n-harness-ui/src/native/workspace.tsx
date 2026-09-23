@@ -47,6 +47,7 @@ import { ComposerDrafts } from "../conversations/composer";
 import { conversationTitle } from "../conversations/local-input";
 import { nativeLink, pageLink } from "../shell/page-links";
 import { OpenHostFile } from "../conversations/tool-call";
+import { LeadBadge } from "../conversations/lead-icon";
 
 export function NativeWorkspace({
   children,
@@ -517,6 +518,10 @@ export function NativeWorkspace({
                   ? "Archived conversations"
                   : "Settings"}
           </h1>
+          {threadId &&
+            projects.data?.some(
+              (project) => project.lead_thread_id === threadId,
+            ) && <LeadBadge />}
           {isWorkspace && (
             <div className={styles.panelTools} aria-label="Workbench views">
               {status.data?.features?.host_files && (

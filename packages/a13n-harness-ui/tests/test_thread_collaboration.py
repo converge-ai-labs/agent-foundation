@@ -483,10 +483,15 @@ async def test_terminal_does_not_receive_sidekick_instructions(
     assert "list_agents" not in {tool.name for tool in seen[0].function_tools}
 
 
+@pytest.mark.parametrize("project_lead", [False, True])
 async def test_worker_can_ask_requester_receive_answer_and_report_results(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, project_lead: bool
 ) -> None:
     root = configuration(tmp_path)
+    if project_lead:
+        document = yaml.safe_load(root.read_text())
+        document["webui"] = {"sidekick": {"agent": "agent-worker", "model": "model-secondary"}}
+        root.write_text(yaml.safe_dump(document))
     requester_id = ""
     worker_id = ""
     worker_idle, requester_idle = Event(), Event()
@@ -505,6 +510,9 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
                     if isinstance(part, ToolReturnPart):
                         returned[part.tool_call_id] = part.content
             if thread_id == requester_id:
+                if project_lead:
+                    assert "You are this Project's Lead" in info.instructions
+                    assert "Create a separate Thread only" not in info.instructions
                 if step == 0:
                     assert "Which format should I use?" in str(messages)
                     await worker_idle.wait()
@@ -514,6 +522,10 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
                     return
             else:
                 worker_id = thread_id
+                if project_lead:
+                    assert self._recipes[model_id].model_id == "model-secondary"
+                    assert "You are this Project's Lead" not in info.instructions
+                    assert "requester is the Project Lead" in str(messages)
                 if step == 0:
                     assert "Requesting Project: project-main" in str(messages)
                     assert f"send_thread_message(thread_id={requester_id!r}" in str(messages)
@@ -538,10 +550,17 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:
-        requester_id = (await app.create_thread()).thread_id
+        requester_id = (
+            await app.ensure_project_lead("project-main") if project_lead else await app.create_thread()
+        ).thread_id
+        admission = await app._root_runs._executor.capture(thread_id=requester_id, prompt="Coordinate")
         with fail_after(15):
             worker = await controller(app).create_thread(
-                source_thread_id=requester_id, prompt="Prepare a report", title=None, agent_id=None
+                source_thread_id=requester_id,
+                prompt="Prepare a report",
+                title=None,
+                agent_id=None,
+                source_composition=admission.published.value,
             )
             assert (
                 await app.wait_root_operation(worker["receipt"]["receipt_id"])
@@ -569,7 +588,9 @@ async def test_requester_identity_uses_run_capture_not_future_thread_selections(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, project_id: str | None
 ) -> None:
     root = configuration(tmp_path)
-    captured = SimpleNamespace(project_id=project_id, project_roots=("/captured/root",), webui_sidekick=None)
+    captured = SimpleNamespace(
+        project_id=project_id, project_roots=("/captured/root",), webui_sidekick=None, is_project_lead=False
+    )
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
         source = await app.create_thread()
         prompts = []

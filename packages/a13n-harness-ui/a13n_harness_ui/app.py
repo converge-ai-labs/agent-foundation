@@ -1009,6 +1009,14 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
+    async def ensure_project_lead(self, project_id: str) -> ThreadSummary:
+        """Resolve the canonical Lead identity without admitting a Run."""
+        async with self._operation():
+            thread = await self._threads.ensure_project_lead(project_id)
+            await self._summary_hub.publish(kind="project")
+            await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
+            return await self._projections.get_thread(thread.thread_id)
+
     async def preview_thread_configuration(
         self, *, defaults: NewThreadDefaults | RootThreadDefaults | None = None
     ) -> ThreadConfiguration:

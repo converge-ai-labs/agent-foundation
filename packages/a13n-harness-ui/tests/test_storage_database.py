@@ -35,6 +35,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "current_configuration",
             "environment_binding",
             "project_model_preference",
+            "project_lead",
             "planned_restart",
             "output_comment",
             "output_comment_tombstone",

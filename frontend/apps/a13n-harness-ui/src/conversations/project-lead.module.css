@@ -1,0 +1,85 @@
+.icon {
+  color: #4b6f9a;
+  flex-shrink: 0;
+}
+:global(.dark) .icon {
+  color: #92b5e2;
+}
+.intro {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+}
+.intro > svg {
+  box-sizing: content-box;
+  padding: 12px;
+  border-radius: 18px;
+  background: color-mix(in srgb, #6f96c6 10%, transparent);
+}
+.intro h2 {
+  margin: 0;
+}
+.intro p {
+  max-width: 440px;
+  margin: 0;
+  line-height: 1.65;
+}
+.badge {
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--a13n-text-supporting);
+  font-size: 12px;
+  font-weight: 500;
+}
+.entry {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+  font-weight: 500;
+}
+.entry > span {
+  flex: 1;
+  text-align: start;
+}
+.start p {
+  margin: 2px 8px 12px 36px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.switcher {
+  display: flex;
+  gap: 2px;
+  margin: 3px 4px 8px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.switcher button {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+.switcher button[aria-pressed="true"] {
+  background: var(--a13n-elevated);
+  color: var(--a13n-text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 6%);
+}
+.other {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+.other:hover {
+  color: var(--a13n-text);
+}

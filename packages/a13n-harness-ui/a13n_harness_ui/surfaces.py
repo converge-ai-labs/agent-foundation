@@ -317,6 +317,7 @@ class ProjectSummary(SurfaceModel):
     position: int
     roots: tuple[str, ...] = Field(max_length=64)
     last_active_at: datetime | None = None
+    lead_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     defaults: ProjectDefaults = Field(default_factory=ProjectDefaults)
 
     @field_validator("last_active_at")
@@ -715,6 +716,7 @@ class ModelSummary(SurfaceModel):
 
 
 class ThreadSelectorCatalog(SurfaceModel):
+    sidekick_enabled: bool = False
     media_understanding: dict[NativeInputMediaKind, str] = Field(default_factory=dict)
     media_understanding_environment: tuple[NativeInputMediaKind, ...] = ()
     agents: tuple[AgentSummary, ...]

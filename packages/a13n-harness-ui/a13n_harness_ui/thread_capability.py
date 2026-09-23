@@ -184,6 +184,13 @@ class ThreadToolController:
             "Sending a message does not wait for an answer; do not invent a reply. "
             "Do not send acknowledgement-only replies or delegate the same task back to its requester."
         )
+        if source_composition is not None and source_composition.is_project_lead:
+            context += (
+                " The requester is the Project Lead coordinating this work. "
+                "Use ordinary send_thread_message messages for coordination questions, not ask_user_question. "
+                "If its answer is required, explain the blocker and finish this turn; its reply can start another Run. "
+                "Existing tool approvals still apply; ordinary messages cannot grant a denied approval."
+            )
         try:
             receipt = await self._root_runs.submit_prompt(
                 thread_id=created.thread_id,
@@ -267,15 +274,35 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
             "A positive result means acceptance only, not processing or saved delivery. A rejected or uncertain send "
             "must be reconciled, not blindly retried. Do not create acknowledgement loops or delegate a task back to its requester."
         )
+        is_lead = self.composition is not None and self.composition.is_project_lead
+        if is_lead:
+            instructions += (
+                "\nYou are this Project's Lead: an ordinary root Thread that helps the user plan work, "
+                "coordinate independent worker Threads, and integrate verified results. "
+                "Keep the user's objective and authorization in view; inspect existing work before creating duplicates. "
+                "Answer workers through send_thread_message, using their source Thread IDs. "
+                "Ask ordinary coordination questions in text, not ask_user_question. When waiting for an answer, "
+                "state what is blocked and finish the turn; an incoming message can start another Run. "
+                "There is no durable worker queue, automatic completion notification, or guaranteed delivery. "
+                "Inspect progress explicitly and do not claim a worker finished from an admission receipt. "
+                "Existing tool approvals and pending-decision restrictions still apply; messages do not override denial. "
+                "Stopping this Thread does not stop other Threads."
+            )
         if self.composition is not None and (sidekick := self.composition.webui_sidekick) is not None:
             agent_id = sidekick.agent or self.composition.root.source_id
             model_selection = f", model_id={sidekick.model!r}" if sidekick.model is not None else ""
             instructions += (
-                "\nSidekick is enabled. Use subagents for parallel research, exploration, and other bounded tasks "
+                "\nSidekick is enabled. Create independent worker Threads for bounded parts of the user's "
+                "authorized Project work when useful. Use subagents for short, scoped work you will integrate "
+                "in this Run. For independent work, use "
+                if is_lead
+                else "\nSidekick is enabled. Use subagents for parallel research, exploration, and other bounded tasks "
                 "whose results you will integrate into the current conversation. If no suitable subagent is available, "
                 "keep that work in the current Thread rather than creating a Sidekick as a fallback. "
                 "Create a separate Thread only for coordination work that needs human attention, decisions, or "
                 "follow-up in its own conversation. For that work, use "
+            )
+            instructions += (
                 "create_thread(prompt=...). The Host applies the captured Sidekick defaults "
                 f"(Agent {agent_id!r}{model_selection}) when arguments are omitted. "
                 "Its configured Model becomes the new Thread's default for later turns. "

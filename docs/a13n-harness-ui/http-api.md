@@ -20,6 +20,12 @@ The status contract has `api_version: "1"`, package/build information, App statu
 
 Authentication and Host/Origin validation apply at the listener boundary. Use a header-capable HTTP/fetch client. Do not put access keys in API query strings or logs, or confuse model-provider credentials managed under `/api/auth/*` with the listener key. The deliberate dangerous-bypass mode is not a production authentication mechanism.
 
+## Project Lead
+
+`GET /api/projects` includes nullable `lead_thread_id`. `POST /api/projects/{project_id}/lead` idempotently returns the Project's canonical Lead as a `ThreadSummary`, creating it only if needed. It accepts no body, allocates no Run, and performs no model call. Missing Projects and new creation with Sidekick disabled are rejected. Existing archived Leads are returned without restoration or replacement; use the ordinary expected-version metadata API to restore them. Their Project selection cannot be changed or cleared. `GET /api/selectors` includes `sidekick_enabled` for creation affordances.
+
+After an uncertain ensure response, read Projects or explicitly ensure again; concurrent requests select one identity. Prompt admission remains a separate ordinary Thread submit and must not be automatically replayed.
+
 ## Run-only execution environment
 
 `POST /api/threads/{thread_id}/submit` accepts an optional `environment` patch alongside the prompt or ordered input parts:

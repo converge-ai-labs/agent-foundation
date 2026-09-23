@@ -45,6 +45,20 @@ export function useProjectExpansion() {
   return [expanded, update] as const;
 }
 
+export function useProjectView(projectId: string) {
+  const key = `a13n-harness-ui.project-view.${projectId}`;
+  const [view, setView] = useState<"lead" | "conversations">(() =>
+    readPreference(key) === "lead" ? "lead" : "conversations",
+  );
+  return [
+    view,
+    (next: "lead" | "conversations") => {
+      setView(next);
+      savePreference(key, next);
+    },
+  ] as const;
+}
+
 export function orderedProjects(ids: string[], saved: string[]) {
   return [...new Set([...saved.filter((id) => ids.includes(id)), ...ids])];
 }

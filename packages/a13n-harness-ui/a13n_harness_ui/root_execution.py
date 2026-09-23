@@ -199,7 +199,7 @@ class RootRunExecutor:
                 "The selected Thread continuation has unresolved deferred tool requests.",
                 code="thread_deferred_pending",
             )
-        selection = _selection(thread)
+        selection = replace(_selection(thread), is_project_lead=await self._store.threads.is_project_lead(thread_id))
         if environment is not None:
             selection = replace(
                 selection,

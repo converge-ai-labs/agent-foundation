@@ -3297,6 +3297,45 @@
         }
       }
     },
+    "/api/projects/{project_id}/lead": {
+      "post": {
+        "summary": "Ensure Project Lead",
+        "operationId": "ensure_project_lead_api_projects__project_id__lead_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/decisions": {
       "get": {
         "summary": "Decision Batch",
@@ -10406,6 +10445,19 @@
             ],
             "title": "Last Active At"
           },
+          "lead_thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Thread Id"
+          },
           "defaults": {
             "$ref": "#/components/schemas/ProjectDefaults"
           }
@@ -13053,6 +13105,11 @@
       },
       "ThreadSelectorCatalog": {
         "properties": {
+          "sidekick_enabled": {
+            "type": "boolean",
+            "title": "Sidekick Enabled",
+            "default": false
+          },
           "media_understanding": {
             "additionalProperties": {
               "type": "string"

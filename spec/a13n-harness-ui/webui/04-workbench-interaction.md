@@ -8,6 +8,14 @@ The primary experience is doing work in a conversation. Configuration is availab
 
 The workbench uses the shared frontend design system with English interface text only. Controls describe user actions, such as Log in, Log out, Save changes, Connect account, and Reconnect, rather than internal credential-retention or publication operations. It has no language selector or translation runtime. Light and dark themes remain available; English-only interface text does not restrict the language of prompts, configuration content, names or comments.
 
+## Project Lead View
+
+Each configured Project offers a browser-local **Conversations / Lead** presentation preference, defaulting to Conversations. The choice does not change Project configuration, allocate a Thread, admit a Run, or redirect an explicit conversation link. Lead view pins the canonical entry above **Other conversations**; that disclosure describes ordinary Project membership, not worker ownership. A directly opened non-Lead conversation remains revealed. Existing search, pagination, ordinary creation, archive, and per-Thread execution controls remain available.
+
+When Sidekick is enabled and the Project has no Lead, **Open Project Lead** explicitly ensures its identity and opens the existing `/threads/{id}` route without sending a prompt. Browsing, toggling the view, and refetching are read-only. Existing Leads remain accessible with Sidekick disabled, including archived Leads through explicit Restore; there is no replacement action. The shared selector projection exposes `sidekick_enabled` so navigation does not fetch configuration source files per Project.
+
+The entry uses a distinctive compass icon. The conversation identifies its Lead role independently from its editable title and shows a static introductory hint when empty, not a fabricated assistant message. It reuses the ordinary conversation renderer, composer, result tracking, and pending-decision controls. The view neither aggregates worker approvals nor invents Project-wide execution state.
+
 ## Entry and Navigation
 
 1. Open the instance URL and complete the existing key-entry flow if necessary.

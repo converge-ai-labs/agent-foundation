@@ -68,6 +68,8 @@ let failDrafts: boolean;
 let activity: URL[];
 let activeThreads: ReturnType<typeof thread>[];
 let writes: Request[];
+let sidekickEnabled: boolean;
+let leadThread: ReturnType<typeof thread> | null;
 let failMore: boolean;
 let failSave: boolean;
 let cwd: string;
@@ -83,6 +85,8 @@ beforeEach(() => {
   activity = [];
   activeThreads = [];
   writes = [];
+  sidekickEnabled = false;
+  leadThread = null;
   failMore = false;
   failSave = false;
   cwd = "/outside";
@@ -122,6 +126,10 @@ beforeEach(() => {
       }
       if (request.method !== "GET") {
         writes.push(request.clone());
+        if (url.pathname === "/api/projects/project-one/lead") {
+          leadThread = thread("canonical-lead");
+          return json(leadThread);
+        }
         if (request.method === "PUT") {
           if (failSave)
             return json(
@@ -142,7 +150,18 @@ beforeEach(() => {
           });
         return json(thread("created"));
       }
-      if (url.pathname === "/api/projects") return json(projects);
+      if (url.pathname === "/api/projects")
+        return json(
+          projects.map((project) => ({
+            ...project,
+            lead_thread_id:
+              project.project_id === "project-one"
+                ? (leadThread?.thread_id ?? null)
+                : null,
+          })),
+        );
+      if (leadThread && url.pathname === `/api/threads/${leadThread.thread_id}`)
+        return json({ thread: leadThread, deferred_requests: [] });
       if (url.pathname === "/api/setup")
         return json({ suggested_project_path: cwd });
       if (url.pathname === "/api/status")
@@ -150,7 +169,11 @@ beforeEach(() => {
       if (url.pathname === "/api/configuration/sources")
         return json({ sources: [] });
       if (url.pathname === "/api/selectors")
-        return json({ agents: [], environments: [] });
+        return json({
+          agents: [],
+          environments: [],
+          sidekick_enabled: sidekickEnabled,
+        });
       const activeThread = activeThreads.find(
         (item) =>
           url.pathname === `/api/threads/${encodeURIComponent(item.thread_id)}`,
@@ -1043,4 +1066,118 @@ it("keeps discovery failure inside the popup and supports retry without an empty
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await screen.findByRole("button", { name: "Drafts 1" });
   await screen.findByRole("link", { name: /old-draft/ });
+});
+
+it("switches Lead presentation without writes and ensures only on explicit open", async () => {
+  sidekickEnabled = true;
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const group = screen.getByRole("region", { name: "One" });
+  fireEvent.click(await within(group).findByRole("button", { name: "Lead" }));
+  expect(writes).toHaveLength(0);
+  expect(screen.queryByRole("link", { name: "Recent 1" })).toBeNull();
+  expect(localStorage.getItem("a13n-harness-ui.project-view.project-one")).toBe(
+    '"lead"',
+  );
+  fireEvent.click(
+    within(group).getByRole("button", { name: "Other conversations" }),
+  );
+  await within(group).findByRole("link", { name: "Recent 1" });
+  expect(writes).toHaveLength(0);
+  fireEvent.click(
+    within(group).getByRole("button", { name: "Open Project Lead" }),
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current route").textContent).toBe(
+      "/threads/canonical-lead",
+    ),
+  );
+  expect(writes).toHaveLength(1);
+  expect(new URL(writes[0].url).pathname).toBe(
+    "/api/projects/project-one/lead",
+  );
+});
+
+it("pins the canonical Lead outside pagination, preserves archived identity and respects a direct worker link", async () => {
+  leadThread = {
+    ...thread("archived-lead"),
+    title: "Old Lead",
+    archived: true,
+  };
+  localStorage.setItem("a13n-harness-ui.project-view.project-one", '"lead"');
+  mount("/threads/selected-old");
+  await screen.findByRole("link", { name: /Old Lead.*Project Lead.*Archived/ });
+  expect(screen.getByRole("button", { name: "Restore Old Lead" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "selected-old" })).toBeTruthy();
+  expect(screen.getByLabelText("Current route").textContent).toBe(
+    "/threads/selected-old",
+  );
+  expect(writes).toHaveLength(0);
+  expect(
+    screen.queryByRole("button", { name: "Open Project Lead" }),
+  ).toBeNull();
+});
+
+it("does not offer a new Lead when Sidekick is disabled", async () => {
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  await screen.findByRole("link", { name: "Recent 1" });
+  expect(screen.queryByRole("button", { name: "Lead" })).toBeNull();
+  expect(writes).toHaveLength(0);
+});
+
+it("counts an unread Lead in its collapsed Project without duplicating it in Other conversations", async () => {
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  leadThread = thread("canonical-lead");
+  localStorage.setItem("a13n-harness-ui.project-view.project-one", '"lead"');
+  const results = new ResultTracker(createTransport("test", () => {}));
+  vi.spyOn(results, "invalidate").mockImplementation(() => {});
+  const unread = {
+    ...leadThread,
+    completion: {
+      version: 1,
+      run_id: "run-done",
+      continuation_id: "a".repeat(64),
+      completed_at: "2026-09-23T00:00:00Z",
+    },
+  } as Schema<"ThreadSummary">;
+  await results.follow({ ...unread, completion: null });
+  results.observe(unread);
+  mount("/", false, results);
+  const group = await screen.findByRole("region", { name: "One" });
+  expect(
+    within(group).getByLabelText("1 conversations with new results"),
+  ).toBeTruthy();
+  fireEvent.click(
+    within(group).getByRole("button", { name: /^One/, expanded: false }),
+  );
+  await within(group).findByRole("link", { name: /canonical-lead/ });
+  fireEvent.click(
+    within(group).getByRole("button", { name: "Other conversations" }),
+  );
+  expect(
+    within(group).getAllByRole("link", { name: /canonical-lead/ }),
+  ).toHaveLength(1);
+  vi.restoreAllMocks();
+});
+
+it("learns a Lead created in another client from a Project summary hint without ensuring again", async () => {
+  sidekickEnabled = true;
+  localStorage.setItem("a13n-harness-ui.project-view.project-one", '"lead"');
+  mount("/", true);
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  await screen.findByRole("button", { name: "Open Project Lead" });
+  leadThread = thread("remote-lead");
+  act(() =>
+    vi.mocked(watchSummary).mock.calls.at(-1)![1]({
+      kind: "project",
+      epoch: "test",
+      sequence: 1,
+    }),
+  );
+  await screen.findByRole("link", { name: /remote-lead/ });
+  expect(
+    screen.queryByRole("button", { name: "Open Project Lead" }),
+  ).toBeNull();
+  expect(writes).toHaveLength(0);
 });

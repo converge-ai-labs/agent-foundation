@@ -79,6 +79,28 @@ class ThreadService:
     ) -> Thread:
         source = await self._required_configuration()
         configuration = resolve_thread_configuration(source, defaults)
+        return await self._create(configuration=configuration, title=title, thread_id=thread_id)
+
+    async def ensure_project_lead(self, project_id: str) -> Thread:
+        source = await self._required_configuration()
+        if project_id not in source.projects:
+            raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
+        existing = (await self._store.threads.project_leads()).get(project_id)
+        if existing is not None:
+            return await self.get(existing)
+        if source.document.webui.sidekick is None:
+            raise ThreadError("Enable Sidekick before creating a Project Lead.", code="project_lead_disabled")
+        configuration = resolve_thread_configuration(source, RootThreadDefaults(project_id=project_id))
+        return await self._create(configuration=configuration, title="Project Lead", project_lead=True)
+
+    async def _create(
+        self,
+        *,
+        configuration: ThreadConfiguration,
+        title: str | None,
+        thread_id: str | None = None,
+        project_lead: bool = False,
+    ) -> Thread:
         baseline = HarnessState.new(thread_id=thread_id)
         initial = await self._store.objects.publish_model(
             object_kind=ObjectKind.thread_initial_state,
@@ -89,6 +111,7 @@ class ThreadService:
             configuration=configuration,
             initial_state=initial.ref,
             title=title,
+            project_lead=project_lead,
         )
 
     async def preview_creation(self, defaults: RootThreadDefaults | None = None) -> ThreadConfiguration:

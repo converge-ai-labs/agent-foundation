@@ -93,6 +93,14 @@ Current Run receipts, status, subscribers, steering queues, and live output rema
 
 Title and archive state form one metadata compare-and-select head independent from sticky configuration. A metadata command names the exact expected metadata version and atomically updates either or both fields. A changed head increments once; a no-op can retain its version. Title can be explicitly cleared. Root archive is rejected while that Thread has a current-process root operation, so an accepted operation cannot become hidden mid-Run. Child metadata changes require the parent-scoped child boundary.
 
+## Project Lead
+
+A configured Project may bind one canonical ordinary root Thread as its Lead. The binding is by Project ID, not name, title, Agent, or browser view. `ensure_project_lead(project_id)` and `POST /api/projects/{project_id}/lead` return that identity, creating it once if absent. Creation requires enabled Sidekick and uses normal Project creation defaults, not the Sidekick Agent or Model; subsequent independent workers use the calling Run's captured Sidekick settings. Ensuring allocates no Run and calls no Model. Project queries expose nullable `lead_thread_id` without requiring Thread pagination.
+
+Concurrent ensures select the same identity and never leave losing Thread rows. Archive preserves the binding; ensure returns the archived Thread without restoring or replacing it. Existing explicit Restore remains required before execution. Renaming the Project or Thread does not change the binding. A bound Lead cannot change or clear its Project; other sticky selections remain editable. Removing a Project from accepted configuration does not delete its saved Lead or history. Existing Lead access remains available when Sidekick is disabled; creating a new binding is rejected.
+
+The Lead is not a worker owner or scheduler. It uses ordinary root history, drafts, configuration, admission, steering, cancellation, and pending decisions. No worker table, queue, completion event, Project-wide stop, or approval aggregation is implied. [Runtime instructions](05-runtime-subagents-and-surfaces.md#project-lead-instructions) own coordination behavior, and [browser presentation](webui/04-workbench-interaction.md#project-lead-view) owns the local view preference.
+
 ## Sticky Thread Configuration
 
 ```python

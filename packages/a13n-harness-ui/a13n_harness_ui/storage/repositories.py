@@ -35,6 +35,7 @@ from .models import (
     CurrentConfigurationRecord,
     EnvironmentBindingRecord,
     PlannedRestartRecord,
+    ProjectLeadRecord,
     ProjectModelPreferenceRecord,
     ResourceIndexRecord,
     ThreadConfigurationRecord,
@@ -188,10 +189,21 @@ class ThreadRepository:
         parent_thread_id: str | None = None,
         title: str | None = None,
         created_at: datetime | None = None,
+        project_lead: bool = False,
     ) -> Thread:
+        if project_lead and (configuration.project_id is None or parent_thread_id is not None):
+            raise ValueError("A Project Lead must be a root Thread with a Project")
         _require_kind(initial_state, ObjectKind.thread_initial_state)
         now = _utc(created_at)
         async with transaction(self._sessions) as session:
+            # BEGIN IMMEDIATE serializes the lookup and creation across App processes.
+            if project_lead:
+                binding = await session.get(ProjectLeadRecord, configuration.project_id)
+                if binding is not None:
+                    existing = await session.get(ThreadRecord, binding.thread_id)
+                    selected = await session.get(ThreadConfigurationRecord, binding.thread_id)
+                    assert existing is not None and selected is not None
+                    return _thread_value(existing, _configuration_value(selected))
             if await session.get(ThreadRecord, thread_id) is not None:
                 raise StoreIntegrityError(
                     "Thread identity already exists; read it before retrying.", code="thread_exists"
@@ -216,8 +228,24 @@ class ThreadRepository:
             session.add(record)
             await session.flush()
             session.add(_configuration_record(thread_id, configuration))
+            if project_lead:
+                session.add(ProjectLeadRecord(project_id=configuration.project_id, thread_id=thread_id))
             await session.flush()
             return _thread_value(record, configuration)
+
+    async def project_leads(self) -> dict[str, str]:
+        async with short_session(self._sessions) as session:
+            records = await session.scalars(select(ProjectLeadRecord))
+            return {record.project_id: record.thread_id for record in records}
+
+    async def is_project_lead(self, thread_id: str) -> bool:
+        async with short_session(self._sessions) as session:
+            return (
+                await session.scalar(
+                    select(ProjectLeadRecord.project_id).where(ProjectLeadRecord.thread_id == thread_id)
+                )
+                is not None
+            )
 
     async def touch(self, thread_id: str, *, touched_at: datetime | None = None) -> None:
         """Advance navigation recency without changing content or metadata versions."""
@@ -366,6 +394,11 @@ class ThreadRepository:
                 raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
             if configuration.version != expected_version:
                 _conflict("thread_configuration_conflict", expected_version, configuration.version)
+            binding = await session.scalar(select(ProjectLeadRecord).where(ProjectLeadRecord.thread_id == thread_id))
+            if binding is not None and replacement.project_id != binding.project_id:
+                raise StoreConflictError(
+                    "A Project Lead cannot move to another Project.", code="project_lead_project_locked"
+                )
             _assign_configuration(configuration, replacement)
             record.updated_at = now
             await session.flush()

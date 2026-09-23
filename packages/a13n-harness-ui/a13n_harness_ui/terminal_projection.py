@@ -441,6 +441,7 @@ class TerminalProjectionService:
             for item in await self._store.configurations.resources(source.source_digest)
         }
         return ThreadSelectorCatalog(
+            sidekick_enabled=source.document.webui.sidekick is not None,
             media_understanding=source.document.media_understanding.selections(),
             media_understanding_environment=environment_media_kinds(),
             agents=tuple(

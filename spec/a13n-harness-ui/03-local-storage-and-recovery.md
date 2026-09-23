@@ -58,6 +58,12 @@ The App stores the last explicit terminal Model choice as one Model resource ID 
 
 Each explicit selection atomically replaces one Project's preference; reset deletes only that Project's preference. Short SQLite write transactions serialize updates with last-write-wins semantics, including across independent Apps. Different Projects never replace each other's entries. Reads, Runs, and shutdown do not write preferences. Active terminals do not subscribe to preference changes. A removed Project or Model does not turn a preference into a resource definition, and lookup never resurrects missing resources. Downgrading past this additive table discards preferences only; it does not rewrite Threads, checkpoints, or YAML. [Interactive CLI](07-interactive-cli.md#agent-selection-and-reasoning) owns selection and fallback behavior.
 
+## Project Lead Binding
+
+`project_lead` contains only `project_id` (primary key) and `thread_id` (unique, non-null foreign key to `thread.thread_id`, restricted deletion). Projects are file-defined resources, so their IDs have no database foreign key. The additive migration starts with no bindings and does not promote existing conversations. Downgrade drops bindings without deleting Threads or rewriting history.
+
+The ordinary initial-state object is published before the short writer transaction. Inside one transaction, ensure reads the binding and either returns its existing Thread or inserts the ordinary Thread, configuration head, and binding together. SQLite writer arbitration covers independent App connections; uniqueness is not implemented as a process-local lock alone. An unsuccessful candidate may leave an unselected immutable object, never an orphan relational Thread. Bound Lead configuration updates enforce the Project invariant in the same transaction as the configuration head mutation.
+
 ## Thread Default Model Storage
 
 The nullable `thread_configuration.default_model_id` column belongs to the mutable configuration head and participates in its existing expected-version mutation. An additive migration leaves existing rows null; it does not infer defaults from Sidekick settings, Project preferences, or historical Runs. Reopening the App preserves non-null defaults. Run compositions and continuation objects retain their existing schemas and captured effective Models. Downgrade removes only this selection column, discarding Thread default Models without rewriting historical captures.

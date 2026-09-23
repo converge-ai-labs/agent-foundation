@@ -11,7 +11,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { ArrowDown } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
-import { useSelectors, useTransport } from "../transport/context";
+import { useProjects, useSelectors, useTransport } from "../transport/context";
+import { LeadIcon } from "./lead-icon";
+import leadStyles from "./project-lead.module.css";
 import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
@@ -59,6 +61,10 @@ function Conversation({
   const transport = useTransport();
   const queries = useQueryClient();
   const detail = useThread(threadId);
+  const projects = useProjects();
+  const isLead =
+    projects.data?.some((project) => project.lead_thread_id === threadId) ??
+    false;
   const results = useResults();
   const tracker = results.tracker;
   useEffect(() => {
@@ -729,12 +735,28 @@ function Conversation({
                 !showLive &&
                 !history.isPending &&
                 !history.error && (
-                  <div className={styles.empty}>
-                    <h2>Start something together.</h2>
-                    <p>
-                      Write a prompt below. People on this conversation can edit
-                      the same input.
-                    </p>
+                  <div
+                    className={`${styles.empty} ${isLead ? leadStyles.intro : ""}`}
+                  >
+                    {isLead ? (
+                      <>
+                        <LeadIcon size={48} />
+                        <h2>Bring your project into focus.</h2>
+                        <p>
+                          Share a goal. Your Lead can plan the work, coordinate
+                          separate conversations, and bring the results back
+                          here.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <h2>Start something together.</h2>
+                        <p>
+                          Write a prompt below. People on this conversation can
+                          edit the same input.
+                        </p>
+                      </>
+                    )}
                   </div>
                 )}
             </div>
