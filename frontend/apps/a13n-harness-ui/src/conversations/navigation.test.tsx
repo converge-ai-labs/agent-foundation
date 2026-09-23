@@ -920,9 +920,9 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   vi.restoreAllMocks();
 });
 
-it("surfaces unvisited drafts above collapsed projects and refreshes only discovery on a draft hint", async () => {
+it("opens unvisited drafts on demand and refreshes only discovery on a draft hint", async () => {
   unsentThreads = [
-    thread("old-draft"),
+    { ...thread("old-draft"), root_activity: { state: "running" } },
     { ...thread("archived-draft"), archived: true },
   ];
   unsentDrafts = unsentThreads.map((item) => ({
@@ -931,22 +931,28 @@ it("surfaces unvisited drafts above collapsed projects and refreshes only discov
     unsent_since: "2026-09-21T10:00:00Z",
   }));
   mount("/", true);
-  const section = await screen.findByRole("region", { name: "Unsent input" });
-  expect(within(section).getByText("Unsent (1)")).toBeTruthy();
-  const shortcut = within(section).getByRole("link", { name: /old-draft/ });
-  expect(
-    within(shortcut).getByRole("img", { name: "Unsent input" }),
-  ).toBeTruthy();
-  expect(within(shortcut).getByText("One")).toBeTruthy();
-  expect(screen.queryByText("archived-draft")).toBeNull();
+  const trigger = await screen.findByRole("button", { name: "Drafts 1" });
+  expect(screen.queryByRole("dialog", { name: "Drafts" })).toBeNull();
   expect(activity).toHaveLength(0);
+  fireEvent.click(trigger);
+  const popup = await screen.findByRole("dialog", { name: "Drafts" });
+  const shortcut = within(popup).getByRole("link", { name: /old-draft/ });
+  expect(within(shortcut).getByText("One")).toBeTruthy();
+  expect(within(popup).queryByText("Running")).toBeNull();
+  expect(within(popup).queryByRole("button", { name: /Actions/ })).toBeNull();
+  expect(screen.queryByText("archived-draft")).toBeNull();
   fireEvent.click(shortcut);
   await waitFor(() =>
     expect(screen.getByLabelText("Current route").textContent).toBe(
-      "/threads/old-draft",
+      "/threads/old-draft?compose=1",
     ),
   );
-  expect(within(section).getByText("old-draft")).toBeTruthy();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("button", { name: "Drafts 1" })).toBe(trigger);
+  const project = await screen.findByRole("region", { name: "One" });
+  const row = within(project).getByRole("link", { name: /old-draft/ });
+  expect(within(row).getByText("Draft")).toBeTruthy();
+  expect(within(row).getByText("Running")).toBeTruthy();
   await screen.findByText("Recent 5");
   const activityCalls = activity.length;
   unsentDrafts = [];
@@ -959,34 +965,72 @@ it("surfaces unvisited drafts above collapsed projects and refreshes only discov
     });
   });
   await waitFor(() =>
-    expect(screen.queryByRole("region", { name: "Unsent input" })).toBeNull(),
+    expect(screen.getByRole("button", { name: "Drafts" })).toBe(trigger),
   );
+  expect(within(row).queryByText("Draft")).toBeNull();
   expect(activity).toHaveLength(activityCalls);
 });
 
-it("shows local input immediately, retains the shortcut on opening, and removes it on clear", async () => {
+it("keeps the entry and project rows stable while local drafts appear and clear", async () => {
+  const user = userEvent.setup();
   const draft = new ThreadDraft();
   unsentThreads = [thread("old-draft")];
   mount("/", false, null, draft);
-  await screen.findByRole("button", { name: "One" });
-  expect(screen.queryByRole("region", { name: "Unsent input" })).toBeNull();
+  const project = await screen.findByRole("button", { name: "One" });
+  const trigger = screen.getByRole("button", { name: "Drafts" });
+  await user.click(trigger);
+  await screen.findByText("No unsent drafts.");
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+  const search = screen.getByRole("searchbox");
+  search.focus();
   act(() => {
     draft.doc.getText("text").insert(0, "Remember me");
   });
-  const section = await screen.findByRole("region", { name: "Unsent input" });
-  await within(section).findByText("old-draft");
+  expect(await screen.findByRole("button", { name: "Drafts 1" })).toBe(trigger);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(search);
+  expect(screen.getByRole("button", { name: "One" })).toBe(project);
+  await user.click(trigger);
+  await screen.findByRole("link", { name: /old-draft/ });
   act(() => {
     draft.doc.getText("text").delete(0, draft.doc.getText("text").length);
   });
-  await waitFor(() =>
-    expect(screen.queryByRole("region", { name: "Unsent input" })).toBeNull(),
-  );
+  await screen.findByText("No unsent drafts.");
+  expect(screen.getByRole("button", { name: "Drafts" })).toBe(trigger);
+  expect(screen.getByRole("dialog", { name: "Drafts" })).toBeTruthy();
 });
 
-it("makes discovery failure retryable rather than silently treating it as an empty index", async () => {
+it("refocuses the current draft without dismissing its reminder", async () => {
+  const user = userEvent.setup();
+  const draft = new ThreadDraft();
+  draft.doc.getText("text").insert(0, "Continue writing");
+  unsentThreads = [thread("old-draft")];
+  mount("/threads/old-draft?compose=1", false, null, draft);
+  const editor = document.createElement("textarea");
+  editor.setAttribute("data-composer-editor", "");
+  document.body.append(editor);
+  try {
+    await user.click(await screen.findByRole("button", { name: "Drafts 1" }));
+    const popup = await screen.findByRole("dialog", { name: "Drafts" });
+    await user.click(within(popup).getByRole("link", { name: /old-draft/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(editor));
+    expect(screen.getByRole("button", { name: "Drafts 1" })).toBeTruthy();
+    expect(draft.hasUnsentInput).toBe(true);
+  } finally {
+    editor.remove();
+  }
+});
+
+it("keeps discovery failure inside the popup and supports retry without an empty claim", async () => {
   failDrafts = true;
   mount();
+  await screen.findByLabelText("Draft discovery unavailable");
+  expect(screen.queryByText("Draft discovery unavailable")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Drafts/ }));
   await screen.findByText("Draft discovery unavailable");
+  expect(screen.queryByText("No unsent drafts.")).toBeNull();
   failDrafts = false;
   unsentThreads = [thread("old-draft")];
   unsentDrafts = [
@@ -997,5 +1041,6 @@ it("makes discovery failure retryable rather than silently treating it as an emp
     },
   ];
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  await screen.findByText("Unsent (1)");
+  await screen.findByRole("button", { name: "Drafts 1" });
+  await screen.findByRole("link", { name: /old-draft/ });
 });

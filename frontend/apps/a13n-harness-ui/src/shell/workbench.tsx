@@ -126,6 +126,7 @@ function WorkbenchContent({
   };
   const [menu, setMenu] = useState(false);
   const mobileMenuButton = useRef<HTMLButtonElement>(null);
+  const menuLocation = useRef("");
   const live = useLiveWorkbench(
     profile,
     !!status.features?.page_presence,
@@ -148,7 +149,7 @@ function WorkbenchContent({
   }, [setup.data, location.pathname, location.search, navigate]);
   useEffect(() => {
     setMenu(false);
-  }, [location.pathname, location.search]);
+  }, [location.key]);
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     writePreference("theme", theme);
@@ -236,7 +237,17 @@ function WorkbenchContent({
       <Sheet open={menu} onOpenChange={setMenu}>
         <SheetPopup
           id="workbench-navigation"
-          finalFocus={mobileMenuButton}
+          finalFocus={() => {
+            if (
+              location.key !== menuLocation.current &&
+              new URLSearchParams(location.search).get("compose") === "1"
+            )
+              return (
+                document.querySelector<HTMLElement>("[data-composer-editor]") ??
+                mobileMenuButton.current
+              );
+            return mobileMenuButton.current;
+          }}
           side="left"
           className={styles.mobileNavigation}
           closeProps={{ "aria-label": "Close navigation" }}
@@ -315,7 +326,10 @@ function WorkbenchContent({
                 aria-haspopup="dialog"
                 aria-expanded={menu}
                 aria-controls={menu ? "workbench-navigation" : undefined}
-                onClick={() => setMenu(true)}
+                onClick={() => {
+                  menuLocation.current = location.key;
+                  setMenu(true);
+                }}
               >
                 <List />
               </Button>

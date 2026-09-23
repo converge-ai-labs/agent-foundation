@@ -16,12 +16,14 @@ type UnsentState = {
   store?: UnsentStore;
   inputs: ReadonlyMap<string, string>;
   rows: Schema<"ThreadActivityView">[];
+  loading: boolean;
   error: unknown;
   retry?: () => void;
 };
 const UnsentContext = createContext<UnsentState>({
   inputs: new Map(),
   rows: [],
+  loading: false,
   error: null,
 });
 export const useUnsent = () => useContext(UnsentContext);
@@ -79,6 +81,7 @@ export function UnsentProvider({ children }: { children: ReactNode }) {
         store,
         inputs,
         rows,
+        loading: shared.isPending || lookups.some((lookup) => lookup.isPending),
         error: shared.error ?? lookups.find((lookup) => lookup.error)?.error,
         retry: () => {
           void shared.refetch();

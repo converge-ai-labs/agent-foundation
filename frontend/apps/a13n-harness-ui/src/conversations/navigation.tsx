@@ -36,7 +36,7 @@ import { newConversationPath } from "./new-conversation";
 import { ThreadRow } from "./thread-row";
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
-import { useUnsent } from "./unsent";
+import { DraftNavigation } from "./draft-navigation";
 
 type Presence = Schema<"PresenceFrame"> | null;
 type Group = {
@@ -52,7 +52,6 @@ export function ConversationNavigation({
   presence?: Presence;
 }) {
   const projects = useProjects();
-  const unsent = useUnsent();
   const navigate = useNavigate();
   const match = useMatch("/threads/:threadId");
   const selectedId = match?.params.threadId ?? "";
@@ -155,24 +154,7 @@ export function ConversationNavigation({
           </PopoverPopup>
         </Popover>
       </div>
-      {unsent.rows.length > 0 && (
-        <section className={styles.unsentSection} aria-label="Unsent input">
-          <div className={styles.navigationHeading}>
-            <span>Unsent ({unsent.rows.length})</span>
-          </div>
-          <div className={`${styles.unsentList} a13n-scrollbar`}>
-            {unsent.rows.map((row) => (
-              <ThreadRow
-                key={row.thread.thread_id}
-                row={row}
-                presence={presence}
-                showProject
-              />
-            ))}
-          </div>
-        </section>
-      )}
-      <ErrorNotice error={unsent.error} retry={unsent.retry} />
+      <DraftNavigation />
       <div className={styles.navigationHeading}>
         <span title={scopedProject?.name}>
           {scopedProject?.name ?? "Projects"}

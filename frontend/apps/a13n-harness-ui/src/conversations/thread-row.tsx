@@ -132,13 +132,8 @@ export function ThreadRow({
             {threadState(row) && <small>{threadState(row)}</small>}
           </span>
           {unsent && (
-            <span
-              className={styles.unsentMarker}
-              role="img"
-              aria-label="Unsent input"
-              title="Unsent input"
-            >
-              <PencilSimple aria-hidden="true" />
+            <span className={styles.unsentMarker} title="Shared, unsent input">
+              Draft
             </span>
           )}
           {unread && (
