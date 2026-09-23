@@ -183,7 +183,10 @@ async def test_message_tools_reject_self_and_empty_input_before_admission() -> N
 async def test_real_model_tools_discover_delegate_cross_project_and_report_to_idle_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    root = configuration(tmp_path)  # Sidekick is disabled: all collaboration tools still work.
+    root = configuration(tmp_path)
+    document = yaml.safe_load(root.read_text())
+    document["webui"] = {"sidekick": None}  # Opting out does not remove generic collaboration tools.
+    root.write_text(yaml.safe_dump(document))
     origin_id = ""
     origin_idle, reported = Event(), Event()
     steps: dict[str, int] = {}
@@ -324,6 +327,7 @@ async def test_invalid_sidekick_configuration_is_rejected(tmp_path: Path, sideki
 @pytest.mark.parametrize(
     "sidekick, expected_agent, expected_model",
     [
+        (None, "agent-assistant", "model-primary"),
         ({}, "agent-assistant", "model-primary"),
         ({"agent": "agent-worker"}, "agent-worker", "model-secondary"),
         ({"model": "model-secondary"}, "agent-assistant", "model-secondary"),
@@ -335,8 +339,10 @@ async def test_host_applies_sidekick_defaults_to_creation_and_later_turns(
 ) -> None:
     root = configuration(tmp_path)
     document = yaml.safe_load(root.read_text())
-    document["webui"] = {"sidekick": sidekick}
-    root.write_text(yaml.safe_dump(document))
+    if sidekick is not None:
+        document["webui"] = {"sidekick": sidekick}
+        root.write_text(yaml.safe_dump(document))
+    sidekick = sidekick or {}
     instructions = []
 
     async def resolve(self, context, model_id):
@@ -369,6 +375,8 @@ async def test_host_applies_sidekick_defaults_to_creation_and_later_turns(
         assert "Host applies the captured Sidekick defaults" in instructions[0]
         reference = await app._root_runs.composition_reference(first.receipt_id)
         composition = await app._store.objects.read_model(reference, ResolvedRunComposition)
+        historical = ResolvedRunComposition.model_validate_json(composition.model_dump_json(exclude={"webui_sidekick"}))
+        assert historical.webui_sidekick is None  # Missing fields in old captures must not enable Sidekick.
         if "model" in sidekick:
             assert f"model_id={sidekick['model']!r}" in instructions[0]
         result = await controller(app).create_thread(
@@ -448,11 +456,15 @@ async def test_host_applies_sidekick_defaults_to_creation_and_later_turns(
         assert (await app.inspect_operation_configuration(receipt)).agent.model_id == "model-primary"
 
 
-async def test_terminal_does_not_receive_sidekick_instructions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("configured", [False, True])
+async def test_terminal_does_not_receive_sidekick_instructions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configured: bool
+) -> None:
     root = configuration(tmp_path)
-    document = yaml.safe_load(root.read_text())
-    document["webui"] = {"sidekick": {"model": "model-secondary"}}
-    root.write_text(yaml.safe_dump(document))
+    if configured:
+        document = yaml.safe_load(root.read_text())
+        document["webui"] = {"sidekick": {"model": "model-secondary"}}
+        root.write_text(yaml.safe_dump(document))
     seen = []
 
     async def resolve(self, context, model_id):

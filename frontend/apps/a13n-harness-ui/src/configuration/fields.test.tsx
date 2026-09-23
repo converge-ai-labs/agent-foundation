@@ -86,6 +86,41 @@ function renderFields(initial: string) {
   );
 }
 
+it.each(["", "webui: {}\n", "webui:\n  sidekick: {}\n"])(
+  "shows Sidekick enabled without rewriting default configuration: %j",
+  async (webui) => {
+    const initial = 'schema_version: "1"\n' + webui;
+    renderFields(initial);
+    expect(
+      (await screen.findByRole("combobox", { name: "Sidekick" })).textContent,
+    ).toContain("Enabled");
+    expect(
+      screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
+    ).toContain("Inherit current agent");
+    expect(
+      screen.getByRole("combobox", { name: "Sidekick model" }).textContent,
+    ).toContain("Use agent model");
+    expect(screen.getByTestId("source").textContent).toBe(initial);
+  },
+);
+
+it("preserves explicit Sidekick opt-out and writes an empty mapping when re-enabled", async () => {
+  const initial = 'schema_version: "1"\nwebui:\n  sidekick: null\n';
+  renderFields(initial);
+  const user = userEvent.setup();
+  const sidekick = await screen.findByRole("combobox", { name: "Sidekick" });
+  expect(sidekick.textContent).toContain("Disabled");
+  expect(screen.queryByRole("combobox", { name: "Sidekick agent" })).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Sidekick model" })).toBeNull();
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  await user.click(sidekick);
+  await user.click(await screen.findByRole("option", { name: "Enabled" }));
+  expect(
+    parse(screen.getByTestId("source").textContent!).webui.sidekick,
+  ).toEqual({});
+  expect(screen.getByRole("combobox", { name: "Sidekick agent" })).toBeTruthy();
+});
+
 it("selects saved key metadata without rewriting model settings or dropping an unresolved reference on load", async () => {
   const initial =
     'schema_version: "1"\nkind: model\nid: model-one\nname: Model\nroute: openai-responses:custom-model\nauthentication: {kind: api_key, credential_ref: key-missing}\nsettings: {temperature: 0.3}\n';

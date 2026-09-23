@@ -202,7 +202,7 @@ class SidekickConfiguration(ConfigurationModel):
 
 
 class WebUiConfiguration(ConfigurationModel):
-    sidekick: SidekickConfiguration | None = None
+    sidekick: SidekickConfiguration | None = Field(default_factory=SidekickConfiguration)
 
 
 class MediaUnderstandingConfiguration(ConfigurationModel):

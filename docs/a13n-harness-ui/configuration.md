@@ -102,7 +102,7 @@ security:
 subagents:
   include: []
 webui:
-  sidekick: null
+  sidekick: {}
 ```
 
 ### Media understanding
@@ -110,6 +110,8 @@ webui:
 `media_understanding.image`, `.video`, and `.audio` select saved Model IDs for file `view` fallback when the active Model cannot accept that media natively. Each defaults to `null`, preserving the corresponding Harness environment fallback. Configure these in **Settings → Models** or `/model defaults`. See [media understanding defaults](models-and-authentication.md#media-understanding-defaults) for precedence, capability requirements, and Run capture behavior.
 
 ### WebUI Sidekick
+
+Sidekick is enabled by default. Setup writes `webui.sidekick: {}` explicitly in new configuration files. Existing files that omit `webui` or `sidekick` also enable it without being rewritten. An existing `sidekick: null` remains disabled; setup preserves explicit null and custom Agent/Model selections.
 
 In **Settings → General → Sidekick**, select **Enabled**, optionally choose an Agent and a default Model, then **Save changes**. This sets preferences for independent work without changing your default conversation Agent:
 

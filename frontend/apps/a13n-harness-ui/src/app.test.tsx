@@ -1113,8 +1113,9 @@ it("configures Sidekick in General without changing defaults or starting convers
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("combobox", { name: "Sidekick" }));
-  await user.click(await screen.findByRole("option", { name: "Enabled" }));
+  expect(
+    (await screen.findByRole("combobox", { name: "Sidekick" })).textContent,
+  ).toContain("Enabled");
   expect(
     screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
   ).toContain("Inherit current agent");

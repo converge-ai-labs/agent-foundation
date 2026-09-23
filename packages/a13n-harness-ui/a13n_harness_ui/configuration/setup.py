@@ -322,6 +322,9 @@ async def preview_setup(
         }
         files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     if not selection.is_addition:
+        webui = root.setdefault("webui", {})
+        if isinstance(webui, dict):
+            webui.setdefault("sidekick", {})
         tools = root.setdefault("tools", {})
         if isinstance(tools, dict):
             for name, value in ToolsConfiguration().model_dump(mode="json").items():

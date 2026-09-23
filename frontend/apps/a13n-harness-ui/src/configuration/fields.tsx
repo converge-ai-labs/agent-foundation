@@ -312,13 +312,15 @@ export function ResourceFields({
             <SettingsSection title="Sidekick">
               <SettingsRow
                 label="Sidekick"
-                description="Add instructions for independent work in other conversations. Does not start work automatically. Thread and resource tools remain available when disabled."
+                description="Enabled by default. Add instructions for coordination in other conversations. Does not start work automatically. Thread and resource tools remain available when disabled."
               >
                 <ChoiceField
                   label="Sidekick"
                   hideLabel
                   className={styles.settingControl}
-                  value={get(["webui", "sidekick"]) ? "enabled" : "disabled"}
+                  value={
+                    get(["webui", "sidekick"]) !== null ? "enabled" : "disabled"
+                  }
                   onValueChange={(value) =>
                     set(["webui", "sidekick"], value === "disabled" ? null : {})
                   }
@@ -328,7 +330,7 @@ export function ResourceFields({
                   ]}
                 />
               </SettingsRow>
-              {get(["webui", "sidekick"]) != null && (
+              {get(["webui", "sidekick"]) !== null && (
                 <>
                   {scalar(
                     "Sidekick agent",

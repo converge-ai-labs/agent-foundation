@@ -96,6 +96,25 @@ async def test_native_configuration_payloads_preserve_keys_values_and_whitespace
     assert restored == loaded
 
 
+@pytest.mark.parametrize(
+    "webui, enabled",
+    [
+        ("", True),
+        ("webui: {}\n", True),
+        ("webui:\n  sidekick: {}\n", True),
+        ("webui:\n  sidekick: null\n", False),
+    ],
+)
+async def test_sidekick_defaults_preserve_explicit_opt_out_without_rewriting_source(
+    tmp_path: Path, webui: str, enabled: bool
+) -> None:
+    path = _write_source_tree(tmp_path, root='schema_version: "1"\n' + webui)
+    original = path.read_bytes()
+    source = await load_harness_ui_configuration(path)
+    assert (source.document.webui.sidekick is not None) is enabled
+    assert path.read_bytes() == original
+
+
 async def test_root_defaults_enable_codeact_and_match_empty_onboarding(tmp_path: Path) -> None:
     loaded = await load_harness_ui_configuration(_write_source_tree(tmp_path))
     empty = configuration_loader.empty_harness_ui_configuration()
@@ -107,6 +126,8 @@ async def test_root_defaults_enable_codeact_and_match_empty_onboarding(tmp_path:
         "enable_codeact": True,
     }
     assert empty.sources[0].content == 'schema_version: "1"\n'
+    assert empty.document.webui.sidekick is not None
+    assert empty.document.webui.sidekick.model_dump() == {"agent": None, "model": None}
 
 
 @pytest.mark.parametrize("setting", ["enable_user_input: false", "user_input_timeout_seconds: 30"])

@@ -74,6 +74,15 @@ A completed credential save or login is independent of configuration publication
 
 ## Inspect what was saved
 
+The generated root configuration explicitly enables [WebUI Sidekick](configuration.md#webui-sidekick):
+
+```yaml
+webui:
+  sidekick: {}
+```
+
+This does not start work automatically. Set `sidekick: null` or choose **Settings → General → Sidekick → Disabled** to turn off the preference. Repeating setup preserves an explicit opt-out or custom Agent/Model selections.
+
 ```console
 a13n-harness-ui config path
 a13n-harness-ui config show --format json

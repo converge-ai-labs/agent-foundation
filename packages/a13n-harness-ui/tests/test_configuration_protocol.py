@@ -214,8 +214,6 @@ async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_
 
     root = _write_configuration(tmp_path)
     document = yaml.safe_load(root.read_text())
-    document["webui"] = {"sidekick": {"agent": "agent-assistant"}}
-    root.write_text(yaml.safe_dump(document))
     started, release = Event(), Event()
     seen = []
 
@@ -241,14 +239,14 @@ async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_
                 await started.wait()
             assert "Sidekick is enabled" in seen[0] and "Agent 'agent-assistant'" in seen[0]
             captured = (await api.get(f"/api/operations/{first}/configuration")).json()
-            assert captured["webui_sidekick"] == {"agent": "agent-assistant", "model": None}
+            assert captured["webui_sidekick"] == {"agent": None, "model": None}
             invalid = {**document, "webui": {"sidekick": {"agent": "agent-missing"}}}
             assert (
                 await api.put(
                     "/api/configuration/sources/a13n-harness-ui.yaml", json={"content": yaml.safe_dump(invalid)}
                 )
             ).status_code == 400
-            document["webui"]["sidekick"] = None
+            document["webui"] = {"sidekick": None}
             saved = await api.put(
                 "/api/configuration/sources/a13n-harness-ui.yaml", json={"content": yaml.safe_dump(document)}
             )
@@ -267,3 +265,7 @@ async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_
             saved = (await api.get("/api/configuration/sources/a13n-harness-ui.yaml")).json()
             assert yaml.safe_load(saved["content"])["webui"]["sidekick"] is None
             assert (await api.get("/api/threads")).json()["total"] == 1
+            third = (await api.post(prefix + "/submit", json={"prompt": "Still disabled"})).json()["receipt_id"]
+            assert (await settled(api, third))["status"] == "completed"
+            assert (await api.get(f"/api/operations/{third}/configuration")).json()["webui_sidekick"] is None
+            assert "Sidekick is enabled" not in seen[-1]
