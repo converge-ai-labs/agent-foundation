@@ -683,8 +683,9 @@ it.each(["send", "steer"] as const)(
   "submits captured skill references for %s and preserves later edits",
   async (action) => {
     const draft = new ThreadDraft();
-    draft.thinking = false;
-    draft.fast = false;
+    draft.controls.thinking = false;
+    draft.controls.fast = false;
+    draft.controls.reasoning_mode = "standard";
     draft.environment = {
       environment_profile_id: "environment-sandbox",
       local_roots: ["/work/selected"],
@@ -729,8 +730,9 @@ it.each(["send", "steer"] as const)(
       undefined,
       undefined,
       async () => {
-        draft.thinking = "high";
-        draft.fast = true;
+        draft.controls.thinking = "high";
+        draft.controls.fast = true;
+        draft.controls.reasoning_mode = "pro";
         draft.environment = {
           environment_profile_id: "environment-native",
           local_roots: [],
@@ -756,6 +758,10 @@ it.each(["send", "steer"] as const)(
     else expect(POST.mock.calls[0][1].body).not.toHaveProperty("thinking");
     if (action === "send") expect(POST.mock.calls[0][1].body.fast).toBe(false);
     else expect(POST.mock.calls[0][1].body).not.toHaveProperty("fast");
+    if (action === "send")
+      expect(POST.mock.calls[0][1].body.reasoning_mode).toBe("standard");
+    else
+      expect(POST.mock.calls[0][1].body).not.toHaveProperty("reasoning_mode");
     if (action === "send")
       expect(POST.mock.calls[0][1].body.environment).toEqual({
         environment_profile_id: "environment-sandbox",
@@ -801,7 +807,7 @@ it("does not submit after navigation cancels a pending skill catalog read", asyn
 
 it("retries with an ordinary continuation without consuming the shared draft or attachments", async () => {
   const draft = new ThreadDraft();
-  draft.thinking = "low";
+  draft.controls.thinking = "low";
   draft.doc.getText("text").insert(0, "Keep my next question");
   draft.addAttachment("attachment-kept");
   const before = values(draft.doc);

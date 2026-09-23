@@ -156,18 +156,19 @@ def test_lookup_uses_complete_command_or_alias_not_prose_prefix() -> None:
 
 
 @pytest.mark.anyio
-async def test_fast_during_active_work_preserves_draft_without_changing_tier() -> None:
+@pytest.mark.parametrize("command", ["fast", "pro"])
+async def test_model_control_during_active_work_preserves_draft(command) -> None:
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.ready = True
         fast = AsyncMock()
-        shell.backend = SimpleNamespace(thread_id="thread-one", fast=fast)
+        shell.backend = SimpleNamespace(thread_id="thread-one", **{command: fast})
         shell.job_kind = "run"
         shell.job = asyncio.create_task(asyncio.Event().wait())
         try:
-            await shell.handle("/fast off")
+            await shell.handle(f"/{command} off")
             fast.assert_not_called()
-            assert shell.composer.text == "/fast off"
+            assert shell.composer.text == f"/{command} off"
             assert "plain text" not in _notices(shell)
         finally:
             shell.job.cancel()

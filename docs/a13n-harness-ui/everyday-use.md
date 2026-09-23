@@ -16,6 +16,7 @@
 | Resume one saved conversation                       | `/resume session-id`                             |
 | Read saved messages and tool details                | Ctrl+T or `/history`                             |
 | List/select configured Agents                       | `/agent`, `/agent agent-codex`, `/agent default` |
+| Select temporary reasoning mode                     | `/pro`, `/pro on`, `/pro off`, `/pro reset`      |
 | Read/change reasoning                               | `/thinking`, `/thinking low`                     |
 | Toggle temporary Fast processing                    | `/fast`, `/fast on`, `/fast off`, `/fast reset`  |
 | Read/change execution permissions                   | `/environment`, `/environment sandbox`           |

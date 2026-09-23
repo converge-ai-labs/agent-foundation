@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import type { Schema } from "../transport/client";
 import { ThreadRunChoices } from "./thread-run-choices";
+import type { ModelControlValues } from "./model-controls";
 import { ModelPicker } from "./model-picker";
 
 afterEach(cleanup);
@@ -64,9 +65,7 @@ const catalog: Schema<"ThreadSelectorCatalog"> = {
 
 function Choices({ defaultModelId }: { defaultModelId?: string } = {}) {
   const [modelId, setModelId] = useState<string>();
-  const [thinking, setThinking] =
-    useState<Schema<"SubmitRequest">["thinking"]>();
-  const [fast, setFast] = useState<boolean | null>(null);
+  const [controls, setControls] = useState<ModelControlValues>({});
   return (
     <ThreadRunChoices
       catalog={catalog}
@@ -74,13 +73,11 @@ function Choices({ defaultModelId }: { defaultModelId?: string } = {}) {
       defaultAgentId="agent"
       defaultModelId={defaultModelId}
       modelId={modelId}
-      thinking={thinking}
-      fast={fast}
-      onFastChange={setFast}
+      controls={controls}
+      onControlsChange={setControls}
       disabled={false}
       onAgentChange={vi.fn()}
       onModelChange={setModelId}
-      onThinkingChange={setThinking}
     />
   );
 }
@@ -175,10 +172,9 @@ it("keeps unavailable selections visible and disambiguates duplicate model names
       models={[model, { ...other, name: model.name }]}
       defaultModelId={model.model_id}
       value="removed-model"
-      thinking="max"
+      controls={{ thinking: "max" }}
       onChange={onChange}
-      onThinkingChange={onThinkingChange}
-      onFastChange={vi.fn()}
+      onControlsChange={onThinkingChange}
     />,
   );
   const trigger = screen.getByRole("button", { name: "Model settings" });
@@ -256,8 +252,8 @@ it("cannot change selections while active work disables the controls", async () 
       defaultModelId={model.model_id}
       disabled
       onChange={onChange}
-      onThinkingChange={vi.fn()}
-      onFastChange={vi.fn()}
+      controls={{}}
+      onControlsChange={vi.fn()}
     />,
   );
   await user.click(screen.getByRole("button", { name: "Model settings" }));

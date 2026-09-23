@@ -110,6 +110,13 @@ COMMANDS = (
         choices=("on", "off", "reset"),
     ),
     Command(
+        "pro",
+        "Select Pro reasoning mode; off selects Standard, reset inherits the Model.",
+        "[on|off|reset]",
+        maximum=1,
+        choices=("on", "off", "reset"),
+    ),
+    Command(
         "thinking",
         "Show or change reasoning effort for subsequent turns.",
         "[level]",

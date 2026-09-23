@@ -5480,6 +5480,10 @@
           "fast": {
             "$ref": "#/components/schemas/FastState",
             "default": "default"
+          },
+          "reasoning_mode": {
+            "$ref": "#/components/schemas/ReasoningModeState",
+            "default": "default"
           }
         },
         "additionalProperties": false,
@@ -9276,6 +9280,9 @@
             "type": "boolean",
             "title": "Supports Service Tier"
           },
+          "reasoning_mode": {
+            "$ref": "#/components/schemas/ReasoningModeControl"
+          },
           "native_tools": {
             "items": {
               "$ref": "#/components/schemas/ModelToolChoice"
@@ -9295,7 +9302,8 @@
           "known_context_window",
           "characteristics",
           "known_capabilities",
-          "supports_service_tier"
+          "supports_service_tier",
+          "reasoning_mode"
         ],
         "title": "ModelOptions"
       },
@@ -9408,6 +9416,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/FastControl"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reasoning_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReasoningModeControl"
               },
               {
                 "type": "null"
@@ -10524,6 +10542,44 @@
           "options"
         ],
         "title": "QuestionView"
+      },
+      "ReasoningModeControl": {
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "title": "Supported"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReasoningModeState"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "supported",
+          "state"
+        ],
+        "title": "ReasoningModeControl"
+      },
+      "ReasoningModeState": {
+        "type": "string",
+        "enum": [
+          "standard",
+          "pro",
+          "default",
+          "custom"
+        ]
       },
       "RequiredAction": {
         "type": "string",
@@ -15556,6 +15612,20 @@
               }
             ],
             "title": "Base Url"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
           }
         },
         "additionalProperties": false,
@@ -15602,6 +15672,20 @@
             ],
             "title": "Base Url"
           },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          },
           "authentication": {
             "anyOf": [
               {
@@ -15622,20 +15706,6 @@
               }
             ],
             "title": "Preset"
-          },
-          "settings": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/JsonValue"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Settings"
           },
           "model_configuration": {
             "additionalProperties": {
@@ -16543,6 +16613,13 @@
         "title": "InputAttachmentReference",
         "type": "object"
       },
+      "ReasoningMode": {
+        "enum": [
+          "standard",
+          "pro"
+        ],
+        "type": "string"
+      },
       "SkillReference": {
         "additionalProperties": false,
         "properties": {
@@ -16574,6 +16651,37 @@
       "SubmitRequest": {
         "additionalProperties": false,
         "properties": {
+          "thinking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThinkingSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fast": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fast"
+          },
+          "reasoning_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReasoningMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "prompt": {
             "default": "",
             "maxLength": 262144,
@@ -16663,27 +16771,6 @@
               }
             ],
             "title": "Model Id"
-          },
-          "thinking": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ThinkingSelection"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "fast": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fast"
           }
         },
         "title": "SubmitRequest",

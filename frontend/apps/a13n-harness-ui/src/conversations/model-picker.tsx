@@ -14,8 +14,8 @@ import {
 } from "a13n-ui";
 import { useEffect, useRef, useState } from "react";
 import type { Schema } from "../transport/client";
-import { ThinkingPicker, thinkingSummary } from "./thinking-picker";
-import { FastToggle } from "./fast-toggle";
+import { thinkingSummary } from "./thinking-picker";
+import { ModelControlPanel, type ModelControlProps } from "./model-controls";
 import styles from "./model-picker.module.css";
 
 export function ModelPicker({
@@ -23,23 +23,17 @@ export function ModelPicker({
   defaultModelId,
   value,
   defaultSource = "agent",
-  thinking,
-  fast,
-  onFastChange,
+  controls,
+  onControlsChange,
   disabled,
   onChange,
-  onThinkingChange,
-}: {
+}: ModelControlProps & {
   models: Schema<"ModelSummary">[];
   defaultModelId?: string;
   defaultSource?: "agent" | "thread";
   value?: string;
-  thinking?: Schema<"SubmitRequest">["thinking"];
-  fast?: Schema<"SubmitRequest">["fast"];
-  onFastChange: (value: boolean) => void;
   disabled?: boolean;
   onChange: (value: string | undefined) => void;
-  onThinkingChange: (value: Schema<"SubmitRequest">["thinking"]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [choosingModel, setChoosingModel] = useState(false);
@@ -49,7 +43,16 @@ export function ModelPicker({
   );
   const modelName =
     model?.name ?? `${value ?? defaultModelId ?? "Model"} (unavailable)`;
-  const summary = thinkingSummary(model, thinking);
+  const summary = [
+    thinkingSummary(model, controls.thinking),
+    controls.reasoning_mode != null && !model?.reasoning_mode?.supported
+      ? "Unavailable mode"
+      : (controls.reasoning_mode ?? model?.reasoning_mode?.state) === "pro"
+        ? "Pro"
+        : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   useEffect(() => {
     if (open && !choosingModel) modelButton.current?.focus();
@@ -118,12 +121,6 @@ export function ModelPicker({
           <>
             <PopoverTitle className={styles.title}>Model</PopoverTitle>
             <div className={styles.modelSettings}>
-              <FastToggle
-                model={model}
-                value={fast}
-                disabled={disabled}
-                onChange={onFastChange}
-              />
               <Button
                 ref={modelButton}
                 variant="ghost"
@@ -140,11 +137,11 @@ export function ModelPicker({
                 ? `Following ${defaultSource} default`
                 : "Override for next run"}
             </p>
-            <ThinkingPicker
+            <ModelControlPanel
               model={model}
-              value={thinking}
+              controls={controls}
               disabled={disabled}
-              onChange={onThinkingChange}
+              onControlsChange={onControlsChange}
             />
           </>
         )}

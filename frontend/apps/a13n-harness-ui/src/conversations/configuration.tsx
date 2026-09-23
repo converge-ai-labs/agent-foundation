@@ -1,3 +1,4 @@
+import { reasoningModeLabel } from "./reasoning-mode-picker";
 import { useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -147,6 +148,12 @@ export function ConversationConfiguration({
                     <dt>Thinking (requested)</dt>
                     <dd>
                       {data.captured.agent.thinking_summary ?? "Not captured"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Reasoning mode (requested)</dt>
+                    <dd>
+                      {reasoningModeLabel(data.captured.agent.reasoning_mode)}
                     </dd>
                   </div>
                   <div>

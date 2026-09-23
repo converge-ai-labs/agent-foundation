@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { modelControlRequest } from "./model-controls";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import {
@@ -160,8 +161,7 @@ export async function submitDraft(
   )
     return;
   const mode = draft.mode;
-  const thinking = draft.thinking;
-  const fast = draft.fast;
+  const controls = modelControlRequest(draft.controls);
   const environment = draft.environment
     ? structuredClone(draft.environment)
     : undefined;
@@ -210,8 +210,7 @@ export async function submitDraft(
             ...(references.length ? { skill_references: references } : {}),
             ...(modelId ? { model_id: modelId } : {}),
             ...(environment ? { environment } : {}),
-            ...(thinking != null ? { thinking } : {}),
-            ...(fast != null ? { fast } : {}),
+            ...controls,
           },
         }),
       );

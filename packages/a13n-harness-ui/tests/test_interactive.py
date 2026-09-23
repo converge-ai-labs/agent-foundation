@@ -2148,3 +2148,92 @@ async def test_goal_live_status_and_saved_outcome_share_app_execution(
         await backend.execute(StreamRenderer(status), prompt="An ordinary new task")
         assert status.goal is None
         assert (await app.get_thread(thread_id)).thread.goal is None
+
+
+@pytest.mark.anyio
+async def test_pro_uses_model_default_and_preserves_independent_controls(tmp_path, monkeypatch):
+    import a13n_harness.models.codex as runtime
+    import yaml
+
+    path = await _seed(tmp_path, monkeypatch)
+    model_path = path.parent / "models/codex.yaml"
+    document = yaml.safe_load(model_path.read_text())
+    document["route"] = "openai-codex:gpt-5.6-sol"
+    document["settings"]["openai_reasoning_mode"] = "pro"
+    document["settings"]["openai_reasoning_summary"] = "detailed"
+    model_path.write_text(yaml.safe_dump(document))
+    original = model_path.read_bytes()
+    observed = []
+
+    async def stream(messages, info):
+        observed.append(dict(info.model_settings))
+        yield "Reply."
+
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        assert backend.status.reasoning_mode == "pro"
+        assert backend.status.reasoning_mode_description == "Pro (Model default)"
+        await backend.thinking("low")
+        await backend.fast("off")
+        assert "Standard (session override; Model default: Pro)" in await backend.pro(None)
+        assert backend.overrides.reasoning_mode == "standard"
+        assert backend.overrides.fast is False
+        assert backend.overrides.thinking == "low"
+        renderer = StreamRenderer(backend.status)
+        try:
+            await backend.execute(renderer, prompt="Standard mode")
+            thread_id = backend.thread_id
+            await backend.pro("reset")
+            assert backend.overrides.reasoning_mode is None
+            assert backend.status.reasoning_mode == "pro"  # Reset is not Standard.
+            await backend.execute(renderer, prompt="Model default mode")
+            await backend.pro("off")
+            await backend.resume(thread_id)
+            assert backend.overrides.reasoning_mode == "standard"
+            restarted = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
+            await restarted.initialize()
+            assert restarted.overrides.reasoning_mode is None
+            assert restarted.status.reasoning_mode == "pro"
+            await backend.new()
+            assert backend.overrides.reasoning_mode == "standard"
+            await backend.models("default")
+            assert backend.overrides.controls().model_dump(exclude_none=True) == {}
+        finally:
+            renderer.transcript.close()
+    assert [item["openai_reasoning_mode"] for item in observed] == ["standard", "pro"]
+    assert all(item["openai_reasoning_summary"] == "detailed" for item in observed)
+    assert model_path.read_bytes() == original
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("remembered_model", [None, "model-codex"])
+async def test_resume_saved_default_preserves_session_controls(tmp_path, monkeypatch, remembered_model):
+    import yaml
+    from a13n_harness_ui.surfaces import NewThreadDefaults
+
+    path = await _seed(tmp_path, monkeypatch)
+    model_path = path.parent / "models/codex.yaml"
+    model = yaml.safe_load(model_path.read_text())
+    model["settings"]["openai_reasoning_mode"] = "pro"
+    model_path.write_text(yaml.safe_dump(model))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        project = await app.ensure_cwd_project(tmp_path)
+        if remembered_model is not None:
+            await app.remember_project_model(project_id=project, model_id=remembered_model)
+        target = await app.create_thread(defaults=NewThreadDefaults(project_id=project, default_model_id="model-codex"))
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        assert backend.status.reasoning_mode == "pro"
+        await backend.pro("off")
+        await backend.fast("off")
+        await backend.resume(target.thread_id)
+        assert backend.overrides.model_id is None
+        assert backend.overrides.reasoning_mode == "standard"
+        assert backend.status.reasoning_mode == "standard"
+        assert backend.overrides.fast is False

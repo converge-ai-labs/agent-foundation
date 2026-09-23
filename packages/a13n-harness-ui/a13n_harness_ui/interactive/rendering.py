@@ -60,6 +60,8 @@ class Status:
     thinking: str = "default"
     service_tier: str | None = None
     fast: str = "default"
+    reasoning_mode: str = "default"
+    reasoning_mode_description: str = "Provider default"
     environment: str = "not selected"
     directory: Path | None = None
     context_window: int | None = None
@@ -173,6 +175,8 @@ class Status:
         state = self.state.capitalize()
         if compact and self.fast == "on":
             state += " Fast"
+        if compact and self.reasoning_mode == "pro":
+            state += " Pro"
         goal = self.goal
         goal_label = None
         if goal is not None:
@@ -184,6 +188,7 @@ class Status:
             *((goal_label,) if goal_label is not None else ()),
             state,
             *(("Fast",) if not compact and self.fast == "on" else ()),
+            *(("Pro",) if not compact and self.reasoning_mode == "pro" else ()),
             f"{'tok' if compact else 'tokens'} {token_count}",
             f"ctx {context}",
             f"cache {self.cache_rate_text}",

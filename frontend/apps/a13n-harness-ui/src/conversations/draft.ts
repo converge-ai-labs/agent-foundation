@@ -1,5 +1,6 @@
 import * as Y from "yjs";
 import type { Schema, Transport } from "../transport/client";
+import type { ModelControlValues } from "./model-controls";
 import type { LocalInput } from "./local-input";
 import type { StopRequest } from "./stop-operation";
 import {
@@ -100,8 +101,7 @@ export class ThreadDraft {
   mode: "normal" | "goal" = "normal";
   modelId: string | undefined;
   environment: Schema<"EnvironmentSelectionPatch"> | undefined;
-  thinking: Schema<"SubmitRequest">["thinking"] = null;
-  fast: Schema<"SubmitRequest">["fast"] = null;
+  controls: ModelControlValues = {};
   replacement: Schema<"DraftFrame"> | undefined;
   private accepted: Y.Snapshot | undefined;
   private listeners = new Set<() => void>();

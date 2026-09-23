@@ -60,6 +60,7 @@ vi.mock("../transport/context", () => ({
                   },
                 ],
                 native_tools: [],
+                reasoning_mode: { supported: true, state: "default" },
               },
             }),
     },
@@ -182,4 +183,38 @@ it("an old prepare cannot overwrite advanced edits after route-triggered remount
     }),
   );
   expect(source()).toBe(advanced);
+});
+
+it("edits the permanent reasoning mode without clobbering effort, and removes only mode for provider default", async () => {
+  const user = userEvent.setup();
+  mount(
+    original.replace(
+      "  thinking: high",
+      "  thinking: high\n  openai_reasoning_mode: pro\n  openai_reasoning_summary: detailed",
+    ),
+  );
+  await user.click(
+    await screen.findByRole("combobox", { name: "Reasoning mode" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Standard" }));
+  expect(parse(source()).settings).toMatchObject({
+    thinking: "high",
+    openai_reasoning_mode: "standard",
+    openai_reasoning_summary: "detailed",
+  });
+  await user.click(screen.getByRole("combobox", { name: "Settings preset" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Provider defaults" }),
+  );
+  expect(parse(source()).settings.openai_reasoning_mode).toBe("standard");
+  await user.click(screen.getByRole("combobox", { name: "Reasoning mode" }));
+  await user.click(
+    await screen.findByRole("option", {
+      name: "Provider default",
+    }),
+  );
+  expect(parse(source()).settings).toEqual({
+    temperature: 0.3,
+    openai_reasoning_summary: "detailed",
+  });
 });

@@ -30,8 +30,10 @@ from a13n_harness_ui.goal import GoalMode
 from a13n_harness_ui.live import LiveEvent, model_usage, root_context_samples
 from a13n_harness_ui.media_understanding import environment_media_kinds
 from a13n_harness_ui.model_adapters import service_tier_setting
-from a13n_harness_ui.model_fast import FastControl, apply_fast, describe_fast, fast_state
-from a13n_harness_ui.model_thinking import ThinkingControl, apply_thinking, describe_thinking, summarize_thinking
+from a13n_harness_ui.model_controls import describe_model_controls
+from a13n_harness_ui.model_fast import FastControl, apply_fast, fast_state
+from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl, apply_reasoning_mode, reasoning_mode_state
+from a13n_harness_ui.model_thinking import ThinkingControl, apply_thinking, summarize_thinking
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     ThreadConfiguration,
@@ -78,6 +80,7 @@ class SessionBackend:
         self.overrides = RunModelOverrides()
         self.thinking_control: ThinkingControl | None = None
         self.fast_control: FastControl | None = None
+        self.reasoning_mode_control: ReasoningModeControl | None = None
         self._model_preference_project_id: str | None = None
         self._model_from_preference = False
         self.environment = request.environment_profile_id or (
@@ -198,10 +201,30 @@ class SessionBackend:
             self.status.service_tier = None
             self.status.fast = "default"
             self.fast_control = None
+            self.reasoning_mode_control = None
+            self.status.reasoning_mode = "default"
+            self.status.reasoning_mode_description = "Provider default"
             self.status.context_window = None
             return False
         self.status.model = model.route
-        self.fast_control = describe_fast(model.route, model.settings)
+        controls = describe_model_controls(model.route, model.settings)
+        self.fast_control = controls.fast
+        self.reasoning_mode_control = controls.reasoning_mode
+        default_mode = controls.reasoning_mode.state
+        default_label = "Provider default" if default_mode == "default" else default_mode.capitalize()
+        try:
+            mode_settings = apply_reasoning_mode(model.route, model.settings, self.overrides.reasoning_mode)
+            self.status.reasoning_mode = reasoning_mode_state(model.route, mode_settings)
+            self.status.reasoning_mode_description = (
+                f"{default_label} (Model default)"
+                if self.overrides.reasoning_mode is None
+                else f"{self.overrides.reasoning_mode.capitalize()} (session override; Model default: {default_label})"
+            )
+        except HarnessUiError:
+            self.status.reasoning_mode = "unavailable"
+            self.status.reasoning_mode_description = (
+                f"Unavailable selection — /pro reset (Model default: {default_label})"
+            )
         try:
             fast_settings = apply_fast(model.route, model.settings, self.overrides.fast)
         except HarnessUiError:
@@ -213,7 +236,7 @@ class SessionBackend:
             or fast_settings.get("service_tier")
         )
         self.status.service_tier = tier if isinstance(tier, str) else None
-        self.thinking_control = describe_thinking(model.route, model.settings)
+        self.thinking_control = controls.thinking
         try:
             effective = apply_thinking(model.route, model.settings, self.overrides.thinking)
             self.status.thinking = summarize_thinking(model.route, effective)
@@ -385,6 +408,24 @@ class SessionBackend:
             )
         return message
 
+    async def pro(self, selected: str | None) -> str:
+        if not await self.refresh():
+            raise ValueError("Configure a model before selecting reasoning mode.")
+        action = selected or ("off" if self.status.reasoning_mode == "pro" else "on")
+        if action not in {"on", "off", "reset"}:
+            raise ValueError("Usage: /pro [on|off|reset]")
+        control = self.reasoning_mode_control
+        if action != "reset" and (control is None or not control.supported):
+            raise ValueError(control.reason if control else "Reasoning mode is unavailable.")
+        self.overrides = RunModelOverrides.model_validate(
+            {**self.overrides.model_dump(), "reasoning_mode": {"on": "pro", "off": "standard", "reset": None}[action]}
+        )
+        await self.refresh()
+        message = f"Reasoning mode · {self.status.reasoning_mode_description} · configuration unchanged."
+        if self.status.reasoning_mode == "pro":
+            message += " Pro requested; access, usage and latency depend on the provider."
+        return message
+
     async def set_environment(self, selected: str | None) -> str:
         if selected is not None:
             profile = environment_profile_id_for_mode(selected)
@@ -474,7 +515,8 @@ class SessionBackend:
         if thread.configuration.default_model_id is None:
             await self._restore_project_model(thread.configuration.project_id)
         elif self._model_from_preference:
-            self.overrides = RunModelOverrides()
+            # Drop restored model memory, not this terminal's explicit controls.
+            self.overrides = self.overrides.model_copy(update={"model_id": None})
             self._model_from_preference = False
             self._model_preference_project_id = None
         # A saved default outranks restored Project memory, not an explicit local choice.
@@ -489,9 +531,8 @@ class SessionBackend:
             # Historical usage never restores a temporary model selection.
             self.overrides = RunModelOverrides.model_validate(
                 {
+                    **self.overrides.model_dump(),
                     "thinking": usage.thinking if usage.model_id == default_model_id else None,
-                    "service_tier": self.overrides.service_tier,
-                    "fast": self.overrides.fast,
                 }
             )
         self._refresh_status(configuration, thread)

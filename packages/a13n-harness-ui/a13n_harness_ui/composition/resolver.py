@@ -39,6 +39,7 @@ from a13n_harness_ui.environment_profiles import (
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.model_adapters import PydanticAiModelAdapter, service_tier_setting
+from a13n_harness_ui.model_controls import apply_model_controls
 from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
 from a13n_harness_ui.surfaces import RunModelOverrides
 
@@ -302,20 +303,12 @@ class AgentCompositionResolver:
             raise CompositionError("The selected model is unavailable.", code="model_missing")
         resource = source.models[selected_model]
         if model_overrides is not None:
-            settings = model_overrides.model_dump(include={"thinking", "service_tier", "fast"}, exclude_none=True)
-            if settings:
-                effective = dict(resource.settings)
-                if model_overrides.service_tier is not None:
-                    # Native provider tiers otherwise take precedence over the generic override.
-                    effective.pop(service_tier_setting(resource.route), None)
-                from a13n_harness_ui.model_fast import apply_fast
-                from a13n_harness_ui.model_thinking import apply_thinking
-
-                effective = apply_thinking(resource.route, effective, model_overrides.thinking)
-                effective = apply_fast(resource.route, effective, model_overrides.fast)
-                settings.pop("thinking", None)
-                settings.pop("fast", None)
-                resource = resource.model_copy(update={"settings": {**effective, **settings}})
+            effective = apply_model_controls(resource.route, resource.settings, model_overrides)
+            if model_overrides.service_tier is not None:
+                # Preserve the existing raw tier override; it is exclusive with Fast.
+                effective.pop(service_tier_setting(resource.route), None)
+                effective["service_tier"] = model_overrides.service_tier
+            resource = resource.model_copy(update={"settings": effective})
         model = self._model_recipe(resource)
         if model_overrides is not None and model_overrides.thinking is not None:
             model = model.model_copy(update={"thinking_override": model_overrides.thinking})

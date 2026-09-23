@@ -39,6 +39,7 @@ const catalog: Schema<"ThreadSelectorCatalog"> = {
       name: "Model One",
       route: "custom:one",
       fast: { supported: true, state: "off" },
+      reasoning_mode: { supported: true, state: "pro" },
       thinking: {
         status: "supported",
         default_summary: "High",
@@ -182,22 +183,16 @@ function Input() {
           catalog={catalog}
           agentId="writer"
           modelId={state.modelId}
-          thinking={state.thinking}
-          fast={state.fast}
+          controls={state.controls}
           disabled={disabled}
           onAgentChange={() => {}}
           onModelChange={(next) => {
             state.modelId = next;
-            state.thinking = null;
-            state.fast = null;
+            state.controls = {};
             state.notify();
           }}
-          onThinkingChange={(next) => {
-            state.thinking = next;
-            state.notify();
-          }}
-          onFastChange={(next) => {
-            state.fast = next;
+          onControlsChange={(next) => {
+            state.controls = next;
             state.notify();
           }}
         />
@@ -237,6 +232,9 @@ it.each([false, true])(
     const trigger = screen.getByRole("button", { name: "Composer options" });
     await user.click(trigger);
     const panel = await screen.findByRole("dialog", { name: "Run settings" });
+    expect(within(panel).getByText("Model default: Pro")).toBeTruthy();
+    await user.click(within(panel).getByRole("button", { name: "Standard" }));
+    expect(draft.controls.reasoning_mode).toBe("standard");
     await user.click(within(panel).getByRole("button", { name: "Low" }));
     await user.click(within(panel).getByRole("button", { name: "Fast mode" }));
     await user.click(within(panel).getByRole("button", { name: "Goal" }));
@@ -249,8 +247,7 @@ it.each([false, true])(
     );
     await user.click(screen.getByRole("button", { name: "Model Two" }));
     expect(draft.modelId).toBe("two");
-    expect(draft.thinking).toBeNull();
-    expect(draft.fast).toBeNull();
+    expect(draft.controls).toEqual({});
     expect(within(panel).getByText("Model default: Custom")).toBeTruthy();
     expect(
       (

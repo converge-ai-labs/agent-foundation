@@ -22,8 +22,7 @@ from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILL
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
 from a13n_harness_ui.errors import AppStateError, ThreadError
 from a13n_harness_ui.media_understanding import environment_media_kinds
-from a13n_harness_ui.model_fast import describe_fast
-from a13n_harness_ui.model_thinking import describe_thinking
+from a13n_harness_ui.model_controls import describe_model_controls
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import LocalStore
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
@@ -458,8 +457,7 @@ class TerminalProjectionService:
                     model_id=item.id,
                     name=item.name,
                     route=item.route,
-                    thinking=describe_thinking(item.route, item.settings),
-                    fast=describe_fast(item.route, item.settings),
+                    **describe_model_controls(item.route, item.settings).model_dump(),
                     media_capabilities=item.media_capabilities(),
                 )
                 for item in sorted(source.models.values(), key=lambda item: (item.name.casefold(), item.id))

@@ -15,8 +15,10 @@ from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
+from a13n_harness_ui.model_controls import ModelControlSelection
 from a13n_harness_ui.model_fast import FastControl
-from a13n_harness_ui.model_thinking import ThinkingControl, ThinkingSelection
+from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl
+from a13n_harness_ui.model_thinking import ThinkingControl
 from a13n_harness_ui.output_comment_models import SavedOutputTarget
 from a13n_harness_ui.storage import AgentResourceSource, MarkdownSubagentSource, ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
@@ -32,13 +34,11 @@ class SurfaceModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
 
-class RunModelOverrides(SurfaceModel):
+class RunModelOverrides(ModelControlSelection):
     """Per-operation choices; never rewrite resources or sticky Thread heads."""
 
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
-    thinking: ThinkingSelection | None = None
     service_tier: Literal["auto", "default", "flex", "priority"] | None = None
-    fast: bool | None = None
 
     @model_validator(mode="after")
     def _exclusive_speed_override(self) -> Self:
@@ -710,6 +710,7 @@ class ModelSummary(SurfaceModel):
     route: str = Field(min_length=1)
     thinking: ThinkingControl | None = None
     fast: FastControl | None = None
+    reasoning_mode: ReasoningModeControl | None = None
     media_capabilities: tuple[NativeInputMediaKind, ...] = ()
 
 

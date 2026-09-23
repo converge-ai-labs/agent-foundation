@@ -1526,3 +1526,36 @@ async def test_fast_capture_preserves_resources_and_independent_children(tmp_pat
     assert resolver.resolve_run(source, _selection()).root == original.root
     view = captured_configuration("capture", composition)
     assert view.agent.fast == ("off" if fast is False else "on")
+
+
+@pytest.mark.parametrize("mode", [None, "standard", "pro"])
+async def test_reasoning_mode_capture_preserves_model_and_independent_children(tmp_path, mode):
+    from a13n_harness_ui.configuration_inspection import captured_configuration
+    from a13n_harness_ui.surfaces import RunModelOverrides
+
+    path = _write_source(tmp_path)
+    model = tmp_path / "models/primary.yaml"
+    model.write_text(
+        model.read_text()
+        .replace("route: openai:gpt-5", "route: openai:gpt-5.6-sol")
+        .replace(
+            "settings: {temperature: 0}",
+            "settings: {openai_reasoning_mode: pro, openai_reasoning_summary: detailed}",
+        )
+    )
+    original_bytes = model.read_bytes()
+    source = await load_harness_ui_configuration(path)
+    resolver = AgentCompositionResolver(_catalog())
+    original = resolver.resolve_run(source, _selection())
+    composition = resolver.resolve_run(
+        source, _selection(), model_overrides=RunModelOverrides(reasoning_mode=mode, thinking="low", fast=False)
+    )
+    settings = composition.root.model.settings
+    assert settings["openai_reasoning_mode"] == (mode or "pro")
+    assert settings["openai_reasoning_summary"] == "detailed"
+    assert settings["service_tier"] == "default"
+    assert composition.root.children[0].definition.model == composition.root.model
+    assert composition.root.children[1].definition.model == original.root.children[1].definition.model
+    assert source.models["model-primary"].settings["openai_reasoning_mode"] == "pro"
+    assert model.read_bytes() == original_bytes
+    assert captured_configuration("capture", composition).agent.reasoning_mode == (mode or "pro")

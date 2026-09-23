@@ -1793,6 +1793,8 @@ export interface components {
             thinking_summary?: string | null;
             /** @default default */
             fast?: components["schemas"]["FastState"];
+            /** @default default */
+            reasoning_mode?: components["schemas"]["ReasoningModeState"];
         };
         /** CapturedConfiguration */
         CapturedConfiguration: {
@@ -3215,6 +3217,7 @@ export interface components {
             known_capabilities: boolean;
             /** Supports Service Tier */
             supports_service_tier: boolean;
+            reasoning_mode: components["schemas"]["ReasoningModeControl"];
             /**
              * Native Tools
              * @default []
@@ -3259,6 +3262,7 @@ export interface components {
             route: string;
             thinking?: components["schemas"]["ThinkingControl"] | null;
             fast?: components["schemas"]["FastControl"] | null;
+            reasoning_mode?: components["schemas"]["ReasoningModeControl"] | null;
             /**
              * Media Capabilities
              * @default []
@@ -3642,6 +3646,16 @@ export interface components {
              */
             multi_select?: boolean;
         };
+        /** ReasoningModeControl */
+        ReasoningModeControl: {
+            /** Supported */
+            supported: boolean;
+            state: components["schemas"]["ReasoningModeState"];
+            /** Reason */
+            reason?: string | null;
+        };
+        /** @enum {string} */
+        ReasoningModeState: "standard" | "pro" | "default" | "custom";
         /**
          * RequiredAction
          * @enum {string}
@@ -5534,6 +5548,10 @@ export interface components {
             model_id: string;
             /** Base Url */
             base_url?: string | null;
+            /** Settings */
+            settings?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
         };
         /**
          * ModelCapability
@@ -5549,13 +5567,13 @@ export interface components {
             model_id: string;
             /** Base Url */
             base_url?: string | null;
-            authentication?: components["schemas"]["ModelAuthentication"] | null;
-            /** Preset */
-            preset?: string | null;
             /** Settings */
             settings?: {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
+            authentication?: components["schemas"]["ModelAuthentication"] | null;
+            /** Preset */
+            preset?: string | null;
             /** Model Configuration */
             model_configuration?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -5800,6 +5818,8 @@ export interface components {
             /** Attachment Id */
             attachment_id: string;
         };
+        /** @enum {string} */
+        ReasoningMode: "standard" | "pro";
         /** SkillReference */
         SkillReference: {
             /** Catalog Id */
@@ -5811,6 +5831,10 @@ export interface components {
         };
         /** SubmitRequest */
         SubmitRequest: {
+            thinking?: components["schemas"]["ThinkingSelection"] | null;
+            /** Fast */
+            fast?: boolean | null;
+            reasoning_mode?: components["schemas"]["ReasoningMode"] | null;
             /**
              * Prompt
              * @default
@@ -5839,9 +5863,6 @@ export interface components {
             environment?: components["schemas"]["EnvironmentSelectionPatch"] | null;
             /** Model Id */
             model_id?: string | null;
-            thinking?: components["schemas"]["ThinkingSelection"] | null;
-            /** Fast */
-            fast?: boolean | null;
         };
         /** RootSteerRequest */
         RootSteerRequest: {

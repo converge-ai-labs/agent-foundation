@@ -81,8 +81,7 @@ function Conversation({
       );
     },
     onSuccess: (updated) => {
-      draft.thinking = null;
-      draft.fast = null;
+      draft.controls = {};
       draft.notify();
       queries.setQueryData<Schema<"ThreadDetail">>(
         ["thread", threadId, "detail"],
@@ -821,14 +820,9 @@ function Conversation({
                 agentId={thread?.configuration.agent_source.id ?? ""}
                 defaultModelId={thread?.configuration.default_model_id}
                 modelId={draft.modelId}
-                thinking={draft.thinking}
-                fast={draft.fast}
-                onFastChange={(value) => {
-                  draft.fast = value;
-                  draft.notify();
-                }}
-                onThinkingChange={(value) => {
-                  draft.thinking = value;
+                controls={draft.controls}
+                onControlsChange={(value) => {
+                  draft.controls = value;
                   draft.notify();
                 }}
                 disabled={
@@ -841,8 +835,7 @@ function Conversation({
                 onAgentChange={(value) => agentSelection.mutate(value)}
                 onModelChange={(value) => {
                   draft.modelId = value;
-                  draft.thinking = null;
-                  draft.fast = null;
+                  draft.controls = {};
                   draft.notify();
                 }}
               />

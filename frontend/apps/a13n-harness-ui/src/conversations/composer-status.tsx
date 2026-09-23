@@ -1,3 +1,4 @@
+import { reasoningModeLabel } from "./reasoning-mode-picker";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
@@ -60,12 +61,13 @@ export function ComposerStatus({
       ),
   });
   const captured = inspection.data;
-  const fast =
+  const capturedAgent =
     active &&
     (captured?.capture_source !== "active_operation" ||
       captured.receipt_id !== operation?.receipt.receipt_id)
       ? undefined
-      : captured?.captured?.agent.fast;
+      : captured?.captured?.agent;
+  const fast = capturedAgent?.fast;
   const fastLabel =
     fast === "on"
       ? "On"
@@ -180,6 +182,18 @@ export function ComposerStatus({
         >
           Fast <strong>{fastLabel}</strong>
         </span>
+        {capturedAgent?.reasoning_mode &&
+          capturedAgent.reasoning_mode !== "default" && (
+            <span
+              className={styles.metric}
+              title="Captured reasoning mode request, not the next-run draft or a guarantee of provider access."
+            >
+              Mode{" "}
+              <strong>
+                {reasoningModeLabel(capturedAgent.reasoning_mode)}
+              </strong>
+            </span>
+          )}
         {stale && <span className={styles.stale}>Update unavailable</span>}
       </div>
     </div>

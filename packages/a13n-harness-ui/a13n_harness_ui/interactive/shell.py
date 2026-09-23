@@ -1808,6 +1808,7 @@ class CliShell:
                 + "\n"
                 + f"Agent        {self.status.agent}\nModel        {self.status.model}\n"
                 + f"Reasoning    {self.status.thinking}\nFast         {self.status.fast} (requested)\n"
+                + f"Mode         {self.status.reasoning_mode_description} (requested)\n"
                 + f"Service tier {self.status.service_tier_text} (requested)\n"
                 + f"Context      {tokens} / {window} tokens\n"
                 + f"Environment  {self.status.environment}\nWorkspace    {self.directory}\n"
@@ -1897,6 +1898,8 @@ class CliShell:
             self.launch(self.backend.thinking(argument), failure_input=invocation.source)
         elif name == "fast":
             self.launch(self.backend.fast(argument), failure_input=invocation.source)
+        elif name == "pro":
+            self.launch(self.backend.pro(argument), failure_input=invocation.source)
         elif name == "environment":
             self.launch(self.backend.set_environment(argument), failure_input=invocation.source)
         elif name == "new":
@@ -1914,5 +1917,5 @@ class CliShell:
             self.open_history()
         elif name == "config":
             self.emit(
-                f"Configuration: {self.request.config_path or Path.home() / '.a13n-harness-ui/a13n-harness-ui.yaml'}\n/agent selects an agent; /model selects and remembers a model for this project (/model default clears it); /thinking adjusts reasoning for subsequent turns; /fast temporarily selects priority service (/fast reset restores Model configuration).\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-harness-ui config show --format json` for accepted values and `a13n-harness-ui config validate` after editing."
+                f"Configuration: {self.request.config_path or Path.home() / '.a13n-harness-ui/a13n-harness-ui.yaml'}\n/agent selects an agent; /model selects and remembers a model for this project (/model default clears it); /thinking adjusts reasoning for subsequent turns; /fast temporarily selects priority service (/fast reset restores Model configuration); /pro selects Pro reasoning mode (/pro off selects Standard, /pro reset restores the Model default).\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-harness-ui config show --format json` for accepted values and `a13n-harness-ui config validate` after editing."
             )

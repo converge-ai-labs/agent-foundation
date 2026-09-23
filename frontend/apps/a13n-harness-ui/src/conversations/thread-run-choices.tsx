@@ -12,8 +12,7 @@ import {
   SettingsRow,
   useComposerSettings,
 } from "./composer-settings";
-import { ThinkingPicker } from "./thinking-picker";
-import { FastToggle } from "./fast-toggle";
+import { ModelControlPanel, type ModelControlProps } from "./model-controls";
 
 export function RunEnvironments({
   catalog,
@@ -333,24 +332,18 @@ export function ThreadRunChoices({
   defaultAgentId,
   defaultModelId,
   modelId,
-  thinking,
-  onThinkingChange,
-  fast,
-  onFastChange,
+  controls,
+  onControlsChange,
   disabled,
   onAgentChange,
   onModelChange,
-}: {
+}: ModelControlProps & {
   expanded?: boolean;
   catalog?: Schema<"ThreadSelectorCatalog">;
   agentId: string;
   defaultAgentId?: string;
   defaultModelId?: string | null;
   modelId?: string;
-  thinking?: Schema<"SubmitRequest">["thinking"];
-  onThinkingChange: (value: Schema<"SubmitRequest">["thinking"]) => void;
-  fast?: Schema<"SubmitRequest">["fast"];
-  onFastChange: (value: boolean | null) => void;
   disabled: boolean;
   onAgentChange: (value: string) => void;
   onModelChange: (value: string | undefined) => void;
@@ -371,11 +364,10 @@ export function ThreadRunChoices({
       previousSelection.current !== selectionKey
     ) {
       // Also cover a collaborator's Agent change or a new inherited default.
-      onThinkingChange(null);
-      onFastChange(null);
+      onControlsChange({});
     }
     previousSelection.current = selectionKey;
-  }, [selectionKey, onThinkingChange, onFastChange, settings]);
+  }, [selectionKey, onControlsChange, settings]);
   const agentGroups = [
     {
       label: "Agents",
@@ -453,20 +445,12 @@ export function ThreadRunChoices({
           disabled={disabled || !catalog}
           onClick={() => settings.navigate("model")}
         />
-        <ThinkingPicker
+        <ModelControlPanel
           model={model}
-          value={thinking}
-          onChange={onThinkingChange}
+          controls={controls}
+          onControlsChange={onControlsChange}
           disabled={disabled}
         />
-        <div className={panelStyles.group}>
-          <FastToggle
-            model={model}
-            value={fast}
-            onChange={onFastChange}
-            disabled={disabled}
-          />
-        </div>
         <SettingsRow
           label="Agent"
           value={agent?.name ?? (agentId || "Default agent")}
@@ -502,10 +486,8 @@ export function ThreadRunChoices({
           value={modelId}
           disabled={disabled || !catalog}
           onChange={onModelChange}
-          thinking={thinking}
-          onThinkingChange={onThinkingChange}
-          fast={fast}
-          onFastChange={onFastChange}
+          controls={controls}
+          onControlsChange={onControlsChange}
         />
       </div>
     </div>

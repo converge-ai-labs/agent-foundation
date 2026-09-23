@@ -254,6 +254,7 @@ Type these in the terminal composer, not your shell. Tab completes supported syn
 | `/agent [agent-id]`                     | —       | No         | Switch agent, including its model, instructions, and tools.                                                                 |
 | `/model [model-id\|default\|defaults]`  | —       | No         | Select a Project Model; `default` clears its preference; `defaults` configures global media understanding with Save/Cancel. |
 | `/fast [on\|off\|reset]`                | —       | No         | Toggle supported Fast processing without saving configuration.                                                              |
+| `/pro [on\|off\|reset]`                 | —       | No         | Select Pro or Standard reasoning mode; reset inherits the Model configuration.                                              |
 | `/thinking [level]`                     | —       | No         | Show or change reasoning effort for subsequent turns.                                                                       |
 | `/environment [mode]`                   | —       | No         | Show or select execution permissions for subsequent turns.                                                                  |
 | `/new`                                  | —       | No         | Start a fresh session; keep all saved history.                                                                              |

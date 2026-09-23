@@ -229,11 +229,22 @@ export function ModelEditor({
     enabled: api,
   });
   const options = useQuery({
-    queryKey: ["model-options", connection, effectiveId, effectiveUrl],
+    queryKey: [
+      "model-options",
+      connection,
+      effectiveId,
+      effectiveUrl,
+      value?.settings,
+    ],
     queryFn: ({ signal }) =>
       result(
         client.POST("/api/models/options", {
-          body: { connection, model_id: effectiveId, base_url: effectiveUrl },
+          body: {
+            connection,
+            model_id: effectiveId,
+            base_url: effectiveUrl,
+            settings: value?.settings,
+          },
           signal,
         }),
       ),
@@ -450,6 +461,48 @@ export function ModelEditor({
               }
             }}
           />
+          {(options.data?.reasoning_mode?.supported ||
+            value.settings?.openai_reasoning_mode != null) && (
+            <ChoiceField
+              label="Reasoning mode"
+              value={String(value.settings?.openai_reasoning_mode ?? "")}
+              description={
+                options.data?.reasoning_mode?.reason ??
+                "Saved Model default, independent of thinking effort. Pro access, usage and latency depend on the provider."
+              }
+              options={[
+                { value: "", label: "Provider default" },
+                {
+                  value: "standard",
+                  label: "Standard",
+                  disabled: !options.data?.reasoning_mode?.supported,
+                },
+                {
+                  value: "pro",
+                  label: "Pro",
+                  disabled: !options.data?.reasoning_mode?.supported,
+                },
+                ...(![undefined, null, "standard", "pro"].includes(
+                  value.settings?.openai_reasoning_mode as
+                    string | null | undefined,
+                )
+                  ? [
+                      {
+                        value: String(value.settings?.openai_reasoning_mode),
+                        label: `Current: ${value.settings?.openai_reasoning_mode}`,
+                        disabled: true,
+                      },
+                    ]
+                  : []),
+              ]}
+              onValueChange={(mode) => {
+                const settings = { ...value.settings };
+                if (mode) settings.openai_reasoning_mode = mode;
+                else delete settings.openai_reasoning_mode;
+                update({ settings });
+              }}
+            />
+          )}
           {options.data?.supports_service_tier && (
             <ChoiceField
               label="Service speed"

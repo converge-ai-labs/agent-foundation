@@ -353,27 +353,20 @@ function NewConversation({
                 agentId={defaults.agent_id ?? ""}
                 defaultAgentId={effectiveAgent?.agent_id}
                 modelId={composerDraft.modelId}
-                thinking={composerDraft.thinking}
-                fast={composerDraft.fast}
-                onFastChange={(value) => {
-                  composerDraft.fast = value;
+                controls={composerDraft.controls}
+                onControlsChange={(value) => {
+                  composerDraft.controls = value;
                   composerDraft.notify();
                 }}
                 disabled={choicesDisabled}
                 onAgentChange={(value) => {
                   change({ agent_id: value || null });
-                  composerDraft.thinking = null;
-                  composerDraft.fast = null;
+                  composerDraft.controls = {};
                   composerDraft.notify();
                 }}
                 onModelChange={(value) => {
                   composerDraft.modelId = value;
-                  composerDraft.thinking = null;
-                  composerDraft.fast = null;
-                  composerDraft.notify();
-                }}
-                onThinkingChange={(value) => {
-                  composerDraft.thinking = value;
+                  composerDraft.controls = {};
                   composerDraft.notify();
                 }}
               />

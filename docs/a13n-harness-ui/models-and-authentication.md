@@ -163,6 +163,23 @@ Use `/thinking` to see the choices supported by the selected Model and installed
 
 Codex subscription requests do **not** receive an API output-token cap copied from YAACLI presets. The official Pydantic AI Codex profile strips unsupported generic settings such as `max_tokens`; `openai_store` is forced false. Explicit `openai_*` settings otherwise follow upstream validation rather than a separate Harness filter.
 
+## Pro reasoning mode
+
+On supported OpenAI Responses and Codex Models, `/pro` toggles the requested reasoning mode for subsequent Runs. `/pro on` selects Pro; `/pro off` selects Standard, **not** thinking off; `/pro reset` inherits the selected Model's configuration. If the Model is configured with Pro, resetting returns to Pro. An unset configuration is shown as Provider default, not Standard.
+
+Mode is independent of `/thinking` effort, `/fast` processing, and `openai_reasoning_summary` (the provider-exposed summary preference). The override survives `/new` and in-process `/resume`, but changing Agent or Model clears it and a new TUI process does not restore it from history. Unsupported connections and conflicting `extra_body.reasoning` controls reject explicit choices rather than silently ignoring them. Availability comes from the installed SDK profile, not an account access check.
+
+For a permanent default, edit the selected Model:
+
+```yaml
+settings:
+  openai_reasoning_mode: pro  # or standard; remove for provider default
+  thinking: high
+  openai_reasoning_summary: detailed
+```
+
+The WebUI offers the same independent Reasoning mode control in Model settings, with the Model default always visible and a Use default action. The Model resource editor saves a permanent Standard/Pro choice; its Provider default choice removes the native field. Changing these settings never relabels an already captured Run. Pro access, usage, and latency depend on the provider; selecting Pro does not guarantee entitlement.
+
 ## Fast mode and service tiers
 
 Codex onboarding adds a **Fast / Standard** choice after the model, defaulting to **Fast**. Fast saves `settings.openai_service_tier: priority`; Standard saves `settings.openai_service_tier: default`. The choice also appears when creating a new Codex Model with `add model` or `add agent`. Reusing a Model or loading an existing configuration does not change its tier.

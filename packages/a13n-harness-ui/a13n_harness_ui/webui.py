@@ -89,7 +89,7 @@ from a13n_harness_ui.model_authoring import (
     ModelRecipeRequest,
 )
 from a13n_harness_ui.model_catalog import ModelCatalogSnapshot
-from a13n_harness_ui.model_thinking import ThinkingSelection
+from a13n_harness_ui.model_controls import ModelControlSelection
 from a13n_harness_ui.output_comment_models import (
     CommentEdit,
     CommentPage,
@@ -228,12 +228,10 @@ class SteerRequest(SurfaceModel):
     prompt: str = Field(min_length=1, max_length=256 * 1024)
 
 
-class SubmitRequest(PromptRequest):
+class SubmitRequest(PromptRequest, ModelControlSelection):
     mode: Literal["normal", "goal"] = "normal"
     environment: EnvironmentSelectionPatch | None = None
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
-    thinking: ThinkingSelection | None = None
-    fast: bool | None = None
 
 
 class RootSteerRequest(PromptRequest):
@@ -1525,9 +1523,7 @@ def create_webui(
                 mode=document.mode,
                 attachment_ids=document.attachment_ids,
                 environment=document.environment,
-                model_overrides=RunModelOverrides(
-                    model_id=document.model_id, thinking=document.thinking, fast=document.fast
-                ),
+                model_overrides=RunModelOverrides(model_id=document.model_id, **document.controls().model_dump()),
                 skill_references=document.skill_references,
                 input_surface="webui",
             )
