@@ -13,7 +13,7 @@ from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
 def _selection(tmp_path: Path, **changes: object) -> SetupSelection:
     return SetupSelection.model_validate(
         {
-            "model": prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-5.6-sol")),
+            "model": prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-6-sol")),
             "default_agent": "agent-codex",
             "project": "project-local",
             "project_path": str(tmp_path),
@@ -69,7 +69,7 @@ async def test_setup_writes_native_codex_service_tier(tmp_path: Path, tier: str 
             if operation == "add_model"
             else {"new_agent_id": "agent-second", "new_agent_name": "Second Agent"}
         )
-    recipe = prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-5.6-sol"))
+    recipe = prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-6-sol"))
     settings = dict(recipe.settings)
     if tier is None:
         settings.pop("openai_service_tier")
@@ -566,7 +566,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
             assert batch.requests[0].kind == "approval"
         else:
             assert batch is None
-    assert set(resolved) == {"gpt-5.6-luna", "gpt-5.6-sol"}
+    assert set(resolved) == {"gpt-5.6-luna", "gpt-6-sol"}
     assert reviewed == ["low"]
     assert marker.exists() is (review_outcome == "error")
 

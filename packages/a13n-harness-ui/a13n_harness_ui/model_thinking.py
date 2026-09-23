@@ -81,7 +81,7 @@ def _choices(route: str) -> tuple[_Choice, ...]:
         levels: tuple[ThinkingSelection, ...]
         if "-chat" in name:
             levels = ("medium",)
-        elif name.startswith(("gpt-5.2", "gpt-5.3", "gpt-5.4", "gpt-5.5", "gpt-5.6", "gpt-6-astra")):
+        elif name.startswith(("gpt-5.2", "gpt-5.3", "gpt-5.4", "gpt-5.5", "gpt-5.6", "gpt-6-astra", "gpt-6-sol")):
             levels = ("medium", "high", "xhigh") if "-pro" in name else ("low", "medium", "high", "xhigh")
         elif name.startswith("gpt-5-pro"):
             levels = ("high",)

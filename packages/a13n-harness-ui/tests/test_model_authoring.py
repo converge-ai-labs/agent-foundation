@@ -16,10 +16,11 @@ from a13n_harness_ui.model_authoring import (
 from pydantic import ValidationError
 
 
-def test_subscription_defaults_are_native_and_independent_of_api_presets() -> None:
-    codex = prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-5.6-sol"))
+@pytest.mark.parametrize("model_id", ["gpt-6-sol", "gpt-6-astra", "gpt-5.6-terra"])
+def test_subscription_defaults_are_native_and_independent_of_api_presets(model_id: str) -> None:
+    codex = prepare_model(ModelRecipeRequest(connection="codex", model_id=model_id))
     assert codex.authentication.kind == "codex_subscription"
-    assert codex.route == "openai-codex:gpt-5.6-sol"
+    assert codex.route == f"openai-codex:{model_id}"
     assert codex.settings == {
         "thinking": "high",
         "openai_reasoning_summary": "detailed",
@@ -34,11 +35,48 @@ def test_subscription_defaults_are_native_and_independent_of_api_presets() -> No
     assert grok.settings == {} and grok.model_configuration == {}
     assert grok.model_characteristics.context_window_tokens is None
     choices = ModelChoices()
+    codex_connection = next(c for c in choices.connections if c.id == "codex")
+    assert [item.value for item in codex_connection.models] == ["gpt-6-sol", "gpt-6-astra", "gpt-5.6-terra"]
+    assert codex_connection.default_model == "gpt-6-sol"
+    assert codex_connection.models[0].label == "Codex - GPT-6 Sol"
     assert next(c for c in choices.connections if c.id == "grok").authentication == "api_key"
     subscription = next(c for c in choices.connections if c.id == "grok-subscription")
     assert subscription.authentication == "grok_subscription"
     assert subscription.default_model == "grok-4.7"
     assert subscription.models[0].value == subscription.default_model
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("effort", ["high", "medium", "low", "xhigh"])
+async def test_codex_sol_preset_reaches_native_request(effort: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    from typing import cast
+    from unittest.mock import AsyncMock
+
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+    from pydantic_ai.profiles.openai_codex import openai_codex_model_profile
+    from pydantic_ai.providers.openai import OpenAIProvider
+    from pydantic_ai.settings import ModelSettings
+
+    recipe = prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-6-sol", preset=effort))
+    provider = OpenAIProvider(api_key="test-not-a-secret")
+    model = OpenAIResponsesModel("gpt-6-sol", provider=provider, profile=openai_codex_model_profile("gpt-6-sol"))
+    send = AsyncMock(side_effect=RuntimeError("captured native request"))
+    monkeypatch.setattr(model.client.responses, "create", send)
+    async with model.client:
+        with pytest.raises(RuntimeError, match="captured native request"):
+            async with model.request_stream(
+                [ModelRequest(parts=[UserPromptPart("Hello")])],
+                cast(ModelSettings, recipe.settings),
+                ModelRequestParameters(),
+            ):
+                pass
+    request = send.call_args.kwargs
+    assert request["model"] == "gpt-6-sol"
+    assert request["reasoning"] == {"effort": effort, "summary": "detailed", "context": "all_turns"}
+    assert request["service_tier"] == "priority"
+    assert request["store"] is False
 
 
 def test_prepare_preserves_explicit_native_mappings_and_empty_capabilities() -> None:
@@ -106,6 +144,26 @@ def test_terminal_manual_subscription_id_uses_only_offered_defaults() -> None:
     recipe = wizard.selection("/tmp")["model"]
     assert recipe["route"] == "openai-codex:old-subscription-model"
     assert recipe["settings"] == {"openai_store": False, "openai_service_tier": "default"}
+
+
+@pytest.mark.parametrize("operation", ["setup", "add_agent", "add_model"])
+def test_terminal_subscription_creation_uses_shared_codex_default(operation: str) -> None:
+    from a13n_harness_ui.interactive.setup import SetupWizard
+
+    wizard = SetupWizard(add_agent=operation == "add_agent", add_model=operation == "add_model")
+    if operation == "add_agent":
+        wizard.accept("new")
+    wizard.accept("codex")
+    assert wizard.question.key == "model"
+    assert wizard.question.choices == ("gpt-6-sol", "gpt-6-astra", "gpt-5.6-terra")
+    assert wizard.question.default == "gpt-6-sol"
+    wizard.accept("")
+    while wizard.question is not None:
+        wizard.accept("")
+    recipe = wizard.selection("/tmp")["model"]
+    assert recipe["route"] == "openai-codex:gpt-6-sol"
+    assert recipe["settings"]["thinking"] == "high"
+    assert "max_tokens" not in recipe["settings"]
 
 
 def test_terminal_saved_credential_choice_never_needs_the_secret() -> None:

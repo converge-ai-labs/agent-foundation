@@ -11,6 +11,7 @@ from a13n_harness_ui.model_thinking import apply_thinking, describe_thinking, su
     [
         ("openai-responses:gpt-5", [None, "minimal", "low", "medium", "high"]),
         ("openai-codex:gpt-5.6-sol", [None, False, "low", "medium", "high", "xhigh"]),
+        ("openai-codex:gpt-6-sol", [None, False, "low", "medium", "high", "xhigh"]),
         ("anthropic:claude-sonnet-4-6", [None, False, "low", "medium", "high"]),
         ("anthropic:claude-opus-4-6", [None, False, "low", "medium", "high", "max"]),
         ("google:gemini-3-pro-preview", [None, "low", "high"]),

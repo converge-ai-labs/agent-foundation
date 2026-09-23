@@ -45,7 +45,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(
     account = _codex_login_file(datetime.now(UTC) + timedelta(hours=-1 if expired else 1))
     original = account.read_bytes()
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
-    answers = deque(["codex", "gpt-5.6-sol", fast, "", "full-control"])
+    answers = deque(["codex", "gpt-6-sol", fast, "", "full-control"])
     asked, output = [], []
 
     async def ask(question, selection):
@@ -101,7 +101,7 @@ async def test_setup_reuses_an_existing_multi_root_project_without_publishing_a_
     )
     original = project.read_bytes()
     output = []
-    answers = deque(["codex", "gpt-5.6-sol", "", "", "full-control"])
+    answers = deque(["codex", "gpt-6-sol", "", "", "full-control"])
 
     async def ask(question, selection):
         return answers.popleft()
@@ -191,7 +191,7 @@ async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path, cance
 @pytest.mark.anyio
 async def test_missing_account_offers_explicit_login_and_allows_configuring_later(tmp_path: Path) -> None:
     Path(os.environ["CODEX_HOME"]).mkdir(parents=True)
-    answers = deque(["codex", "later", "gpt-5.6-sol", "", "", "full-control"])
+    answers = deque(["codex", "later", "gpt-6-sol", "", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -496,7 +496,7 @@ async def test_landing_busy_cancellation_releases_terminal() -> None:
 async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaults(tmp_path: Path) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
     path = tmp_path / "config.yaml"
-    answers = deque(["codex", "gpt-5.6-sol", "", "", "full-control"])
+    answers = deque(["codex", "gpt-6-sol", "", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -524,7 +524,7 @@ async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaul
 async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, api: bool) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
     path = tmp_path / "config.yaml"
-    answers = deque(["codex", "gpt-5.6-sol", "", "", "full-control"])
+    answers = deque(["codex", "gpt-6-sol", "", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -601,7 +601,7 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
 @pytest.mark.anyio
 async def test_add_agent_can_back_out_of_existing_model_and_create_new(tmp_path: Path) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
-    answers = deque(["codex", "gpt-5.6-sol", "", "", "full-control"])
+    answers = deque(["codex", "gpt-6-sol", "", "", "full-control"])
 
     async def ask(question, selection):
         value = answers.popleft()

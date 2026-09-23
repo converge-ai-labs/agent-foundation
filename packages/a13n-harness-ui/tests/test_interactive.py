@@ -159,12 +159,12 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
     monkeypatch.setattr("a13n_harness_ui.interactive.setup.local_sandbox_supported", lambda: True)
     wizard = SetupWizard(advanced=True)
     wizard.accept("codex")
-    wizard.accept("gpt-5.6-sol")
+    wizard.accept("gpt-6-sol")
     for value in ("on", "all", "extended", "medium", "", "no", "", "sandbox"):
         wizard.accept(value)
     assert wizard.question is None
     selection = wizard.selection("/tmp")
-    assert selection["model"]["route"] == "openai-codex:gpt-5.6-sol"
+    assert selection["model"]["route"] == "openai-codex:gpt-6-sol"
     characteristics = selection["model"]["model_characteristics"]
     assert characteristics["context_window_tokens"] == 872000
     assert characteristics["proactive_context_management_threshold"] == 0.65
@@ -213,7 +213,9 @@ async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
     selection = SetupSelection(
-        model=prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-5.6-sol")),
+        model=prepare_model(
+            ModelRecipeRequest(connection="codex", model_id="gpt-5.6-sol", settings={"thinking": "high"})
+        ),
         default_agent="agent-codex",
         project="project-local",
         project_path=str(tmp_path),
