@@ -12,6 +12,7 @@ from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolic
 from pydantic import Field
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.messages import TextContent
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness_ui.composition import CompositionAcceptanceService, ResolvedRunComposition
@@ -112,10 +113,15 @@ class ThreadToolController:
             result["configuration"] = inspection.model_dump(mode="json")
         return result
 
-    async def run_thread(self, *, thread_id: str, prompt: str, model_id: str | None = None) -> dict[str, Any]:
+    async def run_thread(
+        self, *, source_thread_id: str, thread_id: str, prompt: str, model_id: str | None = None
+    ) -> dict[str, Any]:
+        if not prompt.strip():
+            raise ThreadError("A non-empty prompt is required.", code="thread_prompt_empty")
+        source = await self._projections.detail(source_thread_id)
         receipt = await self._root_runs.submit_prompt(
             thread_id=thread_id,
-            prompt=prompt,
+            prompt=_thread_input(source.thread, prompt),
             model_overrides=RunModelOverrides(model_id=model_id) if model_id is not None else None,
             touch=True,
         )
@@ -169,19 +175,21 @@ class ThreadToolController:
         requester_project = (
             source_composition.project_id if source_composition is not None else configuration.project_id
         )
-        prompt = (
+        context = (
             f"Task from Thread {source_thread_id}. Requesting Project: {requester_project or 'No Project'}.\n"
             "This is an independent root Thread, not a delegated child. "
             f"For clarification, decisions or blockers, use send_thread_message(thread_id={source_thread_id!r}, "
             "message=...) to ask the requester. The requester can reply with the same tool targeting your Thread. "
             "When finished, use that tool to report your findings, changes, validation and remaining issues to the requester. "
             "Sending a message does not wait for an answer; do not invent a reply. "
-            "Do not send acknowledgement-only replies or delegate the same task back to its requester.\n\n"
-            f"{prompt}"
+            "Do not send acknowledgement-only replies or delegate the same task back to its requester."
         )
         try:
             receipt = await self._root_runs.submit_prompt(
-                thread_id=created.thread_id, prompt=prompt, model_overrides=model_overrides, touch=True
+                thread_id=created.thread_id,
+                prompt=_thread_input(source.thread, prompt, context=context),
+                model_overrides=model_overrides,
+                touch=True,
             )
         except HarnessUiError as exc:
             # Creation and run admission are separate durable effects. Never hide the created identity.
@@ -194,27 +202,31 @@ class ThreadToolController:
             raise ThreadError("Child Threads use parent-scoped delegation controls.", code="child_thread_scoped")
         if detail.thread.archived:
             raise ThreadError("An archived Thread cannot receive messages.", code="thread_archived")
-        message = f"Message from Thread {source_thread_id}:\n\n{message}"
+        source = await self._projections.detail(source_thread_id)
+        prompt = _thread_input(source.thread, message)
         operation = await self._root_runs.active(thread_id)
         if operation is not None:
             # Resolve once. A rejected steer never falls through into a different operation.
-            result = await self._root_runs.steer(receipt_id=operation.receipt.receipt_id, message=message)
+            result = await self._root_runs.steer(receipt_id=operation.receipt.receipt_id, message=prompt)
             return {"ok": result.accepted, "mode": "steer", **result.model_dump(mode="json")}
         if detail.deferred_requests:
             raise ThreadError(
                 "Resolve this Thread's pending decisions before sending a message.", code="thread_deferred_pending"
             )
         # Admission serializes concurrent sends. If another operation wins, report its conflict without retrying.
-        receipt = await self._root_runs.submit_prompt(thread_id=thread_id, prompt=message)
+        receipt = await self._root_runs.submit_prompt(thread_id=thread_id, prompt=prompt)
         return {"ok": True, "mode": "run", "receipt": receipt.model_dump(mode="json")}
 
-    async def steer_thread(self, *, thread_id: str, message: str) -> dict[str, Any]:
+    async def steer_thread(self, *, source_thread_id: str, thread_id: str, message: str) -> dict[str, Any]:
+        if not message.strip():
+            raise ThreadError("A non-empty message is required.", code="thread_message_empty")
         operation = await self._root_runs.active(thread_id)
         if operation is None:
             return {"accepted": False, "receipt_id": None, "enqueue_id": None}
+        source = await self._projections.detail(source_thread_id)
         result = await self._root_runs.steer(
             receipt_id=operation.receipt.receipt_id,
-            message=message,
+            message=_thread_input(source.thread, message),
         )
         return result.model_dump(mode="json")
 
@@ -381,7 +393,9 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 "A Thread cannot recursively run itself from its active root invocation.",
             )
         try:
-            receipt = await self.controller.run_thread(thread_id=thread_id, prompt=prompt, model_id=model_id)
+            receipt = await self.controller.run_thread(
+                source_thread_id=self.source_thread_id, thread_id=thread_id, prompt=prompt, model_id=model_id
+            )
             return {"ok": True, "receipt": receipt}
         except (HarnessUiError, ValueError) as exc:
             return _failure(exc, "thread_run_failed")
@@ -436,7 +450,9 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 "A Thread cannot steer itself from its active root invocation.",
             )
         try:
-            result = await self.controller.steer_thread(thread_id=thread_id, message=message)
+            result = await self.controller.steer_thread(
+                source_thread_id=self.source_thread_id, thread_id=thread_id, message=message
+            )
             return {"ok": result["accepted"], **result}
         except HarnessUiError as exc:
             return _failure(exc, "thread_steer_failed")
@@ -519,6 +535,24 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 "Harness UI Thread tools cannot cross root Run scope.",
                 code="capability_scope_invalid",
             )
+
+
+def _thread_input(source: ThreadSummary, text: str, *, context: str | None = None) -> tuple[TextContent, TextContent]:
+    """Keep model context separate from the attributed, surface-visible message."""
+    return (
+        TextContent(context or f"Message from Thread {source.thread_id}:", metadata={"display": False}),
+        TextContent(
+            text,
+            metadata={
+                "harness_ui": {
+                    "thread_message": {
+                        "source_thread_id": source.thread_id,
+                        "source_thread_title": source.title or source.excerpt.first_input or None,
+                    }
+                }
+            },
+        ),
+    )
 
 
 def _tool(

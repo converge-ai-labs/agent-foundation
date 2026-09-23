@@ -390,6 +390,34 @@
   color: var(--a13n-secondary);
   margin-bottom: 8px;
 }
+.threadSource {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  color: var(--a13n-secondary);
+  text-decoration: none;
+}
+.threadSource svg,
+.threadSourceLabel {
+  flex-shrink: 0;
+}
+.threadSourceName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+.threadSource:hover .threadSourceName {
+  text-decoration: underline;
+}
+.threadSource:focus-visible {
+  outline: 2px solid var(--a13n-text);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
 .inputStatus {
   display: inline;
   font-size: 11px;
