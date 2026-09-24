@@ -23,10 +23,10 @@ export function conversationKeys(workspaceId: string) {
     threads: (sessionId: string) => [...root, "threads", sessionId] as const,
     thread: (threadId: string) => [...root, "thread", threadId] as const,
     runs: (threadId: string) => [...root, "runs", threadId] as const,
-    queue: (threadId: string) => [...root, "queue", threadId] as const,
+    inbox: (threadId: string) => [...root, "inbox", threadId] as const,
     /** One inbox entry; it changes with its Thread's inbox. */
     entry: (threadId: string, entryId: string) =>
-      [...root, "queue", threadId, "entry", entryId] as const,
+      [...root, "inbox", threadId, "entry", entryId] as const,
     run: (runId: string) => [...root, "run", runId] as const,
     items: (runId: string) => [...root, "items", runId] as const,
     attempts: (runId: string) => [...root, "attempts", runId] as const,
@@ -159,9 +159,9 @@ export function conversationQueries(client: Client, workspaceId: string) {
             .then((attempts) => attempts.items),
       }),
     /** One Thread's inbox entries in the given states, in inbox order. */
-    queue: (thread_id: string, status: Schema["EntryStatus"][]) =>
+    inbox: (thread_id: string, status: Schema["EntryStatus"][]) =>
       queryOptions({
-        queryKey: [...keys.queue(thread_id), status],
+        queryKey: [...keys.inbox(thread_id), status],
         queryFn: ({ signal }) =>
           allPages((cursor) =>
             client.http
@@ -222,7 +222,7 @@ export function invalidateConversation(
             return !!change.sessionId && id === change.sessionId;
           case "thread":
           case "runs":
-          case "queue":
+          case "inbox":
             return !!change.threadId && id === change.threadId;
           case "run":
           case "items":

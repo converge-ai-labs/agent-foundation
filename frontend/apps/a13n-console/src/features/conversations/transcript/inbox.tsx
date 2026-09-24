@@ -42,7 +42,7 @@ import { isInteractive } from "./run-actions";
 import { InputContent } from "./user-message";
 import styles from "./cards.module.css";
 
-/** The inbox statuses each queue view shows. */
+/** The inbox statuses each inbox view shows. */
 const VIEWS = {
   queued: ["pending"],
   consumed: ["assigned", "consumed"],
@@ -50,7 +50,7 @@ const VIEWS = {
 } satisfies Record<string, Schema["EntryStatus"][]>;
 
 /** What is waiting behind the current run, in the order it will be consumed. */
-export function ThreadQueue({
+export function ThreadInbox({
   thread,
   canRunNext = false,
 }: {
@@ -65,7 +65,7 @@ export function ThreadQueue({
     navigate = useNavigate();
   const [state, setState] = useState<keyof typeof VIEWS>("queued");
   const query = useQuery({
-    ...conversationQueries(client, workspace.id).queue(thread.id, VIEWS[state]),
+    ...conversationQueries(client, workspace.id).inbox(thread.id, VIEWS[state]),
     enabled: can("read"),
   });
   const refresh = () => {
@@ -147,7 +147,7 @@ export function ThreadQueue({
   const editable = isInteractive(thread) && can("run");
   const next = items.find((item) => item.kind === "message");
   const nextMessage = next && entryResubmission(next);
-  // A read-only thread with a known-empty queue has nothing to say.
+  // A read-only thread with a known-empty inbox has nothing to say.
   if (!editable && query.data && !items.length) return null;
   function move(index: number, offset: number) {
     const ids = items.map((item) => item.id);
@@ -155,7 +155,7 @@ export function ThreadQueue({
     reorder.mutate(ids);
   }
   // The closed state says what is there, not a bare count beside a filter.
-  const queueSummary = (count: number, filter: string) => {
+  const inboxSummary = (count: number, filter: string) => {
     const name = t(`state.${filter}`, { defaultValue: filter }).toLowerCase();
     return count
       ? t("{{count}} {{state}}", { count, state: name })
@@ -163,14 +163,14 @@ export function ThreadQueue({
   };
   return (
     <DisclosureSection
-      className={styles.queue}
+      className={styles.inbox}
       title={t("Queued messages")}
-      summary={queueSummary(items.length, state)}
+      summary={inboxSummary(items.length, state)}
     >
-      <div className={styles.queueBody}>
-        <div className={styles.queueToolbar}>
+      <div className={styles.inboxBody}>
+        <div className={styles.inboxToolbar}>
           <ChoiceField
-            placeholder={t("Queue state")}
+            placeholder={t("Inbox state")}
             value={state}
             onValueChange={(value) => {
               if (
@@ -180,7 +180,7 @@ export function ThreadQueue({
               )
                 setState(value);
             }}
-            label={t("Queue state")}
+            label={t("Inbox state")}
             variant="filter"
             options={[
               { value: "queued", label: t("Queued") },
@@ -207,7 +207,7 @@ export function ThreadQueue({
           )}
         </div>
         {editable && !canRunNext && state === "queued" && !!items.length && (
-          <p className={styles.queueNote}>
+          <p className={styles.inboxNote}>
             {t(
               "Queued messages can run after the current run finishes and pending feedback is resolved.",
             )}
@@ -222,25 +222,25 @@ export function ThreadQueue({
         />
         <ErrorToast error={reorder.error ?? runNext.error} />
         {runNext.data?.entry.status === "failed" && (
-          <p className={styles.queueNote} role="status">
+          <p className={styles.inboxNote} role="status">
             {t(
-              "The next submission failed admission. Its details are retained in the Failed queue view.",
+              "The next submission failed admission. Its details are retained in the Failed inbox view.",
             )}
           </p>
         )}
         {query.isPending ? (
           <Loading variant="list" rows={3} />
         ) : !items.length ? (
-          <p className={styles.queueNote}>
-            {t("No messages in this queue state.")}
+          <p className={styles.inboxNote}>
+            {t("No messages in this inbox state.")}
           </p>
         ) : (
           items.map((item, index) => (
-            <article key={item.id} className={styles.queueItem}>
+            <article key={item.id} className={styles.inboxItem}>
               <header>
                 <StatePill state={item.status} />
                 <Timestamp value={item.created_at} relative />
-                <div className={styles.queueActions}>
+                <div className={styles.inboxActions}>
                   {editable && state === "queued" && (
                     <>
                       <Button
@@ -290,7 +290,7 @@ export function ThreadQueue({
                           onSuccess={refresh}
                           title={t("Delete queued message")}
                           description={t(
-                            "Remove this message from the queue permanently.",
+                            "Remove this message from the inbox permanently.",
                           )}
                           triggerElement={
                             <MenuItem
@@ -327,7 +327,7 @@ export function ThreadQueue({
               {item.failure && <JsonView value={item.failure} />}
               {item.assigned_run_id && (
                 <Link
-                  className={styles.queueLink}
+                  className={styles.inboxLink}
                   to={runPath(basePath, {
                     session_id: thread.session_id,
                     thread_id: thread.id,

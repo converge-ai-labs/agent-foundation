@@ -59,7 +59,7 @@ function show() {
   return cache;
 }
 
-it("mounts a registered Device path on the Thread it was read with, retrying the same request", async () => {
+it("mounts an external target's working directory on the Thread it was read with, retrying the same request", async () => {
   mocks.POST.mockRejectedValueOnce(
     new Error("Connection lost"),
   ).mockResolvedValueOnce({ data: { name: "reference" } });
@@ -102,7 +102,7 @@ it("mounts a registered Device path on the Thread it was read with, retrying the
   cache.clear();
 });
 
-it("asks for a working directory only on a registered Device", async () => {
+it("asks for a working directory only on an external target", async () => {
   const cache = show();
   const user = userEvent.setup();
   await user.click(

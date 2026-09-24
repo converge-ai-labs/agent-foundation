@@ -54,7 +54,7 @@ vi.mock("../run-display", () => ({
 }));
 vi.mock("./history", () => ({ HistoryTranscript: () => null }));
 vi.mock("../agents/queries", () => ({ useAgent: () => ({ data: null }) }));
-vi.mock("./queue", () => ({ ThreadQueue: () => <p>Thread queue</p> }));
+vi.mock("./inbox", () => ({ ThreadInbox: () => <p>Thread inbox</p> }));
 beforeEach(() => {
   requests.length = 0;
   stream.calls.length = 0;
@@ -135,7 +135,7 @@ function show(entry = "/") {
 it("prefills a stopped run's message to resubmit it instead of retrying it", async () => {
   show();
   expect(await screen.findByText("Build an agent")).toBeTruthy();
-  expect(screen.getByText("Thread queue")).toBeTruthy();
+  expect(screen.getByText("Thread inbox")).toBeTruthy();
   expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty(
     "value",
     "",

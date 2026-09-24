@@ -18,7 +18,7 @@ import { useRun } from "../queries";
 import type { Resubmission } from "../resubmit";
 import { ContinueWithoutFeedback } from "./continuation";
 import { PendingRequests, RunFeedback } from "./pending-request";
-import { ThreadQueue } from "./queue";
+import { ThreadInbox } from "./inbox";
 import {
   isInteractive,
   questionsOnly,
@@ -120,7 +120,7 @@ export function RunDock({
         ) : (
           <PendingRequests actions={run.pending.items} />
         ))}
-      <ThreadQueue thread={thread} canRunNext={canRunNext} />
+      <ThreadInbox thread={thread} canRunNext={canRunNext} />
       <div className={styles.dock}>
         {above}
         {!current ? (

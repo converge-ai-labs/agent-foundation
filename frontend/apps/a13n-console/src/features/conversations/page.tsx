@@ -31,7 +31,7 @@ import type { EnvironmentChoice } from "./composer/options-dialog";
 import { SessionList } from "./list";
 import { SessionHeader } from "./session-header";
 import { RunCollapseProvider } from "./transcript/debug/collapse";
-import { ThreadQueue } from "./transcript/queue";
+import { ThreadInbox } from "./transcript/inbox";
 import styles from "./conversations.module.css";
 
 export function ConversationsPage() {
@@ -277,7 +277,7 @@ export function ThreadLayout() {
               title={t("No runs yet")}
               description={t("This thread has not started a run.")}
             />
-            <ThreadQueue thread={thread.data} />
+            <ThreadInbox thread={thread.data} />
           </div>
         )
       )}

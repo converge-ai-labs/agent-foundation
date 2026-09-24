@@ -8,7 +8,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, ifMatch, rowTag, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
-import { DeviceDirectory } from "../environments/device-directory";
+import { WorkingDirectory } from "../environments/working-directory";
 import { EnvironmentReference } from "../environments/reference";
 import {
   conversationKeys,
@@ -196,7 +196,7 @@ function AddMountForm({
         />
       </FormField>
       {selected && !selected.template_id && (
-        <DeviceDirectory
+        <WorkingDirectory
           key={selected.id}
           value={directory}
           onChange={setDirectory}

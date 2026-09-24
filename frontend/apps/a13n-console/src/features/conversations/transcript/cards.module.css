@@ -132,28 +132,28 @@
   gap: 16px;
 }
 
-/* Queue ------------------------------------------------------------------ */
-.queue {
+/* Inbox ------------------------------------------------------------------ */
+.inbox {
   min-width: 0;
 }
-.queueBody {
+.inboxBody {
   display: grid;
   gap: 10px;
   min-width: 0;
 }
-.queueToolbar {
+.inboxToolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
-.queueNote {
+.inboxNote {
   margin: 0;
   color: var(--a13n-secondary);
   font-size: 12.5px;
   line-height: 1.6;
 }
-.queueItem {
+.inboxItem {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -162,20 +162,20 @@
   background: var(--a13n-surface);
   font-size: 13px;
 }
-.queueItem header {
+.inboxItem header {
   display: flex;
   align-items: center;
   gap: 10px;
   color: var(--a13n-secondary);
   font-size: 12px;
 }
-.queueActions {
+.inboxActions {
   display: flex;
   align-items: center;
   gap: 2px;
   margin-left: auto;
 }
-.queueLink {
+.inboxLink {
   color: var(--a13n-secondary);
   font-size: 12px;
   justify-self: start;

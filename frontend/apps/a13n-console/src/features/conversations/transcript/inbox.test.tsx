@@ -5,7 +5,7 @@ import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { createClient, type Client } from "../../../service-client";
 import { fixtureRun, fixtureThread } from "./fixture";
-import { ThreadQueue } from "./queue";
+import { ThreadInbox } from "./inbox";
 
 let client: Client;
 vi.mock("../../../auth/context", () => ({ useClient: () => client }));
@@ -78,7 +78,7 @@ function mount(
       }
     >
       <MemoryRouter>
-        <ThreadQueue thread={fixtureThread()} canRunNext={canRunNext} />
+        <ThreadInbox thread={fixtureThread()} canRunNext={canRunNext} />
         <Location />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -116,7 +116,7 @@ it("withdraws a pending message against the Thread it was read with", async () =
   );
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(
-    await screen.findByText("No messages in this queue state."),
+    await screen.findByText("No messages in this inbox state."),
   ).toBeTruthy();
   const removal = requests.find((request) => request.method === "DELETE")!;
   expect(new URL(removal.url).pathname).toBe(

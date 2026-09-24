@@ -19,7 +19,7 @@ import { allPages, data, type Schema } from "../../../shared/api";
 import { ErrorNotice } from "../../../shared/feedback";
 import { jsonObject, runOverride, TextAreaField } from "../../../shared/forms";
 import { environmentTemplates } from "../../environments/api";
-import { DeviceDirectory } from "../../environments/device-directory";
+import { WorkingDirectory } from "../../environments/working-directory";
 import { modelApi } from "../../models/api";
 import {
   InheritIcon,
@@ -301,7 +301,7 @@ export function RunOptionsDialog({
           options={environmentOptions}
         />
         {selectedEnvironment?.device_id && open && (
-          <DeviceDirectory
+          <WorkingDirectory
             key={selectedEnvironment.id}
             value={options.workingDirectory}
             onChange={options.setWorkingDirectory}

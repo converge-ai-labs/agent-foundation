@@ -119,7 +119,7 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   );
 });
 
-it("mounts a Device at a working directory and clears it when switching targets", async () => {
+it("mounts an external target at a working directory and clears it when switching targets", async () => {
   http.GET.mockImplementation(async (path: string) => ({
     response: new Response(null),
     data: {
