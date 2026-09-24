@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
-    from pydantic_ai.profiles import ModelProfileSpec
     from pydantic_ai.providers import Provider
 
 
@@ -26,9 +25,9 @@ class ModelApi:
     def settings_type(self) -> Any:
         return getattr(import_module(self.settings_module), self.settings_name)
 
-    def build(self, model_name: str, provider: Provider[Any], *, profile: ModelProfileSpec | None = None) -> Model[Any]:
+    def build(self, model_name: str, provider: Provider[Any]) -> Model[Any]:
         constructor = getattr(import_module(self.model_module), self.model_name)
-        return constructor(model_name, provider=provider, profile=profile)
+        return constructor(model_name, provider=provider)
 
 
 MODEL_APIS = MappingProxyType(

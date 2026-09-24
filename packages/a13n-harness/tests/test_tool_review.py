@@ -31,7 +31,8 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.errors import RunError
 from a13n_harness.model_calls import ModelCall
-from a13n_harness.token_pricing import TokenPriceTier, TokenPricing, TokenPricingCapability, TokenRates
+from a13n_harness.pricing import ModelPriceRule, ModelPricingEntry, PriceComponent
+from a13n_harness.token_pricing import TokenPricingCapability
 from a13n_harness.tools import (
     HarnessTool,
     HarnessToolMetadata,
@@ -508,8 +509,17 @@ async def test_default_reviewer_in_a_run_is_a_checked_priced_model_request_of_th
     reviewer = AgentToolReviewer(
         FunctionModel(stream_function=review_model), ToolReviewConfig(model="logical:review-model")
     )
-    rates = TokenRates(input=Decimal(1), output=Decimal(2))
-    prices = TokenPricingCapability({"logical:review-model": TokenPricing(tiers=(TokenPriceTier(rates=rates),))})
+    rule = ModelPriceRule(
+        rule_id="standard",
+        prices=(
+            PriceComponent(price_key="input_mtok", price=Decimal(1)),
+            PriceComponent(price_key="output_mtok", price=Decimal(2)),
+        ),
+    )
+    pricing = ModelPricingEntry(
+        provider="review", model="review-model", rules=(rule,), source="custom", source_revision="test"
+    )
+    prices = TokenPricingCapability({"logical:review-model": pricing})
     executed: list[dict[str, Any]] = []
     result = await _build(reviewer, executed, capabilities=(prices,)).run(
         "go",

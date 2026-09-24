@@ -47,7 +47,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | `a13n_harness.plugin_factories`      | Plugin factory discovery and catalogs                                                        |
 | `a13n_harness.plugins`               | Complete plugin middleware protocol                                                          |
 | `a13n_harness.pricing`               | Bundled/current pricing catalogs and model-cost Capability family                            |
-| `a13n_harness.token_pricing`         | Frozen Host-authored token tiers and selected-model-ID cost valuation                        |
+| `a13n_harness.token_pricing`         | Selected-model-ID cost valuation against complete pricing entries                            |
 | `a13n_harness.state`                 | Advanced context and Capability state values                                                 |
 | `a13n_harness.tools`                 | Tool recovery declarations, managed tool invocation, and event helpers                       |
 | `a13n_harness.toolsets`              | First-party reusable Toolsets, including the standard async subagent dispatcher              |

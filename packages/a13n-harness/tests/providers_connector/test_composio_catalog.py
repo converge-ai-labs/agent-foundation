@@ -81,17 +81,9 @@ def test_hosted_credentials_and_instance_fields_do_not_enter_local_schema(scheme
 
 
 @pytest.mark.anyio
-async def test_managed_configuration_creation_reconciles_before_single_use_gate():
+async def test_managed_configuration_creation_reuses_a_configuration_accepted_with_a_lost_response():
     configs = []
     posts = []
-    reserved = False
-
-    async def reserve(scheme):
-        assert scheme == "OAUTH2"
-        nonlocal reserved
-        if reserved:
-            raise ConnectorProviderError("shared_setup_outcome_unknown")
-        reserved = True
 
     def respond(request):
         if request.method == "GET":
@@ -112,20 +104,11 @@ async def test_managed_configuration_creation_reconciles_before_single_use_gate(
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
         catalog = ComposioCatalog(ConnectorHttpClient(http, AllowEndpoint(), response_max_bytes=65536), "secret")
         with pytest.raises(ConnectorProviderError):
-            await catalog.resolve_auth_config(
-                "github", "create:OAUTH2", reserve, configurations=await catalog.configurations()
-            )
+            await catalog.resolve_auth_config("github", "create:OAUTH2", configurations=await catalog.configurations())
         # Upstream accepted the POST despite a lost response; reuse its result.
         assert (
-            await catalog.resolve_auth_config(
-                "github", "create:OAUTH2", reserve, configurations=await catalog.configurations()
-            )
+            await catalog.resolve_auth_config("github", "create:OAUTH2", configurations=await catalog.configurations())
         ).id == "ac_created"
-        configs.clear()
-        with pytest.raises(ConnectorProviderError, match="shared_setup_outcome_unknown"):
-            await catalog.resolve_auth_config(
-                "github", "create:OAUTH2", reserve, configurations=await catalog.configurations()
-            )
     assert len(posts) == 1
     assert posts[0]["auth_config"]["type"] == "use_composio_managed_auth"
 
@@ -145,10 +128,6 @@ def test_hosted_composio_rejects_user_configuration():
 @pytest.mark.parametrize("scheme", ["API_KEY", "BEARER_TOKEN", "BASIC"])
 async def test_secretless_auth_configs_use_documented_scheme_and_one_catalog_read(scheme):
     requests = []
-    claims = []
-
-    async def reserve(method):
-        claims.append(method)
 
     def respond(request):
         requests.append(request)
@@ -182,10 +161,9 @@ async def test_secretless_auth_configs_use_documented_scheme_and_one_catalog_rea
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
         catalog = ComposioCatalog(ConnectorHttpClient(http, AllowEndpoint(), response_max_bytes=65536), "secret")
         configured = await catalog.prepare_setup(
-            "github", {"auth_config_id": f"create:{scheme}", "toolkit_version": "20260903_01"}, reserve
+            "github", {"auth_config_id": f"create:{scheme}", "toolkit_version": "20260903_01"}
         )
     assert configured.scheme == scheme and configured.id == "ac_new"
-    assert claims == [scheme]
     assert (
         len([request for request in requests if request.method == "GET" and request.url.path.endswith("auth_configs")])
         == 1
@@ -203,8 +181,8 @@ async def test_ambiguous_managed_configs_are_never_arbitrarily_reused_or_created
     ) as http:
         catalog = ComposioCatalog(ConnectorHttpClient(http, AllowEndpoint(), response_max_bytes=65536), "secret")
         with pytest.raises(ConnectorProviderError, match="auth_configuration_ambiguous"):
-            await catalog.resolve_auth_config("github", "create:OAUTH2", None, configurations=configurations)
-        assert (await catalog.resolve_auth_config("github", "ac_b", None, configurations=configurations)).id == "ac_b"
+            await catalog.resolve_auth_config("github", "create:OAUTH2", configurations=configurations)
+        assert (await catalog.resolve_auth_config("github", "ac_b", configurations=configurations)).id == "ac_b"
 
 
 def test_app_credentials_require_dashboard_but_account_secrets_do_not():
@@ -302,5 +280,4 @@ async def test_prefill_is_optional_typed_and_selected_scheme_specific_before_any
             await catalog.prepare_setup(
                 "github",
                 {**setup, "auth_config_id": f"create:{scheme}", "connection_data": {"password": "secret"}},
-                None,
             )

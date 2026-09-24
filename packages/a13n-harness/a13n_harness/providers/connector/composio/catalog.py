@@ -11,7 +11,7 @@ from pydantic import JsonValue
 
 from a13n_harness.providers.connector.contracts import JsonObject
 
-from ..contracts import BeforeSharedSetup, ConnectorProviderError, ConnectorTool, ConnectorToolPage, DiscoveredConnector
+from ..contracts import ConnectorProviderError, ConnectorTool, ConnectorToolPage, DiscoveredConnector
 from ..directory import DirectoryBudget, directory_items, is_credential_field
 from ..http import ConnectorHttpClient
 from ..validation import optional_string, path_segment, required_object, required_string
@@ -79,35 +79,11 @@ class ComposioCatalog:
     async def connector(self, key: str) -> DiscoveredConnector:
         return connector_metadata(await self._toolkit(key), await self.configurations())
 
-    async def prepare_setup(
-        self, key: str, setup: JsonObject, before_shared_setup: BeforeSharedSetup | None
-    ) -> AuthConfiguration:
+    async def prepare_setup(self, key: str, setup: JsonObject) -> AuthConfiguration:
         item = await self._toolkit(key)
         configurations = await self.configurations()
         configured = await self._validate_setup(key, setup, item, configurations)
-        return await self.resolve_auth_config(
-            key, configured.auth_config_id, before_shared_setup, configurations=configurations
-        )
-
-    async def prepare_credentials(
-        self, key: str, setup: JsonObject, credentials: JsonObject, before_shared_setup: BeforeSharedSetup | None
-    ) -> AuthConfiguration:
-        item = await self._toolkit(key)
-        configurations = await self.configurations()
-        configured = await self._validate_setup(key, setup, item, configurations)
-        selected = next(
-            (config for config in configurations if config.id == configured.auth_config_id and config.toolkit == key),
-            None,
-        )
-        scheme = selected.scheme if selected is not None else configured.auth_config_id.removeprefix("create:")
-        if scheme not in {"API_KEY", "BEARER_TOKEN", "BASIC"}:
-            raise ConnectorProviderError("invalid_setup_options")
-        schema = _credential_schema(item, scheme)
-        if not schema["properties"] or not Draft202012Validator(schema).is_valid(credentials):
-            raise ConnectorProviderError("invalid_credentials")
-        return await self.resolve_auth_config(
-            key, configured.auth_config_id, before_shared_setup, configurations=configurations
-        )
+        return await self.resolve_auth_config(key, configured.auth_config_id, configurations=configurations)
 
     async def _validate_setup(
         self, key: str, setup: JsonObject, item: JsonObject, configurations: tuple[AuthConfiguration, ...]
@@ -143,12 +119,7 @@ class ComposioCatalog:
         return item
 
     async def resolve_auth_config(
-        self,
-        key: str,
-        selection: str,
-        before_shared_setup: BeforeSharedSetup | None,
-        *,
-        configurations: tuple[AuthConfiguration, ...],
+        self, key: str, selection: str, *, configurations: tuple[AuthConfiguration, ...]
     ) -> AuthConfiguration:
         configurations = tuple(item for item in configurations if item.toolkit == key)
         if not selection.startswith("create:"):
@@ -164,8 +135,6 @@ class ComposioCatalog:
             return matching[0]
         if matching:
             raise ConnectorProviderError("auth_configuration_ambiguous")
-        if before_shared_setup is not None:
-            await before_shared_setup(scheme)
         value = await self._http.request(
             "POST",
             endpoint=COMPOSIO_ENDPOINT,
@@ -283,7 +252,6 @@ def connector_metadata(item: JsonObject, configurations: tuple[AuthConfiguration
         unavailable_reason=reason,
         setup_schema=schema,
         authentication_methods=methods if item.get("no_auth") is not True else (),
-        credential_schemas={scheme: _credential_schema(item, scheme) for scheme in methods if scheme != "OAUTH2"},
     )
 
 
@@ -354,28 +322,6 @@ def _connection_data_schema(item: JsonObject, scheme: str) -> JsonObject:
         "properties": properties,
         "additionalProperties": False,
     }
-
-
-def _credential_schema(item: JsonObject, scheme: str) -> JsonObject:
-    properties: JsonObject = {}
-    required: list[JsonValue] = []
-    for detail in _auth_details(item):
-        if detail.get("mode") != scheme:
-            continue
-        fields = required_object(required_object(detail.get("fields")).get("connected_account_initiation", {}))
-        for group in ("required", "optional"):
-            entries = fields.get(group, [])
-            if not isinstance(entries, list):
-                raise ConnectorProviderError("invalid_provider_response")
-            for entry in entries:
-                field = required_object(entry)
-                name = required_string(field, "name", max_length=128)
-                if not is_credential_field(name) and field.get("is_secret") is not True:
-                    continue
-                properties[name] = {"type": "string", "minLength": 1, "writeOnly": True}
-                if group == "required":
-                    required.append(name)
-    return {"type": "object", "properties": properties, "required": required, "additionalProperties": False}
 
 
 class ComposioToolCatalog:

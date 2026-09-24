@@ -8,7 +8,7 @@ from a13n_harness._exports import exported_names, load_export
 if TYPE_CHECKING:
     from .authentication import Authentication, AuthenticationCase, CredentialMode
     from .catalog import ProviderCatalog, ProviderNotSelected
-    from .connector.definition import ConnectorProviderDefinition, ConnectorSetupPolicy
+    from .connector.definition import ConnectorProviderDefinition
     from .definition import ProviderDefinition
     from .environment.definition import EnvironmentProviderDefinition
     from .model.definition import ModelProviderDefinition
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 _EXPORTS = {
     "a13n_harness.providers.authentication": ("Authentication", "AuthenticationCase", "CredentialMode"),
     "a13n_harness.providers.catalog": ("ProviderCatalog", "ProviderNotSelected"),
-    "a13n_harness.providers.connector.definition": ("ConnectorProviderDefinition", "ConnectorSetupPolicy"),
+    "a13n_harness.providers.connector.definition": ("ConnectorProviderDefinition",),
     "a13n_harness.providers.definition": ("ProviderDefinition",),
     "a13n_harness.providers.environment.definition": ("EnvironmentProviderDefinition",),
     "a13n_harness.providers.model.definition": ("ModelProviderDefinition",),

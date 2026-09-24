@@ -332,7 +332,6 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
         "Authentication",
         "AuthenticationCase",
         "ConnectorProviderDefinition",
-        "ConnectorSetupPolicy",
         "CredentialMode",
         "EnvironmentProviderDefinition",
         "ModelProviderDefinition",

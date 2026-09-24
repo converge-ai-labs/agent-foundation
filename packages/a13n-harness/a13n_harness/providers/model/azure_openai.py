@@ -120,7 +120,6 @@ DEFINITION = ModelProviderDefinition(
     supported_model_apis=("openai.responses", "openai.chat_completions"),
     build_provider=_build_provider,
     endpoint=_endpoint,
-    endpoint_configuration_field="resource_endpoint",
     reserved_headers=("authorization", "api-key"),
     connection_probe=_request,
 )

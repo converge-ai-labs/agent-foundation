@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal, Protocol
@@ -25,11 +24,6 @@ class AdapterConnectionStatus(StrEnum):
     disabled = "disabled"
 
 
-class AdapterStatusReason(StrEnum):
-    reauthorization_required = "reauthorization_required"
-    incompatible = "incompatible"
-
-
 class SetupContext(StrictModel):
     connector_key: str = Field(min_length=1, max_length=128)
     external_user_correlation: str = Field(min_length=1, max_length=128, repr=False)
@@ -37,7 +31,6 @@ class SetupContext(StrictModel):
 
 
 class SetupCompletionMethod(StrEnum):
-    polling = "polling"
     oauth_verifier = "oauth_verifier"
     browser_confirmation = "browser_confirmation"
 
@@ -57,15 +50,8 @@ class ConnectionInspection(StrictModel):
     connector_key: str = Field(min_length=1, max_length=128)
     external_user_correlation: str = Field(min_length=1, max_length=128, repr=False)
     status: AdapterConnectionStatus
-    status_reason: AdapterStatusReason | None = None
     safe_metadata: JsonObject
     provider_version: str = Field(min_length=1, max_length=128)
-
-    @model_validator(mode="after")
-    def valid_reason(self) -> ConnectionInspection:
-        if (self.status is AdapterConnectionStatus.action_required) != (self.status_reason is not None):
-            raise ValueError("status_reason is required exactly for action_required")
-        return self
 
 
 class ConnectorTool(StrictModel):
@@ -127,10 +113,6 @@ class ConnectionBinding(StrictModel):
     connector_key: str = Field(min_length=1, max_length=128)
 
 
-BeforeDispatch = Callable[[], Awaitable[None]]
-BeforeSharedSetup = Callable[[str], Awaitable[None]]
-
-
 class ConnectorConnectionRuntime(Protocol):
     """One verified external account; creating a handle has no remote effects."""
 
@@ -145,7 +127,6 @@ class ConnectorConnectionRuntime(Protocol):
         provider_version: str,
         arguments: JsonObject,
         request_id: str,
-        before_dispatch: BeforeDispatch | None = None,
     ) -> ConnectorToolOutcome: ...
 
     async def revoke(self, *, operation_id: str) -> None: ...
@@ -155,28 +136,14 @@ class ToolCatalog(Protocol):
     async def discover_tools(self, *, cursor: str | None) -> ConnectorToolPage: ...
 
 
-ProviderAccess = Literal["catalog_read", "account_read"]
-
-
 class ConnectorProviderRuntime(Protocol):
-    compatibility_profile: str
-    setup_replay_safe: bool
-
-    async def test(self) -> tuple[ProviderAccess, ...]: ...
+    async def test(self) -> None: ...
 
     async def discover_connectors(self) -> tuple[DiscoveredConnector, ...]: ...
 
     async def discover_connector(self, connector_key: str) -> DiscoveredConnector: ...
 
-    async def start_setup(
-        self,
-        *,
-        setup: JsonObject,
-        context: SetupContext,
-        resume_ref: str | None = None,
-        before_shared_setup: BeforeSharedSetup | None = None,
-        credentials: JsonObject | None = None,
-    ) -> SetupStarted: ...
+    async def start_setup(self, *, setup: JsonObject, context: SetupContext) -> SetupStarted: ...
 
     async def complete_setup(
         self, *, session_uri: str, context: SetupContext, expected_external_ref: str
@@ -197,4 +164,3 @@ class DiscoveredConnector(StrictModel):
     unavailable_reason: str | None = Field(default=None, max_length=512)
     setup_schema: JsonObject
     authentication_methods: tuple[str, ...] = Field(max_length=32)
-    credential_schemas: dict[str, JsonObject] = Field(default_factory=dict)

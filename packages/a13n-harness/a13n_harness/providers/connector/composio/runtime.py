@@ -9,16 +9,12 @@ from a13n_harness.providers.connector.contracts import JsonObject
 
 from ..contracts import (
     AdapterConnectionStatus,
-    AdapterStatusReason,
-    BeforeDispatch,
-    BeforeSharedSetup,
     ConnectionBinding,
     ConnectionInspection,
     ConnectorProviderError,
     ConnectorToolOutcome,
     ConnectorToolPage,
     DiscoveredConnector,
-    ProviderAccess,
     SetupCompletionMethod,
     SetupContext,
     SetupStarted,
@@ -37,9 +33,6 @@ from .configuration import COMPOSIO_CONNECT_ENDPOINT, COMPOSIO_ENDPOINT
 
 
 class ComposioProvider:
-    compatibility_profile = "composio_v3_1"
-    setup_replay_safe = False
-
     def __init__(self, http: ConnectorHttpClient, credentials: ApiKeyCredentials) -> None:
         self._http = http
         # The Provider boundary is the one place the API key is revealed for outbound requests.
@@ -61,14 +54,13 @@ class ComposioProvider:
             )
         ).inspect()
 
-    async def test(self) -> tuple[ProviderAccess, ...]:
+    async def test(self) -> None:
         await self._http.request(
             "GET",
             endpoint=COMPOSIO_ENDPOINT,
             path="/api/v3.1/connected_accounts?limit=1",
             api_key=self._api_key,
         )
-        return ("account_read",)
 
     async def discover_connectors(self) -> tuple[DiscoveredConnector, ...]:
         return await self._catalog.directory()
@@ -76,24 +68,10 @@ class ComposioProvider:
     async def discover_connector(self, connector_key: str) -> DiscoveredConnector:
         return await self._catalog.connector(connector_key)
 
-    async def start_setup(
-        self,
-        *,
-        setup: JsonObject,
-        context: SetupContext,
-        resume_ref: str | None = None,
-        before_shared_setup: BeforeSharedSetup | None = None,
-        credentials: JsonObject | None = None,
-    ) -> SetupStarted:
-        if resume_ref is not None:
-            raise ConnectorProviderError("setup_replay_unavailable")
-        if credentials is not None:
-            return await self._create_with_credentials(
-                setup=setup, credentials=credentials, context=context, before_shared_setup=before_shared_setup
-            )
+    async def start_setup(self, *, setup: JsonObject, context: SetupContext) -> SetupStarted:
         if context.callback_url is None:
             raise ConnectorProviderError("callback_unavailable")
-        auth_config = await self._catalog.prepare_setup(context.connector_key, setup, before_shared_setup)
+        auth_config = await self._catalog.prepare_setup(context.connector_key, setup)
         value = await self._http.request(
             "POST",
             endpoint=COMPOSIO_ENDPOINT,
@@ -121,45 +99,6 @@ class ComposioProvider:
             )
         except ValueError as error:
             raise ConnectorProviderError("invalid_provider_response", outcome_unknown=True) from error
-
-    async def _create_with_credentials(
-        self,
-        *,
-        setup: JsonObject,
-        credentials: JsonObject,
-        context: SetupContext,
-        before_shared_setup: BeforeSharedSetup | None,
-    ) -> SetupStarted:
-        auth_config = await self._catalog.prepare_credentials(
-            context.connector_key, setup, credentials, before_shared_setup
-        )
-        data = setup.get("connection_data", {})
-        if not isinstance(data, dict):
-            raise ConnectorProviderError("invalid_setup_options")
-        value = await self._http.request(
-            "POST",
-            endpoint=COMPOSIO_ENDPOINT,
-            path="/api/v3.1/connected_accounts",
-            api_key=self._api_key,
-            json_body={
-                "auth_config": {"id": auth_config.id},
-                "connection": {
-                    "user_id": context.external_user_correlation,
-                    "state": {"authScheme": auth_config.scheme, "val": {**data, **credentials, "status": "ACTIVE"}},
-                },
-            },
-            write=True,
-        )
-        try:
-            identifier = required_string(required_object(value), "id")
-        except ValueError as error:
-            raise ConnectorProviderError("invalid_provider_response", outcome_unknown=True) from error
-        return SetupStarted(
-            setup_ref=identifier,
-            external_ref=identifier,
-            completion_method=SetupCompletionMethod.polling,
-            expected_metadata={"auth_config_id": auth_config.id, "auth_scheme": auth_config.scheme},
-        )
 
     async def complete_setup(
         self,
@@ -271,12 +210,9 @@ class ComposioConnection:
         provider_version: str,
         arguments: JsonObject,
         request_id: str,
-        before_dispatch: BeforeDispatch | None = None,
     ) -> ConnectorToolOutcome:
         if TOOLKIT_VERSION.fullmatch(provider_version) is None:
             raise ConnectorProviderError("incompatible_toolkit_version")
-        if before_dispatch is not None:
-            await before_dispatch()
         try:
             value = await self._http.request(
                 "POST",
@@ -328,7 +264,7 @@ def _inspection(
         raise ConnectorProviderError("provider_mismatch")
     if required_string(value, "user_id", max_length=128) != external_user_correlation:
         raise ConnectorProviderError("owner_mismatch")
-    status, reason = _status(required_string(value, "status", max_length=64))
+    status = _status(required_string(value, "status", max_length=64))
     disabled = value.get("is_disabled", False)
     if not isinstance(disabled, bool):
         raise ValueError("Invalid account enabled state")
@@ -340,13 +276,12 @@ def _inspection(
     if value.get("authScheme") is not None and scheme is not None and value["authScheme"] != scheme:
         raise ConnectorProviderError("provider_mismatch")
     if disabled or auth_disabled:
-        status, reason = AdapterConnectionStatus.disabled, None
+        status = AdapterConnectionStatus.disabled
     return ConnectionInspection(
         external_ref=external_ref,
         connector_key=connector_key,
         external_user_correlation=external_user_correlation,
         status=status,
-        status_reason=reason,
         safe_metadata={
             "auth_config_id": optional_string(auth_config.get("id"), max_length=256),
             "auth_scheme": scheme,
@@ -358,13 +293,11 @@ def _inspection(
     )
 
 
-def _status(value: str) -> tuple[AdapterConnectionStatus, AdapterStatusReason | None]:
+def _status(value: str) -> AdapterConnectionStatus:
     if value in {"INITIALIZING", "PENDING"}:
-        return AdapterConnectionStatus.pending, None
+        return AdapterConnectionStatus.pending
     if value == "ACTIVE":
-        return AdapterConnectionStatus.ready, None
+        return AdapterConnectionStatus.ready
     if value == "DISABLED":
-        return AdapterConnectionStatus.disabled, None
-    if value in {"EXPIRED", "REVOKED"}:
-        return AdapterConnectionStatus.action_required, AdapterStatusReason.reauthorization_required
-    return AdapterConnectionStatus.action_required, AdapterStatusReason.incompatible
+        return AdapterConnectionStatus.disabled
+    return AdapterConnectionStatus.action_required

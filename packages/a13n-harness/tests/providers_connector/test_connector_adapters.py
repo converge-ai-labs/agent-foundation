@@ -14,57 +14,6 @@ from pydantic import ValidationError
 pytestmark = pytest.mark.anyio
 
 
-async def test_credential_setup_captures_resolved_auth_config():
-    def respond(request):
-        path = request.url.path
-        if path.endswith("/toolkits/github"):
-            return httpx2.Response(
-                200,
-                json={
-                    "slug": "github",
-                    "name": "GitHub",
-                    "meta": {"version": "20260903_01"},
-                    "auth_schemes": ["API_KEY"],
-                    "auth_config_details": [
-                        {
-                            "mode": "API_KEY",
-                            "fields": {
-                                "connected_account_initiation": {"required": [{"name": "api_key", "is_secret": True}]}
-                            },
-                        }
-                    ],
-                },
-            )
-        if path.endswith("/auth_configs"):
-            return httpx2.Response(
-                200,
-                json={
-                    "items": [
-                        {"id": "ac_key", "toolkit": {"slug": "github"}, "status": "ENABLED", "auth_scheme": "API_KEY"}
-                    ]
-                },
-            )
-        assert request.method == "POST" and path.endswith("/connected_accounts")
-        body = json.loads(request.content)
-        assert body["auth_config"] == {"id": "ac_key"}
-        assert body["connection"]["state"]["val"]["api_key"] == "account-secret"
-        return httpx2.Response(200, json={"id": "ca_key"})
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
-        started = await _composio(http).start_setup(
-            setup={"auth_config_id": "ac_key", "toolkit_version": "20260903_01"},
-            context=_context(),
-            credentials={"api_key": "account-secret"},
-        )
-    assert started.expected_metadata == {"auth_config_id": "ac_key", "auth_scheme": "API_KEY"}
-    assert started.completion_method == "polling"
-    assert "account-secret" not in started.model_dump_json()
-
-
-async def allow_dispatch():
-    return None
-
-
 class _AllowEndpoint:
     async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str:
         assert resolve_dns
@@ -217,7 +166,6 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
             provider_version=catalog.items[0].provider_version,
             arguments={},
             request_id="op_2",
-            before_dispatch=allow_dispatch,
         )
 
     assert started.expected_metadata == {"auth_config_id": "ac_github", "auth_scheme": "OAUTH2"}

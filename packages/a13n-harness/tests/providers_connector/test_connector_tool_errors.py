@@ -9,10 +9,6 @@ from a13n_harness.providers.connector.tool_errors import rejected_tool_outcome
 from .test_connector_adapters import _AllowEndpoint, _composio
 
 
-async def allow_dispatch():
-    return None
-
-
 @pytest.mark.parametrize(
     ("status", "body", "code"),
     [
@@ -98,7 +94,6 @@ async def test_composio_http_success_with_tool_failure_keeps_only_safe_status(st
                 provider_version="20260903_01",
                 arguments={},
                 request_id="tool_test",
-                before_dispatch=allow_dispatch,
             )
     outcome = rejected_tool_outcome(raised.value, request_id="tool_test")
     assert outcome is not None and outcome.kind == "failed" and outcome.error.code == code
@@ -140,7 +135,6 @@ async def test_composio_invalid_execution_evidence_remains_unknown_without_retry
             provider_version="20260903_01",
             arguments={},
             request_id="tool_test",
-            before_dispatch=allow_dispatch,
         )
     assert outcome.kind == "outcome_unknown" and outcome.request_id == "tool_test"
     assert outcome.result is None and len(calls) == 1

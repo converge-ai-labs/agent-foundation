@@ -1,22 +1,30 @@
-"""Authored token prices retain unknowns and use whole-request cliff tiers."""
+"""Selected model IDs choose complete pricing entries, independent of the response model name."""
 
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 from a13n_harness.pricing import ModelCostInput, ModelPricingEntry
-from a13n_harness.token_pricing import TokenPricing, TokenPricingCapability
-from pydantic import ValidationError
+from a13n_harness.token_pricing import TokenPricingCapability
 from pydantic_ai.usage import RequestUsage
 
 
-def pricing(input_price="1", output_price="2"):
-    return TokenPricing.model_validate(
+def entry(input_price="1", output_price="2"):
+    return ModelPricingEntry.model_validate(
         {
-            "tiers": [
-                {"rates": {"input": input_price, "output": output_price, "cache_read": "0"}},
-                {"above": 200000, "rates": {"input": "10", "output": "20", "cache_read": "1"}},
-            ]
+            "provider": "openai",
+            "model": "gpt-test",
+            "rules": [
+                {
+                    "rule_id": "standard",
+                    "prices": [
+                        {"price_key": "input_mtok", "price": input_price},
+                        {"price_key": "output_mtok", "price": output_price},
+                    ],
+                }
+            ],
+            "source": "custom",
+            "source_revision": "2026-09-01",
         }
     )
 
@@ -34,22 +42,8 @@ def value(model="root", **usage):
     )
 
 
-def test_threshold_is_strict_and_prices_the_whole_request():
-    policy = TokenPricingCapability({"root": pricing()})
-    assert policy.quote(value(input_tokens=200000)).cost_usd == Decimal("0.2")
-    assert policy.quote(value(input_tokens=200001)).cost_usd == Decimal("2.00001")
-
-
-def test_cached_input_is_inclusive_and_zero_is_free():
-    policy = TokenPricingCapability({"root": pricing()})
-    assert policy.quote(value(input_tokens=100000, cache_read_tokens=50000)).cost_usd == Decimal("0.05")
-    assert policy.quote(value(input_tokens=100000, cache_write_tokens=1)) is None
-    assert policy.quote(value(input_tokens=1, cache_read_tokens=2)) is None
-    assert policy.quote(value(input_tokens=1, input_audio_tokens=1)) is None
-
-
 def test_shared_policy_selects_child_prices_by_selection_not_response_alias():
-    policy = TokenPricingCapability({"root": pricing(), "child": pricing("9")})
+    policy = TokenPricingCapability({"root": entry(), "child": entry("9")})
     assert policy.quote(value("root", input_tokens=100000)).cost_usd == Decimal("0.1")
     assert policy.quote(value("child", input_tokens=100000)).cost_usd == Decimal("0.9")
     assert policy.quote(value("unknown", input_tokens=100000)) is None
@@ -57,7 +51,7 @@ def test_shared_policy_selects_child_prices_by_selection_not_response_alias():
 
 
 def test_a_complete_entry_prices_the_selected_model_whatever_it_names():
-    entry = ModelPricingEntry.model_validate(
+    compatible = ModelPricingEntry.model_validate(
         {
             "provider": "minimax",
             "model": "MiniMax-M3",
@@ -74,27 +68,11 @@ def test_a_complete_entry_prices_the_selected_model_whatever_it_names():
             "source_revision": "2026-05-01",
         }
     )
-    policy = TokenPricingCapability({"root": pricing(), "compatible": entry})
+    policy = TokenPricingCapability({"root": entry(), "compatible": compatible})
     quote = policy.quote(value("compatible", input_tokens=300000, input_audio_tokens=100000))
-    # A tier prices the complete input, and audio input has its own price, unlike a token table.
+    # A tier prices the complete input, and audio input has its own price.
     assert quote is not None and (quote.cost_usd, quote.source, quote.rule_id) == (Decimal("0.8"), "custom", "standard")
-    assert quote.pricing_revision == policy.revision != TokenPricingCapability({"root": pricing()}).revision
-
-
-@pytest.mark.parametrize(
-    "tiers",
-    [
-        [],
-        [{"above": 1, "rates": {}}],
-        [{"rates": {}}, {"above": 20, "rates": {}}, {"above": 10, "rates": {}}],
-        [{"rates": {}}, {"above": 10, "rates": {}}, {"above": 10, "rates": {}}],
-        [{"rates": {"input": "-1"}}],
-        [{"rates": {"input": "NaN"}}],
-    ],
-)
-def test_invalid_tables_are_rejected(tiers):
-    with pytest.raises(ValidationError):
-        TokenPricing.model_validate({"tiers": tiers})
+    assert quote.pricing_revision == policy.revision != TokenPricingCapability({"root": entry()}).revision
 
 
 @pytest.mark.anyio
@@ -111,7 +89,7 @@ async def test_resolver_selection_reaches_usage_valuation():
         assert model_id == "logical:root"
         return FunctionModel(stream_function=stream, model_name="different-response-name")
 
-    policy = TokenPricingCapability({"logical:root": pricing()})
+    policy = TokenPricingCapability({"logical:root": entry()})
     executable = HarnessBuilder().build(
         AgentSpec(model="logical:root"),
         output_type=str,

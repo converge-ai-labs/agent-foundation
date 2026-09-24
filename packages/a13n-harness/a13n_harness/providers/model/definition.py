@@ -20,7 +20,6 @@ from .types import ModelConnection, ProviderConfiguration, ValidatedProviderConf
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
-    from pydantic_ai.profiles import ModelProfileSpec
     from pydantic_ai.providers import Provider
 
 
@@ -30,10 +29,6 @@ _PROBE_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 class ProviderOperationError(ValueError):
     """A bounded, safe connection-probe failure."""
-
-
-class ProviderOperationUnsupported(ProviderOperationError):
-    """This provider has no native connection probe."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +50,6 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
     supported_model_apis: tuple[str, ...]
     build_provider: NativeProviderBuilder[C, K]
     endpoint: str | EndpointResolver | None = None
-    endpoint_configuration_field: str | None = None
     connection_probe: Callable[[ModelConnection[C, K]], ConnectionProbeRequest] | None = None
     reserved_headers: tuple[str, ...] = ("authorization",)
     additional_endpoint_fields: tuple[str, ...] = ()
@@ -85,16 +79,6 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         endpoint = parsed.base_url or (self.endpoint(normalized) if callable(self.endpoint) else self.endpoint)
         return ValidatedProviderConfiguration(configuration=normalized, endpoint=endpoint)
 
-    def with_validated_endpoint(
-        self, validated: ValidatedProviderConfiguration, endpoint: str
-    ) -> ValidatedProviderConfiguration:
-        normalized = dict(validated.configuration)
-        if "base_url" in normalized:
-            normalized["base_url"] = endpoint
-        elif self.endpoint_configuration_field is not None:
-            normalized[self.endpoint_configuration_field] = endpoint
-        return ValidatedProviderConfiguration(configuration=normalized, endpoint=endpoint)
-
     def bind(
         self,
         configuration: Mapping[str, object],
@@ -120,7 +104,7 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
     ) -> None:
         """Test this connection without exposing or retaining the upstream response."""
         if self.connection_probe is None:
-            raise ProviderOperationUnsupported("Test a saved Model to verify this connection")
+            raise ProviderOperationError("Test a saved Model to verify this connection")
         try:
             with fail_after(_PROBE_TIMEOUT_SECONDS):
                 request = self.connection_probe(connection)
@@ -151,8 +135,6 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         http_client: httpx2.AsyncClient,
         extra_headers: Mapping[str, str] | None = None,
         endpoint_policy: EndpointValidator | None = None,
-        profile: ModelProfileSpec | None = None,
-        profile_resolver: Callable[[Provider[Any]], ModelProfileSpec | None] | None = None,
     ) -> Model[Any]:
         """Return a native Model. The caller owns the supplied HTTP client and enters the Model."""
         api = model_api or self.supported_model_apis[0]
@@ -169,8 +151,7 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         native = await to_thread.run_sync(self.build_provider, connection, http_client, api)
         try:
             await policy.validate(str(native.base_url), resolve_dns=True)
-            selected_profile = profile_resolver(native) if profile_resolver else profile
-            return MODEL_APIS[api].build(model_name, native, profile=selected_profile)
+            return MODEL_APIS[api].build(model_name, native)
         except BaseException as error:
             with move_on_after(5, shield=True):
                 await native.__aenter__()

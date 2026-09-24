@@ -68,7 +68,6 @@ DEFINITION = ModelProviderDefinition(
     build_provider=_build_provider,
     authentication=Authentication(mode=CredentialMode.forbidden),
     endpoint=_endpoint,
-    endpoint_configuration_field="base_url",
     connection_probe=_request,
 )
 
