@@ -8933,12 +8933,14 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Successful Response */
+      /** @description The asset bytes, with their stored content type */
       200: {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "*/*": Binary;
+        };
       };
       400: components["responses"]["Error"];
       default: components["responses"]["Error"];
@@ -10127,6 +10129,15 @@ export interface operations {
       };
     };
     responses: {
+      /** @description The replayed submission in its current state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Submitted"];
+        };
+      };
       /** @description Successful Response */
       201: {
         headers: {
@@ -10235,6 +10246,15 @@ export interface operations {
       };
     };
     responses: {
+      /** @description The existing successor run in its current state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunView"];
+        };
+      };
       /** @description Successful Response */
       201: {
         headers: {
@@ -10974,12 +10994,14 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Successful Response */
+      /** @description The revision's package as a zip archive */
       200: {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/zip": Binary;
+        };
       };
       400: components["responses"]["Error"];
       default: components["responses"]["Error"];
@@ -10999,12 +11021,14 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Successful Response */
+      /** @description One file of the revision's package */
       200: {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/octet-stream": Binary;
+        };
       };
       400: components["responses"]["Error"];
       default: components["responses"]["Error"];
@@ -11305,6 +11329,15 @@ export interface operations {
       };
     };
     responses: {
+      /** @description The replayed submission in its current state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Submitted"];
+        };
+      };
       /** @description Successful Response */
       201: {
         headers: {
@@ -11534,6 +11567,15 @@ export interface operations {
       };
     };
     responses: {
+      /** @description The replayed submission in its current state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Submitted"];
+        };
+      };
       /** @description Successful Response */
       201: {
         headers: {

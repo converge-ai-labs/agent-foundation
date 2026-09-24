@@ -49,6 +49,7 @@ function restore(): Omit<NewDraft, "save"> | undefined {
     throw error;
   }
   if (saved.mode === "goal") composer.mode = "goal";
+  composer.coordinator = saved.coordinator === true;
   if (typeof saved.modelId === "string") composer.modelId = saved.modelId;
   if (
     saved.environment &&
@@ -126,6 +127,7 @@ export class NewDraftStore {
     const composer = new ThreadDraft();
     Y.applyUpdate(composer.doc, Y.encodeStateAsUpdate(old.composer.doc));
     composer.mode = old.composer.mode;
+    composer.coordinator = old.composer.coordinator;
     composer.modelId = old.composer.modelId;
     composer.environment = old.composer.environment
       ? structuredClone(old.composer.environment)
@@ -181,6 +183,7 @@ export class NewDraftStore {
             update: encode(Y.encodeStateAsUpdate(draft.composer.doc)),
             draftId: draft.composer.draftId,
             mode: draft.composer.mode,
+            coordinator: draft.composer.coordinator,
             modelId: draft.composer.modelId,
             environment: draft.composer.environment,
             submission: draft.composer.submission.kind,

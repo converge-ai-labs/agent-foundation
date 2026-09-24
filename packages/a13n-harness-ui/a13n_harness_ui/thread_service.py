@@ -87,11 +87,18 @@ class ThreadService:
         title: str | None = None,
         thread_id: str | None = None,
         coordinator_thread_id: str | None = None,
+        coordinator: bool = False,
     ) -> Thread:
         source = await self._required_configuration()
         configuration = resolve_thread_configuration(source, defaults)
+        if coordinator and configuration.project_id not in source.projects:
+            raise ThreadError("A Coordinator requires an available Project.", code="thread_project_missing")
         return await self._create(
-            configuration=configuration, title=title, thread_id=thread_id, coordinator_thread_id=coordinator_thread_id
+            configuration=configuration,
+            title=title,
+            thread_id=thread_id,
+            coordinator_thread_id=coordinator_thread_id,
+            coordinator=coordinator,
         )
 
     async def promote_coordinator(self, thread_id: str) -> Thread:
@@ -115,6 +122,7 @@ class ThreadService:
         title: str | None,
         thread_id: str | None = None,
         coordinator_thread_id: str | None = None,
+        coordinator: bool = False,
     ) -> Thread:
         baseline = HarnessState.new(thread_id=thread_id)
         initial = await self._store.objects.publish_model(
@@ -127,6 +135,7 @@ class ThreadService:
             initial_state=initial.ref,
             title=title,
             coordinator_thread_id=coordinator_thread_id,
+            coordinator=coordinator,
         )
 
     async def preview_creation(self, defaults: RootThreadDefaults | None = None) -> ThreadConfiguration:

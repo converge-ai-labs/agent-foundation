@@ -667,6 +667,16 @@
 .goalButton {
   flex-shrink: 0;
 }
+.coordinatorIdentity {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
 .composerEnvironment {
   display: flex;
   align-items: center;

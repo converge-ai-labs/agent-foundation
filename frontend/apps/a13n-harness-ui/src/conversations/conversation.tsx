@@ -21,7 +21,10 @@ import { ComposerStatus } from "./composer-status";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
-import { CoordinatorSettings } from "./coordinator-settings";
+import {
+  canPromoteCoordinator,
+  CoordinatorSettings,
+} from "./coordinator-settings";
 import { WorkInspector } from "./work-inspector";
 import { RootFailureNotice } from "./failure-notice";
 import { refreshThreadLists, useHistory, useThread } from "./queries";
@@ -801,6 +804,17 @@ function Conversation({
             autoFocus={pageReady && search.get("compose") === "1"}
             threadId={threadId}
             activity={thread?.root_activity ?? { state: "inactive" }}
+            coordinator={
+              thread && thread.role !== "worker"
+                ? {
+                    active: thread.role === "coordinator",
+                    available: canPromoteCoordinator(
+                      thread,
+                      !!detail.data?.deferred_requests?.length,
+                    ),
+                  }
+                : undefined
+            }
             canRun={
               !agentSelection.isPending &&
               !agentSelection.isError &&

@@ -113,7 +113,12 @@ async def list_threads(
     )
 
 
-@router.post("/threads", response_model=Submitted, status_code=201)
+@router.post(
+    "/threads",
+    response_model=Submitted,
+    status_code=201,
+    responses={200: {"model": Submitted, "description": "The replayed submission in its current state"}},
+)
 async def create_thread(
     runtime: CurrentRuntime, response: Response, workspace_id: str, body: NewThread, actor: Actor, key: IdempotencyKey
 ) -> Submitted:
@@ -209,7 +214,12 @@ async def list_inbox(
     )
 
 
-@router.post("/threads/{thread_id}/inbox", response_model=Submitted, status_code=201)
+@router.post(
+    "/threads/{thread_id}/inbox",
+    response_model=Submitted,
+    status_code=201,
+    responses={200: {"model": Submitted, "description": "The replayed submission in its current state"}},
+)
 async def submit_message(
     runtime: CurrentRuntime,
     response: Response,
@@ -310,7 +320,12 @@ async def interrupt_run(
     return tagged(response, await runs.interrupt(runtime, actor, workspace_id, run_id))
 
 
-@router.post("/runs/{run_id}/fork", response_model=Submitted, status_code=201)
+@router.post(
+    "/runs/{run_id}/fork",
+    response_model=Submitted,
+    status_code=201,
+    responses={200: {"model": Submitted, "description": "The replayed submission in its current state"}},
+)
 async def fork_run(
     runtime: CurrentRuntime,
     response: Response,
@@ -324,7 +339,12 @@ async def fork_run(
     return _created(response, await submit.fork(runtime, actor, workspace_id, run_id, body, request_key=key))
 
 
-@router.post("/runs/{run_id}/resume", response_model=RunView, status_code=201)
+@router.post(
+    "/runs/{run_id}/resume",
+    response_model=RunView,
+    status_code=201,
+    responses={200: {"model": RunView, "description": "The existing successor run in its current state"}},
+)
 async def resume_run(
     runtime: CurrentRuntime,
     response: Response,
