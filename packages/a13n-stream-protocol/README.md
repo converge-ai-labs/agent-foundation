@@ -62,8 +62,6 @@ observer = HarnessAguiObserver(processor=process_event)
 
 A replacement must retain the same AG-UI event type and source-derived correlation. The processor is synchronous, replay-stable, and does not retain mutable processing state or persist, publish, or acknowledge events. The Host acts on the complete batch returned by live `observe()` calls.
 
-For native input presentation, `input_source(event)` returns a frozen `InputSource` with the exact position in the accompanying source item. `model_input` provides `content_index`; `enqueued_messages` also provides `message_index` and `part_index`. Positions are zero-based in the original structure, including skipped cache/non-user items. Every text chunk and media event has its item coordinate; diagnostics have none. Coordinates are separate from caller metadata and cannot be inserted, removed or rewritten by a processor. They survive resume and transport reassembly and convey no ownership or consumption authority.
-
 ## Ownership
 
 The package owns only:

@@ -2,36 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Self
-
-from ag_ui.core.events import BaseEvent
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, JsonValue
 from pydantic_ai.messages import BinaryContent, CachePoint, FileUrl, TextContent, UploadedFile, UserContent
-
-
-class InputSource(BaseModel):
-    """Exact native input position, independent of caller presentation metadata."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    kind: Literal["model_input", "enqueued_messages"]
-    content_index: Annotated[StrictInt, Field(ge=0)]
-    message_index: Annotated[StrictInt, Field(ge=0)] | None = None
-    part_index: Annotated[StrictInt, Field(ge=0)] | None = None
-
-    @model_validator(mode="after")
-    def validate_position(self) -> Self:
-        if self.kind == "model_input":
-            if self.message_index is not None or self.part_index is not None:
-                raise ValueError("Model input has no message or part index")
-        elif self.message_index is None or self.part_index is None:
-            raise ValueError("Enqueued input requires message and part indices")
-        return self
-
-
-def input_source(event: BaseEvent) -> InputSource | None:
-    """Read the observer-owned coordinate from an input presentation event."""
-    value = (event.model_extra or {}).get("input_source")
-    return InputSource.model_validate(value) if value is not None else None
 
 
 class ContentMetadata(BaseModel):

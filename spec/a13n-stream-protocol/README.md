@@ -24,7 +24,7 @@ Read `00`, then [Harness UI Runtime Subagents and Surfaces](../a13n-harness-ui/0
 
 ### Service observation
 
-The new Service uses AG-UI as an event vocabulary, with its own durable display and attempt stream contract in [facts and delivery](../a13n-service/07-facts-and-delivery.md). It does not expose a hosted AG-UI endpoint or A2A gateway. Shared stream adapters remain available to other Hosts.
+The Service uses AG-UI as the event vocabulary of its durable display and thread stream, owned by [facts and delivery](../a13n-service/07-facts-and-delivery.md). Shared stream adapters remain available to other Hosts.
 
 ## Authority Rules
 

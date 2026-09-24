@@ -3,7 +3,7 @@
 from importlib.metadata import version
 
 from a13n_stream_protocol.fragments import CustomEventAssembler, fragment_custom_event
-from a13n_stream_protocol.messages import ContentMetadata, InputSource, input_source
+from a13n_stream_protocol.messages import ContentMetadata
 from a13n_stream_protocol.observer import (
     AguiEventProcessor,
     AguiObservationError,
@@ -18,8 +18,6 @@ __all__ = [
     "ContentMetadata",
     "CustomEventAssembler",
     "HarnessAguiObserver",
-    "InputSource",
     "__version__",
     "fragment_custom_event",
-    "input_source",
 ]
