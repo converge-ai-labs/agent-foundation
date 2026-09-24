@@ -49,13 +49,20 @@ if TYPE_CHECKING:
     )
     from .memory import (
         DEFAULT_FILE_GUIDE,
+        DEFAULT_RECORD_GUIDE,
         FILE_MEMORY_CAPABILITY_ID,
         FILE_TOOL_KEYS,
+        RECORD_MEMORY_CAPABILITY_ID,
+        RECORD_TOOL_KEYS,
         FileMemoryCapability,
         FileMemoryLimits,
         FileMount,
         FileToolKey,
         MemoryCursors,
+        RecordMemoryCapability,
+        RecordMemoryLimits,
+        RecordMount,
+        RecordToolKey,
     )
     from .native_image_generation import NativeImageGenerationCapability, NativeImageSaver
     from .skills import (
@@ -203,13 +210,20 @@ _EXPORTS = {
     ),
     "a13n_harness.capabilities.memory": (
         "DEFAULT_FILE_GUIDE",
+        "DEFAULT_RECORD_GUIDE",
         "FILE_MEMORY_CAPABILITY_ID",
         "FILE_TOOL_KEYS",
+        "RECORD_MEMORY_CAPABILITY_ID",
+        "RECORD_TOOL_KEYS",
         "FileMemoryCapability",
         "FileMemoryLimits",
         "FileMount",
         "FileToolKey",
         "MemoryCursors",
+        "RecordMemoryCapability",
+        "RecordMemoryLimits",
+        "RecordMount",
+        "RecordToolKey",
     ),
     "a13n_harness.capabilities.native_image_generation": (
         "NativeImageGenerationCapability",

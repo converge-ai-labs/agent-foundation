@@ -1,8 +1,8 @@
-"""An in-memory FileStore fake with numbered versions, a change feed and interference hooks."""
+"""In-memory store fakes: a FileStore with numbered versions, a change feed and interference hooks, and a RecordStore."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 
 from a13n_harness.providers.memory import (
     Changes,
@@ -11,8 +11,10 @@ from a13n_harness.providers.memory import (
     FileText,
     FullResync,
     GrepMatch,
+    MemoryRecord,
     MemoryStoreError,
     Origin,
+    RecordPage,
     describe,
     validate_path,
 )
@@ -118,3 +120,70 @@ class SearchingFileStore(FakeFileStore):
     ) -> tuple[list[GrepMatch], bool]:
         self.searches.append((pattern, regex, case_sensitive, path, limit))
         return [GrepMatch(path="native.md", line=3, text="from the store")], True
+
+
+async def _proceed(operation: str) -> None:
+    del operation
+
+
+class FakeRecordStore:
+    """Records `r<n>` in insertion order. Search returns every record with score 1.0, up to the limit.
+
+    `before(operation)` is awaited at the start of every call, so a test can make
+    the store fail or hang.
+    """
+
+    def __init__(self, texts: Sequence[str] = ()) -> None:
+        self.records: dict[str, str] = {}
+        self.calls: list[str] = []
+        self.searches: list[tuple[str, int]] = []
+        self.before: Callable[[str], Awaitable[None]] = _proceed
+        self._next = 0
+        for text in texts:
+            self.put(text)
+
+    def put(self, text: str) -> str:
+        self._next += 1
+        record_id = f"r{self._next}"
+        self.records[record_id] = text
+        return record_id
+
+    async def _enter(self, operation: str) -> None:
+        self.calls.append(operation)
+        await self.before(operation)
+
+    def _existing(self, record_id: str) -> None:
+        if record_id not in self.records:
+            raise MemoryStoreError("record_not_found", f"No record {record_id!r} in this memory.")
+
+    async def search(self, query: str, *, limit: int) -> tuple[MemoryRecord, ...]:
+        await self._enter("search")
+        self.searches.append((query, limit))
+        return tuple(MemoryRecord(id=key, text=text, score=1.0) for key, text in self.records.items())[:limit]
+
+    async def list(self, *, limit: int, cursor: str | None = None) -> RecordPage:
+        await self._enter("list")
+        start = int(cursor or 0)
+        items = [MemoryRecord(id=key, text=text) for key, text in self.records.items()]
+        end = start + limit
+        return RecordPage(tuple(items[start:end]), str(end) if end < len(items) else None)
+
+    async def add(self, text: str) -> MemoryRecord:
+        await self._enter("add")
+        record_id = self.put(text)
+        return MemoryRecord(id=record_id, text=text)
+
+    async def update(self, record_id: str, text: str) -> MemoryRecord:
+        await self._enter("update")
+        self._existing(record_id)
+        self.records[record_id] = text
+        return MemoryRecord(id=record_id, text=text)
+
+    async def delete(self, record_id: str) -> None:
+        await self._enter("delete")
+        self._existing(record_id)
+        del self.records[record_id]
+
+    async def purge(self) -> None:
+        await self._enter("purge")
+        self.records.clear()

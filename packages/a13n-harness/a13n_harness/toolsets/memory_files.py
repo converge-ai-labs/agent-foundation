@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable, Collection, Iterator, Sequence
 from contextlib import contextmanager
-from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import Field, JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import ToolFailed
-from pydantic_ai.tools import Tool, ToolDefinition
 
 from a13n_harness.context import AgentContext
 from a13n_harness.providers.memory import (
@@ -30,63 +27,51 @@ from a13n_harness.providers.memory import (
     validate_directory,
     validate_path,
 )
-from a13n_harness.tools.metadata import (
-    HarnessTool,
-    HarnessToolMetadata,
-    ToolEffect,
-    ToolOutputPolicy,
-    recovery_retryable,
-)
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._memory import MemoryName, MemoryTool, failure, memory_toolset, mounted
 
 if TYPE_CHECKING:
     from a13n_harness.capabilities.memory import FileMount
 
 type FileToolKey = Literal["view", "grep", "create", "edit", "append", "move", "delete"]
 
-
-@dataclass(frozen=True, slots=True)
-class _Tool:
-    access: MemoryAccess
-    effects: frozenset[ToolEffect]
-    max_output_bytes: int
-    description: str
-
-
-_TOOLS: dict[FileToolKey, _Tool] = {
-    "view": _Tool(
+_TOOLS: dict[FileToolKey, MemoryTool] = {
+    "view": MemoryTool(
         "read",
         frozenset({"read"}),
         128 * 1024,
         'List a memory directory ("" for the root, or a path ending in "/"), or read one file with its version.',
     ),
-    "grep": _Tool(
+    "grep": MemoryTool(
         "read",
         frozenset({"read"}),
         64 * 1024,
         "Find the lines of a memory's files that contain a text. Literal and case-insensitive unless asked otherwise.",
     ),
-    "create": _Tool("write", frozenset({"write"}), 4096, "Create a memory file at a path that does not exist yet."),
-    "edit": _Tool(
+    "create": MemoryTool(
+        "write", frozenset({"write"}), 4096, "Create a memory file at a path that does not exist yet."
+    ),
+    "edit": MemoryTool(
         "write",
         frozenset({"read", "write"}),
         4096,
         "Replace old_string with new_string in a memory file; old_string must occur exactly once.",
     ),
-    "append": _Tool("write", frozenset({"read", "write"}), 4096, "Append text to the end of an existing memory file."),
-    "move": _Tool(
+    "append": MemoryTool(
+        "write", frozenset({"read", "write"}), 4096, "Append text to the end of an existing memory file."
+    ),
+    "move": MemoryTool(
         "write",
         frozenset({"read", "write", "delete"}),
         4096,
         "Move or rename a memory file to a destination that does not exist yet.",
     ),
-    "delete": _Tool("write", frozenset({"delete"}), 4096, "Delete a memory file at the version you viewed."),
+    "delete": MemoryTool("write", frozenset({"delete"}), 4096, "Delete a memory file at the version you viewed."),
 }
 FILE_TOOL_KEYS: tuple[FileToolKey, ...] = tuple(_TOOLS)
 _INSTRUCTION = tool_instruction("memory-files")
 
-_Memory = Annotated[str, Field(description="The memory's mount name")]
 _FilePath = Annotated[
     str, Field(min_length=1, description="File path relative to the memory root, such as notes/tea.md")
 ]
@@ -117,48 +102,12 @@ class MemoryFileToolset:
         self._enabled = frozenset(tools)
 
     def get_toolset(self) -> InstructionFunctionToolset | None:
-        tools = [self._tool(key) for key in FILE_TOOL_KEYS if key in self._enabled and self._names(key)]
-        if not tools:
-            return None
-        return InstructionFunctionToolset(tools=tools, id="a13n-memory-file-tools", instructions=[_INSTRUCTION])
-
-    def _names(self, key: FileToolKey) -> list[str]:
-        return [name for name, mount in self._mounts.items() if _allows(mount.access, _TOOLS[key].access)]
-
-    def _tool(self, key: FileToolKey) -> Tool[AgentContext]:
-        spec = _TOOLS[key]
-        names = self._names(key)
-
-        def prepare(ctx: RunContext[AgentContext], tool_def: ToolDefinition) -> ToolDefinition:
-            del ctx
-            schema = deepcopy(tool_def.parameters_json_schema)
-            schema["properties"]["memory"]["enum"] = names
-            return replace(tool_def, parameters_json_schema=schema)
-
-        tool = HarnessTool(
-            getattr(self, key),
-            name=f"memory_file_{key}",
-            description=spec.description,
-            prepare=prepare,
-            harness_metadata=HarnessToolMetadata(
-                tool_id=f"memory.file.{key}",
-                effects=spec.effects,
-                credential_audiences=(),
-                idempotency="read_only" if spec.access == "read" else "none",
-                output_policy=ToolOutputPolicy(
-                    max_inline_bytes=spec.max_output_bytes,
-                    max_output_bytes=spec.max_output_bytes,
-                    overflow="truncate",
-                ),
-            ),
-        )
-        # Reads may run again after an unknown outcome; a write's outcome stays unknown.
-        return recovery_retryable(tool) if spec.access == "read" else tool
+        return memory_toolset(self, "file", _TOOLS, self._enabled, self._mounts, _INSTRUCTION)
 
     async def view(
         self,
         ctx: RunContext[AgentContext],
-        memory: _Memory,
+        memory: MemoryName,
         path: Annotated[str, Field(description='A file, or a directory: "" for the root or a path ending in "/"')] = "",
     ) -> dict[str, JsonValue]:
         del ctx
@@ -174,14 +123,14 @@ class MemoryFileToolset:
             entries = await mount.store.list()
             if any(entry.path.startswith(f"{path}/") for entry in entries):
                 return self._listing(mount, f"{path}/", entries)
-        raise _failure(
+        raise failure(
             "not_found", f'{path} does not exist. List the files with memory_file_view(memory="{mount.name}").'
         )
 
     async def grep(
         self,
         ctx: RunContext[AgentContext],
-        memory: _Memory,
+        memory: MemoryName,
         pattern: Annotated[str, Field(min_length=1, max_length=512, description="Text to find in each line")],
         path: Annotated[str, Field(description='Directory to search: "" for all files or a path ending in "/"')] = "",
         regex: Annotated[bool, Field(description="Treat pattern as a regular expression")] = False,
@@ -215,7 +164,7 @@ class MemoryFileToolset:
     async def create(
         self,
         ctx: RunContext[AgentContext],
-        memory: _Memory,
+        memory: MemoryName,
         path: _FilePath,
         content: Annotated[str, Field(description="The whole content of the new file")],
     ) -> dict[str, JsonValue]:
@@ -231,7 +180,7 @@ class MemoryFileToolset:
     async def edit(
         self,
         ctx: RunContext[AgentContext],
-        memory: _Memory,
+        memory: MemoryName,
         path: _FilePath,
         old_string: Annotated[str, Field(min_length=1, description="Text that occurs exactly once in the file")],
         new_string: Annotated[str, Field(description="Replacement text")],
@@ -255,7 +204,7 @@ class MemoryFileToolset:
     async def append(
         self,
         ctx: RunContext[AgentContext],
-        memory: _Memory,
+        memory: MemoryName,
         path: _FilePath,
         content: Annotated[str, Field(min_length=1, description="Text to add at the end of the file")],
     ) -> dict[str, JsonValue]:
@@ -268,7 +217,7 @@ class MemoryFileToolset:
     async def move(
         self,
         ctx: RunContext[AgentContext],
-        memory: _Memory,
+        memory: MemoryName,
         source: _FilePath,
         destination: _FilePath,
     ) -> dict[str, JsonValue]:
@@ -291,7 +240,7 @@ class MemoryFileToolset:
     async def delete(
         self,
         ctx: RunContext[AgentContext],
-        memory: _Memory,
+        memory: MemoryName,
         path: _FilePath,
         version: Annotated[str, Field(min_length=1, description="The version you viewed")],
     ) -> dict[str, JsonValue]:
@@ -341,12 +290,7 @@ class MemoryFileToolset:
             raise await self._exhausted(mount.store, path)
 
     def _mount(self, memory: str, access: MemoryAccess) -> FileMount:
-        mount = self._mounts.get(memory)
-        if mount is None:
-            raise _failure("unknown_memory", f"No memory is mounted as {memory!r}.")
-        if not _allows(mount.access, access):
-            raise _failure("forbidden", f"The memory {memory!r} is mounted read-only.")
-        return mount
+        return mounted(self._mounts, memory, access)
 
     def _existing(self, current: FileText | None, path: str) -> FileText:
         if current is None:
@@ -381,13 +325,9 @@ class MemoryFileToolset:
                     "version": entry.version,
                 }
         if directory and not files and not counts:
-            raise _failure("not_found", f"{directory} does not exist or holds no files.")
+            raise failure("not_found", f"{directory} does not exist or holds no files.")
         listed = files | {child: {"path": child, "files": count} for child, count in counts.items()}
         return {"memory": mount.name, "path": directory, "entries": [listed[path] for path in sorted(listed)]}
-
-
-def _allows(granted: MemoryAccess, needed: MemoryAccess) -> bool:
-    return needed == "read" or granted == "write"
 
 
 async def _read(store: FileStore, path: str) -> FileText | None:
@@ -434,13 +374,9 @@ def _file(file: FileText, fmt: FileFormat) -> dict[str, JsonValue]:
     return value
 
 
-def _failure(code: str, message: str, **details: JsonValue) -> ToolFailed:
-    return ToolFailed(json.dumps({"error": code, "message": message, **details}, ensure_ascii=False))
-
-
 def _unmet(code: str, message: str, current: FileText | None, fmt: FileFormat) -> ToolFailed:
     """A failed condition, with the file as it is now (null when it does not exist)."""
-    return _failure(code, message, current=_file(current, fmt) if current is not None else None)
+    return failure(code, message, current=_file(current, fmt) if current is not None else None)
 
 
 @contextmanager
@@ -451,7 +387,7 @@ def _store_failures(fmt: FileFormat) -> Iterator[None]:
     except MemoryStoreError as error:
         if error.current is not None:
             raise _unmet(error.code, str(error), error.current, fmt) from None
-        raise _failure(error.code, str(error)) from None
+        raise failure(error.code, str(error)) from None
 
 
 __all__ = ["FILE_TOOL_KEYS", "FileToolKey", "MemoryFileToolset"]
