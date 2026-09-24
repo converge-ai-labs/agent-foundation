@@ -32,7 +32,7 @@ Do not assume ports: `make dev-status` reports them. It changes nothing and work
 
 ## Instance and settings
 
-The first command that needs an instance reserves a block of loopback ports for the checkout (Service, Console, model, PostgreSQL, Redis) and records it in `var/dev/instance.json`. A machine lock serializes reservations, and a machine registry (`~/.local/state/agent-foundation/dev/checkouts.json`) keeps blocks disjoint across checkouts; ports that checkouts on the previous local workflow reserved in `instances.json` stay excluded. Assignments never move, because seeded model providers store the model's address. When an assigned port is taken, the command fails and names it; stop the process holding it.
+The first command that needs an instance reserves a block of loopback ports for the checkout (Service, Console, model, PostgreSQL, Redis) and records it in `var/dev/instance.json`. A machine lock serializes reservations, and a machine registry (`~/.local/state/agent-foundation/dev/checkouts.json`) keeps blocks disjoint across checkouts. Assignments never move, because seeded model providers store the model's address. When an assigned port is taken, the command fails and names it; stop the process holding it.
 
 One resolver, `checkout.py`, derives everything local from the instance and writes the Service's ordinary settings file, `var/dev/service.toml`: loopback listener, the Console origin as `server.public_url`, the database and Redis URLs, the object store under `var/dev/objects`, an encryption key generated once per checkout (`var/dev/encryption.key`), outbound access to loopback over plain HTTP for the scripted model, development-only `local` environments, and telemetry. Nothing in `packages/` knows about checkouts. Applications start without inherited `A13N_*` and `OTEL_*` variables, so a deployment shell can neither redirect nor break the local instance.
 
@@ -74,7 +74,7 @@ Removal stops the checkout's applications, deletes its Compose containers and vo
 
 ## Recovery and checks
 
-- A migration failure after the Service rewrote its migration history: `make dev-reset STATE=empty` or `STATE=seeded` rebuilds this checkout's database.
+- A migration failure because the database's migration history does not match this checkout: `make dev-reset STATE=empty` or `STATE=seeded` rebuilds this checkout's database.
 - An application that exits: its log is in `var/dev/logs/`; the others are stopped with it.
 - Docker unavailable: start it and retry; nothing is switched or started implicitly.
 

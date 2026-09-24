@@ -199,7 +199,7 @@ def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("up", "down", "check", "reset", "test"))
+    parser.add_argument("command", choices=("up", "down", "check", "reset"))
     args = parser.parse_args()
     stack = Langfuse()
     if args.command == "up":
@@ -208,10 +208,8 @@ def main() -> None:
         stack.stop()
     elif args.command == "check":
         stack.check_credentials()
-    elif args.command == "reset":
-        stack.stop(reset=True)
     else:
-        parser.error("Service trace-query integration is not implemented; use check for shared project authentication")
+        stack.stop(reset=True)
 
 
 if __name__ == "__main__":

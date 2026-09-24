@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from dev.service import instance
 from dev.service.instance import ensure_instance, instance_file, load_instance, require_free
 
 
@@ -29,14 +28,6 @@ def test_a_lost_instance_file_is_restored_from_the_registry(checkout_root: Path)
     instance_file(checkout_root).unlink()
     assert load_instance(checkout_root) is None
     assert ensure_instance(checkout_root) == reserved
-
-
-def test_previous_workflow_reservations_are_avoided(checkout_root: Path, machine: Path) -> None:
-    preferred = instance._allocate(checkout_root, set())
-    machine.mkdir(parents=True)
-    legacy = {"/elsewhere": {"id": "x", "root": "/elsewhere", "ports": {"service": preferred.service, "mem0": 1}}}
-    (machine / "instances.json").write_text(json.dumps(legacy))
-    assert preferred.service not in ensure_instance(checkout_root).ports.named().values()
 
 
 def test_a_copied_instance_file_is_refused(tmp_path: Path, checkout_root: Path) -> None:

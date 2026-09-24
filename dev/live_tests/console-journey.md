@@ -11,7 +11,7 @@ Run `make live-test-console CONSOLE_LIVE_DIR=/tmp/a13n-console-review` with Dock
 7. Sign out, then sign in as `viewer@example.com` using the same fixture password. The Viewer can read existing resources/history but has no create, send or interrupt control. Direct unauthorized mutations must still be refused by Service.
 8. Inspect the actual pages at desktop and 390×844, light and dark themes. Check the narrow navigation drawer, form labels, wrapping, keyboard focus, visible errors and absence of horizontal page overflow. Save screenshots beside the logs.
 
-The launcher records `control.log`, `worker.log`, `console.log` and `state.json`. Console's proxy log records actual API method/path/status without bodies, cookies or credentials. Configuration files contain disposable database/encryption secrets and are mode0600; do not publish them. Close the browser tabs and stop the launcher when finished. This journey proves the ordinary Console milestone only; the retained full validation matrix remains open.
+The launcher records `control.log`, `worker.log`, `console.log` and `state.json`. Console's proxy log records actual API method/path/status without bodies, cookies or credentials. Configuration files contain disposable database/encryption secrets and are mode0600; do not publish them. Close the browser tabs and stop the launcher when finished.
 
 ## Remote MCP journey
 

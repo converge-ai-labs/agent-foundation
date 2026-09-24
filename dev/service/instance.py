@@ -113,28 +113,12 @@ def machine_lock() -> Iterator[None]:
     """Serialize port reservations across every checkout on this machine."""
     directory = machine_directory()
     directory.mkdir(parents=True, exist_ok=True)
-    fd = os.open(directory / "instances.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    fd = os.open(directory / "checkouts.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield
     finally:
         os.close(fd)
-
-
-def _previous_workflow_ports() -> set[int]:
-    # Checkouts still on the previous local workflow record their ports in instances.json (same lock).
-    path = machine_directory() / "instances.json"
-    try:
-        records = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return set()
-    return {
-        port
-        for record in (records.values() if isinstance(records, dict) else ())
-        if isinstance(record, dict) and isinstance(record.get("ports"), dict)
-        for port in record["ports"].values()
-        if type(port) is int
-    }
 
 
 def occupied(ports: dict[str, int]) -> list[str]:
@@ -185,7 +169,7 @@ def ensure_instance(root: Path) -> Instance:
         }
         instance = recorded or registered
         if instance is None:
-            instance = Instance(identity(root), str(root), _allocate(root, others | _previous_workflow_ports()))
+            instance = Instance(identity(root), str(root), _allocate(root, others))
         elif not others.isdisjoint(instance.ports.named().values()):
             raise ValueError(f"Ports in {instance_file(root)} are reserved by another registered checkout")
         records[str(root)] = instance

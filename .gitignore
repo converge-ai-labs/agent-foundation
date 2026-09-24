@@ -9,9 +9,6 @@ tmp/
 # Local runtime storage and caches, including make cli config/data in var/harness-ui/
 /var/
 
-# Machine-specific Service configuration, selected with SERVICE_CONFIG
-/dev/service/local.private.toml
-
 # Python bytecode and native extensions
 __pycache__/
 *.py[cod]

@@ -49,8 +49,8 @@ def migrate(checkout: Checkout) -> None:
     command = service_command(checkout, "migrate")
     if subprocess.run(command, cwd=checkout.root, env=service_environment(checkout)).returncode:
         raise RuntimeError(
-            "Migration failed (output above). A database built from a since-rewritten migration history needs "
-            "make dev-reset STATE=empty or STATE=seeded."
+            "Migration failed (output above). A database whose migration history does not match this checkout "
+            "needs make dev-reset STATE=empty or STATE=seeded."
         )
 
 
