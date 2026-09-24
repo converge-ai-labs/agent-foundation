@@ -1,6 +1,6 @@
 # Providers: what the Service calls
 
-A provider is a backend the Service calls on a tenant's behalf: a model API, an environment backend, a connector platform, a web search or scrape service, a Remote MCP server or the trace backend. This chapter owns the provider definitions a deployment registers, the capability flags and type descriptions clients read, runtime handles, the outbound endpoint policy, tool sources, the MCP server catalogue, the model catalog, trace backends and installed Harness plugins. Tenant-configured provider accounts are [provider resources](04-resources.md#provider-resources).
+A provider is a backend the Service calls on a tenant's behalf: a model API, an environment backend, a connector platform, a web search or scrape service, a record memory backend, a Remote MCP server or the trace backend. This chapter owns the provider definitions a deployment registers, the capability flags and type descriptions clients read, runtime handles, the outbound endpoint policy, tool sources, the MCP server catalogue, the model catalog, trace backends and installed Harness plugins. Tenant-configured provider accounts are [provider resources](04-resources.md#provider-resources).
 
 ## Terms
 
@@ -10,7 +10,7 @@ A provider is a backend the Service calls on a tenant's behalf: a model API, an 
 
 ## Registry
 
-`providers/registry.py` holds the definitions a deployment registers, keyed by `(kind, type)`. `kind` is `model`, `environment`, `connector` or `web`; there is no trace kind.
+`providers/registry.py` holds the definitions a deployment registers, keyed by `(kind, type)`. `kind` is `model`, `environment`, `connector`, `web` or `memory`; there is no trace kind.
 
 - `Registry.of(definitions)` groups the distribution's definitions by kind. A duplicate type within a kind, or a definition of any other kind, fails assembly ([09](09-runtime.md#assembly)).
 - `get(kind, type)` returns the definition a resource's `type` selects. An unregistered type is `unavailable` with dependency `{kind}:{type}`, so a row whose type a deployment no longer registers stays readable and fails only when used.
@@ -18,7 +18,7 @@ A provider is a backend the Service calls on a tenant's behalf: a model API, an 
 - `check_model_settings` checks an agent's native model settings against the calling API's schema ([provider type descriptions](#provider-type-descriptions)); settings for a calling API the deployment no longer offers are `unavailable` with dependency `model_api:{api}`; the module function `web_operations` names the operations a web type serves.
 - `check_environment_endpoint` is the [environment provider](#environment-providers) rule.
 
-The built-in distribution registers the Harness built-in model and web providers, the built-in connector provider (Composio) and eight environment types. Templates create instances of every one; external envd targets are no provider type ([06](06-environments.md#external-targets)).
+The built-in distribution registers the Harness built-in model, web and memory providers, the built-in connector provider (Composio) and eight environment types. Templates create instances of every one; external envd targets are no provider type ([06](06-environments.md#external-targets)).
 
 | Environment type | Instances                                                                                   | Stop                                 | Destroy |
 | ---------------- | ------------------------------------------------------------------------------------------- | ------------------------------------ | ------- |
@@ -36,6 +36,8 @@ The built-in distribution registers the Harness built-in model and web providers
 **Hosted types reach fixed vendor APIs.** An `e2b`, `daytona`, `modal`, `vercel`, `sprites` or `runloop` account holds the vendor credential and names at most an organization, team, workspace or app, never a host, so no tenant value chooses where the Service connects. The Service's `e2b` type leaves out the Harness's `domain` and `api_url`, which would name the hosts its SDK dials: an account always reaches the E2B cloud, and one that sets them is `invalid_argument` on `config`. Each hosted type names or tags its target with the environment ID, so a continued create finds the target the interrupted one made, and stop and destroy observe the target's state and succeed on one already stopped or gone ([06](06-environments.md#one-outstanding-external-operation)). The `e2b`, `modal`, `vercel` and `runloop` definitions set `requires_keepalive`, because their vendors end sandboxes that are not renewed, and the renewal sweep renews their ready instances before the expiry the provider reports ([06](06-environments.md#renewal)). E2B's timeout and Runloop's idle timer are extended, so the template's idle policy decides when those sandboxes stop. A renewal extends an E2B sandbox by at most its recipe's `timeout_seconds`, so the Service's `e2b` recipe requires at least 300 seconds, the renewal horizon. Renewal cannot pass a vendor's hard lifetime: Modal terminates a sandbox at its recipe's `timeout_seconds`, at most 24 hours, after which the instance is `environment_lost` until it is deleted, and Vercel ends a session at its recipe's `timeout_seconds`, after which the instance is `stopped` and the next run resumes the sandbox. An idle stop that comes first keeps the files.
 
 `local` is registered only when `environments.allow_local` is set, and every process that executes runs must then share the host holding the directories.
+
+Memory Providers back record memories only ([11](11-memory.md#memory-providers)); a definition declares no memory kind. The built-in types are `mem0_platform`, the hosted mem0 Platform, and `mem0_oss`, a self-hosted mem0 REST server the account's `base_url` names; both keep a memory's records under its namespace as the mem0 `user_id` ([Harness: mem0](../a13n-harness/21a-record-memory.md#mem0)). File memories are stored by the Service itself: `postgres` is no provider type.
 
 Connections use the registry through `type` too: `mcp` is the built-in Remote MCP tool source and needs no provider resource, and every other connection type is served by a connector provider resource of that type ([04](04-resources.md#connections)).
 
@@ -63,13 +65,14 @@ The registry derives each calling API's settings schema when it is assembled, wh
 
 A handle is opened per use from values resolved in a short database session, after the session closes, and closed when its context exits. The credential is revealed only when the handle opens; no handle, client or credential is cached across uses.
 
-| Kind        | Opened by                                     | Lifetime                                                                   |
-| ----------- | --------------------------------------------- | -------------------------------------------------------------------------- |
-| model       | `resources/models/runtime.open_model`         | one attempt's model; reads bounded by `providers.model_timeout`            |
-| web         | `resources/web_providers/runtime`             | one attempt's search or scrape backend                                     |
-| connector   | `resources/connector_providers/catalog`       | one catalogue read, authorization step or attempt                          |
-| Remote MCP  | `resources/connections/oauth.open_mcp_client` | one discovery, authorization step or attempt                               |
-| environment | `runs/environments/adapters`                  | one lifecycle operation, or one attempt's mount ([06](06-environments.md)) |
+| Kind        | Opened by                                      | Lifetime                                                                   |
+| ----------- | ---------------------------------------------- | -------------------------------------------------------------------------- |
+| model       | `resources/models/runtime.open_model`          | one attempt's model; reads bounded by `providers.model_timeout`            |
+| web         | `resources/web_providers/runtime`              | one attempt's search or scrape backend                                     |
+| connector   | `resources/connector_providers/catalog`        | one catalogue read, authorization step or attempt                          |
+| Remote MCP  | `resources/connections/oauth.open_mcp_client`  | one discovery, authorization step or attempt                               |
+| environment | `runs/environments/adapters`                   | one lifecycle operation, or one attempt's mount ([06](06-environments.md)) |
+| memory      | `resources/memories/records.open_record_store` | one API call or purge, or one attempt's record memory ([11](11-memory.md)) |
 
 The web backend's ID is the provider resource ID, so two accounts of one type stay distinct. Fetch and download use the host transport and need no provider resource.
 
@@ -77,7 +80,7 @@ Redis caches under `provider:{type}:` hold only discovery results (MCP tool list
 
 ## Outbound endpoint policy
 
-Requests to models, the model catalog, connectors, Remote MCP servers, OAuth servers, webhook destinations and trace backends go through a host-owned HTTP client (`infra/outbound.py`); web search and scrape backends use the Harness web transport, and environment backends their own clients after the endpoint check below. All of them are under one endpoint policy built from `providers.private_domains`, `providers.private_cidrs`, `providers.http_origins` and `providers.require_https`:
+Requests to models, the model catalog, connectors, record memory backends, Remote MCP servers, OAuth servers, webhook destinations and trace backends go through a host-owned HTTP client (`infra/outbound.py`); web search and scrape backends use the Harness web transport, and environment backends their own clients after the endpoint check below. All of them are under one endpoint policy built from `providers.private_domains`, `providers.private_cidrs`, `providers.http_origins` and `providers.require_https`:
 
 - Cloud metadata addresses are always refused. Loopback, link-local, multicast, unspecified and private addresses are refused unless their domain or network is allowlisted. With `require_https`, plain HTTP is refused except for the allowlisted `http_origins`.
 - The policy checks each request URL before it is sent, and each new connection resolves its host once and connects only when every answer is allowed. A DNS answer that changes after validation therefore never reaches a refused address.

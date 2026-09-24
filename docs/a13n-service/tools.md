@@ -13,16 +13,16 @@ Every tool has a [permission](agents-and-runs.md#tool-permissions) in the revisi
 
 `GET /api/v1/workspaces/{workspace_id}/toolsets` returns the catalog with each tool's key, the name the model sees, its default state and permission, and its configuration schema.
 
-| Toolset            | Tools (model names)                                                                                 | Default                                                             |
-| ------------------ | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `files`            | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`      | Enabled                                                             |
-| `shell` (Terminal) | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                             | Enabled                                                             |
-| `web`              | `search`, `scrape`, `fetch`, `download`                                                             | Each tool disabled                                                  |
-| `memory`           | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`                      | Enabled                                                             |
-| `assets`           | `publish_asset`                                                                                     | Disabled                                                            |
-| `configuration`    | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision` | Disabled; see [Configuration assistant](configuration-assistant.md) |
+| Toolset            | Tools (model names)                                                                                                                           | Default                                                             |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `files`            | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                | Enabled                                                             |
+| `shell` (Terminal) | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                       | Enabled                                                             |
+| `web`              | `search`, `scrape`, `fetch`, `download`                                                                                                       | Each tool disabled                                                  |
+| `memory`           | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete` | Enabled                                                             |
+| `assets`           | `publish_asset`                                                                                                                               | Disabled                                                            |
+| `configuration`    | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision`                                           | Disabled; see [Configuration assistant](configuration-assistant.md) |
 
-The files and terminal tools act on the run's mounted [environments](environments.md) and are offered to the model only when the run has one. The memory tools act on the run's mounted [memories](memory.md), and a `read` mount offers only viewing and searching. `publish_asset` turns a file from an environment into a workspace [asset](files-and-webhooks.md#assets).
+The files and terminal tools act on the run's mounted [environments](environments.md) and are offered to the model only when the run has one. The memory tools act on the run's mounted [memories](memory.md): file tools on file memories and record tools on record memories, and a `read` mount offers only viewing, listing and searching. `publish_asset` turns a file from an environment into a workspace [asset](files-and-webhooks.md#assets).
 
 ## Web search and scrape
 

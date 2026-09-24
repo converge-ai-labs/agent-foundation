@@ -166,7 +166,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 ### Providers and models
 
-`{kind}-providers` stands for each of `model-providers`, `environment-providers`, `web-providers` and `connector-providers`.
+`{kind}-providers` stands for each of `model-providers`, `environment-providers`, `web-providers`, `connector-providers` and `memory-providers`.
 
 | Path                                                    | Methods    | Owner                                            |
 | ------------------------------------------------------- | ---------- | ------------------------------------------------ |
@@ -289,10 +289,13 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/workspaces/{ws}/memories/{memory}/revisions`               | GET, DELETE        | [11](11-memory.md#files-and-history-through-the-api) |
 | `/workspaces/{ws}/memories/{memory}/revisions/{seq}`         | GET                | [11](11-memory.md#files-and-history-through-the-api) |
 | `/workspaces/{ws}/memories/{memory}/revisions/{seq}/restore` | POST               | [11](11-memory.md#files-and-history-through-the-api) |
+| `/workspaces/{ws}/memories/{memory}/records`                 | GET, POST          | [11](11-memory.md#records-through-the-api)           |
+| `/workspaces/{ws}/memories/{memory}/records/search`          | POST               | [11](11-memory.md#records-through-the-api)           |
+| `/workspaces/{ws}/memories/{memory}/records/{record}`        | PUT, DELETE        | [11](11-memory.md#records-through-the-api)           |
 | `/workspaces/{ws}/threads/{thread}/memories`                 | GET, POST          | [11](11-memory.md#mounts)                            |
-| `/workspaces/{ws}/threads/{thread}/memories/{name}`          | DELETE             | [11](11-memory.md#mounts)                            |
+| `/workspaces/{ws}/threads/{thread}/memories/{name}`          | PATCH, DELETE      | [11](11-memory.md#mounts)                            |
 
-A file `{path}` is the file's path in the memory, with its `/` separators. A file's ETag names its current version; creating a file takes no `If-Match`, and a restore takes one only when a file exists at the revision's path.
+A file `{path}` is the file's path in the memory, with its `/` separators. A file's ETag names its current version; creating a file takes no `If-Match`, and a restore takes one only when a file exists at the revision's path. A `{record}` is the backend's record ID, at most 256 characters; records carry no ETag.
 
 ### Usage and traces
 

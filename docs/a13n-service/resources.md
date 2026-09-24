@@ -41,7 +41,7 @@ Nothing a run depends on is hard-deleted underneath it:
 
 ## Providers
 
-A provider is one configured account of an external service. There are four kinds:
+A provider is one configured account of an external service. There are five kinds:
 
 | Kind          | Types                                                                                                                                                                                          | Used for                                               |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
@@ -49,6 +49,7 @@ A provider is one configured account of an external service. There are four kind
 | `web`         | `duckduckgo`, `brave`, `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `perplexity`, `serpapi`, `tinyfish`                                                                                   | The [web toolset](tools.md#web-search-and-scrape)      |
 | `environment` | `docker`, `e2b`, `daytona`, `modal`, `vercel`, `sprites`, `runloop` (and `local` when the deployment enables it for development)                                                               | [Environments](environments.md)                        |
 | `connector`   | `composio`                                                                                                                                                                                     | [Connector connections](tools.md#composio-connections) |
+| `memory`      | `mem0_platform`, `mem0_oss`                                                                                                                                                                    | [Record memories](memory.md#record-memories)           |
 
 `GET /api/v1/provider-types/{kind}` describes each installed type: its `configuration_schema` and `credential_schema` (JSON Schema), when a credential is required, and a `setup_url` for obtaining one. Model types add their model APIs and per-API settings schemas; web types list the operations they serve; environment types describe their environment schema and whether they support managed instances, stop and destroy. Console builds its provider forms from this endpoint.
 
@@ -64,6 +65,6 @@ curl -X POST "$A13N_URL/api/v1/organizations/$ORG/model-providers" \
 - **A credential is bound to its configuration.** A `PATCH` that changes `config` while a credential is stored must also replace or remove the credential (and every stored extra header of a model provider), or it is refused as `invalid_argument`. This keeps a credential from being sent to an endpoint it was not entered for.
 - **Endpoints obey the deployment's outbound policy.** Base URLs and other endpoints must pass the [endpoint policy](configuration.md#outbound-requests); private and plain-HTTP endpoints need the operator's explicit allowance.
 - **Disable** with `PATCH {"enabled": false}`. A disabled provider refuses new use with `disabled`; existing environments of a disabled environment provider are still maintained.
-- **Test** with `POST …/{provider_id}/test` (needs `run`). It sends one inexpensive probe with the stored configuration and returns `succeeded`, `failed` (with a message) or `unsupported`. Web providers and the `google_vertex`, `aws_bedrock`, `typesafe` and `local` types have no test. An environment provider test only reads: it checks the Docker Engine or the Envd daemon's identity, and creates nothing.
+- **Test** with `POST …/{provider_id}/test` (needs `run`). It sends one inexpensive probe with the stored configuration and returns `succeeded`, `failed` (with a message) or `unsupported`. Web providers and the `google_vertex`, `aws_bedrock`, `typesafe` and `local` types have no test. An environment provider test only reads: it checks the Docker Engine or the Envd daemon's identity, and creates nothing. A memory provider test lists one page of a namespace no memory uses.
 
 Providers have no delete operation; disable them instead.

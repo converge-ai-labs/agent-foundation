@@ -29,7 +29,7 @@ a13n_service/
     requests.py       the runtime dependency resource routes use
     agents/           tables  schemas  service  routes  validation  definition  toolsets  assistant
     skills/           tables  schemas  service  routes  package  content  github  pins
-    providers/        tables (all four provider tables)  schemas  service  routes  scope  probe
+    providers/        tables (all five provider tables)  schemas  service  routes  scope  probe
     models/           tables  schemas  service  routes  catalog  models_dev  media  runtime
     environment_templates/   tables  schemas  service  routes
     connector_providers/     schemas  routes  catalog
@@ -39,7 +39,7 @@ a13n_service/
     secrets/          tables  schemas  service  routes
     uploads/          schemas  service  routes
     assets/           tables  schemas  service  routes
-    memories/         tables  schemas  service  routes  store  files
+    memories/         tables  schemas  service  routes  store  files  records  purge
     subscriptions/    tables  schemas  service  routes  delivery
 
   runs/               how input becomes sealed runs
@@ -103,7 +103,7 @@ The resource packages depend on each other in one direction:
 ```
 agents     ->  connections, environment_templates, memories, models, providers, secrets, skills
 connections  ->  connector_providers, providers
-models, environment_templates, connector_providers, web_providers  ->  providers
+models, environment_templates, connector_providers, web_providers, memories  ->  providers
 skills, assets  ->  uploads
 ```
 
@@ -190,6 +190,7 @@ Object IDs follow the platform's [data conventions](../data-conventions.md#servi
 | `eprov`             | environment_providers                                                 | `env`                 | environments                                 |
 | `cprov`             | connector_providers                                                   | `envoper`, `envrenew` | environment operations, environment renewals |
 | `wprov`             | web_providers                                                         | `wrk`                 | worker IDs                                   |
+| `memprov`           | memory_providers                                                      |                       |                                              |
 | `ctl`               | control sweep claim owners (outbox delivery, environment maintenance) | `req`                 | request IDs                                  |
 | `mem`               | memories                                                              | `mfile`               | memory_files                                 |
 

@@ -27,7 +27,7 @@ flowchart LR
 
 ## Boundaries
 
-The Service owns tenancy, configured resources, durable run ownership and history, environment instances created through providers, the file memories agents keep across conversations ([11](11-memory.md)), and delivery of what happened. It is API-only: it hosts no browser assets and exposes no product API on worker-only processes.
+The Service owns tenancy, configured resources, durable run ownership and history, environment instances created through providers, the memories agents keep across conversations, as files in its own database or as records in a Memory Provider's backend ([11](11-memory.md)), and delivery of what happened. It is API-only: it hosts no browser assets and exposes no product API on worker-only processes.
 
 | Need                                                        | Served by                                                                                                                                                         |
 | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |

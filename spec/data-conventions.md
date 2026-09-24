@@ -67,7 +67,7 @@ The shared Service allocator owns these prefix assignments; callers cannot choos
 
 | Suffix length | Allocated prefixes                                                                                                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 20            | `ap`, `conn`, `cprov`, `envtpl`, `eprov`, `mdl`, `mem`, `mprov`, `org`, `sa`, `sk`, `usr`, `wprov`, `ws`                                                                 |
+| 20            | `ap`, `conn`, `cprov`, `envtpl`, `eprov`, `mdl`, `mem`, `memprov`, `mprov`, `org`, `sa`, `sk`, `usr`, `wprov`, `ws`                                                      |
 | 24            | `apr`, `ast`, `env`, `inv`, `mfile`, `rb`, `sess`, `skr`                                                                                                                 |
 | 28            | `inb`, `rat`, `run`                                                                                                                                                      |
 | 32            | `ase`, `audit`, `connop`, `ctl`, `ect`, `envoper`, `key`, `obx`, `prt`, `req`, `sec`, `sub`, `thread`, `wrk`, `envrenew`; every other valid kind defaults to this length |
@@ -120,7 +120,7 @@ Where a domain exposes configured Providers as resources, each has its own `id`,
 
 Each Provider type owns the strongly typed model for its non-secret `configuration`. The same implementation-owned model supplies safe configuration metadata for management surfaces and performs authoritative parsing and validation. Credential requirements are described separately, and credential values never enter ordinary configuration, configuration schemas, or read projections. Configuration validation is deterministic and distinct from testing credentials, endpoints, or upstream availability.
 
-These naming and configuration conventions do not create a universal Provider resource, base class, registry, credential model, discovery operation, or lifecycle. Model, Connector, Environment, and other domains define their own Provider contracts when they have one; common management projections or helpers are added only for a concrete shared consumer.
+These naming and configuration conventions do not create a universal Provider resource, base class, registry, credential model, discovery operation, or lifecycle. Model, Connector, Environment, Memory, and other domains define their own Provider contracts when they have one; common management projections or helpers are added only for a concrete shared consumer.
 
 Suffixes have stable domain meanings. `Revision` is an immutable member of a resource lineage; `Snapshot` is a frozen capture outside that lineage; `Request` is caller-supplied input; `Selection` records a choice; `Lock` freezes an exact dependency; `Ref` identifies without granting authority; `State` describes an owner's condition; `Event` records an occurrence; and `Receipt` is bounded evidence of an accepted or committed operation. A suffix is not added merely to make a local name sound more explicit.
 
