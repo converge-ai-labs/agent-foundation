@@ -100,6 +100,12 @@ async def test_a_thread_mounts_a_bounded_number_of_memories(serve, settings, scr
         extra = await service.client.post(mounts, json=mount("three", third), headers={"if-match": version})
         assert extra.status_code == 409 and reason(extra) == "memory_mount_limit", extra.text
 
+        # Agent defaults that would take a thread over the limit at its first acceptance fail the entry.
+        model_id = await runs_kit.create_model(service, scripted_model)
+        crowded = await runs_kit.add_agent(service, "crowded", model_id, memory_mounts=[mount("three", third)])
+        refused = await runs_kit.start_thread(service, crowded, "hi", memories=initial)
+        assert refused["run"] is None and refused["entry"]["failure"]["code"] == "memory_mount_limit", refused
+
 
 async def test_agent_defaults_join_at_a_threads_first_acceptance_only(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     team, notes, own = [await create_memory(service, key) for key in ("team", "notes", "own")]
