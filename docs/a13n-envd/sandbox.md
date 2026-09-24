@@ -40,9 +40,9 @@ docker run --rm -i \
 
 A new empty volume inherits the image directory's ownership. Existing volumes and bind mounts retain their ownership; arrange write access for `1000:1000` yourself. The image does not recursively chown mounted files at startup. Closing a Session does not delete workspace files, but removing a container discards files not stored in a volume or bind mount.
 
-### Connect to Harness UI or Service
+### Connect to Harness UI
 
-Use an outbound connection when the Host supports Device registration:
+Use an outbound connection to Harness UI:
 
 ```bash
 docker volume create agent-envd-state
@@ -54,7 +54,7 @@ docker run --rm --name agent-sandbox \
   a13n-envd connect https://host.example.com --host work
 ```
 
-Replace the Host URL with one reachable **from inside the container**. Container `localhost` is not the host computer. Approve the printed verification code at the Host, then leave the container running. This outbound mode needs no Docker port publishing. Subsequent starts reuse the saved Device identity and credential from the state volume. Treat that volume as a credential; do not mount it into another unrelated sandbox. See [registration and saved Hosts](configuration.md#connect-to-a-host).
+Replace the Host URL with one reachable **from inside the container**. Container `localhost` is not the host computer. Approve the printed verification code at the Host, then leave the container running. This outbound mode needs no Docker port publishing. Subsequent starts reuse the saved Device identity and credential from the state volume. Treat that volume as a credential; do not mount it into another unrelated sandbox. See [registration and saved Hosts](configuration.md#connect-to-a-host). To use the sandbox with a13n Service, run it as an HTTP daemon and [register it as an external target](../environments/remote-envd.md#connect-to-the-service).
 
 The persistent installation directory is `/var/lib/a13n-envd`. Standalone generation-private runtime data uses `/run/a13n-envd-state`; `connect` manages its Host-specific runtime under the installation directory. Neither runtime directory is a workspace or a Session recovery checkpoint.
 

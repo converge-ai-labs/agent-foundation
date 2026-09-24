@@ -42,5 +42,3 @@ Harness is one consumer through the provider-neutral [Environment integration](.
 ## Specification Conventions
 
 Python-like shapes are conceptual unless explicitly identified as serialized EIP JSON. EIP uses snake_case fields and one JSON-RPC request/response per message; file bytes use the raw data plane. A receipt records observed native effects, not Host completion. Device, generation, Session, operation and model-facing Run references are distinct identities.
-
-These contracts require a coordinated breaking implementation. They do not make the previous singleton client, existing generated artifacts or downstream Service integration compatible without adaptation. Service/Console product changes remain separately scoped.

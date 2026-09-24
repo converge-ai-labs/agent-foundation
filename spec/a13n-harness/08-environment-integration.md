@@ -402,7 +402,7 @@ Run cleanup fences admission, cancels local watchers and releases observations t
 
 A released observation no longer pins mount retirement even if its remote command survives. Native scope-close semantics remain Provider-owned. E2B can preserve commands in a surviving sandbox; Direct Local and Envd-backed Providers retain their actual scope cleanup behavior. Harness never infers persistence from the presence of non-null state.
 
-No model reference, log offset, status mirror or watcher enters Harness Capability state. Provider `EnvironmentState` remains opaque and owns backend-specific recovery evidence. A later Run starts an empty controller, uses native discovery when supported and rejects references copied from old messages. No Service process table, UI process store, durable wake service or automatic command replay is introduced. Async subagents retain their independent Host operator.
+No model reference, log offset, status mirror or watcher enters Harness Capability state. Provider `EnvironmentState` remains opaque and owns backend-specific recovery evidence. A later Run starts an empty controller, uses native discovery when supported and rejects references copied from old messages; no command is replayed automatically. Async subagents retain their independent Host operator.
 
 ## Ports
 

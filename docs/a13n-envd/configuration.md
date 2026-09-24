@@ -28,13 +28,13 @@ Device connections negotiate the carrier and protocol. EIP Sessions select a fix
 
 ## Connect to a Host
 
-For a Harness UI or a13n Service Host with device registration, start one outbound connection:
+To connect to Harness UI, start one outbound connection:
 
 ```console
 a13n-envd connect https://host.example.com --host work
 ```
 
-Open the approval address printed by envd, sign in to the Host, and approve the matching verification code. Keep envd running. On later starts, `a13n-envd connect work` reuses its saved identity, credential and approved connection. The credential is generated on the Device and never needs to be copied into the browser. Reconnection does not require a fresh ticket or another approval.
+Open the approval address printed by envd, sign in to the Host, and approve the matching verification code. Keep envd running. On later starts, `a13n-envd connect work` reuses its saved identity, credential and approved connection. The credential is generated on the Device and never needs to be copied into the browser. Reconnection does not require a fresh ticket or another approval. a13n Service instead connects to an HTTP daemon you register; see [Connect to the Service](../environments/remote-envd.md#connect-to-the-service).
 
 The Host URL must be reachable from this computer. HTTPS is required except for loopback HTTP, such as `http://127.0.0.1:8765`. Add `--ca-file /path/to/ca.pem` for a private CA; TLS verification is never disabled. `--name` sets the approval display name, and `--default-working-directory` selects an existing native directory. `--config` supplies ordinary daemon JSON, including resource limits and command settings.
 

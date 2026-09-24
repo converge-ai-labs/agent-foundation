@@ -60,7 +60,7 @@ Read `07`, `08`, `13`, and `15`, then `08a` for Provider definitions, adapter li
 
 ### Implement Hosting or Persistence
 
-Read `10`, `12`, `13`, `14`, and `20`, then the a13n Service catalog. A Host owns all async-child lifecycle authority. Shell references and observations are Run-local; cleanup releases them without blanket termination. Provider state owns native process recovery. See `08` for the independent process and output completion boundaries.
+Read `10`, `12`, `13`, `14`, and `20`, then the [a13n Service specification](../a13n-service/README.md). A Host owns all async-child lifecycle authority. Shell references and observations are Run-local; cleanup releases them without blanket termination. Provider state owns native process recovery. See `08` for the independent process and output completion boundaries.
 
 ### Integrate Observation
 

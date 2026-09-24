@@ -94,9 +94,9 @@ Carrier loss detaches its Sessions, destroys incomplete transfers and starts the
 
 Missing/malformed token, upgrade 401/403, invalid TLS/hostname, endpoint policy, redirect or incompatible subprotocol/framing is generation-fatal under the daemon contract. Transient DNS/connect/unavailability/liveness failures are reconnectable. Backoff resets only after a stable connection interval, not after each brief upgrade.
 
-## Control-Service and Browser Boundary
+## Host and Browser Boundary
 
-The listener and HTTP requester belong to trusted Host code. The Host owns product-user authorization, device registration, directory selection and cross-process placement. Browser UI does not receive daemon credentials, raw Session/transfer selectors or native operation authority. Product IDs in an EIP parameter cannot replace this trust boundary. Generic EIP is independent of any Service routing or storage design.
+The listener and HTTP requester belong to trusted Host code. The Host owns product-user authorization, device registration, directory selection and cross-process placement. Browser UI does not receive daemon credentials, raw Session/transfer selectors or native operation authority. Product IDs in an EIP parameter cannot replace this trust boundary. Generic EIP is independent of any Host routing or storage design.
 
 ## Failures and Compatibility
 

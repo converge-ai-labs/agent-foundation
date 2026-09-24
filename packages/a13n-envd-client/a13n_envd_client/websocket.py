@@ -39,7 +39,7 @@ class WebSocketConnection(Protocol):
 
 
 class AcceptedWebSocketTransport:
-    """EIP framing over a control-service-authenticated WebSocket connection.
+    """EIP framing over a Host-authenticated WebSocket connection.
 
     The owning listener validates the Bearer attachment token before constructing
     this adapter. This class verifies the negotiated EIP subprotocol and owns only

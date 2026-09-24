@@ -4,7 +4,7 @@
 
 Embedded applications and hosted execution workers use the same code-first Harness API. The Harness does not expose a separate hosted Agent format. A hosted service owns durable Agent definition schemas, Presets, immutable revisions, dependency locks, and reconstruction adapters; the worker reconstructs one process-local `AgentDefinition` and calls `HarnessBuilder`. Plugin middleware may instead use the narrow Harness-owned configuration document and Build Context, so the Host need not expose or implement plugin factory concepts.
 
-The Host also owns durable acceptance, durable execution attempts, leases, checkpoint selection, deferred delivery, recovery, and terminal commit. The Harness returns only process-local observations and state candidates. a13n Service's concrete use of these generic surfaces is owned by [Service–Harness Runtime Integration](../a13n-service/05-runs.md). In Service, durable work is a `Run` and one replaceable Worker attempt is a `RunAttempt`; these are Host resources, not Harness types.
+The Host also owns durable acceptance, durable execution attempts, leases, checkpoint selection, deferred delivery, recovery, and terminal commit. The Harness returns only process-local observations and state candidates. a13n Service's concrete use of these generic surfaces is owned by [Runs](../a13n-service/05-runs.md). In Service, durable work is a run and one replaceable worker lease of it is an attempt; these are Host resources, not Harness types.
 
 ## Boundary
 
@@ -125,7 +125,7 @@ Harness supplies no default async manager, execution-store protocol, parent-stat
 
 Shell observations follow the separate [Environment contract](08-environment-integration.md#run-local-shell-observations). Harness supplies Run-local references, optional native discovery, explicit-offset observations and best-effort exit hints without a Host process operator. Run close releases observations without blanket termination. Provider state owns recovery of whatever the backend actually retained; a later Run uses fresh references and cannot assume historical output survives.
 
-a13n Service and Harness UI use this ordinary Environment integration without a process table, durable process mirror or post-Run wake service. Async subagents retain their independent Host operator.
+a13n Service and Harness UI use this ordinary Environment integration. Async subagents retain their independent Host operator.
 
 ## Events and Completion
 

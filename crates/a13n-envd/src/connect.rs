@@ -30,7 +30,7 @@ const RESPONSE_LIMIT: usize = 64 * 1024;
 
 pub(crate) const HELP: &str = "a13n-envd connect <URL or saved Host> [options]
 
-Connect one envd process to one Harness UI or a13n Service Host.
+Connect one envd process to one Harness UI Host.
 The first connection asks you to approve a code in the Host's device settings.
 Later connections reuse the saved identity and credential automatically.
 

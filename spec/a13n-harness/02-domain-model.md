@@ -115,7 +115,7 @@ The owner persists a compact reference only when its semantic continuation cross
 
 A Host revision reconstructs a process-local `AgentDefinition`; it is not itself a Harness value. A Host durable run selects an executable, fresh `RunBindings`, optional input, and optional prior `HarnessState`. The Harness result and state become durable only if the Host commits them.
 
-One logical Harness Run can use several model-attempt IDs during bounded model recovery. This does not change the Service `RunAttempt`, Harness Run ID, context, entered Environment lifetime, plugins, state coordinator, or usage accumulator. Run-local mount mutations publish immutable snapshots inside that one lifetime rather than creating another Run identity.
+One logical Harness Run can use several model-attempt IDs during bounded model recovery. This does not change a Service run attempt, the Harness Run ID, context, entered Environment lifetime, plugins, state coordinator, or usage accumulator. Run-local mount mutations publish immutable snapshots inside that one lifetime rather than creating another Run identity.
 
 ## Version Boundaries
 
