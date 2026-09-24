@@ -146,6 +146,24 @@ async def test_a_mount_and_the_toolset_limit_the_offered_tools(service, scripted
     assert FULL in text(request) and not any(name.startswith("memory_") for name in tool_names(request))
 
 
+async def test_tool_permissions_apply_to_the_memory_tools(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    memory = await team_memory(service)
+    rules = {"memory": {"tools": {"file_delete": {"permission": "deny"}, "file_append": {"permission": "ask"}}}}
+    model_id = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(service, "careful", model_id, toolsets=rules)
+    tea = {"memory": "team", "path": "notes/tea.md"}
+    scripted_model.call("memory_file_delete", {**tea, "version": "1"}, call_id="call_delete")
+    scripted_model.call("memory_file_append", {**tea, "content": "Sencha\n"}, call_id="call_append")
+    started = await runs_kit.start_thread(service, agent, "tidy up", memories=[mount(memory)])
+    await (await runs_kit.attempt(service))
+    run = await runs_kit.get_run(service, started["run"]["id"])
+    # The denied delete never reached the store; the append waits for approval.
+    assert (run["status"], run["wait_reason"]) == ("waiting", "approval"), run
+    assert [item["tool_name"] for item in run["pending"]["items"]] == ["memory_file_append"]
+    tea_file = await service.client.get(f"{service.workspace}/memories/{memory['id']}/files/notes/tea.md")
+    assert tea_file.json()["content"] == "Oolong\n"
+
+
 async def test_only_the_root_agent_gets_the_runs_memories(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     memory = await team_memory(service)
     agent = await runs_kit.delegating(service, scripted_model, "inline")
