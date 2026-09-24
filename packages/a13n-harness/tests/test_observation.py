@@ -1361,7 +1361,7 @@ def test_operation_failure_keeps_safe_local_status_and_no_synthetic_output(failu
     activation = observation.activate()
     try:
         with pytest.raises(failure):
-            with observe_operation("memory_recall"):
+            with observe_operation("compaction"):
                 raise failure("private provider details")
     finally:
         observation.deactivate(activation)

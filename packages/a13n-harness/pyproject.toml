@@ -38,7 +38,6 @@ dependencies = [
 docker = ["docker>=7.2,<8"]
 e2b = ["e2b>=2.46.4,<3"]
 modal = ["modal>=1.5.5,<2"]
-mem0 = ["mem0ai>=2.0.19,<3"]
 
 [dependency-groups]
 test = [

@@ -1,5 +1,5 @@
 {
-  "descriptor_sha256": "7a3f4a5a6abcfbd1d15c50a18e9d215b968a26732265209d073d5e9ee9b9eecb",
+  "descriptor_sha256": "e37b4ae18b2f722608c3384dbf58770007d7d859e254a0168d6a9fc71cf57bec",
   "files": [
     "crates/a13n-envd/protocol/eip/v1/descriptor.pb",
     "packages/a13n-envd-client/a13n_envd_client/eip/v1/__init__.py",

@@ -51,7 +51,7 @@ Each guide starts with the use case, then shows the public API and the boundary 
 | [Tools and dependencies](tools-and-dependencies.md)     | Typed functions and current application services                             | Native Pydantic AI tool composition, not another dispatcher           |
 | [Inputs and outputs](inputs-and-outputs.md)             | Text/media input and typed business output                                   | Output contract is fixed at build; progress is not final output       |
 | [Capabilities](capabilities.md)                         | Select behavior, hooks, Toolsets, and trusted implementations                | Feature selection is not permission to access a resource              |
-| [Context and memory](context-and-memory.md)             | Context projections, tasks, notes, handoff, compaction, Mem0                 | Continuation and memory are not workflow ownership                    |
+| [Context and working state](context.md)                 | Context projections, tasks, notes, handoff, compaction                       | Continuation is not workflow ownership                                |
 | [Environments](environments.md)                         | Files, shell, processes, output, ports, multi-mount routing                  | Host selects Providers; Provider owns the target                      |
 | [State and Resume](state-and-resume.md)                 | Continue, fork, export checkpoints, answer deferred calls                    | State restores data, not clients, credentials, or current authority   |
 | [MCP tools](mcp.md)                                     | External tools and per-run headers                                           | Pydantic AI owns MCP transport; local/native paths differ             |

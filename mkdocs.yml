@@ -61,7 +61,7 @@ nav:
           - Inputs and outputs: a13n-harness/inputs-and-outputs.md
           - Capabilities: a13n-harness/capabilities.md
       - Add behavior:
-          - Context and memory: a13n-harness/context-and-memory.md
+          - Context and working state: a13n-harness/context.md
           - Environments: a13n-harness/environments.md
           - State and Resume: a13n-harness/state-and-resume.md
           - MCP tools: a13n-harness/mcp.md

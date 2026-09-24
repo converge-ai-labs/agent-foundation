@@ -42,7 +42,7 @@ mod tests {
     fn generated_registry_has_complete_v1_surface() {
         assert_eq!(EIP_PROTOCOL_VERSION, "0.1");
         assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");
-        assert_eq!(METHODS.len(), 42);
+        assert_eq!(METHODS.len(), 41);
         assert!(
             METHODS
                 .iter()
@@ -61,7 +61,7 @@ mod tests {
                 .iter()
                 .filter(|method| method.replay_class == "terminal_evidence")
                 .count(),
-            16
+            15
         );
         assert_eq!(
             METHODS

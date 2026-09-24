@@ -2,7 +2,7 @@
 
 ## Design Position
 
-A Provider is an inert immutable value that declares how to reach one external capability and how to open it. `a13n_harness.providers` owns one shared core for five Provider domains: Model, Web, Memory, Connector, and Environment. Every domain reuses the same identity, typed input models, credential declaration, setup help, selection catalog, and installed-plugin contract, and adds only the operations its capability actually needs.
+A Provider is an inert immutable value that declares how to reach one external capability and how to open it. `a13n_harness.providers` owns one shared core for four Provider domains: Model, Web, Connector, and Environment. Every domain reuses the same identity, typed input models, credential declaration, setup help, selection catalog, and installed-plugin contract, and adds only the operations its capability actually needs.
 
 Providers are values, not registries. Importing a definition performs no I/O, opens no client, and grants no authority. A Host selects the definitions its deployment trusts, supplies validated configuration and a current credential, and owns the resulting resource lifetime.
 
@@ -75,11 +75,10 @@ Hosts project this declaration alongside the configuration and credential schema
 | ----------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Model       | `ModelProviderDefinition`       | Supported native calling APIs, endpoint derivation, reserved headers, native Provider construction, optional bounded probe |
 | Web         | `WebProviderDefinition`         | Optional `search` and `scrape` operations and declared restricted-scrape support                                           |
-| Memory      | `MemoryProviderDefinition`      | Optional record backend and declared document, revision, and change capabilities                                           |
 | Connector   | `ConnectorProviderDefinition`   | Setup validation and a scoped provider runtime over one bounded HTTP client                                                |
 | Environment | `EnvironmentProviderDefinition` | A separate target recipe model, construction of one fresh adapter, and declared target lifecycle capabilities              |
 
-[Model Provider Definitions](16b-model-provider-definitions.md) owns Model construction and native API bindings; [Environment Providers](08a-environment-providers.md) owns the Environment domain; [Context and Memory](09-context-and-memory.md) owns the memory boundary. Declared capability flags are the single source a Host reads before offering an action; a domain rejects a definition whose flags contradict its supplied operations.
+[Model Provider Definitions](16b-model-provider-definitions.md) owns Model construction and native API bindings; [Environment Providers](08a-environment-providers.md) owns the Environment domain. Declared capability flags are the single source a Host reads before offering an action; a domain rejects a definition whose flags contradict its supplied operations.
 
 A definition never stores durable state, chooses retention, or associates a Thread. Acquiring a live resource is a separate explicit call that returns a scoped object owned by the caller.
 
@@ -116,7 +115,6 @@ class ProviderManifest:
     api_version: int
     model: tuple[ModelProviderDefinition, ...] = ()
     web: tuple[WebProviderDefinition, ...] = ()
-    memory: tuple[MemoryProviderDefinition, ...] = ()
     environment: tuple[EnvironmentProviderDefinition, ...] = ()
     connector: tuple[ConnectorProviderDefinition, ...] = ()
 ```
@@ -156,7 +154,7 @@ Definitions carry no configuration schema version. A Provider owns exactly one c
 
 ## Invariants
 
-01. One shared core declares identity, typed inputs, credential presence, and setup help for all five domains.
+01. One shared core declares identity, typed inputs, credential presence, and setup help for all four domains.
 02. Defining and selecting a Provider performs no external I/O and creates no client.
 03. `a13n_harness.providers.plugins` is the only Provider entry-point group and the only authoring surface for installed contributions.
 04. A deployment selects entry-point names; it never supplies an import target.

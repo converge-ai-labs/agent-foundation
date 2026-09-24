@@ -1,4 +1,4 @@
-"""The shared `ProviderDefinition` core validates identically in all five domains."""
+"""The shared `ProviderDefinition` core validates identically in all four domains."""
 
 from dataclasses import replace
 
@@ -7,7 +7,6 @@ from a13n_harness.providers.authentication import Authentication, Authentication
 from a13n_harness.providers.connector.builtins import COMPOSIO
 from a13n_harness.providers.definition import ProviderDefinition
 from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
-from a13n_harness.providers.memory.builtins import FILESYSTEM, MEM0_OSS
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_harness.providers.web.builtins import built_in_web_providers
 from pydantic import BaseModel
@@ -15,7 +14,6 @@ from pydantic import BaseModel
 CREDENTIALED = [
     pytest.param(built_in_web_providers()[1], "Web", {}, id="web"),
     pytest.param(BUILT_IN_MODEL_PROVIDERS[0], "Model", {}, id="model"),
-    pytest.param(MEM0_OSS, "Memory", {"base_url": "http://localhost:8000"}, id="memory"),
     pytest.param(COMPOSIO, "Connector", {}, id="connector"),
     pytest.param(
         next(item for item in BUILT_IN_ENVIRONMENT_PROVIDERS if item.type == "e2b"), "Environment", {}, id="environment"
@@ -23,7 +21,6 @@ CREDENTIALED = [
 ]
 NO_CREDENTIAL = [
     pytest.param(built_in_web_providers()[0], id="web"),
-    pytest.param(FILESYSTEM, id="memory"),
     pytest.param(
         next(item for item in BUILT_IN_ENVIRONMENT_PROVIDERS if item.type == "direct_local"), id="environment"
     ),

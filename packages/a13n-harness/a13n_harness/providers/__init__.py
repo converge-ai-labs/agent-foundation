@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     from .connector.definition import ConnectorProviderDefinition, ConnectorSetupPolicy
     from .definition import ProviderDefinition
     from .environment.definition import EnvironmentProviderDefinition
-    from .memory.definition import MemoryProviderDefinition
     from .model.definition import ModelProviderDefinition
     from .plugins import ProviderManifest
     from .web.definition import WebProviderDefinition
@@ -22,7 +21,6 @@ _EXPORTS = {
     "a13n_harness.providers.connector.definition": ("ConnectorProviderDefinition", "ConnectorSetupPolicy"),
     "a13n_harness.providers.definition": ("ProviderDefinition",),
     "a13n_harness.providers.environment.definition": ("EnvironmentProviderDefinition",),
-    "a13n_harness.providers.memory.definition": ("MemoryProviderDefinition",),
     "a13n_harness.providers.model.definition": ("ModelProviderDefinition",),
     "a13n_harness.providers.plugins": ("ProviderManifest",),
     "a13n_harness.providers.web.definition": ("WebProviderDefinition",),

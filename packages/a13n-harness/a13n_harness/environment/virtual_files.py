@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, AsyncIterable, Callable
-from contextlib import AbstractAsyncContextManager, AsyncExitStack
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any
 
 from a13n_harness.environment.providers import FileScopeSelection
 from a13n_harness.providers.environment.files import (
-    FileCommitOperator,
-    FileCommitRequest,
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
@@ -45,41 +43,6 @@ class VirtualFileOperator:
     def __init__(self, resolve: ResolvePath, prepare: PrepareFile) -> None:
         self._resolve = resolve
         self._prepare = prepare
-
-    async def commit(self, request: FileCommitRequest) -> FileMutationResult:
-        selected = self._resolve(request.root)
-
-        def routed(path: str) -> str:
-            resolved = self._resolve(path)
-            if (
-                resolved.resolved_path.mount_id != selected.resolved_path.mount_id
-                or resolved.observed_generation != selected.observed_generation
-            ):
-                raise EnvironmentError("Commit paths must share one mount", code="environment_denied")
-            return resolved.resolved_path.path
-
-        routed_request = FileCommitRequest(
-            root=selected.resolved_path.path,
-            conditions=tuple(item.model_copy(update={"path": routed(item.path)}) for item in request.conditions),
-            directories=tuple(routed(path) for path in request.directories),
-            writes=tuple(item.model_copy(update={"path": routed(item.path)}) for item in request.writes),
-            removals=tuple(routed(path) for path in request.removals),
-        )
-        async with AsyncExitStack() as stack:
-            prepared = None
-            for action in (
-                EnvironmentAction.FILE_READ_BYTES,
-                EnvironmentAction.FILE_WRITE_TEXT,
-                EnvironmentAction.FILE_MKDIR,
-                EnvironmentAction.FILE_REMOVE,
-            ):
-                prepared = await stack.enter_async_context(self._prepare(selected, action))
-            assert prepared is not None
-            if not isinstance(prepared.backend, FileCommitOperator):
-                raise EnvironmentError("Conditional publication is unavailable", code="environment_unsupported")
-            result = await prepared.backend.commit(routed_request)
-            prepared.validate_result(result)
-            return result.model_copy(update={"path": request.root})
 
     async def read_text(self, path: str, **kwargs: Any) -> FileTextResult:
         async with self._prepare(self._resolve(path), EnvironmentAction.FILE_READ_TEXT) as prepared:

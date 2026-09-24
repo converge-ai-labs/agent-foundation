@@ -1,4 +1,4 @@
-"""One manifest contract for all five domains: inert selection and one catalog owner."""
+"""One manifest contract for all four domains: inert selection and one catalog owner."""
 
 from dataclasses import replace
 from types import SimpleNamespace
@@ -7,7 +7,6 @@ import pytest
 from a13n_harness.providers.catalog import ProviderCatalog, ProviderNotSelected
 from a13n_harness.providers.connector.builtins import COMPOSIO
 from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
-from a13n_harness.providers.memory.builtins import MEM0_OSS
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_harness.providers.plugins import ProviderManifest, load_provider_plugins
 from a13n_harness.providers.web.builtins import built_in_web_providers
@@ -15,7 +14,6 @@ from a13n_harness.providers.web.builtins import built_in_web_providers
 DOMAINS = [
     pytest.param("web", built_in_web_providers()[0], id="web"),
     pytest.param("model", BUILT_IN_MODEL_PROVIDERS[0], id="model"),
-    pytest.param("memory", MEM0_OSS, id="memory"),
     pytest.param("connector", COMPOSIO, id="connector"),
     pytest.param("environment", BUILT_IN_ENVIRONMENT_PROVIDERS[0], id="environment"),
 ]

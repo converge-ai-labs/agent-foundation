@@ -13,13 +13,13 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     eip::{
-        EIPPath, FileCommitParams, FileCopyParams, FileFindParams, FileFindResult, FileInfo,
-        FileKind, FileListEntry, FileListParams, FileListResult, FileMkdirParams, FileMoveParams,
-        FilePatchTextParams, FileReadTextParams, FileReadTextResult, FileRemoveParams,
-        FileSearchMatch, FileSearchParams, FileSearchResult, FileStatParams, FileStatResult,
-        FileWriteMode, FileWriteTextParams, SearchMode,
+        EIPPath, FileCopyParams, FileFindParams, FileFindResult, FileInfo, FileKind, FileListEntry,
+        FileListParams, FileListResult, FileMkdirParams, FileMoveParams, FilePatchTextParams,
+        FileReadTextParams, FileReadTextResult, FileRemoveParams, FileSearchMatch,
+        FileSearchParams, FileSearchResult, FileStatParams, FileStatResult, FileWriteMode,
+        FileWriteTextParams, SearchMode,
     },
-    filesystem::{CommitDirectory, DeviceFilesystem, PathError, StagedCandidate},
+    filesystem::{DeviceFilesystem, PathError, StagedCandidate},
     operation::{OperationInterruption, OperationLedger},
     transfer::file_info,
 };
@@ -372,142 +372,6 @@ impl ResourceRegistry {
             has_more,
             omitted_unrepresentable_entries: omitted,
         })
-    }
-
-    /// Ordered publication for cooperating writers; ordinary file operations
-    /// remain independent observations of the filesystem.
-    pub(crate) fn commit(
-        &self,
-        filesystem: &Arc<DeviceFilesystem>,
-        params: &FileCommitParams,
-    ) -> Result<u64, ResourceError> {
-        if !cfg!(unix) {
-            return Err(ResourceError::Unsupported);
-        }
-        crate::device_path::to_native(&params.root.path).map_err(map_path_error)?;
-        let count = params.conditions.len()
-            + params.directories.len()
-            + params.writes.len()
-            + params.removals.len();
-        if count > 256
-            || params
-                .writes
-                .iter()
-                .map(|write| write.text.len())
-                .sum::<usize>()
-                > 2 * 1024 * 1024
-        {
-            return Err(ResourceError::Limit);
-        }
-        let relative = |path: &EIPPath| -> Result<PathBuf, ResourceError> {
-            crate::device_path::to_native(&path.path).map_err(map_path_error)?;
-            let prefix = format!("{}/", params.root.path.trim_end_matches('/'));
-            let suffix = path
-                .path
-                .strip_prefix(&prefix)
-                .filter(|value| !value.is_empty())
-                .ok_or(ResourceError::Denied)?;
-            Ok(PathBuf::from(suffix))
-        };
-        let mut conditions = BTreeMap::new();
-        for condition in &params.conditions {
-            relative(&condition.path)?;
-            if conditions
-                .insert(condition.path.path.clone(), condition.digest.as_ref())
-                .is_some()
-            {
-                return Err(ResourceError::Invalid);
-            }
-        }
-        let mut writes = std::collections::BTreeSet::new();
-        for write in &params.writes {
-            relative(&write.path)?;
-            if !conditions.contains_key(&write.path.path)
-                || !writes.insert(&write.path.path)
-                || write.text.contains('\0')
-            {
-                return Err(ResourceError::Invalid);
-            }
-            if write.text.len() as u64 > filesystem.max_file_bytes {
-                return Err(ResourceError::Limit);
-            }
-        }
-        for path in params.directories.iter().chain(&params.removals) {
-            relative(path)?;
-        }
-        // The batch's retained root inode coordinates cooperating writers across
-        // Devices and Sessions. It does not restrict ordinary Device operations.
-        let scope = CommitDirectory::open(&params.root).map_err(map_path_error)?;
-        let lock = scope.lock_file().map_err(map_path_error)?;
-        loop {
-            self.check_cancelled(&params.context.operation_id)?;
-            match fs2::FileExt::try_lock_exclusive(&lock) {
-                Ok(()) => break,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(std::time::Duration::from_millis(10))
-                }
-                Err(_) => return Err(ResourceError::Unsupported),
-            }
-        }
-        let mut observed_bytes = 0_u64;
-        for condition in &params.conditions {
-            let path = relative(&condition.path)?;
-            let current = match scope.open_regular(&path) {
-                Ok(opened) => {
-                    if opened.metadata.len() > 2 * 1024 * 1024 {
-                        return Err(ResourceError::Limit);
-                    }
-                    let mut bytes = Vec::new();
-                    opened
-                        .file
-                        .take(2 * 1024 * 1024 + 1)
-                        .read_to_end(&mut bytes)
-                        .map_err(|_| ResourceError::Io)?;
-                    observed_bytes += bytes.len() as u64;
-                    if bytes.len() > 2 * 1024 * 1024 || observed_bytes > 8 * 1024 * 1024 {
-                        return Err(ResourceError::Limit);
-                    }
-                    Some(format!("{:x}", Sha256::digest(&bytes)))
-                }
-                Err(PathError::NotFound) => None,
-                Err(error) => return Err(map_path_error(error)),
-            };
-            if current.as_deref()
-                != condition
-                    .digest
-                    .as_ref()
-                    .map(|digest| digest.value.as_str())
-            {
-                return Err(ResourceError::Conflict);
-            }
-        }
-        let publish = || -> Result<(), ResourceError> {
-            for path in &params.directories {
-                self.check_cancelled(&params.context.operation_id)?;
-                scope.mkdir(&relative(path)?).map_err(map_path_error)?;
-            }
-            for write in &params.writes {
-                self.check_cancelled(&params.context.operation_id)?;
-                scope
-                    .write_text(
-                        filesystem,
-                        &relative(&write.path)?,
-                        &write.path,
-                        &write.text,
-                    )
-                    .map_err(map_path_error)?;
-            }
-            for path in &params.removals {
-                self.check_cancelled(&params.context.operation_id)?;
-                match scope.remove(&relative(path)?, MAX_TRAVERSAL_ENTRIES) {
-                    Ok(_) | Err(PathError::NotFound) => {}
-                    Err(error) => return Err(map_path_error(error)),
-                }
-            }
-            Ok(())
-        };
-        publish().map_err(|_| ResourceError::UnknownOutcome)?;
-        Ok(params.writes.len() as u64)
     }
 
     pub(crate) fn write_text(
@@ -2134,77 +1998,6 @@ mod tests {
                 .unwrap(),
             }
         }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn conditional_commit_serializes_writers_and_rejects_stale_batches() {
-        use crate::eip::{FileCommitCondition, FileCommitParams, FileCommitWrite};
-        let fixture = Fixture::new();
-        let request = FileCommitParams {
-            context: context("op-commit"),
-            root: fixture.path("/memory"),
-            conditions: vec![FileCommitCondition {
-                path: fixture.path("/memory/head"),
-                digest: None,
-            }],
-            directories: vec![],
-            writes: vec![FileCommitWrite {
-                path: fixture.path("/memory/head"),
-                text: "one".into(),
-            }],
-            removals: vec![],
-        };
-        let results = std::thread::scope(|scope| {
-            let workers: Vec<_> = (0..8)
-                .map(|_| scope.spawn(|| fixture.resources.commit(&fixture.filesystem, &request)))
-                .collect();
-            workers
-                .into_iter()
-                .map(|worker| worker.join().unwrap())
-                .collect::<Vec<_>>()
-        });
-        assert_eq!(results.iter().filter(|result| **result == Ok(1)).count(), 1);
-        assert_eq!(
-            results
-                .iter()
-                .filter(|result| **result == Err(ResourceError::Conflict))
-                .count(),
-            7
-        );
-        assert_eq!(
-            fs::read_to_string(fixture.native.join("memory/head")).unwrap(),
-            "one"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn conditional_commit_confines_links_to_selected_subtree() {
-        use crate::eip::{FileCommitCondition, FileCommitParams, FileCommitWrite};
-        let fixture = Fixture::new();
-        fs::create_dir(fixture.native.join("memory")).unwrap();
-        fs::create_dir(fixture.native.join("outside")).unwrap();
-        std::os::unix::fs::symlink("../outside", fixture.native.join("memory/link")).unwrap();
-        let request = FileCommitParams {
-            context: context("op-commit"),
-            root: fixture.path("/memory"),
-            conditions: vec![FileCommitCondition {
-                path: fixture.path("/memory/link/head"),
-                digest: None,
-            }],
-            directories: vec![],
-            writes: vec![FileCommitWrite {
-                path: fixture.path("/memory/link/head"),
-                text: "bad".into(),
-            }],
-            removals: vec![],
-        };
-        assert_eq!(
-            fixture.resources.commit(&fixture.filesystem, &request),
-            Err(ResourceError::Denied)
-        );
-        assert!(!fixture.native.join("outside/head").exists());
     }
 
     #[test]

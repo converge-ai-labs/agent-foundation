@@ -10,7 +10,6 @@ from typing import Any
 
 from .connector.definition import ConnectorProviderDefinition
 from .environment.definition import EnvironmentProviderDefinition
-from .memory.definition import MemoryProviderDefinition
 from .model.definition import ModelProviderDefinition
 from .web.definition import WebProviderDefinition
 
@@ -23,7 +22,6 @@ class ProviderManifest:
     api_version: int
     model: tuple[ModelProviderDefinition[Any, Any], ...] = ()
     web: tuple[WebProviderDefinition[Any, Any], ...] = ()
-    memory: tuple[MemoryProviderDefinition[Any, Any], ...] = ()
     environment: tuple[EnvironmentProviderDefinition[Any, Any, Any, Any], ...] = ()
     connector: tuple[ConnectorProviderDefinition[Any, Any], ...] = ()
 
@@ -33,7 +31,6 @@ class ProviderManifest:
         for label, definitions, kind in (
             ("Web", self.web, WebProviderDefinition),
             ("Model", self.model, ModelProviderDefinition),
-            ("Memory", self.memory, MemoryProviderDefinition),
             ("Connector", self.connector, ConnectorProviderDefinition),
             ("Environment", self.environment, EnvironmentProviderDefinition),
         ):

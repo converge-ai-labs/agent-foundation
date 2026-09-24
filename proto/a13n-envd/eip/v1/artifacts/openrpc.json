@@ -256,69 +256,6 @@
       "x-eip-transfer-direction": "server_to_client"
     },
     {
-      "name": "file.commit",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "context",
-          "required": true,
-          "schema": {
-            "$ref": "schema.json#/$defs/FileCommitParams/properties/context"
-          }
-        },
-        {
-          "name": "root",
-          "required": true,
-          "schema": {
-            "$ref": "schema.json#/$defs/FileCommitParams/properties/root"
-          }
-        },
-        {
-          "name": "conditions",
-          "required": false,
-          "schema": {
-            "$ref": "schema.json#/$defs/FileCommitParams/properties/conditions"
-          }
-        },
-        {
-          "name": "directories",
-          "required": false,
-          "schema": {
-            "$ref": "schema.json#/$defs/FileCommitParams/properties/directories"
-          }
-        },
-        {
-          "name": "writes",
-          "required": false,
-          "schema": {
-            "$ref": "schema.json#/$defs/FileCommitParams/properties/writes"
-          }
-        },
-        {
-          "name": "removals",
-          "required": false,
-          "schema": {
-            "$ref": "schema.json#/$defs/FileCommitParams/properties/removals"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema.json#/$defs/FileCommitResult"
-        }
-      },
-      "x-eip-error-family": "resource",
-      "x-eip-introduced": "0.1",
-      "x-eip-kind": "request_response",
-      "x-eip-params-schema": {
-        "$ref": "schema.json#/$defs/FileCommitParams"
-      },
-      "x-eip-replay-class": "terminal_evidence",
-      "x-eip-transfer-action": null,
-      "x-eip-transfer-direction": null
-    },
-    {
       "name": "file.commit_writer",
       "paramStructure": "by-name",
       "params": [

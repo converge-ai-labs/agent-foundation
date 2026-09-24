@@ -10,7 +10,6 @@ _BLOCKED = (
     "docker",
     "e2b",
     "modal",
-    "mem0",
     "a13n_service",
     "pydantic_ai",
     "a13n_harness.builder",
@@ -52,13 +51,12 @@ def test_five_domain_metadata_needs_no_optional_sdk() -> None:
         "from a13n_harness.providers.plugins import ProviderManifest\n"
         "from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS\n"
         "from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS\n"
-        "from a13n_harness.providers.memory.builtins import BUILT_IN_MEMORY_PROVIDERS\n"
         "from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS\n"
         "from a13n_harness.providers.web.builtins import built_in_web_providers\n"
         "manifest = ProviderManifest(api_version=1, environment=BUILT_IN_ENVIRONMENT_PROVIDERS)\n"
         "assert len(manifest.environment) == 11\n"
         "assert all(item.configuration_model.model_json_schema() for item in manifest.environment)\n"
-        "assert BUILT_IN_CONNECTOR_PROVIDERS and BUILT_IN_MEMORY_PROVIDERS and BUILT_IN_MODEL_PROVIDERS\n"
+        "assert BUILT_IN_CONNECTOR_PROVIDERS and BUILT_IN_MODEL_PROVIDERS\n"
         "assert built_in_web_providers()\n"
     )
 

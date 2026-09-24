@@ -20,7 +20,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [07-tool-execution.md](07-tool-execution.md)                                             | Native and managed function tools, client-side external tools, policy, credentials, and deferred results                         |
 | [08-environment-integration.md](08-environment-integration.md)                           | Fresh Environment inputs, aggregate path roots and routing, Run Extensions, mutation, model projection, state, and cleanup       |
 | [08a-environment-providers.md](08a-environment-providers.md)                             | Environment Provider definitions, adapter lifecycle, portable state, built-in Providers, and remote Envd                         |
-| [09-context-and-memory.md](09-context-and-memory.md)                                     | History, runtime context, handoff, skills, working state, resource acquisition, compaction, and memory boundary                  |
+| [09-context-and-memory.md](09-context-and-memory.md)                                     | History, runtime context, handoff, skills, working state, resource acquisition, and compaction                                   |
 | [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `HarnessState`, interrupted-history normalization, import/export, and Host persistence boundary                                  |
 | [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Child topology, Harness-private inline execution, standard async Toolsets, and the Host operator boundary                        |
 | [12-events-observability-and-usage.md](12-events-observability-and-usage.md)             | Process-local events, mixed-source usage attribution, pricing catalogs, reporting, and accounting boundary                       |
@@ -34,8 +34,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch          |
 | [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry signals, trace levels, metrics, correlation, information boundary, Host profiles, and export-failure semantics     |
 | [20-async-components-and-lifecycle.md](20-async-components-and-lifecycle.md)             | Async subagent admission, observation, parent closure, wake, restart, loss, retention, and Host shutdown                         |
-| [21-document-memory.md](21-document-memory.md)                                           | Document types, revisions and change diffs, extraction/organization, navigation/tools, and file-only Environment-backed memory   |
-| [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core, credential declaration, catalogs, and the installed-plugin manifest across all five domains                |
+| [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core, credential declaration, catalogs, and the installed-plugin manifest across all four domains                |
 
 ## Reading Paths
 
@@ -49,7 +48,7 @@ Read `03`, `04`, `05`, and `14`. Hosted durable definitions are owned by [Servic
 
 ### Author or Select a Provider
 
-Read `22` for the shared Provider core, credential declaration, catalogs, and the installed-plugin manifest, then the owning domain: `16b` for Model, `08a` for Environment, `09` for Memory, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
+Read `22` for the shared Provider core, credential declaration, catalogs, and the installed-plugin manifest, then the owning domain: `16b` for Model, `08a` for Environment, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
 
 ### Understand Models and Recovery
 
@@ -62,10 +61,6 @@ Read `07`, `08`, `13`, and `15`, then `08a` for Provider definitions, adapter li
 ### Implement Hosting or Persistence
 
 Read `10`, `12`, `13`, `14`, and `20`, then the a13n Service catalog. A Host owns all async-child lifecycle authority. Shell references and observations are Run-local; cleanup releases them without blanket termination. Provider state owns native process recovery. See `08` for the independent process and output completion boundaries.
-
-### Integrate Document Memory
-
-Read `21`, the memory boundary in `09`, and Environment file access in `08`. Embedded Hosts own storage bindings, authorization, organization completion, and publication; the current Service does not offer memory. Native record adapters retain their contract in `09`.
 
 ### Integrate Observation
 

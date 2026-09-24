@@ -67,7 +67,7 @@ _MAX_OBSERVATION_METADATA_KEY_LENGTH = 64
 _MAX_OBSERVATION_METADATA_STRING_BYTES = 256
 _OBSERVATION_METADATA_KEY_PATTERN = r"[a-z][a-z0-9_.-]*"
 
-OperationKind = Literal["recovery", "delegation", "handoff", "compaction", "memory_recall", "tool_review"]
+OperationKind = Literal["recovery", "delegation", "handoff", "compaction", "tool_review"]
 RunOutcome = Literal["completed", "suspended", "failed", "cancelled"]
 
 

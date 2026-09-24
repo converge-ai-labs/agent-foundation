@@ -342,12 +342,11 @@ async def test_reporting_is_bounded_and_does_not_take_over_tool_internal_spans()
     assert tool.status.status_code is StatusCode.ERROR
 
 
-@pytest.mark.parametrize("source", ["web", "documents", "media", "memory", "file_media", "note_key", "note_value"])
+@pytest.mark.parametrize("source", ["web", "documents", "media", "file_media", "note_key", "note_value"])
 async def test_first_party_error_projectors_report_without_changing_results(source: str) -> None:
     from a13n_harness.toolsets.documents import _document_error
     from a13n_harness.toolsets.files import _media_understanding_error
     from a13n_harness.toolsets.media import _media_error
-    from a13n_harness.toolsets.memory import _failure
     from a13n_harness.toolsets.web import _web_error
     from a13n_harness.toolsets.working_state import _validate_note, _validate_note_key
 
@@ -355,7 +354,6 @@ async def test_first_party_error_projectors_report_without_changing_results(sour
         "web": lambda: _web_error("web_timeout"),
         "documents": lambda: _document_error("document_conversion_failed"),
         "media": lambda: _media_error("media_read_failed"),
-        "memory": lambda: _failure("memory_timeout"),
         "file_media": lambda: _media_understanding_error("media_understanding_failed"),
         "note_key": lambda: _validate_note_key(""),
         "note_value": lambda: _validate_note("key", "\x00"),

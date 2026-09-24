@@ -8,7 +8,7 @@ Agent Harness exposes focused extension points rather than one universal plugin 
 | Pydantic Capability          | Own or compose Toolsets, instructions, request hooks, Agent-loop state, and collaboration with other run Capabilities            | Native Pydantic Agent/run lifecycle                                             | Yes                                              |
 | `EnvironmentProviderBinding` | Implement one already selected provider-neutral Environment operation revision                                                   | One binding scope inside one `EnvironmentRuntime`                               | Only through explicit Environment tools/context  |
 | `EnvironmentRunExtension`    | Hold a resource that needs the complete entered Environment aggregate; use `EnvironmentRunCallbacks` for simple paired callbacks | Entered with the current aggregate; reverse-order exit before provider teardown | No                                               |
-| Provider plugin              | Add a Model, Web, Memory, Connector, or Environment Provider your Host can select                                                | Inert definitions loaded once at Host startup                                   | No                                               |
+| Provider plugin              | Add a Model, Web, Connector, or Environment Provider your Host can select                                                        | Inert definitions loaded once at Host startup                                   | No                                               |
 
 Installed entry-point metadata means code is available, not enabled or authorized. Importing `a13n_harness` scans no entry points and activates no extension.
 
@@ -214,7 +214,7 @@ To support optional grouped presentation, a plugin can expose source factories o
 
 ## Provider Plugins
 
-A Provider plugin adds one or more Providers your Host can select: a Model, a Web search or scrape backend, a Memory backend, a Connector, or an Environment. All five domains use one authoring contract, one entry-point group, and one immutable manifest.
+A Provider plugin adds one or more Providers your Host can select: a Model, a Web search or scrape backend, a Connector, or an Environment. All four domains use one authoring contract, one entry-point group, and one immutable manifest.
 
 A definition is a frozen value. It declares its stable `type`, a `display_name`, the typed configuration and credential models its inputs use, how credentials are required, and optional setup help. Importing it performs no I/O and creates no client:
 
@@ -248,7 +248,6 @@ manifest = ProviderManifest(
     api_version=1,
     model=(ACME_MODEL,),
     web=(ACME_SEARCH,),
-    memory=(ACME_MEMORY,),
     connector=(ACME_CONNECTOR,),
     environment=(ACME_SANDBOX,),
 )
@@ -280,12 +279,11 @@ The runnable [plugin example](https://github.com/converge-ai-labs/agent-foundati
 
 The base `a13n-harness` installation contains every Provider definition, so metadata, schemas, and Console forms work without an optional dependency. Vendor SDKs are separate extras:
 
-| Extra    | Adds                      | Needed by                           |
-| -------- | ------------------------- | ----------------------------------- |
-| `docker` | The Docker SDK for Python | The `docker` Environment Provider   |
-| `e2b`    | The asynchronous E2B SDK  | The `e2b` Environment Provider      |
-| `modal`  | The Modal SDK             | The `modal` Environment Provider    |
-| `mem0`   | The Mem0 Platform client  | The `mem0_platform` Memory Provider |
+| Extra    | Adds                      | Needed by                         |
+| -------- | ------------------------- | --------------------------------- |
+| `docker` | The Docker SDK for Python | The `docker` Environment Provider |
+| `e2b`    | The asynchronous E2B SDK  | The `e2b` Environment Provider    |
+| `modal`  | The Modal SDK             | The `modal` Environment Provider  |
 
 ```console
 uv add "a13n-harness[docker,e2b]"

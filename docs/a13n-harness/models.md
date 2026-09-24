@@ -211,7 +211,7 @@ Use [Harness UI authentication](../a13n-harness-ui/models-and-authentication.md)
 
 `AgentSpec.model_settings` contains native provider request settings. `model_characteristics` describes explicit local context and input policy. A larger local budget does not increase a provider limit, and an image declaration does not make an endpoint accept images.
 
-Continue with [context and memory](context-and-memory.md), [inputs and outputs](inputs-and-outputs.md), or [usage and limits](usage-and-limits.md).
+Continue with [context and working state](context.md), [inputs and outputs](inputs-and-outputs.md), or [usage and limits](usage-and-limits.md).
 
 ## Reusable provider definitions
 

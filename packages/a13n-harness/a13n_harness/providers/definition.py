@@ -15,7 +15,7 @@ NO_CREDENTIAL = Authentication(mode=CredentialMode.forbidden)
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ProviderDefinition[C: BaseModel, K: BaseModel]:
-    """Identity, declared inputs and setup help shared by all five Provider domains.
+    """Identity, declared inputs and setup help shared by all four Provider domains.
 
     `credential_model` is `None` for Providers that take no credential at all; such a
     definition declares no `Authentication`, because it can only forbid credentials.

@@ -74,13 +74,10 @@ def test_runtime_import_defers_unused_provider_sdks() -> None:
             "-c",
             "import sys; "
             "import a13n_harness_ui.interactive.runtime; "
-            "assert not {'mem0', 'qdrant_client', 'openai', 'pydantic_ai.models.openai'} & sys.modules.keys(); "
+            "assert not {'openai', 'pydantic_ai.models.openai'} & sys.modules.keys(); "
             "from a13n_harness.models.codex import CodexRequestModel; "
             "from a13n_harness.models.codex import CodexRequestModel as native; "
-            "assert CodexRequestModel is native; "
-            "from a13n_harness.capabilities import MemoryCapability; "
-            "from a13n_harness.capabilities.memory import MemoryCapability as memory; "
-            "assert MemoryCapability is memory",
+            "assert CodexRequestModel is native",
         ],
         check=False,
         capture_output=True,

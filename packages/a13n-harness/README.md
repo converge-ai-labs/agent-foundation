@@ -31,19 +31,6 @@ capabilities = (
 
 Embedding code constructs one fresh Provider `Environment` per independent Run and passes it through `run(..., environment=...)`, or supplies a named mapping of `Environment` and `EnvironmentMount` values through `environments=...`. The Host selects Provider configuration and current state before construction; Harness enters the adapters, owns only Run-local routing and access policy, exports cached state, and closes adapters without destroying backing targets. Only explicit Host policy constructs a fresh lifecycle adapter and calls `destroy()`. Ordinary calls can omit `RunBindings`; an advanced `EnvironmentRuntime` uses fresh `RunBindings.embedded()` values. General media URL reading, document conversion, and Web implementations stay behind typed run collaborators. Environment file multimedia understanding has built-in image, video, and audio Pydantic AI Agents selected by `A13N_HARNESS_*_UNDERSTANDING_MODEL`, with native support declared through the `model_characteristics` construction key and read from `AgentSpec.model_characteristics.capabilities`, plus a typed run collaborator available as an override. Static callers may import reusable Toolsets from `a13n_harness.toolsets`; their model-facing JSON results use named `TypedDict` contracts in the corresponding Toolset modules. Managed invocation policy and client-tool contracts are available from `a13n_harness.tools`.
 
-Long-term memory uses the opt-in `MemoryCapability` with a required Host-owned backend. OSS is the primary native HTTP backend; Platform has a separate native SDK adapter. The Host opens and closes transports; the Capability has no environment fallback or Run-owned client. See the [memory guide](../../docs/a13n-harness/context-and-memory.md#long-term-memory).
-
-```python
-from a13n_harness.capabilities import MemoryCapability, MemoryScope
-from a13n_harness.providers.memory.mem0_oss import open_mem0_oss
-
-async with open_mem0_oss(base_url=mem0_url, api_key=mem0_api_key) as backend:
-    capabilities = (MemoryCapability(backend=backend, scope=MemoryScope.USER),)
-    # Build and execute Agents within this Host-owned lifetime.
-```
-
-`thread`, `agent`, and `user` scopes resolve only from trusted run context and identity claims; the model never supplies entity IDs. Automatic recall is bounded and input-only, and the optional Toolset exposes only search, list, and explicit add. The Harness performs no automatic terminal transcript extraction; the embedding Host can dispatch extraction after its own durable checkpoint commit.
-
 The shell Toolset is derived from effective Environment actions. A shell-only Environment exposes completion-only `shell_exec`; a process-capable Environment exposes exactly `shell_exec`, `shell_wait`, `shell_input`, and `shell_signal`. `shell_exec` waits briefly and returns a Run-owned `process-*` reference only when the command remains live. `shell_wait` reads retained output non-consumingly from explicit caller offsets, while input and signal tools never read output. Run cleanup kills and releases every owned process before Environment close. Process references, offsets, and observations never enter `AgentContextState` or `HarnessState`, and continuation Runs cannot rebind them.
 
 `SubagentCapability()` provides Harness-private inline delegation with no Host scheduler. It recursively runs declared children, borrows the active parent Environment mapping without re-entering or closing adapters, and stores complete child continuation only in parent Agent state. `SubagentCapability(async_enabled=True, operator=...)` instead exposes the standard six async tools through a Host-owned `SubagentOperator`. Harness resolves child Identity, context, and usage ceilings before dispatch but provides no default async manager, execution store, background task registry, parent-state mirror, or shutdown lifecycle.

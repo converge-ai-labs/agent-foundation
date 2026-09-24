@@ -98,12 +98,6 @@ Validation of a complete initial mount set precedes ownership transfer. The same
 
 Provider denial always narrows Harness access. Mount names, mount IDs, paths, process references, cursors, and saved state are selectors or observations, not bearer credentials.
 
-## Memory File Access
-
-[Document Memory](21-document-memory.md#storage-binding-and-environment-lifetime) borrows a root-confined file facade from the selected Environment. It reuses readiness, current action ceilings, backing identity, and execution guards; it does not re-enter or independently close the same adapter. Default memory uses the current default Environment, while an explicit Host binding can supply another target. Memory receives no shell, process, port, or output facet, and uses no shell commands to implement memory operations. Disabling the generic file Toolset alone does not remove the underlying file operations authorized for memory.
-
-This is a capability boundary, not an OS isolation claim: other tools with access to the same target may still read or change its files. Memory detects out-of-band changes under its owning revision contract. Environment `close()` does not erase memory; backing-target destruction can. A recreated target does not restore its predecessor's corpus. File operations alone do not promise memory transactions or cross-process write coordination.
-
 ## Identity and Core Values
 
 | Value                    | Meaning                                                 | Visibility                                       |
