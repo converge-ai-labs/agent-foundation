@@ -37,7 +37,7 @@ flowchart TB
 
 The following invariants define the shared model:
 
-01. A Session contains one root Thread and zero or more child Threads.
+01. A Session groups one or more Threads, including child and forked Threads; the Host defines how Threads enter a Session.
 02. Every Thread persisted in a Host interaction store belongs to exactly one Session; a directly embedded Harness Thread need not have a Host Session record.
 03. A Thread owns one independently advancing history and continuation lineage.
 04. Resume preserves `thread_id`; fork creates a new `thread_id`.
@@ -52,13 +52,13 @@ The following invariants define the shared model:
 
 | Boundary                           | Contract                                                                                                                                                                                    |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session creation, fork, and policy | The Host creates and persists Sessions, selects the root Thread, groups child Threads, and owns product and presentation state.                                                             |
+| Session creation, fork, and policy | The Host creates and persists Sessions, creates their Threads, groups child and forked Threads, and owns product and presentation state.                                                    |
 | Thread continuation                | [`HarnessState`](a13n-harness/10-snapshot-and-resume.md) carries the stable `thread_id` and complete Harness continuation data for one Thread.                                              |
 | Run acceptance and completion      | The Host accepts input, allocates `run_id`, selects or initializes the Thread state advanced by the Run, correlates execution, and commits the outcome under its owning lifecycle contract. |
 | Item projection and retention      | Agent Stream Protocol or another Host projection maps public execution observations into semantic Items; the Host decides whether and how those Items persist.                              |
 | Provider-native session state      | A model/provider integration owns any provider-specific selector. It does not replace the platform Thread identity.                                                                         |
 
-A Run can span zero or more process-local Harness Runs, including Host-owned waiting and durable recovery transitions. A concrete Host owns whether authenticated waiting feedback continues the same Run or advances the Thread through another Run. One Harness Run belongs to exactly one Thread and can optionally be correlated to one Host Run. Embedded Harness callers are not required to create a Session, Run, or Item store.
+A Run can span zero or more process-local Harness Runs, including Host-owned waiting and durable recovery transitions. A concrete Host owns whether resuming a waiting Run with answers continues the same Run or advances the Thread through another Run. One Harness Run belongs to exactly one Thread and can optionally be correlated to one Host Run. Embedded Harness callers are not required to create a Session, Run, or Item store.
 
 ## Invariants
 
@@ -66,5 +66,5 @@ A Run can span zero or more process-local Harness Runs, including Host-owned wai
 2. Thread identity follows independently advancing continuation state, not a workload instance, process, provider session, or execution attempt.
 3. Run identity records Host acceptance and completion, not merely entry into process-local execution.
 4. Item identity names semantic user-visible content, not a generic stream envelope or transport event.
-5. Forking a Session creates a new Session and root Thread while preserving an explicit source reference; it never advances the source Thread.
+5. Forking creates a new Thread with an explicit source reference and never advances the source Thread; the Host defines the Session the fork belongs to.
 6. Public schemas use explicit `session_id`, `thread_id`, `run_id`, and `item_id` fields where those concepts apply rather than an ambiguous combined reference.

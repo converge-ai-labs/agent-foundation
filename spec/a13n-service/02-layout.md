@@ -169,26 +169,26 @@ Every service function follows the same conventions:
 
 ## Object IDs
 
-Object IDs follow the platform's [data conventions](../data-conventions.md#service-id-allocation): a kind prefix, an underscore and a cryptographically random lowercase hexadecimal suffix whose length the shared allocator assigns per prefix. The data conventions own the tiers, their volume budgets and the retired prefixes. `ObjectId` accepts exactly what the allocator can produce: a prefix of 2 to 8 lowercase ASCII letters or digits starting with a letter, an underscore and 20 to 32 lowercase hexadecimal characters (at most 41 in all). Consumers never infer authority, ownership or order from an ID.
+Object IDs follow the platform's [data conventions](../data-conventions.md#service-id-allocation): a kind prefix, an underscore and a cryptographically random lowercase hexadecimal suffix whose length the shared allocator assigns per prefix. The data conventions own the tiers, their volume budgets and the reserved prefixes. `ObjectId` accepts exactly what the allocator can produce: a prefix of 2 to 8 lowercase ASCII letters or digits starting with a letter, an underscore and 20 to 32 lowercase hexadecimal characters (at most 41 in all). Consumers never infer authority, ownership or order from an ID.
 
-| Prefix              | Kind                                                                  | Prefix    | Kind                   |
-| ------------------- | --------------------------------------------------------------------- | --------- | ---------------------- |
-| `org`               | organizations                                                         | `mdl`     | models                 |
-| `ws`                | workspaces                                                            | `envtpl`  | environment_templates  |
-| `usr`, `sa`         | principals (user, service account)                                    | `conn`    | connections            |
-| `key`               | api_keys                                                              | `connop`  | connection operations  |
-| `ase`, `prt`, `ect` | tokens (login session, password reset, email change)                  | `sec`     | secrets                |
-| `rb`                | grants                                                                | `ast`     | assets                 |
-| `inv`               | invitations                                                           | `sub`     | subscriptions          |
-| `audit`             | audit_events                                                          | `sess`    | sessions               |
-| `obx`               | outbox                                                                | `thread`  | threads                |
-| `ap`, `apr`         | agents, agent_revisions                                               | `inb`     | inbox_entries          |
-| `sk`, `skr`         | skills, skill_revisions                                               | `run`     | runs                   |
-| `mprov`             | model_providers                                                       | `rat`     | run_attempts           |
-| `eprov`             | environment_providers                                                 | `env`     | environments           |
-| `cprov`             | connector_providers                                                   | `envoper` | environment operations |
-| `wprov`             | web_providers                                                         | `wrk`     | worker IDs             |
-| `ctl`               | control sweep claim owners (outbox delivery, environment maintenance) | `req`     | request IDs            |
+| Prefix              | Kind                                                                  | Prefix                | Kind                                         |
+| ------------------- | --------------------------------------------------------------------- | --------------------- | -------------------------------------------- |
+| `org`               | organizations                                                         | `mdl`                 | models                                       |
+| `ws`                | workspaces                                                            | `envtpl`              | environment_templates                        |
+| `usr`, `sa`         | principals (user, service account)                                    | `conn`                | connections                                  |
+| `key`               | api_keys                                                              | `connop`              | connection operations                        |
+| `ase`, `prt`, `ect` | tokens (login session, password reset, email change)                  | `sec`                 | secrets                                      |
+| `rb`                | grants                                                                | `ast`                 | assets                                       |
+| `inv`               | invitations                                                           | `sub`                 | subscriptions                                |
+| `audit`             | audit_events                                                          | `sess`                | sessions                                     |
+| `obx`               | outbox                                                                | `thread`              | threads                                      |
+| `ap`, `apr`         | agents, agent_revisions                                               | `inb`                 | inbox_entries                                |
+| `sk`, `skr`         | skills, skill_revisions                                               | `run`                 | runs                                         |
+| `mprov`             | model_providers                                                       | `rat`                 | run_attempts                                 |
+| `eprov`             | environment_providers                                                 | `env`                 | environments                                 |
+| `cprov`             | connector_providers                                                   | `envoper`, `envrenew` | environment operations, environment renewals |
+| `wprov`             | web_providers                                                         | `wrk`                 | worker IDs                                   |
+| `ctl`               | control sweep claim owners (outbox delivery, environment maintenance) | `req`                 | request IDs                                  |
 
 Uploads are `upl_` plus a 64-character SHA-256 derived from the upload's scope and request key ([04](04-resources.md#uploads-and-assets)). `passwords` and `thread_environments` are join tables without IDs, and `usage_records` keep the Harness's record IDs; every other table has a 72-character `id` primary key, and every workspace-owned row has a composite `(organization_id, workspace_id)` foreign key. Display items are `itm_` plus the first 32 hex characters of a SHA-256 of their run, kind and source, so they are stable across attempts ([07](07-facts-and-delivery.md#checkpoints-and-display)). Harness tool-call IDs, provider-owned IDs, secrets, cursors and digests keep their owners' formats.
 

@@ -21,7 +21,7 @@ This document defines the normative content and workflow boundaries of the Agent
 | `packages/`       | Python 3.13 uv workspace packages whose distribution names use the `a13n-` prefix                     | Design discussion and unrelated generated artifacts                                                               |
 | `crates/`         | Rust workspace crates, including the native `a13n-envd` daemon                                        | Python packages and local reference repositories                                                                  |
 | `sdk/`            | Ignored optional checkouts of independently maintained Service SDK repositories                       | Root language workspace membership, service implementation, and generated release artifacts                       |
-| `proto/`          | Language-neutral protocol IDL, Service contract exports, and shared wire evidence                     | Handwritten language-local implementations, release artifacts, and normative design prose                         |
+| `proto/`          | Language-neutral protocol IDL and the Service contract exports                                        | Handwritten language-local implementations, release artifacts, and normative design prose                         |
 
 There is no repository-local `issues/` directory. "Issues" means the repository's GitHub Issues.
 
@@ -29,7 +29,7 @@ Workspace membership does not by itself select a release group. The Harness rele
 
 `packages/a13n-logging` is a shared library with an independent `release/a13n-logging-v<version>` release channel. Its workflow versions and publishes only the `a13n-logging` Python distribution through the existing `foundation-pypi` environment. a13n Service releases neither version nor republish logging. Consumers retain unversioned source workspace dependencies and consume published logging independently of their own release versions.
 
-`packages/a13n-envd-client` participates in root Python development and validation but is versioned and published with `crates/a13n-envd` by the a13n-envd release workflow. a13n Service releases exclude that package and consume a compatible published version. The client owns only EIP transport/session behavior and never discovers, downloads, installs, or launches the native executable. Other release-group exceptions require an explicit owning specification and release workflow rather than inference from directory placement.
+`packages/a13n-envd-client` participates in root Python development and validation but is versioned and published with `crates/a13n-envd` by the a13n-envd release workflow. Harness and Harness UI consume a compatible published version. The client owns only EIP transport/session behavior and never discovers, downloads, installs, or launches the native executable. Other release-group exceptions require an explicit owning specification and release workflow rather than inference from directory placement.
 
 a13n-envd native releases publish immutable archives for Linux, macOS, and Windows x86_64/ARM64 plus `SHA256SUMS`. Repository-owned POSIX shell and Windows PowerShell installers select and verify one release archive and publish the executable to an absolute user-selected directory; they do not define a self-updater, service installation, or install database. The detailed installer contract is owned by [Protocol Source, Client, and Generation](a13n-envd/08-protocol-source-client-and-generation.md#executable-distribution-and-installation).
 
@@ -37,7 +37,7 @@ Harness UI resolves its native a13n-envd version from the installed `a13n-envd-c
 
 a13n Service SDKs live in the independent `converge-ai-labs/a13n-sdk-{python,go,rust,typescript}` repositories. Optional local checkouts can live under ignored `sdk/{python,go,rust,typescript}` directories, but are not tracked entries, submodules, workspace members, or inputs to main-repository build, test, documentation, and release gates. The Rust SDK repository also owns the companion `a13n-service-cli` project and its independent release channel.
 
-Service owns the exported Native contract and shared protocol evidence under `proto/a13n-service/`, specified by the [Service API contract](a13n-service/10-api.md). Each SDK repository owns its language-specific specification, concrete public API, implementation, SHA-pinned Service snapshot, generators, validation, and release automation. The main specification does not prescribe language-specific signatures, implementation structure, or CLI command design; applications retain business workflow ownership.
+Service owns its exported OpenAPI document and thread-stream schema under `proto/a13n-service/`, specified by the [Service API contract](a13n-service/10-api.md). Each SDK repository owns its language-specific specification, concrete public API, implementation, SHA-pinned Service snapshot, generators, validation, and release automation. The main specification does not prescribe language-specific signatures, implementation structure, or CLI command design; applications retain business workflow ownership.
 
 Projects under `examples/` may carry their own manifests and lock files when realistic packaging is part of the integration being demonstrated. They remain outside production package workspaces and release groups; example distribution names and artifacts are not platform packages.
 
@@ -51,7 +51,7 @@ Maintained component source directories and public distributions use the same ca
 
 `frontend/` owns one private pnpm workspace and lockfile. `frontend/apps/a13n-console` is the React/TypeScript/Vite Service Console with English as the default and fallback language and Simplified Chinese translation resources. It consumes the public Service contract through its own private client and uses the shared design system; its product navigation and interaction boundary are owned by [Console](frontend/console.md). `frontend/packages/a13n-ui` owns shared React components, design tokens, and its independent development showcase, as defined by the [frontend design system](frontend/design-system.md). Its private source exports exclude the showcase.
 
-`frontend/apps/a13n-harness-ui` retains its existing Python distribution ownership. The workspace migration does not add a frontend runtime to Service or change Harness UI release identity. Both applications use the workspace build tooling; standalone SDK projects remain outside this workspace. The root Make targets integrate frontend installation, checks, and builds. Compiled assets and dependency directories are not committed.
+`frontend/apps/a13n-harness-ui` is build input of the Harness UI Python distribution and has no release identity of its own. Service carries no frontend runtime. Both applications use the workspace build tooling; standalone SDK projects remain outside this workspace. The root Make targets integrate frontend installation, checks, and builds. Compiled assets and dependency directories are not committed.
 
 ## Change Flow
 
@@ -82,7 +82,7 @@ Documentation sources live in `docs/` and use Markdown. The canonical public sit
 
 Configuration and generated output do not live in `docs/`. Every source file under `docs/` is Markdown.
 
-The main site owns Service guides and the Service HTTP API reference. Its SDK landing page links to the independent repositories and any available SDK-owned reference sites; it does not generate or vendor language-specific SDK API references.
+The main site owns Service guides and the Service HTTP API reference. The Service overview points readers to the independent SDK and CLI repositories; the site does not generate or vendor language-specific SDK API references.
 
 ## Specification Discipline
 
@@ -112,12 +112,12 @@ Each consuming package owns its cross-release-group Python requirements in its `
 
 The current cross-group requirements are:
 
-| Consumer                     | Dependency               | Published requirement                |
-| ---------------------------- | ------------------------ | ------------------------------------ |
-| Harness UI                   | Harness, Stream Protocol | `>=0.1.0,<0.2.0`, identical for both |
-| Service                      | Harness, Stream Protocol | `>=0.1.0,<0.2.0`, identical for both |
-| Harness UI, Harness          | `a13n-logging`           | `>=0.1.0,<0.2.0`                     |
-| Harness, Harness UI, Service | `a13n-envd-client`       | `>=0.0.6,<0.1.0`                     |
+| Consumer            | Dependency               | Published requirement                |
+| ------------------- | ------------------------ | ------------------------------------ |
+| Harness UI          | Harness, Stream Protocol | `>=0.1.0,<0.2.0`, identical for both |
+| Service             | Harness, Stream Protocol | `>=0.1.0,<0.2.0`, identical for both |
+| Harness UI, Harness | `a13n-logging`           | `>=0.1.0,<0.2.0`                     |
+| Harness, Harness UI | `a13n-envd-client`       | `>=0.0.6,<0.1.0`                     |
 
 Independent release lines do not force consumer releases or lower-bound bumps for every dependency patch. Raise the minimum when the consumer needs newer APIs or behavior; a breaking compatibility change crosses the declared line and requires an explicit consumer update. These bounded requirements are reviewed compatibility policy, not a general semantic-versioning guarantee for all `0.x` releases. Python prerelease resolution follows standard package-manager rules.
 
@@ -127,7 +127,7 @@ Every release channel accepts a canonical stable `X.Y.Z` identity or RC `X.Y.Z-r
 
 An RC runs the owning release workflow, publishes its normal immutable artifacts to the owning registries, and creates a GitHub prerelease. It never advances a stable mutable selector: a13n Service and a13n-envd RCs do not modify the corresponding container `latest` tag. A stable release creates a normal GitHub Release and advances only the mutable `latest` selectors defined by its owning channel. Standalone a13n-envd installers resolve only stable `release/a13n-envd-v*` releases by default; an RC requires an explicit canonical version.
 
-Release notes are generated automatically when a component tag is published; no separate notes file or preparation step is required. Entries are selected from first-parent Git history by changed paths belonging to that component, including its shipped assets and component documentation, rather than repository-wide pull-request activity. PR labels at generation time determine categories and exclusions; historical unlabelled PRs and direct commits fall back to Conventional Commit titles and explicit breaking-change markers. PR labels are automatically inferred from titles and breaking-change markers on opening and readiness, preserving existing type labels without introducing a merge gate. Draft PRs skip code CI; readiness and subsequent code updates trigger the applicable checks independently of label presence. Optional reviewed notes may supplement the generated entries. The Full Changelog link remains a repository-wide comparison, not a component-filtered view.
+Release notes are generated automatically when a component tag is published; no separate notes file or preparation step is required. Entries are selected from first-parent Git history by changed paths belonging to that component, including its shipped assets and component documentation, rather than repository-wide pull-request activity. PR labels at generation time determine categories and exclusions; unlabelled PRs and direct commits fall back to Conventional Commit titles and explicit breaking-change markers. PR labels are automatically inferred from titles and breaking-change markers on opening and readiness, preserving existing type labels without introducing a merge gate. Draft PRs skip code CI; readiness and subsequent code updates trigger the applicable checks independently of label presence. Optional reviewed notes may supplement the generated entries. The Full Changelog link remains a repository-wide comparison, not a component-filtered view.
 
 Comparison bases are canonical tags in the same component channel that are ancestors of the release tag. A stable release compares with the preceding stable tag, excluding RC tags as comparison bases. An RC compares with an earlier RC for the same target version when available, otherwise with the preceding stable tag. The first release without a comparison base uses initial-release notes rather than repository-wide history.
 

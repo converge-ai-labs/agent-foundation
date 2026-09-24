@@ -21,7 +21,7 @@ These conventions do not replace an upstream or project-owned protocol. The Harn
 
 Foundation-owned product HTTP APIs use the `/api` namespace. The current public compatibility line places its versioned resource routes below `/api/v1`. Operational endpoints such as liveness and readiness are outside `/api` and are not public resource APIs.
 
-Path segments use lowercase kebab-case, with plural names for resource collections. `GET` reads a resource or collection, `POST` creates a resource or invokes an explicit command, `PATCH` applies a partial mutation, and `DELETE` removes a resource only when its owning contract defines deletion. `PUT` is used only for a genuine complete replacement. A command uses a subordinate action path such as `POST /api/v1/runs/{id}/interrupt`; arbitrary verb-shaped RPC endpoints are not introduced when a resource or command expresses the operation directly.
+Path segments use lowercase kebab-case, with plural names for resource collections. `GET` reads a resource or collection, `POST` creates a resource or invokes an explicit command, `PATCH` applies a partial mutation, and `DELETE` removes a resource only when its owning contract defines deletion. `PUT` is used only for a genuine complete replacement. A command uses a subordinate action path such as `POST /api/v1/workspaces/{workspace_id}/runs/{run_id}/interrupt`; arbitrary verb-shaped RPC endpoints are not used when a resource or command expresses the operation directly.
 
 A successful single-resource, mutation, or command response returns that resource or receipt directly. There is no universal `data` envelope. Ordinary status meanings are:
 
@@ -69,9 +69,9 @@ GET /api/v1/workspaces/ws_123/agents?limit=50&cursor=opaque-value
 
 Each endpoint defines one deterministic default order and uses a unique stable tie-breaker. It exposes only explicit filters and sort choices rather than a platform query language. A cursor is bound to the authenticated scope and the query that created it. A changed scope, filter, or ordering, or an invalid or expired cursor, returns a typed error instead of an empty page.
 
-[Trace Query](a13n-service/10-api.md) is a scoped exception for provider-backed telemetry: descending start time uses the selected backend's stable opaque identity continuation for ties rather than a cross-provider public ID comparator. Service preserves this native order across filtered pages; it does not impose a different global order by sorting individual pages.
+[Trace query](a13n-service/07-facts-and-delivery.md#trace-query) is a scoped exception for provider-backed telemetry: descending start time uses the selected backend's stable opaque identity continuation for ties rather than a cross-provider public ID comparator. Service preserves this native order across filtered pages; it does not impose a different global order by sorting individual pages.
 
-A bounded transient catalog command may return its complete `items` array without pagination when its owning API explicitly defines that contract and its response limits, as in [Model discovery](a13n-service/10-api.md). This does not change ordinary resource collection pagination.
+A bounded transient catalog command may return its complete `items` array without pagination when its owning API explicitly defines that contract and its response limits, as in the [model catalog](a13n-service/08-providers.md#model-catalog). This does not change ordinary resource collection pagination.
 
 The cursor is a continuation value, not an object ID or bearer authority. Clients do not parse or construct it, and the server reauthorizes every page. Ordinary collection pagination does not imply a database snapshot; an API that requires snapshot isolation or durable replay defines that stronger contract separately.
 
@@ -82,7 +82,7 @@ Every error response uses one bounded shape:
 ```json
 {
   "error": {
-    "code": "invalid_request",
+    "code": "invalid_argument",
     "message": "The request is invalid.",
     "details": {},
     "request_id": "opaque-request-id"
@@ -113,9 +113,9 @@ SDKs expose one common API error base carrying HTTP status, `code`, `message`, `
 
 ## Mutations and Retries
 
-A versioned state-machine mutation that can lose a concurrent update accepts `expected_version` and compares it with the model's `version`. When one request boundary necessarily exposes multiple independent version axes, secondary preconditions are qualified just enough to distinguish them, such as `expected_queue_version`. A mismatch returns `409`. A mutable representation without an addressable history requires a strong `ETag` plus `If-Match`; an absent precondition returns `428` and a stale tag returns `412`. The tag changes whenever that complete representation changes and is not an addressable version, revision, or history selector. A revisioned resource head orders Revision publication, default selection and metadata changes with its one `ETag` ([data conventions](data-conventions.md#resource-revisions-and-concurrency)). One mutation axis never mixes the two contracts. Resources that cannot lose updates do not require an artificial concurrency token.
+A versioned state-machine mutation that can lose a concurrent update accepts `expected_version` and compares it with the model's `version`. When one request boundary necessarily exposes multiple independent version axes, secondary preconditions are qualified just enough to distinguish them. A mismatch returns `409`. A mutable representation without an addressable history requires a strong `ETag` plus `If-Match`; an absent precondition returns `428` and a stale tag returns `412`. The tag changes whenever that complete representation changes and is not an addressable version, revision, or history selector. A revisioned resource head orders Revision publication, default selection and metadata changes with its one `ETag` ([data conventions](data-conventions.md#resource-revisions-and-concurrency)). One mutation axis never mixes the two contracts. Resources that cannot lose updates do not require an artificial concurrency token.
 
-A create or command that callers may safely retry accepts an `Idempotency-Key` header containing 1–512 visible ASCII bytes. Scope includes the authenticated Principal, applicable Workspace or Organization boundary, operation, target, and key digest. The same scoped key selects the accepted business result; a request whose content differs from the one the key accepted is refused with `409` rather than replayed, so a reused key never silently returns another request's result. Service reauthorizes replay access and constructs the response from retained records using current logic, so mutable fields and versions may have advanced. Replay precedes new-mutation version and semantic-input checks. Keys do not expire after 24 hours; deleting the owning data may end deduplication. No response snapshot or replay-specific retention hold is required. AG-UI, A2A, and durable execution identities retain their separately owned semantics.
+A create or command that callers may safely retry accepts an `Idempotency-Key` header containing 1–512 visible ASCII bytes. Scope includes the authenticated Principal, applicable Workspace or Organization boundary, operation, target, and key digest. The same scoped key selects the accepted business result; a request whose content differs from the one the key accepted is refused with `409` rather than replayed, so a reused key never silently returns another request's result. Service reauthorizes replay access and constructs the response from retained records using current logic, so mutable fields and versions may have advanced. Replay precedes new-mutation version and semantic-input checks. Keys do not expire after 24 hours; deleting the owning data may end deduplication. No response snapshot or replay-specific retention hold is required. External protocol identities retain their separately owned semantics.
 
 Idempotent replay is resolved before evaluating `expected_version` or `If-Match`, so replay of a committed mutation does not conflict with the state it already changed. A timeout or lost response after possible dispatch has unknown outcome unless the same idempotency key or authoritative receipt reconciles it. A caller never changes the key merely because acknowledgement was lost.
 
@@ -142,8 +142,4 @@ Cursor encoding, storage layout, framework models, and SDK transport machinery a
 
 ## Resource References
 
-For Organization, Workspace, and Agent path segments, a reference accepts either the immutable ID or the current readable key. Path parameters are named `organization`, `workspace`, and `agent`. IDs contain an underscore and readable keys cannot, so resolution selects one namespace without fallback. Mixed ID/key paths are valid.
-
-Workspace keys resolve inside the authenticated Organization; a Workspace-bound API Key can resolve only its own Workspace. Browser sessions supply the Organization boundary, while an API Key supplies its Workspace boundary. Agent management uses `/api/v1/workspaces/{workspace}/agents/{agent}` and child operation paths. Resolving an Agent by ID still verifies membership in the path's Workspace. For example, `/api/v1/workspaces/research/agents/code-reviewer` and the equivalent all-ID path identify the same resource. AgentRevision and other unkeyed resource references retain their owning ID contracts.
-
-Resolution produces internal IDs before application use cases apply current authorization and lifecycle checks. A caller cannot widen its credential boundary by choosing another parent path. Unknown, obsolete, or out-of-scope references return a concealed not-found result. Key changes update the canonical address immediately without retaining old routes or aliases.
+The owning API defines which path segments accept a readable key beside the immutable ID and how they resolve; for the Service, [paths and scope](a13n-service/10-api.md#paths-and-scope) and [authorization](a13n-service/03-tenancy.md#authorization) own that contract. Resolution never widens a credential's boundary, and an out-of-scope reference returns a concealed not-found result. A key change updates the canonical address immediately without retaining old routes or aliases.

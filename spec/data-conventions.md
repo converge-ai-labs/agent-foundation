@@ -23,7 +23,7 @@ The following terms describe different data and lifecycle axes. They are not syn
 
 | Term         | Canonical meaning                                                                                                                                                                                                          | Representation                                                                                   |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `version`    | The owner-defined version of a model. For a revisioned resource, it is the positive integer position of one immutable Revision in that resource's lineage.                                                                 | Usually a positive integer; its exact initial value and increment boundary belong to the model.  |
+| `version`    | The owner-defined version of a model. For a revisioned resource, it is the head's representation version, which every head change advances; a Revision's position in the lineage is its `number`.                          | Usually a positive integer; its exact initial value and increment boundary belong to the model.  |
 | `revision`   | A complete immutable content record or materialization associated with a stable resource or artifact. A revision can contain normalized content and aggregate exact references to other revisions.                         | A structured content value. A revision ID, reference, or content digest identifies that value.   |
 | `snapshot`   | A complete immutable capture or derived projection frozen at a defined boundary. A snapshot can aggregate revisions, state, configuration, and locks, but is not by default a published member of a resource lineage.      | A structured content value. A snapshot reference or digest identifies that value.                |
 | `state`      | The values that describe an owner's condition or continuation data within a named scope. State can be mutable or immutable, transient or durable, and complete or partial as defined by its owner.                         | A typed value or payload; the term alone implies no persistence, immutability, or resumability.  |
@@ -33,16 +33,16 @@ The following terms describe different data and lifecycle axes. They are not syn
 
 Immutability and aggregation do not choose between `revision` and `snapshot`. Use `revision` when the value belongs to the published content lineage of a stable resource or artifact. Use `snapshot` when the value is a point-in-time capture or a derived projection outside that lineage. If an owning model does not establish that semantic difference, it exposes only one of the two concepts.
 
-`Revision` and `Snapshot` type names denote the complete content values. Names ending in `RevisionRef` or `SnapshotRef` denote typed references; fields ending in `_id` or `_digest` denote their scalar identities. A Foundation resource and its current structured Revision expose the same `version`; the scalar selects that immutable content without replacing the Revision object. Other models can also expose `version` for their own single version axis. Qualify the name only when the same model or boundary exposes multiple independently meaningful versions, such as Thread `version` and `queue_version`, or when the owning compatibility term is itself established, such as `schema_version`.
+`Revision` and `Snapshot` type names denote the complete content values. Names ending in `RevisionRef` or `SnapshotRef` denote typed references; fields ending in `_id` or `_digest` denote their scalar identities. A revisioned resource head exposes `version` and `default_revision_id`, and each Revision exposes its lineage `number` ([Resource Revisions](#resource-revisions-and-concurrency)). Other models can also expose `version` for their own single version axis. Qualify the name only when the same model or boundary exposes multiple independently meaningful versions, or when the owning compatibility term is itself established, such as `schema_version`.
 
 A checkpoint is stronger than ordinary state or a point-in-time snapshot: its owner has validated completeness and durably selected it for continuation. A generation identifies an incarnation; a fence excludes obsolete or terminal participants. Neither term supplies content-version or compatibility meaning unless its owning contract states that separately.
 
 ## Object Identity
 
-Every independently addressable Foundation-owned object has one stable opaque identifier. Newly allocated identifiers use the canonical form `<kind-prefix>_<random-suffix>`.
+Every independently addressable Foundation-owned object has one stable opaque identifier. Allocated identifiers use the canonical form `<kind-prefix>_<random-suffix>`.
 
 - The kind prefix is a short, stable, lowercase abbreviation of the object kind, such as `org` or `ag`.
-- Newly allocated random suffixes use lowercase hexadecimal (`0-9a-f`) from a cryptographically secure random generator. Length follows the owning subsystem's cumulative allocation volume and unpredictability requirements.
+- Random suffixes use lowercase hexadecimal (`0-9a-f`) from a cryptographically secure random generator. Length follows the owning subsystem's cumulative allocation volume and unpredictability requirements.
 - Prefixes are allocated as object kinds are introduced. The set is open, but an allocated prefix is never renamed, reused, or assigned another meaning.
 - An identifier is immutable and is not reused after its object is removed.
 - An identifier encodes no organization, region, time, ordering, parentage, storage, or routing information.
@@ -50,7 +50,7 @@ Every independently addressable Foundation-owned object has one stable opaque id
 
 Service Python code uses one shared object-ID generator rather than reimplementing prefix validation, alphabet selection, or randomness. Independently embeddable libraries and other languages follow the same observable format when they are responsible for creating Foundation-owned objects; they do not depend on the Service allocator. Consumers treat IDs as opaque strings and do not derive behavior from their prefix, separator, or suffix.
 
-New Thread IDs use `thread_` plus 32 lowercase hexadecimal characters. Service allocation retains 128 random bits; the embeddable Harness and browser retain their existing UUID4 generation with only the separator changed. The legacy `thread-` plus 32 lowercase hexadecimal shape remains accepted permanently on every Thread acceptance surface, including persisted state, client-supplied identity, Hook references, and browser drafts. Existing IDs, references, and `threads/<thread-id>/` directories are never rewritten. Previously accepted host-supplied forms remain valid at their existing boundaries; allocation is narrower than acceptance.
+Thread IDs use `thread_` plus 32 lowercase hexadecimal characters. The Service allocates 128 random bits; the embeddable Harness and Harness UI use the hexadecimal form of a UUID4. The Harness and Harness UI also accept `thread-` plus 32 lowercase hexadecimal characters wherever they accept a Thread ID, including persisted state, client-supplied identity and browser drafts, and never rewrite Thread IDs, references or `threads/<thread-id>/` directories. The Service accepts only its own object ID form.
 
 ### Service ID Allocation
 
@@ -60,23 +60,23 @@ Service allocates four suffix lengths. The table specifies capacity assumptions,
 | ----------------- | ----------- | --------------------------------------------------------------------------------------------- | -------------------------- | ------------------------------------ |
 | 20 hex characters | 80          | Managed identities and configuration resources                                                | `10**7`                    | `4.14e-11`                           |
 | 24 hex characters | 96          | Sessions, resource revisions, attachments, and bindings                                       | `10**10`                   | `6.31e-10`                           |
-| 28 hex characters | 112         | Runs, attempts, control inputs, and execution records                                         | `10**12`                   | `9.63e-11`                           |
+| 28 hex characters | 112         | Runs, attempts, inbox entries, and execution records                                          | `10**12`                   | `9.63e-11`                           |
 | 32 hex characters | 128         | High-volume events, coordination identities, authentication workflows, and unclassified kinds | `10**15`                   | `1.47e-9`                            |
 
 The shared Service allocator owns these prefix assignments; callers cannot choose a shorter length:
 
-| Suffix length | Allocated prefixes                                                                                                                                           |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 20            | `ap`, `conn`, `cprov`, `envtpl`, `eprov`, `mdl`, `mprov`, `org`, `sa`, `sk`, `usr`, `wprov`, `ws`                                                            |
-| 24            | `apr`, `ast`, `env`, `inv`, `rb`, `sess`, `skr`                                                                                                              |
-| 28            | `inb`, `rat`, `run`                                                                                                                                          |
-| 32            | `ase`, `audit`, `connop`, `ctl`, `ect`, `envoper`, `key`, `obx`, `prt`, `req`, `sec`, `sub`, `thread`, `wrk`; every other valid kind defaults to this length |
+| Suffix length | Allocated prefixes                                                                                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 20            | `ap`, `conn`, `cprov`, `envtpl`, `eprov`, `mdl`, `mprov`, `org`, `sa`, `sk`, `usr`, `wprov`, `ws`                                                                        |
+| 24            | `apr`, `ast`, `env`, `inv`, `rb`, `sess`, `skr`                                                                                                                          |
+| 28            | `inb`, `rat`, `run`                                                                                                                                                      |
+| 32            | `ase`, `audit`, `connop`, `ctl`, `ect`, `envoper`, `key`, `obx`, `prt`, `req`, `sec`, `sub`, `thread`, `wrk`, `envrenew`; every other valid kind defaults to this length |
 
-Prefixes allocated by the historical Service remain retired and are never reassigned: `a2actx`, `a2amsg`, `a2apush`, `a2atask`, `acct`, `aguirb`, `aguitb`, `aud`, `bind`, `cconn`, `comment`, `crr`, `csa`, `dlv`, `effect`, `envop`, `envowner`, `envrev`, `hsub`, `hsubr`, `iadm`, `ibat`, `idem`, `img`, `lev`, `lsp`, `mcpc`, `memprov`, `message`, `mos`, `mut`, `ntf`, `opg`, `qsub`, `reply`, `session`, `sku`, `svc`, `tgt` and `tool`.
+These prefixes are reserved and never assigned: `a2actx`, `a2amsg`, `a2apush`, `a2atask`, `acct`, `aguirb`, `aguitb`, `aud`, `bind`, `cconn`, `comment`, `crr`, `csa`, `dlv`, `effect`, `envop`, `envowner`, `envrev`, `hsub`, `hsubr`, `iadm`, `ibat`, `idem`, `img`, `lev`, `lsp`, `mcpc`, `memprov`, `message`, `mos`, `mut`, `ntf`, `opg`, `qsub`, `reply`, `session`, `sku`, `svc`, `tgt` and `tool`.
 
 Kinds used for claims, worker incarnations, publication generations, or authentication workflows retain at least 128 random bits regardless of their expected volume. New kinds start at 32 characters until their owner assigns a smaller tier against an explicit lifetime volume budget. A deployment expected to exceed a tier's budget must review allocation length before that growth; cleanup does not reset the budget. These probabilities apply per prefix, not to the aggregate probability across all kinds.
 
-Hex allocation does not rewrite existing IDs. Service continues accepting its existing lowercase alphanumeric ID syntax (16-64 suffix characters), preserving stored references, links, and rolling interoperability. Acceptance does not enforce the current allocation length for a kind. Database column sizes and wire schemas remain unchanged. Unique constraints remain the final collision guard; a collision must not overwrite or reuse an existing object. This allocation policy introduces no automatic persistence retry contract.
+Service `ObjectId` accepts exactly the shapes the allocator produces: a kind prefix, an underscore and 20 to 32 lowercase hexadecimal characters ([Service object IDs](a13n-service/02-layout.md#object-ids)). Acceptance checks that shape, not the tier of a particular kind. Unique constraints are the final collision guard; a collision never overwrites or reuses an existing object, and allocation defines no automatic persistence retry.
 
 Authentication secrets, API key secret material, cookie tokens, OAuth state and verifiers, and provider-owned IDs retain their owning generation rules. A public credential record ID is distinct from its secret. The allocation tiers do not shorten those secrets or re-encode external identifiers.
 
@@ -128,17 +128,9 @@ Suffixes have stable domain meanings. `Revision` is an immutable member of a res
 
 The public boundary validates and normalizes input once. Internal code consumes the resulting typed meaning instead of repeatedly inferring whether a string is an object ID, symbolic selection, external identity, scoped reference, or secret. No universal field-suffix rule overrides clarity at either boundary.
 
-Where a feature requires case-insensitive display-name uniqueness, Service display names bounded to 128 Unicode scalar values may expand during casefolding. Their case-insensitive uniqueness columns accommodate up to 384 scalar values; the derived key is never truncated and the display-name limit does not change. A uniqueness key is distinct from the feature-owned display-name normalization.
-
 ### Readable Resource Keys
 
-Organization, Workspace, and Agent expose a mutable `key` separately from their immutable `id` and display `name`. Organization keys are globally unique; Workspace keys are unique within their Organization; Agent keys are unique within their Workspace. Display names may repeat. Deleted resources retain their keys until physical removal.
-
-A key contains 1–64 lowercase ASCII letters or digits separated by single hyphens. Underscores, leading or trailing hyphens, repeated hyphens, and application navigation keywords are invalid. Reserved keywords are `api`, `assets`, `confirm-email`, `connector-setup`, `forgot-password`, `invitations`, `login`, `new`, `reset-password`, and `settings`.
-
-Creation accepts an explicit key or derives one from the lowercase ASCII portions of the name, replacing intervening characters with hyphens and truncating to the key limit. A generated collision appends a hyphen and four random lowercase hexadecimal characters, shortening the readable prefix as needed. A name without usable ASCII characters uses the resource kind (`org`, `workspace`, or `agent`) as the prefix and always receives that suffix. A reserved derived key also receives a suffix. Allocation retries are finite, and database uniqueness protects concurrent creation. An explicit conflicting key returns `409 resource_key_conflict` rather than being changed automatically. Exhausted generated-key retries return `409 resource_key_exhausted` without creating a resource.
-
-Changing a name preserves the key. Explicit key changes retain the resource ID, references, revisions, and authorization; they invalidate the previous key immediately. There are no historical aliases or redirects. These rules do not replace Model or Skill key contracts.
+Service organizations, workspaces, agents, skills, models and environment templates expose a mutable `key` beside their immutable `id` and display `name`. A key matches `^[a-z0-9][a-z0-9_-]{0,127}$` and is unique in its owning scope; a duplicate is `already_exists`. [Tenancy](a13n-service/03-tenancy.md) and [resources](a13n-service/04-resources.md) own each kind's scope, default and changes, and the [API](a13n-service/10-api.md#paths-and-scope) owns path resolution. Changing a key keeps the resource ID, references, revisions and authorization; links that name the previous key stop resolving.
 
 ## Ownership and Authority
 
@@ -159,7 +151,7 @@ Data that affects authority, execution behavior, compatibility, or recovery is r
 01. Every independently addressable Foundation-owned object has one immutable, non-reused, kind-prefixed opaque ID.
 02. Foundation-owned object IDs encode no authority, ordering, ownership, or deployment information.
 03. External identities and compact scoped references preserve their owning formats and are never relabeled as Foundation-owned object IDs.
-04. A revisioned Foundation resource uses one stable ID, one current Revision ID, and positive integer versions beginning at `1`; the head and current Revision expose the same version.
+04. A revisioned Foundation resource has one stable ID, a head whose `version` advances with every head change and whose `default_revision_id` selects the Revision an unpinned selection resolves, and immutable Revisions numbered from `1`.
 05. A mutation of a versioned state model uses `expected_version`; a revisioned resource head, metadata-only and intentionally non-versioned mutations use an owning strong `ETag`; neither introduces a parallel generic counter.
 06. Durable work selects exact object versions, immutable revision identities, or an owner-defined execution snapshot rather than resolving `latest` during execution or recovery.
 07. Public interfaces favor concise domain language, while internal models make ambiguous meanings explicit through names and types.
