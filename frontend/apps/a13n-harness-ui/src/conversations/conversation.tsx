@@ -19,7 +19,7 @@ import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, submitContinuation, useDraft } from "./composer";
 import { ComposerStatus } from "./composer-status";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
-import { Decisions } from "./decisions";
+import { Decisions, useDecisionPlacement } from "./decisions";
 import { ConversationDetails } from "./details";
 import {
   canPromoteCoordinator,
@@ -224,6 +224,15 @@ function Conversation({
     void refreshThreadLists(queries);
     void queries.invalidateQueries({ queryKey: ["child-saved-output"] });
   }, [queries, threadId]);
+  const decisions = useDecisionPlacement(
+    detail.data?.deferred_requests?.length ? (
+      <Decisions
+        threadId={threadId}
+        continuation={detail.data.continuation_id}
+        reconcile={reconcile}
+      />
+    ) : null,
+  );
   const entries = useMemo(() => {
     const byPosition = new Map<number, Schema<"TranscriptEntry">>();
     for (const page of history.data?.pages ?? [])
@@ -668,12 +677,26 @@ function Conversation({
                   continuation={continuation}
                   gap={showLive && display.gap}
                   threadId={threadId}
+                  pending={
+                    !hasLater && detail.data?.deferred_requests?.length
+                      ? {
+                          requestIds: detail.data.deferred_requests
+                            .filter(
+                              (request) =>
+                                request.tool_name === "ask_user_question",
+                            )
+                            .map((request) => request.request_id),
+                          content: decisions.slot,
+                        }
+                      : undefined
+                  }
                   recovery={
                     !hasLater && display.recovery?.state === "resumed"
                       ? display.recovery
                       : undefined
                   }
                 />
+                {decisions.portal}
               </PauseConversationFollowing>
               {hasLater && (
                 <div className={styles.historyActions}>
@@ -724,13 +747,6 @@ function Conversation({
               {display.recovery?.state !== "resumed" && (
                 <RecoveryNotice recovery={display.recovery} />
               )}
-              {!!detail.data?.deferred_requests?.length && (
-                <Decisions
-                  threadId={threadId}
-                  continuation={detail.data?.continuation_id}
-                  reconcile={reconcile}
-                />
-              )}
               {!entries.length &&
                 !draft.localInputs.length &&
                 thread?.root_activity.state === "inactive" &&
@@ -766,14 +782,17 @@ function Conversation({
           !history.data &&
           !draft.localInputs.length &&
           !showLive && <p role="status">Loading saved history…</p>}
-        {newOutput && (
+        {(newOutput ||
+          (hasLater && !!detail.data?.deferred_requests?.length)) && (
           <Button
             className={styles.newOutput}
             variant="outline"
             onClick={backToLatest}
           >
             <ArrowDown />
-            New output
+            {detail.data?.deferred_requests?.length
+              ? "Response needed"
+              : "New output"}
           </Button>
         )}
         {detail.data && (

@@ -197,6 +197,7 @@ it("honors display metadata, canonical reasoning events and tool result identity
     },
     {
       id: "run-one:call-one",
+      toolCallId: "call-one",
       kind: "tool",
       name: "shell",
       text: "{}",

@@ -9,6 +9,7 @@ import {
 
 export type DisplayBlock = {
   id: string;
+  toolCallId?: string;
   kind:
     "assistant" | "user" | "thinking" | "tool" | "activity" | "media" | "task";
   text: string;
@@ -418,6 +419,7 @@ export class FocusDisplay {
     } else if (type === "TOOL_CALL_START") {
       this.blocks.set(key, {
         id: key,
+        toolCallId: id,
         kind: "tool",
         name: string(payload.tool_call_name ?? payload.toolCallName),
         text: "",
@@ -426,6 +428,7 @@ export class FocusDisplay {
       const block = this.blocks.get(key) ?? {
         id: key,
         kind: "tool" as const,
+        toolCallId: id,
         text: "",
       };
       this.blocks.set(key, {
@@ -436,6 +439,7 @@ export class FocusDisplay {
       const block = this.blocks.get(key) ?? {
         id: key,
         kind: "tool" as const,
+        toolCallId: id,
         text: "",
       };
       this.blocks.set(key, {
@@ -653,6 +657,7 @@ export class FocusDisplay {
           text: "",
           name: string(part.tool_name),
           ...block,
+          toolCallId: string(part.tool_call_id),
           result: sourceText(part.content),
           done: true,
           retry: part.part_kind === "retry-prompt",

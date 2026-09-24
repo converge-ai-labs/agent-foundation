@@ -3,6 +3,7 @@ import type { Schema } from "../transport/client";
 export type AppliedEdit = { file_path: string; before: string; after: string };
 export type ToolView = {
   id: string;
+  toolCallId?: string;
   name: string;
   input?: unknown;
   result?: unknown;
@@ -414,6 +415,7 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
       if (part.kind === "tool_call") {
         views.set(part, {
           id: `${entry.position}:${index}`,
+          toolCallId: part.tool_call_id ?? undefined,
           name: part.tool_name || "Tool",
           input: part.value ?? part.text ?? undefined,
           provider: part.provider ?? undefined,
@@ -435,6 +437,7 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
             id: `${entry.position}:${index}`,
             name: part.tool_name || "Tool",
           }),
+          toolCallId: part.tool_call_id ?? undefined,
           result: part.kind === "retry" ? part.text : part.value,
           resultOmitted: part.value_omitted,
           outcome: part.outcome ?? undefined,

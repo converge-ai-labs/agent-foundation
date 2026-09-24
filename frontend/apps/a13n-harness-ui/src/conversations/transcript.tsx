@@ -15,7 +15,7 @@ import {
 } from "./reading-anchor";
 import { ArrowClockwise } from "@phosphor-icons/react";
 import { ExecutionDetails } from "./execution-details";
-import { ToolActivity } from "./tool-call";
+import { QuestionInteraction, ToolActivity } from "./tool-call";
 import {
   activityKind,
   describeTool,
@@ -44,6 +44,8 @@ function notificationTitle(source: string) {
   return source === "background_process" ? "Process update" : "Subagent update";
 }
 
+type PendingInteraction = { requestIds: string[]; content: ReactNode };
+
 type Row = {
   id: string;
   anchor?: string;
@@ -53,6 +55,7 @@ type Row = {
   | { kind: "input"; parts: InputPart[]; status?: string }
   | { kind: "thinking"; segments: { id: string; text: string }[] }
   | { kind: "tools"; tools: ToolView[] }
+  | { kind: "question"; tool?: ToolView; content?: ReactNode }
   | {
       kind: "assistant";
       text: string;
@@ -238,6 +241,81 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
   return rows;
 }
 
+// Resume runs can contain result-only blocks. Correlate within the native Turn,
+// by call identity, and keep the interaction at the original call's position.
+function questionRows(rows: Row[], pending?: PendingInteraction): Row[] {
+  const questions = new Map<string, Extract<Row, { kind: "question" }>>();
+  const projected: Row[] = [];
+  for (const row of rows) {
+    if (row.kind !== "tools") {
+      projected.push(row);
+      continue;
+    }
+    if (
+      !row.tools.some(
+        (tool) =>
+          tool.name === "ask_user_question" ||
+          (tool.toolCallId &&
+            questions.has(
+              `question:${tool.provider ?? "function"}:${tool.toolCallId}`,
+            )),
+      )
+    ) {
+      projected.push(row);
+      continue;
+    }
+    for (const tool of row.tools) {
+      const key = tool.toolCallId
+        ? `question:${tool.provider ?? "function"}:${tool.toolCallId}`
+        : undefined;
+      const previous = key ? questions.get(key) : undefined;
+      if (previous) {
+        // A duplicate call/partial frame must not erase an observed result.
+        if (tool.result !== undefined || tool.resultOmitted || tool.outcome)
+          previous.tool = {
+            ...previous.tool!,
+            ...tool,
+            id: previous.tool!.id,
+            name: previous.tool!.name,
+            input: tool.input || previous.tool!.input,
+          };
+      } else if (
+        tool.name === "ask_user_question" &&
+        (!tool.provider || tool.provider === "function")
+      ) {
+        const question: Extract<Row, { kind: "question" }> = {
+          ...row,
+          id: key ?? row.id,
+          kind: "question",
+          tool,
+        };
+        projected.push(question);
+        if (key) questions.set(key, question);
+      } else projected.push({ ...row, id: `tools:${tool.id}`, tools: [tool] });
+    }
+  }
+  if (!pending) return projected;
+  const matching = projected.filter(
+    (row) =>
+      row.kind === "question" &&
+      row.tool?.toolCallId &&
+      pending.requestIds.includes(row.tool.toolCallId),
+  );
+  const anchor = matching[0];
+  if (anchor?.kind === "question") anchor.content = pending.content;
+  else
+    projected.push({
+      id: pending.requestIds.length
+        ? `question:function:${pending.requestIds[0]}`
+        : "pending-decisions",
+      kind: "question",
+      content: pending.content,
+    });
+  // Mixed batches keep one form and one atomic submission. Other pending
+  // questions already appear inside that form; completed receipts remain distinct.
+  return projected.filter((row) => row === anchor || !matching.includes(row));
+}
+
 // Group only adjacent visible items. Separate Markdown documents remain separate:
 // an unfinished fence in one reasoning part cannot consume the next part.
 function groupRows(rows: Row[]) {
@@ -319,6 +397,8 @@ function Rows({
         />
       ) : row.kind === "thinking" ? (
         <Reasoning segments={row.segments} />
+      ) : row.kind === "question" ? (
+        (row.content ?? (row.tool && <QuestionInteraction tool={row.tool} />))
       ) : row.kind === "tools" ? (
         <ToolActivity tools={row.tools} />
       ) : row.kind === "assistant" ? (
@@ -408,7 +488,9 @@ export function ConversationTranscript({
   loadDetails = false,
   onSavedEntries,
   recovery,
+  pending,
 }: {
+  pending?: PendingInteraction;
   recovery?: FocusDisplay["recovery"];
   turns?: Schema<"TranscriptTurn">[];
   loadDetails?: boolean;
@@ -468,6 +550,7 @@ export function ConversationTranscript({
         onSavedEntries={onSavedEntries}
         continuation={continuation}
         recovery={recovery}
+        pending={pending}
       />
       {gap && <GapNotice />}
     </>
@@ -484,7 +567,9 @@ function TurnRows({
   onSavedEntries,
   continuation,
   recovery,
+  pending,
 }: {
+  pending?: PendingInteraction;
   recovery?: FocusDisplay["recovery"];
   rows: Row[];
   entries: Schema<"TranscriptEntry">[];
@@ -517,15 +602,21 @@ function TurnRows({
     if (groups.at(-1)?.id !== id) groups.push({ id, turn, rows: [] });
     groups.at(-1)!.rows.push(row);
   }
-  if (!groups.length && recovery) groups.push({ id: "ungrouped", rows: [] });
+  if (!groups.length && (recovery || pending))
+    groups.push({ id: "ungrouped", rows: [] });
   return groups.map((group, index) =>
-    group.id === "ungrouped" && !recovery ? (
-      <Rows key={group.id} rows={group.rows} threadId={threadId} />
+    group.id === "ungrouped" && !recovery && !pending ? (
+      <Rows
+        key={group.id}
+        rows={questionRows(group.rows)}
+        threadId={threadId}
+      />
     ) : (
       <Turn
         key={group.id}
         {...group}
         recovery={index === groups.length - 1 ? recovery : undefined}
+        pending={index === groups.length - 1 ? pending : undefined}
         entries={entries}
         threadId={threadId}
         missing={
@@ -546,6 +637,7 @@ function TurnRows({
 }
 
 function Turn(props: {
+  pending?: PendingInteraction;
   recovery?: FocusDisplay["recovery"];
   id: string;
   turn?: Schema<"TranscriptTurn">;
@@ -572,6 +664,7 @@ function TurnHistory({
   onSavedEntries,
   ...props
 }: {
+  pending?: PendingInteraction;
   id: string;
   recovery?: FocusDisplay["recovery"];
   turn?: Schema<"TranscriptTurn">;
@@ -702,7 +795,9 @@ function TurnSegments({
   loading = false,
   failed = false,
   recovery,
+  pending,
 }: {
+  pending?: PendingInteraction;
   recovery?: FocusDisplay["recovery"];
   id: string;
   turn?: Schema<"TranscriptTurn">;
@@ -714,7 +809,7 @@ function TurnSegments({
   loading?: boolean;
   failed?: boolean;
 }) {
-  const rows = usePresentedRows(sourceRows, !missing);
+  const rows = usePresentedRows(questionRows(sourceRows, pending), !missing);
   const mountedExecution = useRef(new Set<string>());
   const complete =
     turn?.final_position != null &&
@@ -758,15 +853,25 @@ function TurnSegments({
   for (const row of rows) {
     appendGap(row.position ?? turn?.end_position ?? previousPosition);
     const kind =
-      row.kind === "input" || row.kind === "assistant"
+      row.kind === "input" ||
+      row.kind === "assistant" ||
+      row.kind === "question"
         ? "visible"
         : "execution";
     if (row.kind === "input") {
       boundary = row.id;
       textIndex = 0;
+    } else if (row.kind === "question") {
+      boundary = row.id;
+      textIndex = 0;
     } else if (row.kind === "assistant") textIndex++;
     const previous = segments.at(-1);
-    if (previous?.kind === kind) previous.rows.push(row);
+    if (
+      previous?.kind === kind &&
+      (kind === "execution" ||
+        (row.kind !== "question" && previous.rows.at(-1)?.kind !== "question"))
+    )
+      previous.rows.push(row);
     else
       segments.push({
         id:

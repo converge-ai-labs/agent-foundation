@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { useTransport } from "../transport/context";
@@ -11,6 +18,20 @@ import {
   DecisionInput,
   type DecisionResponse as Response,
 } from "./decision-inputs";
+// The form belongs to the conversation, not a history page or Turn component.
+// Move its portal host when history fills in the interaction's location, without
+// remounting drafts, mutations, or the no-replay guard for uncertain submissions.
+export function useDecisionPlacement(content: ReactNode) {
+  const [host] = useState(() => document.createElement("div"));
+  const place = useCallback(
+    (element: HTMLDivElement | null) => {
+      if (element) element.appendChild(host);
+    },
+    [host],
+  );
+  return { slot: <div ref={place} />, portal: createPortal(content, host) };
+}
+
 export function Decisions({
   threadId,
   continuation,

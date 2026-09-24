@@ -271,6 +271,16 @@
   overflow: hidden;
   background: color-mix(in srgb, var(--muted) 16%, transparent);
 }
+.questionStatus {
+  padding: 0.875rem 1rem 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.questionContext {
+  padding: 0.875rem 1rem;
+  overflow-wrap: anywhere;
+}
 .answers {
   display: grid;
   gap: 0.75rem;

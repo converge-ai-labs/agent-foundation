@@ -525,75 +525,8 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   const info = describeTool(tool);
   const [expanded, setExpanded] = useState(false);
   const Icon = toolIcons[info.kind];
-  const receipt = questionReceipt(tool);
-  if (receipt)
-    return (
-      <section
-        className={styles.questionReceipt}
-        data-tool-id={tool.id}
-        aria-label="Your answers"
-      >
-        <dl className={styles.answers}>
-          {receipt.items.map((item, index) => (
-            <div key={index}>
-              <dt>
-                <span className={styles.questionHeader}>{item.title}</span>
-                {item.question && item.question !== item.title && (
-                  <p className={styles.questionText}>{item.question}</p>
-                )}
-              </dt>
-              <dd>
-                {item.values.map((value, i) => (
-                  <div key={i}>
-                    <p className={styles.answerLabel}>{value.label}</p>
-                    {value.description && (
-                      <p className={styles.answerDescription}>
-                        {value.description}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <DisclosureSection
-          title="Questions & details"
-          open={expanded}
-          onOpenChange={setExpanded}
-        >
-          {expanded && (
-            <div className={styles.details} data-tool-details>
-              {receipt.questions.map((question, index) => (
-                <section key={index} className={styles.originalQuestion}>
-                  {typeof question.header === "string" && (
-                    <h4>{question.header}</h4>
-                  )}
-                  {typeof question.question === "string" && (
-                    <p>{question.question}</p>
-                  )}
-                  {Array.isArray(question.options) && (
-                    <ul>
-                      {question.options.filter(record).map((option, i) => (
-                        <li key={i}>
-                          {typeof option.label === "string" && (
-                            <strong>{option.label}</strong>
-                          )}
-                          {typeof option.description === "string" && (
-                            <span>{option.description}</span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              ))}
-              <ToolDetails tool={tool} />
-            </div>
-          )}
-        </DisclosureSection>
-      </section>
-    );
+  if (tool.name === "ask_user_question")
+    return <QuestionInteraction tool={tool} />;
   return (
     <section className={styles.tool} data-tool-id={tool.id}>
       <DisclosureSection
@@ -620,6 +553,113 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
     </section>
   );
 });
+
+/** The same question stays visible before and after its durable result. */
+export function QuestionInteraction({ tool }: { tool: ToolView }) {
+  const info = describeTool(tool);
+  const [expanded, setExpanded] = useState(false);
+  const receipt = questionReceipt(tool);
+  const questions =
+    receipt?.questions ??
+    (Array.isArray(info.args.questions)
+      ? info.args.questions.filter(record)
+      : []);
+  return (
+    <section
+      className={styles.questionReceipt}
+      data-tool-id={tool.id}
+      aria-label={receipt ? "Answers" : "Question"}
+    >
+      <header className={styles.questionStatus}>
+        {receipt
+          ? "Answered"
+          : tool.result !== undefined || tool.outcome || tool.failure
+            ? "Not answered"
+            : "Awaiting response"}
+      </header>
+      {!receipt && (
+        <div className={styles.questionContext}>
+          {questions.map((question, index) => (
+            <div key={index}>
+              {typeof question.header === "string" && (
+                <strong className={styles.questionHeader}>
+                  {question.header}
+                </strong>
+              )}
+              {typeof question.question === "string" && (
+                <p className={styles.questionText}>{question.question}</p>
+              )}
+            </div>
+          ))}
+          {(tool.failure || typeof tool.result === "string") && (
+            <p className={styles.answerDescription}>
+              {tool.failure || (tool.result as string)}
+            </p>
+          )}
+        </div>
+      )}
+      <dl className={styles.answers}>
+        {receipt?.items.map((item, index) => (
+          <div key={index}>
+            <dt>
+              <span className={styles.questionHeader}>{item.title}</span>
+              {item.question && item.question !== item.title && (
+                <p className={styles.questionText}>{item.question}</p>
+              )}
+            </dt>
+            <dd>
+              {item.values.map((value, i) => (
+                <div key={i}>
+                  <p className={styles.answerLabel}>{value.label}</p>
+                  {value.description && (
+                    <p className={styles.answerDescription}>
+                      {value.description}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <DisclosureSection
+        title="Questions & details"
+        open={expanded}
+        onOpenChange={setExpanded}
+      >
+        {expanded && (
+          <div className={styles.details} data-tool-details>
+            {questions.map((question, index) => (
+              <section key={index} className={styles.originalQuestion}>
+                {typeof question.header === "string" && (
+                  <h4>{question.header}</h4>
+                )}
+                {typeof question.question === "string" && (
+                  <p>{question.question}</p>
+                )}
+                {Array.isArray(question.options) && (
+                  <ul>
+                    {question.options.filter(record).map((option, i) => (
+                      <li key={i}>
+                        {typeof option.label === "string" && (
+                          <strong>{option.label}</strong>
+                        )}
+                        {typeof option.description === "string" && (
+                          <span>{option.description}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ))}
+            <ToolDetails tool={tool} />
+          </div>
+        )}
+      </DisclosureSection>
+    </section>
+  );
+}
 
 /** One quiet disclosure for adjacent activity; expanding shows details without a second per-call accordion. */
 export const ToolActivity = memo(function ToolActivity({

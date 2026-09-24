@@ -352,7 +352,7 @@ it("shows question context and selected option descriptions by default, keeping 
   expect(
     Array.from(document.querySelectorAll("dt"), (item) => item.textContent),
   ).toEqual(["ScopeWhich scope?", "ChecksWhich checks?"]);
-  const receipt = screen.getByRole("region", { name: "Your answers" });
+  const receipt = screen.getByRole("region", { name: "Answers" });
   for (const text of [
     "Scope",
     "Which scope?",
@@ -441,9 +441,7 @@ it("preserves free-text and general responses in live and saved question receipt
       ))}
     </>,
   );
-  expect(screen.getAllByRole("region", { name: "Your answers" })).toHaveLength(
-    1,
-  );
+  expect(screen.getAllByRole("region", { name: "Answers" })).toHaveLength(1);
   expect(screen.getByText("Scope")).toBeTruthy();
   expect(screen.getByText("Which scope?")).toBeTruthy();
   expect(screen.queryByText("Only the browser surface")).toBeNull();
@@ -480,7 +478,7 @@ it("keeps questions and answers readable without original headers or matching op
   expect(screen.getByText("Custom answer")).toBeTruthy();
 });
 
-it("keeps missing, omitted, malformed and unsuccessful question results in the ordinary tool view", () => {
+it("keeps missing, omitted, malformed and unsuccessful question results visible without claiming an answer", () => {
   for (const changes of [
     { result: undefined },
     { result: { answers: {} } },
@@ -494,10 +492,8 @@ it("keeps missing, omitted, malformed and unsuccessful question results in the o
     const { unmount } = render(
       <ToolCall tool={{ ...questionTool, ...changes }} />,
     );
-    expect(screen.queryByRole("region", { name: "Your answers" })).toBeNull();
-    expect(
-      screen.getByRole("button", { name: /ask_user_question/ }),
-    ).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Answers" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Question" })).toBeTruthy();
     unmount();
   }
 });
