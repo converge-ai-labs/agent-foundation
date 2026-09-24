@@ -179,10 +179,10 @@ Inspect App and extension health.
 
 Show Model authentication status.
 
-| Parameter  | Type / choices | Parser default | Meaning                      |
-| ---------- | -------------- | -------------- | ---------------------------- |
-| `PROVIDER` | codex, grok    | `not set`      | Optional positional argument |
-| `--format` | text, json     | `"text"`       |                              |
+| Parameter  | Type / choices       | Parser default | Meaning                      |
+| ---------- | -------------------- | -------------- | ---------------------------- |
+| `PROVIDER` | codex, grok, copilot | `not set`      | Optional positional argument |
+| `--format` | text, json           | `"text"`       |                              |
 
 ### `auth key list`
 
@@ -209,25 +209,45 @@ Delete a saved key after confirmation. Future Model resolution using it can fail
 | `REFERENCE` | text           | `required`     | Required positional argument          |
 | `--yes`     | boolean        | `false`        | Confirm the action without prompting. |
 
+### `auth sources`
+
+List supported saved account sources without exposing credentials. Source selection is currently supported for Copilot only.
+
+| Parameter  | Type / choices       | Parser default | Meaning                      |
+| ---------- | -------------------- | -------------- | ---------------------------- |
+| `PROVIDER` | codex, grok, copilot | `required`     | Required positional argument |
+| `--format` | text, json           | `"text"`       | Output format                |
+
+### `auth select`
+
+Explicitly replace this Host's account and credential-source binding. Use a login listed by `auth sources copilot`; source paths are resolved by the Host, not supplied on the command line.
+
+| Parameter   | Type / choices           | Parser default | Meaning                                                                 |
+| ----------- | ------------------------ | -------------- | ----------------------------------------------------------------------- |
+| `PROVIDER`  | codex, grok, copilot     | `required`     | Required positional argument; currently only Copilot supports selection |
+| `--source`  | native, copilot_cli_file | `required`     | Credential source kind                                                  |
+| `--account` | text                     | `required`     | Selected GitHub login                                                   |
+| `--format`  | text, json               | `"text"`       | Output format                                                           |
+
 ### `auth logout`
 
-Remove locally stored Model credentials.
+Remove the selected locally stored Model credentials. For a shared Copilot CLI file source, this also deletes the selected account's supported token fields from that file and affects Copilot CLI. Other accounts are preserved; the Host does not fall back to another source.
 
-| Parameter  | Type / choices | Parser default | Meaning                      |
-| ---------- | -------------- | -------------- | ---------------------------- |
-| `PROVIDER` | codex, grok    | `required`     | Required positional argument |
-| `--format` | text, json     | `"text"`       |                              |
+| Parameter  | Type / choices       | Parser default | Meaning                      |
+| ---------- | -------------------- | -------------- | ---------------------------- |
+| `PROVIDER` | codex, grok, copilot | `required`     | Required positional argument |
+| `--format` | text, json           | `"text"`       |                              |
 
 ### `login`
 
-Authenticate a compatible Model provider.
+Authenticate a compatible Model provider. Copilot supports device authorization only and defaults to the public Copilot App identity; subscribers do not need to register an OAuth App. See [models and authentication](models-and-authentication.md#github-copilot-subscription) for permissions and compatibility limits.
 
-| Parameter                  | Type / choices | Parser default | Meaning                                                     |
-| -------------------------- | -------------- | -------------- | ----------------------------------------------------------- |
-| `PROVIDER`                 | codex, grok    | `required`     | Required positional argument                                |
-| `--allow-account-switch`   | boolean        | `false`        |                                                             |
-| `--device-code, --browser` | boolean        | `true`         | Device authorization (default) or a local browser callback. |
-| `--format`                 | text, json     | `"text"`       |                                                             |
+| Parameter                  | Type / choices       | Parser default | Meaning                                                     |
+| -------------------------- | -------------------- | -------------- | ----------------------------------------------------------- |
+| `PROVIDER`                 | codex, grok, copilot | `required`     | Required positional argument                                |
+| `--allow-account-switch`   | boolean              | `false`        |                                                             |
+| `--device-code, --browser` | boolean              | `true`         | Device authorization (default) or a local browser callback. |
+| `--format`                 | text, json           | `"text"`       |                                                             |
 
 ## In-chat commands
 

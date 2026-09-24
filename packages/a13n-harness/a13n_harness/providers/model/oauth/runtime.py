@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any, Protocol, cast
 from urllib.parse import urljoin, urlsplit
 
 import httpx2
@@ -20,7 +20,7 @@ from .models import (
     GrokRefresh,
     ModelAuthenticationError,
 )
-from .rotation import require_same_account
+from .rotation import RotatingCredentials, require_same_account
 
 _GROK_BASE_URL = "https://api.x.ai/v1"
 _DEFAULT_REFRESH_WINDOW = timedelta(minutes=5)
@@ -92,12 +92,18 @@ class _GrokAuthentication:
             raise ModelAuthenticationError("grok", "The Model credential source returned an invalid value.")
 
 
-class _GrokAuth(httpx2.Auth):
+class _RequestAuthentication[CredentialT: RotatingCredentials](Protocol):
+    async def prepare(self) -> tuple[CredentialT, Callable[[], Awaitable[CredentialT]]]: ...
+
+
+class _OAuthAuth[CredentialT: RotatingCredentials](httpx2.Auth):
     """Own the authorization header and the HTTP client the refresh exchange reuses."""
 
     _AUTHORIZATION = "Authorization"
 
-    def __init__(self, manager: _GrokAuthentication, *, base_url: str, client: httpx2.AsyncClient) -> None:
+    def __init__(
+        self, manager: _RequestAuthentication[CredentialT], *, base_url: str, client: httpx2.AsyncClient
+    ) -> None:
         parsed = urlsplit(base_url)
         if parsed.scheme != "https" or parsed.hostname is None:
             raise ValueError("Model OAuth base_url must be an absolute HTTPS URL")
@@ -141,7 +147,7 @@ class _GrokAuth(httpx2.Auth):
     def _strip_protected_headers(self, request: httpx2.Request) -> None:
         request.headers.pop(self._AUTHORIZATION, None)
 
-    def _apply(self, request: httpx2.Request, credentials: GrokCredentials) -> None:
+    def _apply(self, request: httpx2.Request, credentials: CredentialT) -> None:
         request.headers[self._AUTHORIZATION] = f"Bearer {credentials.access_token}"
 
 
@@ -194,7 +200,7 @@ def build_grok_model(
         return await refresh_grok_credentials(credentials, http_client=auth.client)
 
     manager = _GrokAuthentication(credential_source, selected_refresh, refresh_window)
-    auth = _GrokAuth(manager, base_url=_GROK_BASE_URL, client=client)
+    auth = _OAuthAuth(manager, base_url=_GROK_BASE_URL, client=client)
     client.auth = auth
     client.event_hooks["response"].append(auth.protect_redirect)
 

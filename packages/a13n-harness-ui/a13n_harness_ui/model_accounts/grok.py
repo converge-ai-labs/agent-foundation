@@ -30,7 +30,7 @@ from ._common import (
     timestamp_text,
     write_json_if_unchanged,
 )
-from .grok_coordination import RefreshJournal, store_lock
+from .coordination import RefreshJournal, store_lock
 from .models import (
     AccountProjection,
     AccountStoreConflictError,

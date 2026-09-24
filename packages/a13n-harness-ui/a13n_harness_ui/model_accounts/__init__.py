@@ -1,6 +1,7 @@
-"""Codex and Grok Build compatible local account-store boundaries."""
+"""Provider-specific subscription account-store boundaries."""
 
 from .codex import CodexAccountStore, CodexLoginCallback, CodexLoginRequest, resolve_codex_policy
+from .copilot import CopilotAccountStore, CopilotLoginCallback, CopilotLoginRequest
 from .grok import (
     DEFAULT_GROK_OAUTH_CLIENT_ID,
     DEFAULT_GROK_OAUTH_ISSUER,
@@ -14,7 +15,9 @@ from .grok import (
     resolve_grok_scope,
 )
 from .models import (
+    AccountCandidate,
     AccountProjection,
+    AccountSelection,
     AccountStoreConflictError,
     AccountStoreError,
     Availability,
@@ -31,13 +34,18 @@ __all__ = [
     "DEFAULT_GROK_OAUTH_SCOPE",
     "DEFAULT_GROK_OAUTH_SCOPES",
     "DEFAULT_GROK_OIDC_SCOPES",
+    "AccountCandidate",
     "AccountProjection",
+    "AccountSelection",
     "AccountStoreConflictError",
     "AccountStoreError",
     "Availability",
     "CodexAccountStore",
     "CodexLoginCallback",
     "CodexLoginRequest",
+    "CopilotAccountStore",
+    "CopilotLoginCallback",
+    "CopilotLoginRequest",
     "ExpiryStatus",
     "GrokAccountStore",
     "GrokLoginCallback",

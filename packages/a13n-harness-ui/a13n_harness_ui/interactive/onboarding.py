@@ -270,20 +270,52 @@ def _describe_accounts(status: SetupStatus) -> dict[str, str]:
 
 
 async def _ensure_account(app: HarnessUiApp, provider: str, ask_user: Ask, emit: Callable[[str], None]) -> None:
+    from a13n_harness_ui.model_authoring import account_connection
+
+    connection = account_connection(provider)
+    login_choices = {
+        "device": Choice("device", "Sign in with a device code", "Complete authorization in any browser"),
+        "browser": Choice(
+            "browser", "Sign in through a local browser", "Browser must reach this Host's loopback callback"
+        ),
+    }
     while True:
         status = await app.setup_status(rediscover=True)
         account = next(item for item in status.providers if item.provider == provider)
+        candidates = await app.model_account_candidates(provider) if connection.source_selection else ()
         if account.available:
             emit(f"Using existing {provider.title()} login. No new sign-in is needed.")
-            return
+            if not connection.source_selection:
+                return
+            action = await _choose(
+                ask_user,
+                "Account source",
+                (
+                    Choice("keep", "Use the selected account"),
+                    Choice("choose", "Choose another saved account"),
+                    Choice("login", "Sign in to a Host-owned account"),
+                ),
+            )
+            if action == "keep":
+                return
+            if action == "choose":
+                if candidates:
+                    picked = await _choose(
+                        ask_user,
+                        "Select account and source",
+                        tuple(Choice(str(index), item.label) for index, item in enumerate(candidates)),
+                    )
+                    await app.select_model_account(provider, candidates[int(picked)].selection)
+                continue
         emit(account.diagnostic or f"{provider.title()} account requires: {account.action}.")
         action = await _choose(
             ask_user,
             f"Connect {provider.title()}",
             (
-                Choice("device", "Sign in with a device code", "Complete authorization in any browser"),
-                Choice(
-                    "browser", "Sign in through a local browser", "Browser must reach this Host's loopback callback"
+                *(login_choices[method] for method in connection.login_methods),
+                *(
+                    Choice(f"source-{index}", item.label, "Use this saved account and source")
+                    for index, item in enumerate(candidates)
                 ),
                 Choice("retry", "Check again", "After signing in externally or fixing the account store"),
                 Choice(
@@ -295,6 +327,9 @@ async def _ensure_account(app: HarnessUiApp, provider: str, ask_user: Ask, emit:
         )
         if action == "later":
             return
+        if action.startswith("source-"):
+            await app.select_model_account(provider, candidates[int(action.removeprefix("source-"))].selection)
+            continue
         if action in {"device", "browser"}:
             from a13n_harness_ui.model_accounts.login import LoginRequest
 
@@ -350,6 +385,7 @@ async def run_setup(
 
     from a13n_harness_ui.configuration.setup import SetupSelection
     from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput
+    from a13n_harness_ui.model_authoring import SUBSCRIPTION_CONNECTIONS, subscription_connection
 
     emit(
         "Add an agent · Choose an existing Model or create a new one. Existing agents and defaults stay unchanged."
@@ -422,6 +458,27 @@ async def run_setup(
                     if question.key == "provider" and wizard.values["provider"] != "api":
                         await _ensure_account(app, wizard.values["provider"], ask_user, emit)
                         checked_provider = wizard.values["provider"]
+                        wizard.account_models = ()
+                        connection = subscription_connection(checked_provider)
+                        if connection.account is not None and connection.account.model_discovery:
+                            account = await app.inspect_model_account(checked_provider)
+                            if account.usable:
+                                action = await _choose(
+                                    ask_user,
+                                    "Choose Copilot models",
+                                    (
+                                        Choice("manual", "Enter a model ID", "No network request"),
+                                        Choice(
+                                            "fetch",
+                                            "Fetch account models",
+                                            "Explicit authenticated catalog request; Chat Completions only",
+                                        ),
+                                    ),
+                                )
+                                if action == "fetch":
+                                    wizard.account_models = tuple(
+                                        item.value for item in await app.discover_account_models(checked_provider)
+                                    )
                     if (add_agent or add_model) and (
                         question.key == "model"
                         or (question.key == "model_source" and wizard.existing_model_id is not None)
@@ -435,9 +492,7 @@ async def run_setup(
                             route = (
                                 wizard.values["api_provider"]
                                 if provider == "api"
-                                else "grok-subscription"
-                                if provider == "grok"
-                                else provider
+                                else subscription_connection(provider).id
                             )
                             base = model_name(route, wizard.values["model"])
                         if add_agent:
@@ -450,7 +505,10 @@ async def run_setup(
                         wizard.suggested_name = name
                     continue
                 provider = wizard.values.get("provider", "existing")
-                if provider in {"codex", "grok"} and provider != checked_provider:
+                if (
+                    provider in {item.account.provider for item in SUBSCRIPTION_CONNECTIONS if item.account is not None}
+                    and provider != checked_provider
+                ):
                     await _ensure_account(app, provider, ask_user, emit)
                     checked_provider = provider
                 selection = SetupSelection.model_validate(wizard.selection(str(directory)))

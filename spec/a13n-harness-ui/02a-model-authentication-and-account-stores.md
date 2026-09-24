@@ -2,9 +2,11 @@
 
 ## Design Position
 
-Harness UI supports API-key Models and OAuth subscription-backed Models. The shared [Harness Model Authentication contract](../a13n-harness/16a-model-authentication.md) defines the boundary between the official Pydantic AI Codex provider, Harness supplemental Codex request/login behavior, and Harness-owned Grok authentication. Harness UI is the local Host: it selects authentication in Model resources and adapts Codex and Grok Build product stores to those SDK-first source protocols.
+Harness UI supports API-key Models and OAuth subscription-backed Models. The shared [Harness Model Authentication contract](../a13n-harness/16a-model-authentication.md) defines the boundary between the official Pydantic AI Codex provider, Harness supplemental Codex request/login behavior, Harness-owned Grok authentication, and request-fresh authentication around Pydantic AI's native Copilot provider. Harness UI is the local Host: it selects authentication in Model resources and adapts Codex and Grok Build product stores to those SDK-first source protocols.
 
 Codex and Grok subscription authentication reuse the upstream products' account stores instead of creating another Harness UI token copy. A user who already authenticated with Codex or Grok Build should normally run the corresponding Model without another browser login. A login started by Harness UI writes through the same compatible product store so the upstream CLI can reuse it.
+
+Copilot uses the same account and Model-authoring surfaces, with a separate storage policy: native login publishes Host-owned OAuth credentials, while supported official CLI file credentials are reused in place without copying them. Its durable source/account selection and compatibility limits are defined below.
 
 ## Model Authentication Selection
 
@@ -39,10 +41,15 @@ class GrokSubscriptionAuthentication(BaseModel):
     kind: Literal["grok_subscription"]
 
 
+class CopilotSubscriptionAuthentication(BaseModel):
+    kind: Literal["copilot_subscription"]
+
+
 ModelAuthentication = (
     ApiKeyAuthentication
     | CodexSubscriptionAuthentication
     | GrokSubscriptionAuthentication
+    | CopilotSubscriptionAuthentication
 )
 ```
 
@@ -75,6 +82,22 @@ The two products do not share one JSON schema. Codex stores one auth envelope co
 
 A physical `auth.json` file is not unconditionally authoritative. The adapter first resolves the upstream product's effective credential-store policy. Codex can select file, keyring, automatic, or ephemeral storage. Grok Build can override the file path and can receive process-supplied credentials that are not a writable shared login store. Harness UI follows the supported file policy or reports the selected mode as unsupported and requires the user or embedding Host to switch the upstream product policy explicitly; it never claims that an in-memory selection changed upstream configuration, merges stores, or creates a shadow credential source.
 
+## Copilot Accounts and Source Selection
+
+`copilot_subscription` requires a `github-copilot:` route and has no configurable subscription endpoint. The native Pydantic AI device flow uses the official Copilot CLI public App ID `Ov23ctDVkRmgkPke0Mmm`; users do not register an application or provide a client secret. The requested `read:user,read:org,repo,gist` scopes are the inspected historical CLI compatibility baseline, not a claim of minimal permissions or current subscription entitlement. Login presentation warns about broad repository permissions. Browser-callback login is unsupported. GitHub authorization identifies the account through `/user`; it does not make an inference request.
+
+The Host data root owns `oauth/copilot.json`, a version-1 document containing native `accounts`, the selected GitHub login, and its source binding. Native entries contain the upstream complete credential envelope and once-normalized absolute expiries. The binding names either `native` or `copilot_cli_file`; a CLI binding also retains the canonical config-file path. This plaintext store is separate from API-key `auth.json`, configuration, SQLite, immutable objects, and continuation state. Writes use private permissions, fsync, atomic replacement, and observed-digest checks while retaining other accounts and metadata. Native rotation uses the same durable exclusion and uncertainty rules as Grok. Both replacement tokens must be published before they can be used.
+
+When no selection exists, the Host can bind the official CLI's selected GitHub.com user without copying its credentials. Discovery uses `$COPILOT_HOME/config.json`, or `~/.copilot/config.json`, only when the sibling `settings.json` explicitly selects `storeTokenPlaintext: true`. The initial user is `lastLoggedInUser`, otherwise `loggedInUsers[0]`. A selected user with missing credentials does not trigger a search for another token. Once bound, later CLI active-user changes, missing credentials, expiration, configuration-path changes, and logout do not select a different account or source. Explicit native login or source selection changes the binding; an existing Model resource is not rewritten.
+
+The supported file profile accepts JSON comments and the reviewed snake_case aliases for these top-level fields. Token keys are the full `https://github.com:<login>` string. A nonempty `copilotTokens[key]` string takes priority over the supported `authTokens[key] = {"token": "..."}` envelope. Unsupported envelope fields fail rather than inventing refresh grants or expiration. File tokens have unknown expiry and cannot be refreshed by Harness UI. The current OS-keychain encoding and precedence are not supported; absent/false plaintext policy never authorizes a stale-file fallback. Native login remains available independently of unsupported external storage. This file-reader compatibility is bounded to the inspected official CLI 1.0.88 Linux fixtures; it is not a guarantee for other versions, platforms, or login writers.
+
+Authenticated `GET /api/auth/accounts/{provider}/sources` lists nonsecret candidates and `PUT /api/auth/accounts/{provider}/selection` explicitly selects `{source, account_id}`. The server resolves the path; clients cannot submit an arbitrary credential-file path. CLI `auth sources` and `auth select`, terminal setup, and browser account cards use the same operations. Diagnostics include account identity, source identity, and whether deletion affects the shared CLI source. Model authentication pins both account and source for the provider lifetime and fails if either changes.
+
+Logout deletes the selected native entry or both accepted token fields for the selected CLI user, preserving other accounts and unrelated fields/files. CLI-file writes normalize JSONC to JSON. The nonsecret binding remains and can report missing credentials; there is no disabled/disconnect marker and no fallback. Logging into that exact source/account externally can make it usable again. Web logout requires confirmation warning that shared-file deletion affects the official CLI and other Hosts; the explicit CLI logout command needs no second confirmation. Logout is local deletion, not GitHub revocation. A native login whose observed Host or selected external store changed during authorization fails without publishing its result. Non-cooperating official CLI writers retain the optimistic no-clobber limitation described above.
+
+Authenticated model discovery is a separate explicit `POST /api/auth/accounts/copilot/models` operation. It requests `/models` from the native provider, returns only unique IDs advertising `/chat/completions`, does not follow server pagination URLs, and rejects results after a source/account change. It is not the public model directory, an inference probe, a settings recommendation, or proof of entitlement. Custom model IDs remain editable when discovery is unavailable.
+
 ## Host-local API Keys
 
 API-key authentication selects exactly one `env` name or `credential_ref` resource ID. A reference resolves in the Host data root's independent `auth.json`, not the configuration tree. The file contains a versioned map of references to plaintext keys; it contains no subscription tokens. Harness UI supports explicit add/replace/delete and lists only reference IDs. Reads, diagnostics, exports, and frozen Run recipes never return key bytes or masked key fragments. Environment references remain supported without implicit fallback.
@@ -83,7 +106,7 @@ The Host rereads a referenced key when constructing a Model for a Run. Updating 
 
 ## Credential Source Behavior
 
-For every provider `load()`, the adapter rereads the selected product store and returns one complete credential set. It does not retain a long-lived token snapshot. A missing, malformed, incompatible, or differently scoped store fails explicitly.
+For every provider `load()`, the adapter rereads the selected credential store and returns one complete credential set. It does not retain a long-lived token snapshot. A missing, malformed, incompatible, or differently scoped store fails explicitly.
 
 For each Codex save or Grok credential publication, the adapter:
 
@@ -102,7 +125,7 @@ A blocked current grant projects `required_action=login` and cannot supply Model
 
 ## Reuse, Login, and Logout
 
-Harness UI resolves local account use in this order:
+Codex and Grok resolve local account use in this order; Copilot follows its explicit source-binding contract above:
 
 1. resolve the canonical product home and effective compatible store policy;
 2. let the Harness Model load and reuse or refresh the selected account for requests;
@@ -111,7 +134,7 @@ Harness UI resolves local account use in this order:
 
 An expiring token with a refresh grant does not start another interactive login. Authentication rejection never starts browser login. Login is itself explicit reauthentication; it can replace the same account without another flag. Replacing a different shared account requires the caller's `allow_account_switch` confirmation and otherwise fails after authorization without changing the store.
 
-Host surfaces use the same typed operations to inspect compatible accounts, invoke a registered provider login, confirm account replacement, and log out. Harness UI natively registers the Codex ID-token-preserving login adapter and Grok login primitives for its executable surfaces; an embedding Host can replace these collaborators but a surface must not expose a login action when its App has no registered flow.
+Host surfaces use the same typed operations to inspect compatible accounts, invoke a registered provider login, confirm account replacement, and log out. Harness UI natively registers the Codex ID-token-preserving login adapter Grok login primitives, and the native Copilot device flow for its executable surfaces; an embedding Host can replace these collaborators but a surface must not expose a login action when its App has no registered flow.
 
 ### Grok Scope and First Login
 
@@ -127,7 +150,7 @@ This default creates only the matching in-memory adapter. No file entry exists u
 
 ### Browser and Device Presentation
 
-Interactive and one-shot CLI authentication default to device authorization for both providers. The Host presents a verification URL and user code; the user may open the URL in any browser. No browser is opened automatically and no local callback is needed. Grok uses RFC 8628; Codex uses its vendor-specific device-code/authorization-code exchange and registered device callback. Unsupported device authorization fails explicitly without fallback.
+Interactive and one-shot CLI authentication default to device authorization for all three providers. The Host presents a verification URL and user code; the user may open the URL in any browser. No browser is opened automatically and no local callback is needed. Grok uses RFC 8628; Codex uses its vendor-specific device-code/authorization-code exchange and registered device callback. Unsupported device authorization fails explicitly without fallback.
 
 The auth CLI offers explicit browser and device actions. Codex browser authorization retains `http://localhost:1455/auth/callback`; Grok discovery uses its compatible loopback callback. Neither callback is rewritten to a different application origin. Browser login requires the user's browser to reach the Host's loopback listener; otherwise the user selects device authorization. Codex PKCE, state, and callback handling remain upstream-owned; its login exchange retains the real ID token required for native `auth.json`. Grok nonce and identity validation remain Harness-owned. Successful Codex login callbacks return `CodexLoginResult`, not a bare model credential. Fresh login and account switching publish its new ID token; same-account refresh preserves the stored ID token.
 
@@ -139,18 +162,20 @@ Interactive sessions are process-local and bounded to fifteen minutes, with star
 a13n-harness-ui auth key list [--format json]
 a13n-harness-ui auth key set <reference>
 a13n-harness-ui auth key delete <reference> [--yes]
-a13n-harness-ui auth status [codex|grok]
-a13n-harness-ui login <codex|grok> [--allow-account-switch] [--device-code|--browser]
-a13n-harness-ui auth logout <codex|grok>
+a13n-harness-ui auth status [codex|grok|copilot]
+a13n-harness-ui login <codex|grok|copilot> [--allow-account-switch] [--device-code|--browser]
+a13n-harness-ui auth logout <codex|grok|copilot>
+a13n-harness-ui auth sources copilot
+a13n-harness-ui auth select copilot --source <native|copilot_cli_file> --account <login>
 ```
 
-`status` without a provider returns both provider projections in stable `codex`, then `grok` order; selecting a provider returns one. `login` and `logout` require a provider. Login defaults to device authorization; `--browser` explicitly selects a Host-local callback. Logout removes only the selected compatible provider record or Grok scope and preserves unrelated document fields and scopes.
+`status` without a provider returns provider projections in stable `codex`, `grok`, `copilot` order; selecting a provider returns one. `login` and `logout` require a provider. Login defaults to device authorization; `--browser` explicitly selects a Host-local callback for Codex or Grok and is rejected for Copilot. Logout removes only the selected compatible provider record or Grok scope and preserves unrelated document fields and scopes.
 
 Every command supports detached text and JSON result rendering. Authorization progress and URLs use stderr in both formats; the final credential-free projection uses stdout. Login cancellation or failure exits nonzero and leaves the previous shared account unchanged.
 
 ## Setup Discovery
 
-[First-use setup](06-setup-and-environment-readiness.md) inspects credential-free status and offers each supported connection as an independent Model recipe. One operation creates one connection; additional Models and Agents do not combine credentials or introduce a runtime fallback. Discovery never starts login or refresh. The terminal wizard labels reusable accounts and skips its login question for the selected available or refreshable account. Missing credentials offer explicit device/browser login through the same App sessions used by WebUI, rediscovery, or configuration without authentication. Login cancellation observes the actual terminal result; completed account publication is not rolled back by setup cancellation. Invalid or unsupported stores require repair rather than replacement. A missing or invalid provider does not prevent selecting the other provider or an existing configured Model.
+[First-use setup](06-setup-and-environment-readiness.md) inspects credential-free status and offers each supported connection as an independent Model recipe. One operation creates one connection; additional Models and Agents do not combine credentials or introduce a runtime fallback. Discovery never starts login or refresh. The terminal wizard labels reusable accounts without requiring a new login. Copilot also offers explicit source/account reselection. Missing credentials offer explicit device/browser login through the same App sessions used by WebUI, rediscovery, or configuration without authentication. Login cancellation observes the actual terminal result; completed account publication is not rolled back by setup cancellation. Invalid or unsupported stores require repair rather than replacement. A missing or invalid provider does not prevent selecting the other provider or an existing configured Model.
 
 ## Codex Subscription Usage and Reset Credits
 
@@ -164,9 +189,9 @@ Each account operation constructs a fresh official Codex provider over its dedic
 
 ## Run Capture and Information Boundary
 
-An immutable Run composition records the Model route and authentication kind, never credential bytes. Every independent Run receives a fresh official Codex provider wrapped by `CodexRequestModel`, or a fresh Harness Grok Model. The local store can rotate without changing the logical composition.
+An immutable Run composition records the Model route and authentication kind, never credential bytes. Every independent Run receives a fresh official Codex provider wrapped by `CodexRequestModel`, a fresh Harness Grok Model, or a native Copilot Model with request-fresh account/source binding. The local store can rotate without changing the logical composition.
 
-Authentication diagnostics expose only bounded provider, account-status, expiry-status, and required-action facts. Tokens, authorization codes, PKCE verifier values, raw identity claims, and complete account-store content never enter model context, SQLite, immutable objects, logs, telemetry, or UI error payloads.
+Authentication diagnostics expose only bounded provider, account/source identity, account-status, expiry-status, and required-action facts. Tokens, authorization codes, PKCE verifier values, raw identity claims, and complete account-store content never enter model context, SQLite, immutable objects, logs, telemetry, or UI error payloads.
 
 ## Failure Semantics
 
@@ -194,12 +219,13 @@ Provider file schemas, path policy, and login presentation may evolve with upstr
 
 01. Codex uses the official Pydantic AI provider with Harness supplements; Grok uses Harness authentication. Both prefer an existing compatible product login.
 02. Harness UI account stores implement Harness credential sources; Harness UI owns no duplicate request-auth or refresh lifecycle.
-03. Harness UI-originated login writes the corresponding compatible product store.
+03. Codex/Grok login writes the compatible product store; Copilot native login writes the separate Host OAuth store.
 04. Effective provider policy selects one source; stores are never merged.
 05. Refresh saves use an optimistic digest check plus product-compatible atomic replacement and preserve unrelated fields.
 06. Authentication kind is explicit and never falls back across providers.
 07. Run compositions capture authentication provenance, never credential bytes.
 08. Unknown or incompatible account stores fail without overwrite.
-09. Both providers support native device authorization; browser login is an explicit alternative and preserves the provider-compatible redirect.
+09. All three subscription providers support device authorization. Codex/Grok also support explicit browser login with their provider-compatible redirect; Copilot does not.
 10. A first Grok login uses the reviewed production profile, while an existing unambiguous compatible scope retains its own issuer and client identity.
-11. Auth results and diagnostics never expose token material, authorization codes, secret device codes, PKCE values, or raw identity claims; the human-facing user code is shown only during authorization.
+11. Copilot binds both account and source, never copies CLI tokens, and never falls back after missing credentials or logout.
+12. Auth results and diagnostics never expose token material, authorization codes, secret device codes, PKCE values, or raw identity claims; the human-facing user code is shown only during authorization.

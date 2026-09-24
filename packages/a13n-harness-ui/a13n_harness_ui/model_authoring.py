@@ -11,7 +11,7 @@ from typing import Literal
 
 from a13n_harness.model_affinity import SESSION_AFFINITY_PRESETS, SessionAffinityPreset
 from a13n_harness.spec import HarnessModelCharacteristics
-from pydantic import Field, JsonValue, model_validator
+from pydantic import Field, JsonValue, TypeAdapter, model_validator
 
 from a13n_harness_ui.configuration.models import ModelAuthentication, ModelCharacteristics, StrictModel
 from a13n_harness_ui.errors import HarnessUiError
@@ -27,7 +27,7 @@ from a13n_harness_ui.model_presets import (
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl, describe_reasoning_mode
 from a13n_harness_ui.resource_names import model_name
 
-type AuthenticationKind = Literal["api_key", "codex_subscription", "grok_subscription"]
+type AuthenticationKind = Literal["api_key", "codex_subscription", "grok_subscription", "copilot_subscription"]
 
 
 class ModelChoice(StrictModel):
@@ -48,11 +48,22 @@ CODEX_CONTEXT_CHOICES = (
 )
 
 
+class AccountConnection(StrictModel):
+    """Built-in account actions shared by terminal and browser authoring."""
+
+    provider: Literal["codex", "grok", "copilot"]
+    label: str
+    login_methods: tuple[Literal["device", "browser"], ...]
+    model_discovery: bool = False
+    source_selection: bool = False
+
+
 class ModelConnection(StrictModel):
     id: str
     label: str
     provider: str
     authentication: AuthenticationKind
+    account: AccountConnection | None = None
     base_url: str = ""
     credential_env: str | None = None
     supports_base_url: bool = False
@@ -67,6 +78,7 @@ SUBSCRIPTION_CONNECTIONS = (
         label="Codex subscription",
         provider="openai-codex",
         authentication="codex_subscription",
+        account=AccountConnection(provider="codex", label="Codex", login_methods=("device", "browser")),
         models=tuple(
             ModelChoice(value=value, label=model_name("codex", value))
             for value in ("gpt-6-sol", "gpt-6-astra", "gpt-5.6-terra")
@@ -78,13 +90,42 @@ SUBSCRIPTION_CONNECTIONS = (
         label="Grok subscription",
         provider="grok",
         authentication="grok_subscription",
+        account=AccountConnection(provider="grok", label="Grok", login_methods=("device", "browser")),
         models=tuple(
             ModelChoice(value=value, label=model_name("grok-subscription", value))
             for value in ("grok-4.7", "grok-4.5", "grok-4.20-0309-reasoning")
         ),
         default_model="grok-4.7",
     ),
+    ModelConnection(
+        id="copilot-subscription",
+        label="GitHub Copilot subscription",
+        provider="github-copilot",
+        authentication="copilot_subscription",
+        account=AccountConnection(
+            provider="copilot",
+            label="GitHub Copilot",
+            login_methods=("device",),
+            model_discovery=True,
+            source_selection=True,
+        ),
+        models=(),
+        default_model="",
+    ),
 )
+
+
+def subscription_connection(provider: str) -> ModelConnection:
+    for connection in SUBSCRIPTION_CONNECTIONS:
+        if connection.account is not None and connection.account.provider == provider:
+            return connection
+    raise HarnessUiError("Choose a supported account provider.", code="account_provider_unknown")
+
+
+def account_connection(provider: str) -> AccountConnection:
+    account = subscription_connection(provider).account
+    assert account is not None
+    return account
 
 
 def model_connections() -> tuple[ModelConnection, ...]:
@@ -132,7 +173,10 @@ class ModelRecipe(StrictModel):
 
     @model_validator(mode="after")
     def _subscription_connection(self) -> ModelRecipe:
-        route = {"codex_subscription": "openai-codex", "grok_subscription": "grok"}.get(self.authentication.kind)
+        route = next(
+            (item.provider for item in SUBSCRIPTION_CONNECTIONS if item.authentication == self.authentication.kind),
+            None,
+        )
         if route is not None and (self.route.partition(":")[0] != route or self.model_configuration):
             raise ValueError("Subscriptions require their native route and no endpoint configuration")
         return self
@@ -237,8 +281,8 @@ def authoring_presets(connection: ModelConnection, model_id: str) -> tuple[Setti
             )
             for effort in ("high", "medium", "low", "xhigh")
         )
-    if connection.authentication == "grok_subscription":
-        return (SettingsPreset("default", "Subscription defaults", "Keep Grok's native subscription behavior", {}),)
+    if connection.authentication in {"grok_subscription", "copilot_subscription"}:
+        return (SettingsPreset("default", "Subscription defaults", "Keep native subscription behavior", {}),)
     if (
         model_id not in API_MODEL_SUGGESTIONS.get(connection.provider, ())
         and known_model_capabilities(f"{connection.provider}:{model_id}") is None
@@ -263,7 +307,7 @@ def model_options(request: ModelOptionsRequest) -> ModelOptions:
     known_capabilities = known_model_capabilities(route)
     context = (
         HarnessModelCharacteristics().context_window_tokens
-        if connection.authentication == "grok_subscription"
+        if connection.authentication in {"grok_subscription", "copilot_subscription"}
         else min(350000, known_context)
         if known_context
         else 350000
@@ -311,13 +355,7 @@ def prepare_model(request: ModelRecipeRequest) -> ModelRecipe:
     )
     authentication = request.authentication
     if authentication is None and connection.authentication != "api_key":
-        from a13n_harness_ui.configuration.models import CodexSubscriptionAuthentication, GrokSubscriptionAuthentication
-
-        authentication = (
-            CodexSubscriptionAuthentication(kind="codex_subscription")
-            if connection.id == "codex"
-            else GrokSubscriptionAuthentication(kind="grok_subscription")
-        )
+        authentication = TypeAdapter(ModelAuthentication).validate_python({"kind": connection.authentication})
     if authentication is None or authentication.kind != connection.authentication:
         raise HarnessUiError("Choose authentication matching this connection.", code="model_authentication_invalid")
     settings = request.settings
@@ -350,8 +388,8 @@ def prepare_model(request: ModelRecipeRequest) -> ModelRecipe:
 
 def recipe_name(recipe: ModelRecipe) -> str:
     provider, _, model_id = recipe.route.partition(":")
-    naming_provider = {"codex_subscription": "codex", "grok_subscription": "grok-subscription"}.get(
-        recipe.authentication.kind, provider
+    naming_provider = next(
+        (item.id for item in SUBSCRIPTION_CONNECTIONS if item.authentication == recipe.authentication.kind), provider
     )
     return model_name(naming_provider, model_id)
 

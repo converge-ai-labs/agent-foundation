@@ -18,14 +18,17 @@ function safeLoginUrl(value: string | null | undefined): string | undefined {
   }
 }
 export function ProviderAccount({
-  provider,
+  connection,
   inline = false,
   onReady,
+  onIdentity,
 }: {
-  provider: "codex" | "grok";
+  connection: Schema<"AccountConnection">;
   inline?: boolean;
   onReady?: (ready: boolean) => void;
+  onIdentity?: (identity: string) => void;
 }) {
+  const { provider, label, login_methods: loginMethods } = connection;
   const { client } = useTransport();
   const queries = useQueryClient();
   const [session, setSession] = useState<string | null>(
@@ -48,7 +51,9 @@ export function ProviderAccount({
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [copyFailed, setCopyFailed] = useState(false);
 
-  const [method, setMethod] = useState<"device" | "browser">("device");
+  const [method, setMethod] = useState<"device" | "browser">(
+    loginMethods[0] ?? "device",
+  );
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
   const account = useQuery({
@@ -60,6 +65,33 @@ export function ProviderAccount({
           signal,
         }),
       ),
+  });
+  const sources = useQuery({
+    queryKey: ["account-sources", provider],
+    enabled: !!connection.source_selection,
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/auth/accounts/{provider}/sources", {
+          params: { path: { provider } },
+          signal,
+        }),
+      ),
+  });
+  const select = useMutation({
+    mutationFn: (selection: Schema<"AccountSelection">) =>
+      result(
+        client.PUT("/api/auth/accounts/{provider}/selection", {
+          params: { path: { provider } },
+          body: selection,
+        }),
+      ),
+    onSuccess: (status) => {
+      queries.setQueryData(["account", provider], status);
+      void queries.invalidateQueries({
+        queryKey: ["account-sources", provider],
+      });
+      void queries.invalidateQueries({ queryKey: ["setup"] });
+    },
   });
   const login = useQuery({
     queryKey: ["login", provider],
@@ -124,6 +156,9 @@ export function ProviderAccount({
     if (login.data?.state === "succeeded") {
       void queries.invalidateQueries({ queryKey: ["account", provider] });
       void queries.invalidateQueries({ queryKey: ["setup"] });
+      void queries.invalidateQueries({
+        queryKey: ["account-sources", provider],
+      });
     }
   }, [login.data?.state, queries, provider]);
   const ready =
@@ -131,8 +166,12 @@ export function ProviderAccount({
     (account.data?.availability === "available" &&
       account.data.required_action === "refresh");
   useEffect(() => {
-    onReady?.(ready);
-  }, [onReady, ready]);
+    onReady?.(ready && !select.isPending && !logout.isPending);
+  }, [onReady, ready, select.isPending, logout.isPending]);
+  const identity = `${account.data?.source_id ?? ""}:${account.data?.account_id ?? ""}`;
+  useEffect(() => {
+    onIdentity?.(identity);
+  }, [onIdentity, identity]);
   const active =
     !!session &&
     !login.error &&
@@ -163,7 +202,9 @@ export function ProviderAccount({
           start.error ||
           login.error ||
           cancel.error ||
-          logout.error
+          logout.error ||
+          sources.error ||
+          select.error
         }
       />
       {!active && (
@@ -180,33 +221,83 @@ export function ProviderAccount({
               account.data &&
               ` · ${account.data.source} · ${account.data.expiry}`}
           </p>
+          {account.data?.account_id && (
+            <p>
+              {account.data.account_id} ·{" "}
+              {account.data.shared_with_cli
+                ? "Shared Copilot CLI file"
+                : "Host account"}
+            </p>
+          )}
+          {account.data?.message && <p role="status">{account.data.message}</p>}
+          {connection.source_selection && (
+            <details className={accountStyles.advanced}>
+              <summary>Choose account source</summary>
+              <p>
+                A selection replaces this server's binding. Missing credentials
+                never fall back to another account.
+              </p>
+              <div className={styles.actions}>
+                {sources.data?.map((candidate) => (
+                  <Button
+                    key={`${candidate.selection.source}:${candidate.selection.account_id}`}
+                    variant="outline"
+                    disabled={
+                      candidate.selected ||
+                      select.isPending ||
+                      !!activeLogin.data?.session_id
+                    }
+                    onClick={() => select.mutate(candidate.selection)}
+                  >
+                    {candidate.label}
+                    {candidate.selected ? " · selected" : ""}
+                  </Button>
+                ))}
+                <Button
+                  variant="outline"
+                  onClick={() => void sources.refetch()}
+                >
+                  Find saved accounts
+                </Button>
+              </div>
+              {!sources.isPending && !sources.data?.length && (
+                <p>
+                  No supported saved accounts found. Connect an account to use
+                  native device login.
+                </p>
+              )}
+            </details>
+          )}
           {!inline && account.data?.required_action !== "none" && (
             <p>{account.data?.required_action?.replaceAll("_", " ")}</p>
           )}
           <div className={styles.stack}>
-            <details className={accountStyles.advanced}>
-              <summary>Advanced login options</summary>
-              <ChoiceField
-                label="Login method"
-                value={method}
-                options={[
-                  {
-                    value: "device",
-                    label: "Device code (recommended for remote servers)",
-                  },
-                  { value: "browser", label: "Browser callback on the server" },
-                ]}
-                onValueChange={(value) =>
-                  setMethod(value as "device" | "browser")
-                }
-              />
-              {method === "browser" && (
-                <p>
-                  The callback must reach the server's loopback listener. For a
-                  remote host or container, use device login where supported.
-                </p>
-              )}
-            </details>
+            {loginMethods.length > 1 && (
+              <details className={accountStyles.advanced}>
+                <summary>Advanced login options</summary>
+                <ChoiceField
+                  label="Login method"
+                  value={method}
+                  options={loginMethods.map((method) => ({
+                    value: method,
+                    label:
+                      method === "device"
+                        ? "Device code (recommended for remote servers)"
+                        : "Browser callback on the server",
+                  }))}
+                  onValueChange={(value) =>
+                    setMethod(value as "device" | "browser")
+                  }
+                />
+                {method === "browser" && (
+                  <p>
+                    The callback must reach the server's loopback listener. For
+                    a remote host or container, use device login where
+                    supported.
+                  </p>
+                )}
+              </details>
+            )}
             {activeLogin.data?.provider &&
               activeLogin.data.provider !== provider && (
                 <p role="status">
@@ -217,7 +308,9 @@ export function ProviderAccount({
             <div className={styles.actions}>
               <Button
                 loading={start.isPending}
-                disabled={!!activeLogin.data?.session_id}
+                disabled={
+                  !!activeLogin.data?.session_id || !loginMethods.length
+                }
                 onClick={() => start.mutate(false)}
               >
                 {account.data?.usable ? "Reconnect account" : "Connect account"}
@@ -225,9 +318,9 @@ export function ProviderAccount({
               <Button variant="outline" onClick={() => void account.refetch()}>
                 Refresh status
               </Button>
-              {account.data?.usable && (
+              {account.data?.availability === "available" && (
                 <Button variant="outline" onClick={() => setLogoutOpen(true)}>
-                  Disconnect account
+                  Log out account
                 </Button>
               )}
             </div>
@@ -325,7 +418,11 @@ export function ProviderAccount({
         open={logoutOpen}
         onOpenChange={setLogoutOpen}
         title={`Log out of ${provider}?`}
-        description="Remove the local account credentials. This does not disconnect your browser from this Harness UI instance."
+        description={
+          account.data?.source_id?.startsWith("native:")
+            ? "Remove the selected Host-owned credentials for everyone using this server. Other saved accounts remain intact. This does not revoke GitHub authorization or delete Models and Agents."
+            : "Remove the selected local account credentials. This also affects the official CLI and other Hosts sharing this account store. Other accounts remain intact. This does not revoke authorization, delete Models or Agents, or disconnect this browser."
+        }
         closeLabel="Cancel"
         footer={
           <Button
@@ -344,9 +441,7 @@ export function ProviderAccount({
   return inline ? (
     <div className={styles.stack}>{content}</div>
   ) : (
-    <Panel title={provider === "codex" ? "Codex account" : "Grok account"}>
-      {content}
-    </Panel>
+    <Panel title={`${label} account`}>{content}</Panel>
   );
 }
 
@@ -458,12 +553,26 @@ export function CredentialKeys() {
   );
 }
 export function AccountsPage() {
+  const { client } = useTransport();
+  const choices = useQuery({
+    queryKey: ["model-choices"],
+    queryFn: ({ signal }) =>
+      result(client.GET("/api/models/choices", { signal })),
+  });
   return (
     <>
       <PageHeader title="Accounts & API keys" />
       <div className={styles.twoColumns}>
-        <ProviderAccount provider="codex" />
-        <ProviderAccount provider="grok" />
+        <ErrorNotice error={choices.error} />
+        {choices.data?.connections?.map(
+          (connection) =>
+            connection.account && (
+              <ProviderAccount
+                key={connection.id}
+                connection={connection.account}
+              />
+            ),
+        )}
       </div>
       <CredentialKeys />
     </>

@@ -81,6 +81,11 @@ async function fetcher(request: Request): Promise<Response> {
           label: "Codex subscription",
           provider: "openai-codex",
           authentication: "codex_subscription",
+          account: {
+            provider: "codex",
+            label: "Codex",
+            login_methods: ["device", "browser"],
+          },
           models: [{ value: "gpt-5.6-sol", label: "Release Codex model" }],
           default_model: "gpt-5.6-sol",
         },

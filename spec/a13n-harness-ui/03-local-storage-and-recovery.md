@@ -34,6 +34,8 @@ The store supports local restart and inspection, not durable work scheduling. Ha
 | Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                         |
 | Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                         |
 
+Host-local API keys and native Copilot OAuth grants have independent private files outside SQLite and immutable objects. Copilot's file also owns its nonsecret account/source binding; shared CLI tokens remain in the selected external source. [Model Authentication](02a-model-authentication-and-account-stores.md) owns their schemas, publication, logout, and durable grant-coordination semantics. Live credential objects remain process-local; neither native nor shared secrets enter continuation storage.
+
 ## Device and Environment Selection Storage
 
 Device definitions remain desired files in the accepted generation. Thread configuration stores binding selections and the normalized default; immutable Run compositions retain the exact captured Devices and working directories used for that admission. [Devices and Environment Bindings](04a-devices-and-environment-bindings.md) owns their semantics and binding-state identity.

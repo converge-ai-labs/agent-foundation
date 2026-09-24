@@ -667,6 +667,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/accounts/{provider}/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Account Sources */
+        get: operations["account_sources_api_auth_accounts__provider__sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/accounts/{provider}/selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Select Account */
+        put: operations["select_account_api_auth_accounts__provider__selection_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/accounts/{provider}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover Account Models */
+        post: operations["discover_account_models_api_auth_accounts__provider__models_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/catalog": {
         parameters: {
             query?: never;
@@ -1587,6 +1638,39 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountCandidate */
+        AccountCandidate: {
+            selection: components["schemas"]["AccountSelection"];
+            /** Label */
+            label: string;
+            /** Selected */
+            selected: boolean;
+        };
+        /**
+         * AccountConnection
+         * @description Built-in account actions shared by terminal and browser authoring.
+         */
+        AccountConnection: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "codex" | "grok" | "copilot";
+            /** Label */
+            label: string;
+            /** Login Methods */
+            login_methods: ("device" | "browser")[];
+            /**
+             * Model Discovery
+             * @default false
+             */
+            model_discovery?: boolean;
+            /**
+             * Source Selection
+             * @default false
+             */
+            source_selection?: boolean;
+        };
         /**
          * AccountProjection
          * @description Bounded diagnostics safe for logs, APIs, and UI projection.
@@ -1602,6 +1686,27 @@ export interface components {
             expires_at?: string | null;
             /** @default none */
             required_action?: components["schemas"]["RequiredAction"];
+            /** Account Id */
+            account_id?: string | null;
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Shared With Cli
+             * @default false
+             */
+            shared_with_cli?: boolean;
+            /** Message */
+            message?: string | null;
+        };
+        /** AccountSelection */
+        AccountSelection: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "native" | "copilot_cli_file";
+            /** Account Id */
+            account_id: string;
         };
         /** ActivitySummary */
         ActivitySummary: {
@@ -1795,7 +1900,7 @@ export interface components {
             override_allowed?: boolean;
         };
         /** @enum {string} */
-        AuthenticationKind: "api_key" | "codex_subscription" | "grok_subscription";
+        AuthenticationKind: "api_key" | "codex_subscription" | "grok_subscription" | "copilot_subscription";
         /**
          * Availability
          * @enum {string}
@@ -2420,6 +2525,14 @@ export interface components {
         CoordinatorUpdate: {
             /** Auto Followup */
             auto_followup: boolean;
+        };
+        /** CopilotSubscriptionAuthentication */
+        CopilotSubscriptionAuthentication: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "copilot_subscription";
         };
         /** DecisionBatchView */
         DecisionBatchView: {
@@ -3114,7 +3227,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "codex" | "grok";
+            provider: "codex" | "grok" | "copilot";
             /**
              * Method
              * @enum {string}
@@ -3151,7 +3264,7 @@ export interface components {
             /** Id */
             id: string;
         };
-        ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"];
+        ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
         /** ModelCatalogSnapshot */
         ModelCatalogSnapshot: {
             /** Items */
@@ -3213,6 +3326,7 @@ export interface components {
             /** Provider */
             provider: string;
             authentication: components["schemas"]["AuthenticationKind"];
+            account?: components["schemas"]["AccountConnection"] | null;
             /**
              * Base Url
              * @default
@@ -3641,7 +3755,7 @@ export interface components {
          * Provider
          * @enum {string}
          */
-        Provider: "codex" | "grok";
+        Provider: "codex" | "grok" | "copilot";
         /** PublicDestinations */
         PublicDestinations: {
             /**
@@ -3981,7 +4095,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "codex" | "grok";
+            provider: "codex" | "grok" | "copilot";
             /** Available */
             available: boolean;
             /** Selected */
@@ -5670,7 +5784,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "codex" | "grok";
+            provider: "codex" | "grok" | "copilot";
             /**
              * Method
              * @default device
@@ -7163,6 +7277,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": boolean;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    account_sources_api_auth_accounts__provider__sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: components["schemas"]["Provider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountCandidate"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    select_account_api_auth_accounts__provider__selection_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: components["schemas"]["Provider"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountSelection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountProjection"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discover_account_models_api_auth_accounts__provider__models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: components["schemas"]["Provider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelChoice"][];
                 };
             };
             /** @description Validation Error */

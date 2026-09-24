@@ -17,11 +17,18 @@ export type ModelEditorDraft = {
   authentication?: Recipe["authentication"];
 };
 
-export function connectionId(recipe: Recipe | null) {
-  if (recipe?.authentication.kind === "codex_subscription") return "codex";
-  if (recipe?.authentication.kind === "grok_subscription")
-    return "grok-subscription";
-  return recipe?.route.split(":")[0] ?? "codex";
+export function connectionId(
+  recipe: Recipe | null,
+  connections: readonly Connection[],
+) {
+  if (!recipe) return connections[0]?.id ?? "";
+  return (
+    connections.find(
+      (item) =>
+        item.authentication === recipe.authentication.kind &&
+        item.provider === recipe.route.split(":")[0],
+    )?.id ?? recipe.route.split(":")[0]
+  );
 }
 
 /** Secrets never leave this memory-only component except for an explicit key save. */
@@ -166,27 +173,44 @@ function CredentialField({
 }
 
 /** Shared authoring surface. Discovery never changes a saved recipe; defaults require an explicit action. */
-export function ModelEditor({
-  value,
-  onChange,
-  onReady,
-  draft,
-  onDraftChange,
-}: {
+type ModelEditorProps = {
   value: Recipe | null;
   onChange: (recipe: Recipe, suggestedName?: string) => void;
   onReady?: (ready: boolean) => void;
+  onRecipeReady?: (ready: boolean) => void;
   draft?: ModelEditorDraft;
   onDraftChange?: (draft: ModelEditorDraft) => void;
-}) {
+};
+
+export function ModelEditor(props: ModelEditorProps) {
   const { client } = useTransport();
   const choices = useQuery({
     queryKey: ["model-choices"],
     queryFn: ({ signal }) =>
       result(client.GET("/api/models/choices", { signal })),
   });
+  if (!choices.data)
+    return (
+      <>
+        <ErrorNotice error={choices.error} />
+        <p role="status">Loading model connections…</p>
+      </>
+    );
+  return <LoadedModelEditor {...props} choices={choices.data} />;
+}
+
+function LoadedModelEditor({
+  choices,
+  value,
+  onChange,
+  onReady,
+  onRecipeReady,
+  draft,
+  onDraftChange,
+}: ModelEditorProps & { choices: Schema<"ModelChoices"> }) {
+  const { client } = useTransport();
   const [connection, setConnection] = useState(
-    () => draft?.connection ?? connectionId(value),
+    () => draft?.connection ?? connectionId(value, choices.connections ?? []),
   );
   const [modelId, setModelId] = useState(
     () =>
@@ -199,6 +223,7 @@ export function ModelEditor({
     draft?.authentication ?? value?.authentication,
   );
   const [accountReady, setAccountReady] = useState(false);
+  const [accountIdentity, setAccountIdentity] = useState("");
   const savedAuthentication = JSON.stringify(value?.authentication);
   const previousAuth = useRef(savedAuthentication);
   useEffect(() => {
@@ -215,9 +240,7 @@ export function ModelEditor({
   useEffect(() => {
     onDraftChange?.({ connection, modelId, baseUrl, authentication });
   }, [connection, modelId, baseUrl, authentication, onDraftChange]);
-  const selected = choices.data?.connections?.find(
-    (item) => item.id === connection,
-  );
+  const selected = choices.connections?.find((item) => item.id === connection);
   const effectiveId =
     modelId || (!value ? (selected?.default_model ?? "") : "");
   const effectiveUrl = baseUrl || (!value ? (selected?.base_url ?? "") : "");
@@ -252,16 +275,22 @@ export function ModelEditor({
   });
   const matches =
     !!value &&
-    connectionId(value) === connection &&
+    connectionId(value, choices.connections ?? []) === connection &&
     value.route === `${selected?.provider}:${effectiveId}` &&
     String(value.model_configuration?.base_url ?? "") === effectiveUrl;
   const authReady = api
     ? authentication?.kind === "api_key" &&
       !!(authentication.env || authentication.credential_ref)
     : accountReady;
+  // Publishing a recipe is independent of account login. Never publish the
+  // previous recipe while the editor displays unapplied connection choices.
+  const recipeReady = matches && (api ? !!authReady : true);
   useEffect(() => {
-    onReady?.(!!matches && !!authReady);
-  }, [matches, authReady, onReady]);
+    onRecipeReady?.(recipeReady);
+  }, [recipeReady, onRecipeReady]);
+  useEffect(() => {
+    onReady?.(recipeReady && !!authReady);
+  }, [recipeReady, authReady, onReady]);
   // An in-flight prepare may not replace later input or advanced source edits.
   const revision = JSON.stringify([
     connection,
@@ -302,6 +331,29 @@ export function ModelEditor({
       onChange(prepared.recipe, options.data?.name);
     },
   });
+  const discoveryEpoch = useRef(0);
+  useEffect(() => {
+    discoveryEpoch.current += 1;
+  }, [connection, accountReady, accountIdentity]);
+  const discovery = useMutation({
+    mutationFn: async () => {
+      const epoch = discoveryEpoch.current;
+      const provider = selected!.account!.provider;
+      const models = await result(
+        client.POST("/api/auth/accounts/{provider}/models", {
+          params: { path: { provider } },
+        }),
+      );
+      return { epoch, models, identity: accountIdentity, connection };
+    },
+  });
+  const currentDiscovery =
+    accountReady &&
+    discovery.data?.epoch === discoveryEpoch.current &&
+    discovery.data.identity === accountIdentity &&
+    discovery.data.connection === connection
+      ? discovery.data.models
+      : undefined;
   const update = (change: Partial<Recipe>) => {
     if (value) onChange({ ...value, ...change });
   };
@@ -337,6 +389,13 @@ export function ModelEditor({
           .filter(Boolean)
           .join(" · "),
       });
+  if (currentDiscovery)
+    for (const item of currentDiscovery)
+      candidates.set(item.value, {
+        value: item.value,
+        label: item.label,
+        description: "Account catalog · Chat Completions",
+      });
   if (effectiveId && !candidates.has(effectiveId))
     candidates.set(effectiveId, {
       value: effectiveId,
@@ -345,20 +404,18 @@ export function ModelEditor({
     });
   return (
     <div className={styles.stack}>
-      <ErrorNotice error={choices.error || options.error || prepare.error} />
+      <ErrorNotice error={options.error || prepare.error} />
       <ChoiceField
         label="Model connection"
         value={connection}
         options={
-          choices.data?.connections?.map((item) => ({
+          choices.connections?.map((item) => ({
             value: item.id,
             label: item.label,
           })) ?? []
         }
         onValueChange={(id) => {
-          const next = choices.data!.connections!.find(
-            (item) => item.id === id,
-          )!;
+          const next = choices.connections!.find((item) => item.id === id)!;
           setConnection(id);
           setModelId(next.default_model);
           setBaseUrl(next.base_url ?? "");
@@ -374,14 +431,38 @@ export function ModelEditor({
             value={authentication}
             onChange={setAuth}
           />
-        ) : (
+        ) : selected.account ? (
           <ProviderAccount
             key={connection}
-            provider={connection === "codex" ? "codex" : "grok"}
+            connection={selected.account}
             inline
             onReady={setAccountReady}
+            onIdentity={setAccountIdentity}
           />
-        ))}
+        ) : null)}
+      {selected?.account?.model_discovery && (
+        <>
+          <Button
+            disabled={!accountReady}
+            loading={discovery.isPending}
+            onClick={() => discovery.mutate()}
+          >
+            Fetch account models
+          </Button>
+          <small>
+            Explicitly queries this account's catalog. Only Chat Completions
+            models are shown; access is still subject to your plan and
+            organization policy.
+          </small>
+          <ErrorNotice error={discovery.error} />
+          {currentDiscovery?.length === 0 && (
+            <p role="status">
+              No compatible models returned. You can still enter a model ID
+              manually.
+            </p>
+          )}
+        </>
+      )}
       <SearchPicker
         label="Model"
         placeholder="Find a model"
@@ -438,6 +519,12 @@ export function ModelEditor({
       {matches && value && (
         <>
           <p role="status">{value.route} · Access not tested</p>
+          {!api && !accountReady && (
+            <p>
+              You can save this Model now. Connect its account before running
+              it.
+            </p>
+          )}
           <ChoiceField
             label="Settings preset"
             value=""
@@ -578,9 +665,10 @@ export function ModelEditor({
                 value=""
                 options={[
                   { value: "", label: "Keep current header" },
-                  ...(choices.data?.session_affinity_presets ?? []).map(
-                    (preset) => ({ value: preset.header, label: preset.label }),
-                  ),
+                  ...(choices.session_affinity_presets ?? []).map((preset) => ({
+                    value: preset.header,
+                    label: preset.label,
+                  })),
                 ]}
                 onValueChange={(header) => {
                   if (header)
@@ -660,7 +748,7 @@ export function ModelFields({
       : null;
   return (
     <ModelEditor
-      key={`${connectionId(value)}:${value?.route ?? "new"}`}
+      key={`${value?.authentication.kind ?? "new"}:${value?.route ?? "new"}`}
       value={value}
       onChange={(recipe, suggestedName) => {
         let next = source;

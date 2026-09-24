@@ -7,6 +7,7 @@ import binascii
 import hashlib
 import json
 import os
+import re
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -90,6 +91,7 @@ async def read_json_snapshot(
     *,
     provider: Provider,
     empty_object: bool = False,
+    comments: bool = False,
 ) -> JsonSnapshot:
     try:
         raw = await to_thread.run_sync(_read_bytes, path)
@@ -109,8 +111,19 @@ async def read_json_snapshot(
         return JsonSnapshot(path=path, document=None, digest=None)
     return JsonSnapshot(
         path=path,
-        document=decode_json_object(raw, provider=provider, empty_object=empty_object),
+        document=decode_json_object(
+            _strip_comments(raw) if comments else raw, provider=provider, empty_object=empty_object
+        ),
         digest=hashlib.sha256(raw).hexdigest(),
+    )
+
+
+def _strip_comments(raw: bytes) -> bytes:
+    # Match strings first so URL slashes and escaped quotes remain untouched.
+    return re.sub(
+        rb'"(?:[^"\\]|\\.)*"|//[^\r\n]*|/\*[\s\S]*?\*/',
+        lambda match: match[0] if match[0].startswith(b'"') else b" ",
+        raw,
     )
 
 

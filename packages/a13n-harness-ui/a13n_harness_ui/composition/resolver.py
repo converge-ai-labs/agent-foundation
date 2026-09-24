@@ -25,6 +25,7 @@ from a13n_harness_ui.configuration import (
     ApiKeyAuthentication,
     CanonicalSubagent,
     CodexSubscriptionAuthentication,
+    CopilotSubscriptionAuthentication,
     GrokSubscriptionAuthentication,
     LoadedHarnessUiConfiguration,
     ModelResource,
@@ -847,6 +848,10 @@ def _validate_auth_route(item: ModelResource) -> None:
     if isinstance(authentication, CodexSubscriptionAuthentication) and prefix != "openai-codex":
         raise CompositionError(
             "Codex subscription authentication requires an openai-codex route.", code="model_auth_invalid"
+        )
+    if isinstance(authentication, CopilotSubscriptionAuthentication) and prefix != "github-copilot":
+        raise CompositionError(
+            "Copilot subscription authentication requires a github-copilot route.", code="model_auth_invalid"
         )
     if isinstance(authentication, GrokSubscriptionAuthentication) and prefix not in {"grok", "grok-build"}:
         raise CompositionError("Grok subscription authentication requires a Grok route.", code="model_auth_invalid")

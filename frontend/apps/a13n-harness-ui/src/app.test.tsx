@@ -56,6 +56,27 @@ function fixture(request: Request): Response | Promise<Response> {
       configuration_path: "/tmp/config.yaml",
       system_prompt: "Be helpful.",
     });
+  if (path === "/api/models/choices")
+    return json({
+      connections: [
+        {
+          id: "codex",
+          account: {
+            provider: "codex",
+            label: "Codex",
+            login_methods: ["device", "browser"],
+          },
+        },
+        {
+          id: "grok-subscription",
+          account: {
+            provider: "grok",
+            label: "Grok",
+            login_methods: ["device", "browser"],
+          },
+        },
+      ],
+    });
   if (path === "/api/agents/agent-assistant/tool-proxy")
     return json({
       agent_id: "agent-assistant",
@@ -606,7 +627,7 @@ it("retains login across navigation, requires switch authorization and respects 
   render(<BrowserApp />);
   await screen.findByRole("heading", { name: "Accounts & API keys" });
   fireEvent.click(
-    screen.getAllByRole("button", { name: "Connect account" })[0],
+    (await screen.findAllByRole("button", { name: "Connect account" }))[0],
   );
   fireEvent.click(
     await screen.findByRole("button", { name: "Switch account…" }),

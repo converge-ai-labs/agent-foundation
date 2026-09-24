@@ -20,7 +20,7 @@ from a13n_harness_ui.sandbox import validate_sandbox_runtime
 
 
 class SetupProvider(StrictModel):
-    provider: Literal["codex", "grok"]
+    provider: Literal["codex", "grok", "copilot"]
     available: bool
     selected: bool
     action: str

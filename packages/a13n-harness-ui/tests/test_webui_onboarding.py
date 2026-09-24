@@ -15,7 +15,7 @@ from anyio import create_task_group
 def test_model_choices_project_release_owned_connections() -> None:
     choices = ModelChoices()
     subscriptions = [c for c in choices.connections if c.authentication != "api_key"]
-    assert [c.id for c in subscriptions] == ["codex", "grok-subscription"]
+    assert [c.id for c in subscriptions] == ["codex", "grok-subscription", "copilot-subscription"]
     providers = [c for c in choices.connections if c.authentication == "api_key"]
     assert tuple(provider.id for provider in providers) == tuple(p.route for p in API_PROVIDERS)
     for provider in providers:
@@ -102,7 +102,17 @@ async def test_first_conversation_identity_is_create_only_and_survives_restart(t
 
 
 @pytest.mark.anyio
-async def test_shared_model_authoring_http_contract_is_inert_and_has_one_setup_shape(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("connection", "model_id", "authentication", "model_file"),
+    [
+        ("codex", "gpt-5.6-sol", "codex_subscription", "codex"),
+        ("grok-subscription", "grok-4.7", "grok_subscription", "grok"),
+        ("copilot-subscription", "synthetic-chat-model", "copilot_subscription", "copilot"),
+    ],
+)
+async def test_shared_model_authoring_http_contract_is_inert_and_has_one_setup_shape(
+    tmp_path: Path, connection: str, model_id: str, authentication: str, model_file: str
+) -> None:
     import httpx
     from a13n_harness_ui.webui import create_webui
 
@@ -127,11 +137,13 @@ async def test_shared_model_authoring_http_contract_is_inert_and_has_one_setup_s
         assert {c["id"] for c in choices.json()["connections"]} >= {"codex", "grok-subscription", "openai-chat"}
         catalog = await client.get("/api/models/catalog")
         assert catalog.status_code == 200 and catalog.json()["items"]
-        options = await client.post("/api/models/options", json={"connection": "codex", "model_id": "gpt-5.6-sol"})
-        assert options.status_code == 200 and options.json()["supports_service_tier"]
-        recipe = await client.post("/api/models/prepare", json={"connection": "codex", "model_id": "gpt-5.6-sol"})
+        request = {"connection": connection, "model_id": model_id}
+        options = await client.post("/api/models/options", json=request)
+        assert options.status_code == 200
+        assert options.json()["supports_service_tier"] is (connection == "codex")
+        recipe = await client.post("/api/models/prepare", json=request)
         assert recipe.status_code == 200
-        assert recipe.json()["authentication"] == {"kind": "codex_subscription"}
+        assert recipe.json()["authentication"] == {"kind": authentication}
         assert not configuration.exists()
         assert not (configuration.parent / "models").exists()
         assert "/api/setup/model-options" not in server.openapi()["paths"]
@@ -144,5 +156,13 @@ async def test_shared_model_authoring_http_contract_is_inert_and_has_one_setup_s
             "/api/setup/preview", json={"model": recipe.json(), "environment_profile": "environment-native"}
         )
         assert preview.status_code == 200, preview.text
-        assert "models/codex.yaml" in preview.json()["files"]
+        assert f"models/{model_file}.yaml" in preview.json()["files"]
         assert not configuration.exists()
+        published = await client.post(
+            "/api/setup/apply",
+            json={"selection": {"model": recipe.json(), "environment_profile": "environment-native"}},
+        )
+        assert published.status_code == 200, published.text
+        assert published.json()["completed"]
+        assert configuration.exists()
+        assert (configuration.parent / "models" / f"{model_file}.yaml").is_file()

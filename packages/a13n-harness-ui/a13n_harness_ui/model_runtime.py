@@ -15,13 +15,19 @@ from a13n_harness.errors import ModelResolutionError
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models.inference import RequestHeadersModel
 from a13n_harness.providers.model.credentials import ApiKeyCredential
-from a13n_harness.providers.model.oauth import GrokCredentials, GrokCredentialSource
+from a13n_harness.providers.model.oauth import (
+    CopilotCredentialSource,
+    CopilotRefresh,
+    GrokCredentials,
+    GrokCredentialSource,
+)
 from a13n_harness.providers.model.routes import build_api_key_model
 from pydantic_ai.models import Model, ModelResolutionContext
 
 from a13n_harness_ui.configuration import (
     ApiKeyAuthentication,
     CodexSubscriptionAuthentication,
+    CopilotSubscriptionAuthentication,
     GrokSubscriptionAuthentication,
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
@@ -47,7 +53,15 @@ class GrokSubscriptionSource:
     refresh: Callable[[GrokCredentials], Awaitable[GrokCredentials]] | None = None
 
 
-type SubscriptionSource = CodexSubscriptionSource | GrokSubscriptionSource
+@dataclass(frozen=True, slots=True)
+class CopilotSubscriptionSource:
+    """Host wiring for request-fresh Copilot credentials."""
+
+    source: CopilotCredentialSource
+    refresh: CopilotRefresh | None = None
+
+
+type SubscriptionSource = CodexSubscriptionSource | GrokSubscriptionSource | CopilotSubscriptionSource
 
 
 class HarnessUiModelResolver:
@@ -108,6 +122,11 @@ class HarnessUiModelResolver:
                 credential_source=BoundCodexCredentialSource(source.source),
                 thread_id=thread_id,
             )
+        if isinstance(authentication, CopilotSubscriptionAuthentication):
+            from a13n_harness.providers.model.oauth import build_copilot_model
+
+            source = self._required_subscription_source("copilot_subscription", CopilotSubscriptionSource)
+            return build_copilot_model(_model_name(recipe), credential_source=source.source, refresh=source.refresh)
         if isinstance(authentication, GrokSubscriptionAuthentication):
             from a13n_harness.providers.model.oauth import build_grok_model
 
@@ -198,6 +217,7 @@ def model_recipe_id(recipe: ResolvedModelRecipe) -> str:
 
 __all__ = [
     "CodexSubscriptionSource",
+    "CopilotSubscriptionSource",
     "GrokSubscriptionSource",
     "HarnessUiModelResolver",
     "SubscriptionSource",

@@ -64,6 +64,7 @@ The value stays stable for the same Thread across turns and retries; independent
 a13n-harness-ui auth status
 a13n-harness-ui login codex
 a13n-harness-ui login grok
+a13n-harness-ui login copilot
 a13n-harness-ui login codex --browser
 a13n-harness-ui auth key list
 a13n-harness-ui auth key set key-primary
@@ -75,6 +76,42 @@ Device authorization is the default and needs no host callback. Open the printed
 For API access, choose **API key** in initial setup, `a13n-harness-ui add model`, or the **Create a new model** branch of `a13n-harness-ui add agent`. Select the provider/protocol, confirm or edit its base URL, enter a key in the hidden credential field, choose a provider-specific model suggestion (or type a custom, case-sensitive model ID), select a settings preset, and review the working context budget. You can instead enter `key:key-primary` for a stored key or `env:OPENAI_API_KEY` for an environment variable available to the Harness UI process. A newly entered key is saved immediately under a fresh reference in the local key store, independently of configuration publication. Never paste an API key into the normal composer.
 
 Stored API keys are plaintext in the data root's independent `auth.json`, with private permissions. Protect the host and backups. Configuration and Run snapshots hold references, not key bytes. A completed credential save/login is independent of setup publication and is not undone by cancelling setup.
+
+## GitHub Copilot subscription
+
+Choose **GitHub Copilot subscription** in onboarding, Add Model, or the new-Model branch of Add Agent. Existing Models can be selected without editing them or signing in again. You can save a recipe before authentication is ready; it will need credentials before its first request. Cancelling Agent creation does not delete an independently saved inline Model.
+
+Native login uses Pydantic AI's device flow with the official Copilot CLI public App ID. No app registration, client secret, installed CLI, or Copilot SDK Agent loop is needed. The historical CLI scope baseline requests `read:user`, `read:org`, `repo`, and `gist`; review the broad repository permissions on GitHub's authorization screen. This is not a minimal-permission claim. Browser-callback login is not supported for Copilot.
+
+Harness UI can reuse the selected official CLI GitHub.com account from `$COPILOT_HOME/config.json` (default `~/.copilot/config.json`) when the sibling `settings.json` explicitly has `storeTokenPlaintext: true`. It accepts the reviewed legacy token string and `{token: ...}` file forms and their snake_case aliases, without copying tokens into Harness UI. This compatibility was checked with synthetic CLI 1.0.88 Linux files. Current OS-keychain storage is not supported; Harness UI does not use a potentially stale file as a fallback. Prefer native login rather than weakening your CLI storage policy just for this integration.
+
+Native credentials are plaintext in `<data-root>/oauth/copilot.json`, private-permission protected and separate from API-key `auth.json`. This file also remembers the selected account and source. Missing or expired credentials never select another saved account automatically. **Choose account source** explicitly changes the binding. The same actions are available in the terminal:
+
+```console
+a13n-harness-ui auth sources copilot
+a13n-harness-ui auth select copilot --source copilot_cli_file --account YOUR_LOGIN
+a13n-harness-ui auth select copilot --source native --account YOUR_LOGIN
+a13n-harness-ui auth status copilot --format json
+a13n-harness-ui auth logout copilot
+```
+
+**Logout deletes the selected credentials.** When the selected source is the CLI file, this affects the official CLI and other Hosts using that account file. Other accounts remain intact; the remembered selection remains missing until credentials are restored there or you explicitly select another source. It does not revoke authorization at GitHub. CLI-file logout retains unrelated data but normalizes JSON comments/formatting to JSON.
+
+Enter a model ID manually or explicitly choose **Fetch account models** after connecting. This calls the authenticated catalog, not inference, and lists only models advertising Chat Completions support. It is separate from the public API-model directory. Setup, login, saving a Model, and opening an empty conversation do not issue inference requests. Catalog presence and successful authorization do not prove access: subscription tier, organization policy, endpoint support, and availability still apply. No live subscription entitlement/inference was used to validate this integration.
+
+Copilot does not inherit Codex fast mode, context budgets, native-tool presets, or a guessed cheaper reviewer. Its native upstream model profile remains authoritative. A minimal manually authored recipe is:
+
+```yaml
+schema_version: "1"
+kind: model
+id: model-copilot
+name: Copilot
+route: github-copilot:YOUR_MODEL_ID
+authentication:
+  kind: copilot_subscription
+settings: {}
+model_configuration: {}
+```
 
 ## Native media input
 
@@ -272,7 +309,7 @@ authentication:
   kind: codex_subscription
 ```
 
-Grok uses `kind: grok_subscription` and a compatible `grok:` route. API-key authentication requires exactly one of `env` and `credential_ref`. A subscription kind must match its route. There is no silent fallback to another provider's credentials.
+Grok uses `kind: grok_subscription` and a compatible `grok:` route. Copilot uses `kind: copilot_subscription` with `github-copilot:`. API-key authentication requires exactly one of `env` and `credential_ref`. A subscription kind must match its route. There is no silent fallback to another provider's credentials.
 
 ### Context and modality policy
 
@@ -293,7 +330,7 @@ These values guide Harness behavior; they do not give a model modalities or toke
 
 Codex shares its supported file store under `CODEX_HOME` (default `~/.codex`). Harness UI respects the upstream credential-store policy and reports unsupported stores rather than replacing them. Grok uses `GROK_AUTH_PATH` before `GROK_HOME` or its default file; inline `GROK_AUTH` is not a shared writable-login mode. Account inspection does not log in or refresh credentials. Codex model requests use Pydantic AI 2.41 or later with an explicit shared-store credential source. A provider caches credentials within its lifetime and rereads storage before refresh, not on every request. A new Run or account operation gets a fresh provider. If refreshed credentials cannot be saved, the request fails, but the provider retains the rotated credentials in memory; resolve the store conflict and start a new Run rather than assuming the rotation was persisted. Grok retains its Harness-owned refresh lifecycle.
 
-Harness retains device login, Thread affinity, routing hints, and per-run turn state where the official Codex provider has no equivalent. Browser PKCE and callback handling use the official flow; a small login-exchange adapter retains the real ID token required by native Codex `auth.json`. New login and account switching write that ID token, and same-account refresh preserves it. No second subscription store is created.
+Harness retains device login, Thread affinity, routing hints, and per-run turn state where the official Codex provider has no equivalent. Browser PKCE and callback handling use the official flow; a small login-exchange adapter retains the real ID token required by native Codex `auth.json`. New login and account switching write that ID token, and same-account refresh preserves it. No second Codex subscription store is created.
 
 ```console
 a13n-harness-ui auth status codex --format json
@@ -342,7 +379,7 @@ For the exact reviewed model IDs below, selecting a thinking preset also saves `
 | OpenRouter: `openai/gpt-5.4`                                                                                                      | low / medium / high          | 16,384 / 32,768 / 65,536 |
 | OpenRouter: `anthropic/claude-sonnet-4.6`, `google/gemini-2.5-pro`                                                                | low / medium or high         |          16,384 / 32,768 |
 
-The selected native profile still determines which thinking presets are offered. For Gemini 2.5, native high thinking uses a 24,576-token thinking budget; its 32,768-token output cap leaves room for the answer. Claude's explicit 8,192-token interleaved thinking budget retains its existing 16,384-token cap, including for custom model IDs. Unreviewed Claude adaptive presets also retain the existing 16,384-token baseline. Other unreviewed models and routes get no new output cap; adding a suggestion or matching a model-name prefix does not opt a model into a budget. Exact reviewed IDs receive the same editable recommendations behind custom endpoints, whose limits may differ. Codex and Grok subscription creation is unchanged; no API preset is applied to those transports.
+The selected native profile still determines which thinking presets are offered. For Gemini 2.5, native high thinking uses a 24,576-token thinking budget; its 32,768-token output cap leaves room for the answer. Claude's explicit 8,192-token interleaved thinking budget retains its existing 16,384-token cap, including for custom model IDs. Unreviewed Claude adaptive presets also retain the existing 16,384-token baseline. Other unreviewed models and routes get no new output cap; adding a suggestion or matching a model-name prefix does not opt a model into a budget. Exact reviewed IDs receive the same editable recommendations behind custom endpoints, whose limits may differ. No API preset is applied to Codex, Grok, or Copilot subscription creation.
 
 Review the saved value for your endpoint, context size, reasoning needs, latency, and cost. You can edit `settings.max_tokens` independently afterward. Changing `/thinking` does **not** recalculate it. Reusing a Model, loading an existing file, or passing explicit settings to the setup API does not apply a preset. There is no runtime auto-budget policy, context-overflow guarantee, Harness preset dependency, or network lookup during setup.
 

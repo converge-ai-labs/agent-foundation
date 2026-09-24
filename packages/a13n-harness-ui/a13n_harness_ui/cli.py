@@ -50,6 +50,8 @@ class CliRequest:
     plugin_id: str | None = None
     ref: str | None = None
     provider: str | None = None
+    account_source: str | None = None
+    account_id: str | None = None
     allow_account_switch: bool = False
     device_code: bool = False
     credential_key: SecretStr | None = field(default=None, repr=False)
@@ -75,7 +77,7 @@ class _CliContext:
 _CONTEXT_SETTINGS = {"help_option_names": ("-h", "--help")}
 _FORMAT_CHOICE = click.Choice(tuple(item.value for item in OutputFormat), case_sensitive=True)
 _ENVIRONMENT_MODE_CHOICE = click.Choice(("full-control", "sandbox"))
-_PROVIDER_CHOICE = click.Choice(("codex", "grok"))
+_PROVIDER_CHOICE = click.Choice(("codex", "grok", "copilot"))
 _PRODUCT_CHOICE = click.Choice(("claude-code", "cursor", "codex"))
 _SCOPE_CHOICE = click.Choice(("user", "project"))
 _PATH = click.Path(path_type=Path)
@@ -540,6 +542,40 @@ def auth_login_command(
             provider=provider,
             allow_account_switch=allow_account_switch,
             device_code=device_code,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@auth_group.command("sources")
+@click.argument("provider", type=_PROVIDER_CHOICE)
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text")
+@click.pass_context
+def auth_sources_command(ctx: click.Context, provider: str, output_format: str) -> None:
+    """List supported saved account sources without exposing credentials."""
+    _execute(
+        _request(ctx, command="auth", action="sources", provider=provider, output_format=OutputFormat(output_format))
+    )
+
+
+@auth_group.command("select")
+@click.argument("provider", type=_PROVIDER_CHOICE)
+@click.option("--source", "account_source", required=True, type=click.Choice(("native", "copilot_cli_file")))
+@click.option("--account", "account_id", required=True)
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text")
+@click.pass_context
+def auth_select_command(
+    ctx: click.Context, provider: str, account_source: str, account_id: str, output_format: str
+) -> None:
+    """Explicitly replace this Host's account and credential-source binding."""
+    _execute(
+        _request(
+            ctx,
+            command="auth",
+            action="select",
+            provider=provider,
+            account_source=account_source,
+            account_id=account_id,
             output_format=OutputFormat(output_format),
         )
     )

@@ -14,6 +14,7 @@ def isolated_user_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    monkeypatch.setenv("COPILOT_HOME", str(home / ".copilot"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
     monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local/share"))
 

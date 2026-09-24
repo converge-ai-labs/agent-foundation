@@ -22,6 +22,7 @@ _SUPPORTED_PROVIDERS = frozenset(API_PROVIDER_BY_ROUTE) | frozenset(
         "anthropic",
         "cohere",
         "gemini",
+        "github-copilot",
         "google-cloud",
         "google-gla",
         "google-vertex",
@@ -105,6 +106,7 @@ class PydanticAiModelAdapter:
                 preset = API_PROVIDER_BY_ROUTE.get(provider)
                 if (preset is not None and not preset.supports_session_affinity) or provider in {
                     "cohere",
+                    "github-copilot",
                     "grok-build",
                     "openai-codex",
                 }:

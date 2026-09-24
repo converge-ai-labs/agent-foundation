@@ -19,7 +19,7 @@ from anyio import to_thread
 from pydantic import ConfigDict, Field, model_validator
 
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError
-from a13n_harness_ui.model_authoring import ModelRecipe, recipe_document, recipe_name
+from a13n_harness_ui.model_authoring import SUBSCRIPTION_CONNECTIONS, ModelRecipe, recipe_document, recipe_name
 from a13n_harness_ui.model_presets import starter_tool_capabilities
 from a13n_harness_ui.resource_names import coding_agent_name
 from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
@@ -107,7 +107,14 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
     selected: dict[str, object] = dict(existing_model or (recipe_document(recipe) if recipe is not None else {}))
     authentication = selected.get("authentication")
     kind = authentication.get("kind") if isinstance(authentication, dict) else None
-    connection = "codex" if kind == "codex_subscription" else "grok" if kind == "grok_subscription" else "api-key"
+    connection = next(
+        (
+            item.account.provider
+            for item in SUBSCRIPTION_CONNECTIONS
+            if item.authentication == kind and item.account is not None
+        ),
+        "api-key",
+    )
     display_name = recipe_name(recipe) if recipe is not None else str(selected.get("name", "Default Agent"))
     model_id = selection.existing_model_id
     if recipe is not None:

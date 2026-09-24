@@ -65,6 +65,10 @@ class GrokCredentials:
     access_token: str = field(repr=False)
     refresh_token: str | None = field(default=None, repr=False)
 
+    @property
+    def provider(self) -> str:
+        return "grok"
+
 
 type GrokRefresh = Callable[[GrokCredentials], Awaitable[GrokCredentials]]
 

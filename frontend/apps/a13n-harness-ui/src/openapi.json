@@ -1692,6 +1692,138 @@
         }
       }
     },
+    "/api/auth/accounts/{provider}/sources": {
+      "get": {
+        "summary": "Account Sources",
+        "operationId": "account_sources_api_auth_accounts__provider__sources_get",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AccountCandidate"
+                  },
+                  "title": "Response Account Sources Api Auth Accounts  Provider  Sources Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/accounts/{provider}/selection": {
+      "put": {
+        "summary": "Select Account",
+        "operationId": "select_account_api_auth_accounts__provider__selection_put",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountProjection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountSelection"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/accounts/{provider}/models": {
+      "post": {
+        "summary": "Discover Account Models",
+        "operationId": "discover_account_models_api_auth_accounts__provider__models_post",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelChoice"
+                  },
+                  "title": "Response Discover Account Models Api Auth Accounts  Provider  Models Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/catalog": {
       "get": {
         "summary": "Implementation Catalog",
@@ -5032,6 +5164,75 @@
   },
   "components": {
     "schemas": {
+      "AccountCandidate": {
+        "properties": {
+          "selection": {
+            "$ref": "#/components/schemas/AccountSelection"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "selected": {
+            "type": "boolean",
+            "title": "Selected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "selection",
+          "label",
+          "selected"
+        ],
+        "title": "AccountCandidate"
+      },
+      "AccountConnection": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "codex",
+              "grok",
+              "copilot"
+            ],
+            "title": "Provider"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "login_methods": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "device",
+                "browser"
+              ]
+            },
+            "type": "array",
+            "title": "Login Methods"
+          },
+          "model_discovery": {
+            "type": "boolean",
+            "title": "Model Discovery",
+            "default": false
+          },
+          "source_selection": {
+            "type": "boolean",
+            "title": "Source Selection",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "label",
+          "login_methods"
+        ],
+        "title": "AccountConnection",
+        "description": "Built-in account actions shared by terminal and browser authoring."
+      },
       "AccountProjection": {
         "properties": {
           "provider": {
@@ -5065,6 +5266,44 @@
           "required_action": {
             "$ref": "#/components/schemas/RequiredAction",
             "default": "none"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "shared_with_cli": {
+            "type": "boolean",
+            "title": "Shared With Cli",
+            "default": false
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
           }
         },
         "type": "object",
@@ -5077,6 +5316,31 @@
         ],
         "title": "AccountProjection",
         "description": "Bounded diagnostics safe for logs, APIs, and UI projection."
+      },
+      "AccountSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "enum": [
+              "native",
+              "copilot_cli_file"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "account_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Account Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "account_id"
+        ],
+        "title": "AccountSelection",
+        "type": "object"
       },
       "ActivitySummary": {
         "properties": {
@@ -5571,7 +5835,8 @@
         "enum": [
           "api_key",
           "codex_subscription",
-          "grok_subscription"
+          "grok_subscription",
+          "copilot_subscription"
         ]
       },
       "Availability": {
@@ -7248,6 +7513,21 @@
           "auto_followup"
         ],
         "title": "CoordinatorUpdate"
+      },
+      "CopilotSubscriptionAuthentication": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "copilot_subscription",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "CopilotSubscriptionAuthentication"
       },
       "DecisionBatchView": {
         "properties": {
@@ -9102,7 +9382,8 @@
             "type": "string",
             "enum": [
               "codex",
-              "grok"
+              "grok",
+              "copilot"
             ],
             "title": "Provider"
           },
@@ -9218,6 +9499,9 @@
           },
           {
             "$ref": "#/components/schemas/GrokSubscriptionAuthentication"
+          },
+          {
+            "$ref": "#/components/schemas/CopilotSubscriptionAuthentication"
           }
         ],
         "discriminator": {
@@ -9225,6 +9509,7 @@
           "mapping": {
             "api_key": "#/components/schemas/ApiKeyAuthentication",
             "codex_subscription": "#/components/schemas/CodexSubscriptionAuthentication",
+            "copilot_subscription": "#/components/schemas/CopilotSubscriptionAuthentication",
             "grok_subscription": "#/components/schemas/GrokSubscriptionAuthentication"
           }
         }
@@ -9347,6 +9632,16 @@
           },
           "authentication": {
             "$ref": "#/components/schemas/AuthenticationKind"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountConnection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "base_url": {
             "type": "string",
@@ -10600,7 +10895,8 @@
         "type": "string",
         "enum": [
           "codex",
-          "grok"
+          "grok",
+          "copilot"
         ],
         "title": "Provider"
       },
@@ -11588,7 +11884,8 @@
             "type": "string",
             "enum": [
               "codex",
-              "grok"
+              "grok",
+              "copilot"
             ],
             "title": "Provider"
           },
@@ -16017,7 +16314,8 @@
             "type": "string",
             "enum": [
               "codex",
-              "grok"
+              "grok",
+              "copilot"
             ],
             "title": "Provider"
           },

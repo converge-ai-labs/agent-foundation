@@ -222,7 +222,7 @@ def test_question_and_approval_batch_is_typed_and_complete() -> None:
 
 def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
     wizard = SetupWizard(advanced=True)
-    wizard.accept("3")
+    wizard.accept("api")
     assert wizard.question is not None and wizard.question.key == "api_provider"
     wizard.accept("")
     wizard.accept("")

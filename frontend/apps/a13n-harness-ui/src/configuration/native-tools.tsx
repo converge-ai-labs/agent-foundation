@@ -92,10 +92,15 @@ export function AgentNativeTools({
   });
   const recipe = readDocument(saved.data?.content ?? "")?.toJS() as
     Schema<"ModelRecipe"> | undefined;
+  const choices = useQuery({
+    queryKey: ["model-choices"],
+    queryFn: ({ signal }) =>
+      result(client.GET("/api/models/choices", { signal })),
+  });
   const request =
-    recipe?.route && recipe.authentication
+    recipe?.route && recipe.authentication && choices.data
       ? {
-          connection: connectionId(recipe),
+          connection: connectionId(recipe, choices.data.connections ?? []),
           model_id: recipe.route.slice(recipe.route.indexOf(":") + 1),
           base_url:
             typeof recipe.model_configuration?.base_url === "string"

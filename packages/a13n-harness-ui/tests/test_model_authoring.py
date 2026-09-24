@@ -224,3 +224,29 @@ def test_model_options_describe_agent_tools_without_mutating_model_recipe() -> N
     assert next(tool for tool in custom.native_tools if tool.value == "mcp_server").capability is None
     recipe = prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-5.6-sol"))
     assert "native_tools" not in recipe.model_dump()
+
+
+def test_copilot_recipe_and_terminal_use_shared_device_only_declaration():
+    from a13n_harness_ui.interactive.setup import SetupWizard
+    from a13n_harness_ui.model_authoring import subscription_connection
+
+    connection = subscription_connection("copilot")
+    assert connection.account.login_methods == ("device",)
+    assert connection.account.model_discovery
+    assert not connection.models and not connection.default_model
+    recipe = prepare_model(ModelRecipeRequest(connection=connection.id, model_id="custom-chat-model"))
+    assert recipe.route == "github-copilot:custom-chat-model"
+    assert recipe.authentication.kind == "copilot_subscription"
+    assert recipe.settings == {} and recipe.model_configuration == {}
+    assert recipe.model_characteristics.context_window_tokens is None
+    options = model_options(ModelOptionsRequest(connection=connection.id, model_id="custom-chat-model"))
+    assert not options.supports_service_tier
+    assert not options.context_choices
+    assert not options.native_tools
+    wizard = SetupWizard(add_model=True)
+    wizard.accept("copilot")
+    assert wizard.question.key == "model"
+    wizard.accept("custom-chat-model")
+    assert wizard.question.key == "name"
+    wizard.accept("Copilot custom")
+    assert wizard.selection("/tmp")["model"]["authentication"] == {"kind": "copilot_subscription"}

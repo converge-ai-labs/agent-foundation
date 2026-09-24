@@ -147,9 +147,12 @@ from a13n_harness_ui.model_accounts import (
     resolve_grok_scope,
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
+from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
+from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
 from a13n_harness_ui.model_accounts.usage import CodexUsage, CodexUsageClient, ResetRequest, ResetResult
 from a13n_harness_ui.model_authoring import (
+    ModelChoice,
     ModelChoices,
     ModelOptions,
     ModelOptionsRequest,
@@ -159,7 +162,12 @@ from a13n_harness_ui.model_authoring import (
     prepare_model,
 )
 from a13n_harness_ui.model_catalog import ModelCatalog, ModelCatalogSnapshot
-from a13n_harness_ui.model_runtime import CodexSubscriptionSource, GrokSubscriptionSource, SubscriptionSource
+from a13n_harness_ui.model_runtime import (
+    CodexSubscriptionSource,
+    CopilotSubscriptionSource,
+    GrokSubscriptionSource,
+    SubscriptionSource,
+)
 from a13n_harness_ui.observation import open_observation
 from a13n_harness_ui.output_comment_models import (
     CommentEdit,
@@ -342,6 +350,7 @@ class HarnessUiApp:
         subagent_operator: HarnessUiSubagentOperator,
         live_hub: HarnessUiLiveHub,
         summary_hub: HarnessUiSummaryHub,
+        copilot_account: CopilotAccountStore,
         codex_account: CodexAccountStore | None,
         codex_account_error: AccountStoreError | None,
         rediscover_accounts: Callable[
@@ -353,6 +362,7 @@ class HarnessUiApp:
         grok_account_error: AccountStoreError | None,
         codex_login: CodexLoginCallback | None,
         grok_login: GrokLoginCallback | None,
+        copilot_login: CopilotLoginCallback | None,
         candidate_error: HarnessUiError | None = None,
         share_computer: bool = False,
         web_push: WebPush | None = None,
@@ -384,6 +394,8 @@ class HarnessUiApp:
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
         self._summary_hub = summary_hub
+        self._copilot_account = copilot_account
+        self._copilot_login = copilot_login
         self._codex_account = codex_account
         self._codex_account_error = codex_account_error
         self._rediscover_accounts = rediscover_accounts
@@ -2026,7 +2038,7 @@ class HarnessUiApp:
                 self._codex_account_error = errors.get(Provider.CODEX)
                 self._grok_account_error = errors.get(Provider.GROK)
             providers: list[SetupProvider] = []
-            for provider in (Provider.CODEX, Provider.GROK):
+            for provider in Provider:
                 try:
                     account = await self._account(provider).inspect()
                     selected = account.usable or (
@@ -2085,6 +2097,40 @@ class HarnessUiApp:
     async def model_choices(self) -> ModelChoices:
         async with self._operation():
             return ModelChoices()
+
+    async def model_account_candidates(self, provider: Provider | str) -> tuple[AccountCandidate, ...]:
+        async with self._operation():
+            account = self._account(Provider(provider))
+            return await account.candidates() if isinstance(account, CopilotAccountStore) else ()
+
+    async def select_model_account(self, provider: Provider | str, selection: AccountSelection) -> AccountProjection:
+        async with self._operation():
+            account = self._account(Provider(provider))
+            if not isinstance(account, CopilotAccountStore):
+                raise AppStateError(
+                    "This account has no source-selection action.", code="account_selection_unsupported"
+                )
+            return await account.select(selection)
+
+    async def discover_account_models(self, provider: Provider | str) -> tuple[ModelChoice, ...]:
+        """Explicit account-scoped discovery, separate from the public model directory."""
+        from a13n_harness.providers.model.oauth import discover_copilot_models
+
+        async with self._operation():
+            if Provider(provider) is not Provider.COPILOT:
+                raise AppStateError("This account has no model-discovery action.", code="model_discovery_unsupported")
+            try:
+                before = await self._copilot_account.load()
+                ids = await discover_copilot_models(credential_source=self._copilot_account)
+                after = await self._copilot_account.load()
+                if (before.source_id, before.account_id) != (after.source_id, after.account_id):
+                    raise ValueError("The selected account changed during discovery")
+            except Exception:
+                raise AppStateError(
+                    "Copilot model discovery failed. Check the selected account, subscription and organization policy.",
+                    code="model_discovery_failed",
+                ) from None
+            return tuple(ModelChoice(value=model_id, label=model_id) for model_id in ids)
 
     async def model_catalog(self) -> ModelCatalogSnapshot:
         async with self._operation():
@@ -2263,6 +2309,10 @@ class HarnessUiApp:
     ) -> AccountProjection:
         async with self._operation():
             selected = Provider(provider)
+            if selected is Provider.COPILOT:
+                if self._copilot_login is None:
+                    raise AppStateError("No Copilot login flow is registered.", code="model_account_login_unavailable")
+                return await self._copilot_account.login(self._copilot_login, allow_account_switch=allow_account_switch)
             if selected is Provider.CODEX:
                 if self._codex_login is None:
                     raise AppStateError(
@@ -2410,7 +2460,9 @@ class HarnessUiApp:
                     expected_account_id=request.account_id,
                 ).redeem(request)
 
-    def _account(self, provider: Provider) -> CodexAccountStore | GrokAccountStore:
+    def _account(self, provider: Provider) -> CodexAccountStore | GrokAccountStore | CopilotAccountStore:
+        if provider is Provider.COPILOT:
+            return self._copilot_account
         if provider is Provider.CODEX:
             if self._codex_account is None:
                 if self._codex_account_error is not None:
@@ -2544,6 +2596,7 @@ async def open_harness_ui_app(
     grok_scope: str | None = None,
     grok_refresh: Callable[[GrokCredentials], Awaitable[GrokCredentials]] | None = None,
     grok_login: GrokLoginCallback | None = None,
+    copilot_login: CopilotLoginCallback | None = None,
     integrations: HarnessUiIntegrations | None = None,
     instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
 ) -> AsyncGenerator[HarnessUiApp]:
@@ -2658,7 +2711,10 @@ async def open_harness_ui_app(
             except AccountStoreError as exc:
                 grok_account = None
                 grok_account_error = exc
-            subscription_sources: dict[str, SubscriptionSource] = {}
+            copilot_account = CopilotAccountStore(store.layout.root / "oauth" / "copilot.json")
+            subscription_sources: dict[str, SubscriptionSource] = {
+                "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
+            }
             if codex_account is not None:
                 subscription_sources["codex_subscription"] = CodexSubscriptionSource(source=codex_account)
             if grok_account is not None:
@@ -2739,7 +2795,9 @@ async def open_harness_ui_app(
                 CodexAccountStore | None, GrokAccountStore | None, dict[Provider, AccountStoreError]
             ]:
                 errors: dict[Provider, AccountStoreError] = {}
-                sources: dict[str, SubscriptionSource] = {}
+                sources: dict[str, SubscriptionSource] = {
+                    "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
+                }
                 discovered_codex: CodexAccountStore | None = None
                 discovered_grok: GrokAccountStore | None = None
                 try:
@@ -2773,6 +2831,8 @@ async def open_harness_ui_app(
                 subagent_operator=operator,
                 live_hub=live_hub,
                 summary_hub=summary_hub,
+                copilot_account=copilot_account,
+                copilot_login=copilot_login,
                 codex_account=codex_account,
                 codex_account_error=codex_account_error,
                 rediscover_accounts=rediscover_accounts,

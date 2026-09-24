@@ -40,7 +40,11 @@ class Question:
 
 _QUESTIONS = (
     Question("model_source", "Choose a model for the new agent", "new"),
-    Question("provider", "Connect a model", "codex", ("codex", "grok", "api")),
+    Question(
+        "provider",
+        "Connect a model",
+        "codex",
+    ),
     Question(
         "api_provider", "Choose an API provider / protocol", "openai-responses", tuple(p.route for p in API_PROVIDERS)
     ),
@@ -125,19 +129,20 @@ class SetupWizard:
     catalog_models: tuple[CatalogModel, ...] = ()
     catalog_status: str = "bundled"
     saved_credentials: tuple[str, ...] = ()
+    account_models: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         self._skip_irrelevant()
 
     @property
     def connection_id(self) -> str:
+        from a13n_harness_ui.model_authoring import subscription_connection
+
         provider = self.values.get("provider", self.default_provider)
         return (
             self.values.get("api_provider", "openai-responses")
             if provider == "api"
-            else "grok-subscription"
-            if provider == "grok"
-            else "codex"
+            else subscription_connection(provider).id
         )
 
     def presets(self) -> tuple[SettingsPreset, ...]:
@@ -151,6 +156,8 @@ class SetupWizard:
         return value if value != "new" else None
 
     def tool_connection(self) -> tuple[str, str, str | None]:
+        from a13n_harness_ui.model_authoring import subscription_connection
+
         if self.existing_model_id is not None:
             model = self.model_resources.get(self.existing_model_id)
             if model is None:
@@ -161,9 +168,7 @@ class SetupWizard:
         route = (
             self.values.get("api_provider", "openai-responses")
             if provider == "api"
-            else "openai-codex"
-            if provider == "codex"
-            else "grok"
+            else subscription_connection(provider).provider
         )
         return (
             f"{route}:{self.values.get('model', '')}",
@@ -173,7 +178,7 @@ class SetupWizard:
 
     @property
     def question(self) -> Question | None:
-        from a13n_harness_ui.model_authoring import CODEX_CONTEXT_CHOICES, model_connection
+        from a13n_harness_ui.model_authoring import CODEX_CONTEXT_CHOICES, SUBSCRIPTION_CONNECTIONS, model_connection
 
         if self.index >= len(_QUESTIONS):
             return None
@@ -195,6 +200,13 @@ class SetupWizard:
             return Question("model_source", question.text, self.values.get("model_source", choices[0]), choices)
         if question.key == "provider":
             default = self.values.get("provider", self.default_provider)
+            question = replace(
+                question,
+                choices=(
+                    *tuple(item.account.provider for item in SUBSCRIPTION_CONNECTIONS if item.account is not None),
+                    "api",
+                ),
+            )
         if self.values.get("provider") == "api":
             provider = API_PROVIDER_BY_ROUTE[self.values.get("api_provider", "openai-responses")]
             if question.key == "base_url":
@@ -251,12 +263,12 @@ class SetupWizard:
         if question.key == "model":
             connection = model_connection(self.connection_id)
             selected = self.values.get("model", connection.default_model)
-            choices = tuple(item.value for item in connection.models)
+            choices = tuple(dict.fromkeys((*tuple(item.value for item in connection.models), *self.account_models)))
             return Question(
                 "model",
                 "Choose a subscription model or enter its ID",
                 selected,
-                choices if selected in choices else (selected, *choices),
+                choices if selected in choices or not selected else (selected, *choices),
                 allow_custom=True,
             )
         if question.key == "environment" and (self.add_agent or self.add_model):
@@ -284,6 +296,8 @@ class SetupWizard:
         return f"{current} / {total} · {self._notice()}"
 
     def _notice(self) -> str:
+        from a13n_harness_ui.model_authoring import subscription_connection
+
         question = self.question
         if question is None:
             return "Ready to save."
@@ -330,11 +344,7 @@ class SetupWizard:
                 if self.existing_model_id is None:
                     provider = self.values["provider"]
                     route_provider = (
-                        self.values["api_provider"]
-                        if provider == "api"
-                        else "openai-codex"
-                        if provider == "codex"
-                        else "grok"
+                        self.values["api_provider"] if provider == "api" else subscription_connection(provider).provider
                     )
                     known = known_model_capabilities(f"{route_provider}:{self.values['model']}")
                     media = (
@@ -368,7 +378,7 @@ class SetupWizard:
         return "Esc goes back; Ctrl+C cancels."
 
     def selection_prompt(self) -> Selection | None:
-        from a13n_harness_ui.model_authoring import CODEX_CONTEXT_CHOICES, model_connection
+        from a13n_harness_ui.model_authoring import CODEX_CONTEXT_CHOICES, SUBSCRIPTION_CONNECTIONS, model_connection
 
         question = self.question
         if question is None or not question.choices:
@@ -457,8 +467,7 @@ class SetupWizard:
             )
         labels = {
             **{item.value: item.label for item in model_connection(self.connection_id).models},
-            "codex": "Codex subscription",
-            "grok": "Grok subscription",
+            **{item.account.provider: item.label for item in SUBSCRIPTION_CONNECTIONS if item.account is not None},
             "api": "API key",
             "full-control": "Full Control",
             "sandbox": "Sandbox",

@@ -81,7 +81,9 @@ from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, Summary
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
+from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
 from a13n_harness_ui.model_authoring import (
+    ModelChoice,
     ModelChoices,
     ModelOptions,
     ModelOptionsRequest,
@@ -1049,6 +1051,22 @@ def create_webui(
     @server.get("/api/auth/accounts/{provider}", response_model=AccountProjection)
     async def account(provider: Provider) -> AccountProjection:
         return await app().inspect_model_account(provider)
+
+    @server.get("/api/auth/accounts/{provider}/sources", response_model=tuple[AccountCandidate, ...])
+    async def account_sources(provider: Provider) -> tuple[AccountCandidate, ...]:
+        return await app().model_account_candidates(provider)
+
+    @server.put(
+        "/api/auth/accounts/{provider}/selection",
+        response_model=AccountProjection,
+        openapi_extra=_body(AccountSelection),
+    )
+    async def select_account(provider: Provider, request: Request) -> AccountProjection:
+        return await app().select_model_account(provider, await _document(request, AccountSelection))
+
+    @server.post("/api/auth/accounts/{provider}/models", response_model=tuple[ModelChoice, ...])
+    async def discover_account_models(provider: Provider) -> tuple[ModelChoice, ...]:
+        return await app().discover_account_models(provider)
 
     @server.delete("/api/auth/accounts/{provider}", response_model=bool)
     async def logout_account(provider: Provider) -> bool:

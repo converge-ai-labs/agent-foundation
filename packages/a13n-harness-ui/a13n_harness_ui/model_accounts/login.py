@@ -9,6 +9,7 @@ from typing import Literal
 
 from a13n_harness.providers.model.oauth import (
     CodexLoginResult,
+    CopilotCredentials,
     DeviceAuthorizationError,
     GrokCredentials,
     GrokDeviceAuthorizationFlow,
@@ -19,8 +20,10 @@ from anyio.abc import TaskGroup
 
 from a13n_harness_ui.configuration.models import StrictModel
 from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.model_authoring import account_connection
 
 from .codex import CodexAccountStore, CodexLoginRequest
+from .copilot import CopilotAccountStore, CopilotLoginRequest
 from .grok import (
     DEFAULT_GROK_OAUTH_SCOPE,
     DEFAULT_GROK_OAUTH_SCOPES,
@@ -32,14 +35,14 @@ from .models import AccountStoreError, Provider
 
 
 class LoginRequest(StrictModel):
-    provider: Literal["codex", "grok"]
+    provider: Literal["codex", "grok", "copilot"]
     method: Literal["device", "browser"] = "device"
     allow_account_switch: bool = False
 
 
 class LoginStatus(StrictModel):
     session_id: str
-    provider: Literal["codex", "grok"]
+    provider: Literal["codex", "grok", "copilot"]
     method: Literal["device", "browser"]
     state: Literal["starting", "waiting", "succeeded", "failed", "cancelled", "expired"] = "starting"
     verification_url: str | None = None
@@ -94,13 +97,46 @@ async def authorize_grok(request: GrokLoginRequest, method: str, present: Callab
     return await flow.exchange_code_from_callback(timeout_seconds=900)
 
 
+async def authorize_copilot(
+    request: CopilotLoginRequest, method: str, present: Callable[..., None]
+) -> CopilotCredentials:
+    import httpx2
+    from a13n_harness.providers.model.oauth.copilot import copilot_account_id
+    from pydantic_ai.providers.github_copilot import GitHubCopilotOAuthFlow
+
+    if method != "device":
+        raise HarnessUiError("Copilot supports device authorization only.", code="login_method_unsupported")
+    # This is the directly verified CLI device-flow scope baseline, not a claim
+    # of minimal permissions. The authorization page shows the requested access.
+    async with httpx2.AsyncClient(follow_redirects=False) as client:
+        flow = GitHubCopilotOAuthFlow(
+            client_id=request.client_id, scope="read:user,read:org,repo,gist", http_client=client
+        )
+        challenge = await flow.start()
+        present(
+            verification_url=challenge.verification_uri,
+            user_code=challenge.user_code,
+            expires_in=min(challenge.expires_in, 900),
+            message="Uses the official Copilot CLI application identity. Review GitHub's requested permissions, including repository access. Authorization does not verify Copilot entitlement.",
+        )
+        credentials = await flow.wait_for_authorization()
+        account_id = await copilot_account_id(credentials, http_client=client)
+        return CopilotCredentials.issued(credentials, account_id=account_id, client_id=request.client_id)
+
+
 class LoginSessions:
-    def __init__(self, tasks: TaskGroup, account: Callable[[Provider], CodexAccountStore | GrokAccountStore]) -> None:
+    def __init__(
+        self,
+        tasks: TaskGroup,
+        account: Callable[[Provider], CodexAccountStore | GrokAccountStore | CopilotAccountStore],
+    ) -> None:
         self._tasks = tasks
         self._account = account
         self._sessions: dict[str, _Session] = {}
 
     def start(self, request: LoginRequest) -> LoginStatus:
+        if request.method not in account_connection(request.provider).login_methods:
+            raise HarnessUiError("This account does not support that login method.", code="login_method_unsupported")
         if any(not session.done.is_set() for session in self._sessions.values()):
             raise HarnessUiError("A login is already active. Finish or cancel it first.", code="login_active")
         account = self._account(Provider(request.provider))
@@ -133,7 +169,10 @@ class LoginSessions:
         return session.status
 
     async def _run(
-        self, session: _Session, request: LoginRequest, account: CodexAccountStore | GrokAccountStore
+        self,
+        session: _Session,
+        request: LoginRequest,
+        account: CodexAccountStore | GrokAccountStore | CopilotAccountStore,
     ) -> None:
         method = request.method
 
@@ -161,11 +200,18 @@ class LoginSessions:
                             lambda request: authorize(authorize_codex(request, method, present)),
                             allow_account_switch=request.allow_account_switch,
                         )
-                    else:
+                    elif isinstance(account, CopilotAccountStore):
+                        await account.login(
+                            lambda request: authorize(authorize_copilot(request, method, present)),
+                            allow_account_switch=request.allow_account_switch,
+                        )
+                    elif isinstance(account, GrokAccountStore):
                         await account.login(
                             lambda request: authorize(authorize_grok(request, method, present)),
                             allow_account_switch=request.allow_account_switch,
                         )
+                    else:
+                        raise HarnessUiError("No login flow is registered for this account.", code="login_unsupported")
                     session.status = session.status.model_copy(update={"state": "succeeded"})
             if session.scope.cancel_called and session.status.state != "succeeded":
                 session.status = session.status.model_copy(update={"state": "cancelled"})

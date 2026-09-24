@@ -7,12 +7,15 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Provider(StrEnum):
     CODEX = "codex"
     GROK = "grok"
+    COPILOT = "copilot"
 
 
 class StoreKind(StrEnum):
@@ -69,6 +72,24 @@ class AccountProjection:
     expiry: ExpiryStatus
     expires_at: datetime | None = None
     required_action: RequiredAction = RequiredAction.NONE
+    account_id: str | None = None
+    source_id: str | None = None
+    shared_with_cli: bool = False
+    message: str | None = None
+
+
+class AccountSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: Literal["native", "copilot_cli_file"]
+    account_id: str = Field(min_length=1, max_length=100)
+
+
+@dataclass(frozen=True, slots=True)
+class AccountCandidate:
+    selection: AccountSelection
+    label: str
+    selected: bool
 
 
 class AccountStoreError(Exception):
@@ -93,7 +114,9 @@ class AccountStoreConflictError(AccountStoreError):
 
 
 __all__ = [
+    "AccountCandidate",
     "AccountProjection",
+    "AccountSelection",
     "AccountStoreConflictError",
     "AccountStoreError",
     "Availability",

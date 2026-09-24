@@ -284,8 +284,15 @@ class GrokSubscriptionAuthentication(StrictModel):
     kind: Literal["grok_subscription"]
 
 
+class CopilotSubscriptionAuthentication(StrictModel):
+    kind: Literal["copilot_subscription"]
+
+
 type ModelAuthentication = Annotated[
-    ApiKeyAuthentication | CodexSubscriptionAuthentication | GrokSubscriptionAuthentication,
+    ApiKeyAuthentication
+    | CodexSubscriptionAuthentication
+    | GrokSubscriptionAuthentication
+    | CopilotSubscriptionAuthentication,
     Field(discriminator="kind"),
 ]
 
@@ -932,6 +939,7 @@ __all__ = [
     "CanonicalSubagent",
     "CapabilitySelection",
     "CodexSubscriptionAuthentication",
+    "CopilotSubscriptionAuthentication",
     "EnvironmentProfileResource",
     "EnvironmentRunExtensionResource",
     "EnvironmentVariableSource",

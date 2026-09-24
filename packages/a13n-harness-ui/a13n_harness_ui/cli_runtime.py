@@ -12,7 +12,7 @@ from enum import Enum
 from pathlib import Path
 
 import click
-from a13n_harness.providers.model.oauth import CodexLoginResult, GrokCredentials
+from a13n_harness.providers.model.oauth import CodexLoginResult, CopilotCredentials, GrokCredentials
 from a13n_logging import LogFormat, configure_logging
 from anyio import fail_after
 from pydantic import BaseModel
@@ -60,6 +60,7 @@ async def _run(request: CliRequest) -> int:
                 if request.command == "webui"
                 else lambda request: _codex_cli_login(request, device_code=use_device_code)
             ),
+            copilot_login=None if request.command == "webui" else _copilot_cli_login,
             grok_login=(
                 None
                 if request.command == "webui"
@@ -149,6 +150,16 @@ async def _codex_cli_login(request: object, *, device_code: bool = True) -> Code
         raise TypeError("Codex login requires CodexLoginRequest")
     with fail_after(900):
         return await authorize_codex(request, "device" if device_code else "browser", _present_login)
+
+
+async def _copilot_cli_login(request: object) -> CopilotCredentials:
+    from a13n_harness_ui.model_accounts.copilot import CopilotLoginRequest
+    from a13n_harness_ui.model_accounts.login import authorize_copilot
+
+    if not isinstance(request, CopilotLoginRequest):
+        raise TypeError("Copilot login requires CopilotLoginRequest")
+    with fail_after(900):
+        return await authorize_copilot(request, "device", _present_login)
 
 
 async def _grok_cli_login(request: object, *, device_code: bool = True) -> GrokCredentials:
@@ -290,18 +301,22 @@ async def _run_management(
             _print_projection({"credential_ref": request.ref, "deleted": True}, request.output_format)
         return 0
     if request.action == "status" and request.provider is None:
-        result: object = {
-            "accounts": [
-                await app.inspect_model_account(Provider.CODEX),
-                await app.inspect_model_account(Provider.GROK),
-            ]
-        }
+        result: object = {"accounts": [await app.inspect_model_account(provider) for provider in Provider]}
     else:
         if request.provider is None:
             raise RuntimeError("Authentication command requires a provider")
         provider = Provider(request.provider)
         if request.action == "status":
             result = await app.inspect_model_account(provider)
+        elif request.action == "sources":
+            result = await app.model_account_candidates(provider)
+        elif request.action == "select":
+            from a13n_harness_ui.model_accounts.models import AccountSelection
+
+            selection = AccountSelection.model_validate(
+                {"source": request.account_source, "account_id": request.account_id}
+            )
+            result = await app.select_model_account(provider, selection)
         elif request.action == "login":
             result = await app.login_model_account(
                 provider,

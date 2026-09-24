@@ -265,6 +265,7 @@ function AddModelDialog({
   const [id] = useState(() => `model-${crypto.randomUUID().slice(0, 8)}`);
   const [name, setName] = useState("");
   const [recipe, setRecipe] = useState<Schema<"ModelRecipe"> | null>(null);
+  const [recipeReady, setRecipeReady] = useState(false);
   const save = useMutation({
     mutationFn: async () => {
       let content = template("model", id);
@@ -294,7 +295,7 @@ function AddModelDialog({
       closeLabel="Cancel"
       footer={
         <Button
-          disabled={!recipe}
+          disabled={!recipe || !recipeReady}
           loading={save.isPending}
           onClick={() => save.mutate()}
         >
@@ -305,7 +306,12 @@ function AddModelDialog({
       <div className={styles.stack}>
         <ErrorNotice error={save.error} />
         <TextField label="Model name" value={name} onChange={setName} />
-        <ModelEditor value={recipe} onChange={setRecipe} />
+        <p>Saved Models remain available even if you cancel the Agent draft.</p>
+        <ModelEditor
+          value={recipe}
+          onChange={setRecipe}
+          onRecipeReady={setRecipeReady}
+        />
       </div>
     </ModalFrame>
   );

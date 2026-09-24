@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ProviderAccount } from "./accounts";
 import { createTransport, type Schema } from "../transport/client";
@@ -13,14 +19,20 @@ const json = (body: unknown) =>
   new Response(JSON.stringify(body), {
     headers: { "Content-Type": "application/json" },
   });
-function mount() {
+function mount(
+  connection: Schema<"AccountConnection"> = {
+    provider: "codex",
+    label: "Codex",
+    login_methods: ["device", "browser"],
+  },
+) {
   const queries = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queries}>
       <TransportContext value={createTransport("", () => {})}>
-        <ProviderAccount provider="codex" inline />
+        <ProviderAccount connection={connection} inline />
       </TransportContext>
     </QueryClientProvider>,
   );
@@ -115,3 +127,73 @@ it.each(["javascript:alert(1)", "not a URL"])(
     expect(screen.queryByRole("link")).toBeNull();
   },
 );
+
+it("selects a Copilot source explicitly and confirms shared logout even when expired", async () => {
+  let status = {
+    provider: "copilot",
+    availability: "available",
+    source: "file",
+    usable: false,
+    expiry: "expired",
+    required_action: "reauthenticate",
+    account_id: "test-user",
+    source_id: "copilot_cli_file:/synthetic/config.json",
+    shared_with_cli: true,
+  };
+  const selected = vi.fn();
+  const removed = vi.fn();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/auth/logins") return json(null);
+      if (path.endsWith("/sources"))
+        return json([
+          {
+            selection: { source: "native", account_id: "other-user" },
+            label: "other-user · Host login",
+            selected: false,
+          },
+        ]);
+      if (path.endsWith("/selection")) {
+        selected(await request.json());
+        status = {
+          ...status,
+          account_id: "other-user",
+          source_id: "native:/synthetic/copilot.json",
+          shared_with_cli: false,
+        };
+        return json(status);
+      }
+      if (request.method === "DELETE") {
+        removed();
+        return json(true);
+      }
+      return json(status);
+    }),
+  );
+  mount({
+    provider: "copilot",
+    label: "GitHub Copilot",
+    login_methods: ["device"],
+    source_selection: true,
+  });
+  const logout = await screen.findByRole("button", { name: "Log out account" });
+  expect(selected).not.toHaveBeenCalled();
+  expect(screen.queryByRole("combobox", { name: "Login method" })).toBeNull();
+  fireEvent.click(logout);
+  await screen.findByText(/also affects the official CLI and other Hosts/);
+  expect(removed).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByText("Choose account source"));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "other-user · Host login" }),
+  );
+  await waitFor(() =>
+    expect(selected).toHaveBeenCalledWith({
+      source: "native",
+      account_id: "other-user",
+    }),
+  );
+  await screen.findByText("other-user · Host account");
+});

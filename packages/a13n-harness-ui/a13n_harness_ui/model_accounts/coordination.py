@@ -1,4 +1,4 @@
-"""Host-owned exclusion and durable uncertain-grant evidence for the Grok file store."""
+"""Host-owned exclusion and durable uncertain-grant evidence for rotating file grants."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -34,9 +34,10 @@ async def store_lock(path: Path) -> AsyncIterator[None]:
 
 
 class RefreshJournal:
-    def __init__(self, path: Path, scope: str):
+    def __init__(self, path: Path, scope: str, *, provider: Provider = Provider.GROK):
         self.path = Path(f"{path.resolve()}.refresh.json")
         self.scope = scope
+        self.provider = provider
 
     async def blocked(self, grant: str) -> bool:
         state = await self._read()
@@ -53,10 +54,10 @@ class RefreshJournal:
             grants.discard(grant)
         scopes[self.scope] = sorted(grants)
         document["scopes"] = scopes
-        await write_json_if_unchanged(self.path, document, state.digest, provider=Provider.GROK)
+        await write_json_if_unchanged(self.path, document, state.digest, provider=self.provider)
 
     async def _read(self) -> JsonSnapshot:
-        state = await read_json_snapshot(self.path, provider=Provider.GROK)
+        state = await read_json_snapshot(self.path, provider=self.provider)
         doc = state.document
         if doc is not None and (
             doc.get("version") != 1
@@ -69,6 +70,8 @@ class RefreshJournal:
             )
         ):
             raise AccountStoreError(
-                "Grok refresh coordination state is invalid.", code="account_store_incompatible", provider=Provider.GROK
+                "OAuth refresh coordination state is invalid.",
+                code="account_store_incompatible",
+                provider=self.provider,
             )
         return state
