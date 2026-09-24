@@ -5971,6 +5971,11 @@ export interface components {
         };
         /** CreateThreadRequest */
         CreateThreadRequest: {
+            /**
+             * Coordinator
+             * @default false
+             */
+            coordinator?: boolean;
             /** Thread Id */
             thread_id?: string | null;
             defaults?: components["schemas"]["NewThreadDefaults"] | null;

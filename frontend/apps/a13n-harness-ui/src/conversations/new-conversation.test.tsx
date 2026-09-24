@@ -279,6 +279,7 @@ beforeEach(() => {
       if (pathname.endsWith("configuration-preview"))
         return json({
           configuration: {
+            project_id: (await request.clone().json()).project_id ?? null,
             agent_source: {
               id: (await request.clone().json()).agent_id || "agent-one",
             },
@@ -1934,4 +1935,65 @@ it("keeps readable messages and an open execution reader through a multi-page ch
       .getAttribute("aria-expanded"),
   ).toBe("true");
   expect(turnPages).toBe(2);
+});
+
+it("stages Coordinator locally, restores it and creates directly before Goal submission without confirmation", async () => {
+  failure = "submit-reject";
+  mount();
+  await fill();
+  const toggle = screen.getByRole("button", { name: "Coordinator" });
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(toggle);
+  fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+  expect(writes).toHaveLength(0);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  const restored = new NewDraftStore();
+  expect(restored.get(new Map()).composer.coordinator).toBe(true);
+  restored.dispose();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Conversation busy");
+  expect(writes.map((request) => new URL(request.url).pathname)).toEqual([
+    "/api/threads",
+    `/api/threads/${id}/submit`,
+  ]);
+  expect(await writes[0].clone().json()).toMatchObject({
+    thread_id: id,
+    coordinator: true,
+  });
+  expect(await writes[1].clone().json()).toMatchObject({
+    mode: "goal",
+    parts: ["Build this"],
+  });
+  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+  expect(screen.getByText("Coordinator")).toBeTruthy();
+  expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
+  failure = null;
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(writes).toHaveLength(3));
+  expect(new URL(writes[2].url).pathname).toBe(`/api/threads/${id}/submit`);
+});
+
+it("retains Coordinator intent across Project changes without falling back to ordinary submission", async () => {
+  mount();
+  await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Coordinator" }));
+  fireEvent.click(screen.getByRole("link", { name: "New without project" }));
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true),
+  );
+  expect(drafts.get(id)!.coordinator).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Coordinator" }));
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  expect(writes).toHaveLength(0);
 });

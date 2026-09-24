@@ -99,6 +99,9 @@ export class ThreadDraft {
   localInputs: LocalInput[] = [];
   // A private, in-tab Send choice, not shared input or sticky Thread configuration.
   mode: "normal" | "goal" = "normal";
+  // Private intent: establish the durable Coordinator role before the next Send.
+  coordinator = false;
+  coordinatorUncertain = false;
   modelId: string | undefined;
   environment: Schema<"EnvironmentSelectionPatch"> | undefined;
   controls: ModelControlValues = {};

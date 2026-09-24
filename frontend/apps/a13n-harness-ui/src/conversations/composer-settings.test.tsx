@@ -163,6 +163,7 @@ function Input() {
       threadId="thread-responsive"
       activity={{ state: "inactive" }}
       canRun
+      coordinator={{ active: false, available: true }}
       profile={{ display_name: "Tester", color: "#000000" }}
       unauthorized={() => {}}
       reconcile={() => {}}
@@ -239,6 +240,10 @@ it.each([false, true])(
     await user.click(within(panel).getByRole("button", { name: "Fast mode" }));
     await user.click(within(panel).getByRole("button", { name: "Goal" }));
     expect(draft.mode).toBe("goal");
+    await user.click(
+      within(panel).getByRole("button", { name: "Coordinator" }),
+    );
+    expect(draft.coordinator).toBe(true);
     await user.click(within(panel).getByRole("button", { name: "Model" }));
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     await user.type(
@@ -273,6 +278,9 @@ it.each([false, true])(
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
     expect(draft.doc.getText("text").toString()).toBe("Keep this draft");
     expect(screen.getByRole("button", { name: "Turn off Goal" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Turn off Coordinator" }),
+    ).toBeTruthy();
     act(() => resize(860));
     expect(
       screen.getByRole("button", { name: "Model settings" }).textContent,
@@ -285,6 +293,10 @@ it.each([false, true])(
     act(() => resize(380));
     await user.click(screen.getByRole("button", { name: "Turn off Goal" }));
     expect(draft.mode).toBe("normal");
+    await user.click(
+      screen.getByRole("button", { name: "Turn off Coordinator" }),
+    );
+    expect(draft.coordinator).toBe(false);
   },
 );
 

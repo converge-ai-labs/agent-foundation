@@ -18,7 +18,11 @@ Markdown files open with **Preview** selected and expose **Preview** and **Text*
 
 ## Work with a Coordinator
 
-A Project can have several Coordinators for different objectives. Open an existing conversation's actions or **Conversation details**, choose **Make Coordinator**, and confirm. It must be idle, unarchived, project-bound and have no pending decisions. Promotion keeps its URL, history, title and settings; the role is permanent. Workers cannot be promoted, and existing conversations or earlier Sidekicks are not adopted.
+A Project can have several Coordinators for different objectives. Select a Project and enable **Coordinator** beside **Goal** in the composer, then send your first message to create one directly. In an existing ordinary conversation, the same toggle converts it before sending. Turning the toggle on or off does not change the conversation until Send, and this shortcut adds no confirmation dialog. On narrow screens, find the toggle in Composer settings; an enabled chip stays beside Send. Goal can be enabled independently.
+
+After creation or conversion, **Coordinator** becomes a fixed role label, not an off switch. If conversion fails, your message is not sent. If conversion succeeds but sending fails, the conversation stays a Coordinator and your input is retained for retry. New drafts remember the choice across reloads; switching to no Project requires turning it off or choosing a Project before sending.
+
+Alternatively, open an existing conversation's actions or **Conversation details**, choose **Make Coordinator**, and confirm. It must be idle, unarchived, project-bound and have no pending decisions. Promotion keeps its URL, history, title and settings; the role is permanent. Workers cannot be promoted, and existing conversations or earlier Sidekicks are not adopted.
 
 Share a goal in the ordinary composer. A Coordinator can create its own workers, answer their questions and integrate verified results. A connected-nodes icon identifies the role. Click its title to open it, or the disclosure arrow to show its workers. Each worker is a normal root conversation with its own history, controls and human interaction—not a subagent. Workers appear under only their owner, not again in Running or Recent. Search still finds them as **Coordinator worker**. A visible worker keeps its owner reachable even if the owner was archived or falls outside the current page.
 

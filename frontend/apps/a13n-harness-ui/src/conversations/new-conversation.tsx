@@ -81,7 +81,11 @@ export async function ensureConversation(
     try {
       const created = await result(
         transport.client.POST("/api/threads", {
-          body: { thread_id: threadId, defaults: draft.defaults },
+          body: {
+            thread_id: threadId,
+            defaults: draft.defaults,
+            ...(draft.composer.coordinator ? { coordinator: true } : {}),
+          },
         }),
       );
       if (created.thread_id !== threadId)
@@ -314,6 +318,11 @@ function NewConversation({
             autoFocus={pageReady}
             threadId={threadId}
             activity={{ state: "inactive" }}
+            coordinator={{
+              active: draft.created && composerDraft.coordinator,
+              available: !!effective?.project_id && !preview.error,
+              locked: draft.attempted,
+            }}
             canRun={!!preview.data && !preview.error}
             unavailableReason={
               preview.isPending

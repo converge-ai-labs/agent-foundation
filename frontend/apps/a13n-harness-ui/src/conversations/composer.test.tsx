@@ -1235,3 +1235,135 @@ it("keeps unsent input and blocks Send while clearing context", async () => {
   view.unmount();
   query.clear();
 });
+
+it.each([
+  "accepted",
+  "promotion-rejected",
+  "promotion-unknown",
+  "submit-rejected",
+] as const)(
+  "promotes only on Send and preserves durable role/input boundaries: %s",
+  async (outcome) => {
+    const draft = new ThreadDraft();
+    draft.doc.getText("text").insert(0, "Coordinate this work");
+    draft.receive({
+      draft_id: "draft-one",
+      participant_id: "participant-one",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    });
+    vi.spyOn(draft, "connect").mockReturnValue({
+      presence: () => {},
+      close: () => {},
+    });
+    const calls: string[] = [];
+    let rejectSubmission = outcome === "submit-rejected";
+    const post = vi.fn(async (path: string) => {
+      calls.push(path);
+      if (path.endsWith("/coordinator")) {
+        if (outcome === "promotion-rejected")
+          throw new ApiError("Cannot convert now", 409);
+        if (outcome === "promotion-unknown")
+          throw new Error("Conversion response lost");
+        return {
+          data: {
+            thread_id: "thread-one",
+            role: "coordinator",
+            auto_followup: true,
+          },
+        };
+      }
+      if (rejectSubmission) throw new ApiError("Send rejected", 409);
+      return { data: { thread_id: "thread-one", receipt_id: "receipt-one" } };
+    });
+    const query = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const get = vi.fn().mockRejectedValue(new Error("Read unavailable"));
+    const transport = {
+      client: { POST: post, GET: get },
+    } as unknown as Transport;
+    const view = render(
+      <QueryClientProvider client={query}>
+        <TransportContext value={transport}>
+          <ComposerDrafts value={new Map([["thread-one", draft]])}>
+            <Composer
+              threadId="thread-one"
+              activity={{ state: "inactive" }}
+              canRun
+              coordinator={{ active: false, available: true }}
+              profile={{ display_name: "Test", color: "#000000" }}
+              unauthorized={() => {}}
+              reconcile={() => {}}
+            />
+          </ComposerDrafts>
+        </TransportContext>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Coordinator" }));
+    expect(calls).toEqual([]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() =>
+      expect(draft.submission.kind).toBe(
+        outcome === "accepted" ? "accepted" : "rejected",
+      ),
+    );
+    expect(calls[0]).toBe("/api/threads/{thread_id}/coordinator");
+    if (outcome.startsWith("promotion-")) {
+      expect(calls).toHaveLength(1);
+      expect(draft.coordinator).toBe(true);
+      expect(values(draft.doc).prompt).toBe("Coordinate this work");
+      if (outcome === "promotion-unknown") {
+        expect(get).toHaveBeenCalledTimes(1);
+        expect(draft.coordinatorUncertain).toBe(true);
+        expect(
+          (
+            screen.getByRole("button", {
+              name: "Coordinator",
+            }) as HTMLButtonElement
+          ).disabled,
+        ).toBe(true);
+        expect(
+          (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+            .disabled,
+        ).toBe(true);
+        get.mockResolvedValue({
+          data: { thread: { thread_id: "thread-one", role: "coordinator" } },
+        });
+        fireEvent.click(
+          screen.getByRole("button", { name: "Check Coordinator status" }),
+        );
+        await waitFor(() => expect(draft.coordinatorUncertain).toBe(false));
+        expect(
+          screen.queryByRole("button", { name: "Coordinator" }),
+        ).toBeNull();
+        expect(calls).toHaveLength(1);
+        fireEvent.click(screen.getByRole("button", { name: "Send" }));
+        await waitFor(() => expect(draft.submission.kind).toBe("accepted"));
+        expect(calls).toEqual([
+          "/api/threads/{thread_id}/coordinator",
+          "/api/threads/{thread_id}/submit",
+        ]);
+      }
+    } else {
+      expect(calls[1]).toBe("/api/threads/{thread_id}/submit");
+      expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+      expect(screen.getByText("Coordinator")).toBeTruthy();
+      if (outcome === "submit-rejected") {
+        expect(values(draft.doc).prompt).toBe("Coordinate this work");
+        rejectSubmission = false;
+        fireEvent.click(screen.getByRole("button", { name: "Send" }));
+        await waitFor(() => expect(draft.submission.kind).toBe("accepted"));
+        expect(calls).toEqual([
+          "/api/threads/{thread_id}/coordinator",
+          "/api/threads/{thread_id}/submit",
+          "/api/threads/{thread_id}/submit",
+        ]);
+      }
+    }
+    view.unmount();
+    query.clear();
+    draft.doc.destroy();
+  },
+);

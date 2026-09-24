@@ -191,6 +191,7 @@ class CoordinatorUpdate(SurfaceModel):
 
 
 class CreateThreadRequest(SurfaceModel):
+    coordinator: bool = False
     thread_id: str | None = Field(default=None, pattern=r"^thread[-_][0-9a-f]{32}$")
     defaults: NewThreadDefaults | None = None
     title: str | None = Field(default=None, min_length=1, max_length=200)
@@ -1456,7 +1457,12 @@ def create_webui(
     @server.post("/api/threads", response_model=ThreadSummary, openapi_extra=_body(CreateThreadRequest))
     async def create(request: Request) -> ThreadSummary:
         document = await _document(request, CreateThreadRequest)
-        return await app().create_thread(defaults=document.defaults, title=document.title, thread_id=document.thread_id)
+        return await app().create_thread(
+            defaults=document.defaults,
+            title=document.title,
+            thread_id=document.thread_id,
+            coordinator=document.coordinator,
+        )
 
     @server.get("/api/threads/{thread_id}", response_model=ThreadDetail)
     async def thread(thread_id: str) -> ThreadDetail:
