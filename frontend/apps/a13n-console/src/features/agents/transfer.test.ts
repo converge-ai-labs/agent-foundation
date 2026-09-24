@@ -72,7 +72,7 @@ it("round trips complete configuration, multiline text, nulls and pinned referen
   const file = agentFile({ name: "研究 Agent", description: null }, config);
   expect(parseAgentFile(serializeAgentFile(file))).toEqual(file);
   expect(file).toEqual({
-    schema_version: 1,
+    schema_version: 2,
     name: "研究 Agent",
     description: null,
     config,
@@ -101,11 +101,11 @@ describe("invalid Agent files", () => {
     agentFile({ name: "Research", description: null }, config),
   );
   it.each([
-    ["schema_version: 2", "version"],
+    ["schema_version: 1", "version"],
     ["- array", "object"],
     [valid + "name: duplicate\n", "unique"],
     [valid + "---\nname: second\n", "multiple documents"],
-    [valid.replace("schema_version: 1", "schema_version: !custom 1"), "tag"],
+    [valid.replace("schema_version: 2", "schema_version: !custom 2"), "tag"],
     [
       valid.replace("description: null", "description: &d value\nextra: *d"),
       "aliases",

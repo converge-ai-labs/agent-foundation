@@ -1534,7 +1534,7 @@
   "deleted": "已删除",
   "deleting": "删除中",
   "Help me change the agent {{name}} (key {{key}}, ID {{id}}), starting from its version {{version}} (revision ID {{revision}}).": "请帮我修改 Agent {{name}}（Key {{key}}，ID {{id}}），以它的版本 {{version}}（修订版本 ID {{revision}}）为起点。",
-  "Unsupported Agent file version. Expected schema_version: 1.": "不支持此 Agent 文件版本，需要 schema_version: 1。",
+  "Unsupported Agent file version. Expected schema_version: 2.": "不支持此 Agent 文件版本，需要 schema_version: 2。",
   "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped environment starts again when the run needs it.": "从模板创建会分配新环境。复用已有环境会继续使用同一环境及其保留的文件，也可跨会话复用。已停止的环境会在运行需要时重新启动。",
   "Resubmit": "重新提交",
   "External cleanup was skipped. If your provider still holds the authorization, remove it there.": "已跳过外部清理。如果供应商平台仍保留该授权，请前往移除。",

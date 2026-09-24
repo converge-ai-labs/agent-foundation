@@ -1534,7 +1534,7 @@
   "deleted": "deleted",
   "deleting": "deleting",
   "Help me change the agent {{name}} (key {{key}}, ID {{id}}), starting from its version {{version}} (revision ID {{revision}}).": "Help me change the agent {{name}} (key {{key}}, ID {{id}}), starting from its version {{version}} (revision ID {{revision}}).",
-  "Unsupported Agent file version. Expected schema_version: 1.": "Unsupported Agent file version. Expected schema_version: 1.",
+  "Unsupported Agent file version. Expected schema_version: 2.": "Unsupported Agent file version. Expected schema_version: 2.",
   "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped environment starts again when the run needs it.": "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped environment starts again when the run needs it.",
   "Resubmit": "Resubmit",
   "External cleanup was skipped. If your provider still holds the authorization, remove it there.": "External cleanup was skipped. If your provider still holds the authorization, remove it there.",

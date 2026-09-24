@@ -33,7 +33,7 @@ it("copies and downloads the same complete saved configuration shown in raw prev
   await user.click(screen.getByRole("button", { name: "Raw" }));
   const yaml = screen.getByLabelText("Agent YAML").textContent!;
   expect(parseAgentFile(yaml)).toEqual({
-    schema_version: 1,
+    schema_version: 2,
     name: agent.name,
     description: agent.description,
     config,
