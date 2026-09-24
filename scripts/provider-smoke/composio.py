@@ -161,17 +161,14 @@ async def use_connection(
             print("Stopped before tool execution.")
             return 0
 
-    async def before_dispatch() -> None:
-        # Recheck ownership and readiness after the user has reviewed the request.
-        await inspect_connection(connection, require_ready=True)
-
+    # Recheck ownership and readiness after the user has reviewed the request.
+    await inspect_connection(connection, require_ready=True)
     started = monotonic()
     outcome = await connection.execute_tool(
         tool_key=selected.key,
         provider_version=selected.provider_version,
         arguments=arguments,
         request_id=request_id,
-        before_dispatch=before_dispatch,
     )
     show({"elapsed_seconds": round(monotonic() - started, 2), **outcome.model_dump(mode="json")})
     if outcome.kind == "outcome_unknown":
@@ -224,7 +221,7 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
     configuration: JsonObject = {}
     async with definition.open(configuration, {"api_key": key}, http=http) as provider:
         print("\n[1] Validate provider configuration", flush=True)
-        show({"provider": args.provider, "configuration": configuration, "profile": provider.compatibility_profile})
+        show({"provider": args.provider, "configuration": configuration})
         if args.command == "test":
             await provider.test()
             print("Provider connection test passed.", flush=True)
