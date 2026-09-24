@@ -310,6 +310,7 @@ export function Composer({
   skillDefaults,
   prepareThread,
   coordinator,
+  owner,
   onPreparing,
   onSubmitted,
   onReviewOutcome,
@@ -341,6 +342,7 @@ export function Composer({
   skillDefaults?: Schema<"NewThreadDefaults">;
   prepareThread?: () => Promise<void>;
   coordinator?: { active: boolean; available: boolean; locked?: boolean };
+  owner?: { title: string; onRemove?: () => void; locked?: boolean };
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
   onReviewOutcome?: () => void;
@@ -378,7 +380,10 @@ export function Composer({
     coordinatorStatus.data?.thread.role === "coordinator";
   const coordinatorBlocked =
     draft.coordinatorUncertain ||
-    (draft.coordinator && !coordinatorActive && !coordinator?.available);
+    (!owner &&
+      draft.coordinator &&
+      !coordinatorActive &&
+      !coordinator?.available);
   const connection = useRef<ReturnType<ThreadDraft["connect"]> | null>(null);
   const upload = useRef<HTMLInputElement>(null);
   const editor = useRef<EditorView | null>(null);
@@ -607,6 +612,7 @@ export function Composer({
       );
     const promote =
       action === "send" &&
+      !owner &&
       draft.coordinator &&
       !coordinatorActive &&
       !prepareThread;
@@ -862,7 +868,26 @@ export function Composer({
     draft.coordinator = !draft.coordinator;
     draft.notify();
   };
+  const ownerControl = owner && (
+    <span className={styles.workerIdentity} title={`Managed by ${owner.title}`}>
+      <CoordinatorIcon size={16} />
+      <span>Managed by · {owner.title}</span>
+      {owner.onRemove && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Remove Coordinator assignment"
+          title="Create an independent conversation instead"
+          disabled={owner.locked || preparing || pending || unknown}
+          onClick={owner.onRemove}
+        >
+          <X aria-hidden />
+        </Button>
+      )}
+    </span>
+  );
   const coordinatorControl =
+    !owner &&
     coordinator &&
     (coordinatorActive ? (
       <span
@@ -952,7 +977,7 @@ export function Composer({
       <div className={styles.composerBody}>
         <div className={styles.composerHeader} hidden={compact}>
           {goalToggle}
-          {coordinatorControl}
+          {ownerControl || coordinatorControl}
           <div className={styles.composerEnvironment}>{leadingControls}</div>
         </div>
         <div inert={preparing} className={styles.composerEditor}>
@@ -1145,7 +1170,9 @@ export function Composer({
             {controls?.(false)}
           </div>
           <div className={styles.composerTrailing}>
+            {compact && ownerControl}
             {compact &&
+              !owner &&
               coordinator &&
               (coordinatorActive
                 ? coordinatorControl

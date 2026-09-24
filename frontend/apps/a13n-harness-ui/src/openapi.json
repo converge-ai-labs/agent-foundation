@@ -17045,6 +17045,19 @@
             "title": "Coordinator",
             "type": "boolean"
           },
+          "coordinator_thread_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coordinator Thread Id"
+          },
           "thread_id": {
             "anyOf": [
               {

@@ -208,6 +208,9 @@ class ThreadRepository:
                     select(CoordinatorRecord).where(CoordinatorRecord.thread_id == coordinator_thread_id)
                 )
                 owner_configuration = await session.get(ThreadConfigurationRecord, coordinator_thread_id)
+                owner = await session.get(ThreadRecord, coordinator_thread_id)
+                if owner is not None and owner.archived:
+                    raise StoreConflictError("Restore the Coordinator before adding work.", code="thread_archived")
                 if (
                     binding is None
                     or owner_configuration is None

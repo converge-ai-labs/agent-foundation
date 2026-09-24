@@ -91,6 +91,12 @@ class ThreadService:
     ) -> Thread:
         source = await self._required_configuration()
         configuration = resolve_thread_configuration(source, defaults)
+        if coordinator_thread_id is not None:
+            owner = await self.get(coordinator_thread_id)
+            if owner.archived:
+                raise ThreadError("Restore the Coordinator before adding work.", code="thread_archived")
+            if owner.configuration.project_id not in source.projects:
+                raise ThreadError("The Coordinator's Project is unavailable.", code="thread_project_missing")
         if coordinator and configuration.project_id not in source.projects:
             raise ThreadError("A Coordinator requires an available Project.", code="thread_project_missing")
         return await self._create(

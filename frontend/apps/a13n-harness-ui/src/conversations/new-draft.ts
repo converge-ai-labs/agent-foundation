@@ -7,6 +7,7 @@ const STORAGE_KEY = "a13n-harness-ui.new-draft";
 export type NewDraft = {
   threadId: string;
   defaults: Schema<"NewThreadDefaults">;
+  coordinatorThreadId?: string;
   created: boolean;
   attempted: boolean;
   pending?: Promise<void>;
@@ -40,6 +41,11 @@ function restore(): Omit<NewDraft, "save"> | undefined {
       return;
     if (value !== undefined) defaults[key] = value;
   }
+  if (
+    saved.coordinatorThreadId !== undefined &&
+    typeof saved.coordinatorThreadId !== "string"
+  )
+    return;
   const composer = new ThreadDraft();
   try {
     Y.applyUpdate(composer.doc, decode(saved.update));
@@ -49,7 +55,8 @@ function restore(): Omit<NewDraft, "save"> | undefined {
     throw error;
   }
   if (saved.mode === "goal") composer.mode = "goal";
-  composer.coordinator = saved.coordinator === true;
+  composer.coordinator =
+    !saved.coordinatorThreadId && saved.coordinator === true;
   if (typeof saved.modelId === "string") composer.modelId = saved.modelId;
   if (
     saved.environment &&
@@ -70,6 +77,7 @@ function restore(): Omit<NewDraft, "save"> | undefined {
   return {
     threadId: saved.threadId,
     defaults,
+    coordinatorThreadId: saved.coordinatorThreadId || undefined,
     created: saved.created,
     attempted: saved.attempted,
     composer,
@@ -153,6 +161,7 @@ export class NewDraftStore {
     this.retain({
       threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,
       defaults: { ...old.defaults },
+      coordinatorThreadId: old.coordinatorThreadId,
       created: false,
       attempted: false,
       composer,
@@ -178,6 +187,7 @@ export class NewDraftStore {
             version: 1,
             threadId: draft.threadId,
             defaults: draft.defaults,
+            coordinatorThreadId: draft.coordinatorThreadId,
             created: draft.created,
             attempted: draft.attempted,
             update: encode(Y.encodeStateAsUpdate(draft.composer.doc)),

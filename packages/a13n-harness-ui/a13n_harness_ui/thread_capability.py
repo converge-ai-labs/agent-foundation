@@ -21,6 +21,7 @@ from a13n_harness_ui.composition import CompositionAcceptanceService, ResolvedRu
 from a13n_harness_ui.configuration.discovery import ResourceKind, resource_page
 from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError, ThreadError
+from a13n_harness_ui.root_execution import RootRunAdmission
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage.repositories import ThreadRepository
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationView, RunModelOverrides, ThreadSummary
@@ -235,7 +236,13 @@ class ThreadToolController:
             return {**_failure(exc, "thread_run_failed"), "thread_id": created.thread_id}
         return {"ok": True, "thread_id": created.thread_id, "receipt": receipt.model_dump(mode="json")}
 
-    async def notify_coordinator(self, project_id: str | None, operation: RootOperationView) -> None:
+    async def notify_worker_admitted(self, admission: RootRunAdmission, operation: RootOperationView) -> None:
+        if admission.thread.continuation is None and admission.published.value.coordinator_thread_id is not None:
+            await self.notify_coordinator(admission.published.value.project_id, operation, started=True)
+
+    async def notify_coordinator(
+        self, project_id: str | None, operation: RootOperationView, *, started: bool = False
+    ) -> None:
         """Notify only the explicit owner of a managed worker, without retries or a queue."""
         owner_id = (await self._threads.worker_owners((operation.receipt.thread_id,))).get(operation.receipt.thread_id)
         if owner_id is None:
@@ -251,13 +258,21 @@ class ThreadToolController:
             "This lifecycle notice is separate from any worker report; an ended operation does not prove "
             "the task succeeded. Do not send an acknowledgement or repeat an already integrated report."
         )
+        if started:
+            message = (
+                f"Host notification: A user directly started work in your managed Thread {operation.receipt.thread_id} "
+                f"in Project {project_id}. Receipt: {operation.receipt.receipt_id}. "
+                "The task is already admitted; do not recreate or redispatch it. Include this worker in your "
+                "coordination, inspect its current state with get_thread, and review its saved outcome when available. "
+                "Its first input may not be saved yet. This notice is not a completion report; do not acknowledge it."
+            )
         result = await self._run_or_steer(
             thread_id=owner_id,
             prompt=[TextContent(message, metadata={"display": False})],
         )
         if not result["ok"]:
             get_logger(__name__).info(
-                "Coordinator did not accept terminal notification: %s", operation.receipt.receipt_id
+                "Coordinator did not accept lifecycle notification: %s", operation.receipt.receipt_id
             )
 
     async def _require_target(self, source_thread_id: str, thread_id: str, *, control: bool = False) -> None:
@@ -362,7 +377,11 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 "workers, including while automatic coordination is disabled. Old conversations and ordinary "
                 "Sidekicks remain independent; never adopt, steer, or continue them. "
                 "create_thread atomically creates an owned root in your Project; do not supply another Project. "
-                "Workers remain directly accessible to the user. Reconcile any user changes before assigning more work. "
+                "Users can also create your workers directly and submit work without asking you to relay it. "
+                "On a direct-work notice, inspect and include that worker in your coordination; never recreate or "
+                "redispatch its admitted task. Workers remain directly accessible to the user. "
+                "Reconcile any user changes before assigning more work. Review their outcomes and validation "
+                "against the user's objective before accepting results or requesting corrections. "
                 "Keep the user's objective and authorization in view. At the start of each Run, recover relevant "
                 "open work from the continuation summary and projected tasks and notes; use note_get for omitted "
                 "notes when available. Before planning new work or reporting progress, use get_thread(thread_id=...) "

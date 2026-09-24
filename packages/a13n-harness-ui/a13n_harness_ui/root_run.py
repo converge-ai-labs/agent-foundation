@@ -106,6 +106,7 @@ class RootRunCoordinator:
         interaction_timeouts: bool = False,
         notify: Callable[[str, RootOperationNotice], None] | None = None,
         on_settled: Callable[[str | None, RootOperationView], Awaitable[None]] | None = None,
+        on_human_admitted: Callable[[RootRunAdmission, RootOperationView], Awaitable[None]] | None = None,
         restart_coordinator: GracefulRestart | None = None,
     ) -> None:
         if terminal_retention < 1:
@@ -117,6 +118,7 @@ class RootRunCoordinator:
         self._summary_hub = summary_hub
         self._notify = notify
         self._on_settled = on_settled
+        self._on_human_admitted = on_human_admitted
         self._lock = Lock()
         self._operations: dict[str, _RootOperation] = {}
         self._active_by_thread: dict[str, str] = {}
@@ -234,6 +236,7 @@ class RootRunCoordinator:
         model_overrides: RunModelOverrides | None = None,
         touch: bool = False,
         goal: GoalView | None = None,
+        human_input: bool = False,
     ) -> RootRunReceipt:
         prompt = detach_input(prompt)
         return await self._submit(
@@ -245,6 +248,7 @@ class RootRunCoordinator:
             model_overrides=model_overrides,
             touch=touch,
             goal=goal,
+            human_input=human_input,
         )
 
     async def submit_response(
@@ -289,6 +293,7 @@ class RootRunCoordinator:
         restart: RestartItem | None = None,
         environment: EnvironmentSelectionPatch | None = None,
         goal: GoalView | None = None,
+        human_input: bool = False,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
         receipt = RootRunReceipt(
@@ -355,8 +360,19 @@ class RootRunCoordinator:
                 self._operations[receipt.receipt_id] = operation
                 self._active_by_thread[thread_id] = receipt.receipt_id
                 self._task_group.start_soon(self._run_operation, operation, admission)
+                if human_input and self._on_human_admitted is not None:
+                    self._task_group.start_soon(self._notify_human_admitted, admission, _view(operation))
         await self._publish_change(operation)
         return receipt.model_copy(deep=True)
+
+    async def _notify_human_admitted(self, admission: RootRunAdmission, operation: RootOperationView) -> None:
+        if self._on_human_admitted is None or not self._accepting:
+            return
+        try:
+            await self._on_human_admitted(admission, operation)
+        except Exception:
+            # Admission already succeeded. Notification cannot reject or replay it.
+            get_logger(__name__).warning("Could not notify Coordinator of human admission", exc_info=True)
 
     async def get(self, receipt_id: str) -> RootOperationView:
         async with self._lock:

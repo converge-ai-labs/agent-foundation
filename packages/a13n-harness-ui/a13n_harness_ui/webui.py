@@ -192,6 +192,7 @@ class CoordinatorUpdate(SurfaceModel):
 
 class CreateThreadRequest(SurfaceModel):
     coordinator: bool = False
+    coordinator_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, pattern=r"^thread[-_][0-9a-f]{32}$")
     defaults: NewThreadDefaults | None = None
     title: str | None = Field(default=None, min_length=1, max_length=200)
@@ -1462,6 +1463,7 @@ def create_webui(
             title=document.title,
             thread_id=document.thread_id,
             coordinator=document.coordinator,
+            coordinator_thread_id=document.coordinator_thread_id,
         )
 
     @server.get("/api/threads/{thread_id}", response_model=ThreadDetail)

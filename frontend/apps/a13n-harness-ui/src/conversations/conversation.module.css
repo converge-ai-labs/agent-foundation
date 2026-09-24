@@ -662,6 +662,30 @@
   font-size: 12px;
   white-space: nowrap;
 }
+.workerIdentity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 280px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--a13n-hover);
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.workerIdentity > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workerIdentity > svg,
+.workerIdentity > button {
+  flex-shrink: 0;
+}
+.composer[data-compact="true"] .workerIdentity {
+  max-width: 160px;
+}
 .composerEnvironment {
   display: flex;
   align-items: center;

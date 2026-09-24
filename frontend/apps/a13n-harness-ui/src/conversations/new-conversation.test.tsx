@@ -31,6 +31,9 @@ import type { Schema } from "../transport/client";
 
 const id = `thread_${"a".repeat(32)}`;
 const path = newConversationPath("project-one");
+const ownerId = `thread_${"c".repeat(32)}`;
+let ownerArchived = false;
+let createdOwner: string | undefined;
 let writes: Request[];
 let reads: string[];
 let failure: "create" | "submit" | "reject" | "submit-reject" | null;
@@ -72,6 +75,8 @@ function json(data: unknown, status = 200) {
 beforeEach(() => {
   writes = [];
   reads = [];
+  ownerArchived = false;
+  createdOwner = undefined;
   failure = null;
   paused = undefined;
   readPaused = undefined;
@@ -97,7 +102,16 @@ beforeEach(() => {
             snapshot: focused ?? {
               epoch: "epoch-one",
               cutover_sequence: 0,
-              thread: threadDetail,
+              thread: createdOwner
+                ? {
+                    ...threadDetail,
+                    thread: {
+                      ...threadDetail.thread,
+                      role: "worker",
+                      coordinator_thread_id: createdOwner,
+                    },
+                  }
+                : threadDetail,
             },
           });
         });
@@ -237,6 +251,17 @@ beforeEach(() => {
               },
             ],
           });
+        if (pathname === `/api/threads/${ownerId}`)
+          return json({
+            ...threadDetail,
+            thread: {
+              ...threadDetail.thread,
+              thread_id: ownerId,
+              title: "Project manager",
+              role: "coordinator",
+              archived: ownerArchived,
+            },
+          });
         if (pathname === `/api/threads/${id}`) {
           const detail =
             reads.filter((path) => path === pathname).length === 1
@@ -248,7 +273,18 @@ beforeEach(() => {
               { error: { message: "Thread detail unavailable" } },
               500,
             );
-          return json(detail);
+          return json(
+            createdOwner
+              ? {
+                  ...detail,
+                  thread: {
+                    ...detail.thread,
+                    role: "worker",
+                    coordinator_thread_id: createdOwner,
+                  },
+                }
+              : detail,
+          );
         }
         if (pathname.endsWith("/tasks")) return json({ tasks: [] });
         if (pathname.endsWith("/children"))
@@ -288,12 +324,18 @@ beforeEach(() => {
         });
       writes.push(request.clone());
       if (pathname === "/api/threads") {
+        createdOwner = (await request.clone().json()).coordinator_thread_id;
         await paused;
         if (failure === "create")
           throw new TypeError("Creation acknowledgement lost");
         if (failure === "reject")
           return json({ error: { message: "Configuration not ready" } }, 400);
-        return json({ thread_id: id });
+        return json({
+          thread_id: id,
+          ...(createdOwner
+            ? { role: "worker", coordinator_thread_id: createdOwner }
+            : {}),
+        });
       }
       if (pathname.endsWith("/attachments"))
         return json({
@@ -1996,4 +2038,161 @@ it("retains Coordinator intent across Project changes without falling back to or
     ).toBe(false),
   );
   expect(writes).toHaveLength(0);
+});
+
+it("restores worker assignment and removes only ownership without losing the authored draft", async () => {
+  mount(newConversationPath("project-one", ownerId));
+  await fill();
+  await screen.findByText("Managed by · Project manager");
+  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+  expect(
+    (screen.getByRole("combobox", { name: "Project" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+  const composer = drafts.get(id)!;
+  act(() => {
+    composer.modelId = "model-two";
+    composer.notify();
+  });
+  const restored = new NewDraftStore();
+  const retained = restored.get(new Map());
+  expect(retained.coordinatorThreadId).toBe(ownerId);
+  expect(retained.composer.coordinator).toBe(false);
+  restored.dispose();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Remove Coordinator assignment" }),
+  );
+  expect(values(composer.doc).prompt).toBe("Build this");
+  expect(composer.modelId).toBe("model-two");
+  expect(composer.mode).toBe("goal");
+  expect(creations.current?.coordinatorThreadId).toBeUndefined();
+  expect(
+    screen
+      .getByRole("button", { name: "Coordinator" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+  expect(
+    (screen.getByRole("combobox", { name: "Project" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(false);
+  expect(writes).toHaveLength(0);
+});
+
+it("creates an owned worker directly and keeps fixed ownership after a rejected first Goal submission", async () => {
+  failure = "submit-reject";
+  mount(newConversationPath("project-one", ownerId));
+  await fill();
+  await screen.findByText("Managed by · Project manager");
+  fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Conversation busy");
+  expect(await writes[0].clone().json()).toEqual({
+    thread_id: id,
+    defaults: { project_id: "project-one" },
+    coordinator_thread_id: ownerId,
+  });
+  expect(await writes[1].clone().json()).toMatchObject({
+    mode: "goal",
+    parts: ["Build this"],
+  });
+  expect(
+    screen.queryByRole("button", { name: "Remove Coordinator assignment" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+  expect(screen.getByText("Managed by · Project manager")).toBeTruthy();
+  failure = null;
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(writes).toHaveLength(3));
+  expect(
+    writes.filter(
+      (request) => new URL(request.url).pathname === "/api/threads",
+    ),
+  ).toHaveLength(1);
+});
+
+it("locks uncertain worker creation, reconciles its retained identity and never resubmits automatically", async () => {
+  failure = "create";
+  mount(newConversationPath("project-one", ownerId));
+  await fill();
+  await screen.findByText("Managed by · Project manager");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText(
+    "Unable to reach the server. Check your connection and try again.",
+  );
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Remove Coordinator assignment",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Search").textContent).toContain(
+      `coordinator=${ownerId}`,
+    ),
+  );
+  expect(creations.current?.defaults.project_id).toBe("project-one");
+  failure = null;
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location").textContent).toBe(
+      `/threads/${id}`,
+    ),
+  );
+  expect(writes).toHaveLength(1);
+  await screen.findByText("Managed by · Project manager");
+  expect(
+    screen.queryByRole("button", { name: "Remove Coordinator assignment" }),
+  ).toBeNull();
+});
+
+it("blocks sending when owner refresh fails despite cached ownership", async () => {
+  mount(newConversationPath("project-one", ownerId));
+  await fill();
+  await screen.findByText("Managed by · Project manager");
+  const fetch = vi.mocked(globalThis.fetch);
+  const original = fetch.getMockImplementation()!;
+  fetch.mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (new URL(request.url).pathname === `/api/threads/${ownerId}`)
+      return json({ error: { message: "Owner unavailable" } }, 500);
+    return original(input, init);
+  });
+  await act(async () => {
+    await queries.invalidateQueries({
+      queryKey: ["thread", ownerId, "detail"],
+    });
+  });
+  expect(queries.getQueryData(["thread", ownerId, "detail"])).toBeDefined();
+  expect(queries.getQueryState(["thread", ownerId, "detail"])?.status).toBe(
+    "error",
+  );
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true),
+  );
+  expect(writes).toHaveLength(0);
+});
+
+it("blocks unavailable owners rather than silently creating an independent thread", async () => {
+  ownerArchived = true;
+  mount(newConversationPath("project-one", ownerId));
+  await fill();
+  await screen.findByText("Managed by · Project manager");
+  expect(
+    (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(writes).toHaveLength(0);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Remove Coordinator assignment" }),
+  );
+  expect(
+    (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(false);
 });

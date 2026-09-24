@@ -85,7 +85,7 @@ async def test_terminal_notice_runs_or_steers_lead_and_never_notifies_itself(
             if active:
                 initial = await app.submit_thread(thread_id=lead_id, prompt="Coordinate")
                 await started.wait()
-            receipt = await app.submit_thread(thread_id=worker.thread_id, prompt="Work")
+            receipt = await app._root_runs.submit_prompt(thread_id=worker.thread_id, prompt="Work")
             assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
             await settled.wait()
             release.set()
@@ -119,16 +119,6 @@ async def test_terminal_notice_respects_project_and_current_host_state(
         lead = await create_coordinator(app, "project-main")
         if case == "mode_off":
             await app.set_auto_followup(lead.thread_id, False)
-        if case == "archived":
-            await app.update_thread_metadata(
-                thread_id=lead.thread_id,
-                mutation=ThreadMetadataMutation.model_validate(
-                    {
-                        "expected_version": lead.metadata_version,
-                        "patch": {"archived": True},
-                    }
-                ),
-            )
     if case == "sidekick_off":
         document = yaml.safe_load(root.read_text())
         document["webui"]["sidekick"] = None
@@ -151,6 +141,16 @@ async def test_terminal_notice_respects_project_and_current_host_state(
             defaults=NewThreadDefaults(project_id=project_id),
             coordinator_thread_id=lead.thread_id if project_id == "project-main" and case != "independent" else None,
         )
+        if case == "archived":
+            await app.update_thread_metadata(
+                thread_id=lead.thread_id,
+                mutation=ThreadMetadataMutation.model_validate(
+                    {
+                        "expected_version": lead.metadata_version,
+                        "patch": {"archived": True},
+                    }
+                ),
+            )
         settled = Event()
         original = app._root_runs._on_settled
         if original is not None:
@@ -163,7 +163,7 @@ async def test_terminal_notice_respects_project_and_current_host_state(
 
             app._root_runs._on_settled = observe
         with fail_after(15):
-            receipt = await app.submit_thread(thread_id=worker.thread_id, prompt="Work")
+            receipt = await app._root_runs.submit_prompt(thread_id=worker.thread_id, prompt="Work")
             assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
             if original is not None:
                 await settled.wait()
@@ -207,7 +207,7 @@ async def test_explicit_report_and_terminal_notice_are_distinct_inputs(
                 source_thread_id=worker.thread_id, thread_id=lead_id, message="Tests passed; here is my report."
             )
             await app.wait_root_operation(report["receipt"]["receipt_id"])
-            receipt = await app.submit_thread(thread_id=worker.thread_id, prompt="Finish work")
+            receipt = await app._root_runs.submit_prompt(thread_id=worker.thread_id, prompt="Finish work")
             await app.wait_root_operation(receipt.receipt_id)
             await notified.wait()
         assert len(seen) == 2
@@ -260,7 +260,7 @@ async def test_restarted_worker_keeps_owner_and_rejects_configuration_move(
             defaults=NewThreadDefaults(project_id="project-main"), coordinator_thread_id=lead.thread_id
         )
         worker_id = worker.thread_id
-        await app.submit_thread(thread_id=worker_id, prompt="Work across restart")
+        await app._root_runs.submit_prompt(thread_id=worker_id, prompt="Work across restart")
         with fail_after(15):
             await started.wait()
         with pytest.raises(StoreConflictError, match="cannot move"):
@@ -285,3 +285,59 @@ async def test_restarted_worker_keeps_owner_and_rejects_configuration_move(
         assert notified_threads == [lead.thread_id]
         assert await app._root_runs.latest(other.thread_id) is None
         assert calls.count(worker_id) == 2
+
+
+@pytest.mark.parametrize("delivery", ["accepted", "rejected", "error", "paused"])
+async def test_direct_human_work_notifies_owner_without_changing_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, delivery: str
+) -> None:
+    from a13n_harness_ui.thread_capability import ThreadToolController
+
+    from .test_app import _CompletedReconstructor
+
+    root = coordinator_configuration(tmp_path)
+    notices = []
+
+    async def deliver(self, *, thread_id, prompt):
+        notices.append((thread_id, str(prompt)))
+        if delivery == "error":
+            raise RuntimeError("Notification unavailable")
+        return {"ok": delivery != "rejected"}
+
+    monkeypatch.setattr(ThreadToolController, "_run_or_steer", deliver)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        owner = await create_coordinator(app)
+        await app.set_auto_followup(owner.thread_id, delivery != "paused")
+        worker = await app.create_thread(coordinator_thread_id=owner.thread_id)
+        assert notices == []  # Empty creation does not wake a Coordinator.
+        observed = Event()
+        original = app._root_runs._on_human_admitted
+        assert original is not None
+
+        async def observe(admission, operation):
+            try:
+                await original(admission, operation)
+            finally:
+                observed.set()
+
+        app._root_runs._on_human_admitted = observe
+        with fail_after(15):
+            receipt = await app.submit_thread(thread_id=worker.thread_id, prompt="User's direct task")
+            await observed.wait()
+            assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        started = [notice for notice in notices if "directly started work" in notice[1]]
+        assert len(started) == (0 if delivery == "paused" else 1)
+        if started:
+            assert started[0][0] == owner.thread_id
+            assert worker.thread_id in started[0][1] and receipt.receipt_id in started[0][1]
+            assert "do not recreate or redispatch" in started[0][1]
+        transcript = await app.get_thread_transcript(thread_id=worker.thread_id)
+        parts = [part for entry in transcript.entries for part in entry.parts if part.text == "User's direct task"]
+        assert parts and all("thread_message" not in part.metadata.model_dump().get("harness_ui", {}) for part in parts)
+        observed = Event()
+        receipt = await app.submit_thread(thread_id=worker.thread_id, prompt="A follow-up")
+        with fail_after(15):
+            await observed.wait()
+            await app.wait_root_operation(receipt.receipt_id)
+        assert len([notice for notice in notices if "directly started work" in notice[1]]) == len(started)

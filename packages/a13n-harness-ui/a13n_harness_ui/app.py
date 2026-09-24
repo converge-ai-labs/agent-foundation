@@ -1834,6 +1834,7 @@ class HarnessUiApp:
                 environment=environment,
                 goal=goal,
                 touch=True,
+                human_input=True,
             )
             self._terminal_projections.pin_active_skill_catalog(
                 receipt_id=receipt.receipt_id,
@@ -2773,6 +2774,11 @@ async def open_harness_ui_app(
                 root_executor,
                 restart_coordinator=restart_coordinator,
                 notify=web_push.enqueue if web_push is not None else None,
+                on_human_admitted=(
+                    lambda admission, operation: thread_tools.notify_worker_admitted(admission, operation)
+                )
+                if host_mode == "webui"
+                else None,
                 on_settled=(lambda project_id, operation: thread_tools.notify_coordinator(project_id, operation))
                 if host_mode == "webui"
                 else None,

@@ -35,14 +35,18 @@ import { NewDraftStore, type NewDraft } from "./new-draft";
 import { attachmentSelections, isReadyAttachment } from "./inline-attachments";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { refreshThreadLists } from "./queries";
+import { conversationTitle } from "./local-input";
 import { ConversationTranscript } from "./transcript";
 import { ConversationOpening, useInitialReady } from "./opening";
 import styles from "./new-conversation.module.css";
 
 export const NewConversationDrafts = createContext(new NewDraftStore());
 
-export function newConversationPath(projectId: string | null = null) {
-  return `/new?project=${encodeURIComponent(projectId ?? "")}`;
+export function newConversationPath(
+  projectId: string | null = null,
+  coordinatorThreadId?: string,
+) {
+  return `/new?project=${encodeURIComponent(projectId ?? "")}${coordinatorThreadId ? `&coordinator=${encodeURIComponent(coordinatorThreadId)}` : ""}`;
 }
 
 // Creation and admission remain separate. Resolve a lost creation acknowledgement
@@ -84,7 +88,11 @@ export async function ensureConversation(
           body: {
             thread_id: threadId,
             defaults: draft.defaults,
-            ...(draft.composer.coordinator ? { coordinator: true } : {}),
+            ...(draft.coordinatorThreadId
+              ? { coordinator_thread_id: draft.coordinatorThreadId }
+              : draft.composer.coordinator
+                ? { coordinator: true }
+                : {}),
           },
         }),
       );
@@ -155,6 +163,18 @@ function NewConversation({
   const navigate = useNavigate();
   const drafts = useContext(NewConversationDrafts);
   const [defaults, setDefaults] = useState(draft.defaults);
+  const [ownerId, setOwnerId] = useState(draft.coordinatorThreadId);
+  const owner = useQuery({
+    queryKey: ["thread", ownerId, "detail"],
+    enabled: !!ownerId,
+    queryFn: ({ signal }) =>
+      result(
+        transport.client.GET("/api/threads/{thread_id}", {
+          params: { path: { thread_id: ownerId! } },
+          signal,
+        }),
+      ),
+  });
   const [preparing, setPreparing] = useState(false);
   const composerDraft = useDraft(threadId);
   const preview = useQuery({
@@ -176,19 +196,39 @@ function NewConversation({
   });
   const [search, setSearch] = useSearchParams();
   const requestedProject = search.get("project");
+  const requestedOwner = search.get("coordinator");
   useEffect(() => {
-    // Home resumes the slot; a Project's plus explicitly changes only Project.
-    if (requestedProject === null || preparing || draft.attempted) {
-      if (requestedProject !== (draft.defaults.project_id ?? ""))
+    // Home resumes the slot; explicit creation links select Project and ownership.
+    if (
+      (requestedProject === null && requestedOwner === null) ||
+      preparing ||
+      draft.attempted ||
+      composerDraft.submission.kind === "unknown"
+    ) {
+      if (
+        requestedProject !== (draft.defaults.project_id ?? "") ||
+        (requestedOwner || undefined) !== draft.coordinatorThreadId
+      )
         setSearch(
           (current) => {
             const next = new URLSearchParams(current);
             next.set("project", draft.defaults.project_id ?? "");
+            if (draft.coordinatorThreadId)
+              next.set("coordinator", draft.coordinatorThreadId);
+            else next.delete("coordinator");
             return next;
           },
           { replace: true },
         );
       return;
+    }
+    const nextOwner = requestedOwner || undefined;
+    if (draft.coordinatorThreadId !== nextOwner) {
+      draft.coordinatorThreadId = nextOwner;
+      setOwnerId(nextOwner);
+      if (nextOwner) composerDraft.coordinator = false;
+      composerDraft.notify();
+      draft.save();
     }
     if ((draft.defaults.project_id ?? null) === (requestedProject || null))
       return;
@@ -198,7 +238,14 @@ function NewConversation({
     };
     setDefaults(draft.defaults);
     draft.save();
-  }, [requestedProject, preparing, draft, setSearch]);
+  }, [
+    requestedProject,
+    requestedOwner,
+    preparing,
+    draft,
+    composerDraft,
+    setSearch,
+  ]);
   const change = (patch: Schema<"NewThreadDefaults">) => {
     if (preparing || draft.attempted) return;
     draft.defaults = { ...defaults, ...patch };
@@ -224,7 +271,32 @@ function NewConversation({
   const effectiveEnvironment = selectors.data?.environments.find(
     (item) => item.profile_id === effective?.environment_profile_id,
   );
-  const choicesDisabled = preparing || draft.attempted;
+  const choicesDisabled =
+    preparing || draft.attempted || composerDraft.submission.kind === "unknown";
+  const ownerAvailable =
+    !ownerId ||
+    (!owner.isError &&
+      !!owner.data &&
+      owner.data.thread.role === "coordinator" &&
+      !owner.data.thread.archived &&
+      owner.data.thread.configuration.project_id === defaults.project_id &&
+      !!project);
+  const clearOwner = () => {
+    if (choicesDisabled) return;
+    draft.coordinatorThreadId = undefined;
+    setOwnerId(undefined);
+    composerDraft.coordinator = false;
+    composerDraft.notify();
+    draft.save();
+    setSearch(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("coordinator");
+        return next;
+      },
+      { replace: true },
+    );
+  };
   const [showAvailable, setShowAvailable] = useState(false);
   const projectAligned =
     requestedProject === null ||
@@ -287,7 +359,7 @@ function NewConversation({
                 popupClassName={styles.choicePopup}
                 placeholder="Without a project"
                 emptyMessage="No projects found."
-                disabled={preparing || draft.attempted}
+                disabled={choicesDisabled || !!ownerId}
                 value={defaults.project_id ?? ""}
                 onValueChange={(value) => change({ project_id: value || null })}
                 groups={[
@@ -318,18 +390,35 @@ function NewConversation({
             autoFocus={pageReady}
             threadId={threadId}
             activity={{ state: "inactive" }}
-            coordinator={{
-              active: draft.created && composerDraft.coordinator,
-              available: !!effective?.project_id && !preview.error,
-              locked: draft.attempted,
-            }}
-            canRun={!!preview.data && !preview.error}
+            owner={
+              ownerId
+                ? {
+                    title: owner.data
+                      ? conversationTitle(owner.data.thread)
+                      : ownerId,
+                    onRemove: !draft.created ? clearOwner : undefined,
+                    locked: choicesDisabled,
+                  }
+                : undefined
+            }
+            coordinator={
+              ownerId
+                ? undefined
+                : {
+                    active: draft.created && composerDraft.coordinator,
+                    available: !!effective?.project_id && !preview.error,
+                    locked: draft.attempted,
+                  }
+            }
+            canRun={!!preview.data && !preview.error && ownerAvailable}
             unavailableReason={
-              preview.isPending
-                ? "Updating conversation settings…"
-                : preview.error
-                  ? "Review conversation settings before sending."
-                  : undefined
+              !ownerAvailable
+                ? "The Coordinator must be available in this Project. Retry or remove the assignment."
+                : preview.isPending
+                  ? "Updating conversation settings…"
+                  : preview.error
+                    ? "Review conversation settings before sending."
+                    : undefined
             }
             profile={profile}
             unauthorized={unauthorized}
@@ -394,8 +483,11 @@ function NewConversation({
             </p>
           )}
           <ErrorNotice
-            error={preview.error || selectors.error || projects.error}
+            error={
+              owner.error || preview.error || selectors.error || projects.error
+            }
             retry={() => {
+              if (ownerId) void owner.refetch();
               void preview.refetch();
               void selectors.refetch();
               void projects.refetch();

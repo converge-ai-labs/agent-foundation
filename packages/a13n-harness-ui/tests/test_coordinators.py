@@ -213,6 +213,39 @@ async def test_http_promotion_and_followup_are_authenticated_thread_operations(t
         invalid = await client.post("/api/threads", json={"coordinator": True, "defaults": {"project_id": None}})
         assert invalid.status_code == 400, invalid.text
 
+        # Humans create owned roots without executing the Coordinator or relaying input.
+        worker_id = "thread_" + "b" * 32
+        body = {"thread_id": worker_id, "coordinator_thread_id": direct_id}
+        worker = await client.post("/api/threads", json=body)
+        assert worker.status_code == 200, worker.text
+        assert worker.json()["role"] == "worker"
+        assert worker.json()["coordinator_thread_id"] == direct_id
+        assert worker.json()["parent_thread_id"] is None
+        assert worker.json()["root_activity"]["state"] == "inactive"
+        assert (await client.post("/api/threads", json=body)).status_code == 409
+        assert (await client.get(f"/api/threads/{worker_id}")).json()["thread"]["coordinator_thread_id"] == direct_id
+        for invalid_body in (
+            {"coordinator": True, "coordinator_thread_id": direct_id},
+            {"coordinator_thread_id": direct_id, "defaults": {"project_id": "project-other"}},
+            {"coordinator_thread_id": direct_id, "defaults": {"project_id": None}},
+            {"coordinator_thread_id": worker_id},
+        ):
+            rejected = await client.post("/api/threads", json=invalid_body)
+            assert rejected.status_code in (400, 409), rejected.text
+        ordinary = (await client.post("/api/threads", json={})).json()
+        rejected = await client.post("/api/threads", json={"coordinator_thread_id": ordinary["thread_id"]})
+        assert rejected.status_code in (400, 409), rejected.text
+        assert (await client.get(f"/api/threads/{direct_id}")).json()["thread"]["continuation_state"] == "initial"
+        await client.patch(
+            f"/api/threads/{direct_id}/metadata",
+            json={
+                "expected_version": direct.json()["metadata_version"],
+                "patch": {"archived": True},
+            },
+        )
+        rejected = await client.post("/api/threads", json={"coordinator_thread_id": direct_id})
+        assert rejected.status_code in (400, 409), rejected.text
+
 
 async def test_independent_database_writers_promote_same_thread_atomically(tmp_path: Path) -> None:
     from a13n_harness_ui.storage.database import open_database

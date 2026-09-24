@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { ArrowDown } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
@@ -33,7 +33,7 @@ import { useLiveThread } from "./live-threads";
 import { LiveConnectionNotice } from "./live-connection";
 import { ConversationTranscript, RecoveryNotice } from "./transcript";
 import { PauseConversationFollowing } from "./execution-details";
-import { inputSource } from "./local-input";
+import { inputSource, conversationTitle } from "./local-input";
 import { InputNavigation } from "./input-navigation";
 import {
   captureReadingAnchor,
@@ -66,6 +66,18 @@ function Conversation({
   const detail = useThread(threadId);
   const selectors = useSelectors();
   const isCoordinator = detail.data?.thread.role === "coordinator";
+  const ownerId = detail.data?.thread.coordinator_thread_id;
+  const owner = useQuery({
+    queryKey: ["thread", ownerId, "detail"],
+    enabled: !!ownerId,
+    queryFn: ({ signal }) =>
+      result(
+        transport.client.GET("/api/threads/{thread_id}", {
+          params: { path: { thread_id: ownerId! } },
+          signal,
+        }),
+      ),
+  });
   const results = useResults();
   const tracker = results.tracker;
   useEffect(() => {
@@ -804,6 +816,15 @@ function Conversation({
             autoFocus={pageReady && search.get("compose") === "1"}
             threadId={threadId}
             activity={thread?.root_activity ?? { state: "inactive" }}
+            owner={
+              ownerId
+                ? {
+                    title: owner.data
+                      ? conversationTitle(owner.data.thread)
+                      : ownerId,
+                  }
+                : undefined
+            }
             coordinator={
               thread && thread.role !== "worker"
                 ? {
