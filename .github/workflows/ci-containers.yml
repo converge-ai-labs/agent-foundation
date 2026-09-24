@@ -24,7 +24,6 @@ on:
       - "packages/a13n-logging/*"
       - "packages/a13n-logging/a13n_logging/**"
       - "pyproject.toml"
-      - "scripts/docker-entrypoint.sh"
       - "uv.lock"
   workflow_dispatch:
 
@@ -73,7 +72,6 @@ jobs:
               - 'packages/a13n-logging/*'
               - 'packages/a13n-logging/a13n_logging/**'
               - 'pyproject.toml'
-              - 'scripts/docker-entrypoint.sh'
               - 'uv.lock'
             docker_environment:
               - ".github/workflows/ci-containers.yml"

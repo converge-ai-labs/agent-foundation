@@ -33,7 +33,6 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         ".github/workflows/images.yml",
         ".github/workflows/release-*.yml",
         ".github/workflows/ci-containers.yml",
-        "scripts/docker-entrypoint.sh",
         "deploy/containers/*",
     ),
     "test_service_contract_notification.py": (".github/workflows/notify-service-contract.yml",),

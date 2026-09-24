@@ -200,7 +200,7 @@ def test_service_generated_references_match_current_definitions(built_site: Path
 
     for filename, renderer in (
         ("configuration-reference.md", "render_configuration"),
-        ("api-reference.md", "render_native_api"),
+        ("api-reference.md", "render_service_api"),
     ):
         actual = (ROOT / "docs/a13n-service" / filename).read_text(encoding="utf-8")
         assert normalized(actual) == normalized(namespace[renderer]()), filename
@@ -226,7 +226,7 @@ def test_service_generated_references_match_current_definitions(built_site: Path
         assert (built_site / "assets/reference" / generated).read_bytes() == source.read_bytes()
 
 
-def test_service_foundation_configuration_example_matches_settings() -> None:
+def test_service_configuration_examples_match_settings() -> None:
     import tomllib
 
     from a13n_service.settings import Settings

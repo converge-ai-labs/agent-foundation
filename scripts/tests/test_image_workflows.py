@@ -153,7 +153,7 @@ def test_package_tests_do_not_trigger_images(package: str, suffix: str, workflow
     "path,expected",
     [
         ("packages/a13n-service/a13n_service/app.py", {"service"}),
-        ("packages/a13n-service/a13n_service/database/migrations/versions/initial.py", {"service"}),
+        ("packages/a13n-service/a13n_service/migrations/versions/initial.py", {"service"}),
         ("packages/a13n-service/README.md", {"service"}),
         ("packages/a13n-harness/a13n_harness/types.py", {"service", "harness_ui"}),
         ("packages/a13n-envd-client/a13n_envd_client/eip/client.py", {"service", "harness_ui"}),

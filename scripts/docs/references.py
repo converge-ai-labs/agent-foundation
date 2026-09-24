@@ -1,4 +1,4 @@
-"""Render Environment configuration, Service settings, and Native API references."""
+"""Render Environment configuration, Service settings, and Service API references."""
 
 from __future__ import annotations
 
@@ -140,7 +140,7 @@ The complete machine-readable validation schema, including named enum/union defi
     return text.rstrip() + "\n"
 
 
-def render_native_api() -> str:
+def render_service_api() -> str:
     schema = json.loads(OPENAPI.read_text(encoding="utf-8"))
     groups: dict[str, list[tuple[str, str, dict[str, Any], list[dict[str, Any]]]]] = defaultdict(list)
     for path, methods in schema["paths"].items():
@@ -160,7 +160,7 @@ Download [the complete OpenAPI JSON](../assets/reference/service-openapi.json).
         text += f"## {tag}\n\n"
         for path, method, operation, common in operations:
             text += f"### `{method.upper()} {path}`\n\n"
-            text += operation.get("summary", "Native operation") + ".\n\n"
+            text += operation.get("summary", "Service operation") + ".\n\n"
             if description := operation.get("description"):
                 text += description + "\n\n"
             parameters = [*common, *operation.get("parameters", [])]
@@ -298,7 +298,7 @@ def main() -> None:
     outputs = {
         "docs/environments/configuration-reference.md": render_environment_configuration(),
         "docs/a13n-service/configuration-reference.md": render_configuration(),
-        "docs/a13n-service/api-reference.md": render_native_api(),
+        "docs/a13n-service/api-reference.md": render_service_api(),
         "scripts/docs/service-settings.schema.json": json.dumps(Settings.model_json_schema(), indent=2) + "\n",
     }
     for name, content in outputs.items():

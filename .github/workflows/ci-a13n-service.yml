@@ -7,21 +7,15 @@ on:
       - ".github/workflows/ci-a13n-service.yml"
       - ".github/workflows/release-a13n-service.yml"
       - "conftest.py"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/a13n-envd/**"
       - "scripts/tests/test_ci_inputs.py"
       - "dev/**"
       - "packages/a13n-service/**"
       - "packages/a13n-logging/**"
       - "pyproject.toml"
-      - "scripts/dev.sh"
       - "Makefile"
       - "proto/a13n-service/**"
       - "scripts/export-a13n-service-openapi.py"
       - "scripts/tests/test_service_contract.py"
-      - "scripts/provider-smoke/**"
-      - "scripts/tests/provider_smoke/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-envd-client/**"
@@ -32,21 +26,15 @@ on:
       - ".github/workflows/ci-a13n-service.yml"
       - ".github/workflows/release-a13n-service.yml"
       - "conftest.py"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/a13n-envd/**"
       - "scripts/tests/test_ci_inputs.py"
       - "dev/**"
       - "packages/a13n-service/**"
       - "packages/a13n-logging/**"
       - "pyproject.toml"
-      - "scripts/dev.sh"
       - "Makefile"
       - "proto/a13n-service/**"
       - "scripts/export-a13n-service-openapi.py"
       - "scripts/tests/test_service_contract.py"
-      - "scripts/provider-smoke/**"
-      - "scripts/tests/provider_smoke/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-envd-client/**"
@@ -115,10 +103,6 @@ jobs:
       - name: Test Service contract export
         if: matrix.name == 'checks'
         run: uv run --locked python -m pytest scripts/tests/test_service_contract.py --junitxml=test-results/contract.xml
-
-      - name: Test provider diagnostics without external calls
-        if: matrix.name == 'checks'
-        run: uv run --locked python -m pytest scripts/tests/provider_smoke --junitxml=test-results/providers.xml
 
       - name: Test logging
         if: matrix.name == 'checks'

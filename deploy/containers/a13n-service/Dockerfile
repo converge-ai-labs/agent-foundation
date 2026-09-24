@@ -49,10 +49,8 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=builder --chown=root:root /app /app
-COPY --chown=root:root scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY --chown=root:root deploy/containers/a13n-service/service.toml /app/service.toml
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
-    && chmod -R go-w /app \
+RUN chmod -R go-w /app \
     && mkdir -p /app/var/objects \
     && chown -R app:app /app/var
 
@@ -69,5 +67,5 @@ EXPOSE 8000
 # The server answers only after startup, including an `all`/`control` automatic migration.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --start-interval=2s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"]
-ENTRYPOINT ["tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["tini", "--"]
 CMD ["a13n-service", "--config", "/app/service.toml", "run"]

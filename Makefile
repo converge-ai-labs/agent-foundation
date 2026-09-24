@@ -167,15 +167,12 @@ dev-env-list: ## List this machine's checkouts and their local instances
 live-test: sync ## Run the Service live journeys: Control and two Workers over HTTPS with disposable stores (Docker)
 	@uv run --locked python -m dev.live_tests $(LIVE_TEST_ARGS)
 
-.PHONY: langfuse-up langfuse-down langfuse-test langfuse-reset
+.PHONY: langfuse-up langfuse-down langfuse-reset
 langfuse-up: ## Start and authenticate machine-shared local Langfuse
 	@uv run --locked python -m dev.observability.langfuse up
 
 langfuse-down: ## Stop machine-shared local Langfuse while preserving its data
 	@uv run --locked python -m dev.observability.langfuse down
-
-langfuse-test: ## Verify Service OTLP write and Trace Query against shared local Langfuse v4
-	@uv run --locked python -m dev.observability.langfuse test
 
 langfuse-reset: ## Stop shared local Langfuse and remove all shared local trace data
 	@uv run --locked python -m dev.observability.langfuse reset
@@ -567,7 +564,7 @@ service-boundaries: sync ## Verify Service import direction
 
 .PHONY: live-test-check
 live-test-check: sync ## Check live-test fixtures, configuration and journey selection without Docker
-	@uv run --locked python -m pytest scripts/tests/test_service_foundation_tooling.py -q
+	@uv run --locked python -m pytest scripts/tests/test_live_test_tooling.py -q
 
 .PHONY: service-config-check
 service-config-check:

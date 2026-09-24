@@ -14,6 +14,8 @@ on:
       - "conftest.py"
       - "scripts/tests/test_ci_inputs.py"
       - "dev/observation-demo/**"
+      - "scripts/provider-smoke/**"
+      - "scripts/tests/provider_smoke/**"
       - "scripts/check-a13n-distributions.py"
       - "scripts/release_version.py"
       - "pyproject.toml"
@@ -31,6 +33,8 @@ on:
       - "conftest.py"
       - "scripts/tests/test_ci_inputs.py"
       - "dev/observation-demo/**"
+      - "scripts/provider-smoke/**"
+      - "scripts/tests/provider_smoke/**"
       - "scripts/check-a13n-distributions.py"
       - "scripts/release_version.py"
       - "pyproject.toml"
@@ -92,6 +96,10 @@ jobs:
 
       - name: Test a13n Harness
         run: uv run --locked python -m pytest -vv ${{ matrix.test_targets }} --junitxml=test-results/harness.xml --durations=30 -r a
+
+      - name: Test provider diagnostics without external calls
+        if: matrix.name == 'Linux'
+        run: uv run --locked python -m pytest scripts/tests/provider_smoke --junitxml=test-results/providers.xml
 
       - name: Retain Harness test reports
         if: always()

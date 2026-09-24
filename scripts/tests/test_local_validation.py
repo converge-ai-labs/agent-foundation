@@ -145,9 +145,9 @@ def test_logging_and_service_build_targets_publish_only_their_own_package(compon
 @pytest.mark.parametrize(
     "path,regenerates",
     [
-        ("packages/a13n-service/tests/test_openapi.py", False),
+        ("packages/a13n-service/tests/test_foundation.py", False),
         ("packages/a13n-harness/tests/test_agent.py", False),
-        ("packages/a13n-service/src/a13n_service/app.py", True),
+        ("packages/a13n-service/a13n_service/app.py", True),
         ("packages/a13n-service/pyproject.toml", True),
         ("scripts/export-a13n-service-openapi.py", True),
         ("uv.lock", True),
@@ -199,10 +199,10 @@ def test_service_ci_owns_export_drift_and_tests() -> None:
         patterns = workflow[True][event]["paths"]
         for path in (
             "proto/a13n-service/openapi.json",
-            "proto/a13n-service/run-stream-event.schema.json",
+            "proto/a13n-service/thread-stream.schema.json",
             "scripts/export-a13n-service-openapi.py",
             "scripts/tests/test_service_contract.py",
-            "packages/a13n-service/a13n_service/gateway/router.py",
+            "packages/a13n-service/a13n_service/runs/routes.py",
             "packages/a13n-harness/a13n_harness/types.py",
             "packages/a13n-stream-protocol/a13n_stream_protocol/events.py",
             "uv.lock",
