@@ -26,7 +26,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 const vision = {
-  id: "mdl_0123456789abcdef",
+  id: "mdl_0123456789abcdef0123",
   key: "vision",
   name: "Vision",
   enabled: true,
@@ -178,7 +178,7 @@ it("overrides media understanding per kind and names the choice on its chip", as
       ? {
           id: "ws_test",
           version: 0,
-          image: "mdl_0123456789abcdef",
+          image: "mdl_0123456789abcdef0123",
           video: null,
           audio: null,
         }
@@ -214,7 +214,7 @@ it("overrides media understanding per kind and names the choice on its chip", as
   expect(submit.mock.lastCall?.[0].options).toEqual({
     overrides: {
       media_understanding: {
-        image: "mdl_0123456789abcdef",
+        image: "mdl_0123456789abcdef0123",
         video: null,
         audio: null,
       },
@@ -271,7 +271,7 @@ it("sends the chosen model and instructions as the run's overrides", async () =>
   expect(submit.mock.lastCall?.[0]).toEqual({
     options: {
       overrides: {
-        model: { model_id: "mdl_0123456789abcdef" },
+        model: { model_id: "mdl_0123456789abcdef0123" },
         instructions: "Answer briefly.",
       },
     },

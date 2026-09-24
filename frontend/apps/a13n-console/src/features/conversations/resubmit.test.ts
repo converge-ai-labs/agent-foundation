@@ -104,7 +104,7 @@ it("reads every part of a stored message and nothing that is not one", () => {
   const payload = {
     content: [
       { type: "text", text: "Compare" },
-      { type: "asset", asset_id: "ast_0123456789abcdef" },
+      { type: "asset", asset_id: "ast_0123456789abcdef0123" },
       { type: "url", url: "https://example.com/a.png" },
       { type: "json", value: { rows: 2 } },
     ],
