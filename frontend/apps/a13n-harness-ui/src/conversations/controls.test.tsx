@@ -38,9 +38,13 @@ const configuration: Schema<"ThreadConfiguration"> = {
   environment_profile_id: "local",
 };
 it("keeps dirty selections on external changes and requires review before versioned apply", async () => {
-  const PATCH = vi
-    .fn()
-    .mockResolvedValue({ data: { ...configuration, version: 3 } });
+  const PATCH = vi.fn().mockResolvedValue({
+    data: {
+      thread_id: "one",
+      metadata_version: 1,
+      configuration: { ...configuration, version: 3 },
+    },
+  });
   const wrapper = harness({
     PATCH,
     GET: vi.fn(async (path) => ({
@@ -54,13 +58,8 @@ it("keeps dirty selections on external changes and requires review before versio
             },
     })),
   });
-  const reconcile = vi.fn();
   const view = render(
-    <ThreadSelections
-      threadId="one"
-      configuration={configuration}
-      reconcile={reconcile}
-    />,
+    <ThreadSelections threadId="one" configuration={configuration} />,
     { wrapper },
   );
   fireEvent.click(screen.getByText("Change next Run selections"));
@@ -74,7 +73,6 @@ it("keeps dirty selections on external changes and requires review before versio
         version: 2,
         agent_source: { kind: "agent", id: "other-agent" },
       }}
-      reconcile={reconcile}
     />,
   );
   expect((checkbox as HTMLInputElement).checked).toBe(true);
@@ -103,7 +101,11 @@ it("keeps dirty selections on external changes and requires review before versio
 it("clears a saved default Model with an explicit null versioned patch", async () => {
   const user = userEvent.setup();
   const PATCH = vi.fn().mockResolvedValue({
-    data: { ...configuration, version: 2, default_model_id: null },
+    data: {
+      thread_id: "one",
+      metadata_version: 1,
+      configuration: { ...configuration, version: 2, default_model_id: null },
+    },
   });
   const wrapper = harness({
     PATCH,
@@ -128,7 +130,6 @@ it("clears a saved default Model with an explicit null versioned patch", async (
     <ThreadSelections
       threadId="one"
       configuration={{ ...configuration, default_model_id: "model-one" }}
-      reconcile={vi.fn()}
     />,
     { wrapper },
   );
@@ -146,6 +147,19 @@ it("clears a saved default Model with an explicit null versioned patch", async (
   expect(PATCH.mock.calls[0][1].body).toEqual({
     expected_version: 1,
     patch: { default_model_id: null },
+  });
+  // The parent inspection still holds version 1; the acknowledgement owns the
+  // visible value and the next write's version without another GET.
+  await waitFor(() => expect(choice.textContent).toBe("Follow Agent model"));
+  await user.click(choice);
+  await user.click(await screen.findByRole("option", { name: "Saved model" }));
+  await user.click(
+    screen.getByRole("button", { name: "Save next Run selections" }),
+  );
+  await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(2));
+  expect(PATCH.mock.calls[1][1].body).toEqual({
+    expected_version: 2,
+    patch: { default_model_id: "model-one" },
   });
 });
 
@@ -287,14 +301,9 @@ it("disables selection editing during the submitted versioned write", async () =
             },
     })),
   });
-  render(
-    <ThreadSelections
-      threadId="one"
-      configuration={configuration}
-      reconcile={vi.fn()}
-    />,
-    { wrapper },
-  );
+  render(<ThreadSelections threadId="one" configuration={configuration} />, {
+    wrapper,
+  });
   fireEvent.click(screen.getByText("Change next Run selections"));
   fireEvent.click(await screen.findByRole("checkbox", { name: "A" }));
   fireEvent.click(

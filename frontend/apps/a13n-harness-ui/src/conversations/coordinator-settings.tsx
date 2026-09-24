@@ -5,6 +5,7 @@ import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { refreshThreadLists } from "./queries";
+import { refreshThread } from "./refresh";
 
 export function canPromoteCoordinator(
   thread: Schema<"ThreadSummary">,
@@ -43,9 +44,7 @@ export function useCoordinatorMutation(thread: Schema<"ThreadSummary">) {
       );
     },
     onSettled: () => {
-      void queries.invalidateQueries({
-        queryKey: ["thread", thread.thread_id],
-      });
+      refreshThread(queries, thread.thread_id, "lifecycle");
       void refreshThreadLists(queries);
     },
     retry: false,

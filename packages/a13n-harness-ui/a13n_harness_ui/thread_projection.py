@@ -666,7 +666,8 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
     if state.thread_id != thread.thread_id:
         raise ThreadError("Thread state belongs to another Thread.", code="thread_continuation_incompatible")
     display = stored.display_history if isinstance(stored, StoredContinuation) else None
-    history = display.messages if display is not None else state.message_history
+    model_history = state.message_history
+    history = display.messages if display is not None else model_history
     completed = display.completed_responses if display is not None else ()
     continuation_id = thread.continuation.logical_digest if thread.continuation else None
     notes = NotePage(continuation_id=continuation_id)
@@ -676,12 +677,12 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         working = WorkingState.model_validate(entry.data)
         tasks, notes = project_working_state(working, continuation_id)
     metadata = ThreadInspection(
-        context_empty=not state.message_history,
+        context_empty=not model_history,
         run_composition=stored.run_composition if isinstance(stored, StoredContinuation) else None,
         latest_request_tokens=next(
             (
                 message.usage.total_tokens
-                for message in reversed(state.message_history)
+                for message in reversed(model_history)
                 if isinstance(message, ModelResponse) and message.usage.total_tokens > 0
             ),
             None,

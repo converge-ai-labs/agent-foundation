@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
 import { result, type Schema, type Transport } from "../transport/client";
+import { retainThreadSelections } from "./thread-updates";
 
 const pendingRefreshes = new WeakSet<Query>();
 
@@ -63,6 +64,7 @@ export function useThreads(
   } = {},
 ) {
   const { client } = useTransport();
+  const queries = useQueryClient();
   const list = useInfiniteQuery({
     queryKey: [
       "threads",
@@ -78,8 +80,8 @@ export function useThreads(
     ],
     enabled,
     initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam, signal }) => ({
-      ...(await result(
+    queryFn: async ({ pageParam, signal }) => {
+      const page = await result(
         client.GET("/api/threads/activity", {
           params: {
             query: {
@@ -97,10 +99,19 @@ export function useThreads(
           },
           signal,
         }),
-      )),
-      // Pagination observes only its new page, not the rows already loaded.
-      observedAt: Date.now(),
-    }),
+      );
+      const retain = (row: Schema<"ThreadActivityView">) => ({
+        ...row,
+        thread: retainThreadSelections(queries, row.thread),
+      });
+      return {
+        ...page,
+        rows: page.rows.map(retain),
+        active_rows: page.active_rows?.map(retain),
+        // Pagination observes only its new page, not the rows already loaded.
+        observedAt: Date.now(),
+      };
+    },
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
   // Archive toggles replace a query, not the visible list. Retain only the same
@@ -218,16 +229,22 @@ export function seedThreadSnapshot(
 
 export function useThread(threadId: string) {
   const { client } = useTransport();
+  const queries = useQueryClient();
   return useQuery({
     queryKey: ["thread", threadId, "detail"],
     enabled: !!threadId,
-    queryFn: ({ signal }) =>
-      result(
+    queryFn: async ({ signal }) => {
+      const detail = await result(
         client.GET("/api/threads/{thread_id}", {
           params: { path: { thread_id: threadId } },
           signal,
         }),
-      ),
+      );
+      return {
+        ...detail,
+        thread: retainThreadSelections(queries, detail.thread),
+      };
+    },
   });
 }
 export function useHistory(

@@ -18,6 +18,7 @@ import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import { refreshThreadLists } from "./queries";
+import { refreshThread } from "./refresh";
 import { ComposerDrafts } from "./composer";
 import { conversationTitle } from "./local-input";
 import { NewConversationDrafts, newConversationPath } from "./new-conversation";
@@ -110,9 +111,7 @@ export function ThreadRow({
         navigate(newConversationPath(row.thread.configuration.project_id));
     },
     onSettled: () => {
-      void queries.invalidateQueries({
-        queryKey: ["thread", row.thread.thread_id],
-      });
+      refreshThread(queries, row.thread.thread_id, "metadata");
       void refreshThreadLists(queries);
       void queries.invalidateQueries({ queryKey: ["unsent-threads"] });
     },

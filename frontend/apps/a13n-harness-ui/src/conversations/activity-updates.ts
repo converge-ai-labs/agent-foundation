@@ -1,6 +1,7 @@
 import type { InfiniteData, Query, QueryClient } from "@tanstack/react-query";
 import { result, type Schema, type Transport } from "../transport/client";
 import { scheduleRefresh } from "./refresh";
+import { retainThreadSelections } from "./thread-updates";
 
 type Page = Schema<"ThreadActivityPage"> & { observedAt: number };
 type Row = Schema<"ThreadActivityView">;
@@ -39,12 +40,26 @@ export function applyActivityUpdates(
   ids: string[],
   observed?: ReadonlyMap<Query, unknown>,
 ) {
-  const updates = new Map(rows.map((row) => [row.thread.thread_id, row]));
+  const updates = new Map(
+    rows.map((row) => [
+      row.thread.thread_id,
+      {
+        ...row,
+        thread: retainThreadSelections(client, row.thread),
+      },
+    ]),
+  );
   for (const query of client
     .getQueryCache()
     .findAll({ queryKey: ["threads"] })) {
     const data = query.state.data as InfiniteData<Page> | undefined;
-    if (!data?.pages) continue;
+    if (!data?.pages) {
+      // An initial read can also predate the hint. It has no rows with which to
+      // establish old membership, so reconcile it after its own request settles.
+      if (query.state.fetchStatus === "fetching")
+        scheduleRefresh(client, (candidate) => candidate === query);
+      continue;
+    }
     const existing = new Map(
       data.pages
         .flatMap((page) => [...page.rows, ...(page.active_rows ?? [])])
@@ -128,9 +143,8 @@ export function refreshActivity(
           .getQueryCache()
           .findAll({ queryKey: ["threads"] });
         if (!queries.length) continue;
-        // Pagination may have begun before this hint. Observe after it, never
-        // cancel it or let its older response overwrite the incremental result.
-        await Promise.allSettled(queries.map((query) => query.promise));
+        // Do not wait for unrelated pagination before looking up this Thread.
+        // applyActivityUpdates reconciles affected lists whose reads overlap.
         const observed = new Map(
           queries.map((query) => [query, query.state.data]),
         );
