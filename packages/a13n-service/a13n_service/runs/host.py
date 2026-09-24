@@ -1,9 +1,10 @@
 """What the worker binds to the Harness for one attempt, for every agent of the run's inline graph.
 
 `resolve_host` reads, in the attempt's short plan session, what each agent uses from the host: its
-connections, web providers and pinned skills. `open_host` opens them outside any session for one Harness run.
-The opened `Host` answers the definition builder with each agent's capabilities and gives each agent's run
-bindings what it binds of its own. Agents are keyed by revision, which fixes their configuration.
+connections, web providers and pinned skills, and the run's mounted memories, which only the root agent uses.
+`open_host` opens them outside any session for one Harness run. The opened `Host` answers the definition
+builder with each agent's capabilities and gives each agent's run bindings what it binds of its own. Agents
+are keyed by revision, which fixes their configuration.
 """
 
 from collections.abc import AsyncIterator, Mapping
@@ -12,18 +13,21 @@ from dataclasses import dataclass, replace
 from functools import partial
 
 from a13n_harness import AgentContext, RunBindings
+from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.capabilities.web import WebBinding
+from a13n_harness.toolsets.memory_files import FileToolKey
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.resources.agents.toolsets import enabled_tool, enabled_tools, web_tools
+from a13n_service.resources.agents.toolsets import enabled_tool, enabled_tools, memory_file_tools, web_tools
 from a13n_service.resources.connections.runtime import SelectedConnection, open_connections, resolve_connections
 from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease, prove
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.configuration import ConfigurationCapability
+from a13n_service.runs.memories.execution import PlannedMemory, file_memory, resolve_memories
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.secrets import Requirements, secrets_policy
 from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
@@ -43,6 +47,9 @@ class _Parts:
 class HostPlan:
     parts: Mapping[str, _Parts]
     secrets: Requirements
+    memories: tuple[PlannedMemory, ...]
+    # The root agent's enabled memory file tools.
+    memory_tools: frozenset[FileToolKey]
 
 
 async def resolve_host(
@@ -71,7 +78,12 @@ async def resolve_host(
             web=await resolve_web(session, principal, scope, web_tools(config.toolsets), authority=authority),
             skills=await resolve_skills(session, run, config.skills),
         )
-    return HostPlan(parts, {node.revision_id: node.config.secret_requirements for node in agent.agents()})
+    return HostPlan(
+        parts,
+        {node.revision_id: node.config.secret_requirements for node in agent.agents()},
+        memories=await resolve_memories(session, run),
+        memory_tools=memory_file_tools(agent.config.toolsets),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +97,8 @@ class Host:
     models: Mapping[str, Model]
     tools: Mapping[str, tuple[AbstractCapability[AgentContext], ...]]
     webs: Mapping[str, WebBinding]
+    # The root agent's file memory, when the run mounts any memory.
+    memory: tuple[AbstractCapability[AgentContext], ...]
 
     def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
         """The agent's own host tools: its connections, its pinned skills, asset publishing and configuration."""
@@ -130,8 +144,10 @@ async def open_host(
     run: RunRow,
     principal: Principal,
     authority: ExecutionAuthority,
+    cursors: MemoryCursors,
 ) -> AsyncIterator[Host]:
-    """Connections and web backends stay open until the context exits; every paid call passes `check`."""
+    """Connections and web backends stay open until the context exits; every paid call passes `check`. The
+    file memory records the context it delivers in `cursors`."""
     async with AsyncExitStack() as stack:
         tools: dict[str, tuple[AbstractCapability[AgentContext], ...]] = {}
         webs: dict[str, WebBinding] = {}
@@ -150,4 +166,14 @@ async def open_host(
             )
             if parts.web is not None:
                 webs[revision_id] = await stack.enter_async_context(open_web(parts.web, check, runtime=runtime))
-        yield Host(runtime, lease, run, principal, authority, plan, models, tools, webs)
+        memory = file_memory(
+            runtime.storage,
+            runtime.settings.memory,
+            plan.memories,
+            run=run,
+            principal=principal,
+            authority=authority,
+            cursors=cursors,
+            tools=plan.memory_tools,
+        )
+        yield Host(runtime, lease, run, principal, authority, plan, models, tools, webs, (memory,) if memory else ())

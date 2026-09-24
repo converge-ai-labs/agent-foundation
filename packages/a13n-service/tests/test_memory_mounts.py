@@ -229,3 +229,21 @@ async def test_a_run_inherits_cursors_of_memories_mounted_under_the_same_name() 
     ]
     assert inherited_cursors(parent, mounts) == {"mem_a": "7", "mem_c": None}
     assert inherited_cursors(None, mounts) == {}
+
+
+async def test_archiving_a_thread_removes_its_memory_mounts(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    team, notes = await create_memory(service, "team"), await create_memory(service, "notes")
+    started = await runs_kit.start_thread(service, agent, "hi", memories=[mount("team", team)])
+    thread = await runs_kit.get_thread(service, started["thread"]["id"])
+    archived = await service.client.post(
+        f"{service.workspace}/threads/{thread['id']}/archive", headers=runs_kit.if_match(thread)
+    )
+    assert archived.status_code == 200, archived.text
+    mounts = f"{service.workspace}/threads/{thread['id']}/memories"
+    listing = await service.client.get(mounts)
+    assert listing.json()["items"] == []
+    refused = await service.client.post(
+        mounts, json=mount("notes", notes), headers={"if-match": listing.headers["etag"]}
+    )
+    assert refused.status_code == 409 and reason(refused) == "archived", refused.text

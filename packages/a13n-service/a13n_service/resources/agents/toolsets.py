@@ -18,6 +18,7 @@ from a13n_harness.environment import DynamicEnvironmentConfiguration
 from a13n_harness.providers.web.domains import DomainRestrictions
 from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES
 from a13n_harness.tools import ToolPermissionMode, ToolPermissionSetting
+from a13n_harness.toolsets.memory_files import FILE_TOOL_KEYS, FileToolKey
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 from a13n_service.infra.ids import ObjectId
@@ -310,9 +311,13 @@ def permission_rules(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, 
     return {tool.execution_id: selected.permission for tool, selected in _enabled(toolsets)}
 
 
-def memory_file_tools(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozenset[str]:
+# The memory toolset's tool keys name the file memory tools by their Harness keys, such as `file_view`.
+_FILE_TOOLS: dict[str, FileToolKey] = {f"file_{key}": key for key in FILE_TOOL_KEYS}
+
+
+def memory_file_tools(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozenset[FileToolKey]:
     """The enabled memory file tools as the file memory capability names them, such as `view`."""
-    return frozenset(key.removeprefix("file_") for key in enabled_tools(toolsets, "memory"))
+    return frozenset(_FILE_TOOLS[key] for key in enabled_tools(toolsets, "memory"))
 
 
 def environment_configuration(toolsets: dict[ToolsetKey, ToolsetSelection]) -> DynamicEnvironmentConfiguration:

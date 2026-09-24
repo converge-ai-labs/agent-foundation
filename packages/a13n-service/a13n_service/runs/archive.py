@@ -6,6 +6,7 @@ from a13n_service.infra.db import lock, now, transaction
 from a13n_service.infra.http import require_match
 from a13n_service.runs import inbox
 from a13n_service.runs.environments.tables import ThreadEnvironmentRow
+from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import ThreadView
 from a13n_service.runs.seal import stop
@@ -32,6 +33,7 @@ async def archive(
         thread.archived_at = current
         await inbox.withdraw_pending(session, thread, at=current)
         await session.execute(delete(ThreadEnvironmentRow).where(ThreadEnvironmentRow.thread_id == thread.id))
+        await session.execute(delete(ThreadMemoryRow).where(ThreadMemoryRow.thread_id == thread.id))
         if thread.current_run_id is not None:
             run = await lock(session, RunRow, thread.current_run_id)
             assert run is not None
