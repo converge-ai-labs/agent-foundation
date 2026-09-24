@@ -51,3 +51,34 @@ def test_contract_describes_failures_and_credentials_as_sent() -> None:
     assert profile["patch"]["security"] == [{"apiKey": []}, {"loginSession": [], "csrf": []}]
     schemes = document["components"]["securitySchemes"]
     assert (schemes["loginSession"]["name"], schemes["csrf"]["name"]) == ("__Host-a13n_session", "X-CSRF-Token")
+
+
+def test_contract_describes_binary_downloads() -> None:
+    paths = build_app(settings=Settings()).openapi()["paths"]
+    downloads = {
+        "/assets/{asset_id}/content": "*/*",
+        "/skills/{skill_id}/revisions/{revision_id}/content": "application/zip",
+        "/skills/{skill_id}/revisions/{revision_id}/files/{path}": "application/octet-stream",
+    }
+    for path, media_type in downloads.items():
+        responses = paths[f"/api/v1/workspaces/{{workspace_id}}{path}"]["get"]["responses"]
+        assert responses["200"]["content"] == {media_type: {"schema": {"type": "string", "format": "binary"}}}
+        assert responses["default"] == {"$ref": "#/components/responses/Error"}
+
+
+def test_contract_describes_idempotent_creation_and_replay() -> None:
+    paths = build_app(settings=Settings()).openapi()["paths"]
+    submissions = {
+        "/threads": "Submitted",
+        "/threads/{thread_id}/inbox": "Submitted",
+        "/runs/{run_id}/fork": "Submitted",
+        "/runs/{run_id}/resume": "RunView",
+    }
+    for path, model in submissions.items():
+        operation = paths[f"/api/v1/workspaces/{{workspace_id}}{path}"]["post"]
+        for status in ("200", "201"):
+            assert operation["responses"][status]["content"]["application/json"]["schema"] == {
+                "$ref": f"#/components/schemas/{model}"
+            }
+        key = next(parameter for parameter in operation["parameters"] if parameter["name"] == "Idempotency-Key")
+        assert key["in"] == "header" and key["required"] is True

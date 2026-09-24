@@ -192,7 +192,14 @@ class ThreadRepository:
         title: str | None = None,
         created_at: datetime | None = None,
         coordinator_thread_id: str | None = None,
+        coordinator: bool = False,
     ) -> Thread:
+        if coordinator and (
+            configuration.project_id is None or parent_thread_id is not None or coordinator_thread_id is not None
+        ):
+            raise StoreConflictError(
+                "Only an independent Project root can become a Coordinator.", code="coordinator_promotion_invalid"
+            )
         _require_kind(initial_state, ObjectKind.thread_initial_state)
         now = _utc(created_at)
         async with transaction(self._sessions) as session:
@@ -234,6 +241,8 @@ class ThreadRepository:
             session.add(record)
             await session.flush()
             session.add(_configuration_record(thread_id, configuration))
+            if coordinator:
+                session.add(CoordinatorRecord(thread_id=thread_id))
             if coordinator_thread_id is not None:
                 session.add(
                     CoordinatorWorkerRecord(worker_thread_id=thread_id, coordinator_thread_id=coordinator_thread_id)

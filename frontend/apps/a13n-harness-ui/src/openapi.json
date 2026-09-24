@@ -17040,6 +17040,11 @@
       "CreateThreadRequest": {
         "additionalProperties": false,
         "properties": {
+          "coordinator": {
+            "default": false,
+            "title": "Coordinator",
+            "type": "boolean"
+          },
           "thread_id": {
             "anyOf": [
               {

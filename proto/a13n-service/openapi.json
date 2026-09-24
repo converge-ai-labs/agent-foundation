@@ -17753,7 +17753,15 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response"
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The asset bytes, with their stored content type"
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -20754,6 +20762,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submitted"
+                }
+              }
+            },
+            "description": "The replayed submission in its current state"
+          },
           "201": {
             "content": {
               "application/json": {
@@ -21016,6 +21034,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunView"
+                }
+              }
+            },
+            "description": "The existing successor run in its current state"
+          },
           "201": {
             "content": {
               "application/json": {
@@ -22990,7 +23018,15 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response"
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The revision's package as a zip archive"
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -23057,7 +23093,15 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response"
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "One file of the revision's package"
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -23866,6 +23910,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submitted"
+                }
+              }
+            },
+            "description": "The replayed submission in its current state"
+          },
           "201": {
             "content": {
               "application/json": {
@@ -24474,6 +24528,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submitted"
+                }
+              }
+            },
+            "description": "The replayed submission in its current state"
+          },
           "201": {
             "content": {
               "application/json": {

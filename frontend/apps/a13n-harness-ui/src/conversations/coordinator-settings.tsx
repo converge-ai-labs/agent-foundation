@@ -20,7 +20,9 @@ export function canPromoteCoordinator(
   );
 }
 
-export function useCoordinatorMutation(thread: Schema<"ThreadSummary">) {
+export function useCoordinatorMutation(
+  thread: Pick<Schema<"ThreadSummary">, "thread_id">,
+) {
   const { client } = useTransport();
   const queries = useQueryClient();
   return useMutation({

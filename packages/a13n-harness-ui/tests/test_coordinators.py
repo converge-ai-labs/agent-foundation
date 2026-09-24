@@ -29,6 +29,37 @@ async def create_coordinator(app, project_id="project-main"):
     return await app.promote_coordinator(thread.thread_id)
 
 
+async def test_direct_creation_persists_role_before_first_run(tmp_path: Path) -> None:
+    root = coordinator_configuration(tmp_path)
+    settings = _settings(tmp_path / "data")
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        lead = await app.create_thread(coordinator=True, title="Direct Coordinator")
+        assert lead.role == "coordinator" and lead.auto_followup is True
+        assert lead.coordinator_thread_id is None
+        assert lead.root_activity.state == "inactive"
+        captured = await app._root_runs._executor.capture(thread_id=lead.thread_id, prompt="First message")
+        assert captured.published.value.role == "coordinator"
+        assert (await app.create_thread()).role == "ordinary"
+        with pytest.raises(ThreadError, match="Project"):
+            await app.create_thread(coordinator=True, defaults=NewThreadDefaults(project_id=None))
+        with pytest.raises(StoreConflictError, match="independent"):
+            await app.create_thread(coordinator=True, coordinator_thread_id=lead.thread_id)
+        original = await app._threads.get(lead.thread_id)
+        with pytest.raises(StoreConflictError, match="independent"):
+            await app._store.threads.create(
+                thread_id="thread_" + "a" * 32,
+                configuration=original.configuration,
+                initial_state=original.initial_state,
+                parent_thread_id=lead.thread_id,
+                coordinator=True,
+            )
+        assert (await app.list_threads()).total == 2
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        saved = (await app.get_thread(lead.thread_id)).thread
+        assert saved.role == "coordinator" and saved.auto_followup is True
+        assert saved.title == "Direct Coordinator"
+
+
 async def test_promotion_preserves_conversation_and_allows_multiple_coordinators(tmp_path: Path) -> None:
     root = coordinator_configuration(tmp_path)
     settings = _settings(tmp_path / "data")
@@ -171,6 +202,16 @@ async def test_http_promotion_and_followup_are_authenticated_thread_operations(t
         assert (await client.patch(path, json={})).status_code == 422
         assert "lead_thread_id" not in (await client.get("/api/projects")).json()[0]
         assert (await client.post("/api/projects/project-main/lead")).status_code in (404, 405)
+        direct = await client.post("/api/threads", json={"coordinator": True})
+        assert direct.status_code == 200, direct.text
+        assert direct.json()["role"] == "coordinator"
+        assert direct.json()["auto_followup"] is True
+        direct_id = direct.json()["thread_id"]
+        duplicate = await client.post("/api/threads", json={"thread_id": direct_id, "coordinator": True})
+        assert duplicate.status_code == 409
+        assert (await client.get(f"/api/threads/{direct_id}")).json()["thread"]["role"] == "coordinator"
+        invalid = await client.post("/api/threads", json={"coordinator": True, "defaults": {"project_id": None}})
+        assert invalid.status_code == 400, invalid.text
 
 
 async def test_independent_database_writers_promote_same_thread_atomically(tmp_path: Path) -> None:

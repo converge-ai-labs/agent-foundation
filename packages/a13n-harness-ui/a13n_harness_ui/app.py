@@ -1015,6 +1015,7 @@ class HarnessUiApp:
         title: str | None = None,
         thread_id: str | None = None,
         coordinator_thread_id: str | None = None,
+        coordinator: bool = False,
     ) -> ThreadSummary:
         async with self._operation():
             selected = (
@@ -1023,7 +1024,11 @@ class HarnessUiApp:
                 else defaults
             )
             thread = await self._threads.create(
-                defaults=selected, title=title, thread_id=thread_id, coordinator_thread_id=coordinator_thread_id
+                defaults=selected,
+                title=title,
+                thread_id=thread_id,
+                coordinator_thread_id=coordinator_thread_id,
+                coordinator=coordinator,
             )
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)

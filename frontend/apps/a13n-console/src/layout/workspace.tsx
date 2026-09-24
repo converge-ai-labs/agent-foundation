@@ -59,7 +59,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const remembered = userId ? lastWorkspaceByUser.get(userId) : undefined;
   const workspace = workspaceKey
     ? items.find((item) => item.key === workspaceKey)
-    : (items.find((item) => item.id === remembered) ?? items[0]);
+    : // An archived workspace runs nothing, so it is the landing page only when no other exists.
+      (items.find((item) => item.id === remembered) ??
+      items.find((item) => !item.archived_at) ??
+      items[0]);
   const selected = workspace?.id;
   useEffect(() => {
     if (userId && selected) lastWorkspaceByUser.set(userId, selected);

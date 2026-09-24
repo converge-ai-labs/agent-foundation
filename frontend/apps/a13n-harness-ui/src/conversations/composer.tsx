@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { modelControlRequest } from "./model-controls";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import {
   Paperclip,
@@ -38,6 +38,8 @@ import type { Profile } from "../shell/presence";
 import { ConfirmAction } from "../shell/confirm-action";
 import { ThreadDraft, values, type DraftCapture } from "./draft";
 import { ComposerEditor } from "./composer-editor";
+import { CoordinatorIcon } from "./coordinator-icon";
+import { useCoordinatorMutation } from "./coordinator-settings";
 import { ClearContext } from "./clear-context";
 import {
   ComposerSettings,
@@ -307,6 +309,7 @@ export function Composer({
   local = false,
   skillDefaults,
   prepareThread,
+  coordinator,
   onPreparing,
   onSubmitted,
   onReviewOutcome,
@@ -337,6 +340,7 @@ export function Composer({
   local?: boolean;
   skillDefaults?: Schema<"NewThreadDefaults">;
   prepareThread?: () => Promise<void>;
+  coordinator?: { active: boolean; available: boolean; locked?: boolean };
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
   onReviewOutcome?: () => void;
@@ -345,6 +349,7 @@ export function Composer({
   modelId?: string;
 }) {
   const draft = useDraft(threadId);
+  const promotion = useCoordinatorMutation({ thread_id: threadId });
   const { tracker: results } = useResults();
   const [preparing, setPreparing] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -353,6 +358,27 @@ export function Composer({
   useEffect(() => () => preparation.current?.abort(), [threadId]);
   const transport = useTransport();
   const queries = useQueryClient();
+  const coordinatorStatus = useMutation({
+    mutationFn: () =>
+      result(
+        transport.client.GET("/api/threads/{thread_id}", {
+          params: { path: { thread_id: threadId } },
+        }),
+      ),
+    onSuccess: (detail) => {
+      queries.setQueryData(["thread", threadId, "detail"], detail);
+      draft.coordinatorUncertain = false;
+      draft.notify();
+    },
+    retry: false,
+  });
+  const coordinatorActive =
+    coordinator?.active ||
+    promotion.data?.role === "coordinator" ||
+    coordinatorStatus.data?.thread.role === "coordinator";
+  const coordinatorBlocked =
+    draft.coordinatorUncertain ||
+    (draft.coordinator && !coordinatorActive && !coordinator?.available);
   const connection = useRef<ReturnType<ThreadDraft["connect"]> | null>(null);
   const upload = useRef<HTMLInputElement>(null);
   const editor = useRef<EditorView | null>(null);
@@ -523,6 +549,7 @@ export function Composer({
   const stopAction = busy && !hasInput;
   const canSend =
     canRun &&
+    !coordinatorBlocked &&
     !busy &&
     ready &&
     !preparing &&
@@ -542,14 +569,16 @@ export function Composer({
         ? uploading
           ? "Waiting for attachments…"
           : "Resolve unavailable attachments before sending."
-        : !ready
-          ? "Waiting for the shared draft connection…"
-          : !busy && !canRun
-            ? (unavailableReason ??
-              "Refresh conversation status before sending.")
-            : busy && !canSteer
-              ? "This operation cannot accept another message yet."
-              : undefined
+        : coordinatorBlocked && !busy
+          ? "Select an available Project and an idle conversation to enable Coordinator."
+          : !ready
+            ? "Waiting for the shared draft connection…"
+            : !busy && !canRun
+              ? (unavailableReason ??
+                "Refresh conversation status before sending.")
+              : busy && !canSteer
+                ? "This operation cannot accept another message yet."
+                : undefined
       : undefined;
   const submit = async (action: "send" | "steer") => {
     if (action === "send" ? !canSend : !canSteer) return;
@@ -576,6 +605,11 @@ export function Composer({
           return item && id ? [[id, item] as const] : [];
         }),
       );
+    const promote =
+      action === "send" &&
+      draft.coordinator &&
+      !coordinatorActive &&
+      !prepareThread;
     const metadata = attachmentMetadata();
     const localInput = beginInput(draft, action, metadata);
     try {
@@ -595,7 +629,7 @@ export function Composer({
         loadSkills,
         controller.signal,
         undefined,
-        prepareThread || results || !draft.synchronized
+        prepareThread || promote || results || !draft.synchronized
           ? async () => {
               if (prepareThread) {
                 await prepareThread();
@@ -617,6 +651,30 @@ export function Composer({
               controller.signal.throwIfAborted();
               for (const [id, attachment] of attachmentMetadata())
                 metadata.set(id, attachment);
+              if (promote) {
+                // The role write is separate from admission. A lost response is
+                // not a rejection, and turning off local intent cannot undo it.
+                draft.coordinatorUncertain = true;
+                draft.notify();
+                try {
+                  await promotion.mutateAsync(undefined);
+                  draft.coordinatorUncertain = false;
+                  draft.notify();
+                } catch (error) {
+                  if (
+                    error instanceof ApiError &&
+                    error.status >= 400 &&
+                    error.status < 500
+                  ) {
+                    draft.coordinatorUncertain = false;
+                    draft.notify();
+                  } else {
+                    // Read only: recovery never repeats conversion or Send.
+                    await coordinatorStatus.mutateAsync().catch(() => {});
+                  }
+                  throw error;
+                }
+              }
             }
           : undefined,
       );
@@ -792,6 +850,44 @@ export function Composer({
       Goal
     </Button>
   );
+  const coordinatorDisabled =
+    draft.coordinatorUncertain ||
+    !!coordinator?.locked ||
+    busy ||
+    preparing ||
+    pending ||
+    unknown ||
+    (!draft.coordinator && (!canRun || !coordinator?.available));
+  const toggleCoordinator = () => {
+    draft.coordinator = !draft.coordinator;
+    draft.notify();
+  };
+  const coordinatorControl =
+    coordinator &&
+    (coordinatorActive ? (
+      <span
+        className={styles.coordinatorIdentity}
+        title="This conversation is a Coordinator. Its role cannot be reversed."
+      >
+        <CoordinatorIcon size={16} /> Coordinator
+      </span>
+    ) : (
+      <Button
+        variant={draft.coordinator ? "secondary" : "ghost"}
+        size="sm"
+        className={styles.goalButton}
+        aria-pressed={draft.coordinator}
+        title={
+          coordinator.available
+            ? "Become a Coordinator when you send. The role cannot be reversed after creation or conversion."
+            : "Requires an available Project and an idle conversation without pending decisions."
+        }
+        disabled={coordinatorDisabled}
+        onClick={toggleCoordinator}
+      >
+        <CoordinatorIcon size={16} /> Coordinator
+      </Button>
+    ));
   const comment = commentReference(preview);
   return (
     <section
@@ -838,9 +934,25 @@ export function Composer({
           />
         </div>
       )}
+      {draft.coordinatorUncertain && (
+        <div className={styles.warning} role="alert">
+          <p>
+            Coordinator conversion may have succeeded. Check its status before
+            sending; your input is retained.
+          </p>
+          <Button
+            variant="outline"
+            loading={coordinatorStatus.isPending}
+            onClick={() => coordinatorStatus.mutate()}
+          >
+            Check Coordinator status
+          </Button>
+        </div>
+      )}
       <div className={styles.composerBody}>
         <div className={styles.composerHeader} hidden={compact}>
           {goalToggle}
+          {coordinatorControl}
           <div className={styles.composerEnvironment}>{leadingControls}</div>
         </div>
         <div inert={preparing} className={styles.composerEditor}>
@@ -1033,6 +1145,22 @@ export function Composer({
             {controls?.(false)}
           </div>
           <div className={styles.composerTrailing}>
+            {compact &&
+              coordinator &&
+              (coordinatorActive
+                ? coordinatorControl
+                : draft.coordinator && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={coordinatorDisabled}
+                      aria-label="Turn off Coordinator"
+                      title="Turn off Coordinator"
+                      onClick={toggleCoordinator}
+                    >
+                      <CoordinatorIcon size={16} /> <X aria-hidden />
+                    </Button>
+                  ))}
             {compact && draft.mode === "goal" && (
               <Button
                 variant="secondary"
@@ -1066,7 +1194,10 @@ export function Composer({
           <ComposerSettings className={styles.optionsButton}>
             {controls?.(true)}
             {leadingControls}
-            <SettingsHome>{goalToggle}</SettingsHome>
+            <SettingsHome>
+              {goalToggle}
+              {coordinatorControl}
+            </SettingsHome>
           </ComposerSettings>
           {!local && (
             <ClearContext

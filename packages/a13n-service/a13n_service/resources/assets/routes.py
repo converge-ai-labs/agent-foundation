@@ -57,7 +57,16 @@ async def retire_asset(
     )
 
 
-@router.get("/{asset_id}/content", response_class=Response)
+@router.get(
+    "/{asset_id}/content",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "The asset bytes, with their stored content type",
+            "content": {"*/*": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
+)
 async def read_asset_content(workspace_id: str, asset_id: str, actor: Actor, runtime: CurrentRuntime) -> Response:
     result, data = await service.read_asset_content(runtime.storage, runtime.objects, actor, workspace_id, asset_id)
     return Response(
