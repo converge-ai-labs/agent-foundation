@@ -1,8 +1,9 @@
-"""The store contract behind file memory: versioned files with compare-and-swap writes."""
+"""The store contracts behind agent memory: versioned files with compare-and-swap writes, and records."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, Protocol, runtime_checkable
 
 type MemoryAccess = Literal["read", "write"]
@@ -18,6 +19,9 @@ type MemoryErrorCode = Literal[
     "memory_deleted",
     "forbidden",
     "unavailable",
+    "record_not_found",
+    "invalid_text",
+    "write_unconfirmed",
 ]
 
 
@@ -115,4 +119,44 @@ class SearchableFileStore(FileStore, Protocol):
         self, pattern: str, *, regex: bool, case_sensitive: bool, path: str, limit: int
     ) -> tuple[list[GrepMatch], bool]:
         """Matching lines under `path` ("" or a directory ending in "/"), and whether more matched."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryRecord:
+    """A short record. `score` is its similarity to a search query, when it came from one."""
+
+    id: str
+    text: str
+    score: float | None = None
+    updated_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RecordPage:
+    records: tuple[MemoryRecord, ...]
+    next_cursor: str | None = None
+
+
+@runtime_checkable
+class RecordStore(Protocol):
+    """One memory's records, recalled by similarity. The last writer wins.
+
+    Record IDs may be global to the backend: `update` and `delete` raise
+    `record_not_found` for a record outside this store's namespace. A write the
+    backend does not confirm raises `write_unconfirmed` and is never retried.
+    """
+
+    async def search(self, query: str, *, limit: int) -> tuple[MemoryRecord, ...]: ...
+
+    async def list(self, *, limit: int, cursor: str | None = None) -> RecordPage: ...
+
+    async def add(self, text: str) -> MemoryRecord: ...
+
+    async def update(self, record_id: str, text: str) -> MemoryRecord: ...
+
+    async def delete(self, record_id: str) -> None: ...
+
+    async def purge(self) -> None:
+        """Remove every record of the namespace."""
         ...

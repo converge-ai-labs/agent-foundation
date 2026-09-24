@@ -1,4 +1,4 @@
-"""File memory: the store contract, the file format every store applies, and a local directory store."""
+"""Agent memory: the store contracts, the file format every file store applies, a local directory store, and Memory Provider definitions."""
 
 from .contracts import (
     Changes,
@@ -9,10 +9,14 @@ from .contracts import (
     GrepMatch,
     MemoryAccess,
     MemoryErrorCode,
+    MemoryRecord,
     MemoryStoreError,
     Origin,
+    RecordPage,
+    RecordStore,
     SearchableFileStore,
 )
+from .definition import MemoryProviderDefinition
 from .directory import DirectoryFileStore
 from .files import FileFormat, describe, validate_directory, validate_path
 
@@ -27,8 +31,12 @@ __all__ = [
     "GrepMatch",
     "MemoryAccess",
     "MemoryErrorCode",
+    "MemoryProviderDefinition",
+    "MemoryRecord",
     "MemoryStoreError",
     "Origin",
+    "RecordPage",
+    "RecordStore",
     "SearchableFileStore",
     "describe",
     "validate_directory",
