@@ -52,7 +52,7 @@ Each guide starts with the use case, then shows the public API and the boundary 
 | [Inputs and outputs](inputs-and-outputs.md)             | Text/media input and typed business output                                   | Output contract is fixed at build; progress is not final output       |
 | [Capabilities](capabilities.md)                         | Select behavior, hooks, Toolsets, and trusted implementations                | Feature selection is not permission to access a resource              |
 | [Context and working state](context.md)                 | Context projections, tasks, notes, handoff, compaction                       | Continuation is not workflow ownership                                |
-| [File memory](memory.md)                                | Durable files that conversations read and change through memory tools        | Host opens stores and persists cursors; no silent merges              |
+| [Memory](memory.md)                                     | Files and records that conversations share through memory tools              | Host opens stores and persists cursors; no silent merges              |
 | [Environments](environments.md)                         | Files, shell, processes, output, ports, multi-mount routing                  | Host selects Providers; Provider owns the target                      |
 | [State and Resume](state-and-resume.md)                 | Continue, fork, export checkpoints, answer deferred calls                    | State restores data, not clients, credentials, or current authority   |
 | [MCP tools](mcp.md)                                     | External tools and per-run headers                                           | Pydantic AI owns MCP transport; local/native paths differ             |

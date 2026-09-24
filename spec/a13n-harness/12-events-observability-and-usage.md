@@ -99,6 +99,8 @@ The Compaction Capability emits one `context_snapshot` before an eligible ordina
 
 The File Memory Capability emits one `memory_context` payload when it delivers memory context at a run's first input. `memories` has one entry per mount in mount order with `memory`, `context` (`full`, `changes`, `unchanged`, or `unavailable`), and, except for `unavailable`, the delivered block's `bytes`. It carries no memory content. [File Memory](21-file-memory.md#context-projection-and-cursors) owns when context is delivered.
 
+The Record Memory Capability emits one `memory_recall` payload when it recalls at a run's first input. `memories` has one entry per mount whose recall is on, in mount order, with `memory`, `recall` (`recalled`, `timeout`, or `failed`), and, for `recalled`, the delivered record `count` and block `bytes`. It carries no record content. [Record Memory](21a-record-memory.md#recall) owns when recall runs.
+
 Handoff and compaction have disjoint event lifecycles:
 
 | Operation  | Event sequence                                                                      |

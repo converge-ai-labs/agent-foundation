@@ -396,6 +396,10 @@ After successful nested generation and replacement-history construction, compact
 
 `FileMemoryCapability` mounts Host-opened file memories. It is an ordinary model-context Capability: its run-frozen instructions list each mount with its access and guide, its Toolset contributes the `memory_file_*` tools, and it contributes escaped `INPUT_PREAMBLE` blocks only at a run's first input, and only for memories that changed since the cursor the Host supplied. It clears its cursors on `ContextRestoredEvent` from its own run and never re-injects context mid-run. [File Memory](21-file-memory.md) owns the store contract, file format, tools, context budget, cursors, and the local directory store.
 
+## Record Memory
+
+`RecordMemoryCapability` mounts Host-opened record memories in the same way: run-frozen instructions list each mount with its access and guide, its Toolset contributes the `memory_record_*` tools, and it contributes escaped `INPUT_PREAMBLE` recall blocks only at a run's first input, with the records closest to the input's text in each mount whose recall is on. A failed or slow recall is skipped. After `ContextRestoredEvent` from its own run it delivers nothing more in that run. [Record Memory](21a-record-memory.md) owns the store contract, Memory Providers, tools, and recall.
+
 ## State Ownership
 
 | State                                        | Owner                                                                                   |
@@ -405,7 +409,7 @@ After successful nested generation and replacement-history construction, compact
 | Provider-backed task data and scope          | Host task provider; Working State exports only an optional observed cursor              |
 | Pending handoff and logical file references  | Owning context Capabilities                                                             |
 | Loaded skills or discovered tools            | Owning discovery Capability                                                             |
-| File memory content and context cursors      | Host-opened memory stores and Host-persisted `MemoryCursors`; nothing in `HarnessState` |
+| Memory content and file context cursors      | Host-opened memory stores and Host-persisted `MemoryCursors`; nothing in `HarnessState` |
 | Retained semantic inputs and user steering   | Mandatory steering bridge namespace when automatic compaction is enabled                |
 | Monitored-process tasks and completion route | Host collaborator; Capability state can retain only incorporated completion IDs         |
 | Temporary media/document/web content         | Owning Capability or selected provider until bounded projection and cleanup             |

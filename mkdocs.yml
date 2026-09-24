@@ -62,7 +62,7 @@ nav:
           - Capabilities: a13n-harness/capabilities.md
       - Add behavior:
           - Context and working state: a13n-harness/context.md
-          - File memory: a13n-harness/memory.md
+          - Memory: a13n-harness/memory.md
           - Environments: a13n-harness/environments.md
           - State and Resume: a13n-harness/state-and-resume.md
           - MCP tools: a13n-harness/mcp.md

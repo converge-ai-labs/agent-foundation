@@ -105,6 +105,7 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 | `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `RunBindings.skill_selection` |
 | `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateBinding` in provider mode                   |
 | `FileMemoryCapability`         | Mounted file memories: guides, `memory_file_*` tools, and changed-file context at run start | One opened `FileStore` per mount; optional `MemoryCursors`     |
+| `RecordMemoryCapability`       | Mounted record memories: guides, `memory_record_*` tools, and recall at run start           | One opened `RecordStore` per mount                             |
 | `UserInteractionCapability`    | Structured user questions through native deferred tools                                     | Host handles suspension and resume                             |
 | `MediaCapability`              | Media-reading Toolset                                                                       | `RunBindings.media_reader`                                     |
 | `DocumentsCapability`          | Document-conversion Toolset                                                                 | `RunBindings.document_converter`                               |

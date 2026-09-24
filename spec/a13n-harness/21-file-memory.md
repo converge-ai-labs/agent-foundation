@@ -6,7 +6,7 @@ File memory lets an Agent keep a small tree of text files across conversations. 
 
 A memory's guide is authored guidance and belongs to the run's instructions. Memory content is data written by conversations and enters history as untrusted context, only at a run's first input and only when it changed.
 
-The Harness owns the store contract, the file format, `FileMemoryCapability`, and a local `DirectoryFileStore`. It keeps nothing across runs: the Host opens one store per mount and supplies and persists the context cursors.
+The Harness owns the store contract, the file format, `FileMemoryCapability`, and a local `DirectoryFileStore`. It keeps nothing across runs: the Host opens one store per mount and supplies and persists the context cursors. [Record Memory](21a-record-memory.md) owns the other memory kind, short records recalled by similarity.
 
 ## Ownership
 
@@ -39,7 +39,7 @@ A failed version check raises `MemoryStoreError("version_mismatch", current=...)
 
 `SearchableFileStore` adds `search(pattern, *, regex, case_sensitive, path, limit)`, which returns matching lines under a directory and whether more matched. The tools scan the files of any other store.
 
-`Origin(run_id, principal_id, tool_call_id)` attributes a change. Stores without history ignore it. `MemoryStoreError.code` is one of `not_found`, `already_exists`, `version_mismatch`, `invalid_path`, `invalid_file`, `invalid_pattern`, `too_large`, `memory_full`, `memory_deleted`, `forbidden`, or `unavailable`.
+`Origin(run_id, principal_id, tool_call_id)` attributes a change. Stores without history ignore it. A file store's `MemoryStoreError.code` is one of `not_found`, `already_exists`, `version_mismatch`, `invalid_path`, `invalid_file`, `invalid_pattern`, `too_large`, `memory_full`, `memory_deleted`, `forbidden`, or `unavailable`.
 
 History, restore, history purge, quotas, and change-feed retention belong to the store implementation and its Host. They are not part of `FileStore`, and the Harness never calls them.
 

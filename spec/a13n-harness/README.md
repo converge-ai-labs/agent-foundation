@@ -35,7 +35,8 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry signals, trace levels, metrics, correlation, information boundary, Host profiles, and export-failure semantics     |
 | [20-async-components-and-lifecycle.md](20-async-components-and-lifecycle.md)             | Async subagent admission, observation, parent closure, wake, restart, loss, retention, and Host shutdown                         |
 | [21-file-memory.md](21-file-memory.md)                                                   | File memory store contract, file format, mounts, tools, context cursors, and the local directory store                           |
-| [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core across all four domains, credential declaration, catalogs, and the installed Environment manifest           |
+| [21a-record-memory.md](21a-record-memory.md)                                             | Record memory store contract, Memory Providers and mem0 over REST, mounts, tools, and recall                                     |
+| [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core across all five domains, credential declaration, catalogs, and the installed Environment manifest           |
 
 ## Reading Paths
 
@@ -49,7 +50,7 @@ Read `03`, `04`, `05`, and `14`. Hosted durable definitions are owned by [Servic
 
 ### Author or Select a Provider
 
-Read `22` for the shared Provider core, credential declaration, catalogs, and the installed Environment manifest, then the owning domain: `16b` for Model, `08a` for Environment, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
+Read `22` for the shared Provider core, credential declaration, catalogs, and the installed Environment manifest, then the owning domain: `16b` for Model, `08a` for Environment, `21a` for Memory, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
 
 ### Understand Models and Recovery
 
@@ -61,7 +62,7 @@ Read `07`, `08`, `13`, and `15`, then `08a` for Provider definitions, adapter li
 
 ### Add Agent Memory
 
-Read `21` for file memory, then `09` for the model context projection it uses and `07` for tool permissions over `memory.file.*`.
+Read `21` for file memory and `21a` for record memory, then `09` for the model context projection they use and `07` for tool permissions over `memory.file.*` and `memory.record.*`.
 
 ### Implement Hosting or Persistence
 

@@ -1,10 +1,21 @@
-# File memory
+# Memory
 
-File memory gives an Agent a small tree of text files that outlives one conversation: preferences, decisions, conventions, and reference facts. Several conversations can share one memory. Each write checks its condition against the current file when it runs, so a change based on stale content fails instead of overwriting another conversation's work.
+Memory gives an Agent knowledge that outlives one conversation: preferences, decisions, conventions, and facts. Several conversations can share one memory. A memory comes in one of two kinds:
 
-Use it for durable facts that later conversations should find. Use [working state](context.md#working-state) for tasks and notes that belong to one conversation.
+|                        | File memory                                              | Record memory                                                         |
+| ---------------------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
+| Unit                   | A text file with a path                                  | A short record with an ID                                             |
+| How the model finds it | An index at the start of a run, then view and grep       | Recall at the start of a run, then similarity search                  |
+| Writes                 | Each write checks its condition against the current file | The last write wins                                                   |
+| Stores                 | `DirectoryFileStore`, or your own `FileStore`            | mem0 through `MEM0_PLATFORM` or `MEM0_OSS`, or your own `RecordStore` |
 
-## Mount a local memory
+Use [working state](context.md#working-state) for tasks and notes that belong to one conversation.
+
+## File memory
+
+File memory keeps a small tree of text files. Each write checks its condition against the current file when it runs, so a change based on stale content fails instead of overwriting another conversation's work.
+
+### Mount a local memory
 
 `DirectoryFileStore` keeps a memory as plain files under one directory. `FileMemoryCapability` mounts it under a name:
 
@@ -40,7 +51,7 @@ asyncio.run(main())
 
 The model addresses the memory by its mount name, `user`. It never sees the directory path.
 
-## What the model gets
+### What the model gets
 
 - **Instructions.** Each mount is listed with its name, access, and guide. `guide=None` uses `DEFAULT_FILE_GUIDE`, a short rule for what to keep and how to organize it; pass your own text, or `""` for no guide.
 - **Tools.** The `memory_file_*` tools are the only way to read and change a memory. Shell and Environment file tools cannot reach it.
@@ -60,7 +71,7 @@ A failed call changes nothing and returns the current file, so the model can rea
 
 A `read` mount offers only `memory_file_view` and `memory_file_grep`. `tools=("view", "grep")` narrows the tools for every mount. Tool permission rules can target the tool IDs `memory.file.view` through `memory.file.delete`.
 
-## Write good memory files
+### Write good memory files
 
 A file is UTF-8 text, at most 64 KiB. Its index line uses the frontmatter `description` when present, otherwise its first non-empty line:
 
@@ -74,7 +85,7 @@ description: Language and tone preferences
 
 Paths are relative, such as `prefs/language.md`; directories exist implicitly. `always_load` names files whose full content every run starts with. Only the code that builds the mount chooses them, so a conversation cannot pin its own writes into every later conversation.
 
-## Keep context small across runs
+### Keep context small across runs
 
 `MemoryCursors` records where each memory's context in the conversation stands. With the same cursors, a later run gets only the files changed since the last delivered context, or nothing when nothing changed. Persist `cursors.snapshot()` next to the conversation's `HarnessState` and pass `MemoryCursors(saved)` when you build the next run's Capability. Without cursors, every run gets full context. After automatic compaction or a handoff replaces the history, the Capability clears the cursors, so the next run gets full context again.
 
@@ -91,12 +102,98 @@ memory = FileMemoryCapability([FileMount("user", store, "write")], limits=limits
 
 `always_load` files come first, then the indexes share the rest. A large index collapses directories into lines such as `archive/ (37 files)` and is cut with a pointer to `memory_file_view` when it still does not fit.
 
-## Share a memory between processes
+### Share a memory between processes
 
 Several processes can mount the same directory. `DirectoryFileStore` serializes each change with a lock file under `.a13n-memory/`, which it never lists. Cursors belong to a conversation, so keep one `MemoryCursors` per conversation. The directory store keeps no history; back the directory up yourself, or use a store with history, such as the Service's.
 
-## Bring your own store
+### Bring your own file store
 
 A store implements the `FileStore` protocol from `a13n_harness.providers.memory`: `list`, `read`, compare-and-swap `write`, `move`, and `delete`, `changes` for the context cursor, and `purge`. Add `search` to implement `SearchableFileStore`; otherwise `memory_file_grep` reads the files. `validate_path()` and `describe()` apply the shared file rules. `Origin` tells a store with history which run, principal, and tool call made each change.
 
 The [File Memory specification](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/21-file-memory.md) defines the complete store contract, context budget, and failure codes.
+
+## Record memory
+
+Record memory keeps short records, such as "prefers green tea", and recalls the ones closest in meaning to each run's input. Records have no versions: the last write wins.
+
+### Mount mem0
+
+`MEM0_OSS` opens a namespace of a self-hosted [mem0 REST server](https://docs.mem0.ai/open-source/features/rest-api) as a `RecordStore`, and `RecordMemoryCapability` mounts it under a name:
+
+```python
+import asyncio
+
+import httpx2
+
+from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness.capabilities import RecordMemoryCapability, RecordMount
+from a13n_harness.providers.memory import MEM0_OSS
+
+
+async def main() -> None:
+    async with (
+        httpx2.AsyncClient(timeout=30) as http,
+        MEM0_OSS.open({"base_url": "http://localhost:8888"}, namespace="alice", http=http) as store,
+    ):
+        memory = RecordMemoryCapability([RecordMount("facts", store, "write")])
+        executable = HarnessBuilder().build(
+            AgentSpec(model="openai-responses:gpt-5"),
+            output_type=str,
+            capabilities=(memory,),
+        )
+
+        first = await executable.run("I drink green tea. Remember that.")
+        print(first.output_or_raise())
+        # A new conversation recalls the record.
+        second = await executable.run("What should I order at the cafe?")
+        print(second.output_or_raise())
+
+
+asyncio.run(main())
+```
+
+The namespace is the mem0 `user_id` that holds this memory's records; give each memory its own. Without `http`, the store opens its own client, which reaches only public HTTPS endpoints, so a local server needs a client of your own. The hosted Platform takes an API key and defaults to `https://api.mem0.ai`:
+
+```python
+import os
+
+from a13n_harness.providers.memory import MEM0_PLATFORM
+
+async with MEM0_PLATFORM.open({}, {"api_key": os.environ["MEM0_API_KEY"]}, namespace="alice") as store:
+    ...
+```
+
+Both add records verbatim, confirm every write by reading it back, and never show or change a record of another namespace.
+
+### What the model gets from records
+
+- **Instructions.** Each mount is listed with its name, access, and guide. `guide=None` uses `DEFAULT_RECORD_GUIDE`; pass your own text, or `""` for no guide.
+- **Recall.** At the start of each run, one `<memory-recall>` block per memory shows the records closest to the input's text. `recall=False` on a mount turns it off. A recall that fails or takes longer than `recall_seconds` is skipped, and the run goes on.
+- **Tools.** The `memory_record_*` tools search, list, and change records.
+
+| Tool                   | Does                                            | Fails when                                           |
+| ---------------------- | ----------------------------------------------- | ---------------------------------------------------- |
+| `memory_record_search` | Finds the records closest in meaning to a query | The store is unavailable                             |
+| `memory_record_list`   | Lists records one page at a time                | The cursor is not a `next_cursor` the store returned |
+| `memory_record_add`    | Adds a record                                   | The text is blank or longer than `record_chars`      |
+| `memory_record_update` | Replaces a record's whole text                  | The record does not exist in this memory             |
+| `memory_record_delete` | Deletes a record                                | The record does not exist in this memory             |
+
+A write that the store cannot confirm fails with `write_unconfirmed`: it may or may not have happened, so the model searches before it writes again. A `read` mount offers only search and list, and `tools=("search", "add")` narrows the tools for every mount. Tool permission rules can target the tool IDs `memory.record.search` through `memory.record.delete`.
+
+`RecordMemoryLimits` sets the record size and each run's recall:
+
+```python
+from a13n_harness.capabilities import RecordMemoryLimits
+
+limits = RecordMemoryLimits(record_chars=8000, recall_limit=5, recall_bytes=8192, recall_seconds=2.0)
+memory = RecordMemoryCapability([RecordMount("facts", store, "write")], limits=limits)
+```
+
+A recall block holds up to `recall_limit` records per memory and keeps the closest ones that fit `recall_bytes`.
+
+### Bring your own record store
+
+A store implements the `RecordStore` protocol from `a13n_harness.providers.memory`: `search`, `list` with a cursor, `add`, `update`, `delete`, and `purge`, all bound to one namespace. `validate_record_text()` applies the shared text rule, and `MemoryStoreError` carries the failure codes the tools report.
+
+The [Record Memory specification](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/21a-record-memory.md) defines the complete store contract, the mem0 rules, and recall.
