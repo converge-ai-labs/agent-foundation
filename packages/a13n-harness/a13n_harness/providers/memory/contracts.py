@@ -21,6 +21,7 @@ type MemoryErrorCode = Literal[
     "unavailable",
     "record_not_found",
     "invalid_text",
+    "invalid_cursor",
     "write_unconfirmed",
 ]
 
@@ -138,6 +139,13 @@ class RecordPage:
     next_cursor: str | None = None
 
 
+def validate_record_text(text: str, *, max_chars: int) -> str:
+    """The text of a record, or `invalid_text` when it is blank or longer than `max_chars` characters."""
+    if not text.strip() or len(text) > max_chars:
+        raise MemoryStoreError("invalid_text", f"A record holds 1 to {max_chars} characters and is not blank.")
+    return text
+
+
 @runtime_checkable
 class RecordStore(Protocol):
     """One memory's records, recalled by similarity. The last writer wins.
@@ -145,6 +153,8 @@ class RecordStore(Protocol):
     Record IDs may be global to the backend: `update` and `delete` raise
     `record_not_found` for a record outside this store's namespace. A write the
     backend does not confirm raises `write_unconfirmed` and is never retried.
+    `list` pages with the opaque `next_cursor` it returned; a cursor it cannot
+    read raises `invalid_cursor`.
     """
 
     async def search(self, query: str, *, limit: int) -> tuple[MemoryRecord, ...]: ...

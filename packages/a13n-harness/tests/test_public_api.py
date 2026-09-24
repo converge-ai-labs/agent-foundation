@@ -351,6 +351,7 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
     }
     assert all(hasattr(providers, name) for name in providers.__all__)
     assert set(memory_provider.__all__) == {
+        "BUILT_IN_MEMORY_PROVIDERS",
         "Changes",
         "DirectoryFileStore",
         "FileEntry",
@@ -359,6 +360,11 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
         "FileText",
         "FullResync",
         "GrepMatch",
+        "MEM0_OSS",
+        "MEM0_PLATFORM",
+        "Mem0Credential",
+        "Mem0OSSConfiguration",
+        "Mem0PlatformConfiguration",
         "MemoryAccess",
         "MemoryErrorCode",
         "MemoryProviderDefinition",
@@ -371,6 +377,7 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
         "describe",
         "validate_directory",
         "validate_path",
+        "validate_record_text",
     }
     assert {
         "BUILT_IN_ENVIRONMENT_PROVIDERS",
