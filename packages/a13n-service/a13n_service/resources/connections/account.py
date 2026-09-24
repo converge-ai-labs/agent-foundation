@@ -160,8 +160,6 @@ async def complete(
     context = SetupContext(connector_key=connection.config.app, external_user_correlation=flow.account.correlation)
 
     async def send() -> AccountSecret:
-        if flow.expected_metadata is None:
-            raise ConnectorProviderError("setup_restart_required")
         async with open_connector_provider(
             connection.provider,
             keys=keys,

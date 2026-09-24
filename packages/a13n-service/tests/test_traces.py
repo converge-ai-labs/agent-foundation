@@ -38,6 +38,7 @@ from pydantic import ValidationError
 pytestmark = pytest.mark.anyio
 
 TRACE = "0af7651916cd43dd8448eb211c80319c"
+THREAD, SESSION, OTHER_SESSION = "thread_" + "1" * 32, "sess_" + "1" * 24, "sess_" + "2" * 24
 ATTEMPT = "a13n.observation.metadata.run_attempt_id"
 ORGANIZATION = "a13n.observation.metadata.organization_id"
 # Answers a request only after the querying client's deadline has passed.
@@ -367,7 +368,7 @@ async def test_trace_queries_authorize_the_workspace_before_resolving_ids(
 
 async def test_workspace_traces_page_through_langfuse_within_scope(api: SimpleNamespace, backend: Backend) -> None:
     own, foreign = scope(api), scope(api, "ws_foreign")
-    root = langfuse_row("obs-root", {"attributes": {**own, "a13n.observation.session.id": "thread_1"}})
+    root = langfuse_row("obs-root", {"attributes": {**own, "a13n.observation.session.id": THREAD}})
     # Langfuse may also flatten attribute keys into the metadata object.
     child = langfuse_row("obs-child", {f"attributes.{key}": value for key, value in own.items()}, parent="obs-root")
     backend.answer(
@@ -382,7 +383,7 @@ async def test_workspace_traces_page_through_langfuse_within_scope(api: SimpleNa
     query_through(api, backend.langfuse())
     listing = f"{api.workspace}/traces"
 
-    first = (await api.client.get(listing, params={"thread_id": "thread_1"})).json()
+    first = (await api.client.get(listing, params={"thread_id": THREAD})).json()
     assert [item["id"] for item in first["items"]] == ["obs-root"]
     assert (first["items"][0]["kind"], first["items"][0]["input"]) == ("agent", {"prompt": "hi"})
     request = backend.requests[0]
@@ -390,9 +391,9 @@ async def test_workspace_traces_page_through_langfuse_within_scope(api: SimpleNa
     filters = json.loads(request.url.params["filter"])
     assert {"type": "boolean", "column": "isRootObservation", "operator": "=", "value": True} in filters
     matched = {item["key"]: item["value"] for item in filters if item["type"] == "stringObject"}
-    assert matched == {f"attributes.{key}": value for key, value in scope(api, thread_id="thread_1").items()}
+    assert matched == {f"attributes.{key}": value for key, value in scope(api, thread_id=THREAD).items()}
 
-    second = (await api.client.get(listing, params={"thread_id": "thread_1", "cursor": first["next_cursor"]})).json()
+    second = (await api.client.get(listing, params={"thread_id": THREAD, "cursor": first["next_cursor"]})).json()
     assert second == {"items": [], "next_cursor": None}
     assert backend.requests[1].url.params["cursor"] == "p2"
     assert json.loads(backend.requests[1].url.params["filter"]) == filters
@@ -419,16 +420,16 @@ async def test_workspace_traces_page_through_langfuse_within_scope(api: SimpleNa
 
 async def test_workspace_traces_select_a_session_and_root_attributes(api: SimpleNamespace, backend: Backend) -> None:
     selected = {"gen_ai.agent.name": "support", "deployment": "blue:green"}
-    own = scope(api, session_id="sess_1")
+    own = scope(api, session_id=SESSION)
     rows = [
         langfuse_row("obs-a", {"attributes": {**own, **selected}}),
         langfuse_row("obs-b", {"attributes": {**own, "gen_ai.agent.name": "support"}}),
-        langfuse_row("obs-c", {"attributes": {**scope(api, session_id="sess_2"), **selected}}),
+        langfuse_row("obs-c", {"attributes": {**scope(api, session_id=OTHER_SESSION), **selected}}),
     ]
     backend.answer(httpx2.Response(200, json={"data": rows, "meta": {"cursor": "p2"}}))
     query_through(api, backend.langfuse())
     listing = f"{api.workspace}/traces"
-    params = {"session_id": "sess_1", "attribute": ["gen_ai.agent.name:support", "deployment:blue:green"]}
+    params = {"session_id": SESSION, "attribute": ["gen_ai.agent.name:support", "deployment:blue:green"]}
 
     response = await api.client.get(listing, params=params)
     assert response.status_code == 200, response.text

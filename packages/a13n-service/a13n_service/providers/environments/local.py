@@ -21,9 +21,11 @@ from a13n_harness.providers.environment.errors import EnvironmentProviderErrorCa
 from a13n_harness.providers.environment.management import Environment, EnvironmentProviderConfiguration
 from a13n_harness.providers.environment.models import EnvironmentState
 
+from a13n_service.infra.ids import OBJECT_ID_PATTERN
+
 LOCAL_TYPE = "local"
 # The directory name is the Service environment ID, which can never traverse out of the root.
-_ENVIRONMENT_ID = re.compile(r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")
+_ENVIRONMENT_ID = re.compile(OBJECT_ID_PATTERN)
 
 
 class LocalEnvironment(DirectLocalEnvironment):

@@ -3,8 +3,8 @@
 Workers append output deltas and a boundary marker after each checkpoint, and trim what the boundary's display
 covers once a short retention window passes: the stream carries the in-flight tail. Nothing here is durable or
 authoritative: display objects hold the durable view, and PostgreSQL decides who may read and which attempt is
-current. The gateway turns what it reads from both into data frames and three control frames, so a client can
-always fall back to the durable view:
+current. The stream route turns what the process's `ThreadHub` reads from both into data frames and three control
+frames, so a client can always fall back to the durable view:
 
 - `changed {version}`: the thread snapshot is stale; re-read the thread.
 - `reset {run_id}`: the run changed attempt; discard its provisional output and re-read its items.

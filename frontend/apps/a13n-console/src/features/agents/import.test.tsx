@@ -29,7 +29,10 @@ afterEach(() => {
 });
 const config = {
   ...initialConfig(),
-  model: { model_id: "mdl_0123456789abcdef", settings: { temperature: 0.4 } },
+  model: {
+    model_id: "mdl_0123456789abcdef0123",
+    settings: { temperature: 0.4 },
+  },
   plugins: [{ instance_name: "memory", plugin_key: "memory", config: {} }],
   secret_requirements: [{ key: "token", scope: "workspace" as const }],
 };
@@ -42,7 +45,7 @@ function setup() {
     data: {
       items: [
         {
-          id: "mdl_0123456789abcdef",
+          id: "mdl_0123456789abcdef0123",
           key: "research",
           name: "Research model",
           enabled: true,
@@ -105,8 +108,8 @@ it("blocks missing dependencies and requires an explicit replacement", async () 
   await user.click(screen.getByLabelText("Agent YAML"));
   await user.paste(
     source.replace(
-      "model_id: mdl_0123456789abcdef",
-      "model_id: mdl_fedcba9876543210",
+      "model_id: mdl_0123456789abcdef0123",
+      "model_id: mdl_fedcba9876543210fedc",
     ),
   );
   await user.click(screen.getByRole("button", { name: "Review" }));
@@ -134,7 +137,7 @@ it("blocks missing dependencies and requires an explicit replacement", async () 
   await user.click(screen.getByRole("button", { name: "Back" }));
   expect(
     (screen.getByLabelText("Agent YAML") as HTMLTextAreaElement).value,
-  ).toContain("model_id: mdl_0123456789abcdef");
+  ).toContain("model_id: mdl_0123456789abcdef0123");
   expect(http.POST).not.toHaveBeenCalled();
 });
 
@@ -144,13 +147,17 @@ it("blocks an unavailable root Environment template until mapped in the destinat
     data: url.endsWith("/environment-templates")
       ? {
           items: [
-            { id: "et_fedcba9876543210", name: "Local sandbox", enabled: true },
+            {
+              id: "envtpl_fedcba9876543210fedc",
+              name: "Local sandbox",
+              enabled: true,
+            },
           ],
         }
       : {
           items: [
             {
-              id: "mdl_0123456789abcdef",
+              id: "mdl_0123456789abcdef0123",
               key: "research",
               name: "Research model",
               enabled: true,
@@ -163,7 +170,7 @@ it("blocks an unavailable root Environment template until mapped in the destinat
       { name: "Research", description: null },
       {
         ...config,
-        default_environment_template_id: "et_0123456789abcdef",
+        default_environment_template_id: "envtpl_0123456789abcdef0123",
       },
     ),
   );
@@ -196,7 +203,7 @@ it("blocks an unavailable root Environment template until mapped in the destinat
   await user.click(screen.getByRole("button", { name: "Back" }));
   expect(
     (screen.getByLabelText("Agent YAML") as HTMLTextAreaElement).value,
-  ).toContain("default_environment_template_id: et_fedcba9876543210");
+  ).toContain("default_environment_template_id: envtpl_fedcba9876543210fedc");
   expect(http.POST).not.toHaveBeenCalled();
 });
 

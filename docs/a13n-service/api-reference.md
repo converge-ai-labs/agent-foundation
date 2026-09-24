@@ -389,7 +389,7 @@ Read Asset Content.
 
 Responses:
 
-- **200** — Successful Response.
+- **200** — The asset bytes, with their stored content type (`*/*: string`).
 - **400** — .
 - **default** — .
 
@@ -1787,6 +1787,7 @@ Request body: required.
 
 Responses:
 
+- **200** — The replayed submission in its current state (`application/json: Submitted`).
 - **201** — Successful Response (`application/json: Submitted`).
 - **400** — .
 - **default** — .
@@ -1857,6 +1858,7 @@ Request body: required.
 
 Responses:
 
+- **200** — The existing successor run in its current state (`application/json: RunView`).
 - **201** — Successful Response (`application/json: RunView`).
 - **400** — .
 - **default** — .
@@ -1972,6 +1974,7 @@ Request body: required.
 
 Responses:
 
+- **200** — The replayed submission in its current state (`application/json: Submitted`).
 - **201** — Successful Response (`application/json: Submitted`).
 - **400** — .
 - **default** — .
@@ -2065,6 +2068,7 @@ Request body: required.
 
 Responses:
 
+- **200** — The replayed submission in its current state (`application/json: Submitted`).
 - **201** — Successful Response (`application/json: Submitted`).
 - **400** — .
 - **default** — .
@@ -2206,17 +2210,17 @@ List Traces.
 
 Trace root spans, one per attempt. A cursor keeps the window of the first page.
 
-| Parameter        | Location | Required | Type / schema           | Constraints and default                 |
-| ---------------- | -------- | -------- | ----------------------- | --------------------------------------- |
-| `workspace_id`   | path     | true     | string                  | —                                       |
-| `session_id`     | query    | false    | string or null          | maxLength=72; `pattern="^[a-z0-9_-]+$"` |
-| `thread_id`      | query    | false    | string or null          | maxLength=72; `pattern="^[a-z0-9_-]+$"` |
-| `run_id`         | query    | false    | string or null          | maxLength=72; `pattern="^[a-z0-9_-]+$"` |
-| `attribute`      | query    | false    | array of string or null | —                                       |
-| `started_after`  | query    | false    | string or null          | format="date-time"                      |
-| `started_before` | query    | false    | string or null          | format="date-time"                      |
-| `limit`          | query    | false    | integer                 | minimum=1; maximum=100; default=50      |
-| `cursor`         | query    | false    | string or null          | —                                       |
+| Parameter        | Location | Required | Type / schema           | Constraints and default                                        |
+| ---------------- | -------- | -------- | ----------------------- | -------------------------------------------------------------- |
+| `workspace_id`   | path     | true     | string                  | —                                                              |
+| `session_id`     | query    | false    | string or null          | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+| `thread_id`      | query    | false    | string or null          | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+| `run_id`         | query    | false    | string or null          | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+| `attribute`      | query    | false    | array of string or null | —                                                              |
+| `started_after`  | query    | false    | string or null          | format="date-time"                                             |
+| `started_before` | query    | false    | string or null          | format="date-time"                                             |
+| `limit`          | query    | false    | integer                 | minimum=1; maximum=100; default=50                             |
+| `cursor`         | query    | false    | string or null          | —                                                              |
 
 Responses:
 
@@ -2267,9 +2271,9 @@ Summarize Usage.
 | Parameter         | Location | Required | Type / schema  | Constraints and default                                        |
 | ----------------- | -------- | -------- | -------------- | -------------------------------------------------------------- |
 | `workspace_id`    | path     | true     | string         | —                                                              |
-| `run_id`          | query    | false    | string or null | maxLength=72; `pattern="^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$"` |
-| `thread_id`       | query    | false    | string or null | maxLength=72; `pattern="^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$"` |
-| `session_id`      | query    | false    | string or null | maxLength=72; `pattern="^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$"` |
+| `run_id`          | query    | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+| `thread_id`       | query    | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+| `session_id`      | query    | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
 | `ingested_after`  | query    | false    | string or null | format="date-time"                                             |
 | `ingested_before` | query    | false    | string or null | format="date-time"                                             |
 
@@ -2552,7 +2556,7 @@ The revision's package as a zip archive.
 
 Responses:
 
-- **200** — Successful Response.
+- **200** — The revision's package as a zip archive (`application/zip: string`).
 - **400** — .
 - **default** — .
 
@@ -2571,7 +2575,7 @@ One package file, by the path the revision's manifest lists.
 
 Responses:
 
-- **200** — Successful Response.
+- **200** — One file of the revision's package (`application/octet-stream: string`).
 - **400** — .
 - **default** — .
 

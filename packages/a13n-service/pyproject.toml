@@ -55,7 +55,7 @@ DEP002 = ["psycopg", "python-multipart"]
 
 [tool.deptry]
 known_first_party = ["a13n_service"]
-package_module_name_map = { "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "argon2-cffi" = "argon2", "pyyaml" = "yaml", "sqlalchemy" = "sqlalchemy" }
+package_module_name_map = { "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "argon2-cffi" = "argon2", "pyyaml" = "yaml" }
 
 [tool.a13n.release-dependencies]
 a13n-harness = ">=0.1.0,<0.2.0"

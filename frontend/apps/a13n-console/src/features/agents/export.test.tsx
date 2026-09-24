@@ -25,7 +25,7 @@ it("copies and downloads the same complete saved configuration shown in raw prev
   } as Schema["Agent"];
   const config = {
     ...initialConfig(),
-    model: { model_id: "mdl_0123456789abcdef" },
+    model: { model_id: "mdl_0123456789abcdef0123" },
     instructions: "Preserve\nall instructions.",
   };
   render(<ExportAgent agent={agent} config={config} version={3} />);

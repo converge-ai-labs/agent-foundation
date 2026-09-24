@@ -177,8 +177,8 @@
           "default_environment_template_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -321,8 +321,8 @@
           "default_environment_template_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -523,8 +523,8 @@
           "revision_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -548,8 +548,8 @@
             "$ref": "#/components/schemas/AgentModelCharacteristics"
           },
           "model_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Model Id",
             "type": "string"
           },
@@ -995,8 +995,8 @@
             "title": "Instruction"
           },
           "model": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Model",
             "type": "string"
           },
@@ -1255,8 +1255,8 @@
           "agent_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -1576,8 +1576,8 @@
         "additionalProperties": false,
         "properties": {
           "asset_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Asset Id",
             "type": "string"
           },
@@ -2141,8 +2141,8 @@
           "template_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -2427,8 +2427,8 @@
           "connector_provider_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -2541,8 +2541,8 @@
         "description": "An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.",
         "properties": {
           "connection_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Connection Id",
             "type": "string"
           },
@@ -3156,8 +3156,8 @@
           "agent_revision_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -3812,16 +3812,16 @@
         "additionalProperties": false,
         "properties": {
           "agent_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Agent Id",
             "type": "string"
           },
           "agent_revision_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -3921,8 +3921,8 @@
         "additionalProperties": false,
         "properties": {
           "principal_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Principal Id",
             "type": "string"
           },
@@ -4155,8 +4155,8 @@
         "properties": {
           "entry_ids": {
             "items": {
-              "maxLength": 72,
-              "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+              "maxLength": 41,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
               "type": "string"
             },
             "maxItems": 512,
@@ -4714,8 +4714,8 @@
             "title": "Name"
           },
           "template_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Template Id",
             "type": "string"
           }
@@ -4792,7 +4792,7 @@
       "McpHeaders": {
         "maxProperties": 32,
         "patternProperties": {
-          "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$": {
+          "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$": {
             "additionalProperties": {
               "type": "string"
             },
@@ -4800,7 +4800,7 @@
           }
         },
         "propertyNames": {
-          "maxLength": 72
+          "maxLength": 41
         },
         "type": "object"
       },
@@ -4921,8 +4921,8 @@
           "audio": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -4938,8 +4938,8 @@
           "image": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -4955,8 +4955,8 @@
           "video": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -4980,8 +4980,8 @@
           "audio": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -4993,8 +4993,8 @@
           "image": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -5006,8 +5006,8 @@
           "video": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -5052,16 +5052,16 @@
         "additionalProperties": false,
         "properties": {
           "agent_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Agent Id",
             "type": "string"
           },
           "agent_revision_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -5438,16 +5438,16 @@
             ]
           },
           "provider_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Provider Id",
             "type": "string"
           },
           "workspace_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -5483,8 +5483,8 @@
           "model_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -5882,8 +5882,8 @@
         "additionalProperties": false,
         "properties": {
           "environment_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Environment Id",
             "type": "string"
           },
@@ -5972,16 +5972,16 @@
         "additionalProperties": false,
         "properties": {
           "agent_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Agent Id",
             "type": "string"
           },
           "agent_revision_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -6016,8 +6016,8 @@
           "session_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -7093,8 +7093,8 @@
           "workspace_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -9272,8 +9272,8 @@
           "revision_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -9283,8 +9283,8 @@
             "title": "Revision Id"
           },
           "skill_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Skill Id",
             "type": "string"
           }
@@ -9655,8 +9655,8 @@
           "agent_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -9700,8 +9700,8 @@
           "revision_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -9731,8 +9731,8 @@
           "agent_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -9776,8 +9776,8 @@
           "revision_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -9804,8 +9804,8 @@
         "additionalProperties": false,
         "properties": {
           "agent_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Agent Id",
             "type": "string"
           },
@@ -9830,8 +9830,8 @@
           "revision_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -9861,8 +9861,8 @@
         "additionalProperties": false,
         "properties": {
           "agent_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Agent Id",
             "type": "string"
           },
@@ -9887,8 +9887,8 @@
           "revision_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -10078,8 +10078,8 @@
           "agent_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -10091,8 +10091,8 @@
           "session_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -10104,8 +10104,8 @@
           "thread_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "minLength": 1,
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -10410,8 +10410,8 @@
             "type": "string"
           },
           "provider_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Provider Id",
             "type": "string"
           }
@@ -10525,8 +10525,8 @@
           "provider_id": {
             "anyOf": [
               {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                 "type": "string"
               },
               {
@@ -11542,8 +11542,8 @@
             "type": "string"
           },
           "workspace_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
             "title": "Workspace Id",
             "type": "string"
           }
@@ -25162,8 +25162,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "maxLength": 72,
-                  "pattern": "^[a-z0-9_-]+$",
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                   "type": "string"
                 },
                 {
@@ -25180,8 +25180,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "maxLength": 72,
-                  "pattern": "^[a-z0-9_-]+$",
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                   "type": "string"
                 },
                 {
@@ -25198,8 +25198,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "maxLength": 72,
-                  "pattern": "^[a-z0-9_-]+$",
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                   "type": "string"
                 },
                 {
@@ -25557,8 +25557,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "maxLength": 72,
-                  "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                   "type": "string"
                 },
                 {
@@ -25575,8 +25575,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "maxLength": 72,
-                  "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                   "type": "string"
                 },
                 {
@@ -25593,8 +25593,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "maxLength": 72,
-                  "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
                   "type": "string"
                 },
                 {

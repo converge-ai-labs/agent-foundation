@@ -32,7 +32,9 @@ vi.mock("./editor", () => ({
       {identity}
       <button
         disabled={pending}
-        onClick={() => submit({ model: { model_id: "mdl_0123456789abcdef" } })}
+        onClick={() =>
+          submit({ model: { model_id: "mdl_0123456789abcdef0123" } })
+        }
       >
         Create agent
       </button>
@@ -81,7 +83,7 @@ it("creates the agent under a key derived from its name, retrying a taken key", 
       key: "new-agent",
       name: "New agent",
       description: "",
-      config: { model: { model_id: "mdl_0123456789abcdef" } },
+      config: { model: { model_id: "mdl_0123456789abcdef0123" } },
     },
   });
   expect(http.POST.mock.calls[1]?.[1].body.key).toMatch(

@@ -4,13 +4,13 @@ import { initialConfig } from "../configuration";
 import { buildDraftConfig, thinkingEfforts, useAgentDraft } from "./draft";
 
 const asIs = (value: string) => value;
-const vision = "mdl_vision0000000000",
-  motion = "mdl_motion0000000000";
+const vision = "mdl_00000000000000000001",
+  motion = "mdl_00000000000000000002";
 
 function draftFor(config: Partial<ReturnType<typeof initialConfig>> = {}) {
   const initial = {
     ...initialConfig(),
-    model: { model_id: "mdl_0123456789abcdef" },
+    model: { model_id: "mdl_0123456789abcdef0123" },
     ...config,
   };
   return renderHook(() => useAgentDraft(initial)).result;

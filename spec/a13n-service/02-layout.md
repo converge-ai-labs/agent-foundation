@@ -169,7 +169,7 @@ Every service function follows the same conventions:
 
 ## Object IDs
 
-Object IDs follow the platform's [data conventions](../data-conventions.md#service-id-allocation): a kind prefix, an underscore and a cryptographically random lowercase hexadecimal suffix whose length the shared allocator assigns per prefix. The data conventions own the tiers, their volume budgets and the retired prefixes. The Service accepts any ID of a valid prefix and 16 to 64 lowercase alphanumeric characters (at most 72 in all), so an ID never fails validation because its length differs from today's allocation. Consumers never infer authority, ownership or order from an ID.
+Object IDs follow the platform's [data conventions](../data-conventions.md#service-id-allocation): a kind prefix, an underscore and a cryptographically random lowercase hexadecimal suffix whose length the shared allocator assigns per prefix. The data conventions own the tiers, their volume budgets and the retired prefixes. `ObjectId` accepts exactly what the allocator can produce: a prefix of 2 to 8 lowercase ASCII letters or digits starting with a letter, an underscore and 20 to 32 lowercase hexadecimal characters (at most 41 in all). Consumers never infer authority, ownership or order from an ID.
 
 | Prefix              | Kind                                                                  | Prefix    | Kind                   |
 | ------------------- | --------------------------------------------------------------------- | --------- | ---------------------- |

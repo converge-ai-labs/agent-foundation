@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { advancedConfig, buildConfig, initialConfig } from "./configuration";
 
-const model = { model_id: "mdl_0123456789abcdef" };
+const model = { model_id: "mdl_0123456789abcdef0123" };
 
 test("ordinary editing preserves hidden configuration and leaves omission distinct from null", () => {
   const original = {
@@ -47,7 +47,7 @@ test("keeps reviewer and disabled tool configuration through dedicated fields", 
     ...initialConfig(),
     model,
     reviewer: {
-      model: "mdl_0123456789abcdef",
+      model: "mdl_0123456789abcdef0123",
       risk_threshold: "high" as const,
     },
     toolsets: {
@@ -93,7 +93,7 @@ test("media understanding is a dedicated field kept out of advanced configuratio
     ...initialConfig(),
     model,
     media_understanding: {
-      image: "mdl_fedcba9876543210",
+      image: "mdl_fedcba9876543210fedc",
       video: null,
       audio: null,
     },
@@ -119,7 +119,7 @@ test("media understanding is a dedicated field kept out of advanced configuratio
     buildConfig(
       original,
       { model: original.model },
-      '{"media_understanding": {"image": "mdl_fedcba9876543210"}}',
+      '{"media_understanding": {"image": "mdl_fedcba9876543210fedc"}}',
     ),
   ).toThrow(/dedicated field/);
 });

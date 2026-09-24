@@ -47,7 +47,7 @@ it("saves the environment choice together with other configuration edits", async
   HTMLElement.prototype.scrollIntoView = () => {};
   http.GET.mockResolvedValue({
     data: {
-      items: [{ id: "et_1234567890abcdef", name: "Sandbox" }],
+      items: [{ id: "envtpl_1234567890abcdef1234", name: "Sandbox" }],
       next_cursor: null,
     },
     response: new Response(null, { status: 200 }),
@@ -62,7 +62,7 @@ it("saves the environment choice together with other configuration edits", async
         <AgentEditor
           initial={{
             ...initialConfig(),
-            model: { model_id: "mdl_0123456789abcdef" },
+            model: { model_id: "mdl_0123456789abcdef0123" },
             instructions: "Check the evidence.",
           }}
           version={7}
@@ -88,7 +88,7 @@ it("saves the environment choice together with other configuration edits", async
   expect(submit).toHaveBeenCalledWith(
     expect.objectContaining({
       instructions: "Check the evidence. Keep the draft.",
-      default_environment_template_id: "et_1234567890abcdef",
+      default_environment_template_id: "envtpl_1234567890abcdef1234",
     }),
     '"agent-v1"',
     null,

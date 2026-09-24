@@ -73,7 +73,7 @@ from pydantic_ai.toolsets import FunctionToolset
 pytestmark = pytest.mark.anyio
 
 REVISION = "apr_000000000000000000000000"
-ENVIRONMENT = "env_0000000000000000"
+ENVIRONMENT = "env_000000000000000000000000"
 
 
 @dataclass

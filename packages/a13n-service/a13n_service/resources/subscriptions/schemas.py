@@ -39,7 +39,7 @@ class SubscriptionFilter(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     agent_id: ObjectId | None = None
     session_id: ObjectId | None = None
-    thread_id: Annotated[str, StringConstraints(min_length=1, max_length=72)] | None = None
+    thread_id: ObjectId | None = None
 
 
 class SubscriptionCreate(BaseModel):

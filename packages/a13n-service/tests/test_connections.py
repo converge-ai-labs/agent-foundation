@@ -16,7 +16,6 @@ import pytest
 import uvicorn
 from a13n_harness import AgentSpec, DefinitionError, HarnessBuilder, RunBindings
 from a13n_service.infra.audit import AuditEventRow
-from a13n_service.infra.crypto import SecretLocation
 from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
@@ -1429,37 +1428,6 @@ async def test_account_completion_checks_setup_identity(  # type: ignore[no-unty
         assert stored.authorization is None and stored.operation_id is None
         if not valid:
             assert stored.failure["reason"] == "rejected"
-
-
-@pytest.mark.parametrize("existing_credential", [False, True])
-async def test_legacy_account_flow_requires_restart_without_provider_io(  # type: ignore[no-untyped-def]
-    service, monkeypatch: pytest.MonkeyPatch, existing_credential: bool
-) -> None:
-    async with composio_connection(service, monkeypatch) as (composio, created):
-        item = f"/connections/{created['id']}"
-        if existing_credential:
-            await post(service, item + "/authorize", {}, **{"If-Match": etag(created)})
-            assert (await complete_account(service, composio))["error"] is None
-            created = await view(service, created["id"])
-        previous = (await row(service, created["id"])).credential
-        await post(service, item + "/authorize", {}, **{"If-Match": etag(created)})
-        async with transaction(service.runtime.storage) as session:
-            stored = await session.get(ConnectionRow, created["id"], with_for_update=True)
-            assert stored is not None and stored.authorization is not None
-            keys = service.runtime.keys
-            flow = reveal(keys, stored.organization_id, stored.id, "authorization", stored.authorization, AccountFlow)
-            legacy = flow.model_dump_json(exclude={"expected_metadata"}).encode()
-            location = SecretLocation(stored.organization_id, "connections", "authorization", stored.id)
-            stored.authorization = keys.protect(legacy, location).model_dump(mode="json")
-        calls = (composio.completions, composio.inspections)
-        result = await complete_account(service, composio)
-        assert result["error"] == "setup_restart_required"
-        assert (composio.completions, composio.inspections) == calls
-        stored = await row(service, created["id"])
-        assert stored.authorization is None and stored.operation_id is None
-        assert stored.credential == previous
-        assert stored.failure["reason"] == "rejected"
-        assert composio.revoked == []
 
 
 @pytest.mark.parametrize(

@@ -36,6 +36,7 @@ from sqlalchemy import select
 pytestmark = pytest.mark.anyio
 
 SECRET = "whsec_test_signing_secret_value"
+THREAD = "thread_" + "0" * 32
 
 
 def etag(resource: dict) -> str:
@@ -50,9 +51,9 @@ async def test_subscription_configuration_is_admin_only(service) -> None:  # typ
     subscription = created.json()
     assert subscription["signing_secret"].startswith("whsec_") and subscription["kinds"] == ["run.completed"]
     supplied = await service.client.post(
-        base, json={**body, "name": "Supplied", "signing_secret": SECRET, "filter": {"thread_id": "main"}}
+        base, json={**body, "name": "Supplied", "signing_secret": SECRET, "filter": {"thread_id": THREAD}}
     )
-    assert supplied.json()["signing_secret"] == SECRET and supplied.json()["filter"]["thread_id"] == "main"
+    assert supplied.json()["signing_secret"] == SECRET and supplied.json()["filter"]["thread_id"] == THREAD
 
     item = f"{base}/{subscription['id']}"
     fetched = await service.client.get(item)

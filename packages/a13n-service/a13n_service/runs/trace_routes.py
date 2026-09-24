@@ -6,6 +6,7 @@ from fastapi import APIRouter, Path, Query
 from pydantic import AwareDatetime
 
 from a13n_service.infra.http import PageLimit
+from a13n_service.infra.ids import ObjectId
 from a13n_service.providers.traces import Span, SpanPage
 from a13n_service.runs import traces
 from a13n_service.runs.runtime import CurrentRuntime
@@ -14,7 +15,7 @@ from a13n_service.tenancy.requests import Actor
 router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}", tags=["runs"])
 
 TraceId = Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")]
-IdFilter = Annotated[str | None, Query(max_length=72, pattern=r"^[a-z0-9_-]+$")]
+IdFilter = Annotated[ObjectId | None, Query()]
 
 
 @router.get("/runs/{run_id}/attempts/{attempt_id}/trace", response_model=SpanPage)
