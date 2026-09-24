@@ -67,17 +67,27 @@ it.each(["live", "saved"])(
         </Routes>
       </MemoryRouter>,
     );
-    expect(screen.queryByText(parts[1].text!)).toBeNull();
+    expect(screen.getByText(parts[1].text!)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copy message" })).toBeNull();
     const disclosure = screen.getByRole("button", {
       name: "Thread message details",
       expanded: false,
     });
-    expect(disclosure.textContent).toBe("…");
-    await user.click(disclosure);
+    expect(screen.getByText("Show message")).toBeTruthy();
+    const content = document.getElementById(
+      disclosure.getAttribute("aria-controls")!,
+    )!;
+    expect(content.hidden).toBe(true);
+    await user.click(screen.getByText(parts[1].text!));
     expect(screen.getByText(parts[1].text!)).toBeTruthy();
     expect(disclosure.getAttribute("aria-expanded")).toBe("true");
-    await user.click(disclosure);
-    expect(screen.queryByText(parts[1].text!)).toBeNull();
+    expect(content.hidden).toBe(false);
+    expect(screen.getByText("Show less")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy message" })).toBeTruthy();
+    await user.keyboard(" ");
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    expect(content.hidden).toBe(true);
+    expect(screen.getByText(parts[1].text!)).toBeTruthy();
     expect(screen.queryByText(parts[0].text!)).toBeNull();
     expect(screen.queryByText("User")).toBeNull();
     const link = screen.getByRole("link", {
@@ -120,4 +130,43 @@ it("uses the source ID without a title and does not infer provenance from ordina
     screen.queryByRole("button", { name: "Thread message details" }),
   ).toBeNull();
   expect(inputCopyText([legacy])).toBe(legacy.text);
+});
+
+it("reveals rich content only after keyboard expansion and copies the complete message", async () => {
+  const user = userEvent.setup();
+  const text = `${"Review the implementation carefully. ".repeat(20)}\n\nRead the [review notes](https://example.com/review).`;
+  render(
+    <MemoryRouter>
+      <ConversationTranscript
+        threadId="thread-worker"
+        entries={[
+          {
+            position: 0,
+            message_kind: "request",
+            parts: [parts[0], { ...parts[1], text }],
+          },
+        ]}
+        blocks={[]}
+        localInputs={[]}
+      />
+    </MemoryRouter>,
+  );
+  expect(screen.queryByRole("link", { name: "review notes" })).toBeNull();
+  await user.tab();
+  expect(document.activeElement).toBe(
+    screen.getByRole("link", { name: "From thread Release review" }),
+  );
+  await user.tab();
+  const disclosure = screen.getByRole("button", {
+    name: "Thread message details",
+    expanded: false,
+  });
+  expect(document.activeElement).toBe(disclosure);
+  await user.keyboard("{Enter}");
+  expect(screen.getByRole("link", { name: "review notes" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Copy message" }));
+  expect(await navigator.clipboard.readText()).toBe(text);
+  await user.click(disclosure);
+  expect(screen.queryByRole("link", { name: "review notes" })).toBeNull();
+  expect(screen.queryByText(parts[0].text!)).toBeNull();
 });
