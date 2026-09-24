@@ -38,10 +38,10 @@ A role is a process ownership and scaling boundary, not a separate product, sche
 
 Organize business code by feature and add layers only for a real capability; do not prebuild global `controllers`, `dto`, `managers`, generic repositories, or abstract unit-of-work frameworks.
 
-- FastAPI routers are thin transport adapters. Keep Pydantic request and response DTOs beside the owning feature API; routers validate, authorize, call one application use case, and map its typed result or error.
+- FastAPI routers are thin transport adapters. Keep Pydantic request and response types beside the owning feature API; routers parse the request, call one use case, and shape its typed result. Use cases authorize, so tools, sweeps, and extensions that call them get the same checks as HTTP.
 - Application services own use-case orchestration and short transaction boundaries. They do not import FastAPI or encode HTTP status.
-- Repositories own SQLAlchemy queries, may flush, and never commit. ORM objects stay inside the persistence boundary and are not API responses or Harness contracts.
-- Durable asynchronous lifecycles use idempotent reconcilers and fenced workers. Model, tool, queue, and stream waits happen outside database transactions.
+- A function that takes a session belongs to its caller's transaction: it may flush and never commits. ORM rows stay inside the persistence boundary and are not API responses or Harness contracts.
+- Durable asynchronous lifecycles use idempotent sweeps and fenced attempts. Model, tool, Redis, and stream waits happen outside database transactions.
 - Process-role wiring selects routers and bounded background work; roles share the same domain models. [Runtime composition](spec/a13n-service/09-runtime.md) owns their business contributions.
 
 ### Naming
@@ -51,7 +51,7 @@ Use the package and module hierarchy as a namespace instead of repeating it in e
 - Name feature packages after precise domain nouns, such as `agents`, `assets`, `models`, `secrets`, and `skills`. Do not append generic ownership words such as `_management`, `_manager`, `_service`, or `_system` to a feature namespace.
 - Name a type for what it represents. Do not prefix it with the repository, distribution, service, or containing feature name merely to provide context. Retain a qualifier such as `Workspace`, `Run`, or `Environment` only when it distinguishes real concepts at the same boundary.
 - Use domain suffixes consistently: `Row` is a Service ORM persistence type, `Request` is inbound command data, `Revision` is immutable lineage content, `Snapshot` is a frozen capture, `Selection` is a choice, `Lock` is an exact frozen dependency, and `Receipt` is bounded operation evidence. Do not add a suffix only to make a name longer or more architectural.
-- Application `Service`, `Resolver`, `Factory`, `Reconciler`, and `Preparer` types must describe one cohesive role that is not already clear from a function. Avoid generic `Manager`, `Helper`, `Common`, and `Utils` abstractions.
+- Application `Service`, `Resolver`, `Factory`, and `Preparer` types must describe one cohesive role that is not already clear from a function. Avoid generic `Manager`, `Helper`, `Common`, and `Utils` abstractions.
 - Python refactors do not rename stable wire fields, error codes, event names, table names, indexes, or migration history merely to mirror an internal identifier.
 
 Formatters and general-purpose naming rules can enforce syntax and casing, but they cannot decide whether a qualifier carries domain meaning. Semantic naming clarity remains a design and review responsibility.
@@ -72,23 +72,23 @@ Generated output must compile, type-check where applicable, and pass its contrac
 
 ## Async and Process Lifespan
 
-Service I/O is async-first. Use async database, `httpx2`, Redis, queue, object-store, and subprocess clients. Do not introduce `httpx` or another general HTTP client alongside `httpx2`. Isolate unavoidable bounded blocking work with `anyio.to_thread.run_sync`; never block the event loop or call `asyncio.run()` from an active async path.
+Service I/O is async-first. Use async database, `httpx2`, Redis, object-store, and subprocess clients. Do not introduce `httpx` or another general HTTP client alongside `httpx2`. Isolate unavoidable bounded blocking work with `anyio.to_thread.run_sync`; never block the event loop or call `asyncio.run()` from an active async path.
 
 Create process-wide engines and clients during FastAPI lifespan, store them in explicit application state, and close them during shutdown. Module import must not open connections, start tasks, or configure logging. External calls have explicit timeouts; retries are bounded, observable, and restricted to retry-safe operations. Preserve cancellation and re-raise `CancelledError` after bounded cleanup.
 
 ## Database Sessions and Transactions
 
-All service code obtains the canonical engine and session factory from `a13n_service.infra.db.Storage` and uses its canonical `short_session()` and `transaction()` scopes. Do not construct local engines or session makers.
+All service code obtains the canonical engine and session factory from `a13n_service.infra.db.Storage` and opens sessions only through the canonical `short_session(storage)` and `transaction(storage)` scopes in `a13n_service.infra.db`. Do not construct local engines or session makers.
 
 An `AsyncSession` is a mutable unit of work. Never share it across concurrent tasks or store it in a singleton. Keep each transaction around one small database operation, and do not hold a session, connection, transaction, or lock while waiting for:
 
 - model, tool, or agent execution;
-- HTTP, Redis, queue, object-store, or environment I/O;
+- HTTP, Redis, object-store, or environment I/O;
 - a sleep, retry, long poll, or another worker;
 - SSE, WebSocket, file, or model-output streaming;
 - a FastAPI background task.
 
-Read durable state in one short session, close it, perform external work, then open a new short transaction to publish the result. Revalidate ownership or version fields when state may have changed. Repositories may flush; the application use case owns commit. Return typed values or identifiers rather than live ORM entities, and load relationships explicitly so serialization cannot trigger implicit async I/O. The canonical engine bounds PostgreSQL connection and statement time, readiness uses a shorter application deadline, and shielded rollback/close cleanup is bounded.
+Read durable state in one short session, close it, perform external work, then open a new short transaction to publish the result. Revalidate ownership or version fields when state may have changed. Functions that take a session may flush; the use case that opened the transaction owns commit. Return typed values or identifiers rather than live ORM entities, and load relationships explicitly so serialization cannot trigger implicit async I/O. The canonical engine bounds PostgreSQL connection and statement time, readiness uses a shorter application deadline, and shielded rollback/close cleanup is bounded.
 
 ### FastAPI streaming footgun
 
@@ -100,12 +100,12 @@ Complete authentication, authorization, and initial reads in a short session tha
 
 Minimize database work across the complete application operation using the short-read, external-preparation, short-commit flow above. Simple database-only operations can stay in one transaction. Preserve the owning specification's observation and concurrency boundaries.
 
-- **Observe authority once.** Follow the [IAM contract](spec/a13n-service/03-tenancy.md#authorization): read each Principal/Workspace and credential on first use, then reuse detached facts while still checking each action, target, and credential boundary. Take IAM row locks only where the IAM contract requires them: administrative changes serialize on the organization and recheck the actor's grants inside the changing transaction. Later revocation affects the next operation; requests, polls, and independent background items do not share an operation snapshot. Attempt authorization refresh remains separate.
+- **Observe authority once.** Follow the [tenancy authorization contract](spec/a13n-service/03-tenancy.md#authorization): read each principal, workspace, and credential on first use, then reuse detached facts while still checking each action, target, and credential boundary. Take tenancy row locks only where that contract requires them: administrative changes serialize on the organization and recheck the actor's grants inside the changing transaction. Later revocation affects the next operation; requests, polls, and independent background items do not share an operation snapshot. A running attempt rechecks its frozen authority separately ([claim, heartbeat and authority](spec/a13n-service/05-runs.md#claim-heartbeat-and-authority)).
 - **Select configuration once.** For [Run acceptance](spec/a13n-service/05-runs.md), validate and freeze the complete selection, including descendants, using ordinary reads. Do not reread defaults or rebuild prepared state because of later edits. No shared database timestamp is required. Management serialization and runtime eligibility checks retain their own contracts.
 - **Keep commit-time arbitration.** Recheck required state, versions, source integrity, capacity, leases, generations, and idempotency. Keep command replay preflight read-only; arbitrate evidence with the business mutation and roll back tentative writes before replaying a concurrent winner.
 - **Pass known facts forward.** Reuse existing IDs, selections, and returned values. Prefer existing parameters or small cohesive types; avoid giant Context objects and long forwarding chains. Reuse does not replace authoritative scope or relation checks.
 - **Batch repeated work.** Deduplicate inputs and use bounded set reads and writes. Batch recurring renewals when justified, preserving per-item authority, deadlines, cancellation, conflicts, and accounting.
-- **Combine mutations and narrow locks.** Prefer conditional `UPDATE ... RETURNING` when it expresses the complete invariant. For queue claims that allow skipping contention, use bounded `FOR UPDATE SKIP LOCKED` with an update and returned claims; reuse canonical helpers. Preserve necessary locks, ordering, and fences, and evaluate lease expiry after contention. Commit before external execution or reporting success.
+- **Combine mutations and narrow locks.** Prefer conditional `UPDATE ... RETURNING` when it expresses the complete invariant. For claims that allow skipping contention, such as run attempts and outbox deliveries, use bounded `FOR UPDATE SKIP LOCKED` with an update and returned claims; reuse canonical helpers. Preserve necessary locks, ordering, and fences, and evaluate lease expiry after contention. Commit before external execution or reporting success.
 - **Verify the reduction.** Compare equivalent scenarios with an explicit SQL-counting method under the [existing validation workflow](CONTRIBUTING.md#local-validation). Pair count assertions with relevant concurrency and rollback tests. Fewer statements must preserve correctness and must not introduce unbounded reads, longer transactions, or unnecessary abstractions.
 
 ## Migrations
@@ -117,7 +117,7 @@ The OSS artifact resolves its registry from `a13n_service.distribution.OSS` and 
 Use the repository workflow rather than creating files manually:
 
 ```bash
-make db-migrate msg="add session lease fields"
+make db-migrate msg="describe the schema change"
 ```
 
 For this repository, the command selects the OSS artifact descriptor, starts local PostgreSQL if needed, creates a disposable database, replays its complete history, autogenerates the model diff against its final metadata, formats the revision, and drops the database. The owning repository for another distribution invokes the same workflow with that distribution's fixed descriptor. This prevents a developer's normal database or ambient package set from hiding a missing migration. File names use `YYYYMMDD_<revision>_<slug>.py` and the final graph has at most one head; a deliberately reviewed merge revision reconciles concurrent branches before release.
@@ -143,7 +143,7 @@ These values apply only to migration connections. Override them only for a revie
 
 Configure Python logging once in the executable before Uvicorn or a worker starts. Libraries only obtain namespaced loggers through `a13n-logging`. Use Rich-backed `pretty` output locally and structured `json` output in deployments, writing to stdout or stderr.
 
-Prefer stable event names and structured fields. Include service, role, build version, request or trace ID, and applicable conversation/session/run IDs. Log exceptions with stack traces at the boundary that handles them. Never log credentials, authorization headers, password-bearing URLs, cookies, raw prompts, model output, tool payloads, or uploaded content by default.
+Prefer stable event names and structured fields. Include service, role, build version, request or trace ID, and applicable session, thread, run, and attempt IDs. Log exceptions with stack traces at the boundary that handles them. Never log credentials, authorization headers, password-bearing URLs, cookies, raw prompts, model output, tool payloads, or uploaded content by default.
 
 ## Container Image
 

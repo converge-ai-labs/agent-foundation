@@ -56,7 +56,7 @@ These are component names, not alternative names for the same runtime. In partic
 
 ## Hosted services
 
-The **[Service](a13n-service/index.md)** runs agents as a shared, multi-user application: organizations and workspaces, providers and models, versioned agents, durable conversations executed by workers with the Harness, environments, connections and webhooks, managed through an HTTP API and the Console.
+The **[Service](a13n-service/index.md)** runs agents as a shared, multi-user application: organizations and workspaces, providers and models, versioned agents, durable sessions, threads and runs executed by workers with the Harness, environments, connections and webhooks, managed through an HTTP API and the Console.
 
 For an application embedding Harness directly, start with [Embedding in a Host](a13n-harness/hosting.md) instead of deploying the Service unnecessarily.
 
