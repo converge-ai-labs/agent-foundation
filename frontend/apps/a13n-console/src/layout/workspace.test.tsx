@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { WorkspaceProvider, useWorkspace } from "./workspace";
 
-const mocks = vi.hoisted(() => ({ GET: vi.fn() }));
+const mocks = vi.hoisted(() => ({ GET: vi.fn(), userId: "usr_test" }));
 vi.mock("../auth/context", () => ({
   useAuth: () => ({
     isPending: false,
@@ -14,7 +14,7 @@ vi.mock("../auth/context", () => ({
       organizations: [
         { id: "org_test", key: "acme", name: "Acme", permissions: [] },
       ],
-      user: { value: { id: "usr_test" } },
+      user: { value: { id: mocks.userId } },
     },
   }),
   useClient: () => ({ http: { GET: mocks.GET } }),
@@ -33,7 +33,10 @@ function CurrentWorkspace() {
 }
 function mount(
   path: string,
-  { workspacesError }: { workspacesError?: Error } = {},
+  {
+    workspacesError,
+    firstArchived,
+  }: { workspacesError?: Error; firstArchived?: boolean } = {},
 ) {
   mocks.GET.mockImplementation(async (route: string) => {
     if (route.endsWith("/workspaces")) {
@@ -46,6 +49,7 @@ function mount(
               key: "research",
               name: "Research",
               permissions: ["read"],
+              archived_at: firstArchived ? "2026-09-24T00:00:00Z" : null,
             },
             {
               id: "ws_second",
@@ -118,6 +122,21 @@ it("redirects the entry page using the current workspace key", async () => {
       /\/workspace\/(research|design)\/agents\|ws_(first|second)\|\/workspace\//,
     ),
   ).toBeTruthy();
+});
+
+it("enters a workspace that still runs rather than an archived one", async () => {
+  // A user who has not entered a workspace yet, so none is remembered.
+  mocks.userId = "usr_first_visit";
+  try {
+    mount("/", { firstArchived: true });
+    expect(
+      await screen.findByText(
+        "/workspace/design/agents|ws_second|/workspace/design",
+      ),
+    ).toBeTruthy();
+  } finally {
+    mocks.userId = "usr_test";
+  }
 });
 
 it("preserves the selected workspace when provider management opens in another tab", async () => {
