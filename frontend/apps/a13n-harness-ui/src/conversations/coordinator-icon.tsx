@@ -1,7 +1,7 @@
 import { Graph } from "@phosphor-icons/react";
-import styles from "./project-lead.module.css";
+import styles from "./coordinator.module.css";
 
-export function LeadIcon({ size = 20 }: { size?: number }) {
+export function CoordinatorIcon({ size = 20 }: { size?: number }) {
   return (
     <Graph
       size={size}
@@ -12,7 +12,7 @@ export function LeadIcon({ size = 20 }: { size?: number }) {
   );
 }
 
-export function LeadMark() {
+export function CoordinatorMark() {
   return (
     <span
       className={styles.mark}
@@ -20,7 +20,7 @@ export function LeadMark() {
       aria-label="Coordinator"
       title="Coordinator"
     >
-      <LeadIcon size={18} />
+      <CoordinatorIcon size={18} />
     </span>
   );
 }

@@ -138,8 +138,10 @@ class RootActivityView(SurfaceModel):
 
 
 class ThreadSummary(SurfaceModel):
+    role: Literal["ordinary", "coordinator", "worker"] = "ordinary"
+    auto_followup: bool | None = None
     thread_id: str = Field(min_length=1, max_length=80)
-    lead_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
+    coordinator_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     parent_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     created_at: datetime
     updated_at: datetime
@@ -318,8 +320,6 @@ class ProjectSummary(SurfaceModel):
     position: int
     roots: tuple[str, ...] = Field(max_length=64)
     last_active_at: datetime | None = None
-    lead_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
-    lead_enabled: bool = False
     defaults: ProjectDefaults = Field(default_factory=ProjectDefaults)
 
     @field_validator("last_active_at")

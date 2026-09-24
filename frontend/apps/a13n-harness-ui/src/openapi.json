@@ -3346,18 +3346,18 @@
         }
       }
     },
-    "/api/projects/{project_id}/lead": {
+    "/api/threads/{thread_id}/coordinator": {
       "patch": {
-        "summary": "Set Project Lead Enabled",
-        "operationId": "set_project_lead_enabled_api_projects__project_id__lead_patch",
+        "summary": "Set Auto Followup",
+        "operationId": "set_auto_followup_api_threads__thread_id__coordinator_patch",
         "parameters": [
           {
-            "name": "project_id",
+            "name": "thread_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Project Id"
+              "title": "Thread Id"
             }
           }
         ],
@@ -3366,7 +3366,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ProjectLeadUpdate"
+                "$ref": "#/components/schemas/CoordinatorUpdate"
               }
             }
           }
@@ -3395,16 +3395,16 @@
         }
       },
       "post": {
-        "summary": "Ensure Project Lead",
-        "operationId": "ensure_project_lead_api_projects__project_id__lead_post",
+        "summary": "Promote Coordinator",
+        "operationId": "promote_coordinator_api_threads__thread_id__coordinator_post",
         "parameters": [
           {
-            "name": "project_id",
+            "name": "thread_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Project Id"
+              "title": "Thread Id"
             }
           }
         ],
@@ -3706,7 +3706,7 @@
             }
           },
           {
-            "name": "lead_thread_id",
+            "name": "coordinator_thread_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -3719,7 +3719,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Lead Thread Id"
+              "title": "Coordinator Thread Id"
             }
           },
           {
@@ -7235,6 +7235,20 @@
         "title": "ConversationPage",
         "type": "object"
       },
+      "CoordinatorUpdate": {
+        "properties": {
+          "auto_followup": {
+            "type": "boolean",
+            "title": "Auto Followup"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "auto_followup"
+        ],
+        "title": "CoordinatorUpdate"
+      },
       "DecisionBatchView": {
         "properties": {
           "continuation_id": {
@@ -10508,20 +10522,6 @@
         ],
         "title": "ProjectDefaultsPreview"
       },
-      "ProjectLeadUpdate": {
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "title": "Enabled"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "enabled"
-        ],
-        "title": "ProjectLeadUpdate"
-      },
       "ProjectPage": {
         "additionalProperties": false,
         "properties": {
@@ -10581,24 +10581,6 @@
               }
             ],
             "title": "Last Active At"
-          },
-          "lead_thread_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Lead Thread Id"
-          },
-          "lead_enabled": {
-            "type": "boolean",
-            "title": "Lead Enabled",
-            "default": false
           },
           "defaults": {
             "$ref": "#/components/schemas/ProjectDefaults"
@@ -13329,13 +13311,35 @@
       "ThreadSummary": {
         "additionalProperties": false,
         "properties": {
+          "role": {
+            "default": "ordinary",
+            "enum": [
+              "ordinary",
+              "coordinator",
+              "worker"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "auto_followup": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Auto Followup"
+          },
           "thread_id": {
             "maxLength": 80,
             "minLength": 1,
             "title": "Thread Id",
             "type": "string"
           },
-          "lead_thread_id": {
+          "coordinator_thread_id": {
             "anyOf": [
               {
                 "maxLength": 80,
@@ -13347,7 +13351,7 @@
               }
             ],
             "default": null,
-            "title": "Lead Thread Id"
+            "title": "Coordinator Thread Id"
           },
           "parent_thread_id": {
             "anyOf": [

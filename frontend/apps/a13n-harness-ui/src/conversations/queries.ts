@@ -50,7 +50,7 @@ export function useThreads(
     limit = 30,
     archivedOnly = false,
     includeActive = false,
-    leadThreadId,
+    coordinatorThreadId,
     independentOnly = false,
   }: {
     scope?: "all" | "projectless" | "unavailable";
@@ -58,7 +58,7 @@ export function useThreads(
     limit?: number;
     archivedOnly?: boolean;
     includeActive?: boolean;
-    leadThreadId?: string;
+    coordinatorThreadId?: string;
     independentOnly?: boolean;
   } = {},
 ) {
@@ -73,7 +73,7 @@ export function useThreads(
       limit,
       archivedOnly,
       includeActive,
-      leadThreadId,
+      coordinatorThreadId,
       independentOnly,
     ],
     enabled,
@@ -89,7 +89,7 @@ export function useThreads(
               include_archived: archived,
               archived_only: archivedOnly,
               include_active: includeActive,
-              lead_thread_id: leadThreadId,
+              coordinator_thread_id: coordinatorThreadId,
               independent_only: independentOnly,
               cursor: pageParam,
               limit,
@@ -117,7 +117,7 @@ export function useThreads(
     limit,
     archivedOnly,
     includeActive,
-    leadThreadId,
+    coordinatorThreadId,
     independentOnly,
   ]);
   useEffect(() => {
@@ -147,6 +147,32 @@ export function useThreads(
     hasNextPage: !!list.data && list.hasNextPage,
   };
 }
+// Missing owner anchors can be archived or outside the loaded recent pages.
+export function useThreadOwners(ids: string[], enabled: boolean) {
+  const { client } = useTransport();
+  const owners = [...new Set(ids)].sort();
+  return useQuery<Schema<"ThreadSummary">[]>({
+    queryKey: ["threads", "owners", owners],
+    enabled: enabled && owners.length > 0,
+    // Pagination can change the missing-owner set. Keep known anchors mounted
+    // while fetching the new set; the caller filters them against current IDs.
+    placeholderData: (previous) => previous,
+    queryFn: async ({ signal }) => {
+      const threads: Schema<"ThreadSummary">[] = [];
+      for (let offset = 0; offset < owners.length; offset += 100) {
+        const page = await result(
+          client.POST("/api/threads/lookup", {
+            body: { thread_ids: owners.slice(offset, offset + 100) },
+            signal,
+          }),
+        );
+        threads.push(...page.threads);
+      }
+      return threads;
+    },
+  });
+}
+
 export function useOperation(threadId: string, receipt?: string | null) {
   const { client } = useTransport();
   return useQuery({

@@ -812,7 +812,7 @@ class HarnessUiApp:
         include_archived: bool = False,
         archived_only: bool = False,
         include_active: bool = False,
-        lead_thread_id: str | None = None,
+        coordinator_thread_id: str | None = None,
         independent_only: bool = False,
         cursor: str | None = None,
         limit: int = 20,
@@ -825,7 +825,7 @@ class HarnessUiApp:
                 include_archived=include_archived,
                 archived_only=archived_only,
                 include_active=include_active,
-                lead_thread_id=lead_thread_id,
+                coordinator_thread_id=coordinator_thread_id,
                 independent_only=independent_only,
                 cursor=cursor,
                 limit=limit,
@@ -1002,7 +1002,7 @@ class HarnessUiApp:
         defaults: NewThreadDefaults | RootThreadDefaults | None = None,
         title: str | None = None,
         thread_id: str | None = None,
-        lead_thread_id: str | None = None,
+        coordinator_thread_id: str | None = None,
     ) -> ThreadSummary:
         async with self._operation():
             selected = (
@@ -1011,26 +1011,29 @@ class HarnessUiApp:
                 else defaults
             )
             thread = await self._threads.create(
-                defaults=selected, title=title, thread_id=thread_id, lead_thread_id=lead_thread_id
+                defaults=selected, title=title, thread_id=thread_id, coordinator_thread_id=coordinator_thread_id
             )
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
-    async def set_project_lead_enabled(self, project_id: str, enabled: bool) -> ThreadSummary:
-        """Persist Project coordination independently of browser navigation."""
+    async def promote_coordinator(self, thread_id: str) -> ThreadSummary:
+        """Convert an idle independent root without replacing its conversation."""
         async with self._operation():
-            thread = await self._threads.set_project_lead_enabled(project_id, enabled)
-            await self._summary_hub.publish(kind="project")
-            await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
-            return await self._projections.get_thread(thread.thread_id)
+            async with self._root_runs.require_inactive(thread_id):
+                thread = await self._threads.get(thread_id)
+                if thread.read_model is not None and thread.read_model.deferred_requests is not None:
+                    raise ThreadError(
+                        "Resolve pending decisions before converting this Thread.", code="thread_deferred_pending"
+                    )
+                await self._threads.promote_coordinator(thread_id)
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            return await self._projections.get_thread(thread_id)
 
-    async def ensure_project_lead(self, project_id: str) -> ThreadSummary:
-        """Resolve the canonical Lead identity without admitting a Run."""
+    async def set_auto_followup(self, thread_id: str, auto_followup: bool) -> ThreadSummary:
         async with self._operation():
-            thread = await self._threads.ensure_project_lead(project_id)
-            await self._summary_hub.publish(kind="project")
-            await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
-            return await self._projections.get_thread(thread.thread_id)
+            await self._threads.set_auto_followup(thread_id, auto_followup)
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            return await self._projections.get_thread(thread_id)
 
     async def preview_thread_configuration(
         self, *, defaults: NewThreadDefaults | RootThreadDefaults | None = None
@@ -2709,7 +2712,7 @@ async def open_harness_ui_app(
                 root_executor,
                 restart_coordinator=restart_coordinator,
                 notify=web_push.enqueue if web_push is not None else None,
-                on_settled=(lambda project_id, operation: thread_tools.notify_project_lead(project_id, operation))
+                on_settled=(lambda project_id, operation: thread_tools.notify_coordinator(project_id, operation))
                 if host_mode == "webui"
                 else None,
                 summary_hub=summary_hub,

@@ -24,17 +24,6 @@
   flex-shrink: 0;
   margin-right: 4px;
 }
-.entry {
-  width: 100%;
-  justify-content: flex-start;
-  gap: 8px;
-  font-weight: 500;
-}
-.entry > span {
-  flex: 1;
-  text-align: start;
-}
-
 .heading {
   display: flex;
   align-items: flex-start;

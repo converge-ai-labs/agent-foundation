@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
@@ -28,7 +28,12 @@ import {
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { useUnsent } from "./unsent";
-import { LeadIcon } from "./lead-icon";
+import { CoordinatorIcon } from "./coordinator-icon";
+import {
+  canPromoteCoordinator,
+  CoordinatorPromotion,
+  useCoordinatorMutation,
+} from "./coordinator-settings";
 
 function threadState(row: ActivityRow) {
   if (row.pending_decision) return "Needs your answer";
@@ -63,14 +68,14 @@ export function ThreadRow({
   presence,
   showRestore = false,
   showProject = false,
-  projectLead = false,
 }: {
   row: ActivityRow;
   presence: Schema<"PresenceFrame"> | null;
-  showRestore?: boolean;
+  showRestore?: boolean | "compact";
   showProject?: boolean;
-  projectLead?: boolean;
 }) {
+  const coordinator = useCoordinatorMutation(row.thread);
+  const [promoting, setPromoting] = useState(false);
   const { tracker: results } = useResults();
   const unsent = useUnsent().inputs.has(row.thread.thread_id);
   const unread = results?.isUnread(row.thread.thread_id);
@@ -121,10 +126,14 @@ export function ThreadRow({
             `${styles.threadLink} ${isActive ? styles.selected : ""}`
           }
         >
-          {projectLead ? <LeadIcon size={18} /> : <ThreadStateIcon row={row} />}
+          {row.thread.role === "coordinator" ? (
+            <CoordinatorIcon size={18} />
+          ) : (
+            <ThreadStateIcon row={row} />
+          )}
           <span>
             <strong title={title}>{title}</strong>
-            {projectLead && title !== "Coordinator" && (
+            {row.thread.role === "coordinator" && title !== "Coordinator" && (
               <small>Coordinator</small>
             )}
             {showProject && (
@@ -159,14 +168,15 @@ export function ThreadRow({
         {showRestore && row.thread.archived && (
           <Button
             variant="ghost"
-            size="sm"
+            size={showRestore === "compact" ? "icon-sm" : "sm"}
+            title={`Restore ${title}`}
             loading={archive.isPending}
             disabled={row.thread.root_activity.state !== "inactive"}
             onClick={() => archive.mutate()}
             aria-label={`Restore ${title}`}
           >
             <ArrowCounterClockwise />
-            Restore
+            {showRestore !== "compact" && "Restore"}
           </Button>
         )}
         <Menu>
@@ -197,6 +207,28 @@ export function ThreadRow({
                 {label}
               </MenuItem>
             ))}
+            {row.thread.role === "ordinary" &&
+              row.thread.configuration.project_id && (
+                <MenuItem
+                  disabled={
+                    !canPromoteCoordinator(row.thread, !!row.pending_decision)
+                  }
+                  onClick={() => setPromoting(true)}
+                >
+                  <CoordinatorIcon size={16} /> Make Coordinator
+                </MenuItem>
+              )}
+            {row.thread.role === "coordinator" && (
+              <MenuItem
+                disabled={coordinator.isPending}
+                onClick={() => coordinator.mutate(!row.thread.auto_followup)}
+              >
+                <CoordinatorIcon size={16} />
+                {row.thread.auto_followup
+                  ? "Pause automatic follow-up"
+                  : "Enable automatic follow-up"}
+              </MenuItem>
+            )}
             <MenuItem
               disabled={
                 archive.isPending ||
@@ -212,7 +244,12 @@ export function ThreadRow({
           </MenuPopup>
         </Menu>
       </div>
-      <ErrorNotice error={archive.error} />
+      <ErrorNotice error={archive.error || coordinator.error} />
+      <CoordinatorPromotion
+        open={promoting}
+        close={() => setPromoting(false)}
+        mutation={coordinator}
+      />
     </div>
   );
 }

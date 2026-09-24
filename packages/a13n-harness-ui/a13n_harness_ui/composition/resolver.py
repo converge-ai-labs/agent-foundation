@@ -89,8 +89,8 @@ class ThreadCompositionSelection:
     default_model_id: str | None = None
     environment_bindings: tuple[EnvironmentBindingSelection, ...] = ()
     default_environment: str | None = None
-    is_project_lead: bool = False
-    lead_thread_id: str | None = None
+    role: Literal["ordinary", "coordinator", "worker"] = "ordinary"
+    coordinator_thread_id: str | None = None
 
 
 class AgentCompositionResolver:
@@ -214,8 +214,8 @@ class AgentCompositionResolver:
             thread_id=selection.thread_id,
             thread_configuration_version=selection.version,
             project_id=selection.project_id,
-            is_project_lead=selection.is_project_lead,
-            lead_thread_id=selection.lead_thread_id,
+            role=selection.role,
+            coordinator_thread_id=selection.coordinator_thread_id,
             project_roots=selection.local_roots,
             media_understanding={
                 kind: self._model_recipe(source.models[model_id])

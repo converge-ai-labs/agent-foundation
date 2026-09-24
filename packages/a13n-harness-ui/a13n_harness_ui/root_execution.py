@@ -199,10 +199,15 @@ class RootRunExecutor:
                 "The selected Thread continuation has unresolved deferred tool requests.",
                 code="thread_deferred_pending",
             )
+        owner = (await self._store.threads.worker_owners((thread_id,))).get(thread_id)
         selection = replace(
             _selection(thread),
-            is_project_lead=await self._store.threads.is_project_lead(thread_id),
-            lead_thread_id=(await self._store.threads.worker_leads((thread_id,))).get(thread_id),
+            role="worker"
+            if owner is not None
+            else "coordinator"
+            if await self._store.threads.is_coordinator(thread_id)
+            else "ordinary",
+            coordinator_thread_id=owner,
         )
         if environment is not None:
             selection = replace(
@@ -251,7 +256,13 @@ class RootRunExecutor:
         else:
             captured = await self._store.objects.read_model(restart.composition, ResolvedRunComposition)
             source = await self._configurations.load(captured.generation_digest)
-            published = PublishedRunComposition(value=captured, reference=restart.composition)
+            # Restart retains the captured dependencies, but coordination belongs to the
+            # durable Thread, just as in ordinary/deferred admission.
+            captured = captured.model_copy(
+                update={"role": selection.role, "coordinator_thread_id": selection.coordinator_thread_id}
+            )
+            envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
+            published = PublishedRunComposition(value=captured, reference=envelope.ref)
         return RootRunAdmission(thread, source, published, previous_state, deferred_resume, prompt, response)
 
     async def execute(

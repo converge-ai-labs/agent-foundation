@@ -16,11 +16,11 @@ from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
 from .contracts import (
     AgentResourceSource,
     ChildExecutionHead,
+    Coordinator,
     EnvironmentBindingHead,
     EnvironmentBindingKey,
     ExecutionStatus,
     MarkdownSubagentSource,
-    ProjectLead,
     ResourceIndexEntry,
     SafeFailure,
     Thread,
@@ -33,11 +33,11 @@ from .models import (
     AcceptedConfigurationRecord,
     ChildExecutionRecord,
     ConfigurationSourceRecord,
+    CoordinatorRecord,
+    CoordinatorWorkerRecord,
     CurrentConfigurationRecord,
     EnvironmentBindingRecord,
     PlannedRestartRecord,
-    ProjectLeadRecord,
-    ProjectLeadWorkerRecord,
     ProjectModelPreferenceRecord,
     ResourceIndexRecord,
     ThreadConfigurationRecord,
@@ -191,34 +191,24 @@ class ThreadRepository:
         parent_thread_id: str | None = None,
         title: str | None = None,
         created_at: datetime | None = None,
-        project_lead: bool = False,
-        lead_thread_id: str | None = None,
+        coordinator_thread_id: str | None = None,
     ) -> Thread:
-        if project_lead and (configuration.project_id is None or parent_thread_id is not None):
-            raise ValueError("A Coordinator must be a root Thread with a Project")
         _require_kind(initial_state, ObjectKind.thread_initial_state)
         now = _utc(created_at)
         async with transaction(self._sessions) as session:
-            # BEGIN IMMEDIATE serializes the lookup and creation across App processes.
-            if project_lead:
-                binding = await session.get(ProjectLeadRecord, configuration.project_id)
-                if binding is not None:
-                    existing = await session.get(ThreadRecord, binding.thread_id)
-                    selected = await session.get(ThreadConfigurationRecord, binding.thread_id)
-                    assert existing is not None and selected is not None
-                    return _thread_value(existing, _configuration_value(selected))
-            if lead_thread_id is not None:
+            if coordinator_thread_id is not None:
                 binding = await session.scalar(
-                    select(ProjectLeadRecord).where(ProjectLeadRecord.thread_id == lead_thread_id)
+                    select(CoordinatorRecord).where(CoordinatorRecord.thread_id == coordinator_thread_id)
                 )
+                owner_configuration = await session.get(ThreadConfigurationRecord, coordinator_thread_id)
                 if (
                     binding is None
-                    or binding.project_id != configuration.project_id
+                    or owner_configuration is None
+                    or owner_configuration.project_id != configuration.project_id
                     or parent_thread_id is not None
-                    or project_lead
                 ):
                     raise StoreIntegrityError(
-                        "A worker must be a root in its Coordinator's Project.", code="project_lead_worker_invalid"
+                        "A worker must be a root in its Coordinator's Project.", code="coordinator_worker_invalid"
                     )
             if await session.get(ThreadRecord, thread_id) is not None:
                 raise StoreIntegrityError(
@@ -244,45 +234,60 @@ class ThreadRepository:
             session.add(record)
             await session.flush()
             session.add(_configuration_record(thread_id, configuration))
-            if project_lead:
-                session.add(ProjectLeadRecord(project_id=configuration.project_id, thread_id=thread_id))
-            if lead_thread_id is not None:
-                session.add(ProjectLeadWorkerRecord(worker_thread_id=thread_id, lead_thread_id=lead_thread_id))
+            if coordinator_thread_id is not None:
+                session.add(
+                    CoordinatorWorkerRecord(worker_thread_id=thread_id, coordinator_thread_id=coordinator_thread_id)
+                )
             await session.flush()
             return _thread_value(record, configuration)
 
-    async def project_leads(self) -> dict[str, ProjectLead]:
+    async def promote_coordinator(self, thread_id: str) -> None:
+        """Atomically establish a one-way role; worker ownership is never inferred."""
+        async with transaction(self._sessions) as session:
+            if await session.get(CoordinatorRecord, thread_id) is not None:
+                return
+            thread = await session.get(ThreadRecord, thread_id)
+            configuration = await session.get(ThreadConfigurationRecord, thread_id)
+            worker = await session.get(CoordinatorWorkerRecord, thread_id)
+            if thread is None or configuration is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            if worker is not None or thread.parent_thread_id is not None or configuration.project_id is None:
+                raise StoreConflictError(
+                    "Only an independent Project root can become a Coordinator.", code="coordinator_promotion_invalid"
+                )
+            if thread.archived:
+                raise StoreConflictError("Restore the Thread before converting it.", code="thread_archived")
+            session.add(CoordinatorRecord(thread_id=thread_id))
+
+    async def coordinators(self, thread_ids: tuple[str, ...] | None = None) -> dict[str, Coordinator]:
         async with short_session(self._sessions) as session:
-            records = await session.scalars(select(ProjectLeadRecord))
+            statement = select(CoordinatorRecord)
+            if thread_ids is not None:
+                statement = statement.where(CoordinatorRecord.thread_id.in_(thread_ids))
+            records = await session.scalars(statement)
             return {
-                record.project_id: ProjectLead(thread_id=record.thread_id, enabled=record.enabled) for record in records
+                record.thread_id: Coordinator(thread_id=record.thread_id, auto_followup=record.auto_followup)
+                for record in records
             }
 
-    async def set_project_lead_enabled(self, project_id: str, enabled: bool) -> None:
+    async def set_auto_followup(self, thread_id: str, auto_followup: bool) -> None:
         async with transaction(self._sessions) as session:
-            record = await session.get(ProjectLeadRecord, project_id)
+            record = await session.get(CoordinatorRecord, thread_id)
             if record is None:
-                raise StoreIntegrityError("Coordinator does not exist.", code="project_lead_missing")
-            record.enabled = enabled
+                raise StoreIntegrityError("Coordinator does not exist.", code="coordinator_missing")
+            record.auto_followup = auto_followup
 
-    async def is_project_lead(self, thread_id: str) -> bool:
-        """Identity and scope survive disabling automatic coordination."""
-        async with short_session(self._sessions) as session:
-            return (
-                await session.scalar(
-                    select(ProjectLeadRecord.project_id).where(ProjectLeadRecord.thread_id == thread_id)
-                )
-                is not None
-            )
+    async def is_coordinator(self, thread_id: str) -> bool:
+        return thread_id in await self.coordinators((thread_id,))
 
-    async def worker_leads(self, thread_ids: tuple[str, ...]) -> dict[str, str]:
+    async def worker_owners(self, thread_ids: tuple[str, ...]) -> dict[str, str]:
         if not thread_ids:
             return {}
         async with short_session(self._sessions) as session:
             rows = await session.scalars(
-                select(ProjectLeadWorkerRecord).where(ProjectLeadWorkerRecord.worker_thread_id.in_(thread_ids))
+                select(CoordinatorWorkerRecord).where(CoordinatorWorkerRecord.worker_thread_id.in_(thread_ids))
             )
-            return {row.worker_thread_id: row.lead_thread_id for row in rows}
+            return {row.worker_thread_id: row.coordinator_thread_id for row in rows}
 
     async def touch(self, thread_id: str, *, touched_at: datetime | None = None) -> None:
         """Advance navigation recency without changing content or metadata versions."""
@@ -322,7 +327,7 @@ class ThreadRepository:
         sort: Literal["updated", "activity", "touched"] = "updated",
         thread_ids: tuple[str, ...] | None = None,
         exclude_thread_ids: tuple[str, ...] = (),
-        lead_thread_id: str | None = None,
+        coordinator_thread_id: str | None = None,
         independent_only: bool = False,
         before: tuple[datetime, str] | None = None,
         limit: int = 20,
@@ -351,18 +356,15 @@ class ThreadRepository:
                     ThreadConfigurationRecord.thread_id == ThreadRecord.thread_id,
                 )
             predicates = []
-            workers = select(ProjectLeadWorkerRecord.worker_thread_id)
-            if lead_thread_id is not None:
+            workers = select(CoordinatorWorkerRecord.worker_thread_id)
+            if coordinator_thread_id is not None:
                 predicates.append(
-                    ThreadRecord.thread_id.in_(workers.where(ProjectLeadWorkerRecord.lead_thread_id == lead_thread_id))
-                )
-            if independent_only:
-                predicates.extend(
-                    (
-                        ThreadRecord.thread_id.not_in(workers),
-                        ThreadRecord.thread_id.not_in(select(ProjectLeadRecord.thread_id)),
+                    ThreadRecord.thread_id.in_(
+                        workers.where(CoordinatorWorkerRecord.coordinator_thread_id == coordinator_thread_id)
                     )
                 )
+            if independent_only:
+                predicates.extend((ThreadRecord.thread_id.not_in(workers),))
             if thread_ids is not None:
                 predicates.append(ThreadRecord.thread_id.in_(thread_ids))
             if exclude_thread_ids:
@@ -445,15 +447,15 @@ class ThreadRepository:
                 raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
             if configuration.version != expected_version:
                 _conflict("thread_configuration_conflict", expected_version, configuration.version)
-            binding = await session.scalar(select(ProjectLeadRecord).where(ProjectLeadRecord.thread_id == thread_id))
-            if binding is not None and replacement.project_id != binding.project_id:
+            binding = await session.scalar(select(CoordinatorRecord).where(CoordinatorRecord.thread_id == thread_id))
+            if binding is not None and replacement.project_id != configuration.project_id:
                 raise StoreConflictError(
-                    "A Coordinator cannot move to another Project.", code="project_lead_project_locked"
+                    "A Coordinator cannot move to another Project.", code="coordinator_project_locked"
                 )
-            worker = await session.get(ProjectLeadWorkerRecord, thread_id)
+            worker = await session.get(CoordinatorWorkerRecord, thread_id)
             if worker is not None and replacement.project_id != configuration.project_id:
                 raise StoreConflictError(
-                    "A Coordinator worker cannot move to another Project.", code="project_lead_worker_project_locked"
+                    "A Coordinator worker cannot move to another Project.", code="coordinator_worker_project_locked"
                 )
             _assign_configuration(configuration, replacement)
             record.updated_at = now

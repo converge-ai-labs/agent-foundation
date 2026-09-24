@@ -37,7 +37,9 @@ function thread(id: string, project: string | null = "project-one") {
     configuration: { project_id: project },
     root_activity: { state: "inactive" },
     archived: false,
-    lead_thread_id: null as string | null,
+    role: "ordinary" as Schema<"ThreadSummary">["role"],
+    coordinator_thread_id: null as string | null,
+    auto_followup: null as boolean | null,
   };
 }
 function page(
@@ -70,8 +72,7 @@ let activity: URL[];
 let activeThreads: ReturnType<typeof thread>[];
 let writes: Request[];
 let sidekickEnabled: boolean;
-let leadEnabled: boolean;
-let leadThread: ReturnType<typeof thread> | null;
+let coordinators: ReturnType<typeof thread>[];
 let workerThreads: ReturnType<typeof thread>[];
 let failMore: boolean;
 let failSave: boolean;
@@ -89,8 +90,7 @@ beforeEach(() => {
   activeThreads = [];
   writes = [];
   sidekickEnabled = false;
-  leadEnabled = true;
-  leadThread = null;
+  coordinators = [];
   workerThreads = [];
   failMore = false;
   failSave = false;
@@ -129,15 +129,31 @@ beforeEach(() => {
         );
         if (unsent) return json({ thread: unsent });
       }
+      if (url.pathname === "/api/threads/lookup") {
+        const body = await request.json();
+        return json({
+          threads: coordinators.filter((item) =>
+            body.thread_ids.includes(item.thread_id),
+          ),
+        });
+      }
       if (request.method !== "GET") {
         writes.push(request.clone());
-        if (url.pathname === "/api/projects/project-one/lead") {
+        if (url.pathname.endsWith("/coordinator")) {
           if (failSave)
-            return json({ error: { message: "Lead update failed" } }, 500);
+            return json(
+              { error: { message: "Coordinator update failed" } },
+              500,
+            );
+          const id = decodeURIComponent(url.pathname.split("/")[3]);
+          let owner = coordinators.find((item) => item.thread_id === id);
+          if (!owner) {
+            owner = { ...thread(id), role: "coordinator", auto_followup: true };
+            coordinators.push(owner);
+          }
           if (request.method === "PATCH")
-            leadEnabled = (await request.json()).enabled;
-          leadThread ??= thread("canonical-lead");
-          return json(leadThread);
+            owner.auto_followup = (await request.json()).auto_followup;
+          return json(owner);
         }
         if (request.method === "PUT") {
           if (failSave)
@@ -159,22 +175,12 @@ beforeEach(() => {
           });
         return json(thread("created"));
       }
-      if (url.pathname === "/api/projects")
-        return json(
-          projects.map((project) => ({
-            ...project,
-            lead_enabled:
-              project.project_id === "project-one" &&
-              !!leadThread &&
-              leadEnabled,
-            lead_thread_id:
-              project.project_id === "project-one"
-                ? (leadThread?.thread_id ?? null)
-                : null,
-          })),
-        );
-      if (leadThread && url.pathname === `/api/threads/${leadThread.thread_id}`)
-        return json({ thread: leadThread, deferred_requests: [] });
+      if (url.pathname === "/api/projects") return json(projects);
+      const owner = coordinators.find(
+        (item) =>
+          url.pathname === `/api/threads/${encodeURIComponent(item.thread_id)}`,
+      );
+      if (owner) return json({ thread: owner, deferred_requests: [] });
       if (url.pathname === "/api/setup")
         return json({ suggested_project_path: cwd });
       if (url.pathname === "/api/status")
@@ -213,16 +219,26 @@ beforeEach(() => {
                 }
               : page(["Global match"], null, "project-two"),
           );
-        if (url.searchParams.get("lead_thread_id")) {
+        if (url.searchParams.get("coordinator_thread_id")) {
           if (failMore)
             return json({ error: { message: "Workers unavailable" } }, 503);
           const offset = url.searchParams.get("cursor") ? 5 : 0;
           return json({
             rows: workerThreads
+              .filter(
+                (item) =>
+                  item.coordinator_thread_id ===
+                  url.searchParams.get("coordinator_thread_id"),
+              )
               .slice(offset, offset + 5)
               .map((item) => ({ thread: item, project_name: "One" })),
             active_rows: workerThreads
-              .filter((item) => item.root_activity.state !== "inactive")
+              .filter(
+                (item) =>
+                  item.root_activity.state !== "inactive" &&
+                  item.coordinator_thread_id ===
+                    url.searchParams.get("coordinator_thread_id"),
+              )
               .map((item) => ({ thread: item, project_name: "One" })),
             next_cursor:
               !offset && workerThreads.length > 5 ? "workers-next" : null,
@@ -239,15 +255,34 @@ beforeEach(() => {
               { error: { message: "Page temporarily unavailable" } },
               503,
             );
-          return json(page(["Older one", "Older two"]));
-        }
-        if (url.searchParams.get("project_id") === "project-one")
-          return json(
-            page(
-              [recentTitle, "Recent 2", "Recent 3", "Recent 4", "Recent 5"],
-              "one-next",
-            ),
+          const result = page(["Older one", "Older two"]);
+          result.rows.push(
+            ...workerThreads
+              .slice(1)
+              .map((item) => ({ thread: item, project_name: "One" })),
           );
+          return json(result);
+        }
+        if (url.searchParams.get("project_id") === "project-one") {
+          const result = page(
+            [recentTitle, "Recent 2", "Recent 3", "Recent 4", "Recent 5"],
+            "one-next",
+          );
+          result.rows = [
+            ...coordinators.filter((item) => !item.archived),
+            ...workerThreads.slice(0, 1),
+          ]
+            .map((item) => ({ thread: item, project_name: "One" }))
+            .concat(
+              result.rows.filter(
+                (row) =>
+                  !coordinators.some(
+                    (item) => item.thread_id === row.thread.thread_id,
+                  ),
+              ),
+            );
+          return json(result);
+        }
         if (url.searchParams.get("project_id") === "project-two")
           return json(page(["Other project"], null, "project-two"));
         if (url.searchParams.get("project_scope") === "unavailable")
@@ -1112,105 +1147,261 @@ it("keeps discovery failure inside the popup and supports retry without an empty
   await screen.findByRole("link", { name: /old-draft/ });
 });
 
-it("offers Coordinator by default and creates it only on explicit first open", async () => {
+it("keeps workers collapsed on direct navigation and pages them separately from ordinary Running and Recent", async () => {
   sidekickEnabled = true;
-  mount();
-  fireEvent.click(await screen.findByRole("button", { name: "One" }));
-  const group = screen.getByRole("region", { name: "One" });
-  await within(group).findByRole("button", { name: "Coordinator" });
-  const recent = await within(group).findByRole("link", { name: "Recent 1" });
-  expect(within(group).queryByRole("button", { name: "Lead" })).toBeNull();
+  coordinators = [
+    { ...thread("coordinator-one"), role: "coordinator", auto_followup: true },
+  ];
+  workerThreads = Array.from({ length: 7 }, (_, index) => ({
+    ...thread(`worker-${index + 1}`),
+    coordinator_thread_id: "coordinator-one",
+    role: "worker",
+  }));
+  workerThreads[0].root_activity.state = "running";
+  activeThreads = [
+    { ...thread("ordinary-running"), root_activity: { state: "running" } },
+    workerThreads[0],
+  ];
+  mount("/threads/worker-7");
+  await screen.findByRole("link", { name: /coordinator-one/ });
+  await screen.findByRole("link", { name: /ordinary-running/ });
+  expect(screen.getByText("Running · 1")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: /worker-/ })).toBeNull();
   expect(
-    within(group).queryByRole("button", { name: "Other conversations" }),
-  ).toBeNull();
-  expect(screen.getByLabelText("Current route").textContent).toBe("/");
-  fireEvent.click(recent);
-  expect(screen.getByLabelText("Current route").textContent).toBe(
-    "/threads/Recent%201",
+    activity.filter((url) => url.searchParams.has("coordinator_thread_id")),
+  ).toHaveLength(0);
+  expect(
+    activity
+      .find((url) => url.searchParams.get("project_id") === "project-one")
+      ?.searchParams.get("independent_only"),
+  ).toBe("false");
+  const route = screen.getByLabelText("Current route");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Expand workers for coordinator-one" }),
   );
+  await screen.findByRole("link", { name: /worker-1/ });
+  expect(screen.getAllByRole("link", { name: /worker-1/ })).toHaveLength(1);
+  expect(screen.getByRole("link", { name: "worker-7" })).toBeTruthy();
+  expect(route.textContent).toBe("/threads/worker-7");
+  const request = activity.find((url) =>
+    url.searchParams.has("coordinator_thread_id"),
+  )!;
+  expect(request.searchParams.get("coordinator_thread_id")).toBe(
+    "coordinator-one",
+  );
+  expect(request.searchParams.get("limit")).toBe("5");
+  fireEvent.click(screen.getByRole("button", { name: "More workers" }));
+  await screen.findByRole("link", { name: "worker-6" });
+  fireEvent.click(screen.getByRole("link", { name: /coordinator-one/ }));
+  expect(route.textContent).toBe("/threads/coordinator-one");
+  expect(
+    screen
+      .getByRole("button", { name: "Collapse workers for coordinator-one" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Collapse workers for coordinator-one",
+    }),
+  );
+  expect(screen.queryByRole("link", { name: /worker-/ })).toBeNull();
+  expect(screen.getByRole("link", { name: /ordinary-running/ })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Recent 1" })).toBeTruthy();
   expect(writes).toHaveLength(0);
-  fireEvent.click(within(group).getByRole("button", { name: "Coordinator" }));
-  await waitFor(() =>
-    expect(screen.getByLabelText("Current route").textContent).toBe(
-      "/threads/canonical-lead",
-    ),
-  );
-  expect(writes).toHaveLength(1);
-  expect(new URL(writes[0].url).pathname).toBe(
-    "/api/projects/project-one/lead",
-  );
 });
 
-it("pins the canonical Lead outside pagination, preserves archived identity and respects a direct worker link", async () => {
+it("shows worker fetch failures without claiming empty and retries inside the disclosure", async () => {
   sidekickEnabled = true;
-  leadThread = {
-    ...thread("archived-lead"),
-    title: "Old Lead",
-    archived: true,
-  };
+  coordinators = [
+    { ...thread("coordinator-one"), role: "coordinator", auto_followup: true },
+  ];
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Expand workers for coordinator-one",
+    }),
+  );
+  await screen.findByText("No workers yet");
+  failMore = true;
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  await screen.findByText("Workers unavailable");
+  expect(screen.queryByText("No workers yet")).toBeNull();
+  failMore = false;
+  const workers = screen.getByLabelText("Workers for coordinator-one");
+  fireEvent.click(within(workers).getByRole("button", { name: "Retry" }));
+  await screen.findByText("No workers yet");
+});
+
+it("finds workers through ordinary global search without expanding the Coordinator", async () => {
+  coordinators = [
+    { ...thread("coordinator-one"), role: "coordinator", auto_followup: true },
+  ];
+  workerThreads = [
+    {
+      ...thread("search-worker"),
+      role: "worker",
+      coordinator_thread_id: "coordinator-one",
+    },
+  ];
+  mount();
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "worker" },
+  });
+  await screen.findByRole("link", { name: "search-worker" });
+  expect(screen.getByText("One · Coordinator worker")).toBeTruthy();
+  const request = activity.find(
+    (url) => url.searchParams.get("query") === "worker",
+  )!;
+  expect(request.searchParams.has("coordinator_thread_id")).toBe(false);
+  expect(request.searchParams.get("independent_only")).toBe("false");
+});
+
+it("promotes the selected ordinary conversation without replacing its identity or route", async () => {
   mount("/threads/selected-old");
-  await screen.findByRole("link", { name: /Old Lead.*Coordinator.*Archived/ });
-  expect(screen.getByRole("button", { name: "Restore Old Lead" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "selected-old" })).toBeTruthy();
+  await screen.findByRole("link", { name: "selected-old" });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for selected-old" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Make Coordinator" }),
+  );
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Make this conversation a Coordinator?",
+  });
+  expect(writes).toHaveLength(0);
+  await userEvent.click(
+    within(confirmation).getByRole("button", { name: "Make Coordinator" }),
+  );
+  await screen.findByRole("link", { name: /selected-old.*Coordinator/ });
   expect(screen.getByLabelText("Current route").textContent).toBe(
     "/threads/selected-old",
   );
-  expect(writes).toHaveLength(0);
-  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+  expect(writes).toHaveLength(1);
+  expect(writes[0].method).toBe("POST");
+  expect(new URL(writes[0].url).pathname).toBe(
+    "/api/threads/selected-old/coordinator",
+  );
 });
 
-it("does not offer a new Lead when Sidekick is disabled", async () => {
+it("renders multiple Coordinators with disjoint workers and independent follow-up even with Sidekick off", async () => {
+  coordinators = ["alpha", "beta"].map((id) => ({
+    ...thread(id),
+    role: "coordinator",
+    auto_followup: true,
+  }));
+  workerThreads = ["alpha", "beta"].map((id) => ({
+    ...thread(`${id}-worker`),
+    role: "worker",
+    coordinator_thread_id: id,
+  }));
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
-  await screen.findByRole("link", { name: "Recent 1" });
-  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
-  expect(writes).toHaveLength(0);
+  for (const id of ["alpha", "beta"]) {
+    fireEvent.click(
+      await screen.findByRole("button", { name: `Expand workers for ${id}` }),
+    );
+    await within(screen.getByLabelText(`Workers for ${id}`)).findByRole(
+      "link",
+      { name: `${id}-worker` },
+    );
+  }
+  expect(
+    within(screen.getByLabelText("Workers for alpha")).queryByText(
+      "beta-worker",
+    ),
+  ).toBeNull();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for alpha" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Pause automatic follow-up" }),
+  );
+  await waitFor(() => expect(coordinators[0].auto_followup).toBe(false));
+  expect(coordinators[1].auto_followup).toBe(true);
+  expect(await writes[0].json()).toEqual({ auto_followup: false });
+  expect(screen.getByRole("link", { name: /alpha.*Coordinator/ })).toBeTruthy();
 });
 
-it("hides the dedicated Coordinator when Sidekick is disabled and restores the same identity", async () => {
-  leadThread = thread("canonical-lead");
-  recentTitle = "canonical-lead";
-  mount();
-  fireEvent.click(await screen.findByRole("button", { name: "One" }));
-  const group = screen.getByRole("region", { name: "One" });
-  await within(group).findByRole("link", { name: "Recent 2" });
-  expect(
-    within(group).queryByRole("link", { name: /canonical-lead/ }),
-  ).toBeNull();
-  expect(
-    within(group).queryByRole("button", { name: "Expand Coordinator workers" }),
-  ).toBeNull();
-  expect(
-    within(group).queryByRole("button", { name: "Coordinator" }),
-  ).toBeNull();
-  sidekickEnabled = true;
-  await act(() => queryClient.invalidateQueries({ queryKey: ["selectors"] }));
-  await within(group).findByRole("link", {
-    name: /canonical-lead.*Coordinator/,
+it("keeps an archived owner reachable for a visible worker outside the owner page", async () => {
+  coordinators = [
+    { ...thread("archived-owner"), role: "coordinator", archived: true },
+  ];
+  workerThreads = [
+    {
+      ...thread("visible-worker"),
+      role: "worker",
+      coordinator_thread_id: "archived-owner",
+    },
+  ];
+  mount("/threads/visible-worker");
+  await screen.findByRole("link", {
+    name: /archived-owner.*Coordinator.*Archived/,
   });
   expect(
-    within(group).getAllByRole("link", { name: /canonical-lead/ }),
-  ).toHaveLength(1);
-  sidekickEnabled = false;
-  await act(() => queryClient.invalidateQueries({ queryKey: ["selectors"] }));
-  await within(group).findByRole("link", { name: "Recent 2" });
-  expect(
-    within(group).queryByRole("link", { name: /canonical-lead/ }),
-  ).toBeNull();
-  expect(
-    within(group).queryByRole("button", { name: "Expand Coordinator workers" }),
-  ).toBeNull();
-  expect(writes).toHaveLength(0);
+    screen.getByRole("button", { name: "Restore archived-owner" }),
+  ).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Expand workers for archived-owner" }),
+  );
+  await screen.findByRole("link", { name: "visible-worker" });
+  expect(screen.getByLabelText("Current route").textContent).toBe(
+    "/threads/visible-worker",
+  );
 });
 
-it("counts an unread Lead in its collapsed Project without duplicating it in the conversation list", async () => {
-  sidekickEnabled = true;
+it("does not offer promotion to workers or running conversations", async () => {
+  coordinators = [{ ...thread("owner"), role: "coordinator" }];
+  workerThreads = [
+    { ...thread("worker"), role: "worker", coordinator_thread_id: "owner" },
+  ];
+  activeThreads = [{ ...thread("busy"), root_activity: { state: "running" } }];
+  mount("/threads/worker");
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Expand workers for owner" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Actions for worker" }),
+  );
+  expect(
+    screen.queryByRole("menuitem", { name: "Make Coordinator" }),
+  ).toBeNull();
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for busy" }),
+  );
+  expect(
+    (
+      await screen.findByRole("menuitem", { name: "Make Coordinator" })
+    ).getAttribute("aria-disabled"),
+  ).toBe("true");
+});
+
+it("reports failed follow-up changes without hiding or changing the Coordinator", async () => {
+  coordinators = [
+    { ...thread("owner"), role: "coordinator", auto_followup: true },
+  ];
+  failSave = true;
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Actions for owner" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Pause automatic follow-up" }),
+  );
+  await screen.findByText("Coordinator update failed");
+  expect(coordinators[0].auto_followup).toBe(true);
+  expect(screen.getByRole("link", { name: /owner.*Coordinator/ })).toBeTruthy();
+});
+
+it("counts an unread Coordinator once and retains its anchor after fresh pagination", async () => {
   vi.stubGlobal("indexedDB", new IDBFactory());
-  leadThread = thread("canonical-lead");
+  coordinators = [{ ...thread("owner"), role: "coordinator" }];
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
   const unread = {
-    ...leadThread,
+    ...coordinators[0],
     completion: {
       version: 1,
       run_id: "run-done",
@@ -1228,182 +1419,46 @@ it("counts an unread Lead in its collapsed Project without duplicating it in the
   fireEvent.click(
     within(group).getByRole("button", { name: /^One/, expanded: false }),
   );
-  await within(group).findByRole("link", { name: /canonical-lead/ });
+  await within(group).findByRole("link", { name: /owner.*Coordinator/ });
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Show more conversations in One",
+    }),
+  );
+  await screen.findByRole("link", { name: "Older one" });
   expect(
-    within(group).getAllByRole("link", { name: /canonical-lead/ }),
+    within(group).getAllByRole("link", { name: /owner.*Coordinator/ }),
   ).toHaveLength(1);
   vi.restoreAllMocks();
 });
 
-it("learns a Lead created in another client from a Project summary hint without ensuring again", async () => {
-  sidekickEnabled = true;
-  mount("/", true);
+it("keeps an expanded archived owner mounted while pagination discovers another owner", async () => {
+  coordinators = ["earlier", "older"].map((id) => ({
+    ...thread(id),
+    role: "coordinator",
+    archived: true,
+  }));
+  workerThreads = coordinators.map((owner) => ({
+    ...thread(`${owner.thread_id}-worker`),
+    role: "worker",
+    coordinator_thread_id: owner.thread_id,
+  }));
+  mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
-  await screen.findByRole("button", { name: "Coordinator" });
-  leadThread = thread("remote-lead");
-  act(() =>
-    vi.mocked(watchSummary).mock.calls.at(-1)![1]({
-      kind: "project",
-      epoch: "test",
-      sequence: 1,
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Expand workers for earlier" }),
+  );
+  const worker = await screen.findByRole("link", { name: "earlier-worker" });
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Show more conversations in One",
     }),
   );
-  await screen.findByRole("link", { name: /remote-lead/ });
-  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
-  expect(writes).toHaveLength(0);
-});
-
-it("persists Coordinator mode through project actions and follows server updates", async () => {
-  sidekickEnabled = true;
-  leadThread = thread("canonical-lead");
-  recentTitle = "canonical-lead";
-  mount();
-  fireEvent.click(await screen.findByRole("button", { name: "One" }));
-  await screen.findByRole("link", { name: /canonical-lead.*Coordinator/ });
-  await userEvent.click(
-    screen.getByRole("button", { name: "Actions for One" }),
-  );
-  await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Disable Coordinator" }),
-  );
-  await waitFor(() =>
-    expect(screen.queryByRole("link", { name: /canonical-lead/ })).toBeNull(),
-  );
-  expect(writes).toHaveLength(1);
-  expect(writes[0].method).toBe("PATCH");
-  expect(await writes[0].json()).toEqual({ enabled: false });
-  await userEvent.click(
-    screen.getByRole("button", { name: "Actions for One" }),
-  );
-  await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Enable Coordinator" }),
-  );
-  await screen.findByRole("link", { name: /canonical-lead.*Coordinator/ });
-  await waitFor(() =>
-    expect(screen.getByLabelText("Current route").textContent).toBe(
-      "/threads/canonical-lead",
-    ),
-  );
-  expect(writes).toHaveLength(2);
-  expect(await writes[1].json()).toEqual({ enabled: true });
-  // A different browser changes the backend mode; navigation does not own it.
-  leadEnabled = false;
-  await act(() => queryClient.invalidateQueries({ queryKey: ["projects"] }));
-  await waitFor(() =>
-    expect(screen.queryByRole("link", { name: /canonical-lead/ })).toBeNull(),
-  );
-  expect(writes).toHaveLength(2);
-});
-
-it("keeps the server's Lead mode when an update fails", async () => {
-  sidekickEnabled = true;
-  leadThread = thread("canonical-lead");
-  failSave = true;
-  mount();
-  fireEvent.click(await screen.findByRole("button", { name: "One" }));
-  await screen.findByRole("link", { name: /canonical-lead.*Coordinator/ });
-  await userEvent.click(
-    screen.getByRole("button", { name: "Actions for One" }),
-  );
-  await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Disable Coordinator" }),
-  );
-  await screen.findByText("Lead update failed");
-  expect(
-    screen.getByRole("link", { name: /canonical-lead.*Coordinator/ }),
-  ).toBeTruthy();
-  expect(writes).toHaveLength(1);
-});
-
-it("keeps workers collapsed on direct navigation and pages them separately from ordinary Running and Recent", async () => {
-  sidekickEnabled = true;
-  leadThread = thread("canonical-lead");
-  workerThreads = Array.from({ length: 7 }, (_, index) => ({
-    ...thread(`worker-${index + 1}`),
-    lead_thread_id: "canonical-lead",
-  }));
-  workerThreads[0].root_activity.state = "running";
-  activeThreads = [
-    { ...thread("ordinary-running"), root_activity: { state: "running" } },
-    workerThreads[0],
-  ];
-  mount("/threads/worker-7");
-  await screen.findByRole("link", { name: /canonical-lead/ });
-  await screen.findByRole("link", { name: /ordinary-running/ });
-  expect(screen.getByText("Running · 1")).toBeTruthy();
-  expect(screen.queryByRole("link", { name: /worker-/ })).toBeNull();
-  expect(
-    activity.filter((url) => url.searchParams.has("lead_thread_id")),
-  ).toHaveLength(0);
-  expect(
-    activity
-      .find((url) => url.searchParams.get("project_id") === "project-one")
-      ?.searchParams.get("independent_only"),
-  ).toBe("true");
-  const route = screen.getByLabelText("Current route");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Expand Coordinator workers" }),
-  );
-  await screen.findByRole("link", { name: /worker-1/ });
-  expect(screen.getAllByRole("link", { name: /worker-1/ })).toHaveLength(1);
-  expect(screen.getByRole("link", { name: "worker-7" })).toBeTruthy();
-  expect(route.textContent).toBe("/threads/worker-7");
-  const request = activity.find((url) =>
-    url.searchParams.has("lead_thread_id"),
-  )!;
-  expect(request.searchParams.get("lead_thread_id")).toBe("canonical-lead");
-  expect(request.searchParams.get("limit")).toBe("5");
-  fireEvent.click(screen.getByRole("button", { name: "More workers" }));
-  await screen.findByRole("link", { name: "worker-6" });
-  fireEvent.click(screen.getByRole("link", { name: /canonical-lead/ }));
-  expect(route.textContent).toBe("/threads/canonical-lead");
+  await screen.findByRole("link", { name: /older.*Coordinator.*Archived/ });
   expect(
     screen
-      .getByRole("button", { name: "Collapse Coordinator workers" })
+      .getByRole("button", { name: "Collapse workers for earlier" })
       .getAttribute("aria-expanded"),
   ).toBe("true");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Collapse Coordinator workers" }),
-  );
-  expect(screen.queryByRole("link", { name: /worker-/ })).toBeNull();
-  expect(screen.getByRole("link", { name: /ordinary-running/ })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Recent 1" })).toBeTruthy();
-  expect(writes).toHaveLength(0);
-});
-
-it("shows worker fetch failures without claiming empty and retries inside the disclosure", async () => {
-  sidekickEnabled = true;
-  leadThread = thread("canonical-lead");
-  mount();
-  fireEvent.click(await screen.findByRole("button", { name: "One" }));
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Expand Coordinator workers" }),
-  );
-  await screen.findByText("No workers yet");
-  failMore = true;
-  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
-  await screen.findByText("Workers unavailable");
-  expect(screen.queryByText("No workers yet")).toBeNull();
-  failMore = false;
-  const workers = screen.getByLabelText("Coordinator workers");
-  fireEvent.click(within(workers).getByRole("button", { name: "Retry" }));
-  await screen.findByText("No workers yet");
-});
-
-it("finds workers through ordinary global search without expanding the Lead", async () => {
-  leadThread = thread("canonical-lead");
-  workerThreads = [
-    { ...thread("search-worker"), lead_thread_id: "canonical-lead" },
-  ];
-  mount();
-  fireEvent.change(screen.getByRole("searchbox"), {
-    target: { value: "worker" },
-  });
-  await screen.findByRole("link", { name: "search-worker" });
-  expect(screen.getByText("One · Coordinator worker")).toBeTruthy();
-  const request = activity.find(
-    (url) => url.searchParams.get("query") === "worker",
-  )!;
-  expect(request.searchParams.has("lead_thread_id")).toBe(false);
-  expect(request.searchParams.get("independent_only")).toBe("false");
+  expect(screen.getByRole("link", { name: "earlier-worker" })).toBe(worker);
 });

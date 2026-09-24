@@ -43,6 +43,7 @@ from a13n_harness_ui.storage import (
     Thread,
     ThreadConfiguration,
 )
+from a13n_harness_ui.storage.contracts import Coordinator
 from a13n_harness_ui.storage.inspection import InspectionData, InspectionHeader, InspectionTurn
 from a13n_harness_ui.surfaces import (
     AgentSourceView,
@@ -85,8 +86,9 @@ class _ThreadCursor(SurfaceModel):
     project_ids: tuple[str, ...] | None = None
     project_ids_digest: str | None = None
     projectless: bool = False
-    lead_thread_id: str | None = None
+    coordinator_thread_id: str | None = None
     independent_only: bool = False
+    visible_thread_ids: tuple[str, ...] | None = None
     sort: Literal["updated", "activity", "touched"] = "updated"
     include_archived: bool
     archived_only: bool = False
@@ -156,8 +158,9 @@ class ThreadProjectionService:
         archived_only: bool = False,
         project_ids: tuple[str, ...] | None = None,
         projectless: bool = False,
-        lead_thread_id: str | None = None,
+        coordinator_thread_id: str | None = None,
         independent_only: bool = False,
+        visible_thread_ids: tuple[str, ...] | None = None,
         sort: Literal["updated", "activity", "touched"] = "updated",
         active_only: bool | None = None,
         active_thread_ids: tuple[str, ...] = (),
@@ -165,7 +168,7 @@ class ThreadProjectionService:
         limit: int = 20,
     ) -> ThreadPage:
         normalized_query = _normalize_query(query)
-        if lead_thread_id is not None and independent_only:
+        if coordinator_thread_id is not None and independent_only:
             raise ThreadError("Choose workers or independent Threads, not both.", code="thread_page_invalid")
         if sum((project_id is not None, project_ids is not None, projectless)) > 1:
             raise ThreadError("Choose only one Project filter.", code="thread_page_invalid")
@@ -190,8 +193,9 @@ class ThreadProjectionService:
                     else decoded.project_ids != project_ids
                 )
                 or decoded.projectless != projectless
-                or decoded.lead_thread_id != lead_thread_id
+                or decoded.coordinator_thread_id != coordinator_thread_id
                 or decoded.independent_only != independent_only
+                or decoded.visible_thread_ids != visible_thread_ids
                 or decoded.sort != sort
                 or decoded.active_only != active_only
             ):
@@ -204,10 +208,14 @@ class ThreadProjectionService:
             archived_only=archived_only,
             project_ids=project_ids,
             projectless=projectless,
-            lead_thread_id=lead_thread_id,
+            coordinator_thread_id=coordinator_thread_id,
             independent_only=independent_only,
             sort=sort,
-            thread_ids=active_thread_ids if active_only is True else None,
+            thread_ids=(
+                tuple(item for item in active_thread_ids if visible_thread_ids is None or item in visible_thread_ids)
+                if active_only is True
+                else visible_thread_ids
+            ),
             exclude_thread_ids=active_thread_ids if active_only is False else (),
             before=before,
             limit=limit + 1,
@@ -216,9 +224,15 @@ class ThreadProjectionService:
         activities: Mapping[str, RootActivityView] = {}
         if visible and self._root_activities is not None:
             activities = await self._root_activities(tuple(item.thread_id for item in visible))
-        owners = await self._store.threads.worker_leads(tuple(item.thread_id for item in visible))
+        owners = await self._store.threads.worker_owners(tuple(item.thread_id for item in visible))
+        coordinators = await self._store.threads.coordinators(tuple(item.thread_id for item in visible))
         summaries = tuple(
-            [await self._summary(item, activity=activities.get(item.thread_id), owners=owners) for item in visible]
+            [
+                await self._summary(
+                    item, activity=activities.get(item.thread_id), owners=owners, coordinators=coordinators
+                )
+                for item in visible
+            ]
         )
         next_cursor = None
         if len(stored) > limit:
@@ -238,8 +252,9 @@ class ThreadProjectionService:
                     # A filter can cover many unavailable Projects; keep its cursor bounded.
                     project_ids_digest=project_ids_digest,
                     projectless=projectless,
-                    lead_thread_id=lead_thread_id,
+                    coordinator_thread_id=coordinator_thread_id,
                     independent_only=independent_only,
+                    visible_thread_ids=visible_thread_ids,
                     sort=sort,
                     thread_id=last.thread_id,
                 )
@@ -254,10 +269,16 @@ class ThreadProjectionService:
             thread_ids=tuple(set(thread_ids)), include_archived=True, limit=100
         )
         activities = {} if self._root_activities is None else await self._root_activities(thread_ids)
-        owners = await self._store.threads.worker_leads(thread_ids)
+        owners = await self._store.threads.worker_owners(thread_ids)
+        coordinators = await self._store.threads.coordinators(thread_ids)
         return ThreadPage(
             threads=tuple(
-                [await self._summary(item, activity=activities.get(item.thread_id), owners=owners) for item in stored]
+                [
+                    await self._summary(
+                        item, activity=activities.get(item.thread_id), owners=owners, coordinators=coordinators
+                    )
+                    for item in stored
+                ]
             ),
             total=total,
         )
@@ -457,7 +478,6 @@ class ThreadProjectionService:
                 code="configuration_not_accepted",
             )
         recency = await self._store.threads.project_recency()
-        leads = await self._store.threads.project_leads()
         return tuple(
             ProjectSummary(
                 project_id=project.id,
@@ -465,8 +485,6 @@ class ThreadProjectionService:
                 position=project.position,
                 roots=tuple(root.path for root in project.roots),
                 last_active_at=recency.get(project.id),
-                lead_thread_id=leads[project.id].thread_id if project.id in leads else None,
-                lead_enabled=leads[project.id].enabled if project.id in leads else False,
                 defaults=project.defaults,
             )
             for project in sorted(source.projects.values(), key=lambda item: (item.position, item.id))
@@ -484,9 +502,10 @@ class ThreadProjectionService:
         *,
         activity: RootActivityView | None = None,
         owners: Mapping[str, str] | None = None,
+        coordinators: Mapping[str, Coordinator] | None = None,
     ) -> ThreadSummary:
         if owners is None:
-            owners = await self._store.threads.worker_leads((thread.thread_id,))
+            owners = await self._store.threads.worker_owners((thread.thread_id,))
         if activity is None:
             activity = _ROOT_INACTIVE
             if thread.parent_thread_id is None and self._root_activity is not None:
@@ -496,9 +515,14 @@ class ThreadProjectionService:
             # An active checkpoint left by an interrupted process is not liveness.
             pending = thread.read_model is not None and thread.read_model.deferred_requests is not None
             goal = goal.model_copy(update={"status": "suspended" if pending else "unverified_stop"})
+        if coordinators is None:
+            coordinators = await self._store.threads.coordinators((thread.thread_id,))
+        coordinator = coordinators.get(thread.thread_id)
         return ThreadSummary(
+            role="coordinator" if coordinator else "worker" if thread.thread_id in owners else "ordinary",
+            auto_followup=coordinator.auto_followup if coordinator else None,
             thread_id=thread.thread_id,
-            lead_thread_id=owners.get(thread.thread_id),
+            coordinator_thread_id=owners.get(thread.thread_id),
             parent_thread_id=thread.parent_thread_id,
             created_at=thread.created_at,
             updated_at=thread.updated_at,

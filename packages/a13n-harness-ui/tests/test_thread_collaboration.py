@@ -486,12 +486,12 @@ async def test_terminal_does_not_receive_sidekick_instructions(
     assert "list_agents" not in {tool.name for tool in seen[0].function_tools}
 
 
-@pytest.mark.parametrize("project_lead", [False, True])
+@pytest.mark.parametrize("coordinator", [False, True])
 async def test_worker_can_ask_requester_receive_answer_and_report_results(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, project_lead: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, coordinator: bool
 ) -> None:
     root = configuration(tmp_path)
-    if project_lead:
+    if coordinator:
         document = yaml.safe_load(root.read_text())
         document["webui"] = {"sidekick": {"agent": "agent-worker", "model": "model-secondary"}}
         root.write_text(yaml.safe_dump(document))
@@ -513,8 +513,8 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
                     if isinstance(part, ToolReturnPart):
                         returned[part.tool_call_id] = part.content
             if thread_id == requester_id:
-                if project_lead:
-                    assert "You are this Project's Coordinator" in info.instructions
+                if coordinator:
+                    assert "You are a Coordinator in this Project" in info.instructions
                     assert "At the start of each Run" in info.instructions
                     assert "get_thread(thread_id=...)" in info.instructions
                     assert "compact coordination note" in info.instructions
@@ -530,9 +530,9 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
                     return
             else:
                 worker_id = thread_id
-                if project_lead:
+                if coordinator:
                     assert self._recipes[model_id].model_id == "model-secondary"
-                    assert "You are this Project's Coordinator" not in info.instructions
+                    assert "You are a Coordinator in this Project" not in info.instructions
                     assert "requester is the Coordinator" in str(messages)
                 if step == 0:
                     assert "Requesting Project: project-main" in str(messages)
@@ -560,9 +560,10 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:
         # Explicit question/report protocol is independent of best-effort lifecycle notices.
         monkeypatch.setattr(app._root_runs, "_on_settled", None)
-        requester_id = (
-            await app.set_project_lead_enabled("project-main", True) if project_lead else await app.create_thread()
-        ).thread_id
+        requester = await app.create_thread()
+        if coordinator:
+            requester = await app.promote_coordinator(requester.thread_id)
+        requester_id = requester.thread_id
         admission = await app._root_runs._executor.capture(thread_id=requester_id, prompt="Coordinate")
         with fail_after(15):
             worker = await controller(app).create_thread(
@@ -602,8 +603,8 @@ async def test_requester_identity_uses_run_capture_not_future_thread_selections(
         project_id=project_id,
         project_roots=("/captured/root",),
         webui_sidekick=None,
-        is_project_lead=False,
-        lead_thread_id=None,
+        role="ordinary",
+        coordinator_thread_id=None,
     )
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
         source = await app.create_thread()

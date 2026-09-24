@@ -25,13 +25,12 @@ import {
   ArrowDown,
   PencilSimpleIcon,
 } from "@phosphor-icons/react";
-import { useProjects, useSelectors } from "../transport/context";
+import { useProjects } from "../transport/context";
 import type { Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
-import { useThread, useThreads } from "./queries";
+import { useThread, useThreads, useThreadOwners } from "./queries";
 import { useProjectExpansion, useProjectOrder } from "./project-order";
-import { ProjectLeadEntry, useProjectLeadMode } from "./project-lead";
-import { LeadIcon } from "./lead-icon";
+import { CoordinatorEntry } from "./coordinator-entry";
 import { NewProject } from "./new-project";
 import { RenameProject } from "../configuration/rename-project";
 import { newConversationPath } from "./new-conversation";
@@ -268,15 +267,6 @@ function ProjectGroup({
   const navigate = useNavigate();
   const results = useResults();
   const projects = useProjects();
-  const selectors = useSelectors();
-  const project = projects.data?.find(
-    (item) => item.project_id === group.projectId,
-  );
-  const canEnableLead = !!project && selectors.data?.sidekick_enabled === true;
-  const hasLead =
-    canEnableLead && (!project.lead_thread_id || project.lead_enabled === true);
-  const groupsWorkers = !!project?.lead_thread_id;
-  const leadMode = useProjectLeadMode(group.projectId);
   const belongs = (thread: Schema<"ThreadSummary">) => {
     const project = thread.configuration.project_id;
     return group.scope === "projectless"
@@ -292,7 +282,6 @@ function ProjectGroup({
     enabled: enabled && expanded,
     limit: 5,
     includeActive: true,
-    independentOnly: groupsWorkers,
   });
   // The selected detail can arrive before a slower sidebar refresh. Use that
   // observation for this row, without replacing other Projects or page cursors.
@@ -347,20 +336,37 @@ function ProjectGroup({
       thread: selected,
     });
   }
+  const ownerIds = [
+    ...new Set(
+      [...observed.values()]
+        .filter(
+          (row) => !row.thread.archived && row.thread.coordinator_thread_id,
+        )
+        .map((row) => row.thread.coordinator_thread_id!),
+    ),
+  ];
+  const owners = useThreadOwners(
+    ownerIds.filter((id) => !observed.has(id)),
+    enabled && expanded,
+  );
+  for (const thread of owners.data ?? []) {
+    if (
+      belongs(thread) &&
+      ownerIds.includes(thread.thread_id) &&
+      !observed.has(thread.thread_id)
+    )
+      observed.set(thread.thread_id, { thread });
+  }
   const activeRows: Row[] = [];
   const unreadRows: Row[] = [];
   const recentRows: Row[] = [];
   let unreadCount = 0;
   for (const row of observed.values()) {
-    if (row.thread.archived) continue;
+    if (row.thread.archived && !ownerIds.includes(row.thread.thread_id))
+      continue;
     const unread = results.tracker?.isUnread(row.thread.thread_id);
     if (unread) unreadCount++;
-    if (
-      groupsWorkers &&
-      (row.thread.thread_id === project?.lead_thread_id ||
-        row.thread.lead_thread_id)
-    )
-      continue;
+    if (row.thread.role === "worker") continue;
     (row.thread.root_activity.state !== "inactive"
       ? activeRows
       : unread
@@ -450,17 +456,6 @@ function ProjectGroup({
                 <DotsThree />
               </MenuTrigger>
               <MenuPopup align="start" side="right">
-                {canEnableLead && project && (
-                  <MenuItem
-                    disabled={leadMode.isPending}
-                    onClick={() => leadMode.mutate(!project.lead_enabled)}
-                  >
-                    <LeadIcon size={16} />
-                    {project.lead_enabled
-                      ? "Disable Coordinator"
-                      : "Enable Coordinator"}
-                  </MenuItem>
-                )}
                 <MenuItem onClick={rename}>
                   <PencilSimpleIcon />
                   Rename project
@@ -500,17 +495,7 @@ function ProjectGroup({
         </div>
       </div>
       <div hidden={!expanded} className={styles.groupThreads}>
-        {hasLead && project && (
-          <ProjectLeadEntry
-            project={project}
-            presence={presence}
-            enabled={enabled && expanded}
-            mode={leadMode}
-            selected={selected}
-            selectedUpdatedAt={selectedUpdatedAt}
-          />
-        )}
-        <ErrorNotice error={leadMode.error} />
+        <ErrorNotice error={owners.error} retry={() => void owners.refetch()} />
         <div>
           {rows.map((row, index) => (
             <Fragment key={row.thread.thread_id}>
@@ -529,7 +514,17 @@ function ProjectGroup({
                 index === activeRows.length + unreadRows.length && (
                   <small className={styles.emptyGroup}>Recent</small>
                 )}
-              <ThreadRow row={row} presence={presence} />
+              {row.thread.role === "coordinator" ? (
+                <CoordinatorEntry
+                  row={row}
+                  presence={presence}
+                  enabled={enabled && expanded}
+                  selected={selected}
+                  selectedUpdatedAt={selectedUpdatedAt}
+                />
+              ) : (
+                <ThreadRow row={row} presence={presence} />
+              )}
             </Fragment>
           ))}
           {expanded && !rows.length && !list.data && list.isPending && (
@@ -542,12 +537,9 @@ function ProjectGroup({
               <span>Loading conversations…</span>
             </div>
           )}
-          {list.isSuccess &&
-            !list.isPreviousData &&
-            !rows.length &&
-            !(hasLead && project?.lead_thread_id) && (
-              <small className={styles.emptyGroup}>No conversations yet</small>
-            )}
+          {list.isSuccess && !list.isPreviousData && !rows.length && (
+            <small className={styles.emptyGroup}>No conversations yet</small>
+          )}
           <ErrorNotice error={list.error} retry={() => void list.refetch()} />
           {list.hasNextPage && (
             <Button
@@ -594,7 +586,7 @@ function SearchResults({
         <div key={row.thread.thread_id}>
           <small className={styles.emptyGroup}>
             {row.project_name}
-            {row.thread.lead_thread_id ? " · Coordinator worker" : ""}
+            {row.thread.coordinator_thread_id ? " · Coordinator worker" : ""}
           </small>
           <ThreadRow row={row} presence={presence} />
         </div>

@@ -25,9 +25,9 @@ class StoredContract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
 
-class ProjectLead(StoredContract):
+class Coordinator(StoredContract):
     thread_id: str
-    enabled: bool
+    auto_followup: bool
 
 
 class AgentResourceSource(StoredContract):

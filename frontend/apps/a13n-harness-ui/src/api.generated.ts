@@ -1138,7 +1138,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/lead": {
+    "/api/threads/{thread_id}/coordinator": {
         parameters: {
             query?: never;
             header?: never;
@@ -1147,13 +1147,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Ensure Project Lead */
-        post: operations["ensure_project_lead_api_projects__project_id__lead_post"];
+        /** Promote Coordinator */
+        post: operations["promote_coordinator_api_threads__thread_id__coordinator_post"];
         delete?: never;
         options?: never;
         head?: never;
-        /** Set Project Lead Enabled */
-        patch: operations["set_project_lead_enabled_api_projects__project_id__lead_patch"];
+        /** Set Auto Followup */
+        patch: operations["set_auto_followup_api_threads__thread_id__coordinator_patch"];
         trace?: never;
     };
     "/api/threads/{thread_id}/decisions": {
@@ -2416,6 +2416,11 @@ export interface components {
             /** Thread Id */
             thread_id: string;
         };
+        /** CoordinatorUpdate */
+        CoordinatorUpdate: {
+            /** Auto Followup */
+            auto_followup: boolean;
+        };
         /** DecisionBatchView */
         DecisionBatchView: {
             /** Continuation Id */
@@ -3608,11 +3613,6 @@ export interface components {
             current: components["schemas"]["ThreadConfiguration"];
             replacement: components["schemas"]["ThreadConfiguration"];
         };
-        /** ProjectLeadUpdate */
-        ProjectLeadUpdate: {
-            /** Enabled */
-            enabled: boolean;
-        };
         /** ProjectPage */
         ProjectPage: {
             /**
@@ -3635,13 +3635,6 @@ export interface components {
             roots: string[];
             /** Last Active At */
             last_active_at?: string | null;
-            /** Lead Thread Id */
-            lead_thread_id?: string | null;
-            /**
-             * Lead Enabled
-             * @default false
-             */
-            lead_enabled?: boolean;
             defaults?: components["schemas"]["ProjectDefaults"];
         };
         /**
@@ -4671,13 +4664,24 @@ export interface components {
         };
         /** ThreadSummary */
         ThreadSummary: {
+            /**
+             * Role
+             * @default ordinary
+             * @enum {string}
+             */
+            role?: "ordinary" | "coordinator" | "worker";
+            /**
+             * Auto Followup
+             * @default null
+             */
+            auto_followup?: boolean | null;
             /** Thread Id */
             thread_id: string;
             /**
-             * Lead Thread Id
+             * Coordinator Thread Id
              * @default null
              */
-            lead_thread_id?: string | null;
+            coordinator_thread_id?: string | null;
             /**
              * Parent Thread Id
              * @default null
@@ -8351,12 +8355,12 @@ export interface operations {
             };
         };
     };
-    ensure_project_lead_api_projects__project_id__lead_post: {
+    promote_coordinator_api_threads__thread_id__coordinator_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                project_id: string;
+                thread_id: string;
             };
             cookie?: never;
         };
@@ -8382,18 +8386,18 @@ export interface operations {
             };
         };
     };
-    set_project_lead_enabled_api_projects__project_id__lead_patch: {
+    set_auto_followup_api_threads__thread_id__coordinator_patch: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                project_id: string;
+                thread_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ProjectLeadUpdate"];
+                "application/json": components["schemas"]["CoordinatorUpdate"];
             };
         };
         responses: {
@@ -8562,7 +8566,7 @@ export interface operations {
                 include_archived?: boolean;
                 archived_only?: boolean;
                 include_active?: boolean;
-                lead_thread_id?: string | null;
+                coordinator_thread_id?: string | null;
                 independent_only?: boolean;
                 cursor?: string | null;
                 limit?: number;

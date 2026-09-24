@@ -11,8 +11,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { ArrowDown } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
-import { useProjects, useSelectors, useTransport } from "../transport/context";
-import leadStyles from "./project-lead.module.css";
+import { useSelectors, useTransport } from "../transport/context";
+import coordinatorStyles from "./coordinator.module.css";
 import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
@@ -21,6 +21,7 @@ import { ComposerStatus } from "./composer-status";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
+import { CoordinatorSettings } from "./coordinator-settings";
 import { WorkInspector } from "./work-inspector";
 import { RootFailureNotice } from "./failure-notice";
 import { refreshThreadLists, useHistory, useThread } from "./queries";
@@ -60,13 +61,8 @@ function Conversation({
   const transport = useTransport();
   const queries = useQueryClient();
   const detail = useThread(threadId);
-  const projects = useProjects();
   const selectors = useSelectors();
-  const isLead =
-    selectors.data?.sidekick_enabled === true &&
-    projects.data?.some(
-      (project) => project.lead_thread_id === threadId && project.lead_enabled,
-    );
+  const isCoordinator = detail.data?.thread.role === "coordinator";
   const results = useResults();
   const tracker = results.tracker;
   useEffect(() => {
@@ -739,9 +735,9 @@ function Conversation({
                 !history.isPending &&
                 !history.error && (
                   <div
-                    className={`${styles.empty} ${isLead ? leadStyles.intro : ""}`}
+                    className={`${styles.empty} ${isCoordinator ? coordinatorStyles.intro : ""}`}
                   >
-                    {isLead ? (
+                    {isCoordinator ? (
                       <>
                         <h2>What are we working on?</h2>
                         <p>
@@ -973,6 +969,12 @@ function Conversation({
             continuation={detail.data?.continuation_id}
             reconcile={reconcile}
           />
+          {thread && (
+            <CoordinatorSettings
+              thread={thread}
+              pending={!!detail.data?.deferred_requests?.length}
+            />
+          )}
           {!thread?.archived &&
             detail.data?.available_actions?.includes("archive") && (
               <Button
