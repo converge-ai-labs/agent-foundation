@@ -426,83 +426,10 @@ async def test_contextual_mcp_rejects_static_and_resolved_header_conflicts() -> 
 
 
 @pytest.mark.anyio
-async def test_contextual_local_factory_receives_immutable_headers_once_per_run() -> None:
-    from collections.abc import Mapping
-
-    from pydantic_ai.toolsets import FunctionToolset
-
-    seen: list[Mapping[str, str]] = []
-
-    def factory(headers: Mapping[str, str]) -> FunctionToolset[AgentContext]:
-        seen.append(headers)
-        with pytest.raises(TypeError):
-            headers["X-Run"] = "changed"  # type: ignore[index]
-        return FunctionToolset(id="test")
-
-    capability = ContextualMCP(
-        "https://mcp.example.com/mcp",
-        id="context-server",
-        headers_factory=lambda context: {"X-Run": context.run_id},
-        headers={"X-Static": "shared"},
-        authorization_token="Bearer test",
-        local_toolset_factory=factory,
-    )
-    first = _run_context(_MCPContextDeps("run-one"))
-    second = _run_context(_MCPContextDeps("run-two"))
-    active = await capability.for_run(first)
-    assert await capability.for_run(first) is active
-    other = await capability.for_run(second)
-    assert other is not active
-    assert [dict(headers) for headers in seen] == [
-        {"X-Run": "run-one", "X-Static": "shared", "Authorization": "Bearer test"},
-        {"X-Run": "run-two", "X-Static": "shared", "Authorization": "Bearer test"},
-    ]
-
-
-@pytest.mark.parametrize("options", [{"native": True}, {"local": False}])
-def test_contextual_local_factory_refuses_native_or_disabled_local(options: dict[str, bool]) -> None:
-    from pydantic_ai.toolsets import FunctionToolset
-
-    with pytest.raises(DefinitionError) as error:
-        ContextualMCP(
-            "https://mcp.example.com/mcp",
-            id="test",
-            headers_factory=lambda context: {},
-            local_toolset_factory=lambda headers: FunctionToolset(),
-            **options,
-        )
-    assert error.value.code == "mcp_definition_invalid"
-
-
-@pytest.mark.anyio
-async def test_contextual_local_factory_failure_does_not_cache_partial_binding() -> None:
-    from pydantic_ai.toolsets import FunctionToolset
-
-    calls = 0
-
-    def factory(headers):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise RuntimeError("construction failed")
-        return FunctionToolset(id="test")
-
-    capability = ContextualMCP(
-        "https://mcp.example.com/mcp", id="test", headers_factory=lambda context: {}, local_toolset_factory=factory
-    )
-    context = _run_context(_MCPContextDeps())
-    with pytest.raises(RuntimeError, match="construction failed"):
-        await capability.for_run(context)
-    await capability.for_run(context)
-    assert calls == 2
-
-
-@pytest.mark.anyio
-async def test_contextual_local_toolset_lifecycle_is_isolated_on_concurrent_cancellation() -> None:
+async def test_native_mcp_toolset_lifecycle_is_isolated_on_concurrent_cancellation() -> None:
     import asyncio
-    from collections.abc import Mapping
 
-    from pydantic_ai.toolsets import FunctionToolset
+    from pydantic_ai.toolsets import DynamicToolset, FunctionToolset
 
     entered: list[str] = []
     closed: list[str] = []
@@ -521,8 +448,8 @@ async def test_contextual_local_toolset_lifecycle_is_isolated_on_concurrent_canc
             closed.append(self.run_id)
             return await super().__aexit__(*args)
 
-    def factory(headers: Mapping[str, str]) -> OwnedTools:
-        return OwnedTools(headers["X-Run"])
+    def factory(ctx: RunContext[AgentContext]) -> OwnedTools:
+        return OwnedTools(ctx.deps.run_id)
 
     async def model(messages, info):
         if len(entered) == 2:
@@ -534,14 +461,7 @@ async def test_contextual_local_toolset_lifecycle_is_isolated_on_concurrent_canc
         AgentSpec(),
         model=FunctionModel(stream_function=model),
         output_type=str,
-        capabilities=(
-            ContextualMCP(
-                "https://mcp.example.com/mcp",
-                id="owned",
-                headers_factory=lambda context: {"X-Run": context.run_id},
-                local_toolset_factory=factory,
-            ),
-        ),
+        capabilities=(MCP(id="owned", local=DynamicToolset(factory, per_run_step=False)),),
     )
     tasks = [asyncio.create_task(executable.run("test", bindings=RunBindings.embedded())) for _ in range(2)]
     try:

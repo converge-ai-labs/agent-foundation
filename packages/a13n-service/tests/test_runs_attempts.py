@@ -379,3 +379,100 @@ async def test_url_input_that_cannot_be_reached_is_fetched_by_a_later_attempt(
     (entry,) = await runs_kit.inbox(service, response.json()["thread"]["id"])
     assert (entry["status"], entry["assigned_run_id"]) == ("assigned", run_id), entry
     assert scripted_model.requests.empty()
+
+
+async def test_takeover_keeps_external_answer_without_replaying_local_approval(
+    service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    import json
+
+    from a13n_service.runs.boundaries import Boundaries
+
+    await runs_kit.pause_sweeps(service)
+    model_id = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(
+        service,
+        "mixed",
+        model_id,
+        client_tools=[{"name": "lookup", "description": "External fact", "parameters_json_schema": {"type": "object"}}],
+        toolsets={"configuration": {"enabled": True}},
+    )
+    config = {"model": {"model_id": model_id}}
+    calls = [
+        ("create_agent", {"key": "created", "name": "Created", "config": config}, "call_create"),
+        ("lookup", {}, "call_lookup"),
+    ]
+    scripted_model._script(
+        {
+            "delta": {
+                "tool_calls": [
+                    {
+                        "index": index,
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": name, "arguments": json.dumps(args)},
+                    }
+                    for index, (name, args, call_id) in enumerate(calls)
+                ]
+            },
+            "finish": "tool_calls",
+            "gate": None,
+            "to": None,
+        }
+    )
+    first = await runs_kit.start_thread(service, agent, "change and look up")
+    await (await runs_kit.attempt(service))
+    waiting = await runs_kit.get_run(service, first["run"]["id"])
+    assert waiting["status"] == "waiting", waiting
+    response = await service.client.post(
+        f"{service.workspace}/runs/{waiting['id']}/resume",
+        json={
+            "answers": [
+                {"tool_call_id": "call_create", "action": "approve"},
+                {"tool_call_id": "call_lookup", "action": "complete", "result": {"fact": "accepted once"}},
+            ]
+        },
+        headers=runs_kit.fresh_key(),
+    )
+    assert response.status_code == 201, response.text
+    run_id = response.json()["id"]
+    committed = asyncio.Event()
+    before = Boundaries.before_tool_execute
+
+    async def stop_after_commit(self, ctx, *, call, tool_def, args):
+        args = await before(self, ctx, call=call, tool_def=tool_def, args=args)
+        if call.tool_call_id == "call_create":
+            committed.set()
+            await asyncio.Event().wait()
+        return args
+
+    monkeypatch.setattr(Boundaries, "before_tool_execute", stop_after_commit)
+    running = await runs_kit.attempt(service)
+    try:
+        async with asyncio.timeout(10):
+            await committed.wait()
+    finally:
+        running.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await running
+    monkeypatch.setattr(Boundaries, "before_tool_execute", before)
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get_one(RunRow, run_id)
+        assert run.checkpoint is not None and run.resume is not None
+        await session.execute(
+            update(AttemptRow).where(AttemptRow.run_id == run_id).values(lease_expires_at=AttemptRow.created_at)
+        )
+    await expire_leases(service.runtime, batch=10)
+    async with transaction(service.runtime.storage) as session:
+        await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
+    scripted_model.say("Recovered the known fact")
+    await (await runs_kit.attempt(service))
+    result = await runs_kit.get_run(service, run_id)
+    assert result["status"] == "completed" and result["attempts"] == 2, result
+    assert (await service.client.get(f"{service.workspace}/agents/created")).status_code == 404
+    await scripted_model.request()
+    resumed = await scripted_model.request()
+    returns = [message for message in resumed["messages"] if message["role"] == "tool"]
+    external = [message for message in returns if message["tool_call_id"] == "call_lookup"]
+    assert len(external) == 1 and "accepted once" in external[0]["content"]
+    assert len([message for message in returns if message["tool_call_id"] == "call_create"]) == 1

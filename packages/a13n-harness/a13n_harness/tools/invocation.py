@@ -170,11 +170,6 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
             return node
         resume = ctx.deps.deferred_resume
         if isinstance(node, CallToolsNode) and resume is not None:
-            if not ctx.deps._deferred_resume_activated:
-                from a13n_harness.tools._deferred_state import activate
-
-                await activate(ctx.deps.state, resume, ctx.messages)
-                ctx.deps._deferred_resume_activated.add(ctx.deps.run_id)
             await record_approval_denials(resume.requests, resume.results, context=ctx.deps)
         recovery = ctx.deps._tool_recovery
         if recovery is not None and recovery.pending and isinstance(node, CallToolsNode):
@@ -188,10 +183,6 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
-        from a13n_harness.tools._deferred_state import reconcile
-
-        if ctx.run_id == ctx.deps._model_recovery.attempt_id:
-            await reconcile(ctx.deps.state, request_context.messages)
         ctx.deps._tool_permission_checks.clear()
         ctx.deps._tool_pending_approvals.clear()
         # Recovery applies only before the model makes its next decision.

@@ -2557,3 +2557,88 @@ async def test_preparation_failure_after_handoff_saves_intact_display_and_reopen
     async with open_harness_ui_app(settings, configuration_path=root) as reopened:
         assert (await reopened.get_thread(thread.thread_id)).continuation_id == selected.continuation_id
         assert await reopened.get_thread_transcript(thread_id=thread.thread_id) == history
+
+
+async def test_reopen_recovers_accepted_external_fact_without_replaying_approval(tmp_path: Path) -> None:
+    from a13n_harness_ui.surfaces import ApprovalDecision
+    from pydantic_ai import Tool
+
+    root = _write_configuration(tmp_path)
+    started = Event()
+    effects = []
+    observed = []
+
+    async def change() -> str:
+        effects.append("changed")
+        started.set()
+        await sleep_forever()
+        return "unreachable"
+
+    async def model(messages, info):
+        returns = [
+            part
+            for message in messages
+            if message.kind == "request"
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns:
+            yield {
+                0: DeltaToolCall(name="change", json_args="{}", tool_call_id="call_local"),
+                1: DeltaToolCall(name="lookup", json_args="{}", tool_call_id="call_external"),
+            }
+        else:
+            observed.extend(returns)
+            yield "recovered"
+
+    class Reconstructor:
+        def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
+            return _reconstructed(
+                model,
+                (
+                    *root_capabilities,
+                    Capability(
+                        id="mixed",
+                        tools=[Tool(change, requires_approval=True)],
+                        toolsets=[
+                            ExternalToolset(
+                                [ToolDefinition(name="lookup", parameters_json_schema={"type": "object"})],
+                                id="external",
+                            ),
+                        ],
+                    ),
+                ),
+            )
+
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        app._root_runs._executor._agents = Reconstructor()
+        thread = await app.create_thread()
+        first = await app.submit_thread(thread_id=thread.thread_id, prompt="go")
+        assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.suspended
+        detail = await app.get_thread(thread.thread_id)
+        assert detail.continuation_id is not None
+        receipt = await app.respond_thread(
+            thread_id=thread.thread_id,
+            response=ThreadDeferredResponse(
+                expected_continuation_id=detail.continuation_id,
+                responses=(
+                    ApprovalDecision(request_id="call_local", approved=True),
+                    ExternalToolResult(request_id="call_external", result={"fact": "accepted once"}),
+                ),
+            ),
+        )
+        with fail_after(5):
+            await started.wait()
+        await app.cancel_root_operation(receipt.receipt_id)
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.cancelled
+    assert effects == ["changed"]
+
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        app._root_runs._executor._agents = Reconstructor()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="continue")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+    assert effects == ["changed"]
+    external = [part for part in observed if part.tool_call_id == "call_external"]
+    assert len(external) == 1 and external[0].content == {"fact": "accepted once"}
+    local = [part for part in observed if part.tool_call_id == "call_local"]
+    assert len(local) == 1 and local[0].outcome == "failed"

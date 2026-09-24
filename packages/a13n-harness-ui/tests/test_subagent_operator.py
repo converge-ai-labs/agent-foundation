@@ -325,3 +325,74 @@ async def test_child_finalization_failure_preserves_checkpoint_without_success(
         assert outcome["status"] == "failed"
         assert outcome["failure"].code == "subagent_finalization_failed"
         assert not active.cleanup_succeeded
+
+
+@pytest.mark.parametrize("recovery", [False, True])
+async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: bool) -> None:
+    from types import SimpleNamespace
+
+    from a13n_harness import (
+        AgentIdentityRef,
+        DeferredToolResume,
+        HarnessBuilder,
+        HarnessRunResultEvent,
+        HarnessState,
+        RunBindings,
+    )
+    from a13n_harness_ui.composition import ReconstructedAgent
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from pydantic_ai.agent.spec import AgentSpec
+    from pydantic_ai.exceptions import ToolFailed
+    from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, UserPromptPart
+    from pydantic_ai.models.function import FunctionModel
+    from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
+
+    observed = []
+
+    async def model(messages, info):
+        observed.extend(
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, UserPromptPart)
+        )
+        yield "done"
+
+    call = ToolCallPart("lookup", {}, "call_external")
+    state = HarnessState.new(message_history=[ModelResponse(parts=[call])])
+    accepted = DeferredToolResume(
+        DeferredToolRequests(calls=[call]),
+        DeferredToolResults(calls={call.tool_call_id: ToolFailed("external input unavailable")}),
+        recovery=recovery,
+    )
+    unavailable = cast(Any, object())
+    operator = HarnessUiSubagentOperator(
+        store=unavailable,
+        configurations=unavailable,
+        compositions=unavailable,
+        agent_reconstructor=unavailable,
+        environment_service=unavailable,
+    )
+    reconstructed = ReconstructedAgent(
+        executable=HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=model)),
+        model_resolver=HarnessUiModelResolver({}),
+        definition_capability_ids=frozenset(),
+    )
+    stream = operator._new_stream(
+        reconstructed=reconstructed,
+        input="new continuation instruction",
+        usage_limits=None,
+        identity=AgentIdentityRef(issuer="test", subject="child"),
+        state=state,
+        environment=cast(Any, SimpleNamespace(runtime=RunBindings.embedded().environment, tool_result_directory=None)),
+        execution_id="execution_test",
+        parent=cast(Any, SimpleNamespace(agent_instance_id="parent-agent")),
+        agent_instance_id="child-agent",
+        deferred_resume=accepted,
+    )
+    async with stream:
+        async for item in stream:
+            if isinstance(item, HarnessRunResultEvent):
+                assert item.result.status == "completed"
+    assert ("new continuation instruction" in observed) is recovery

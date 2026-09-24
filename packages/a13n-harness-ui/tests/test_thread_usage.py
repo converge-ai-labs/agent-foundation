@@ -83,7 +83,7 @@ def _report(*records: ModelUsageRecord | ProviderUsageRecord) -> HarnessEvent:
         sequence=1,
         occurred_at=_NOW,
         event=HarnessExtensionEvent(
-            schema_version="2",
+            schema_version="1",
             kind="usage",
             payload=UsageReportPayload(
                 report_id="usage-report",
@@ -281,14 +281,25 @@ async def test_usage_cache_reads_only_new_committed_suffix_and_survives_other_wr
         assert cached == await ThreadUsageRepository(database.sessions).snapshot(thread_id="thread-root")
 
 
-async def test_current_and_auxiliary_records_reaggregate_without_repricing_or_context_pollution(tmp_path: Path) -> None:
+async def test_legacy_and_auxiliary_records_reaggregate_without_repricing_or_context_pollution(tmp_path: Path) -> None:
     import json
 
     from a13n_harness_ui.storage.models import ThreadUsageRecord
 
     settings = StorageSettings(data_root=tmp_path)
     async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
-        current = _model(0).model_dump(mode="json")
+        legacy = _model(0).model_dump(mode="json")
+        for field in (
+            "call_id",
+            "source",
+            "tool_id",
+            "tool_call_id",
+            "pricing_status",
+            "cost_source",
+            "pricing_revision",
+            "pricing_rule_id",
+        ):
+            legacy.pop(field, None)
         async with transaction(database.sessions) as session:
             session.add(_thread("thread-root"))
             await session.flush()
@@ -296,14 +307,15 @@ async def test_current_and_auxiliary_records_reaggregate_without_repricing_or_co
                 ThreadUsageRecord(
                     root_thread_id="thread-root",
                     origin_thread_id="thread-root",
-                    record_id=current["record_id"],
-                    run_id=current["run_id"],
+                    record_id=legacy["record_id"],
+                    run_id=legacy["run_id"],
                     descendant=False,
-                    payload_json=json.dumps(current),
+                    payload_json=json.dumps(legacy),
                     observed_at=_NOW,
                 )
             )
         repository = ThreadUsageRepository(database.sessions)
+        assert await repository.latest_root_request(thread_id="thread-root") == ModelUsageRecord.model_validate(legacy)
         primary = _model(1, cost=Decimal("0.1")).model_copy(update={"model_name": "switched-model"})
         media = _model(2, cost=Decimal("0.2")).model_copy(
             update={
@@ -321,8 +333,8 @@ async def test_current_and_auxiliary_records_reaggregate_without_repricing_or_co
         records = (primary, media, child_media, _receipt(cost=None, currency=None))
         await repository.append(thread_id="thread-root", records=records)
         await repository.append(thread_id="thread-root", records=records)
-        # Current reports and terminal reconciliation deduplicate the same immutable record.
-        await repository.append(thread_id="thread-root", records=(ModelUsageRecord.model_validate(current),))
+        # Old reports and new terminal reconciliation agree after additive defaults.
+        await repository.append(thread_id="thread-root", records=(ModelUsageRecord.model_validate(legacy),))
         view = await repository.snapshot(thread_id="thread-root")
         assert view.combined.model_requests == 4
         assert view.combined.model_cost_usd == Decimal("0.6")
@@ -379,13 +391,13 @@ async def test_current_usage_identity_survives_transport_live_and_storage(tmp_pa
     raw = record.model_dump(mode="json")
     report = _report(record)
     extension = report.event.model_copy(
-        update={"schema_version": "2", "payload": {**report.event.payload, "records": [raw]}}
+        update={"schema_version": "1", "payload": {**report.event.payload, "records": [raw]}}
     )
     report = replace(report, event=extension)
     transport = HarnessAguiObserver().observe(report)
     assert len(transport) == 1
     wire = transport[0].model_dump(mode="json")
-    assert wire["value"]["event"]["schema_version"] == "2"
+    assert wire["value"]["event"]["schema_version"] == "1"
     assert wire["value"]["event"]["payload"]["records"] == [raw]
     live = LiveEvent(
         epoch="epoch",
@@ -408,27 +420,22 @@ async def test_current_usage_identity_survives_transport_live_and_storage(tmp_pa
         assert await repository.latest_root_request(thread_id="thread-root") == record
 
 
-@pytest.mark.parametrize("old_shape", ["version", "missing_call_id"])
-async def test_unsupported_usage_is_not_consumed_as_current(tmp_path, old_shape):
+async def test_usage_without_call_id_survives_transport_live_and_storage(tmp_path):
     from a13n_harness_ui.live import LiveEvent, model_usage
-    from a13n_stream_protocol import AguiObservationError, HarnessAguiObserver
-    from pydantic import ValidationError
+    from a13n_stream_protocol import HarnessAguiObserver
 
-    record = _model(0)
+    record = _model(0).model_copy(update={"call_id": None})
     raw = record.model_dump(mode="json")
-    if old_shape == "missing_call_id":
-        raw.pop("call_id")
+    raw.pop("call_id")
     report = _report(record)
     extension = report.event.model_copy(
         update={
-            "schema_version": "1" if old_shape == "version" else "2",
+            "schema_version": "1",
             "payload": {**report.event.payload, "records": [raw]},
         }
     )
     report = replace(report, event=extension)
-    if old_shape == "version":
-        with pytest.raises(AguiObservationError, match="usage schema"):
-            HarnessAguiObserver().observe(report)
+    assert HarnessAguiObserver().observe(report)
     live = LiveEvent(
         epoch="epoch",
         sequence=1,
@@ -440,12 +447,12 @@ async def test_unsupported_usage_is_not_consumed_as_current(tmp_path, old_shape)
         payload={"value": {"event": extension.model_dump(mode="json")}},
         payload_omitted=False,
     )
-    assert model_usage(live) == ()
+    assert model_usage(live) == (record,)
     settings = StorageSettings(data_root=tmp_path)
     async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
         async with transaction(database.sessions) as session:
             session.add(_thread("thread-root"))
         repository = ThreadUsageRepository(database.sessions)
-        with pytest.raises(StoreIntegrityError if old_shape == "version" else ValidationError):
-            await repository.observe(thread_id="thread-root", item=report)
-        assert await repository.latest_root_request(thread_id="thread-root") is None
+        await repository.observe(thread_id="thread-root", item=report)
+        assert await repository.latest_root_request(thread_id="thread-root") == record
+        assert (await repository.snapshot(thread_id="thread-root")).combined.model_requests == 1

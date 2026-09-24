@@ -6,6 +6,8 @@ A thread's history advances only through runs. Four operations move it: **accept
 
 Accepting an input does not prove the agent saw it, and incorporating it does not make a failed run part of the thread's history. The Service guarantees at-most-once incorporation of each entry into its assigned run's committed continuation. It does not guarantee exactly-once model requests, tool effects or sandbox changes.
 
+At execution, accepted input distinguishes message content from a deferred-result batch correlated to the exact waiting run it answers. The Service owns both until committed history incorporates them. A resumed run retains its accepted answers in `resume` and the original requests in its waiting parent's checkpoint. Restoring an own checkpoint does not discard that input: the worker supplies remaining results in recovery mode, without replaying old approval grants or duplicating recorded results. Pre-effect checkpoints remain required; recovery uses their continuation plus unincorporated accepted input rather than a second Harness-owned result store.
+
 ## Boundaries
 
 | Concern                                                                                          | Owner                             |

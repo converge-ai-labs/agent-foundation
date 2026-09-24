@@ -15,7 +15,7 @@ from a13n_harness import (
     HarnessRunResultEvent,
     HarnessStreamEvent,
 )
-from a13n_harness.events import USAGE_SCHEMA_VERSION, ToolExtraEventPayload
+from a13n_harness.events import ToolExtraEventPayload
 from a13n_harness.model_context import ModelInputEvent, user_prompt_content
 from ag_ui.core import Event
 from ag_ui.core.events import (
@@ -214,8 +214,6 @@ class HarnessAguiObserver:
         source = item.event
         events: list[Event]
         if isinstance(source, HarnessExtensionEvent):
-            if source.kind == "usage" and source.schema_version != USAGE_SCHEMA_VERSION:
-                raise AguiObservationError("Unsupported usage schema version")
             _observe_request_lifecycle(source, state)
             return [_custom_harness_event(item, source)]
         if isinstance(source, ModelInputEvent):

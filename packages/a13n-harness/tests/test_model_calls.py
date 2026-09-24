@@ -154,9 +154,7 @@ async def test_dispatched_pre_yield_failure_preserves_native_interrupted_account
     assert record.cost_source == "unknown" and record.pricing_status == "not_reached"
 
 
-async def test_embedded_without_check_rejects_missing_current_call_field():
-    from pydantic import ValidationError
-
+async def test_embedded_without_check_accepts_missing_call_correlation():
     async def provider(messages, info):
         yield "done"
 
@@ -170,8 +168,7 @@ async def test_embedded_without_check_rejects_missing_current_call_field():
     assert isinstance(record, ModelUsageRecord) and record.call_id
     historical = record.model_dump()
     historical.pop("call_id")
-    with pytest.raises(ValidationError, match="call_id"):
-        ModelUsageRecord.model_validate(historical)
+    assert ModelUsageRecord.model_validate(historical).call_id is None
 
 
 async def test_cancellation_during_check_prevents_provider_entry():
@@ -591,7 +588,7 @@ async def test_current_usage_events_are_v2_and_result_keeps_same_call_identity()
         async for item in stream:
             if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent):
                 if item.event.kind == "usage":
-                    assert item.event.schema_version == "2"
+                    assert item.event.schema_version == "1"
                     reports.extend(item.event.payload["records"])
                 else:
                     assert item.event.schema_version == "1"

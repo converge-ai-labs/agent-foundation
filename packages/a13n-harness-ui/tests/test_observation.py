@@ -239,14 +239,14 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
 
     provider, exporter = telemetry
     head = SimpleNamespace(execution_id="execution-test")
-    prepared = SimpleNamespace(head=head)
+    prepared = SimpleNamespace(head=head, accepted_input=None)
     active = SimpleNamespace(done=Event())
     events = (RunErrorEvent(message="not exported", code=event_code),)
 
     async def consume(*args):
         return SimpleNamespace(status=result_status, run_id="run-test", output=None), None, events
 
-    async def finish(*args):
+    async def finish(*args, **kwargs):
         return events
 
     async def publish(*args):

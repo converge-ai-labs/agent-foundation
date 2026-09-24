@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 from a13n_harness import DeferredToolResume, HarnessBuilder, HarnessEvent, HarnessState
@@ -89,11 +89,14 @@ def executable(capture, effects, *, interrupt_after=False, safe=False):
     )
 
 
+@pytest.mark.parametrize("checkpoint_kind", ["boundary", "terminal"])
 @pytest.mark.parametrize("cut", ["before", "after"])
 @pytest.mark.parametrize("mode", ["declared", "never"])
 @pytest.mark.parametrize("safe", [False, True])
 @pytest.mark.parametrize("supplied", ["json", "failed", "return"])
-async def test_mixed_checkpoint_preserves_client_fact_without_replaying_unsafe_approval(cut, mode, safe, supplied):
+async def test_mixed_checkpoint_preserves_client_fact_without_replaying_unsafe_approval(
+    cut, mode, safe, supplied, checkpoint_kind
+):
     effects = []
     capture = Capture(cut=cut == "before")
     agent = executable(capture, effects, interrupt_after=cut == "after")
@@ -107,16 +110,11 @@ async def test_mixed_checkpoint_preserves_client_fact_without_replaying_unsafe_a
             {"review": "provided once"}, content="external explanation", metadata={"source": "client"}
         ),
     }[supplied]
-    async with agent.stream(
-        previous_state=first.state,
-        deferred_resume=DeferredToolResume(
-            first.deferred,
-            DeferredToolResults(
-                calls={"call_client": client_result},
-                approvals={"call_change": ToolApproved()},
-            ),
-        ),
-    ) as run_stream:
+    accepted = DeferredToolResume(
+        first.deferred,
+        DeferredToolResults(calls={"call_client": client_result}, approvals={"call_change": ToolApproved()}),
+    )
+    async with agent.stream(previous_state=first.state, deferred_resume=accepted) as run_stream:
 
         async def drain():
             async for item in run_stream:
@@ -129,11 +127,15 @@ async def test_mixed_checkpoint_preserves_client_fact_without_replaying_unsafe_a
         run_stream.cancel()
         terminal = await asyncio.wait_for(pending, timeout=5)
         assert terminal.result.status == "cancelled"
-    checkpoint = capture.states[-1]
+    checkpoint = capture.states[-1] if checkpoint_kind == "boundary" else terminal.result.state
+    assert checkpoint is not None
     assert len(effects) == (cut == "after")
     restored = HarnessState.model_validate_json(checkpoint.model_dump_json())
     recovery = executable(Capture(), effects, safe=safe)
-    result = await recovery.run(previous_state=restored, tool_recovery=mode)
+    assert "a13n.tool-execution-boundary.deferred-results" not in restored.agent_context_state.entries
+    result = await recovery.run(
+        previous_state=restored, tool_recovery=mode, deferred_resume=replace(accepted, recovery=True)
+    )
     if safe and mode == "declared":
         assert result.status == "suspended"
         assert result.deferred is not None and result.state is not None
@@ -174,36 +176,54 @@ async def test_mixed_checkpoint_preserves_client_fact_without_replaying_unsafe_a
     assert "provided" in json.dumps(result.state.model_dump(mode="json"))
 
 
-async def test_retained_batch_is_detached_bounded_and_rejects_changed_correlation():
-    from a13n_harness.errors import StateError
-    from a13n_harness.tools._deferred_state import MAX_STATE_BYTES, DeferredRecord
+async def test_accepted_recovery_input_is_detached_and_rejects_changed_correlation():
+    from a13n_harness.errors import RunError
+    from a13n_harness.tools.deferred import preflight_deferred_resume
     from pydantic_ai.messages import ModelResponse, ToolCallPart
 
     first = await executable(Capture(), []).run("go")
     assert first.deferred is not None and first.state is not None
-    resume = DeferredToolResume(
+    original = {"review": ["original"]}
+    accepted = DeferredToolResume(
         first.deferred,
-        DeferredToolResults(calls={"call_client": {"review": ["original"]}}, approvals={"call_change": True}),
+        DeferredToolResults(calls={"call_client": original}, approvals={"call_change": True}),
+        recovery=True,
     )
-    record = DeferredRecord.capture(resume)
-    resume.results.calls["call_client"]["review"].append("mutated")
-    assert record.remaining(first.state.message_history)["call_client"].value == {"review": ["original"]}
-    assert '"supplied":{"call_client"' in record.model_dump_json()
-    assert "ToolApproved" not in record.model_dump_json()
-    changed = HarnessState.model_validate_json(first.state.model_dump_json())
-    changed_messages = changed.message_history
-    response = next(message for message in reversed(changed_messages) if isinstance(message, ModelResponse))
+    original["review"].append("mutated")
+    assert accepted.results.calls["call_client"] == {"review": ["original"]}
+    messages = first.state.message_history
+    response = next(message for message in reversed(messages) if isinstance(message, ModelResponse))
     next(part for part in response.parts if isinstance(part, ToolCallPart)).tool_name = "substituted"
-    with pytest.raises(StateError, match="does not match"):
-        record.remaining(changed_messages)
-    data = record.model_dump(mode="json")
-    data["supplied"] = {}
-    with pytest.raises(StateError, match="invalid"):
-        DeferredRecord.model_validate(data)
-    with pytest.raises(StateError, match="byte limit"):
-        DeferredRecord.capture(
-            DeferredToolResume(
-                first.deferred,
-                DeferredToolResults(calls={"call_client": "x" * MAX_STATE_BYTES}, approvals={"call_change": True}),
-            )
-        )
+    changed = HarnessState.new(thread_id=first.state.thread_id, message_history=messages)
+    with pytest.raises(RunError, match="does not match"):
+        preflight_deferred_resume(accepted, previous_state=changed)
+
+
+async def test_recovery_omits_results_already_incorporated_in_history():
+    first = await executable(Capture(), []).run("go")
+    assert first.deferred is not None and first.state is not None
+    accepted = DeferredToolResume(
+        first.deferred,
+        DeferredToolResults(calls={"call_client": "accepted"}, approvals={"call_change": False}),
+        recovery=True,
+    )
+    partial = HarnessState.new(
+        thread_id=first.state.thread_id,
+        message_history=(
+            *first.state.message_history,
+            ModelRequest(parts=[ToolReturnPart("client_result", "accepted", "call_client")]),
+        ),
+    )
+    remaining = accepted.remaining(partial.message_history)
+    assert remaining is not None and not remaining.results.calls
+    result = await executable(Capture(), []).run(previous_state=partial, deferred_resume=accepted)
+    assert result.state is not None
+    assert accepted.remaining(result.state.message_history) is None
+    returns = [
+        part
+        for message in result.state.message_history
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_call_id == "call_client"
+    ]
+    assert len(returns) == 1 and returns[0].content == "accepted"

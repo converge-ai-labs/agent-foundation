@@ -368,7 +368,6 @@ class AgentContext:
     _steering: SteeringBridge = field(repr=False, compare=False)
     deferred_tools_supported: bool = True
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
-    _deferred_resume_activated: set[str] = field(default_factory=set, repr=False, compare=False)
     _model_recovery: ModelRecoveryState = field(default_factory=ModelRecoveryState, repr=False, compare=False)
     model_context: ModelContextMiddleware | None = None
     model_call_check: ModelCallCheck | None = None
@@ -550,9 +549,6 @@ class AgentContext:
 
     async def export_state(self, message_history: Sequence[ModelMessage]) -> HarnessState:
         """Export a detached continuation envelope without persistence side effects."""
-        from a13n_harness.tools._deferred_state import reconcile
-
-        await reconcile(self.state, message_history)
         # A request-boundary export can precede consumption of the native input
         # event. Reconcile delivered steering from the same canonical history
         # before snapshotting capability state; pending input stays unretained.

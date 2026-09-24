@@ -34,7 +34,7 @@ type HarnessExtensionKind = Literal[
 ]
 
 
-USAGE_SCHEMA_VERSION = "2"
+USAGE_SCHEMA_VERSION = "1"
 
 
 class HarnessExtensionEvent(BaseModel):

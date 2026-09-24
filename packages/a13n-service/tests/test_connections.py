@@ -1416,3 +1416,38 @@ async def test_composio_account_is_set_up_through_hosted_flow_and_runs_its_pinne
         revoked = await post(service, item + "/revoke", **{"If-Match": etag(connection)})
         assert revoked["status"] == "pending" and revoked["remote_revocation"] == "revoked"
         assert composio.revoked == ["ca_1", "ca_2"]
+
+
+async def test_mcp_native_runs_have_independent_authenticated_client_lifetimes(service) -> None:  # type: ignore[no-untyped-def]
+    async with remote() as server:
+        created = await create(
+            service,
+            {
+                "config": {"url": f"{server.url}/mcp", "headers": ["x-api-key"], "tools": ["echo"]},
+                "auth": "headers",
+                "credential": {"headers": {"x-api-key": SECRET}},
+            },
+        )
+        dispatches: list[ToolDispatch] = []
+        selection = ConnectionSelection(connection_id=created["id"])
+        async with opened(
+            service, [selection], {created["id"]: {"x-trace": "shared-attempt"}}, dispatches
+        ) as capabilities:
+            # Native attempts may overlap, and later attempts must not inherit a closed toolset/client.
+            results = await asyncio.gather(
+                *(run_tool(capabilities, "echo", {"text": value}) for value in ("one", "two"))
+            )
+            assert sorted(result["results"][0] for result in results) == ["one", "two"]
+            assert (await run_tool(capabilities, "echo", {"text": "three"}))["results"] == ["three"]
+        assert sorted(server.echoed) == ["one", "three", "two"]
+        assert len(dispatches) == 3
+        assert all(
+            request.get("x-api-key") == SECRET and request.get("x-trace") == "shared-attempt"
+            for request in server.requests
+        )
+        # Another attempt has its own caller headers, even for the same connection.
+        async with opened(
+            service, [selection], {created["id"]: {"x-trace": "next-attempt"}}, dispatches
+        ) as capabilities:
+            assert (await run_tool(capabilities, "echo", {"text": "four"}))["results"] == ["four"]
+        assert server.requests[-1]["x-trace"] == "next-attempt"

@@ -12,7 +12,6 @@ from urllib.parse import urlparse
 from pydantic import JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability
-from pydantic_ai.toolsets import AbstractToolset
 
 from a13n_harness._json import dump_json_text
 from a13n_harness.context import AgentContext
@@ -26,15 +25,6 @@ class MCPHeadersFactory(Protocol):
         self,
         context: AgentContext,
     ) -> Mapping[str, str] | Awaitable[Mapping[str, str]]: ...
-
-
-class MCPLocalToolsetFactory(Protocol):
-    """Construct a host-owned transport after exact run headers have been resolved.
-
-    The native capability lifecycle enters and exits the returned Toolset.
-    """
-
-    def __call__(self, headers: Mapping[str, str], /) -> AbstractToolset[AgentContext]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,7 +137,6 @@ class ContextualMCP(MCP[AgentContext]):
         allowed_tools: list[str] | tuple[str, ...] | None = None,
         description: str | None = None,
         defer_loading: bool = False,
-        local_toolset_factory: MCPLocalToolsetFactory | None = None,
     ) -> None:
         if not isinstance(url, str) or not url.strip():
             raise DefinitionError("Contextual MCP url must be a non-blank string.", code="mcp_definition_invalid")
@@ -172,12 +161,6 @@ class ContextualMCP(MCP[AgentContext]):
                 code="mcp_definition_invalid",
             )
 
-        if local_toolset_factory is not None and (native or local is False or not callable(local_toolset_factory)):
-            raise DefinitionError(
-                "A Contextual MCP Toolset factory requires local-only execution.",
-                code="mcp_definition_invalid",
-            )
-        self._local_toolset_factory = local_toolset_factory
         static_headers = dict(headers or {})
         _require_header_mapping(static_headers, source="static")
         recipe = _MCPRecipe(
@@ -229,20 +212,11 @@ class ContextualMCP(MCP[AgentContext]):
         _require_no_header_conflicts(static_headers, validated_dynamic_headers)
         merged_headers = {**static_headers, **validated_dynamic_headers}
 
-        local: bool | AbstractToolset[AgentContext] | None = self._recipe.local
-        if self._local_toolset_factory is not None:
-            if self._recipe.authorization_token is not None:
-                authorization = {"Authorization": self._recipe.authorization_token}
-                _require_no_header_conflicts(merged_headers, authorization)
-                merged_headers.update(authorization)
-            local = self._local_toolset_factory(MappingProxyType(dict(merged_headers)))
-            if not isinstance(local, AbstractToolset):
-                raise TypeError("MCP local_toolset_factory must return an AbstractToolset")
         replacement = MCP[AgentContext](
             self._recipe.url,
             id=self._recipe.capability_id,
             native=self._recipe.native,
-            local=local,
+            local=self._recipe.local,
             authorization_token=self._recipe.authorization_token,
             headers=merged_headers or None,
             allowed_tools=list(self._recipe.allowed_tools) if self._recipe.allowed_tools is not None else None,
@@ -335,5 +309,4 @@ __all__ = [
     "MCPContextHeaders",
     "MCPContextHeadersConfig",
     "MCPHeadersFactory",
-    "MCPLocalToolsetFactory",
 ]

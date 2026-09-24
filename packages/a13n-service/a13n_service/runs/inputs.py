@@ -7,9 +7,11 @@ provider ever fetches an address the operator did not allow.
 
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Literal
 
 import httpx2
+from a13n_harness import DeferredToolResume
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from pydantic import JsonValue
 from pydantic_ai.messages import BinaryContent, TextContent, UserContent
@@ -21,6 +23,21 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import AssetPart, JsonPart, MessagePayload, TextPart, UrlPart
 from a13n_service.runs.tables import InboxEntryRow
 from a13n_service.tenancy.authorize import Principal
+
+
+@dataclass(frozen=True, slots=True)
+class MessageInput:
+    content: tuple[UserContent, ...]
+    kind: Literal["message"] = field(default="message", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class DeferredInput:
+    resume: DeferredToolResume
+    kind: Literal["deferred"] = field(default="deferred", init=False)
+
+
+type AcceptedInput = MessageInput | DeferredInput
 
 
 @dataclass(frozen=True, slots=True)

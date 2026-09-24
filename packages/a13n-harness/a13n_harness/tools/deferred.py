@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from pydantic_ai import ToolApproved, ToolDenied, ToolFailed, ToolReturn
-from pydantic_ai.messages import ModelRequest, ModelResponse, RetryPromptPart, ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    RetryPromptPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
 from a13n_harness._json import dump_json_bytes, require_finite_json
@@ -25,6 +32,8 @@ class DeferredToolResume:
 
     requests: DeferredToolRequests
     results: DeferredToolResults
+    # Recovery carries accepted facts, never permission to replay an old approval.
+    recovery: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.requests, DeferredToolRequests) or not isinstance(self.results, DeferredToolResults):
@@ -35,19 +44,66 @@ class DeferredToolResume:
         except Exception as exc:
             raise TypeError("Deferred tool values must be detachable") from exc
 
+    def remaining(self, messages: Sequence[ModelMessage]) -> DeferredToolResume | None:
+        """Keep only this batch's unanswered calls at the continuation tail.
+
+        Hosts retain accepted input alongside their checkpoint until native history
+        incorporates it. A later response (including compacted history) has already
+        passed this batch; it must not receive the original results again.
+        """
+        response_index = next(
+            (index for index in range(len(messages) - 1, -1, -1) if isinstance(messages[index], ModelResponse)),
+            None,
+        )
+        if response_index is None:
+            raise RunError("Deferred input has no response history.", code="deferred_request_missing")
+        response = messages[response_index]
+        assert isinstance(response, ModelResponse)
+        ids = {call.tool_call_id for call in response.tool_calls}
+        completed = {
+            part.tool_call_id
+            for message in messages[response_index + 1 :]
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart | RetryPromptPart)
+        }
+        calls = [call for call in self.requests.calls if call.tool_call_id in ids - completed]
+        approvals = [call for call in self.requests.approvals if call.tool_call_id in ids - completed]
+        if not calls and not approvals:
+            return None
+        pending = {call.tool_call_id for call in (*calls, *approvals)}
+        return DeferredToolResume(
+            DeferredToolRequests(
+                calls=calls,
+                approvals=approvals,
+                metadata={key: value for key, value in self.requests.metadata.items() if key in pending},
+            ),
+            DeferredToolResults(
+                calls={call.tool_call_id: self.results.calls[call.tool_call_id] for call in calls},
+                approvals={call.tool_call_id: self.results.approvals[call.tool_call_id] for call in approvals},
+                metadata={key: value for key, value in self.results.metadata.items() if key in pending},
+            ),
+            recovery=self.recovery,
+        )
+
 
 def preflight_deferred_resume(
     resume: DeferredToolResume,
     *,
     previous_state: HarnessState | None,
-) -> DeferredToolResume:
+) -> DeferredToolResume | None:
     """Reject incomplete, misplaced, stale, or message-mismatched deferred results."""
     if not isinstance(resume, DeferredToolResume):
         raise RunError("deferred_resume must be DeferredToolResume.", code="deferred_resume_invalid")
     if previous_state is None:
         raise RunError("Deferred resume requires previous_state.", code="deferred_state_required")
 
-    detached = DeferredToolResume(resume.requests, resume.results)
+    if resume.recovery:
+        remaining = resume.remaining(previous_state.message_history)
+        if remaining is None:
+            return None
+        resume = remaining
+    detached = DeferredToolResume(resume.requests, resume.results, recovery=resume.recovery)
     call_ids, approval_ids = validate_deferred_requests(detached.requests)
 
     if set(detached.results.calls) != call_ids or set(detached.results.approvals) != approval_ids:
@@ -71,7 +127,13 @@ def preflight_deferred_resume(
             if request.tool_name == "ask_user_question":
                 from a13n_harness.toolsets.interaction import validate_user_question_result
 
-                call_result = validate_user_question_result(request.args_as_dict(), call_result)
+                if isinstance(call_result, ToolReturn):
+                    call_result = replace(
+                        call_result,
+                        return_value=validate_user_question_result(request.args_as_dict(), call_result.return_value),
+                    )
+                else:
+                    call_result = validate_user_question_result(request.args_as_dict(), call_result)
                 detached.results.calls[call_id] = call_result
             if isinstance(call_result, ToolReturn):
                 require_finite_json(call_result.return_value)

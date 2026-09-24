@@ -6,7 +6,7 @@ Harness UI is a local Agent workbench with a personal CLI and a collaborative We
 
 Human-editable files remain the desired-resource authority so Harness UI can be configured without a browser or a large command surface. Separately, explicit CLI operations install editable declarative Content Plugins under the data root. SQLite owns mutable Thread and execution heads plus [published human comments](webui/05-output-comments.md), while immutable content-addressed objects retain complete Run compositions and continuation checkpoints.
 
-Harness UI persists complete continuation boundaries and independently published comments, not shared editing drafts, page presence, or accepted-work intent. Process loss can discard a root receipt, submitted message or deferred response, partial output, an active child segment, live events, and Run-local shell observations. Native command survival is Provider-owned. A later operation resumes only from a previously selected complete checkpoint.
+Harness UI persists complete continuation boundaries and independently published comments, not shared editing drafts, page presence, or accepted-work intent. Process loss can discard a root receipt, uncheckpointed submitted message or deferred response, partial output, an active child segment, live events, and Run-local shell observations. Native command survival is Provider-owned. A later operation resumes only from a previously selected complete checkpoint.
 
 Harness UI owns two built-in local execution modes. **Full Control** uses the Direct Local Provider and runs commands as the Host user. **Sandbox** uses Local Envd over EIP with Envd-managed restricted Session workers and denied networking; it never falls back to Direct Local. Both preserve the local machine's canonical Project-root paths in Harness aggregate routing and model context while retaining different execution authority. Other adapters use provider-neutral virtual routes unless they explicitly declare that their path space preserves Host paths.
 
@@ -139,7 +139,7 @@ Harness UI stores:
 - Host-authoritative Environment state references;
 - published human comments and their original saved-output references under the [local comment storage contract](03-local-storage-and-recovery.md#output-comment-storage).
 
-It does not durably store shared browser drafts, root receipts, execution-accepted pending input or deferred responses, active root Run records, a child scheduler, process-liveness records, shell-process handles, native terminal sessions, presence, native runtime objects, resolved credentials, or live streams. In-memory browser drafts are not queued inputs and never authorize automatic execution.
+It does not durably store shared browser drafts, root receipts, an execution-accepted input queue, active root Run records, a child scheduler, process-liveness records, shell-process handles, native terminal sessions, presence, native runtime objects, resolved credentials, or live streams. In-memory browser drafts are not queued inputs and never authorize automatic execution.
 
 ## Surfaces and Packaging
 
@@ -158,7 +158,7 @@ The [WebUI](webui/README.md) provides project navigation, page presence, collabo
 05. Thread metadata and sticky configuration are independent versioned heads, while each admitted Run captures immutable effective behavior.
 06. Continuation history survives supported Agent, Capability, Plugin, MCP, Project, and Environment profile selection changes.
 07. Every independent Run receives fresh runtime authority and Environment adapters.
-08. Root receipts, input, deferred responses, and active work are not durably accepted.
+08. Root admission is process-local. Input survives only when incorporated in a selected checkpoint, including accepted deferred facts retained with that checkpoint; active work is not durably scheduled.
 09. Root continuation, Environment state, and child checkpoint publication remain independent facts.
 10. Surface projections and streams are detached from storage and native runtime authority.
 11. The CLI, WebUI, and embedding integrations use the same App commands, projections, and immutable capture boundaries.

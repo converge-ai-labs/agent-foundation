@@ -117,6 +117,7 @@ from a13n_harness_ui.storage import (
     Thread,
     ThreadConfiguration,
 )
+from a13n_harness_ui.storage.contracts import StoredDeferredInput
 from a13n_harness_ui.surfaces import (
     ChildActivityView,
     ChildExecutionPage,
@@ -205,6 +206,7 @@ class _PreparedSegment:
     stream: HarnessRunStream[Any]
     agent_instance_id: str
     display: CompactChildDisplay
+    accepted_input: DeferredToolResume | None = None
 
 
 class _SubagentRequestError(RunCoordinationError):
@@ -851,9 +853,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
             plan.usage_limits,
             reconstructed.executable.definition_usage_limits(),
         )
+        accepted = checkpoint.accepted_input.recover() if checkpoint.accepted_input is not None else None
         stream = self._new_stream(
             reconstructed=reconstructed,
             input=plan.context.input,
+            deferred_resume=accepted,
             usage_limits=usage_limits,
             identity=identity,
             state=checkpoint.harness_state,
@@ -889,6 +893,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             stream=stream,
             agent_instance_id=agent_instance_id,
             display=checkpoint.display,
+            accepted_input=accepted,
         )
         try:
             await self._start_segment(prepared)
@@ -958,10 +963,12 @@ class HarnessUiSubagentOperator(SubagentOperator):
         environment = await self._environments.prepare(composition)
         execution_id, agent_instance_id = _public_id("execution"), _public_id("agent")
         limits = None if item.usage_limits is None else TypeAdapter(UsageLimits).validate_python(item.usage_limits)
+        accepted = checkpoint.accepted_input.recover() if checkpoint.accepted_input is not None else None
         try:
             stream = self._new_stream(
                 reconstructed=reconstructed,
                 input=None,
+                deferred_resume=accepted,
                 usage_limits=limits,
                 identity=identity,
                 state=checkpoint.harness_state,
@@ -990,6 +997,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 stream=stream,
                 agent_instance_id=agent_instance_id,
                 display=checkpoint.display,
+                accepted_input=accepted,
             )
             await self._start_segment(prepared)
         except BaseException as exc:
@@ -1028,7 +1036,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         )
         bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)
         return reconstructed.executable.stream(
-            input if deferred_resume is None else None,
+            input if deferred_resume is None or deferred_resume.recovery else None,
             bindings=bindings,
             previous_state=state,
             deferred_resume=deferred_resume,
@@ -1096,6 +1104,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         expected=expected_checkpoint,
                     )
                     next_environment = await self._environments.prepare(current.composition)
+                    accepted = _deny_deferred(deferred)
                     next_stream = self._new_stream(
                         reconstructed=current.reconstructed,
                         input=current.input,
@@ -1106,7 +1115,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         execution_id=current.head.execution_id,
                         parent=current.scope,
                         agent_instance_id=current.agent_instance_id,
-                        deferred_resume=_deny_deferred(deferred),
+                        deferred_resume=accepted,
                     )
                     async with self._lock:
                         retained = self._active.get(current.head.execution_id)
@@ -1127,6 +1136,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         stream=next_stream,
                         agent_instance_id=current.agent_instance_id,
                         display=display,
+                        accepted_input=accepted,
                     )
                     continue
                 record_output(result.output, status=result.status)
@@ -1136,6 +1146,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     display,
                     expected_checkpoint,
                     terminal_events,
+                    accepted=current.accepted_input,
                 )
                 await self._publish_summary(current.head)
                 await self._publish_live(current, durable_events)
@@ -1167,6 +1178,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         run_id=current.stream.run_id,
                         state=state,
                         deferred_requests=None,
+                        accepted=current.accepted_input,
                         display=active.display,
                         terminal=True,
                     )
@@ -1217,6 +1229,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             run_id=prepared.stream.run_id,
             state=state,
             deferred_requests=None,
+            accepted=prepared.accepted_input,
             display=active.display,
             terminal=True,
         )
@@ -1347,6 +1360,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         display: CompactChildDisplay,
         expected: ObjectRef | None,
         terminal_events: tuple[AguiEvent, ...],
+        *,
+        accepted: DeferredToolResume | None = None,
     ) -> tuple[AguiEvent, ...]:
         if result.status == "completed":
             state = result.state
@@ -1358,6 +1373,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     run_id=result.run_id,
                     state=state,
                     deferred_requests=None,
+                    accepted=accepted,
                     display=terminal_display,
                     terminal=True,
                 )
@@ -1387,6 +1403,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 status="failed",
                 failure=failure,
                 expected=expected,
+                accepted=accepted,
             )
             return terminal_events
 
@@ -1399,6 +1416,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 status="cancelled",
                 failure=None,
                 expected=expected,
+                accepted=accepted,
             )
             return terminal_events
 
@@ -1416,6 +1434,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         status: str,
         failure: SafeFailure | None,
         expected: ObjectRef | None,
+        accepted: DeferredToolResume | None = None,
     ) -> None:
         checkpoint: ObjectRef | None = None
         state = result.state
@@ -1426,6 +1445,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     run_id=result.run_id,
                     state=state,
                     deferred_requests=None,
+                    accepted=accepted,
                     display=display,
                     terminal=True,
                 )
@@ -1478,6 +1498,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         deferred_requests: DeferredToolRequests | None,
         display: CompactChildDisplay,
         terminal: bool,
+        accepted: DeferredToolResume | None = None,
     ) -> ObjectRef:
         value = StoredChildCheckpoint(
             harness_release=harness_version,
@@ -1487,6 +1508,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             segment_index=head.segment_index,
             run_composition=head.run_composition,
             harness_state=state,
+            accepted_input=StoredDeferredInput.capture(accepted, state),
             deferred_requests=deferred_requests,
             display=display,
             terminal=terminal,

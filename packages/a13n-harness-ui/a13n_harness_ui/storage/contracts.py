@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Literal, Self
 
-from a13n_harness import HarnessState, SafeFailure
+from a13n_harness import DeferredToolResume, HarnessState, SafeFailure
 from a13n_harness.providers.environment.models import EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
-from pydantic_ai.tools import DeferredToolRequests
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.display_history import DisplayHistory, saved_display_history
@@ -177,6 +177,32 @@ class StoredThreadInitialState(StoredContract):
         return value.astimezone(UTC)
 
 
+class StoredDeferredInput(StoredContract):
+    """Accepted native input kept with a Host checkpoint until history incorporates it."""
+
+    requests: DeferredToolRequests
+    results: DeferredToolResults
+
+    @classmethod
+    def capture(cls, accepted: DeferredToolResume | None, state: HarnessState) -> StoredDeferredInput | None:
+        remaining = accepted.remaining(state.message_history) if accepted is not None else None
+        if remaining is None:
+            return None
+        # Native tagged ToolReturn values distinguish arbitrary JSON from failures.
+        native = remaining.results.to_tool_call_results()
+        return cls(
+            requests=remaining.requests,
+            results=DeferredToolResults(
+                calls={call.tool_call_id: native[call.tool_call_id] for call in remaining.requests.calls},
+                approvals=remaining.results.approvals,
+                metadata=remaining.results.metadata,
+            ),
+        )
+
+    def recover(self) -> DeferredToolResume:
+        return DeferredToolResume(self.requests, self.results, recovery=True)
+
+
 class StoredContinuation(StoredContract):
     schema_version: Literal["1"] = "1"
     harness_release: str = Field(min_length=1, max_length=128)
@@ -184,6 +210,7 @@ class StoredContinuation(StoredContract):
     harness_state: HarnessState
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     deferred_requests: DeferredToolRequests | None = None
+    accepted_input: StoredDeferredInput | None = None
     created_at: datetime
 
     @property
@@ -239,6 +266,7 @@ class StoredChildCheckpoint(StoredContract):
     run_composition: ObjectRef
     harness_state: HarnessState
     deferred_requests: DeferredToolRequests | None = None
+    accepted_input: StoredDeferredInput | None = None
     display: CompactChildDisplay
     terminal: bool
     created_at: datetime

@@ -13,7 +13,7 @@ run persistence, and no database session survives an external call.
 
 import asyncio
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 
 import anyio
@@ -207,7 +207,11 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
     # Bytes an earlier attempt wrote after its last commit are never read, and never outlive a takeover.
     await checkpoints.clean(runtime.objects, run)
     if (own := await checkpoints.load_state(runtime.objects, run)) is not None:
-        state, resume, seq, outcome = own.harness, None, own.seq, own.outcome
+        state, seq, outcome = own.harness, own.seq, own.outcome
+        # Answers remain Host-owned input until incorporated, even when a pre-effect
+        # checkpoint supersedes the waiting parent's continuation. Never replay its grant.
+        _, accepted = await _initial(runtime, run, parent)
+        resume = replace(accepted, recovery=True).remaining(state.message_history) if accepted is not None else None
         display = await checkpoints.load_display(runtime.objects, run) or Display()
     else:
         (state, resume), seq, outcome, display = await _initial(runtime, run, parent), 0, None, Display()
@@ -322,9 +326,18 @@ class _Attempt:
     async def _stream(self) -> HarnessRunResult | None:
         """The Harness run's result, or None when the worker drained while the mounts were being prepared."""
         runtime, run = self.runtime, self.plan.run
-        content: list[UserContent] = []
+        accepted: list[inputs.AcceptedInput] = []
+        if self.plan.resume is not None:
+            accepted.append(inputs.DeferredInput(self.plan.resume))
         for entry in self.plan.assigned:
-            content.extend(await self._read(entry) or ())
+            accepted.append(inputs.MessageInput(tuple(await self._read(entry) or ())))
+        content: list[UserContent] = []
+        resume: DeferredToolResume | None = None
+        for item in accepted:
+            if isinstance(item, inputs.MessageInput):
+                content.extend(item.content)
+            else:
+                resume = item.resume
         prepared = await self._prepare_mounts()
         if prepared is None:
             return None
@@ -365,7 +378,7 @@ class _Attempt:
                 executable.stream,
                 content or None,
                 previous_state=self.plan.state,
-                deferred_resume=self.plan.resume,
+                deferred_resume=resume,
                 tool_recovery="declared",
                 bindings=host.bindings(root, self._bindings(policies=host.policies())),
                 # The call check enforces the run's own request limit across attempts.

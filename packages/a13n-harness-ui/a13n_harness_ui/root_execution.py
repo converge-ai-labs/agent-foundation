@@ -74,6 +74,7 @@ from a13n_harness_ui.storage import (
     Thread,
     ThreadConfigurationMutation,
 )
+from a13n_harness_ui.storage.contracts import StoredDeferredInput
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
@@ -192,8 +193,10 @@ class RootRunExecutor:
             thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
         if restart is not None and (thread.continuation != restart.checkpoint or thread_id != restart.thread_id):
             raise RunCoordinationError("The saved restart continuation changed.", code="restart_conflict")
-        previous_state, deferred, previous_composition = await self._load_run_state(thread)
+        previous_state, deferred, previous_composition, accepted = await self._load_run_state(thread)
         deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
+        if deferred_resume is None and accepted is not None:
+            deferred_resume = accepted.recover()
         if prompt is not None and deferred is not None:
             raise RunCoordinationError(
                 "The selected Thread continuation has unresolved deferred tool requests.",
@@ -289,6 +292,7 @@ class RootRunExecutor:
                 selected = await self._select_state(
                     thread=thread,
                     composition=published.reference,
+                    accepted=deferred_resume,
                     state=state,
                     display=display,
                     excerpt=excerpt,
@@ -459,6 +463,7 @@ class RootRunExecutor:
                     continuation = await self._select_state(
                         thread=thread,
                         composition=published.reference,
+                        accepted=deferred_resume,
                         state=paused_state,
                         display=display,
                         excerpt=checkpoint_excerpt(thread.excerpt, paused_state.message_history),
@@ -502,6 +507,7 @@ class RootRunExecutor:
                     continuation = await self._select_state(
                         thread=thread,
                         composition=published.reference,
+                        accepted=deferred_resume,
                         state=result.state,
                         display=display,
                         deferred=result.deferred,
@@ -526,6 +532,7 @@ class RootRunExecutor:
                         continuation = await self._select_state(
                             thread=thread,
                             composition=published.reference,
+                            accepted=deferred_resume,
                             state=state,
                             display=display,
                             excerpt=thread.excerpt if excerpts is None else excerpts.finish(None),
@@ -630,7 +637,8 @@ class RootRunExecutor:
 
     async def _load_run_state(
         self, thread: Thread
-    ) -> tuple[HarnessState, DeferredToolRequests | None, ObjectRef | None]:
+    ) -> tuple[HarnessState, DeferredToolRequests | None, ObjectRef | None, StoredDeferredInput | None]:
+        accepted = None
         if thread.continuation is None:
             stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
             state = stored.harness_state
@@ -641,12 +649,13 @@ class RootRunExecutor:
             state = stored_continuation.harness_state
             deferred = stored_continuation.deferred_requests
             composition = stored_continuation.run_composition
+            accepted = stored_continuation.accepted_input
         if state.thread_id != thread.thread_id:
             raise ThreadError(
                 "The selected Thread state belongs to another Thread.",
                 code="thread_continuation_incompatible",
             )
-        return state, deferred, composition
+        return state, deferred, composition, accepted
 
     async def _select_state(
         self,
@@ -656,6 +665,7 @@ class RootRunExecutor:
         state: HarnessState | None,
         display: DisplayHistoryCollector | None = None,
         deferred: DeferredToolRequests | None = None,
+        accepted: DeferredToolResume | None = None,
         excerpt: ConversationExcerpt,
         activity_changed: bool,
         completed_run_id: str | None = None,
@@ -674,6 +684,7 @@ class RootRunExecutor:
                 else state,
                 excerpt=excerpt,
                 deferred_requests=deferred,
+                accepted_input=StoredDeferredInput.capture(accepted, state),
                 created_at=datetime.now(UTC),
             )
             read_model = await to_thread.run_sync(project_continuation, continuation)

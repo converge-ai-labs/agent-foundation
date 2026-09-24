@@ -313,7 +313,7 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
         name="a13n.usage",
         value={
             "event": {
-                "schema_version": "2",
+                "schema_version": "1",
                 "payload": {
                     "type": "usage_report",
                     "records": [item.model_dump(mode="json") for item in (root, root, child, zero)],

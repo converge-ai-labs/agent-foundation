@@ -1,7 +1,7 @@
 """What a worker calls for a run's connections: resolve in its short session, then open outside any session.
 
 Opening yields one Harness capability per selected connection for the run's agent definition: a
-`ContextualMCP` whose caller headers are the run's frozen copy of its thread's `mcp_headers` for that
+native `MCP` whose caller headers are the run's frozen copy of its thread's `mcp_headers` for that
 connection, or a toolset over the connector account. Before every tool call the connection must still be
 enabled and ready, and the worker's `DispatchCheck` must pass; otherwise the call is never sent.
 """
@@ -9,7 +9,9 @@ enabled and ready, and the worker's `DispatchCheck` must pass; otherwise the cal
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from functools import partial
 
+import httpx2
 from a13n_harness import AgentContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from pydantic_ai.capabilities import AbstractCapability, Toolset
@@ -91,21 +93,24 @@ async def open_connections(
     policy: EndpointPolicy,
     settings: Providers,
 ) -> AsyncIterator[tuple[AbstractCapability[AgentContext], ...]]:
-    """The capabilities for the run's definition; transports stay open until the context exits."""
+    """The run's capabilities, with fallback cleanup for every native MCP client's setup."""
     async with AsyncExitStack() as stack:
+
+        async def client_for(connection: McpConnection) -> httpx2.AsyncClient:
+            return await stack.enter_async_context(
+                open_mcp_client(connection, storage=storage, keys=keys, policy=policy, settings=settings)
+            )
+
         capabilities: list[AbstractCapability[AgentContext]] = []
         for selected in connections:
             connection = selected.connection
             checked = _checked(storage, connection.id, check)
             if isinstance(connection, McpConnection):
-                client = await stack.enter_async_context(
-                    open_mcp_client(connection, storage=storage, keys=keys, policy=policy, settings=settings)
-                )
                 capabilities.append(
                     mcp_capability(
                         connection.config.url,
                         connection.id,
-                        client,
+                        partial(client_for, connection),
                         tools=selected.tools,
                         caller_headers=selected.caller_headers,
                         defer_loading=selected.defer_loading,

@@ -954,7 +954,7 @@ def test_context_samples_replace_root_requests_without_double_counting_cache_or_
         payload={
             "value": {
                 "event": {
-                    "schema_version": "2",
+                    "schema_version": "1",
                     "payload": {
                         "type": "usage_report",
                         "records": [item.model_dump(mode="json") for item in (root, child, delegated, auxiliary)],

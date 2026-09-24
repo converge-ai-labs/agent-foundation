@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from typing import Literal
 from uuid import uuid4
 
-from a13n_harness.events import USAGE_SCHEMA_VERSION
 from a13n_harness.usage import ModelUsageRecord
 from a13n_stream_protocol import HarnessAguiObserver
 from ag_ui.core import CustomEvent
@@ -140,9 +139,7 @@ def model_usage(event: LiveEvent) -> tuple[ModelUsageRecord, ...]:
         return ()
     value = event.payload.get("value")
     source = value.get("event") if isinstance(value, dict) else None
-    if not isinstance(source, dict) or source.get("schema_version") != USAGE_SCHEMA_VERSION:
-        return ()
-    payload = source.get("payload")
+    payload = source.get("payload") if isinstance(source, dict) else None
     if not isinstance(payload, dict) or payload.get("type") != "usage_report":
         return ()
     records = payload.get("records")

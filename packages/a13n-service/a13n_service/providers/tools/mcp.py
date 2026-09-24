@@ -5,16 +5,17 @@ connection's authentication; this module only speaks MCP over it.
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Annotated, Literal, Self
 
 import httpx2
 from a13n_harness import AgentContext
-from a13n_harness.mcp import ContextualMCP
 from a13n_harness.providers.connector.bounds import DISCOVERY_MAX_TOOLS
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic_ai import RunContext
+from pydantic_ai.capabilities import MCP
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.toolsets import AbstractToolset
+from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
 from a13n_service.providers.tools import MAX_TOOLS, CheckedToolset, DispatchCheck, ToolInfo, unique
 
@@ -138,31 +139,31 @@ async def list_mcp_tools(url: str, connection_id: str, client: httpx2.AsyncClien
 def mcp_capability(
     url: str,
     connection_id: str,
-    client: httpx2.AsyncClient,
+    open_client: Callable[[], Awaitable[httpx2.AsyncClient]],
     *,
     tools: tuple[str, ...] | None,
     caller_headers: Mapping[str, str],
     defer_loading: bool,
     check: DispatchCheck,
     timeout: float,
-) -> ContextualMCP:
-    """The capability the run's definition carries; the Harness resolves `caller_headers` once per logical run.
+) -> MCP[AgentContext]:
+    """Compose native MCP with fresh authenticated clients and Toolsets per native run.
 
-    `tools` narrows the server's listing before the check, which bounds what the connection exposes.
+    Native MCP owns client entry/exit; the Service also closes clients when setup fails.
+    Filtering precedes the dispatch check's catalog bound.
     """
 
-    def local(headers: Mapping[str, str]) -> AbstractToolset[AgentContext]:
-        client.headers.update(headers)
+    async def local(_ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
+        client = await open_client()
+        client.headers.update(caller_headers)
         listed: AbstractToolset[AgentContext] = _toolset(url, connection_id, client, timeout=timeout)
         if tools is not None:
             selected = frozenset(tools)
             listed = listed.filtered(lambda _ctx, tool: tool.name in selected)
         return CheckedToolset(listed, connection_id, None, check)
 
-    return ContextualMCP(
-        url,
+    return MCP(
         id=connection_id,
-        headers_factory=lambda context: caller_headers,
+        local=DynamicToolset(local, per_run_step=False),
         defer_loading=defer_loading,
-        local_toolset_factory=local,
     )

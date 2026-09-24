@@ -104,7 +104,6 @@ from a13n_harness.result import HarnessRunResult, SafeFailure
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
 from a13n_harness.spec import _default_usage_limits
 from a13n_harness.state import AgentContextState, HarnessState
-from a13n_harness.tools._deferred_state import restored as restored_deferred
 from a13n_harness.tools.deferred import (
     DeferredToolResume,
     bind_managed_approval_identities,
@@ -565,12 +564,15 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             prepare_tool_recovery(
                 self._previous_state.message_history,
                 tool_recovery,
-                restored_deferred(self._previous_state.agent_context_state),
+                deferred_resume,
             )
-            if deferred_resume is None
+            if deferred_resume is None or deferred_resume.recovery
             else None
         )
-        self._deferred_resume = deferred_resume
+        self._accepted_deferred = deferred_resume
+        self._deferred_resume = (
+            deferred_resume if deferred_resume is not None and not deferred_resume.recovery else None
+        )
         self._run_reserved_capability_ids = run_reserved_capability_ids
         self._usage = usage if usage is not None else RunUsage()
         self._usage_limits = usage_limits
@@ -1508,13 +1510,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     async def _normalize_interrupted_history(
         self, messages: Sequence[ModelMessage], *, response_tracker: InterruptedResponseTracker
     ) -> tuple[tuple[ModelMessage, ...], int]:
-        from a13n_harness.tools._deferred_state import STATE_ID, STATE_VERSION, DeferredState
-
-        retained = await self.context.state.read(STATE_ID, DeferredState, version=STATE_VERSION)
+        remaining = self._accepted_deferred.remaining(messages) if self._accepted_deferred is not None else None
         return normalize_interrupted_history(
             messages,
             response_tracker=response_tracker,
-            close_tool_calls=retained is None or retained.batch is None,
+            close_tool_calls=remaining is None,
         )
 
     async def _run_attempts(

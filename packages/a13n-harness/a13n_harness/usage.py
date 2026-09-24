@@ -151,7 +151,7 @@ class ModelUsageRecord(BaseModel):
     record_id: str = Field(min_length=1, max_length=128)
     run_id: str = Field(min_length=1, max_length=256)
     response_ordinal: int = Field(ge=0)
-    call_id: str | None = Field(min_length=1, max_length=128)
+    call_id: str | None = Field(default=None, min_length=1, max_length=128)
     model_run_id: str | None = Field(default=None, max_length=256)
     agent_instance_id: str = Field(min_length=1, max_length=512)
     parent_agent_instance_id: str | None = Field(default=None, max_length=512)

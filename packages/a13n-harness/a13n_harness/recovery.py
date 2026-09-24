@@ -40,11 +40,11 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolReturnPart,
 )
-from pydantic_ai.tools import DeferredToolRequests, DeferredToolResult, DeferredToolResults, ToolApproved
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResult, DeferredToolResults, ToolApproved, ToolDenied
 
 from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
-from a13n_harness.tools._deferred_state import DeferredRecord, decode
+from a13n_harness.tools.deferred import DeferredToolResume
 
 RecoveryPromptFactory = Callable[
     [BaseException, int, Sequence[ModelMessage]],
@@ -90,15 +90,19 @@ class ToolRecoveryPlan:
 
 
 def prepare_tool_recovery(
-    messages: Sequence[ModelMessage], mode: ToolRecoveryMode, retained: DeferredRecord | None = None
+    messages: Sequence[ModelMessage], mode: ToolRecoveryMode, accepted: DeferredToolResume | None = None
 ) -> ToolRecoveryPlan:
     """Retain recorded results and resume only unanswered calls through native dispatch."""
-    supplied = retained.remaining(messages) if retained is not None else {}
+    supplied = dict(accepted.results.calls) if accepted is not None else {}
+    if accepted is not None:
+        for call_id, decision in accepted.results.approvals.items():
+            if decision is False or isinstance(decision, ToolDenied):
+                supplied[call_id] = ToolDenied() if decision is False else decision
     close_pending = mode == "never" and not supplied
     normalized, _ = normalize_interrupted_history(
         messages, close_pending_tools=close_pending, close_tool_calls=close_pending
     )
-    plan = ToolRecoveryPlan(mode, normalized, retained_requests=retained.requests if retained is not None else None)
+    plan = ToolRecoveryPlan(mode, normalized, retained_requests=accepted.requests if accepted is not None else None)
     if close_pending or not normalized:
         return plan
     response_index = next(
@@ -109,7 +113,7 @@ def prepare_tool_recovery(
         return plan
     response = normalized[response_index]
     assert isinstance(response, ModelResponse)
-    if response.state == "suspended":
+    if response.state == "suspended" and accepted is None:
         return plan
     result_parts = [
         part
@@ -126,13 +130,15 @@ def prepare_tool_recovery(
             if call_id not in plan.pending:
                 raise HarnessError("Retained deferred result is not pending.", code="deferred_state_invalid")
             plan.results.approvals.pop(call_id)
-            plan.results.calls[call_id] = decode(value)
+            plan.results.calls[call_id] = value
             plan.pending.pop(call_id)
         if mode == "never":
             for call_id in plan.pending:
                 plan.results.approvals.pop(call_id)
                 plan.results.calls[call_id] = ToolFailed(INTERRUPTED_TOOL_RESULT)
             plan.pending.clear()
+        if accepted is not None:
+            plan.results.metadata = deepcopy(accepted.results.metadata)
     return plan
 
 

@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from a13n_harness import HarnessRunResultEvent
-from a13n_harness.events import USAGE_SCHEMA_VERSION, HarnessEvent, HarnessExtensionEvent, UsageReportPayload
+from a13n_harness.events import HarnessEvent, HarnessExtensionEvent, UsageReportPayload
 from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord, UsageRecord
 from anyio import Lock
 from pydantic import Field, TypeAdapter
@@ -238,8 +238,6 @@ class ThreadUsageRepository:
                 and isinstance(event.payload, dict)
                 and event.payload.get("type") == "usage_report"
             ):
-                if event.schema_version != USAGE_SCHEMA_VERSION:
-                    raise StoreIntegrityError("Unsupported usage schema version", code="usage_schema_unsupported")
                 report = UsageReportPayload.model_validate(event.payload)
                 records = tuple(_RECORD.validate_python(record) for record in report.records)
         elif isinstance(item, HarnessRunResultEvent):
@@ -291,7 +289,7 @@ class ThreadUsageRepository:
             ThreadUsageRecord.root_thread_id == thread_id,
             ThreadUsageRecord.descendant.is_(False),
             func.json_extract(ThreadUsageRecord.payload_json, "$.kind") == "model",
-            func.json_extract(ThreadUsageRecord.payload_json, "$.source") == "agent",
+            func.coalesce(func.json_extract(ThreadUsageRecord.payload_json, "$.source"), "agent") == "agent",
         )
         if run_id is not None:
             query = query.where(ThreadUsageRecord.run_id == run_id)
