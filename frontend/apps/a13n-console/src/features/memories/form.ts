@@ -78,11 +78,31 @@ function fields(draft: MemoryDraft) {
   };
 }
 
+/**
+ * Where a new record memory keeps its records: a Memory Provider, and the
+ * provider's existing namespace to adopt, or none for a new one.
+ */
+export interface RecordBackend {
+  provider: Schema["Provider"];
+  namespace: string;
+}
+
+/** A file memory the Service stores, or a record memory on `record`'s provider. */
 export function memoryCreate(
   key: string,
   draft: MemoryDraft,
+  record?: RecordBackend,
 ): Schema["MemoryCreate"] {
-  return { key, type: "postgres", ...fields(draft) };
+  if (!record) return { key, type: "postgres", ...fields(draft) };
+  const { always_load: _, ...rest } = fields(draft);
+  const namespace = record.namespace.trim();
+  return {
+    key,
+    type: record.provider.type,
+    provider_id: record.provider.id,
+    ...(namespace && { namespace }),
+    ...rest,
+  };
 }
 
 /** Only the fields that differ from the saved memory, so a save changes nothing else. */

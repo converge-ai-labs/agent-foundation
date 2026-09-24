@@ -4,7 +4,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input } from "a13n-ui";
+import { Button, ChoiceField, FormField, Input, Label, Switch } from "a13n-ui";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -49,9 +49,10 @@ function accessOptions(t: (key: string) => string) {
 }
 
 /**
- * Chooses a memory, the name the model will address it by, and whether the
- * model may change it. Memories and names already mounted are refused here
- * rather than by the Service.
+ * Chooses a memory, the name the model will address it by, whether the model
+ * may change it and, for a record memory, whether each run recalls from it.
+ * Memories and names already mounted are refused here rather than by the
+ * Service.
  */
 export function MountForm({
   mounts,
@@ -72,11 +73,14 @@ export function MountForm({
   const choices = useMemoryChoices();
   const [memoryId, setMemoryId] = useState("");
   const [access, setAccess] = useState<Access>("write");
+  const [recall, setRecall] = useState(true);
   const { name, setName, suggestName } = useSuggestedName();
   const taken = mounts.some((mount) => mount.name === name);
   const available = (choices.data ?? []).filter(
     (memory) => !mounts.some((mount) => mount.memory_id === memory.id),
   );
+  const record =
+    available.find((memory) => memory.id === memoryId)?.kind === "record";
   return (
     <form
       className="flex flex-col gap-4"
@@ -84,7 +88,14 @@ export function MountForm({
         // The form may sit in a dialog whose owner is itself a form.
         event.preventDefault();
         event.stopPropagation();
-        if (memoryId && !taken) onSubmit({ name, memory_id: memoryId, access });
+        if (memoryId && !taken)
+          onSubmit({
+            name,
+            memory_id: memoryId,
+            access,
+            // File memories ignore recall.
+            ...(record && { recall }),
+          });
       }}
     >
       <ErrorNotice error={choices.error} retry={() => void choices.refetch()} />
@@ -132,6 +143,19 @@ export function MountForm({
         }
         options={accessOptions(t)}
       />
+      {record && (
+        <div className="grid gap-1">
+          <Label className="flex items-center gap-2">
+            <Switch checked={recall} onCheckedChange={setRecall} />
+            {t("Recall")}
+          </Label>
+          <p className="text-muted-foreground text-sm">
+            {t(
+              "Each run starts with the records closest to its input. Agents can still search.",
+            )}
+          </p>
+        </div>
+      )}
       <ErrorNotice error={error} />
       <FormActions
         pending={pending}
@@ -144,21 +168,27 @@ export function MountForm({
 }
 
 /**
- * Mounted memories by name, each naming its memory with a way in. Draft lists
- * change access in place; a thread's list removes and adds instead.
+ * Mounted memories by name, each naming its memory with a way in. Access, and
+ * a record memory's recall, change in place; changing the memory removes the
+ * name and adds it again.
  */
 export function MemoryMountRows({
   mounts,
   empty,
   runId,
+  disabled = false,
   onAccessChange,
+  onRecallChange,
   onRemove,
 }: {
   mounts: readonly Mount[];
   empty: ReactNode;
-  /** Links each memory's history to the changes of this run. */
+  /** Links each file memory's history to the changes of this run. */
   runId?: string;
+  /** Holds the controls while a change is saved. */
+  disabled?: boolean;
   onAccessChange?: (name: string, access: Access) => void;
+  onRecallChange?: (name: string, recall: boolean) => void;
   onRemove?: (name: string) => void;
 }) {
   const { t } = useTranslation();
@@ -172,6 +202,7 @@ export function MemoryMountRows({
           (item) => item.id === mount.memory_id,
         );
         const path = `${basePath}/memories/${encodeURIComponent(mount.memory_id)}`;
+        const recall = mount.recall !== false;
         return (
           <ListRow
             key={mount.name}
@@ -187,27 +218,48 @@ export function MemoryMountRows({
               )
             }
             control={
-              onAccessChange ? (
-                <ChoiceField
-                  label={t("Access for {{name}}", { name: mount.name })}
-                  hideLabel
-                  className="w-28 [&_[data-slot=select-trigger]]:min-w-0"
-                  value={mount.access}
-                  onValueChange={(value) =>
-                    onAccessChange(
-                      mount.name,
-                      value === "read" ? "read" : "write",
-                    )
-                  }
-                  options={accessOptions(t)}
-                />
-              ) : (
-                t(mount.access === "read" ? "Read" : "Write")
-              )
+              <span className="flex items-center gap-4">
+                {memory?.kind === "record" &&
+                  (onRecallChange ? (
+                    <Label className="flex items-center gap-2">
+                      <Switch
+                        aria-label={t("Recall for {{name}}", {
+                          name: mount.name,
+                        })}
+                        checked={recall}
+                        disabled={disabled}
+                        onCheckedChange={(value) =>
+                          onRecallChange(mount.name, value)
+                        }
+                      />
+                      <span aria-hidden="true">{t("Recall")}</span>
+                    </Label>
+                  ) : (
+                    <span>{t(recall ? "Recall" : "No recall")}</span>
+                  ))}
+                {onAccessChange ? (
+                  <ChoiceField
+                    label={t("Access for {{name}}", { name: mount.name })}
+                    hideLabel
+                    className="w-28 [&_[data-slot=select-trigger]]:min-w-0"
+                    disabled={disabled}
+                    value={mount.access}
+                    onValueChange={(value) =>
+                      onAccessChange(
+                        mount.name,
+                        value === "read" ? "read" : "write",
+                      )
+                    }
+                    options={accessOptions(t)}
+                  />
+                ) : (
+                  <span>{t(mount.access === "read" ? "Read" : "Write")}</span>
+                )}
+              </span>
             }
             actions={
               <>
-                {runId && (
+                {runId && memory?.kind === "file" && (
                   <Button
                     variant="ghost"
                     size="icon-xs"
@@ -230,6 +282,7 @@ export function MemoryMountRows({
                     variant="ghost"
                     size="icon-xs"
                     aria-label={t("Remove {{name}}", { name: mount.name })}
+                    disabled={disabled}
                     onClick={() => onRemove(mount.name)}
                   >
                     <XIcon />

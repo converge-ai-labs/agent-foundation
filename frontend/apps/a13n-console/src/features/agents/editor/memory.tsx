@@ -24,7 +24,7 @@ export function MemorySection({
     <Section
       title={t("Memory")}
       description={t(
-        "Files the agent keeps across conversations. New conversations mount these memories.",
+        "What the agent keeps across conversations. New conversations mount these memories.",
       )}
       actions={
         !readOnly && (
@@ -68,6 +68,16 @@ export function MemorySection({
                 draft.setMemoryMounts((previous) =>
                   previous.map((mount) =>
                     mount.name === name ? { ...mount, access } : mount,
+                  ),
+                )
+        }
+        onRecallChange={
+          readOnly
+            ? undefined
+            : (name, recall) =>
+                draft.setMemoryMounts((previous) =>
+                  previous.map((mount) =>
+                    mount.name === name ? { ...mount, recall } : mount,
                   ),
                 )
         }

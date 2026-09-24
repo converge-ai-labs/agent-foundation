@@ -2,10 +2,32 @@ import { PlusIcon, PushPinIcon, XIcon } from "@phosphor-icons/react";
 import { Button, FormField, Input, SegmentedControl } from "a13n-ui";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { Schema } from "../../shared/api";
 import { ListRow, ListRows, ListRowsEmpty } from "../../shared/collection";
 import { TextAreaField } from "../../shared/forms";
+import { useProviderTypes } from "../providers";
 import type { GuideDraft, GuideMode } from "./form";
 import styles from "./memories.module.css";
+
+type Kind = Schema["MemoryKind"];
+
+export function kindLabel(kind: Kind) {
+  return kind === "file" ? "File" : "Record";
+}
+
+/**
+ * A memory type's name: the Service's own PostgreSQL store for file memories,
+ * else the display name of the Memory Provider type that keeps the records.
+ */
+export function useMemoryTypeName() {
+  const { t } = useTranslation();
+  const types = useProviderTypes("memory");
+  return (type: string) =>
+    type === "postgres"
+      ? t("PostgreSQL")
+      : (types.data?.items.find((item) => item.type === type)?.display_name ??
+        type);
+}
 
 /** At most this many paths lead a memory's context. */
 const MAX_ALWAYS_LOAD = 64;
@@ -16,11 +38,13 @@ const MAX_ALWAYS_LOAD = 64;
  * no guide; Custom is the memory's own.
  */
 export function GuideField({
+  kind,
   value,
   onChange,
   inherited,
   readOnly = false,
 }: {
+  kind: Kind;
   value: GuideDraft;
   onChange: (value: GuideDraft) => void;
   /** The deployment's guide, which a memory without its own receives. */
@@ -76,7 +100,9 @@ export function GuideField({
         <>
           <p className={styles.note}>
             {t(
-              "Runs use the deployment's guide for file memories, and follow it when it changes.",
+              kind === "file"
+                ? "Runs use the deployment's guide for file memories, and follow it when it changes."
+                : "Runs use the deployment's guide for record memories, and follow it when it changes.",
             )}
           </p>
           {inherited && (

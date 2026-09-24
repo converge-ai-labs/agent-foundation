@@ -76,6 +76,11 @@ const toolDescriptions: Record<string, Record<string, string>> = {
     file_append: "Append to a memory file",
     file_move: "Move a memory file",
     file_delete: "Delete a memory file",
+    record_search: "Search memory records",
+    record_list: "List memory records",
+    record_add: "Add a memory record",
+    record_update: "Update a memory record",
+    record_delete: "Delete a memory record",
   },
   assets: { publish: "Publish an asset" },
   configuration: {

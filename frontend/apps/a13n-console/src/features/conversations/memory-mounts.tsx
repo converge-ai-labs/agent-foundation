@@ -16,8 +16,9 @@ import {
 import { isInteractive } from "./transcript/run-actions";
 
 /**
- * The memories the Run's Thread mounts for its later Runs. A mount's memory
- * or access changes by removing the name and adding it again.
+ * The memories the Run's Thread mounts for its later Runs. A mount's access
+ * and recall change in place; its memory changes by removing the name and
+ * adding it again.
  */
 export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
   const { t } = useTranslation();
@@ -49,7 +50,7 @@ export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
       sessionId: run.session_id,
       threadId: run.thread_id,
     });
-  // Both changes name the Thread the reader saw.
+  // Every change names the Thread the reader saw.
   const add = useMutation({
     mutationFn: (mount: Schema["MemoryMount"]) =>
       client.http
@@ -66,6 +67,26 @@ export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
       void changed();
       setOpen(false);
     },
+  });
+  const update = useMutation({
+    mutationFn: ({
+      name,
+      body,
+    }: {
+      name: string;
+      body: Schema["MemoryMountUpdate"];
+    }) =>
+      client.http
+        .PATCH(
+          "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories/{name}",
+          {
+            params: { path: { ...path, name } },
+            headers: ifMatch(thread.data && rowTag(thread.data)),
+            body,
+          },
+        )
+        .then(data),
+    onSuccess: () => void changed(),
   });
   const remove = useMutation({
     mutationFn: (name: string) =>
@@ -115,7 +136,9 @@ export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
           </ModalFrame>
         )}
       </div>
-      <ErrorNotice error={mounts.error ?? thread.error ?? remove.error} />
+      <ErrorNotice
+        error={mounts.error ?? thread.error ?? update.error ?? remove.error}
+      />
       {mounts.isPending ? (
         <Loading variant="list" rows={1} />
       ) : (
@@ -123,11 +146,19 @@ export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
           <MemoryMountRows
             mounts={mounts.data}
             empty={t("No memories.")}
-            onRemove={
-              editable && !remove.isPending
-                ? (name) => remove.mutate(name)
+            // Each change names the Thread version it read.
+            disabled={update.isPending || remove.isPending || thread.isFetching}
+            onAccessChange={
+              editable
+                ? (name, access) => update.mutate({ name, body: { access } })
                 : undefined
             }
+            onRecallChange={
+              editable
+                ? (name, recall) => update.mutate({ name, body: { recall } })
+                : undefined
+            }
+            onRemove={editable ? (name) => remove.mutate(name) : undefined}
           />
         )
       )}

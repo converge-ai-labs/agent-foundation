@@ -1,5 +1,7 @@
 import { BrainIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
+import { ChoiceField } from "a13n-ui";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useClient } from "../../auth/context";
@@ -10,34 +12,97 @@ import {
   Pagination,
   ResourceIdentity,
   ResourceTable,
+  Toolbar,
   useCursor,
 } from "../../shared/collection";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { Page } from "../../shared/page";
+import type { Schema } from "../../shared/api";
+import { useProviderTypes } from "../providers";
 import { memoryQueries } from "./api";
 import { CreateMemory } from "./create";
+import { kindLabel, useMemoryTypeName } from "./fields";
+
+type Kind = Schema["MemoryKind"];
 
 export function MemoriesPage() {
   const { workspace, can } = useWorkspace(),
     client = useClient(),
     { t } = useTranslation(),
     navigate = useNavigate();
-  const page = useCursor();
-  const query = useQuery(memoryQueries(client, workspace.id).page(page.cursor));
+  const [kind, setKind] = useState<Kind>();
+  const [type, setType] = useState<string>();
+  const typeName = useMemoryTypeName();
+  const recordTypes = useProviderTypes("memory").data?.items ?? [];
+  const filters = { kind, type };
+  const page = useCursor(filters);
+  const query = useQuery(
+    memoryQueries(client, workspace.id).page(filters, page.cursor),
+  );
   const create = can("write") ? (
     <CreateMemory onCreated={(memory) => navigate(memory.id)} />
   ) : undefined;
+  const filtered = !!kind || !!type;
+  // A type belongs to one kind, so a kind offers only its own types.
+  const types = [
+    ...(kind !== "record" ? ["postgres"] : []),
+    ...(kind !== "file" ? recordTypes.map((item) => item.type) : []),
+  ];
   return (
     <Page
       title={t("Memories")}
       description={t(
-        "Files agents keep across conversations, with the history of every change.",
+        "What agents keep across conversations: files with the history of every change, or records recalled by meaning.",
       )}
       actions={create}
+      toolbar={
+        <Toolbar
+          filters={
+            <>
+              <ChoiceField
+                label={t("Kind")}
+                variant="filter"
+                value={kind ?? "all"}
+                onValueChange={(value) => {
+                  const next =
+                    value === "file" || value === "record" ? value : undefined;
+                  setKind(next);
+                  if (
+                    next &&
+                    type &&
+                    (type === "postgres") !== (next === "file")
+                  )
+                    setType(undefined);
+                }}
+                options={[
+                  { value: "all", label: t("All kinds") },
+                  { value: "file", label: t("File") },
+                  { value: "record", label: t("Record") },
+                ]}
+              />
+              <ChoiceField
+                label={t("Type")}
+                variant="filter"
+                value={type ?? "all"}
+                onValueChange={(value) =>
+                  setType(value === "all" ? undefined : value)
+                }
+                options={[
+                  { value: "all", label: t("All types") },
+                  ...types.map((item) => ({
+                    value: item,
+                    label: typeName(item),
+                  })),
+                ]}
+              />
+            </>
+          }
+        />
+      }
     >
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
-        <Loading variant="table" columns={4} />
+        <Loading variant="table" columns={6} />
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
@@ -60,19 +125,33 @@ export function MemoriesPage() {
                 ),
               },
               {
+                label: t("Kind"),
+                render: (memory) => t(kindLabel(memory.kind)),
+              },
+              {
+                label: t("Type"),
+                tone: "muted",
+                render: (memory) => typeName(memory.type),
+              },
+              // Only the Service's own store counts a memory's files and bytes.
+              {
                 label: t("Files"),
                 render: (memory) =>
-                  t("{{count}} files", { count: memory.file_count }),
+                  memory.file_count === null
+                    ? "—"
+                    : t("{{count}} files", { count: memory.file_count }),
               },
               {
                 label: t("Size"),
                 tone: "muted",
                 render: (memory) =>
-                  t("{{size}} KB", {
-                    size: Math.ceil(
-                      (memory.content_bytes + memory.history_bytes) / 1024,
-                    ),
-                  }),
+                  memory.content_bytes === null || memory.history_bytes === null
+                    ? "—"
+                    : t("{{size}} KB", {
+                        size: Math.ceil(
+                          (memory.content_bytes + memory.history_bytes) / 1024,
+                        ),
+                      }),
               },
               {
                 label: t("Updated"),
@@ -95,11 +174,13 @@ export function MemoriesPage() {
         !query.error && (
           <Empty
             icon={<BrainIcon size={20} />}
-            title={t("No memories yet")}
+            title={t(filtered ? "No matching memories" : "No memories yet")}
             description={t(
-              "Create a memory to give agents files they keep across conversations.",
+              filtered
+                ? "Try other filters."
+                : "Create a memory to give agents what they keep across conversations.",
             )}
-            action={create}
+            action={!filtered && create}
           />
         )
       )}

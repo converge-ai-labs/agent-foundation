@@ -11,6 +11,7 @@ import { fixtureRun, fixtureThread } from "./transcript/fixture";
 const mocks = vi.hoisted(() => ({
   GET: vi.fn(),
   POST: vi.fn(),
+  PATCH: vi.fn(),
   DELETE: vi.fn(),
   canRun: true,
   thread: {} as Schema["ThreadView"],
@@ -38,8 +39,12 @@ const run = fixtureRun({ status: "completed" });
 beforeEach(() => {
   mocks.canRun = true;
   mocks.thread = fixtureThread();
-  mocks.mounts = [{ name: "handbook", memory_id: "mem_book", access: "read" }];
+  mocks.mounts = [
+    { name: "handbook", memory_id: "mem_book", access: "read" },
+    { name: "facts", memory_id: "mem_facts", access: "write", recall: true },
+  ];
   mocks.POST.mockReset().mockResolvedValue({ data: {} });
+  mocks.PATCH.mockReset().mockResolvedValue({ data: {} });
   mocks.DELETE.mockReset().mockResolvedValue({});
   mocks.GET.mockImplementation(async (path: string) => ({
     data: path.endsWith("/threads/{thread_id}")
@@ -48,8 +53,20 @@ beforeEach(() => {
         ? { items: mocks.mounts }
         : {
             items: [
-              { id: "mem_book", key: "handbook", name: "Handbook" },
-              { id: "mem_prefs", key: "user-prefs", name: "Preferences" },
+              {
+                id: "mem_book",
+                key: "handbook",
+                name: "Handbook",
+                kind: "file",
+              },
+              {
+                id: "mem_prefs",
+                key: "user-prefs",
+                name: "Preferences",
+                kind: "file",
+              },
+              { id: "mem_facts", key: "facts", name: "Facts", kind: "record" },
+              { id: "mem_team", key: "team", name: "Team", kind: "record" },
             ],
             next_cursor: null,
           },
@@ -82,6 +99,8 @@ it("adds a memory to the Thread it was read with", async () => {
   await user.click(
     await screen.findByRole("option", { name: "Preferences (user-prefs)" }),
   );
+  // Only record memories recall.
+  expect(within(dialog).queryByRole("switch", { name: "Recall" })).toBeNull();
   const name = within(dialog).getByRole("textbox", { name: "Mount name" });
   await user.clear(name);
   await user.type(name, "handbook");
@@ -101,6 +120,56 @@ it("adds a memory to the Thread it was read with", async () => {
     },
   ]);
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  cache.clear();
+});
+
+it("adds a record memory without recall", async () => {
+  const cache = show();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Add memory" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("combobox", { name: "Memory" }));
+  await user.click(await screen.findByRole("option", { name: "Team (team)" }));
+  await user.click(within(dialog).getByRole("switch", { name: "Recall" }));
+  await user.click(within(dialog).getByRole("button", { name: "Add memory" }));
+  await waitFor(() => expect(mocks.POST).toHaveBeenCalledOnce());
+  expect(mocks.POST.mock.calls[0]?.[1].body).toEqual({
+    name: "team",
+    memory_id: "mem_team",
+    access: "write",
+    recall: false,
+  });
+  cache.clear();
+});
+
+it("changes a mount's recall and access in place under the Thread's ETag", async () => {
+  const cache = show();
+  const user = userEvent.setup();
+  // A file memory has nothing to recall.
+  await screen.findByRole("link", { name: "Handbook" });
+  expect(
+    screen.queryByRole("switch", { name: "Recall for handbook" }),
+  ).toBeNull();
+  await user.click(
+    await screen.findByRole("switch", { name: "Recall for facts" }),
+  );
+  await waitFor(() => expect(mocks.PATCH).toHaveBeenCalledOnce());
+  expect(mocks.PATCH.mock.calls[0]).toEqual([
+    "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories/{name}",
+    {
+      params: {
+        path: { workspace_id: "ws_test", thread_id: "thr_1", name: "facts" },
+      },
+      headers: { "If-Match": '"thr_1:4"' },
+      body: { recall: false },
+    },
+  ]);
+  await user.click(
+    screen.getByRole("combobox", { name: "Access for handbook" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Write" }));
+  await waitFor(() => expect(mocks.PATCH).toHaveBeenCalledTimes(2));
+  expect(mocks.PATCH.mock.calls[1]?.[1].body).toEqual({ access: "write" });
   cache.clear();
 });
 
@@ -143,6 +212,12 @@ it("links a run's frozen mounts to the changes that run made", async () => {
     <MemoryMountRows
       mounts={[
         { name: "handbook", memory_id: "mem_book", access: "read" },
+        {
+          name: "facts",
+          memory_id: "mem_facts",
+          access: "read",
+          recall: false,
+        },
         { name: "gone", memory_id: "mem_gone", access: "write" },
       ]}
       empty="None"
@@ -159,8 +234,13 @@ it("links a run's frozen mounts to the changes that run made", async () => {
       .getByRole("link", { name: "Changes by this run to handbook" })
       .getAttribute("href"),
   ).toBe("/workspace/design/memories/mem_book?tab=history&run=run_2");
+  // Records have no history, and the run shows the recall it started with.
+  expect(
+    screen.queryByRole("link", { name: "Changes by this run to facts" }),
+  ).toBeNull();
+  expect(screen.getByText("No recall")).toBeTruthy();
   expect(screen.getByText("Memory unavailable · mem_gone")).toBeTruthy();
-  expect(screen.getByText("Read")).toBeTruthy();
+  expect(screen.getAllByText("Read")).toHaveLength(2);
   expect(screen.queryByRole("button", { name: /Remove/ })).toBeNull();
   cache.clear();
 });

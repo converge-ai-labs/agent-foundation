@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FormField, Input } from "a13n-ui";
+import { FormField, Input, ReadOnlyField } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -10,8 +10,20 @@ import { Confirm, ConflictNotice } from "../../../shared/dialogs";
 import { ErrorNotice } from "../../../shared/feedback";
 import { TextAreaField } from "../../../shared/forms";
 import { SaveBar, Section } from "../../../shared/page";
-import { invalidateMemories, isStale, memoryKeys, memoryQueries } from "../api";
-import { AlwaysLoadField, GuideField } from "../fields";
+import {
+  invalidateMemories,
+  isStale,
+  memoryKeys,
+  memoryProviders,
+  memoryQueries,
+} from "../api";
+import {
+  AlwaysLoadField,
+  GuideField,
+  kindLabel,
+  useMemoryTypeName,
+} from "../fields";
+import styles from "../memories.module.css";
 import {
   memoryDraft,
   memoryUpdate,
@@ -40,7 +52,8 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
   const memory = base.value;
   const draft = edit?.draft ?? memoryDraft(memory);
   const readOnly = !can("write");
-  const files = useQuery(queries.files(memory.id));
+  const file = memory.kind === "file";
+  const files = useQuery({ ...queries.files(memory.id), enabled: file });
   function change(next: Partial<MemoryDraft>) {
     setEdit({ base, draft: { ...draft, ...next } });
   }
@@ -106,31 +119,42 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
           </div>
         </Section>
         <Section
+          title={t("Storage")}
+          description={t(
+            "Where the memory keeps its content. It never changes.",
+          )}
+        >
+          <MemoryStorage memory={memory} />
+        </Section>
+        <Section
           title={t("Guide")}
           description={t(
             "What belongs in this memory and how to organize it. Runs that start after a change receive the new guide.",
           )}
         >
           <GuideField
+            kind={memory.kind}
             readOnly={readOnly}
             value={draft.guide}
             onChange={(guide) => change({ guide })}
             inherited={memory.inherited_guide}
           />
         </Section>
-        <Section
-          title={t("Always loaded files")}
-          description={t(
-            "Their full content leads the memory's context in every run. Only people who may configure the memory choose them, so an agent cannot pin its own writes.",
-          )}
-        >
-          <AlwaysLoadField
-            readOnly={readOnly}
-            value={draft.alwaysLoad}
-            files={files.data?.map((file) => file.path)}
-            onChange={(alwaysLoad) => change({ alwaysLoad })}
-          />
-        </Section>
+        {file && (
+          <Section
+            title={t("Always loaded files")}
+            description={t(
+              "Their full content leads the memory's context in every run. Only people who may configure the memory choose them, so an agent cannot pin its own writes.",
+            )}
+          >
+            <AlwaysLoadField
+              readOnly={readOnly}
+              value={draft.alwaysLoad}
+              files={files.data?.map((entry) => entry.path)}
+              onChange={(alwaysLoad) => change({ alwaysLoad })}
+            />
+          </Section>
+        )}
       </fieldset>
       {isStale(save.error) ? (
         <ConflictNotice
@@ -152,7 +176,9 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
         <Section
           title={t("Delete memory")}
           description={t(
-            "Deletes its files, history and thread mounts. Runs that mounted it find it gone at their next memory call.",
+            file
+              ? "Deletes its files, history and thread mounts. Runs that mounted it find it gone at their next memory call."
+              : "Deletes it and its thread mounts, and its provider's records in the background. Runs that mounted it find it gone at their next memory call.",
           )}
         >
           <div>
@@ -161,9 +187,16 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
               trigger={t("Delete memory")}
               title={t("Delete memory")}
               subject={memory.name}
-              description={t(
-                "The memory, every file and all of its history are deleted. This cannot be undone.",
-              )}
+              description={
+                file
+                  ? t(
+                      "The memory, every file and all of its history are deleted. This cannot be undone.",
+                    )
+                  : t(
+                      "The memory is deleted, and every record in its namespace {{namespace}} is deleted from its provider, including records it adopted. This cannot be undone.",
+                      { namespace: memory.namespace },
+                    )
+              }
               action={() =>
                 client.http.DELETE(
                   "/api/v1/workspaces/{workspace_id}/memories/{memory_id}",
@@ -205,5 +238,42 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
         />
       )}
     </form>
+  );
+}
+
+/** What keeps the memory's content: its kind and type, and a record memory's provider and namespace. */
+function MemoryStorage({ memory }: { memory: Schema["Memory"] }) {
+  const client = useClient(),
+    { workspace, organization } = useWorkspace(),
+    { t } = useTranslation();
+  const typeName = useMemoryTypeName();
+  const providers = useQuery({
+    ...memoryProviders(client, organization.id, workspace.id),
+    enabled: memory.kind === "record",
+  });
+  const provider = providers.data?.find(
+    (item) => item.id === memory.provider_id,
+  );
+  return (
+    <div className={styles.storage}>
+      <ReadOnlyField label={t("Kind")}>
+        {t(kindLabel(memory.kind))}
+      </ReadOnlyField>
+      <ReadOnlyField label={t("Type")}>{typeName(memory.type)}</ReadOnlyField>
+      {memory.provider_id && (
+        <ReadOnlyField label={t("Memory provider")}>
+          {provider
+            ? provider.enabled
+              ? provider.name
+              : `${provider.name} · ${t("Disabled")}`
+            : memory.provider_id}
+        </ReadOnlyField>
+      )}
+      {memory.namespace && (
+        <ReadOnlyField label={t("Namespace")}>
+          <code>{memory.namespace}</code>
+        </ReadOnlyField>
+      )}
+    </div>
   );
 }

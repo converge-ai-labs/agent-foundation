@@ -126,3 +126,42 @@ it("reads a limit refusal from its reason, since its message names identifiers",
   expect(screen.getByText("thread thr_1: mount limit")).toBeTruthy();
   expect(screen.getByText(/req_test/)).toBeTruthy();
 });
+
+it("explains a memory provider's refusals without its identifiers", () => {
+  const { rerender } = render(
+    <ErrorNotice
+      error={
+        new ApiError(
+          409,
+          "conflict",
+          "memory mem_1: write not confirmed",
+          { kind: "memory", id: "mem_1", reason: "write_unconfirmed" },
+          "req_test",
+        )
+      }
+    />,
+  );
+  expect(
+    screen.getByText(
+      "The memory's provider did not confirm this change, so it may or may not have happened. Reload to check before trying again.",
+    ),
+  ).toBeTruthy();
+  rerender(
+    <ErrorNotice
+      error={
+        new ApiError(
+          503,
+          "unavailable",
+          "memory:mem0 unavailable",
+          { dependency: "memory:mem0" },
+          "req_test",
+        )
+      }
+    />,
+  );
+  expect(
+    screen.getByText(
+      "The memory's provider is unavailable, so its records cannot be read or changed now. Try again later.",
+    ),
+  ).toBeTruthy();
+});

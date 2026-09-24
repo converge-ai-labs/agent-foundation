@@ -12,6 +12,7 @@ vi.mock("../../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
     basePath: "/workspace/design",
+    organization: { id: "org_1" },
     workspace: { id: "ws_1" },
     can: (verb: string) => permissions.includes(verb),
   }),
@@ -85,6 +86,8 @@ function setup(search = "", allowed = ["read", "run", "write"]) {
     description: "How the team works",
     kind: "file",
     type: "postgres",
+    provider_id: null,
+    namespace: null,
     guide: null,
     inherited_guide: "Keep one topic per file.",
     always_load: ["README.md"],

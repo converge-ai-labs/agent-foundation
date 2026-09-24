@@ -15,11 +15,24 @@ import styles from "./feedback.module.css";
 
 /**
  * A refusal whose Service message carries identifiers or numbers reads from
- * its stable `details.reason` instead.
+ * its stable details instead: a conflict's `reason`, or the kind or dependency
+ * that refused.
  */
 function reasonCopy(error: ApiError, t: TFunction) {
+  const { reason, limit, kind, dependency } = error.details;
+  if (error.code === "disabled" && kind === "memory_provider")
+    return t(
+      "The memory's provider is disabled. Enable it in provider settings to use this memory.",
+    );
+  if (
+    error.code === "unavailable" &&
+    typeof dependency === "string" &&
+    dependency.startsWith("memory:")
+  )
+    return t(
+      "The memory's provider is unavailable, so its records cannot be read or changed now. Try again later.",
+    );
   if (error.code !== "conflict") return undefined;
-  const { reason, limit } = error.details;
   switch (reason) {
     case "mount_limit":
       return t(
@@ -33,6 +46,14 @@ function reasonCopy(error: ApiError, t: TFunction) {
       );
     case "already_mounted":
       return t("The thread already mounts it under another name.");
+    case "write_unconfirmed":
+      return t(
+        "The memory's provider did not confirm this change, so it may or may not have happened. Reload to check before trying again.",
+      );
+    case "namespace_purging":
+      return t(
+        "The records of this namespace are still being deleted with a deleted memory. Try again once that finishes.",
+      );
     case "memory_full":
       return t(
         "This memory is full: its files may hold at most {{limit}} bytes. Shorten or delete files, then try again.",

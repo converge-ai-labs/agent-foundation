@@ -6,7 +6,7 @@ import type { OptionField, RunOptionsState } from "./options-dialog";
 
 /**
  * Memories the new Thread mounts from its first Run, beside the agent's
- * default mounts. The chosen access can still change before sending.
+ * default mounts. The chosen access and recall can still change before sending.
  */
 export function MemoryOptions({
   options,
@@ -41,6 +41,13 @@ export function MemoryOptions({
           setMemories(
             memories.map((mount) =>
               mount.name === name ? { ...mount, access } : mount,
+            ),
+          )
+        }
+        onRecallChange={(name, recall) =>
+          setMemories(
+            memories.map((mount) =>
+              mount.name === name ? { ...mount, recall } : mount,
             ),
           )
         }

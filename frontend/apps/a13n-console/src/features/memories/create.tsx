@@ -1,6 +1,16 @@
-import { PlusIcon } from "@phosphor-icons/react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, FormField, Input, ModalFrame } from "a13n-ui";
+import { PlusIcon, WarningIcon } from "@phosphor-icons/react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  ModalFrame,
+  SegmentedControl,
+} from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -15,9 +25,13 @@ import {
 import { readableKey } from "../../shared/keys";
 import { resourceKeyPattern } from "../../shared/paths";
 import shared from "../../shared/shared.module.css";
-import { invalidateMemories } from "./api";
-import { AlwaysLoadField, GuideField } from "./fields";
+import { ManageProvidersLink } from "../providers";
+import { invalidateMemories, memoryProviders } from "./api";
+import { AlwaysLoadField, GuideField, useMemoryTypeName } from "./fields";
 import { memoryCreate, memoryDraft } from "./form";
+import styles from "./memories.module.css";
+
+type Kind = Schema["MemoryKind"];
 
 export function CreateMemory({
   onCreated,
@@ -38,7 +52,7 @@ export function CreateMemory({
       size="lg"
       title={t("Create memory")}
       description={t(
-        "A memory holds files that agents read and write across conversations.",
+        "A memory keeps what agents read and write across conversations.",
       )}
       closeLabel={t("Close")}
       open={open}
@@ -64,17 +78,33 @@ function CreateForm({
   onCancel: () => void;
 }) {
   const client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, organization } = useWorkspace(),
     cache = useQueryClient(),
     { t } = useTranslation();
   const [draft, setDraft] = useState(memoryDraft);
+  const [kind, setKind] = useState<Kind>("file");
+  const [providerId, setProviderId] = useState("");
+  const [namespace, setNamespace] = useState("");
   const key = useSuggestedName();
+  const typeName = useMemoryTypeName();
+  const record = kind === "record";
+  // Only an enabled provider the workspace may use keeps new records.
+  const providers = useQuery({
+    ...memoryProviders(client, organization.id, workspace.id),
+    enabled: record,
+    select: (items) => items.filter((item) => item.enabled),
+  });
+  const provider = providers.data?.find((item) => item.id === providerId);
   const create = useMutation({
     mutationFn: () =>
       client.http
         .POST("/api/v1/workspaces/{workspace_id}/memories", {
           params: { path: { workspace_id: workspace.id } },
-          body: memoryCreate(key.name, draft),
+          body: memoryCreate(
+            key.name,
+            draft,
+            record && provider ? { provider, namespace } : undefined,
+          ),
         })
         .then(data),
     onSuccess: (memory) => {
@@ -90,6 +120,24 @@ function CreateForm({
         create.mutate();
       }}
     >
+      <div className={styles.kind}>
+        <SegmentedControl
+          label={t("Kind")}
+          value={kind}
+          onValueChange={(value) => setKind(value as Kind)}
+          options={[
+            { value: "file", label: t("File memory") },
+            { value: "record", label: t("Record memory") },
+          ]}
+        />
+        <p className={styles.note}>
+          {t(
+            record
+              ? "Short records in a memory provider, such as mem0. Each run recalls the records closest to its input."
+              : "A small tree of text files the Service stores, with the history of every change.",
+          )}
+        </p>
+      </div>
       <FormField label={t("Name")} disabled={create.isPending}>
         <Input
           required
@@ -121,23 +169,93 @@ function CreateForm({
         value={draft.description}
         onChange={(description) => setDraft({ ...draft, description })}
       />
+      {record && (
+        <>
+          <ErrorNotice
+            error={providers.error}
+            retry={() => void providers.refetch()}
+          />
+          {providers.data && !providers.data.length ? (
+            <div className={styles.missingProvider}>
+              <p className={styles.note}>
+                {t(
+                  "No memory provider is enabled for this workspace. Add one in provider settings first.",
+                )}
+              </p>
+              <ManageProvidersLink category="memory" scope="workspace" />
+            </div>
+          ) : (
+            <ChoiceField
+              label={t("Memory provider")}
+              description={t(
+                "The backend account that keeps the records. It cannot change later.",
+              )}
+              placeholder={
+                providers.isPending ? t("Loading…") : t("Select provider")
+              }
+              required
+              value={providerId}
+              onValueChange={setProviderId}
+              options={(providers.data ?? []).map((item) => ({
+                value: item.id,
+                label: `${item.name} · ${typeName(item.type)}`,
+              }))}
+            />
+          )}
+          <DisclosureSection
+            title={t("Existing namespace")}
+            summary={namespace.trim() || t("New namespace")}
+          >
+            <FormField
+              label={t("Namespace")}
+              description={t(
+                "Leave empty to give the memory a new namespace. Name one the provider already holds, such as a mem0 user_id, to adopt its records. It cannot change later.",
+              )}
+              disabled={create.isPending}
+            >
+              <Input
+                value={namespace}
+                maxLength={256}
+                pattern="[^\s*]+"
+                autoComplete="off"
+                onChange={(event) => setNamespace(event.target.value)}
+              />
+            </FormField>
+            {namespace.trim() && (
+              <Alert variant="warning">
+                <WarningIcon aria-hidden="true" />
+                <AlertDescription>
+                  {t(
+                    "Deleting this memory deletes every record in {{namespace}} from the provider, including the records it adopts.",
+                    { namespace: namespace.trim() },
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+          </DisclosureSection>
+        </>
+      )}
       <GuideField
+        kind={kind}
         value={draft.guide}
         onChange={(guide) => setDraft({ ...draft, guide })}
       />
-      <div className="grid gap-2">
-        <span className="text-[13px] font-medium">
-          {t("Always loaded files")}
-        </span>
-        <AlwaysLoadField
-          value={draft.alwaysLoad}
-          onChange={(alwaysLoad) => setDraft({ ...draft, alwaysLoad })}
-        />
-      </div>
+      {!record && (
+        <div className="grid gap-2">
+          <span className="text-[13px] font-medium">
+            {t("Always loaded files")}
+          </span>
+          <AlwaysLoadField
+            value={draft.alwaysLoad}
+            onChange={(alwaysLoad) => setDraft({ ...draft, alwaysLoad })}
+          />
+        </div>
+      )}
       <ErrorNotice error={create.error} />
       <FormActions
         onCancel={onCancel}
         pending={create.isPending}
+        disabled={record && !provider}
         label={t("Create memory")}
       />
     </form>

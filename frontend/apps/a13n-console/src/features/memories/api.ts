@@ -1,6 +1,7 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { ApiError, type Client } from "../../service-client";
-import { allPages, data, representation } from "../../shared/api";
+import { allPages, data, representation, type Schema } from "../../shared/api";
+import { providerApi } from "../providers/api";
 
 /** Everything read about a workspace's memories hangs off one key. */
 export function memoryKeys(workspaceId: string) {
@@ -16,6 +17,7 @@ export function memoryKeys(workspaceId: string) {
     revisions: (id: string) => [...memory(id), "revisions"] as const,
     revision: (id: string, seq: number) =>
       [...memory(id), "revision", seq] as const,
+    records: (id: string) => [...memory(id), "records"] as const,
   };
 }
 
@@ -32,22 +34,39 @@ export function isStale(error: unknown) {
   return error instanceof ApiError && error.status === 412;
 }
 
+/** The record changes whose outcome the provider could not confirm. */
+export function isUnconfirmed(error: unknown) {
+  return (
+    error instanceof ApiError &&
+    error.code === "conflict" &&
+    error.details.reason === "write_unconfirmed"
+  );
+}
+
 export interface RevisionFilters {
   path?: string;
   run?: string;
+}
+
+export interface MemoryFilters {
+  kind?: Schema["MemoryKind"];
+  type?: string;
 }
 
 export function memoryQueries(client: Client, workspaceId: string) {
   const keys = memoryKeys(workspaceId);
   const path = { workspace_id: workspaceId };
   return {
-    page: (cursor?: string) =>
+    page: ({ kind, type }: MemoryFilters, cursor?: string) =>
       queryOptions({
-        queryKey: [...keys.list(), cursor],
+        queryKey: [...keys.list(), kind, type, cursor],
         queryFn: ({ signal }) =>
           client.http
             .GET("/api/v1/workspaces/{workspace_id}/memories", {
-              params: { path, query: { cursor } },
+              params: {
+                path,
+                query: { kind, type, cursor },
+              },
               signal,
             })
             .then(data),
@@ -148,5 +167,46 @@ export function memoryQueries(client: Client, workspaceId: string) {
             )
             .then(data),
       }),
+    /**
+     * A page of records in the provider's order, whose cursor is the
+     * provider's own; or, for a search, the records closest in meaning first.
+     */
+    records: (memoryId: string, search: string, cursor?: string) =>
+      queryOptions({
+        queryKey: [...keys.records(memoryId), search, cursor],
+        queryFn: ({ signal }) => {
+          const params = { path: { ...path, memory_id: memoryId } };
+          return (
+            search
+              ? client.http.POST(
+                  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/records/search",
+                  { params, body: { query: search }, signal },
+                )
+              : client.http.GET(
+                  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/records",
+                  { params: { ...params, query: { cursor } }, signal },
+                )
+          ).then(data);
+        },
+      }),
   };
+}
+
+/** Every Memory Provider the workspace can see, enabled or not. */
+export function memoryProviders(
+  client: Client,
+  organizationId: string,
+  workspaceId: string,
+) {
+  const scope = { kind: "workspace", id: workspaceId } as const;
+  return queryOptions({
+    queryKey: ["memory-providers", scope.kind, scope.id, "choices"],
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        providerApi(client, organizationId, scope, "memory").providers(
+          signal,
+          cursor,
+        ),
+      ),
+  });
 }

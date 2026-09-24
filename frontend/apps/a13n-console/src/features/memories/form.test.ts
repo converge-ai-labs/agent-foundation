@@ -46,6 +46,26 @@ it("creates a PostgreSQL file memory from the draft", () => {
   });
 });
 
+it("creates a record memory on its provider, without always-loaded files", () => {
+  const provider = { id: "memprov_1", type: "mem0" } as Schema["Provider"];
+  const draft = { ...memoryDraft(), name: "Facts", alwaysLoad: ["README.md"] };
+  const record = {
+    key: "facts",
+    type: "mem0",
+    provider_id: "memprov_1",
+    name: "Facts",
+    description: null,
+    guide: null,
+  };
+  // A blank namespace asks the Service for a new one.
+  expect(memoryCreate("facts", draft, { provider, namespace: " " })).toEqual(
+    record,
+  );
+  expect(
+    memoryCreate("facts", draft, { provider, namespace: " user-42 " }),
+  ).toEqual({ ...record, namespace: "user-42" });
+});
+
 it("updates only the fields the draft changed", () => {
   const draft = memoryDraft(saved);
   expect(memoryUpdate(saved, draft)).toEqual({});

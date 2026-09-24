@@ -1,8 +1,27 @@
 /*
  * Memories: layout only. The file browser is the shared one; these rules
- * cover the guide and always-loaded paths, the file editor and the history
- * list.
+ * cover the kind and storage, the guide and always-loaded paths, the file
+ * editor, the history list and records.
  */
+
+/* Kind and storage --------------------------------------------------------- */
+.kind {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.missingProvider {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.storage {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px 24px;
+}
 
 /* Guide ------------------------------------------------------------------- */
 .guide {
@@ -103,4 +122,10 @@
 }
 .revisionDiff {
   padding: 0 12px 12px;
+}
+
+/* Records ------------------------------------------------------------------ */
+.recordText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

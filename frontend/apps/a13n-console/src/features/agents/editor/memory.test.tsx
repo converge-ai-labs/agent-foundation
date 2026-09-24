@@ -29,8 +29,14 @@ function show(readOnly = false) {
   http.GET.mockResolvedValue({
     data: {
       items: [
-        { id: "mem_book", key: "handbook", name: "Handbook" },
-        { id: "mem_prefs", key: "user-prefs", name: "Preferences" },
+        { id: "mem_book", key: "handbook", name: "Handbook", kind: "file" },
+        {
+          id: "mem_prefs",
+          key: "user-prefs",
+          name: "Preferences",
+          kind: "file",
+        },
+        { id: "mem_facts", key: "facts", name: "Facts", kind: "record" },
       ],
       next_cursor: null,
     },
@@ -41,6 +47,7 @@ function show(readOnly = false) {
       ...initialConfig(),
       memory_mounts: [
         { name: "handbook", memory_id: "mem_book", access: "read" },
+        { name: "facts", memory_id: "mem_facts", access: "write" },
       ],
     });
     drafts.push(draft);
@@ -78,8 +85,11 @@ it("adds, changes and removes the agent's default memories", async () => {
   );
   await user.click(await screen.findByRole("option", { name: "Write" }));
   await user.click(screen.getByRole("button", { name: "Remove user-prefs" }));
+  // A record memory recalls unless the agent turns it off.
+  await user.click(screen.getByRole("switch", { name: "Recall for facts" }));
   expect(draft().memoryMounts).toEqual([
     { name: "handbook", memory_id: "mem_book", access: "write" },
+    { name: "facts", memory_id: "mem_facts", access: "write", recall: false },
   ]);
   expect(draft().dirty).toBe(true);
 });
@@ -90,4 +100,6 @@ it("lists default memories read-only", async () => {
   expect(screen.queryByRole("button", { name: "Add memory" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Remove handbook" })).toBeNull();
   expect(screen.getByText("Read")).toBeTruthy();
+  expect(screen.getByText("Recall")).toBeTruthy();
+  expect(screen.queryByRole("switch")).toBeNull();
 });
