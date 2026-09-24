@@ -9,7 +9,7 @@ import {
 import type { ExtraProps } from "react-markdown";
 import { Button } from "a13n-ui";
 import { ArrowsOut, Copy, Code } from "@phosphor-icons/react";
-import { ImagePreview } from "./image-preview";
+import { ImagePreview } from "../shell/image-preview";
 import { renderDiagram } from "./mermaid-render";
 import styles from "./markdown.module.css";
 

@@ -1,0 +1,48 @@
+.preview {
+  min-width: 0;
+}
+.canvas {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 120px;
+  padding: 16px;
+  border: 0;
+  border-radius: 12px;
+  background-color: var(--a13n-canvas);
+  background-image: conic-gradient(
+    var(--a13n-surface) 25%,
+    transparent 0 50%,
+    var(--a13n-surface) 0 75%,
+    transparent 0
+  );
+  background-size: 16px 16px;
+  cursor: zoom-in;
+}
+.canvas:disabled {
+  cursor: default;
+}
+.canvas:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.canvas img {
+  max-width: 100%;
+  max-height: 60dvh;
+  object-fit: contain;
+}
+.caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.caption span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

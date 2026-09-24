@@ -25,7 +25,7 @@ import {
   attachmentToken,
   isReadyAttachment,
 } from "./inline-attachments";
-import { ImagePreview } from "./image-preview";
+import { ImagePreview } from "../shell/image-preview";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { useTransport } from "../transport/context";
 import {

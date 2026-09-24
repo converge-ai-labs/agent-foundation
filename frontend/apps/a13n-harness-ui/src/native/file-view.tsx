@@ -23,6 +23,7 @@ import {
   type LineRange,
 } from "./buffer";
 import { CaptureContext, downloadBlob } from "./capture";
+import { FileImage, isImagePath } from "./file-image";
 import styles from "./native.module.css";
 
 export function FileView({
@@ -46,6 +47,7 @@ export function FileView({
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState("");
   const [wrap, setWrap] = useState(false);
+  const [imageAttempt, setImageAttempt] = useState(0);
   const [mode, setMode] = useState<"preview" | "text">(() =>
     /\.(?:md|markdown)$/i.test(path) ? "preview" : "text",
   );
@@ -151,6 +153,16 @@ export function FileView({
   };
   const editable = buffer.base.presentation === "text";
   const markdown = editable && /\.(?:md|markdown)$/i.test(path);
+  const image =
+    !editable && (isImagePath(path) || isImagePath(buffer.base.resolved_path));
+  const refreshContent = async () => {
+    const revision = buffer.base.entry.revision;
+    const next = await read.refetch();
+    // A changed revision already replaces the preview; an unchanged one must
+    // still allow retrying a failed fetch or decode.
+    if (next.isSuccess && next.data.entry.revision === revision)
+      setImageAttempt((value) => value + 1);
+  };
   return (
     <section className={styles.file} aria-label="File content">
       <header className={styles.fileHeader}>
@@ -160,7 +172,7 @@ export function FileView({
         </strong>
         <span>
           {buffer.base.entry.size.toLocaleString()} bytes ·{" "}
-          {buffer.base.presentation.replace("_", " ")}
+          {image ? "image" : buffer.base.presentation.replace("_", " ")}
         </span>
       </header>
       <div className={styles.path}>{path}</div>
@@ -200,8 +212,8 @@ export function FileView({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void read.refetch()}
-            disabled={buffer.saving}
+            onClick={() => void refreshContent()}
+            disabled={buffer.saving || read.isFetching}
           >
             <ArrowClockwise />
             Refresh
@@ -406,6 +418,23 @@ export function FileView({
                 onBufferChange?.();
               }}
             />
+          </div>
+        )
+      ) : image ? (
+        buffer.base.entry.size <= 10 * 1024 * 1024 ? (
+          <FileImage
+            key={`${path}:${buffer.base.entry.revision}:${imageAttempt}`}
+            path={path}
+            revision={buffer.base.entry.revision}
+            retry={() => void refreshContent()}
+          />
+        ) : (
+          <div className={styles.empty}>
+            <h3>Image exceeds the preview limit</h3>
+            <p>
+              Image previews and downloads support up to 10 MiB. Use another
+              native workflow for larger files.
+            </p>
           </div>
         )
       ) : (
