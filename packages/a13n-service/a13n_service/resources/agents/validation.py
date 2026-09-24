@@ -26,6 +26,7 @@ from a13n_service.resources.connections.schemas import ConnectionSelection
 from a13n_service.resources.connections.service import validate_selection
 from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.resources.environment_templates.service import resolve_template
+from a13n_service.resources.memories.service import resolve_memory
 from a13n_service.resources.models.service import resolve_media_model, resolve_model
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import WebProviderRow
@@ -101,6 +102,11 @@ async def validate_config(
         if template_id is not None:
             with at_field(path):
                 await resolve_template(session, actor, scope, template_id, verb=verb, authority=authority)
+    if held is None:
+        # A run's thread takes default mounts at its first acceptance, which checks them then.
+        for index, mount in enumerate(config.memory_mounts):
+            with at_field(f"memory_mounts.{index}.memory_id"):
+                await resolve_memory(session, actor, scope, mount.memory_id, verb=verb, authority=authority)
     await subagent_graph(session, scope.workspace_id, agent_id, config)
     return config
 

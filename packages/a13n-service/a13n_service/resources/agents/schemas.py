@@ -17,6 +17,7 @@ from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets
 from a13n_service.resources.connections.schemas import ConnectionSelection
+from a13n_service.resources.memories.schemas import MemoryMounts
 from a13n_service.resources.models.schemas import MediaUnderstandingSelection
 from a13n_service.resources.secrets.schemas import SecretRequirement
 
@@ -178,6 +179,8 @@ class AgentConfig(_Frozen):
     secret_requirements: tuple[SecretRequirement, ...] = Field(default=(), max_length=128)
     # Referenced, not pinned: read when an environment is created from it, never during execution.
     default_environment_template_id: ObjectId | None = None
+    # Added to a thread's memory mounts at its first acceptance, for names and memories it does not use yet.
+    memory_mounts: MemoryMounts = ()
 
     @model_validator(mode="after")
     def unique_selections(self) -> Self:

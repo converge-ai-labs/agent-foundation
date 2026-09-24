@@ -35,6 +35,13 @@ from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.resources.connector_providers.routes import router as connector_providers_router
 from a13n_service.resources.environment_templates.routes import router as environment_templates_router
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
+from a13n_service.resources.memories.routes import router as memories_router
+from a13n_service.resources.memories.tables import (
+    MemoryFileRevisionRow,
+    MemoryFileRow,
+    MemoryFileStoreRow,
+    MemoryRow,
+)
 from a13n_service.resources.models.routes import router as models_router
 from a13n_service.resources.models.routes import workspace_router as media_router
 from a13n_service.resources.models.tables import ModelRow
@@ -59,6 +66,8 @@ from a13n_service.runs.children import child_results
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
 from a13n_service.runs.environments.routes import router as environments_router
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
+from a13n_service.runs.memories.routes import router as thread_memories_router
+from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.routes import router as runs_router
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.seal import expire_leases
@@ -254,10 +263,15 @@ OSS = Distribution(
         SkillRevisionRow,
         AgentRow,
         AgentRevisionRow,
+        MemoryRow,
+        MemoryFileStoreRow,
+        MemoryFileRow,
+        MemoryFileRevisionRow,
         SessionRow,
         ThreadRow,
         EnvironmentRow,
         ThreadEnvironmentRow,
+        ThreadMemoryRow,
         InboxEntryRow,
         RunRow,
         AttemptRow,
@@ -280,6 +294,8 @@ OSS = Distribution(
         traces_router,
         environment_templates_router,
         environments_router,
+        memories_router,
+        thread_memories_router,
         connections_router,
         connector_providers_router,
     ),

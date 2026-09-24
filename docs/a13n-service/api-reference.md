@@ -1189,6 +1189,331 @@ Responses:
 - **400** — .
 - **default** — .
 
+## memories
+
+### `GET /api/v1/workspaces/{workspace_id}/memories`
+
+List Memories.
+
+| Parameter      | Location | Required | Type / schema           | Constraints and default            |
+| -------------- | -------- | -------- | ----------------------- | ---------------------------------- |
+| `workspace_id` | path     | true     | string                  | —                                  |
+| `label`        | query    | false    | array of string or null | —                                  |
+| `limit`        | query    | false    | integer                 | minimum=1; maximum=100; default=50 |
+| `cursor`       | query    | false    | string or null          | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryPage`).
+- **400** — .
+- **default** — .
+
+### `POST /api/v1/workspaces/{workspace_id}/memories`
+
+Create Memory.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace_id` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `MemoryCreate`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: Memory`).
+- **400** — .
+- **default** — .
+
+### `DELETE /api/v1/workspaces/{workspace_id}/memories/{memory_id}`
+
+Delete Memory.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default |
+| -------------- | -------- | -------- | -------------- | ----------------------- |
+| `workspace_id` | path     | true     | string         | —                       |
+| `memory_id`    | path     | true     | string         | —                       |
+| `If-Match`     | header   | false    | string or null | maxLength=512           |
+
+Responses:
+
+- **204** — Successful Response.
+- **400** — .
+- **default** — .
+
+### `GET /api/v1/workspaces/{workspace_id}/memories/{memory_id}`
+
+Get Memory.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace_id` | path     | true     | string        | —                       |
+| `memory_id`    | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Memory`).
+- **400** — .
+- **default** — .
+
+### `PATCH /api/v1/workspaces/{workspace_id}/memories/{memory_id}`
+
+Update Memory.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default |
+| -------------- | -------- | -------- | -------------- | ----------------------- |
+| `workspace_id` | path     | true     | string         | —                       |
+| `memory_id`    | path     | true     | string         | —                       |
+| `If-Match`     | header   | false    | string or null | maxLength=512           |
+
+Request body: required.
+
+- `application/json`: `MemoryUpdate`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: Memory`).
+- **400** — .
+- **default** — .
+
+### `GET /api/v1/workspaces/{workspace_id}/memories/{memory_id}/files`
+
+List Files.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default            |
+| -------------- | -------- | -------- | -------------- | ---------------------------------- |
+| `workspace_id` | path     | true     | string         | —                                  |
+| `memory_id`    | path     | true     | string         | —                                  |
+| `prefix`       | query    | false    | string         | maxLength=1024; default=""         |
+| `limit`        | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`       | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryFilePage`).
+- **400** — .
+- **default** — .
+
+### `POST /api/v1/workspaces/{workspace_id}/memories/{memory_id}/files`
+
+Create File.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace_id` | path     | true     | string        | —                       |
+| `memory_id`    | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `MemoryFileCreate`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: MemoryFile`).
+- **400** — .
+- **default** — .
+
+### `POST /api/v1/workspaces/{workspace_id}/memories/{memory_id}/files/move`
+
+Move File.
+
+Move the source file `If-Match` names; the destination must be free.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default |
+| -------------- | -------- | -------- | -------------- | ----------------------- |
+| `workspace_id` | path     | true     | string         | —                       |
+| `memory_id`    | path     | true     | string         | —                       |
+| `If-Match`     | header   | false    | string or null | maxLength=512           |
+
+Request body: required.
+
+- `application/json`: `MemoryFileMove`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryFile`).
+- **400** — .
+- **default** — .
+
+### `DELETE /api/v1/workspaces/{workspace_id}/memories/{memory_id}/files/{path}`
+
+Delete File.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default |
+| -------------- | -------- | -------- | -------------- | ----------------------- |
+| `workspace_id` | path     | true     | string         | —                       |
+| `memory_id`    | path     | true     | string         | —                       |
+| `path`         | path     | true     | string         | —                       |
+| `If-Match`     | header   | false    | string or null | maxLength=512           |
+
+Responses:
+
+- **204** — Successful Response.
+- **400** — .
+- **default** — .
+
+### `GET /api/v1/workspaces/{workspace_id}/memories/{memory_id}/files/{path}`
+
+Read File.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace_id` | path     | true     | string        | —                       |
+| `memory_id`    | path     | true     | string        | —                       |
+| `path`         | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryFile`).
+- **400** — .
+- **default** — .
+
+### `PUT /api/v1/workspaces/{workspace_id}/memories/{memory_id}/files/{path}`
+
+Replace File.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default |
+| -------------- | -------- | -------- | -------------- | ----------------------- |
+| `workspace_id` | path     | true     | string         | —                       |
+| `memory_id`    | path     | true     | string         | —                       |
+| `path`         | path     | true     | string         | —                       |
+| `If-Match`     | header   | false    | string or null | maxLength=512           |
+
+Request body: required.
+
+- `application/json`: `MemoryFileReplace`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryFile`).
+- **400** — .
+- **default** — .
+
+### `DELETE /api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions`
+
+Purge History.
+
+Delete every retained revision of one file path.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default     |
+| -------------- | -------- | -------- | ------------- | --------------------------- |
+| `workspace_id` | path     | true     | string        | —                           |
+| `memory_id`    | path     | true     | string        | —                           |
+| `path`         | query    | true     | string        | minLength=1; maxLength=1024 |
+
+Responses:
+
+- **200** — Successful Response (`application/json: HistoryPurge`).
+- **400** — .
+- **default** — .
+
+### `GET /api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions`
+
+List Revisions.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default            |
+| -------------- | -------- | -------- | -------------- | ---------------------------------- |
+| `workspace_id` | path     | true     | string         | —                                  |
+| `memory_id`    | path     | true     | string         | —                                  |
+| `path`         | query    | false    | string or null | maxLength=1024                     |
+| `run_id`       | query    | false    | string or null | maxLength=72                       |
+| `limit`        | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`       | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryRevisionPage`).
+- **400** — .
+- **default** — .
+
+### `GET /api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions/{seq}`
+
+Get Revision.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace_id` | path     | true     | string        | —                       |
+| `memory_id`    | path     | true     | string        | —                       |
+| `seq`          | path     | true     | integer       | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryRevisionDetail`).
+- **400** — .
+- **default** — .
+
+### `POST /api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions/{seq}/restore`
+
+Restore Revision.
+
+Set the path back to the content the change replaced; `If-Match` names the file there, if any.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default |
+| -------------- | -------- | -------- | -------------- | ----------------------- |
+| `workspace_id` | path     | true     | string         | —                       |
+| `memory_id`    | path     | true     | string         | —                       |
+| `seq`          | path     | true     | integer        | —                       |
+| `If-Match`     | header   | false    | string or null | maxLength=512           |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryFileState`).
+- **400** — .
+- **default** — .
+
+### `GET /api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories`
+
+List Mounts.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace_id` | path     | true     | string        | —                       |
+| `thread_id`    | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryMountPage`).
+- **400** — .
+- **default** — .
+
+### `POST /api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories`
+
+Add Mount.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default |
+| -------------- | -------- | -------- | -------------- | ----------------------- |
+| `workspace_id` | path     | true     | string         | —                       |
+| `thread_id`    | path     | true     | string         | —                       |
+| `If-Match`     | header   | false    | string or null | maxLength=512           |
+
+Request body: required.
+
+- `application/json`: `MemoryMount`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: MemoryMount`).
+- **400** — .
+- **default** — .
+
+### `DELETE /api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories/{name}`
+
+Remove Mount.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default |
+| -------------- | -------- | -------- | -------------- | ----------------------- |
+| `workspace_id` | path     | true     | string         | —                       |
+| `thread_id`    | path     | true     | string         | —                       |
+| `name`         | path     | true     | string         | —                       |
+| `If-Match`     | header   | false    | string or null | maxLength=512           |
+
+Responses:
+
+- **204** — Successful Response.
+- **400** — .
+- **default** — .
+
 ## models
 
 ### `GET /api/v1/model-catalog`

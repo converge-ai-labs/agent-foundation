@@ -1634,6 +1634,158 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace_id}/memories": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Memories */
+    get: operations["list_memories_api_v1_workspaces__workspace_id__memories_get"];
+    put?: never;
+    /** Create Memory */
+    post: operations["create_memory_api_v1_workspaces__workspace_id__memories_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Memory */
+    get: operations["get_memory_api_v1_workspaces__workspace_id__memories__memory_id__get"];
+    put?: never;
+    post?: never;
+    /** Delete Memory */
+    delete: operations["delete_memory_api_v1_workspaces__workspace_id__memories__memory_id__delete"];
+    options?: never;
+    head?: never;
+    /** Update Memory */
+    patch: operations["update_memory_api_v1_workspaces__workspace_id__memories__memory_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/files": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Files */
+    get: operations["list_files_api_v1_workspaces__workspace_id__memories__memory_id__files_get"];
+    put?: never;
+    /** Create File */
+    post: operations["create_file_api_v1_workspaces__workspace_id__memories__memory_id__files_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/files/move": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Move File
+     * @description Move the source file `If-Match` names; the destination must be free.
+     */
+    post: operations["move_file_api_v1_workspaces__workspace_id__memories__memory_id__files_move_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/files/{path}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read File */
+    get: operations["read_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__get"];
+    /** Replace File */
+    put: operations["replace_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__put"];
+    post?: never;
+    /** Delete File */
+    delete: operations["delete_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Revisions */
+    get: operations["list_revisions_api_v1_workspaces__workspace_id__memories__memory_id__revisions_get"];
+    put?: never;
+    post?: never;
+    /**
+     * Purge History
+     * @description Delete every retained revision of one file path.
+     */
+    delete: operations["purge_history_api_v1_workspaces__workspace_id__memories__memory_id__revisions_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions/{seq}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Revision */
+    get: operations["get_revision_api_v1_workspaces__workspace_id__memories__memory_id__revisions__seq__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions/{seq}/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Restore Revision
+     * @description Set the path back to the content the change replaced; `If-Match` names the file there, if any.
+     */
+    post: operations["restore_revision_api_v1_workspaces__workspace_id__memories__memory_id__revisions__seq__restore_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace_id}/runs/{run_id}": {
     parameters: {
       query?: never;
@@ -2344,6 +2496,41 @@ export interface paths {
     patch: operations["edit_entry_api_v1_workspaces__workspace_id__threads__thread_id__inbox__entry_id__patch"];
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Mounts */
+    get: operations["list_mounts_api_v1_workspaces__workspace_id__threads__thread_id__memories_get"];
+    put?: never;
+    /** Add Mount */
+    post: operations["add_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories/{name}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove Mount */
+    delete: operations["remove_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories__name__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/runs": {
     parameters: {
       query?: never;
@@ -2631,6 +2818,11 @@ export interface components {
        */
       instructions?: string;
       media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
+      /**
+       * Memory Mounts
+       * @default []
+       */
+      memory_mounts?: components["schemas"]["MemoryMount"][];
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /**
@@ -2690,6 +2882,11 @@ export interface components {
        */
       instructions?: string;
       media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
+      /**
+       * Memory Mounts
+       * @default []
+       */
+      memory_mounts?: components["schemas"]["MemoryMount"][];
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /**
@@ -3826,6 +4023,11 @@ export interface components {
        * @constant
        */
       kind?: "message";
+      /**
+       * Memories
+       * @default []
+       */
+      memories?: components["schemas"]["MemoryMount"][];
       options?: components["schemas"]["RunOptions-Input"];
       payload: components["schemas"]["MessagePayload"];
     };
@@ -3938,6 +4140,11 @@ export interface components {
       headers: {
         [key: string]: string;
       };
+    };
+    /** HistoryPurge */
+    HistoryPurge: {
+      /** Purged */
+      purged: number;
     };
     /** InboxOrder */
     InboxOrder: {
@@ -4241,6 +4448,294 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** Memory */
+    Memory: {
+      /** Always Load */
+      always_load: string[];
+      /** Content Bytes */
+      content_bytes: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By Id */
+      created_by_id: string;
+      /** Description */
+      description: string | null;
+      /** Effective Guide */
+      effective_guide: string;
+      /** File Count */
+      file_count: number;
+      /** Guide */
+      guide: string | null;
+      /** History Bytes */
+      history_bytes: number;
+      /** Id */
+      id: string;
+      /** Key */
+      key: string;
+      /**
+       * Kind
+       * @constant
+       */
+      kind: "file";
+      /** Labels */
+      labels: {
+        [key: string]: string;
+      };
+      /** Name */
+      name: string;
+      /** Organization Id */
+      organization_id: string;
+      /**
+       * Type
+       * @constant
+       */
+      type: "postgres";
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Updated By Id */
+      updated_by_id: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** @enum {string} */
+    MemoryAccess: "read" | "write";
+    /** MemoryCreate */
+    MemoryCreate: {
+      /**
+       * Always Load
+       * @default []
+       */
+      always_load?: string[];
+      /** Description */
+      description?: string | null;
+      /** Guide */
+      guide?: string | null;
+      /** Key */
+      key: string;
+      /** Labels */
+      labels?: {
+        [key: string]: string;
+      };
+      /** Name */
+      name: string;
+      /**
+       * Type
+       * @default postgres
+       * @constant
+       */
+      type?: "postgres";
+    };
+    /** MemoryFile */
+    MemoryFile: {
+      /** Content */
+      content: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Description */
+      description: string | null;
+      /** Id */
+      id: string;
+      /** Path */
+      path: string;
+      /** Size */
+      size: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Updated By Principal Id */
+      updated_by_principal_id: string | null;
+      /** Updated By Run Id */
+      updated_by_run_id: string | null;
+      /** Version */
+      version: number;
+    };
+    /** MemoryFileCreate */
+    MemoryFileCreate: {
+      /** Content */
+      content: string;
+      /** Path */
+      path: string;
+    };
+    /** MemoryFileEntry */
+    MemoryFileEntry: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Description */
+      description: string | null;
+      /** Id */
+      id: string;
+      /** Path */
+      path: string;
+      /** Size */
+      size: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Updated By Principal Id */
+      updated_by_principal_id: string | null;
+      /** Updated By Run Id */
+      updated_by_run_id: string | null;
+      /** Version */
+      version: number;
+    };
+    /**
+     * MemoryFileMove
+     * @description Moves the file `If-Match` names to a free path; it keeps its ID.
+     */
+    MemoryFileMove: {
+      /** Destination */
+      destination: string;
+      /** Source */
+      source: string;
+    };
+    /** MemoryFilePage */
+    MemoryFilePage: {
+      /** Items */
+      items: components["schemas"]["MemoryFileEntry"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** MemoryFileReplace */
+    MemoryFileReplace: {
+      /** Content */
+      content: string;
+    };
+    /**
+     * MemoryFileState
+     * @description A path after a restore: its file, or null when the restored state is no file.
+     */
+    MemoryFileState: {
+      file: components["schemas"]["MemoryFile"] | null;
+      /** Path */
+      path: string;
+    };
+    /**
+     * MemoryMount
+     * @description A memory under the name the model addresses it by, exposing the tools its access allows.
+     */
+    MemoryMount: {
+      access: components["schemas"]["MemoryAccess"];
+      /** Memory Id */
+      memory_id: string;
+      /** Name */
+      name: string;
+    };
+    /** MemoryMountPage */
+    MemoryMountPage: {
+      /** Items */
+      items: components["schemas"]["MemoryMount"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** MemoryPage */
+    MemoryPage: {
+      /** Items */
+      items: components["schemas"]["Memory"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /**
+     * MemoryRevision
+     * @description One change to one path. A move is two: `move_out` at the source and `move_in` at the destination.
+     */
+    MemoryRevision: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Moved Path */
+      moved_path: string | null;
+      /**
+       * Op
+       * @enum {string}
+       */
+      op: "create" | "update" | "delete" | "move_out" | "move_in";
+      /** Path */
+      path: string;
+      /** Principal Id */
+      principal_id: string | null;
+      /** Run Id */
+      run_id: string | null;
+      /** Seq */
+      seq: number;
+      /** Tool Call Id */
+      tool_call_id: string | null;
+    };
+    /** MemoryRevisionDetail */
+    MemoryRevisionDetail: {
+      /** Content */
+      content: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Hunks */
+      hunks: string[];
+      /** Moved Path */
+      moved_path: string | null;
+      /**
+       * Op
+       * @enum {string}
+       */
+      op: "create" | "update" | "delete" | "move_out" | "move_in";
+      /** Path */
+      path: string;
+      /** Previous Content */
+      previous_content: string | null;
+      /** Principal Id */
+      principal_id: string | null;
+      /** Run Id */
+      run_id: string | null;
+      /** Seq */
+      seq: number;
+      /** Tool Call Id */
+      tool_call_id: string | null;
+    };
+    /** MemoryRevisionPage */
+    MemoryRevisionPage: {
+      /** Items */
+      items: components["schemas"]["MemoryRevision"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /**
+     * MemoryUpdate
+     * @description Fields left out stay unchanged; `description: null` clears it and `guide: null` inherits the default.
+     */
+    MemoryUpdate: {
+      /** Always Load */
+      always_load?: string[] | null;
+      /** Description */
+      description?: string | null;
+      /** Guide */
+      guide?: string | null;
+      /** Labels */
+      labels?: {
+        [key: string]: string;
+      } | null;
+      /** Name */
+      name?: string | null;
+    };
     /** Message */
     Message: {
       /** Agent Id */
@@ -4527,6 +5022,11 @@ export interface components {
        */
       kind?: "message";
       mcp_headers?: components["schemas"]["McpHeaders"];
+      /**
+       * Memories
+       * @default []
+       */
+      memories?: components["schemas"]["MemoryMount"][];
       options?: components["schemas"]["RunOptions-Input"];
       payload: components["schemas"]["MessagePayload"];
       /** Session Id */
@@ -5194,6 +5694,8 @@ export interface components {
       lineage: components["schemas"]["Lineage"];
       /** Max Attempts */
       max_attempts: number;
+      /** Memory Mounts */
+      memory_mounts: components["schemas"]["MemoryMount"][];
       options: components["schemas"]["RunOptions-Output"];
       output: components["schemas"]["JsonValue"] | null;
       /** Parent Run Id */
@@ -6186,7 +6688,8 @@ export interface components {
       tools: components["schemas"]["ToolDefinition"][];
     };
     /** @enum {string} */
-    ToolsetKey: "files" | "shell" | "web" | "assets" | "configuration";
+    ToolsetKey:
+      "files" | "shell" | "web" | "memory" | "assets" | "configuration";
     /** ToolsetSelection */
     ToolsetSelection: {
       /** Config */
@@ -10000,6 +10503,434 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  list_memories_api_v1_workspaces__workspace_id__memories_get: {
+    parameters: {
+      query?: {
+        label?: string[] | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_memory_api_v1_workspaces__workspace_id__memories_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_memory_api_v1_workspaces__workspace_id__memories__memory_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_memory_api_v1_workspaces__workspace_id__memories__memory_id__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        "If-Match"?: string | null;
+      };
+      path: {
+        workspace_id: string;
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_memory_api_v1_workspaces__workspace_id__memories__memory_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        "If-Match"?: string | null;
+      };
+      path: {
+        workspace_id: string;
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_files_api_v1_workspaces__workspace_id__memories__memory_id__files_get: {
+    parameters: {
+      query?: {
+        /** @description A directory ending in "/"; "" lists every file */
+        prefix?: string;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFilePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_file_api_v1_workspaces__workspace_id__memories__memory_id__files_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryFileCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFile"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  move_file_api_v1_workspaces__workspace_id__memories__memory_id__files_move_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        "If-Match"?: string | null;
+      };
+      path: {
+        workspace_id: string;
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryFileMove"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFile"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  read_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+        path: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFile"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  replace_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__put: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        "If-Match"?: string | null;
+      };
+      path: {
+        workspace_id: string;
+        memory_id: string;
+        path: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryFileReplace"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFile"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        "If-Match"?: string | null;
+      };
+      path: {
+        workspace_id: string;
+        memory_id: string;
+        path: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_revisions_api_v1_workspaces__workspace_id__memories__memory_id__revisions_get: {
+    parameters: {
+      query?: {
+        path?: string | null;
+        run_id?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRevisionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  purge_history_api_v1_workspaces__workspace_id__memories__memory_id__revisions_delete: {
+    parameters: {
+      query: {
+        path: string;
+      };
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HistoryPurge"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_revision_api_v1_workspaces__workspace_id__memories__memory_id__revisions__seq__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+        seq: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRevisionDetail"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  restore_revision_api_v1_workspaces__workspace_id__memories__memory_id__revisions__seq__restore_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        "If-Match"?: string | null;
+      };
+      path: {
+        workspace_id: string;
+        memory_id: string;
+        seq: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFileState"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   get_run_api_v1_workspaces__workspace_id__runs__run_id__get: {
     parameters: {
       query?: never;
@@ -11704,6 +12635,90 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["Submitted"];
         };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_mounts_api_v1_workspaces__workspace_id__threads__thread_id__memories_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryMountPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  add_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        "If-Match"?: string | null;
+      };
+      path: {
+        workspace_id: string;
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryMount"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryMount"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  remove_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories__name__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        "If-Match"?: string | null;
+      };
+      path: {
+        workspace_id: string;
+        thread_id: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       400: components["responses"]["Error"];
       default: components["responses"]["Error"];

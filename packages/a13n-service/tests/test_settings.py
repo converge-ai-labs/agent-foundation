@@ -43,6 +43,7 @@ def test_environment_variables_carry_lists_maps_and_sections_as_json(monkeypatch
         "A13N_ENCRYPTION__ACTIVE_KEY_ID": "k",
         "A13N_ENCRYPTION__KEYS": f'{{"k": "{key}"}}',
         "A13N_AUTH__MAIL": '{"smtp_host": "127.0.0.1", "sender": "a13n@example.com"}',
+        "A13N_MEMORY__DEFAULT_GUIDE": '{"file": "Keep one topic per file."}',
     }.items():
         monkeypatch.setenv(name, value)
     loaded = load_settings()
@@ -51,6 +52,7 @@ def test_environment_variables_carry_lists_maps_and_sections_as_json(monkeypatch
     assert [server.key for server in loaded.providers.mcp_servers] == ["docs"]
     assert loaded.encryption.keys["k"].get_secret_value() == key
     assert loaded.auth.mail.smtp_host == "127.0.0.1"
+    assert loaded.memory.default_guide.file == "Keep one topic per file."
 
 
 def test_a_distribution_section_cannot_shadow_a_core_section() -> None:
@@ -69,6 +71,11 @@ def test_a_distribution_section_cannot_shadow_a_core_section() -> None:
         ({"objects": {"upload_bytes": 4194304}}, "objects.upload_bytes"),
         ({"control": {"inbox_bytes": 1048576}}, "worker.output_bytes"),
         ({"environments": {"scan_seconds": 30, "renewal_seconds": 60}}, r"environments.scan_seconds \+ 2"),
+        ({"memory": {"always_load_bytes": 40000}}, "memory.always_load_bytes"),
+        ({"memory": {"max_file_bytes": 2048, "frontmatter_bytes": 2048}}, "memory.frontmatter_bytes"),
+        ({"memory": {"max_file_bytes": 1048576, "max_total_bytes": 65536}}, "memory.max_file_bytes"),
+        ({"memory": {"default_guide": {"file": "x" * 4097}}}, "memory.default_guide.file"),
+        ({"memory": {"mounts_per_thread": 33}}, "mounts_per_thread"),
     ],
 )
 def test_bounds_must_nest(values: dict, refused: str) -> None:

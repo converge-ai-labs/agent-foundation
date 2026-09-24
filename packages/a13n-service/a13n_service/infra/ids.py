@@ -10,9 +10,10 @@ _KIND_PATTERN = re.compile(r"^[a-z][a-z0-9]{1,7}$")
 # Tiers and their lifetime volume budgets are owned by spec/data-conventions.md#service-id-allocation.
 _RANDOM_BYTES = {
     **dict.fromkeys(
-        ("ap", "conn", "cprov", "envtpl", "eprov", "mdl", "mprov", "org", "sa", "sk", "usr", "wprov", "ws"), 10
+        ("ap", "conn", "cprov", "envtpl", "eprov", "mdl", "mem", "mprov", "org", "sa", "sk", "usr", "wprov", "ws"),
+        10,
     ),
-    **dict.fromkeys(("apr", "ast", "env", "inv", "rb", "sess", "skr"), 12),
+    **dict.fromkeys(("apr", "ast", "env", "inv", "mfile", "rb", "sess", "skr"), 12),
     **dict.fromkeys(("inb", "rat", "run"), 14),
 }
 # Every other kind allocates 32 hex characters (128 random bits).

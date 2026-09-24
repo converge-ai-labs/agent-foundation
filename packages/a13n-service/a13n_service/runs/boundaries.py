@@ -1,8 +1,9 @@
 """Safe boundaries of a Harness run, where the worker commits a checkpoint.
 
-The capability exports the state at each boundary and marks the boundary's position in the event stream with a
-`SafeBoundary` event. The worker folds every event before the marker into the display, so the display it commits
-with that state covers exactly the same history, then acknowledges the boundary.
+The capability exports the state at each boundary, with the memory cursors that history was delivered, and marks
+the boundary's position in the event stream with a `SafeBoundary` event. The worker folds every event before the
+marker into the display, so the display it commits with that state covers exactly the same history, then
+acknowledges the boundary.
 
 - Before a model request the hook does not wait: the marker only reaches the stream once the request starts,
   and a model call needs no durable checkpoint first. The request can always be sent again, so this is where
@@ -14,6 +15,7 @@ Hooks act only for the primary native run: compaction runs nested agents that pa
 """
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -32,18 +34,28 @@ class SafeBoundary(CapabilityEvent, namespace="a13n.service"):
     at: Literal["model", "tool"] = "model"
 
 
+@dataclass(frozen=True, slots=True)
+class Staged:
+    """What one boundary commits: the exported state and the memory cursors its history holds context as of."""
+
+    state: HarnessState
+    cursors: dict[str, str | None]
+
+
 class Boundaries(AbstractCapability[AgentContext]):
     id = "a13n.service.boundaries"
 
-    def __init__(self) -> None:
+    def __init__(self, cursors: Callable[[], dict[str, str | None]]) -> None:
+        # The run's delivered memory cursors, snapshotted with each exported state.
+        self.cursors = cursors
         self.primary: str | None = None
-        self.states: dict[int, HarnessState] = {}
+        self.states: dict[int, Staged] = {}
         self.acknowledged: dict[int, asyncio.Future[None]] = {}
         self.tokens = 0
         # The history length of the latest staged boundary; a boundary without new history is not staged again.
         self.staged_length = -1
 
-    def take(self, token: int) -> HarnessState:
+    def take(self, token: int) -> Staged:
         return self.states.pop(token)
 
     def acknowledge(self, token: int) -> None:
@@ -86,6 +98,7 @@ class Boundaries(AbstractCapability[AgentContext]):
         self.staged_length, self.tokens = len(messages), self.tokens + 1
         token = self.tokens
         self.acknowledged[token] = asyncio.get_running_loop().create_future()
-        self.states[token] = await ctx.deps.export_state(messages)
+        cursors = self.cursors()  # Taken with `messages`, before the export awaits.
+        self.states[token] = Staged(await ctx.deps.export_state(messages), cursors)
         await ctx.emit(SafeBoundary(token=token, at=at))
         return token

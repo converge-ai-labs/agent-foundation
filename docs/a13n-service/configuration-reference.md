@@ -138,6 +138,23 @@ The complete machine-readable validation schema, including named enum/union defi
 | `environments.docker_host`        | `A13N_ENVIRONMENTS__DOCKER_HOST`        | string or null  | minLength=1; maxLength=2048; default=null     |
 | `environments.docker_mount_roots` | `A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS` | array of string | maxItems=64; default=[]                       |
 
+## `memory`
+
+| Setting                     | Environment variable                             | Type / choices | Constraints and default                             |
+| --------------------------- | ------------------------------------------------ | -------------- | --------------------------------------------------- |
+| `memory.max_file_bytes`     | `A13N_MEMORY__MAX_FILE_BYTES`                    | integer        | minimum=1024; maximum=1048576; default=65536        |
+| `memory.revisions_per_file` | `A13N_MEMORY__REVISIONS_PER_FILE`                | integer        | minimum=1; maximum=1000; default=10                 |
+| `memory.max_total_bytes`    | `A13N_MEMORY__MAX_TOTAL_BYTES`                   | integer        | minimum=65536; maximum=1073741824; default=33554432 |
+| `memory.mounts_per_thread`  | `A13N_MEMORY__MOUNTS_PER_THREAD`                 | integer        | minimum=1; maximum=32; default=8                    |
+| `memory.guide_bytes`        | `A13N_MEMORY__GUIDE_BYTES`                       | integer        | minimum=256; maximum=65536; default=4096            |
+| `memory.context_bytes`      | `A13N_MEMORY__CONTEXT_BYTES`                     | integer        | minimum=1024; maximum=1048576; default=32768        |
+| `memory.always_load_bytes`  | `A13N_MEMORY__ALWAYS_LOAD_BYTES`                 | integer        | minimum=0; maximum=1048576; default=8192            |
+| `memory.description_chars`  | `A13N_MEMORY__DESCRIPTION_CHARS`                 | integer        | minimum=1; maximum=1000; default=200                |
+| `memory.frontmatter_bytes`  | `A13N_MEMORY__FRONTMATTER_BYTES`                 | integer        | minimum=128; maximum=16384; default=2048            |
+| `memory.path_bytes`         | `A13N_MEMORY__PATH_BYTES`                        | integer        | minimum=16; maximum=1024; default=256               |
+| `memory.write_retries`      | `A13N_MEMORY__WRITE_RETRIES`                     | integer        | minimum=0; maximum=10; default=3                    |
+| `memory.default_guide.file` | `A13N_MEMORY__DEFAULT_GUIDE` (JSON field `file`) | string or null | maxLength=65536; default=null                       |
+
 ## `providers`
 
 | Setting                            | Environment variable                     | Type / choices  | Constraints and default                            |

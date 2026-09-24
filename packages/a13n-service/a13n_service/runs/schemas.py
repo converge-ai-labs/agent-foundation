@@ -24,6 +24,7 @@ from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.connections.headers import normalize_headers
+from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts
 from a13n_service.runs.display import Item
 from a13n_service.runs.environments.schemas import MAX_MOUNTS, MountCreate
 
@@ -160,6 +161,8 @@ class NewThread(Message):
     session_id: ObjectId | None = None
     mcp_headers: McpHeaders = Field(default_factory=dict)
     environments: InitialMounts = ()
+    # Mounted with the checks of `POST .../threads/{thread}/memories` before the first run is accepted.
+    memories: MemoryMounts = ()
 
 
 class Fork(Message):
@@ -167,6 +170,8 @@ class Fork(Message):
     fresh_environments: bool = False
     # Mounted in addition to the shared ones.
     environments: InitialMounts = ()
+    # Mounted in addition to the origin thread's memory mounts, which a fork copies.
+    memories: MemoryMounts = ()
 
 
 class ThreadUpdate(_Frozen):
@@ -419,6 +424,7 @@ class RunView(BaseModel):
     wait_reason: WaitReason | None
     pending: Pending | None
     environment_mounts: list[EnvironmentMount]
+    memory_mounts: list[MemoryMount]
     # The options its message chose, frozen at acceptance; a resume or child result inherits its origin's.
     options: RunOptions
     current_attempt_id: str | None

@@ -247,6 +247,46 @@ class Environments(Section):
         return roots
 
 
+class DefaultGuides(Section):
+    # Unset keeps the guide built into the Harness; a memory's own guide overrides either.
+    file: str | None = Field(default=None, max_length=65536)
+
+
+class MemorySettings(Section):
+    """File memory limits. Lowering one keeps existing content readable; the next write to a file enforces it."""
+
+    max_file_bytes: int = Field(default=65536, ge=1024, le=1048576)
+    # Revisions kept per file, pruned oldest first at the file's next write.
+    revisions_per_file: int = Field(default=10, ge=1, le=1000)
+    # Current content plus history of one memory; history is pruned oldest first before a write fails.
+    max_total_bytes: int = Field(default=33554432, ge=65536, le=1073741824)
+    mounts_per_thread: int = Field(default=8, ge=1, le=32)
+    guide_bytes: int = Field(default=4096, ge=256, le=65536)
+    # All memory context of one run: always-loaded files, indexes and changes.
+    context_bytes: int = Field(default=32768, ge=1024, le=1048576)
+    # The always-loaded content of one memory, within `context_bytes`.
+    always_load_bytes: int = Field(default=8192, ge=0, le=1048576)
+    description_chars: int = Field(default=200, ge=1, le=1000)
+    frontmatter_bytes: int = Field(default=2048, ge=128, le=16384)
+    path_bytes: int = Field(default=256, ge=16, le=1024)
+    # Re-reads after a lost compare-and-swap before a tool call reports the conflict.
+    write_retries: int = Field(default=3, ge=0, le=10)
+    default_guide: DefaultGuides = Field(default_factory=DefaultGuides)
+
+    @model_validator(mode="after")
+    def consistent(self) -> "MemorySettings":
+        if self.always_load_bytes > self.context_bytes:
+            raise ValueError("memory.always_load_bytes must not exceed memory.context_bytes")
+        if self.frontmatter_bytes >= self.max_file_bytes:
+            raise ValueError("memory.frontmatter_bytes must stay below memory.max_file_bytes")
+        if self.max_file_bytes > self.max_total_bytes:
+            raise ValueError("memory.max_file_bytes must not exceed memory.max_total_bytes")
+        guide = self.default_guide.file
+        if guide is not None and len(guide.encode()) > self.guide_bytes:
+            raise ValueError("memory.default_guide.file must fit memory.guide_bytes")
+        return self
+
+
 class Plugins(Section):
     # Installed Harness plugin factories agents may select, by entry-point key; nothing else is imported.
     keys: tuple[str, ...] = ()
@@ -326,6 +366,7 @@ class Settings(Section):
     control: Control = Field(default_factory=Control)
     worker: Worker = Field(default_factory=Worker)
     environments: Environments = Field(default_factory=Environments)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
     providers: Providers = Field(default_factory=Providers)
     plugins: Plugins = Field(default_factory=Plugins)
     assistant: Assistant = Field(default_factory=Assistant)

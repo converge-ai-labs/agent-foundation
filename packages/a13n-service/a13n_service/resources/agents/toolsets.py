@@ -23,7 +23,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, St
 from a13n_service.infra.ids import ObjectId
 from a13n_service.providers.registry import WebOperation
 
-type ToolsetKey = Literal["files", "shell", "web", "assets", "configuration"]
+type ToolsetKey = Literal["files", "shell", "web", "memory", "assets", "configuration"]
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 JsonObject = dict[str, JsonValue]
 SupportedPermission = Literal["inherit", "allow", "ask", "deny", "review"]
@@ -194,6 +194,21 @@ _TOOLSETS: tuple[_Toolset, ...] = (
             _Tool("download", "Download", "web.download", "download", DownloadConfiguration, False),
         ),
     ),
+    # The file tools of the memories a run mounts; a read mount offers only viewing and searching.
+    _Toolset(
+        "memory",
+        "Memory",
+        True,
+        (
+            _Tool("file_view", "View memory files", "memory.file.view", "memory_file_view"),
+            _Tool("file_grep", "Search memory files", "memory.file.grep", "memory_file_grep"),
+            _Tool("file_create", "Create memory file", "memory.file.create", "memory_file_create"),
+            _Tool("file_edit", "Edit memory file", "memory.file.edit", "memory_file_edit"),
+            _Tool("file_append", "Append to memory file", "memory.file.append", "memory_file_append"),
+            _Tool("file_move", "Move memory file", "memory.file.move", "memory_file_move"),
+            _Tool("file_delete", "Delete memory file", "memory.file.delete", "memory_file_delete"),
+        ),
+    ),
     _Toolset(
         "assets",
         "Asset publication",
@@ -293,6 +308,11 @@ def model_names(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozenset[str]:
 
 def permission_rules(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolPermissionSetting]:
     return {tool.execution_id: selected.permission for tool, selected in _enabled(toolsets)}
+
+
+def memory_file_tools(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozenset[str]:
+    """The enabled memory file tools as the file memory capability names them, such as `view`."""
+    return frozenset(key.removeprefix("file_") for key in enabled_tools(toolsets, "memory"))
 
 
 def environment_configuration(toolsets: dict[ToolsetKey, ToolsetSelection]) -> DynamicEnvironmentConfiguration:

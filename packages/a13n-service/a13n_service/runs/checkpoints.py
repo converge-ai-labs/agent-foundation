@@ -156,13 +156,15 @@ async def save(
     previous: Committed | None,
     state: RunState,
     display: Display,
+    memory_cursors: dict[str, str | None],
     consumed: Sequence[str],
     usage: Sequence[UsageReport],
 ) -> Committed:
     """The checkpoint commit: publish both objects, then move their pointers in one fenced transaction.
 
-    The transaction also consumes the entries the state incorporated and ingests pending usage, so pointers,
-    consumption and usage move together or not at all; it is the checkpoint's durability point. `previous`
+    The transaction also stores the memory cursors the state's history was delivered, consumes the entries the
+    state incorporated and ingests pending usage, so pointers, cursors, consumption and usage move together or
+    not at all; it is the checkpoint's durability point. `previous`
     must still be the run's pointers: any other value means another writer moved them, which the lease
     predicate already rules out, but consuming input against the wrong state would break at-most-once
     incorporation. The replaced objects are deleted after commit, best effort: takeover and seal cleanup
@@ -186,6 +188,7 @@ async def save(
             raise LeaseLost()
         run.checkpoint = committed.state.model_dump(mode="json")
         run.display = committed.display.model_dump(mode="json")
+        run.memory_cursors = memory_cursors
         await inbox.consume(session, run.id, consumed, checkpoint_seq=state.seq, at=current)
         await ingest(session, run, attempt, usage)
     if previous is not None:

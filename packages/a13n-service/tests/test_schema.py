@@ -3,9 +3,16 @@
 from a13n_service.distribution import OSS
 from sqlalchemy import ForeignKeyConstraint, String
 
-# Join tables are keyed by what they join, and usage facts by the Harness's own record IDs; every other row has
-# a Service object ID.
-NOT_OBJECT_KEYED = {"passwords", "thread_environments", "usage_records"}
+# Join tables are keyed by what they join, usage facts by the Harness's own record IDs, and a memory's store and
+# revisions by the memory; every other row has a Service object ID.
+NOT_OBJECT_KEYED = {
+    "memory_file_revisions",
+    "memory_file_stores",
+    "passwords",
+    "thread_environments",
+    "thread_memories",
+    "usage_records",
+}
 
 
 def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:

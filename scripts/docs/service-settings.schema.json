@@ -231,6 +231,26 @@
       "title": "Database",
       "type": "object"
     },
+    "DefaultGuides": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File"
+        }
+      },
+      "title": "DefaultGuides",
+      "type": "object"
+    },
     "Encryption": {
       "additionalProperties": false,
       "properties": {
@@ -530,6 +550,94 @@
         "$ref": "#/$defs/McpServer"
       },
       "type": "array"
+    },
+    "MemorySettings": {
+      "additionalProperties": false,
+      "description": "File memory limits. Lowering one keeps existing content readable; the next write to a file enforces it.",
+      "properties": {
+        "max_file_bytes": {
+          "default": 65536,
+          "maximum": 1048576,
+          "minimum": 1024,
+          "title": "Max File Bytes",
+          "type": "integer"
+        },
+        "revisions_per_file": {
+          "default": 10,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Revisions Per File",
+          "type": "integer"
+        },
+        "max_total_bytes": {
+          "default": 33554432,
+          "maximum": 1073741824,
+          "minimum": 65536,
+          "title": "Max Total Bytes",
+          "type": "integer"
+        },
+        "mounts_per_thread": {
+          "default": 8,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Mounts Per Thread",
+          "type": "integer"
+        },
+        "guide_bytes": {
+          "default": 4096,
+          "maximum": 65536,
+          "minimum": 256,
+          "title": "Guide Bytes",
+          "type": "integer"
+        },
+        "context_bytes": {
+          "default": 32768,
+          "maximum": 1048576,
+          "minimum": 1024,
+          "title": "Context Bytes",
+          "type": "integer"
+        },
+        "always_load_bytes": {
+          "default": 8192,
+          "maximum": 1048576,
+          "minimum": 0,
+          "title": "Always Load Bytes",
+          "type": "integer"
+        },
+        "description_chars": {
+          "default": 200,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Description Chars",
+          "type": "integer"
+        },
+        "frontmatter_bytes": {
+          "default": 2048,
+          "maximum": 16384,
+          "minimum": 128,
+          "title": "Frontmatter Bytes",
+          "type": "integer"
+        },
+        "path_bytes": {
+          "default": 256,
+          "maximum": 1024,
+          "minimum": 16,
+          "title": "Path Bytes",
+          "type": "integer"
+        },
+        "write_retries": {
+          "default": 3,
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Write Retries",
+          "type": "integer"
+        },
+        "default_guide": {
+          "$ref": "#/$defs/DefaultGuides"
+        }
+      },
+      "title": "MemorySettings",
+      "type": "object"
     },
     "Objects": {
       "additionalProperties": false,
@@ -1139,6 +1247,9 @@
     },
     "environments": {
       "$ref": "#/$defs/Environments"
+    },
+    "memory": {
+      "$ref": "#/$defs/MemorySettings"
     },
     "providers": {
       "$ref": "#/$defs/Providers"

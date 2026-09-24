@@ -20,6 +20,7 @@ from a13n_service.runs.accept import accept, primary_template
 from a13n_service.runs.attachments import asset_fields, require_readable
 from a13n_service.runs.environments.mounts import mount_environments, shared_mounts, thread_has_primary
 from a13n_service.runs.inbox import Request, append_message, check_replay, find_request
+from a13n_service.runs.memories.mounts import mount_memories, shared_memory_mounts
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EntryView, Fork, Message, NewThread, Submitted, ThreadView
@@ -158,6 +159,7 @@ async def create_thread(
         session.add(thread)
         await session.flush()
         await mount_environments(session, thread, body.environments, principal_id=actor.id)
+        await mount_memories(session, thread, body.memories, limit=runtime.settings.memory.mounts_per_thread)
         await validate_message(session, runtime, actor, scope, thread, body, authority=authority)
         entry = await append_message(
             session,
@@ -201,6 +203,8 @@ async def fork(
         await session.flush()
         shared = [] if body.fresh_environments else await shared_mounts(session, origin_thread)
         await mount_environments(session, thread, [*shared, *body.environments], principal_id=actor.id)
+        memories = [*await shared_memory_mounts(session, origin_thread), *body.memories]
+        await mount_memories(session, thread, memories, limit=runtime.settings.memory.mounts_per_thread)
         await validate_message(session, runtime, actor, scope, thread, body, authority=authority)
         entry = await append_message(
             session,

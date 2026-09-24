@@ -304,8 +304,8 @@ class InboxEntryRow(Base):
 
 _RUN_PROGRESS = (
     "'status', 'wait_reason', 'pending', 'cancel_requested_at', 'current_attempt_id', 'available_at', 'attempts',"
-    " 'checkpoint', 'display', 'output', 'failure', 'usage_at_seal', 'labels', 'started_at', 'sealed_at',"
-    " 'version', 'updated_at'"
+    " 'checkpoint', 'display', 'memory_cursors', 'output', 'failure', 'usage_at_seal', 'labels', 'started_at',"
+    " 'sealed_at', 'version', 'updated_at'"
 )
 
 
@@ -432,6 +432,8 @@ class RunRow(Stamped, Base):
     # The thread's caller headers, frozen at acceptance; no view shows them.
     mcp_headers: Mapped[dict] = mapped_column(JSONB)
     environment_mounts: Mapped[list] = mapped_column(JSONB)
+    # The thread's memory mounts, frozen at acceptance.
+    memory_mounts: Mapped[list] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
     source_entry_id: Mapped[str | None] = mapped_column(String(72))
     resume: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     resumed_by_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
@@ -451,6 +453,9 @@ class RunRow(Stamped, Base):
     # Typed pointers to the latest committed state and display objects; only fenced commits move them.
     checkpoint: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     display: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    # Each mounted memory's change cursor its context has delivered, by memory ID, committed with `checkpoint`; a
+    # null cursor gives the next run the memory's full context.
+    memory_cursors: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     # Any JSON value, bounded by `worker.output_bytes`; large results are assets the output references.
     output: Mapped[Any] = mapped_column(JSONB(none_as_null=True), nullable=True)
     failure: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))

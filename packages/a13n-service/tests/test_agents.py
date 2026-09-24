@@ -80,7 +80,14 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
     catalogue = toolsets.catalog(frozenset({"search"}))
     tools = [tool for toolset in catalogue.items for tool in toolset.tools]
 
-    assert [toolset.key for toolset in catalogue.items] == ["files", "shell", "web", "assets", "configuration"]
+    assert [toolset.key for toolset in catalogue.items] == [
+        "files",
+        "shell",
+        "web",
+        "memory",
+        "assets",
+        "configuration",
+    ]
     assert len({tool.execution_id for tool in tools}) == len({tool.model_name for tool in tools}) == len(tools)
     supported = {tool.execution_id: tool.deployment_supported for tool in tools}
     assert supported["web.search"] and not supported["web.scrape"] and supported["web.fetch"]
@@ -90,8 +97,21 @@ def test_toolsets_normalize_to_the_whole_catalogue() -> None:
     provider = new_object_id("wp")
     selected = config(toolsets={"web": {"tools": {"search": {"config": {"provider_id": provider}}}}})
 
-    assert set(selected.toolsets) == {"files", "shell", "web", "assets", "configuration"}
+    assert set(selected.toolsets) == {"files", "shell", "web", "memory", "assets", "configuration"}
     assert not selected.toolsets["assets"].enabled
+    # Memory tools reach a run only through its mounts; a disabled tool is left out of every mount.
+    assert toolsets.memory_file_tools(selected.toolsets) == {
+        "view",
+        "grep",
+        "create",
+        "edit",
+        "append",
+        "move",
+        "delete",
+    }
+    reading = config(toolsets={"memory": {"tools": {"file_delete": {"enabled": False}}}})
+    assert "delete" not in toolsets.memory_file_tools(reading.toolsets)
+    assert toolsets.memory_file_tools(config(toolsets={"memory": {"enabled": False}}).toolsets) == frozenset()
     # Writes of the configuration toolset wait for approval unless the author says otherwise.
     assert selected.toolsets["configuration"].tools["create_agent"].permission == "ask"
     assert selected.toolsets["web"].tools["search"].config == {"provider_id": provider, "max_results": 5}
@@ -711,6 +731,7 @@ async def test_heads_duplicate_archive_and_offer_toolsets(service) -> None:  # t
         "files",
         "shell",
         "web",
+        "memory",
         "assets",
         "configuration",
     ]

@@ -49,6 +49,7 @@ from a13n_service.runs.accept import Source, accept, advance, delegation, start_
 from a13n_service.runs.agent import ResolvedSubagent
 from a13n_service.runs.attempts import AttemptControl, Lease, lock_lease, lock_thread_lease
 from a13n_service.runs.environments.mounts import adopt_mounts, reserve_primary
+from a13n_service.runs.memories.mounts import adopt_memory_mounts
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     Delivery,
@@ -144,6 +145,7 @@ class ChildRuns(SubagentOperator):
             session.add(child)
             await session.flush()
             await self._environments(session, child, run, edge)
+            await adopt_memory_mounts(session, child, run.memory_mounts)
             # A run's `max_usage` bounds model requests only, so the edge's request limit is all a child run
             # carries; the edge's token and tool-call limits apply to inline delegation.
             limit = plan.usage_limits.request_limit if plan.usage_limits is not None else None

@@ -81,11 +81,12 @@ async def id_page[T](
     owner: str,
     cursor: str | None,
     limit: int,
+    max_length: int = 72,
 ) -> tuple[Sequence[T], str | None]:
-    """One page of rows in ID order, and the cursor after its last row."""
-    rows = (
-        await session.scalars(query.where(key > id_position(cursor, kind, owner)).order_by(key).limit(limit + 1))
-    ).all()
+    """One page of rows in `key` order, and the cursor after its last row; keys have at most `max_length`
+    characters."""
+    after = id_position(cursor, kind, owner, max_length=max_length)
+    rows = (await session.scalars(query.where(key > after).order_by(key).limit(limit + 1))).all()
     if len(rows) <= limit:
         return rows, None
     return rows[:limit], encode(kind, owner, getattr(rows[limit - 1], key.key))
