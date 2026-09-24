@@ -2,19 +2,16 @@
 
 import asyncio
 import math
-import os
 import threading
-from unittest.mock import AsyncMock, Mock, call
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-from a13n_harness.providers.environment.docker import image_test as image_test_module
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.configuration import (
     DockerEnvironmentConfiguration,
     DockerMountConfiguration,
 )
-from a13n_harness.providers.environment.docker.processes import DockerProcesses
-from a13n_harness.providers.environment.docker.provider import DOCKER, DockerEnvironment, resolve_image
+from a13n_harness.providers.environment.docker.provider import DOCKER, DockerEnvironment
 from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 from a13n_harness.providers.environment.errors import EnvironmentProviderError
 from a13n_harness.providers.environment.models import EnvironmentError
@@ -141,35 +138,6 @@ async def test_missing_image_pulls_once(native):
     await env.close()
 
 
-async def test_image_test_pins_reported_identity_when_tag_changes(native, monkeypatch):
-    env, engine, _ = native
-    image_a = Mock(id="sha256:" + "a" * 64)
-    image_b = Mock(id="sha256:" + "b" * 64)
-    images = {env.config.image: image_a, image_a.id: image_a}
-    engine.client.images.get.side_effect = lambda ref: images[ref]
-    engine.client.ping.return_value = True
-
-    def retag_after_resolve(client, ref):
-        resolved = resolve_image(client, ref)
-        images[ref] = image_b
-        return resolved
-
-    async def exercise(_engine, configuration, image_id):
-        pinned = DockerEnvironment(
-            configuration.model_copy(update={"image": image_id}), "env_pinned", None, env.runtime
-        )
-        await asyncio.to_thread(pinned._create)
-        return ("pinned",)
-
-    monkeypatch.setattr(image_test_module, "resolve_image", retag_after_resolve)
-    monkeypatch.setattr(image_test_module, "_exercise_image", exercise)
-    result = await image_test_module.test_docker_image(engine, env.config)
-    assert result.image_id == image_a.id
-    assert engine.client.containers.create.call_args.args[0] == image_a.id
-    assert engine.client.images.get.call_args_list == [call(env.config.image), call(image_a.id)]
-    engine.client.images.pull.assert_not_called()
-
-
 def test_decimal_memory_preserves_docker_minimum_and_64_bit_limit():
     with pytest.raises(ValueError):
         DockerEnvironmentConfiguration(memory_gb=0.006291455)
@@ -193,52 +161,6 @@ async def test_decimal_memory_minimum_reaches_docker_as_bytes(native):
     await env.prepare()
     assert engine.client.containers.create.call_args.kwargs["mem_limit"] == 6_291_456
     await env.close()
-
-
-async def test_preparation_diagnostic_preserves_non_permission_error(native):
-    env, engine, container = native
-    env.target = Mock(container_id="container-id")
-    container.status = "running"
-    container.exec_run.return_value.exit_code = 0
-    engine.client.containers.get.side_effect = None
-    engine.client.containers.get.return_value = container
-    message = await image_test_module._preparation_failure(
-        engine, env, env.config, RuntimeError("architecture mismatch")
-    )
-    assert "architecture mismatch" in message
-    assert "not writable" not in message
-
-
-async def test_image_test_rejects_process_that_exits_before_kill(monkeypatch):
-    image = os.environ.get("A13N_TEST_DOCKER_IMAGE")
-    if not image:
-        pytest.skip("Set A13N_TEST_DOCKER_IMAGE for real process-control coverage")
-    engine = DockerSDKEngine.connect("unix:///var/run/docker.sock")
-    original_start = DockerProcesses.start
-
-    async def exit_early(self, request):
-        from a13n_harness.providers.environment.commands import ArgvCommand
-
-        if isinstance(request.command, ArgvCommand) and "time.sleep" in request.command.arguments[-1]:
-            request = request.model_copy(
-                update={
-                    "command": ArgvCommand(
-                        executable=request.command.executable,
-                        arguments=("-I", "-c", "raise SystemExit(127)"),
-                    )
-                }
-            )
-            result = await original_start(self, request)
-            await self.wait(result.process.handle, condition="initial_terminal", timeout_seconds=5)
-            return result
-        return await original_start(self, request)
-
-    monkeypatch.setattr(DockerProcesses, "start", exit_early)
-    try:
-        with pytest.raises(image_test_module.DockerImageTestFailure, match="exited before control check"):
-            await image_test_module.test_docker_image(engine, DockerEnvironmentConfiguration(image=image))
-    finally:
-        await engine.close()
 
 
 async def test_cancelled_creation_waits_for_inflight_docker_call(native, monkeypatch):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
@@ -412,7 +412,3 @@ class EnvironmentRuntime(ABC):
     @abstractmethod
     def _begin_close(self) -> None:
         """Install the terminal mutation fence before result delivery."""
-
-
-class RawEnvironmentReader(Protocol):
-    def __aiter__(self) -> AsyncIterator[bytes]: ...

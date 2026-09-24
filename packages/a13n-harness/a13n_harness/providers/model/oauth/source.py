@@ -16,10 +16,6 @@ class CredentialStore[CredentialT: RotatingCredentials](Protocol):
     async def save(self, credentials: CredentialT) -> None: ...
 
 
-type GrokCredentialStore = CredentialStore[GrokCredentials]
-type CopilotCredentialStore = CredentialStore[CopilotCredentials]
-
-
 class _ProcessCredentialSource[CredentialT: RotatingCredentials]:
     """Share this instance across Models. Exclusion/uncertainty lasts only its process lifetime."""
 

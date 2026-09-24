@@ -17,7 +17,6 @@ from ._json import JsonBoundaryError, detach_json
 from .errors import EnvironmentProviderErrorCategory, operation_error_projection, provider_error
 
 type EnvironmentOperationFamily = Literal["files", "shell", "processes", "ports", "outputs", "state"]
-ENVIRONMENT_OPERATION_FAMILIES = frozenset({"files", "shell", "processes", "ports", "outputs", "state"})
 ENVIRONMENT_ACTION_CATALOG_VERSION = "environment-actions/1"
 DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS = 600.0
 DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS = 600.0

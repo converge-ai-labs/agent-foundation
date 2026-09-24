@@ -1,7 +1,7 @@
-"""Shared envd enrollment values, independent of Host storage and user authorization.
+"""Envd enrollment values for Harness UI, the Host that accepts device pairing.
 
-The daemon posts to /api/envd/pair with its locally retained Bearer credential.
-Hosts approve enrollment through their ordinary authenticated management surface;
+The daemon posts to PAIRING_PATH with its locally retained Bearer credential.
+Harness UI approves enrollment through its ordinary authenticated management surface;
 subsequent connections use the same narrowly scoped credential, not a user API key.
 """
 

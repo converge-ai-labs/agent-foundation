@@ -118,9 +118,6 @@ class SubagentCollection(Mapping[str, BuiltSubagent]):
             raise KeyError(f"Unknown subagent: {name!r}") from None
 
 
-EMPTY_SUBAGENTS = SubagentCollection()
-
-
 @dataclass(frozen=True, slots=True)
 class _CapabilityProvenance:
     """Reserved Capability IDs accepted from each trusted composition source."""

@@ -19,6 +19,7 @@ import click
 import uvicorn
 from a13n_envd_client.eip.v1 import DirectoryListResult
 from a13n_harness.providers.environment.remote_envd.pairing import (
+    PAIRING_PATH,
     PairingChallenge,
     PairingRequest,
     PairingResponse,
@@ -423,7 +424,7 @@ class AccessBoundary:
             authorization = request.headers.get("authorization", "")
             if (
                 not interactive
-                and not (scope["path"] == "/api/envd/pair" and scope["method"] == "POST")
+                and not (scope["path"] == PAIRING_PATH and scope["method"] == "POST")
                 and self.api_key is not None
                 and not hmac.compare_digest(authorization.encode(), f"Bearer {self.api_key}".encode())
             ):
@@ -600,7 +601,7 @@ def create_webui(
     async def presence(participant_id: Annotated[str | None, Query(max_length=80)] = None) -> PresenceFrame:
         return await app().page_presence_snapshot(participant_id)
 
-    @server.post("/api/envd/pair", response_model=PairingResponse, openapi_extra=_body(PairingRequest))
+    @server.post(PAIRING_PATH, response_model=PairingResponse, openapi_extra=_body(PairingRequest))
     async def pair_device(request: Request) -> PairingResponse:
         authorization = request.headers.get("authorization", "")
         if request.query_params or not authorization.startswith("Bearer "):
