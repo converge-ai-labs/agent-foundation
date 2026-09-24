@@ -7,7 +7,7 @@ with its defaults and validates each typed config, so readers never merge defaul
 from dataclasses import dataclass
 from typing import Annotated, Literal, TypedDict
 
-from a13n_harness.capabilities import FILE_TOOL_KEYS, FileToolKey
+from a13n_harness.capabilities import FILE_TOOL_KEYS, RECORD_TOOL_KEYS, FileToolKey, RecordToolKey
 from a13n_harness.capabilities.web import (
     WebConfiguration,
     WebDownloadConfiguration,
@@ -195,7 +195,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
             _Tool("download", "Download", "web.download", "download", DownloadConfiguration, False),
         ),
     ),
-    # The file tools of the memories a run mounts; a read mount offers only viewing and searching.
+    # The tools of the memories a run mounts; a read mount offers only viewing and searching.
     _Toolset(
         "memory",
         "Memory",
@@ -208,6 +208,11 @@ _TOOLSETS: tuple[_Toolset, ...] = (
             _Tool("file_append", "Append to memory file", "memory.file.append", "memory_file_append"),
             _Tool("file_move", "Move memory file", "memory.file.move", "memory_file_move"),
             _Tool("file_delete", "Delete memory file", "memory.file.delete", "memory_file_delete"),
+            _Tool("record_search", "Search memory records", "memory.record.search", "memory_record_search"),
+            _Tool("record_list", "List memory records", "memory.record.list", "memory_record_list"),
+            _Tool("record_add", "Add memory record", "memory.record.add", "memory_record_add"),
+            _Tool("record_update", "Update memory record", "memory.record.update", "memory_record_update"),
+            _Tool("record_delete", "Delete memory record", "memory.record.delete", "memory_record_delete"),
         ),
     ),
     _Toolset(
@@ -311,13 +316,19 @@ def permission_rules(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, 
     return {tool.execution_id: selected.permission for tool, selected in _enabled(toolsets)}
 
 
-# The memory toolset's tool keys name the file memory tools by their Harness keys, such as `file_view`.
+# The memory toolset's tool keys name each memory kind's tools by their Harness keys, such as `file_view`.
 _FILE_TOOLS: dict[str, FileToolKey] = {f"file_{key}": key for key in FILE_TOOL_KEYS}
+_RECORD_TOOLS: dict[str, RecordToolKey] = {f"record_{key}": key for key in RECORD_TOOL_KEYS}
 
 
 def memory_file_tools(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozenset[FileToolKey]:
     """The enabled memory file tools as the file memory capability names them, such as `view`."""
-    return frozenset(_FILE_TOOLS[key] for key in enabled_tools(toolsets, "memory"))
+    return frozenset(_FILE_TOOLS[key] for key in enabled_tools(toolsets, "memory") if key in _FILE_TOOLS)
+
+
+def memory_record_tools(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozenset[RecordToolKey]:
+    """The enabled memory record tools as the record memory capability names them, such as `search`."""
+    return frozenset(_RECORD_TOOLS[key] for key in enabled_tools(toolsets, "memory") if key in _RECORD_TOOLS)
 
 
 def environment_configuration(toolsets: dict[ToolsetKey, ToolsetSelection]) -> DynamicEnvironmentConfiguration:

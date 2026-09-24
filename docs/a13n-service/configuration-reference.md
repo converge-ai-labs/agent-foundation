@@ -140,20 +140,25 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `memory`
 
-| Setting                     | Environment variable                             | Type / choices | Constraints and default                             |
-| --------------------------- | ------------------------------------------------ | -------------- | --------------------------------------------------- |
-| `memory.max_file_bytes`     | `A13N_MEMORY__MAX_FILE_BYTES`                    | integer        | minimum=1024; maximum=1048576; default=65536        |
-| `memory.revisions_per_file` | `A13N_MEMORY__REVISIONS_PER_FILE`                | integer        | minimum=1; maximum=1000; default=10                 |
-| `memory.max_total_bytes`    | `A13N_MEMORY__MAX_TOTAL_BYTES`                   | integer        | minimum=65536; maximum=1073741824; default=33554432 |
-| `memory.mounts_per_thread`  | `A13N_MEMORY__MOUNTS_PER_THREAD`                 | integer        | minimum=1; maximum=32; default=8                    |
-| `memory.guide_bytes`        | `A13N_MEMORY__GUIDE_BYTES`                       | integer        | minimum=256; maximum=65536; default=4096            |
-| `memory.context_bytes`      | `A13N_MEMORY__CONTEXT_BYTES`                     | integer        | minimum=1024; maximum=1048576; default=32768        |
-| `memory.always_load_bytes`  | `A13N_MEMORY__ALWAYS_LOAD_BYTES`                 | integer        | minimum=0; maximum=1048576; default=8192            |
-| `memory.description_chars`  | `A13N_MEMORY__DESCRIPTION_CHARS`                 | integer        | minimum=1; maximum=1000; default=200                |
-| `memory.frontmatter_bytes`  | `A13N_MEMORY__FRONTMATTER_BYTES`                 | integer        | minimum=128; maximum=16384; default=2048            |
-| `memory.path_bytes`         | `A13N_MEMORY__PATH_BYTES`                        | integer        | minimum=16; maximum=1024; default=256               |
-| `memory.write_retries`      | `A13N_MEMORY__WRITE_RETRIES`                     | integer        | minimum=0; maximum=10; default=3                    |
-| `memory.default_guide.file` | `A13N_MEMORY__DEFAULT_GUIDE` (JSON field `file`) | string or null | maxLength=65536; default=null                       |
+| Setting                       | Environment variable                               | Type / choices | Constraints and default                             |
+| ----------------------------- | -------------------------------------------------- | -------------- | --------------------------------------------------- |
+| `memory.max_file_bytes`       | `A13N_MEMORY__MAX_FILE_BYTES`                      | integer        | minimum=1024; maximum=1048576; default=65536        |
+| `memory.revisions_per_file`   | `A13N_MEMORY__REVISIONS_PER_FILE`                  | integer        | minimum=1; maximum=1000; default=10                 |
+| `memory.max_total_bytes`      | `A13N_MEMORY__MAX_TOTAL_BYTES`                     | integer        | minimum=65536; maximum=1073741824; default=33554432 |
+| `memory.mounts_per_thread`    | `A13N_MEMORY__MOUNTS_PER_THREAD`                   | integer        | minimum=1; maximum=32; default=8                    |
+| `memory.guide_bytes`          | `A13N_MEMORY__GUIDE_BYTES`                         | integer        | minimum=256; maximum=65536; default=4096            |
+| `memory.context_bytes`        | `A13N_MEMORY__CONTEXT_BYTES`                       | integer        | minimum=1024; maximum=1048576; default=32768        |
+| `memory.always_load_bytes`    | `A13N_MEMORY__ALWAYS_LOAD_BYTES`                   | integer        | minimum=0; maximum=1048576; default=8192            |
+| `memory.description_chars`    | `A13N_MEMORY__DESCRIPTION_CHARS`                   | integer        | minimum=1; maximum=1000; default=200                |
+| `memory.frontmatter_bytes`    | `A13N_MEMORY__FRONTMATTER_BYTES`                   | integer        | minimum=128; maximum=16384; default=2048            |
+| `memory.path_bytes`           | `A13N_MEMORY__PATH_BYTES`                          | integer        | minimum=16; maximum=1024; default=256               |
+| `memory.write_retries`        | `A13N_MEMORY__WRITE_RETRIES`                       | integer        | minimum=0; maximum=10; default=3                    |
+| `memory.recall_limit`         | `A13N_MEMORY__RECALL_LIMIT`                        | integer        | minimum=1; maximum=50; default=5                    |
+| `memory.recall_bytes`         | `A13N_MEMORY__RECALL_BYTES`                        | integer        | minimum=512; maximum=65536; default=8192            |
+| `memory.recall_seconds`       | `A13N_MEMORY__RECALL_SECONDS`                      | number         | maximum=30; exclusiveMinimum=0; default=2           |
+| `memory.record_chars`         | `A13N_MEMORY__RECORD_CHARS`                        | integer        | minimum=1; maximum=8000; default=8000               |
+| `memory.default_guide.file`   | `A13N_MEMORY__DEFAULT_GUIDE` (JSON field `file`)   | string or null | maxLength=65536; default=null                       |
+| `memory.default_guide.record` | `A13N_MEMORY__DEFAULT_GUIDE` (JSON field `record`) | string or null | maxLength=65536; default=null                       |
 
 ## `providers`
 

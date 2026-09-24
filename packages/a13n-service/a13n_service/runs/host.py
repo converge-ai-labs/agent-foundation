@@ -13,20 +13,31 @@ from dataclasses import dataclass, replace
 from functools import partial
 
 from a13n_harness import AgentContext, RunBindings
-from a13n_harness.capabilities import FileToolKey, MemoryCursors
+from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
 from a13n_harness.capabilities.web import WebBinding
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.resources.agents.toolsets import enabled_tool, enabled_tools, memory_file_tools, web_tools
+from a13n_service.resources.agents.toolsets import (
+    enabled_tool,
+    enabled_tools,
+    memory_file_tools,
+    memory_record_tools,
+    web_tools,
+)
 from a13n_service.resources.connections.runtime import SelectedConnection, open_connections, resolve_connections
 from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease, prove
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.configuration import ConfigurationCapability
-from a13n_service.runs.memories.execution import PlannedMemory, file_memory, resolve_memories
+from a13n_service.runs.memories.execution import (
+    PlannedMemory,
+    file_memory,
+    record_memory_capability,
+    resolve_memories,
+)
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.secrets import Requirements, secrets_policy
 from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
@@ -47,8 +58,9 @@ class HostPlan:
     parts: Mapping[str, _Parts]
     secrets: Requirements
     memories: tuple[PlannedMemory, ...]
-    # The root agent's enabled memory file tools.
-    memory_tools: frozenset[FileToolKey]
+    # The root agent's enabled memory tools of each kind.
+    file_tools: frozenset[FileToolKey]
+    record_tools: frozenset[RecordToolKey]
 
 
 async def resolve_host(
@@ -81,7 +93,8 @@ async def resolve_host(
         parts,
         {node.revision_id: node.config.secret_requirements for node in agent.agents()},
         memories=await resolve_memories(session, run),
-        memory_tools=memory_file_tools(agent.config.toolsets),
+        file_tools=memory_file_tools(agent.config.toolsets),
+        record_tools=memory_record_tools(agent.config.toolsets),
     )
 
 
@@ -96,7 +109,7 @@ class Host:
     models: Mapping[str, Model]
     tools: Mapping[str, tuple[AbstractCapability[AgentContext], ...]]
     webs: Mapping[str, WebBinding]
-    # The root agent's file memory, when the run mounts any memory.
+    # The root agent's file and record memory capabilities, for the kinds the run mounts.
     memory: tuple[AbstractCapability[AgentContext], ...]
 
     def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
@@ -145,8 +158,8 @@ async def open_host(
     authority: ExecutionAuthority,
     cursors: MemoryCursors,
 ) -> AsyncIterator[Host]:
-    """Connections and web backends stay open until the context exits; every paid call passes `check`. The
-    file memory records the context it delivers in `cursors`."""
+    """Connections, web backends and record memory stores stay open until the context exits; every paid call
+    passes `check`. The file memory records the context it delivers in `cursors`."""
     async with AsyncExitStack() as stack:
         tools: dict[str, tuple[AbstractCapability[AgentContext], ...]] = {}
         webs: dict[str, WebBinding] = {}
@@ -165,7 +178,7 @@ async def open_host(
             )
             if parts.web is not None:
                 webs[revision_id] = await stack.enter_async_context(open_web(parts.web, check, runtime=runtime))
-        memory = file_memory(
+        files = file_memory(
             runtime.storage,
             runtime.settings.memory,
             plan.memories,
@@ -173,6 +186,12 @@ async def open_host(
             principal=principal,
             authority=authority,
             cursors=cursors,
-            tools=plan.memory_tools,
+            tools=plan.file_tools,
         )
-        yield Host(runtime, lease, run, principal, authority, plan, models, tools, webs, (memory,) if memory else ())
+        records = await stack.enter_async_context(
+            record_memory_capability(
+                runtime, plan.memories, run=run, principal=principal, authority=authority, tools=plan.record_tools
+            )
+        )
+        memory = tuple(capability for capability in (files, records) if capability is not None)
+        yield Host(runtime, lease, run, principal, authority, plan, models, tools, webs, memory)

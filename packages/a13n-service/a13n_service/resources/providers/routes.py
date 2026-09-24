@@ -16,6 +16,7 @@ from a13n_service.resources.providers.schemas import (
 from a13n_service.resources.providers.tables import (
     ConnectorProviderRow,
     EnvironmentProviderRow,
+    MemoryProviderRow,
     ModelProviderRow,
     ProviderRow,
     WebProviderRow,
@@ -100,7 +101,7 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         )
 
 
-for _row_type in (ModelProviderRow, EnvironmentProviderRow, ConnectorProviderRow, WebProviderRow):
+for _row_type in (ModelProviderRow, EnvironmentProviderRow, ConnectorProviderRow, WebProviderRow, MemoryProviderRow):
     _add_routes(_row_type)
 
 

@@ -14,6 +14,7 @@ from types import MappingProxyType
 
 from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
 from a13n_harness.providers.definition import ProviderDefinition
+from a13n_harness.providers.memory import BUILT_IN_MEMORY_PROVIDERS
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_harness.providers.web.builtins import built_in_web_providers
 from fastapi import APIRouter
@@ -35,6 +36,7 @@ from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.resources.connector_providers.routes import router as connector_providers_router
 from a13n_service.resources.environment_templates.routes import router as environment_templates_router
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
+from a13n_service.resources.memories.purge import MemoryPurger
 from a13n_service.resources.memories.routes import router as memories_router
 from a13n_service.resources.memories.tables import (
     MemoryFileRevisionRow,
@@ -49,6 +51,7 @@ from a13n_service.resources.providers.routes import router as providers_router
 from a13n_service.resources.providers.tables import (
     ConnectorProviderRow,
     EnvironmentProviderRow,
+    MemoryProviderRow,
     ModelProviderRow,
     WebProviderRow,
 )
@@ -211,7 +214,12 @@ def _deliver_outbox(runtime: Runtime) -> Sweep:
         every=control.scan_seconds,
         run=Delivery(
             runtime.storage,
-            {"webhook": webhooks, "child_result": child_results(runtime), "email": mail},
+            {
+                "webhook": webhooks,
+                "child_result": child_results(runtime),
+                "email": mail,
+                "memory_purge": MemoryPurger(runtime),
+            },
             owner=new_object_id("ctl"),
             limit=control.outbox_batch,
             lease_seconds=control.outbox_lease_seconds,
@@ -263,6 +271,7 @@ OSS = Distribution(
         SkillRevisionRow,
         AgentRow,
         AgentRevisionRow,
+        MemoryProviderRow,
         MemoryRow,
         MemoryFileStoreRow,
         MemoryFileRow,
@@ -315,6 +324,7 @@ OSS = Distribution(
         *built_in_web_providers(),
         *BUILT_IN_CONNECTOR_PROVIDERS,
         *BUILT_IN_ENVIRONMENT_PROVIDERS,
+        *BUILT_IN_MEMORY_PROVIDERS,
     ),
     roles=BUILT_IN_ROLES,
 )

@@ -246,6 +246,19 @@
           ],
           "default": null,
           "title": "File"
+        },
+        "record": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Record"
         }
       },
       "title": "DefaultGuides",
@@ -553,7 +566,7 @@
     },
     "MemorySettings": {
       "additionalProperties": false,
-      "description": "File memory limits. Lowering one keeps existing content readable; the next write to a file enforces it.",
+      "description": "Memory limits. Lowering a file limit keeps existing content readable; the next write to a file enforces it.",
       "properties": {
         "max_file_bytes": {
           "default": 65536,
@@ -630,6 +643,34 @@
           "maximum": 10,
           "minimum": 0,
           "title": "Write Retries",
+          "type": "integer"
+        },
+        "recall_limit": {
+          "default": 5,
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Recall Limit",
+          "type": "integer"
+        },
+        "recall_bytes": {
+          "default": 8192,
+          "maximum": 65536,
+          "minimum": 512,
+          "title": "Recall Bytes",
+          "type": "integer"
+        },
+        "recall_seconds": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "maximum": 30,
+          "title": "Recall Seconds",
+          "type": "number"
+        },
+        "record_chars": {
+          "default": 8000,
+          "maximum": 8000,
+          "minimum": 1,
+          "title": "Record Chars",
           "type": "integer"
         },
         "default_guide": {

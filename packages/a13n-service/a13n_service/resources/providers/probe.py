@@ -2,7 +2,8 @@
 
 A definition without such a probe is reported as unsupported; billable verification goes through a run. An
 environment probe only reads from the backend its account names: it creates, starts or changes nothing there, and
-an endpoint the account names passes the outbound policy before it is dialed.
+an endpoint the account names passes the outbound policy before it is dialed. A memory probe lists one page of a
+namespace no memory uses.
 """
 
 import math
@@ -22,6 +23,7 @@ from a13n_harness.providers.environment.docker.provider import DOCKER, DockerCon
 from a13n_harness.providers.environment.docker.runtime import DockerSDKEngine
 from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.providers.environment.errors import provider_error as environment_error
+from a13n_harness.providers.memory import MemoryProviderDefinition, MemoryStoreError
 from a13n_harness.providers.model.definition import ModelProviderDefinition, ProviderOperationError
 from anyio import fail_after, to_thread
 from pydantic import JsonValue
@@ -34,6 +36,8 @@ type ProbeStatus = Literal["succeeded", "failed", "unsupported"]
 
 # The environment types whose account a read alone can check.
 _ENVIRONMENT_PROBES = frozenset({DOCKER.type})
+# Default memory namespaces are `a13n-` and a hash, so the probe's never holds a memory's records.
+PROBE_NAMESPACE = "a13n-probe"
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,7 +97,7 @@ def supports_probe(definition: ProviderDefinition) -> bool:
         return definition.supports_connection_probe
     if isinstance(definition, EnvironmentProviderDefinition):
         return definition.type in _ENVIRONMENT_PROBES
-    return isinstance(definition, ConnectorProviderDefinition)
+    return isinstance(definition, ConnectorProviderDefinition | MemoryProviderDefinition)
 
 
 async def probe(
@@ -128,9 +132,12 @@ async def probe(
                         )
                         async with definition.open(config, credential, http=http) as runtime:
                             await runtime.test()
+                    elif isinstance(definition, MemoryProviderDefinition):
+                        async with definition.open(config, credential, namespace=PROBE_NAMESPACE, http=client) as store:
+                            await store.list(limit=1)
     except ProviderOperationError as error:
         return ProbeResult("failed", str(error))
-    except (ConnectorProviderError, EnvironmentProviderError) as error:
+    except (ConnectorProviderError, EnvironmentProviderError, MemoryStoreError) as error:
         return ProbeResult("failed", error.code)
     except TimeoutError:
         return ProbeResult("failed", "Provider test timed out")

@@ -1,5 +1,5 @@
-"""Memories, their files and revisions as the API accepts and returns them, and the mount shape threads, agent
-defaults and runs share."""
+"""Memories, their files, revisions and records as the API accepts and returns them, and the mount shape threads,
+agent defaults and runs share."""
 
 from datetime import datetime
 from typing import Annotated, Literal
@@ -9,6 +9,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.resources.memories.tables import MemoryKind
 
 MemoryKey = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")]
 MemoryName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
@@ -19,6 +20,21 @@ Guide = Annotated[str, StringConstraints(max_length=65536)]
 FilePath = Annotated[str, StringConstraints(min_length=1, max_length=1024)]
 # Checked as file paths when a memory is created or changed; a path need not exist.
 AlwaysLoad = Annotated[tuple[FilePath, ...], Field(max_length=64)]
+
+
+def _printable(value: str) -> str:
+    if not value.isprintable():
+        raise ValueError("must be printable")
+    return value
+
+
+# A record memory's namespace in its provider's backend, such as a mem0 `user_id`, which mem0 filters would widen
+# with `*`.
+Namespace = Annotated[
+    str, StringConstraints(min_length=1, max_length=256, pattern=r"^[^\s*]+$"), AfterValidator(_printable)
+]
+# The byte bound is `memory.record_chars`; mem0 accepts at most 8000 characters.
+RecordText = Annotated[str, StringConstraints(min_length=1, max_length=8000)]
 # The Harness mount-name rule: the model addresses a memory by it.
 MountName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,62}$")]
 # Memories one mount list holds at most; `memory.mounts_per_thread` bounds a thread's.
@@ -26,14 +42,20 @@ MAX_MOUNTS = 32
 
 
 class MemoryCreate(BaseModel):
+    """`postgres` makes a file memory the Service stores; a Memory Provider's type makes a record memory in that
+    provider's backend, under a new namespace or the existing one `namespace` adopts."""
+
     model_config = ConfigDict(extra="forbid")
     key: MemoryKey
     name: MemoryName
     description: Description | None = None
     labels: Labels = Field(default_factory=dict)
-    type: Literal["postgres"] = "postgres"
+    type: str = Field(default="postgres", min_length=1, max_length=64)
+    provider_id: ObjectId | None = None
+    namespace: Namespace | None = None
     # Null inherits the deployment's default guide; "" gives the memory none.
     guide: Guide | None = None
+    # File memories only.
     always_load: AlwaysLoad = ()
 
 
@@ -55,17 +77,21 @@ class Memory(BaseModel):
     key: str
     name: str
     description: str | None
-    kind: Literal["file"]
-    type: Literal["postgres"]
+    kind: MemoryKind
+    # `postgres`, or the Memory Provider type of a record memory.
+    type: str
+    provider_id: str | None
+    namespace: str | None
     guide: str | None
-    # What a null `guide` resolves to, shown even while the memory has its own.
+    # What a null `guide` resolves to for the memory's kind, shown even while the memory has its own.
     inherited_guide: str
     always_load: list[str]
     labels: dict[str, str]
-    file_count: int
-    # Current content and retained history, which together stay within `memory.max_total_bytes`.
-    content_bytes: int
-    history_bytes: int
+    # A file memory's files, current content and retained history, which together stay within
+    # `memory.max_total_bytes`; null for a record memory.
+    file_count: int | None
+    content_bytes: int | None
+    history_bytes: int | None
     version: int
     created_by_id: str
     updated_by_id: str
@@ -160,13 +186,42 @@ class HistoryPurge(BaseModel):
     purged: int
 
 
+class MemoryRecordView(BaseModel):
+    """A record as the memory's provider returns it; `score` is its similarity to a search query."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    text: str
+    score: float | None = None
+    updated_at: datetime | None = None
+
+
+class MemoryRecordPage(BaseModel):
+    items: list[MemoryRecordView]
+    # The provider's own cursor, passed back unchanged; a search answers without one.
+    next_cursor: str | None
+
+
+class MemoryRecordText(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: RecordText
+
+
+class MemoryRecordSearch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    query: RecordText
+    limit: int = Field(default=10, ge=1, le=100)
+
+
 class MemoryMount(BaseModel):
-    """A memory under the name the model addresses it by, exposing the tools its access allows."""
+    """A memory under the name the model addresses it by, exposing the tools its access allows. `recall` lets a
+    record memory recall records into each run's first input; file memories ignore it."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, from_attributes=True)
     name: MountName
     memory_id: ObjectId
     access: MemoryAccess
+    recall: bool = True
 
 
 def _unique(mounts: tuple[MemoryMount, ...]) -> tuple[MemoryMount, ...]:

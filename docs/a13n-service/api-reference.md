@@ -1199,6 +1199,8 @@ List Memories.
 | -------------- | -------- | -------- | ----------------------- | ---------------------------------- |
 | `workspace_id` | path     | true     | string                  | —                                  |
 | `label`        | query    | false    | array of string or null | —                                  |
+| `kind`         | query    | false    | MemoryKind or null      | —                                  |
+| `type`         | query    | false    | string or null          | maxLength=64                       |
 | `limit`        | query    | false    | integer                 | minimum=1; maximum=100; default=50 |
 | `cursor`       | query    | false    | string or null          | —                                  |
 
@@ -1390,6 +1392,101 @@ Responses:
 - **400** — .
 - **default** — .
 
+### `GET /api/v1/workspaces/{workspace_id}/memories/{memory_id}/records`
+
+List Records.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default            |
+| -------------- | -------- | -------- | -------------- | ---------------------------------- |
+| `workspace_id` | path     | true     | string         | —                                  |
+| `memory_id`    | path     | true     | string         | —                                  |
+| `limit`        | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`       | query    | false    | string or null | maxLength=1024                     |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryRecordPage`).
+- **400** — .
+- **default** — .
+
+### `POST /api/v1/workspaces/{workspace_id}/memories/{memory_id}/records`
+
+Add Record.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace_id` | path     | true     | string        | —                       |
+| `memory_id`    | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `MemoryRecordText`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: MemoryRecordView`).
+- **400** — .
+- **default** — .
+
+### `POST /api/v1/workspaces/{workspace_id}/memories/{memory_id}/records/search`
+
+Search Records.
+
+The records most similar to the query; the query travels in the body, never the URL.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace_id` | path     | true     | string        | —                       |
+| `memory_id`    | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `MemoryRecordSearch`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryRecordPage`).
+- **400** — .
+- **default** — .
+
+### `DELETE /api/v1/workspaces/{workspace_id}/memories/{memory_id}/records/{record_id}`
+
+Delete Record.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace_id` | path     | true     | string        | —                       |
+| `memory_id`    | path     | true     | string        | —                       |
+| `record_id`    | path     | true     | string        | maxLength=256           |
+
+Responses:
+
+- **204** — Successful Response.
+- **400** — .
+- **default** — .
+
+### `PUT /api/v1/workspaces/{workspace_id}/memories/{memory_id}/records/{record_id}`
+
+Update Record.
+
+Replace the record's text; records carry no version, so the last writer wins.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace_id` | path     | true     | string        | —                       |
+| `memory_id`    | path     | true     | string        | —                       |
+| `record_id`    | path     | true     | string        | maxLength=256           |
+
+Request body: required.
+
+- `application/json`: `MemoryRecordText`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryRecordView`).
+- **400** — .
+- **default** — .
+
 ### `DELETE /api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions`
 
 Purge History.
@@ -1511,6 +1608,27 @@ Remove Mount.
 Responses:
 
 - **204** — Successful Response.
+- **400** — .
+- **default** — .
+
+### `PATCH /api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories/{name}`
+
+Update Mount.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default |
+| -------------- | -------- | -------- | -------------- | ----------------------- |
+| `workspace_id` | path     | true     | string         | —                       |
+| `thread_id`    | path     | true     | string         | —                       |
+| `name`         | path     | true     | string         | —                       |
+| `If-Match`     | header   | false    | string or null | maxLength=512           |
+
+Request body: required.
+
+- `application/json`: `MemoryMountUpdate`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryMount`).
 - **400** — .
 - **default** — .
 
@@ -1832,6 +1950,93 @@ Responses:
 - **400** — .
 - **default** — .
 
+### `GET /api/v1/organizations/{organization_id}/memory-providers`
+
+List Providers.
+
+| Parameter         | Location | Required | Type / schema  | Constraints and default            |
+| ----------------- | -------- | -------- | -------------- | ---------------------------------- |
+| `organization_id` | path     | true     | string         | —                                  |
+| `workspace_id`    | query    | false    | string or null | —                                  |
+| `limit`           | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`          | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ProviderPage`).
+- **400** — .
+- **default** — .
+
+### `POST /api/v1/organizations/{organization_id}/memory-providers`
+
+Create Provider.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default |
+| ----------------- | -------- | -------- | ------------- | ----------------------- |
+| `organization_id` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `ProviderCreate`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: Provider`).
+- **400** — .
+- **default** — .
+
+### `GET /api/v1/organizations/{organization_id}/memory-providers/{provider_id}`
+
+Get Provider.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default |
+| ----------------- | -------- | -------- | ------------- | ----------------------- |
+| `organization_id` | path     | true     | string        | —                       |
+| `provider_id`     | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Provider`).
+- **400** — .
+- **default** — .
+
+### `PATCH /api/v1/organizations/{organization_id}/memory-providers/{provider_id}`
+
+Update Provider.
+
+A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+
+| Parameter         | Location | Required | Type / schema  | Constraints and default |
+| ----------------- | -------- | -------- | -------------- | ----------------------- |
+| `organization_id` | path     | true     | string         | —                       |
+| `provider_id`     | path     | true     | string         | —                       |
+| `If-Match`        | header   | false    | string or null | maxLength=512           |
+
+Request body: required.
+
+- `application/json`: `ProviderUpdate`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: Provider`).
+- **400** — .
+- **default** — .
+
+### `POST /api/v1/organizations/{organization_id}/memory-providers/{provider_id}/test`
+
+Test Provider.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default |
+| ----------------- | -------- | -------- | ------------- | ----------------------- |
+| `organization_id` | path     | true     | string        | —                       |
+| `provider_id`     | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ProviderTest`).
+- **400** — .
+- **default** — .
+
 ### `GET /api/v1/organizations/{organization_id}/model-providers`
 
 List Providers.
@@ -2010,9 +2215,9 @@ Responses:
 
 List Provider Types.
 
-| Parameter | Location | Required | Type / schema                              | Constraints and default |
-| --------- | -------- | -------- | ------------------------------------------ | ----------------------- |
-| `kind`    | path     | true     | "model", "environment", "connector", "web" | —                       |
+| Parameter | Location | Required | Type / schema                                        | Constraints and default |
+| --------- | -------- | -------- | ---------------------------------------------------- | ----------------------- |
+| `kind`    | path     | true     | "model", "environment", "connector", "web", "memory" | —                       |
 
 Responses:
 

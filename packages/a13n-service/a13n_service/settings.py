@@ -250,10 +250,11 @@ class Environments(Section):
 class DefaultGuides(Section):
     # Unset keeps the guide built into the Harness; a memory's own guide overrides either.
     file: str | None = Field(default=None, max_length=65536)
+    record: str | None = Field(default=None, max_length=65536)
 
 
 class MemorySettings(Section):
-    """File memory limits. Lowering one keeps existing content readable; the next write to a file enforces it."""
+    """Memory limits. Lowering a file limit keeps existing content readable; the next write to a file enforces it."""
 
     max_file_bytes: int = Field(default=65536, ge=1024, le=1048576)
     # Revisions kept per file, pruned oldest first at the file's next write.
@@ -271,6 +272,13 @@ class MemorySettings(Section):
     path_bytes: int = Field(default=256, ge=16, le=1024)
     # Re-reads after a lost compare-and-swap before a tool call reports the conflict.
     write_retries: int = Field(default=3, ge=0, le=10)
+    # Records one record mount recalls into a run's first input, and the bytes of its recall block.
+    recall_limit: int = Field(default=5, ge=1, le=50)
+    recall_bytes: int = Field(default=8192, ge=512, le=65536)
+    # How long a run's recall waits; record mounts recall in parallel, and a late one is skipped.
+    recall_seconds: float = Field(default=2, gt=0, le=30)
+    # One record's text; mem0 accepts at most 8000 characters.
+    record_chars: int = Field(default=8000, ge=1, le=8000)
     default_guide: DefaultGuides = Field(default_factory=DefaultGuides)
 
     @model_validator(mode="after")
@@ -281,9 +289,9 @@ class MemorySettings(Section):
             raise ValueError("memory.frontmatter_bytes must stay below memory.max_file_bytes")
         if self.max_file_bytes > self.max_total_bytes:
             raise ValueError("memory.max_file_bytes must not exceed memory.max_total_bytes")
-        guide = self.default_guide.file
-        if guide is not None and len(guide.encode()) > self.guide_bytes:
-            raise ValueError("memory.default_guide.file must fit memory.guide_bytes")
+        for kind, guide in (("file", self.default_guide.file), ("record", self.default_guide.record)):
+            if guide is not None and len(guide.encode()) > self.guide_bytes:
+                raise ValueError(f"memory.default_guide.{kind} must fit memory.guide_bytes")
         return self
 
 
@@ -401,6 +409,13 @@ class Settings(Section):
             (
                 "auth.mail.timeout",
                 2 * self.auth.mail.timeout,
+                "control.outbox_lease_seconds",
+                control.outbox_lease_seconds,
+            ),
+            # A memory namespace purge is one bounded provider operation.
+            (
+                "providers.operation_seconds",
+                2 * self.providers.operation_seconds,
                 "control.outbox_lease_seconds",
                 control.outbox_lease_seconds,
             ),

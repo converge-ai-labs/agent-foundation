@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,6 +38,8 @@ class ThreadMemoryRow(Base):
             # Mount edits are visible thread changes, so they advance the thread version like inbox edits.
             "CREATE TRIGGER touch_threads_on_memory_insert AFTER INSERT ON thread_memories"
             " REFERENCING NEW TABLE AS changed FOR EACH STATEMENT EXECUTE FUNCTION touch_threads()",
+            "CREATE TRIGGER touch_threads_on_memory_update AFTER UPDATE ON thread_memories"
+            " REFERENCING NEW TABLE AS changed FOR EACH STATEMENT EXECUTE FUNCTION touch_threads()",
             "CREATE TRIGGER touch_threads_on_memory_delete AFTER DELETE ON thread_memories"
             " REFERENCING OLD TABLE AS changed FOR EACH STATEMENT EXECUTE FUNCTION touch_threads()",
         ),
@@ -47,4 +50,6 @@ class ThreadMemoryRow(Base):
     workspace_id: Mapped[str]
     name: Mapped[str]
     access: Mapped[str]
+    # Whether a record memory recalls records into each run's first input; file memories ignore it.
+    recall: Mapped[bool] = mapped_column(server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

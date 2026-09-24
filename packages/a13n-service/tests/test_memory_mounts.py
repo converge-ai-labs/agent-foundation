@@ -55,9 +55,19 @@ async def test_thread_mounts_are_edited_under_the_thread_version(service, script
     assert (await client.post(mounts, json=body)).status_code == 428
     assert (await client.post(mounts, json={**body, "name": "Notes"}, headers={"if-match": version})).status_code == 400
     added = await client.post(mounts, json=body, headers={"if-match": version})
-    assert added.status_code == 201 and added.json() == body and added.headers["etag"] != version
+    assert added.status_code == 201 and added.json() == {**body, "recall": True} and added.headers["etag"] != version
     assert (await client.post(mounts, json=body, headers={"if-match": version})).status_code == 412
-    current = {"if-match": added.headers["etag"]}
+    # Access and recall change in place, under the thread version like every mount edit.
+    change = {"access": "write", "recall": False}
+    assert (await client.patch(f"{mounts}/notes", json=change)).status_code == 428
+    stale = await client.patch(f"{mounts}/notes", json=change, headers={"if-match": version})
+    assert stale.status_code == 412
+    changed = await client.patch(f"{mounts}/notes", json=change, headers={"if-match": added.headers["etag"]})
+    assert changed.status_code == 200 and changed.json() == {**body, **change}, changed.text
+    assert changed.headers["etag"] not in {version, added.headers["etag"]}
+    unknown = await client.patch(f"{mounts}/other", json=change, headers={"if-match": changed.headers["etag"]})
+    assert unknown.status_code == 404
+    current = {"if-match": changed.headers["etag"]}
     again = await client.post(mounts, json={**body, "memory_id": team["id"]}, headers=current)
     assert again.status_code == 409 and again.json()["error"]["code"] == "already_exists", again.text
     twice = await client.post(mounts, json={**body, "name": "copy"}, headers=current)

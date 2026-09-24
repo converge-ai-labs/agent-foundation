@@ -1,11 +1,12 @@
-"""Workspace memories: CRUD with ETags, files by path with their own ETags, and file history."""
+"""Workspace memories: CRUD with ETags; a file memory's files by path with their own ETags and its file history;
+a record memory's records."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Path, Query, Response
 
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
-from a13n_service.resources.memories import files, service
+from a13n_service.resources.memories import files, records, service
 from a13n_service.resources.memories.schemas import (
     HistoryPurge,
     Memory,
@@ -17,14 +18,22 @@ from a13n_service.resources.memories.schemas import (
     MemoryFileReplace,
     MemoryFileState,
     MemoryPage,
+    MemoryRecordPage,
+    MemoryRecordSearch,
+    MemoryRecordText,
+    MemoryRecordView,
     MemoryRevisionDetail,
     MemoryRevisionPage,
     MemoryUpdate,
 )
+from a13n_service.resources.memories.tables import MemoryKind
 from a13n_service.resources.requests import CurrentRuntime
 from a13n_service.tenancy.requests import Actor
 
 router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}/memories", tags=["memories"])
+
+# A record ID is the provider's own.
+RecordId = Annotated[str, Path(max_length=256)]
 
 
 @router.post("", response_model=Memory, status_code=201)
@@ -41,6 +50,8 @@ async def list_memories(
     actor: Actor,
     runtime: CurrentRuntime,
     label: Annotated[list[str] | None, Query()] = None,
+    kind: MemoryKind | None = None,
+    type_: Annotated[str | None, Query(alias="type", max_length=64)] = None,
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> MemoryPage:
@@ -49,6 +60,8 @@ async def list_memories(
         actor,
         workspace_id,
         labels=label or [],
+        kind=kind,
+        type_=type_,
         limit=limit,
         cursor=cursor,
         settings=runtime.settings.memory,
@@ -244,3 +257,51 @@ async def restore_revision(
     if result.file is not None:
         tagged(response, result.file)
     return result
+
+
+@router.get("/{memory_id}/records", response_model=MemoryRecordPage)
+async def list_records(
+    workspace_id: str,
+    memory_id: str,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    limit: PageLimit = 50,
+    cursor: Annotated[str | None, Query(max_length=1024, description="The provider's own cursor")] = None,
+) -> MemoryRecordPage:
+    return await records.list_records(runtime, actor, workspace_id, memory_id, limit=limit, cursor=cursor)
+
+
+@router.post("/{memory_id}/records/search", response_model=MemoryRecordPage)
+async def search_records(
+    workspace_id: str, memory_id: str, body: MemoryRecordSearch, actor: Actor, runtime: CurrentRuntime
+) -> MemoryRecordPage:
+    """The records most similar to the query; the query travels in the body, never the URL."""
+    return await records.search_records(runtime, actor, workspace_id, memory_id, body)
+
+
+@router.post("/{memory_id}/records", response_model=MemoryRecordView, status_code=201)
+async def add_record(
+    workspace_id: str, memory_id: str, body: MemoryRecordText, actor: Actor, runtime: CurrentRuntime
+) -> MemoryRecordView:
+    return await records.add_record(runtime, actor, workspace_id, memory_id, body)
+
+
+@router.put("/{memory_id}/records/{record_id}", response_model=MemoryRecordView)
+async def update_record(
+    workspace_id: str,
+    memory_id: str,
+    record_id: RecordId,
+    body: MemoryRecordText,
+    actor: Actor,
+    runtime: CurrentRuntime,
+) -> MemoryRecordView:
+    """Replace the record's text; records carry no version, so the last writer wins."""
+    return await records.update_record(runtime, actor, workspace_id, memory_id, record_id, body)
+
+
+@router.delete("/{memory_id}/records/{record_id}", status_code=204)
+async def delete_record(
+    workspace_id: str, memory_id: str, record_id: RecordId, actor: Actor, runtime: CurrentRuntime
+) -> Response:
+    await records.delete_record(runtime, actor, workspace_id, memory_id, record_id)
+    return Response(status_code=204)

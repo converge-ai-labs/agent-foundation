@@ -32,6 +32,7 @@ from a13n_service.resources.memories.schemas import (
     MemoryRevisionDetail,
     MemoryRevisionPage,
 )
+from a13n_service.resources.memories.service import require_kind
 from a13n_service.resources.memories.tables import MemoryFileRevisionRow, MemoryFileRow, MemoryRow
 from a13n_service.resources.rows import audit_row, find_row
 from a13n_service.settings import MemorySettings
@@ -68,7 +69,9 @@ def refusals(memory_id: str, settings: MemorySettings, *, field: str = "path") -
 
 async def _memory(session: AsyncSession, actor: Principal, workspace_id: str, memory_id: str, verb: Verb) -> MemoryRow:
     scope = await workspace_scope(session, actor, workspace_id, "read")
-    return await find_row(session, actor, MemoryRow, scope, memory_id, verb)
+    memory = await find_row(session, actor, MemoryRow, scope, memory_id, verb)
+    require_kind(memory, "file")
+    return memory
 
 
 def _origin(actor: Principal) -> Origin:

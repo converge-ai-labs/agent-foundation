@@ -1,7 +1,8 @@
-"""Memories and the PostgreSQL file store behind them; deleting a memory deletes its store in the same transaction."""
+"""Memories and the PostgreSQL file store behind file memories; deleting a memory deletes its store in the same
+transaction. A record memory keeps its records in its Memory Provider's backend, under its namespace."""
 
 from datetime import datetime
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from sqlalchemy import (
     BigInteger,
@@ -20,6 +21,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
+from a13n_service.resources.providers.tables import provider_in_scope
+
+type MemoryKind = Literal["file", "record"]
 
 
 class MemoryRow(Stamped, Base):
@@ -28,10 +32,21 @@ class MemoryRow(Stamped, Base):
     __table_args__ = (
         UniqueConstraint("workspace_id", "key"),
         UniqueConstraint("workspace_id", "id"),
+        # A backend namespace belongs to one memory.
+        UniqueConstraint("provider_id", "namespace"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
-        CheckConstraint("kind IN ('file')", name="kind"),
-        CheckConstraint("type IN ('postgres')", name="type"),
-        rules(identity_guarded("memories")),
+        ForeignKeyConstraint(
+            ["organization_id", "provider_id"], ["memory_providers.organization_id", "memory_providers.id"]
+        ),
+        CheckConstraint("kind IN ('file', 'record')", name="kind"),
+        # The Service stores file memories in PostgreSQL itself; Memory Providers back record memories.
+        CheckConstraint("(type = 'postgres') = (kind = 'file')", name="type"),
+        CheckConstraint(
+            "(type = 'postgres') = (provider_id IS NULL) AND (provider_id IS NULL) = (namespace IS NULL)",
+            name="provider",
+        ),
+        CheckConstraint("kind = 'file' OR always_load = '[]'::jsonb", name="always_load"),
+        rules(identity_guarded("memories"), *provider_in_scope("memories", "provider_id", "memory_providers")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
@@ -39,8 +54,11 @@ class MemoryRow(Stamped, Base):
     key: Mapped[str]
     name: Mapped[str]
     description: Mapped[str | None]
-    kind: Mapped[str]
+    kind: Mapped[MemoryKind] = mapped_column(String)
     type: Mapped[str]
+    provider_id: Mapped[str | None] = mapped_column(String(72))
+    # The record memory's namespace in its provider's backend, such as a mem0 `user_id`.
+    namespace: Mapped[str | None]
     # NULL inherits the default guide; "" means none.
     guide: Mapped[str | None]
     # File paths whose content leads the memory's context, chosen by the owner, never the model.

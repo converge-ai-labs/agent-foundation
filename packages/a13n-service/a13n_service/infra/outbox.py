@@ -41,14 +41,14 @@ from a13n_service.infra.ids import new_object_id
 
 logger = get_logger(__name__)
 
-type OutboxKind = Literal["webhook", "child_result", "email"]
+type OutboxKind = Literal["webhook", "child_result", "email", "memory_purge"]
 
 
 class OutboxRow(Base):
     __tablename__ = "outbox"
     __table_args__ = (
         UniqueConstraint("kind", "dedupe_key"),
-        CheckConstraint("kind IN ('webhook', 'child_result', 'email')", name="kind"),
+        CheckConstraint("kind IN ('webhook', 'child_result', 'email', 'memory_purge')", name="kind"),
         # Account mail (password reset, email change) belongs to no organization; every other delivery does.
         CheckConstraint("organization_id IS NOT NULL OR kind = 'email'", name="tenant"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),

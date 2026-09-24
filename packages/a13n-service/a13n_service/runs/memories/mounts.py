@@ -13,12 +13,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.audit import record
-from a13n_service.infra.db import Storage, short_session, transaction
+from a13n_service.infra.db import Storage, assign, short_session, transaction
 from a13n_service.infra.errors import ServiceError, at_field, conflict, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.resources.memories.schemas import MemoryMount
 from a13n_service.resources.memories.tables import MemoryRow
-from a13n_service.runs.memories.schemas import MemoryMountPage
+from a13n_service.resources.rows import given
+from a13n_service.runs.memories.schemas import MemoryMountPage, MemoryMountUpdate
 from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.tables import RunRow, ThreadRow
 from a13n_service.runs.threads import get_thread, refresh_version, require_open
@@ -55,6 +56,7 @@ def _row(thread: ThreadRow, mount: MemoryMount) -> ThreadMemoryRow:
         workspace_id=thread.workspace_id,
         name=mount.name,
         access=mount.access,
+        recall=mount.recall,
     )
 
 
@@ -171,7 +173,7 @@ async def add_mount(
 ) -> tuple[MemoryMount, int]:
     """Mount a memory for the thread's later runs; returns the mount and the new thread version.
 
-    Changing a mount's memory or access is explicit: remove the name, then add it again.
+    Changing a mount's memory is explicit: remove the name, then add it again.
     """
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
@@ -182,6 +184,33 @@ async def add_mount(
         _audit(session, actor, thread, "create", body.name, body.memory_id)
         await refresh_version(session, thread)
         return body, thread.version
+
+
+async def update_mount(
+    storage: Storage,
+    actor: Principal,
+    workspace_id: str,
+    thread_id: str,
+    name: str,
+    body: MemoryMountUpdate,
+    *,
+    if_match: str | None,
+) -> tuple[MemoryMount, int]:
+    """Change a mount's access or recall for the thread's later runs; returns the mount and the new thread
+    version."""
+    async with transaction(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "run")
+        thread = await get_thread(session, scope.workspace_id, thread_id, lock=True)
+        require_match(if_match, thread.id, thread.version)
+        require_open(thread)
+        mount = await session.get(ThreadMemoryRow, (thread.id, name))
+        if mount is None:
+            raise not_found("mount", name)
+        changed = assign(mount, given(body, "access", "recall"))
+        if changed:
+            _audit(session, actor, thread, "update", name, mount.memory_id)
+            await refresh_version(session, thread)
+        return MemoryMount.model_validate(mount), thread.version
 
 
 async def remove_mount(

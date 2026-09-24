@@ -1,4 +1,4 @@
-"""The four provider resource tables (model, environment, connector, web) and their shared shape.
+"""The five provider resource tables (model, environment, connector, web, memory) and their shared shape.
 
 Each kind keeps its own table so the resources that use it hold typed foreign keys; only the columns and
 their scope rules are shared. `workspace_id IS NULL` shares a provider with every workspace of the org, and a
@@ -75,6 +75,13 @@ class WebProviderRow(ProviderRow):
     PROVIDER_KIND = "web"
     KIND: ClassVar[str] = "web_provider"
     ID_PREFIX = "wprov"
+
+
+class MemoryProviderRow(ProviderRow):
+    __tablename__ = "memory_providers"
+    PROVIDER_KIND = "memory"
+    KIND: ClassVar[str] = "memory_provider"
+    ID_PREFIX = "memprov"
 
 
 def provider_in_scope(table: str, column: str, providers: str) -> tuple[str, str]:

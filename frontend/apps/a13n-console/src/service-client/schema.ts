@@ -515,6 +515,62 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/organizations/{organization_id}/memory-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Providers */
+    get: operations["list_providers_api_v1_organizations__organization_id__memory_providers_get"];
+    put?: never;
+    /** Create Provider */
+    post: operations["create_provider_api_v1_organizations__organization_id__memory_providers_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization_id}/memory-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Provider */
+    get: operations["get_provider_api_v1_organizations__organization_id__memory_providers__provider_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Provider
+     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     */
+    patch: operations["update_provider_api_v1_organizations__organization_id__memory_providers__provider_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization_id}/memory-providers/{provider_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Provider */
+    post: operations["test_provider_api_v1_organizations__organization_id__memory_providers__provider_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/organizations/{organization_id}/model-providers": {
     parameters: {
       query?: never;
@@ -1728,6 +1784,65 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/records": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Records */
+    get: operations["list_records_api_v1_workspaces__workspace_id__memories__memory_id__records_get"];
+    put?: never;
+    /** Add Record */
+    post: operations["add_record_api_v1_workspaces__workspace_id__memories__memory_id__records_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/records/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Search Records
+     * @description The records most similar to the query; the query travels in the body, never the URL.
+     */
+    post: operations["search_records_api_v1_workspaces__workspace_id__memories__memory_id__records_search_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/records/{record_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Update Record
+     * @description Replace the record's text; records carry no version, so the last writer wins.
+     */
+    put: operations["update_record_api_v1_workspaces__workspace_id__memories__memory_id__records__record_id__put"];
+    post?: never;
+    /** Delete Record */
+    delete: operations["delete_record_api_v1_workspaces__workspace_id__memories__memory_id__records__record_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions": {
     parameters: {
       query?: never;
@@ -2528,7 +2643,8 @@ export interface paths {
     delete: operations["remove_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories__name__delete"];
     options?: never;
     head?: never;
-    patch?: never;
+    /** Update Mount */
+    patch: operations["update_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories__name__patch"];
     trace?: never;
   };
   "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/runs": {
@@ -4453,7 +4569,7 @@ export interface components {
       /** Always Load */
       always_load: string[];
       /** Content Bytes */
-      content_bytes: number;
+      content_bytes: number | null;
       /**
        * Created At
        * Format: date-time
@@ -4464,35 +4580,32 @@ export interface components {
       /** Description */
       description: string | null;
       /** File Count */
-      file_count: number;
+      file_count: number | null;
       /** Guide */
       guide: string | null;
       /** History Bytes */
-      history_bytes: number;
+      history_bytes: number | null;
       /** Id */
       id: string;
       /** Inherited Guide */
       inherited_guide: string;
       /** Key */
       key: string;
-      /**
-       * Kind
-       * @constant
-       */
-      kind: "file";
+      kind: components["schemas"]["MemoryKind"];
       /** Labels */
       labels: {
         [key: string]: string;
       };
       /** Name */
       name: string;
+      /** Namespace */
+      namespace: string | null;
       /** Organization Id */
       organization_id: string;
-      /**
-       * Type
-       * @constant
-       */
-      type: "postgres";
+      /** Provider Id */
+      provider_id: string | null;
+      /** Type */
+      type: string;
       /**
        * Updated At
        * Format: date-time
@@ -4507,7 +4620,11 @@ export interface components {
     };
     /** @enum {string} */
     MemoryAccess: "read" | "write";
-    /** MemoryCreate */
+    /**
+     * MemoryCreate
+     * @description `postgres` makes a file memory the Service stores; a Memory Provider's type makes a record memory in that
+     *     provider's backend, under a new namespace or the existing one `namespace` adopts.
+     */
     MemoryCreate: {
       /**
        * Always Load
@@ -4526,12 +4643,15 @@ export interface components {
       };
       /** Name */
       name: string;
+      /** Namespace */
+      namespace?: string | null;
+      /** Provider Id */
+      provider_id?: string | null;
       /**
        * Type
        * @default postgres
-       * @constant
        */
-      type?: "postgres";
+      type?: string;
     };
     /** MemoryFile */
     MemoryFile: {
@@ -4627,9 +4747,12 @@ export interface components {
       /** Path */
       path: string;
     };
+    /** @enum {string} */
+    MemoryKind: "file" | "record";
     /**
      * MemoryMount
-     * @description A memory under the name the model addresses it by, exposing the tools its access allows.
+     * @description A memory under the name the model addresses it by, exposing the tools its access allows. `recall` lets a
+     *     record memory recall records into each run's first input; file memories ignore it.
      */
     MemoryMount: {
       access: components["schemas"]["MemoryAccess"];
@@ -4637,6 +4760,11 @@ export interface components {
       memory_id: string;
       /** Name */
       name: string;
+      /**
+       * Recall
+       * @default true
+       */
+      recall?: boolean;
     };
     /** MemoryMountPage */
     MemoryMountPage: {
@@ -4645,12 +4773,57 @@ export interface components {
       /** Next Cursor */
       next_cursor?: string | null;
     };
+    /**
+     * MemoryMountUpdate
+     * @description Fields left out stay unchanged.
+     */
+    MemoryMountUpdate: {
+      access?: components["schemas"]["MemoryAccess"] | null;
+      /** Recall */
+      recall?: boolean | null;
+    };
     /** MemoryPage */
     MemoryPage: {
       /** Items */
       items: components["schemas"]["Memory"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** MemoryRecordPage */
+    MemoryRecordPage: {
+      /** Items */
+      items: components["schemas"]["MemoryRecordView"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** MemoryRecordSearch */
+    MemoryRecordSearch: {
+      /**
+       * Limit
+       * @default 10
+       */
+      limit?: number;
+      /** Query */
+      query: string;
+    };
+    /** MemoryRecordText */
+    MemoryRecordText: {
+      /** Text */
+      text: string;
+    };
+    /**
+     * MemoryRecordView
+     * @description A record as the memory's provider returns it; `score` is its similarity to a search query.
+     */
+    MemoryRecordView: {
+      /** Id */
+      id: string;
+      /** Score */
+      score?: number | null;
+      /** Text */
+      text: string;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * MemoryRevision
@@ -7969,6 +8142,144 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  list_providers_api_v1_organizations__organization_id__memory_providers_get: {
+    parameters: {
+      query?: {
+        workspace_id?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_provider_api_v1_organizations__organization_id__memory_providers_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_provider_api_v1_organizations__organization_id__memory_providers__provider_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_provider_api_v1_organizations__organization_id__memory_providers__provider_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        "If-Match"?: string | null;
+      };
+      path: {
+        organization_id: string;
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  test_provider_api_v1_organizations__organization_id__memory_providers__provider_id__test_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderTest"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_providers_api_v1_organizations__organization_id__model_providers_get: {
     parameters: {
       query?: {
@@ -8418,7 +8729,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        kind: "model" | "environment" | "connector" | "web";
+        kind: "model" | "environment" | "connector" | "web" | "memory";
       };
       cookie?: never;
     };
@@ -10507,6 +10818,8 @@ export interface operations {
     parameters: {
       query?: {
         label?: string[] | null;
+        kind?: components["schemas"]["MemoryKind"] | null;
+        type?: string | null;
         limit?: number;
         cursor?: string | null;
       };
@@ -10803,6 +11116,147 @@ export interface operations {
         workspace_id: string;
         memory_id: string;
         path: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_records_api_v1_workspaces__workspace_id__memories__memory_id__records_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        /** @description The provider's own cursor */
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRecordPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  add_record_api_v1_workspaces__workspace_id__memories__memory_id__records_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryRecordText"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRecordView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  search_records_api_v1_workspaces__workspace_id__memories__memory_id__records_search_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryRecordSearch"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRecordPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_record_api_v1_workspaces__workspace_id__memories__memory_id__records__record_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+        record_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryRecordText"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRecordView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_record_api_v1_workspaces__workspace_id__memories__memory_id__records__record_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+        memory_id: string;
+        record_id: string;
       };
       cookie?: never;
     };
@@ -12719,6 +13173,39 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories__name__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        "If-Match"?: string | null;
+      };
+      path: {
+        workspace_id: string;
+        thread_id: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryMountUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryMount"];
+        };
       };
       400: components["responses"]["Error"];
       default: components["responses"]["Error"];
