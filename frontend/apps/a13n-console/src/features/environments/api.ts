@@ -1,51 +1,20 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { Client } from "../../service-client";
 import { data, representation, type Schema } from "../../shared/api";
+import { providerApi } from "../providers/api";
 export type EnvironmentScope = {
   kind: "workspace" | "organization";
   id: string;
 };
 /** Templates belong to one workspace. */
 export type WorkspaceScope = EnvironmentScope & { kind: "workspace" };
-/**
- * Providers live in the organization collection: a workspace lists its own and
- * the shared ones and creates its own; the organization creates shared ones.
- */
+/** The organization's environment providers as the scope sees them. */
 export function environmentApi(
   client: Client,
   organizationId: string,
   scope: EnvironmentScope,
 ) {
-  const workspace_id = scope.kind === "workspace" ? scope.id : null;
-  return {
-    providers: (signal: AbortSignal, cursor?: string) =>
-      client.http
-        .GET("/api/v1/organizations/{organization_id}/environment-providers", {
-          params: {
-            path: { organization_id: organizationId },
-            query: { workspace_id, cursor, limit: 100 },
-          },
-          signal,
-        })
-        .then(data),
-    createProvider: (body: Omit<Schema["ProviderCreate"], "workspace_id">) =>
-      client.http
-        .POST("/api/v1/organizations/{organization_id}/environment-providers", {
-          params: { path: { organization_id: organizationId } },
-          body: { ...body, workspace_id },
-        })
-        .then(data),
-    /** A read-only probe of the saved account: it creates or starts nothing. */
-    testProvider: (provider_id: string) =>
-      client.http
-        .POST(
-          "/api/v1/organizations/{organization_id}/environment-providers/{provider_id}/test",
-          {
-            params: { path: { organization_id: organizationId, provider_id } },
-          },
-        )
-        .then(data),
-  };
+  return providerApi(client, organizationId, scope, "environment");
 }
 
 export function environmentTemplates(

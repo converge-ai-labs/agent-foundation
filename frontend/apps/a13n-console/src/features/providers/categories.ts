@@ -1,4 +1,5 @@
 import {
+  BrainIcon,
   CubeIcon,
   GlobeIcon,
   MonitorIcon,
@@ -43,6 +44,14 @@ export const providerCategories = [
     icon: PlugIcon,
     description: "Connect integration services for external accounts.",
     empty: "Add an integration service, then connect accounts through it.",
+  },
+  {
+    value: "memory",
+    label: "Memory",
+    emptyTitle: "No memory providers yet",
+    icon: BrainIcon,
+    description: "Connect record memory backends, such as mem0.",
+    empty: "Add a backend, then create record memories on it.",
   },
 ] as const;
 

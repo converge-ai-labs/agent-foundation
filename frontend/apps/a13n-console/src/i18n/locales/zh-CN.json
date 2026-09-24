@@ -1654,5 +1654,10 @@
   "{{count}} memories_other": "{{count}} 个记忆",
   "{{count}} memories on this page": "本页 {{count}} 个记忆",
   "{{count}} memories on this page_one": "本页 {{count}} 个记忆",
-  "{{count}} memories on this page_other": "本页 {{count}} 个记忆"
+  "{{count}} memories on this page_other": "本页 {{count}} 个记忆",
+  "No memory providers yet": "还没有记忆供应商",
+  "Connect record memory backends, such as mem0.": "连接保存记录记忆的后端，例如 mem0。",
+  "Add a backend, then create record memories on it.": "添加一个后端，然后在其上创建记录记忆。",
+  "Choose the backend that keeps record memories.": "选择保存记录记忆的后端。",
+  "Lists records of a namespace no memory uses, without changing anything.": "列出一个未被任何记忆使用的命名空间中的记录，不做任何更改。"
 }

@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ConnectorProviders } from "../features/connectors/providers";
 import { EnvironmentProviders } from "../features/environments/providers";
+import { MemoryProviders } from "../features/memories/providers";
 
 const http = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -52,7 +53,7 @@ afterEach(() => {
 });
 
 const cases = ["workspace", "organization"].flatMap((kind) =>
-  ["connector", "environment"].map((surface) => ({
+  ["connector", "environment", "memory"].map((surface) => ({
     kind: kind as "workspace" | "organization",
     surface,
   })),
@@ -65,9 +66,9 @@ function setup(
 ) {
   const connector = surface === "connector";
   const scope = { kind, id: kind === "workspace" ? "ws_test" : "org_test" };
-  const type = connector ? "composio" : "e2b";
+  const type = { connector: "composio", environment: "e2b" }[surface] ?? "mem0";
   const provider = {
-    id: connector ? "cprov_test" : "eprov_test",
+    id: `${surface}_test`,
     name: "Existing provider",
     type,
     organization_id: "org_test",
@@ -83,7 +84,7 @@ function setup(
     setup_label: null,
     supports_test: connector,
     type,
-    display_name: connector ? "Composio" : "e2b",
+    display_name: connector ? "Composio" : type,
     configuration_schema: {
       type: "object",
       properties: {},
@@ -121,6 +122,8 @@ function setup(
     <QueryClientProvider client={cache}>
       {connector ? (
         <ConnectorProviders scope={scope} />
+      ) : surface === "memory" ? (
+        <MemoryProviders scope={scope} />
       ) : (
         <EnvironmentProviders scope={scope} />
       )}

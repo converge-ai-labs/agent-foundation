@@ -5,6 +5,7 @@ import { useAccess } from "../../layout/workspace";
 import { Empty } from "../../shared/collection";
 import { ConnectorProviders } from "../connectors/providers";
 import { EnvironmentProviders } from "../environments/providers";
+import { MemoryProviders } from "../memories/providers";
 import { Providers } from "../models/providers";
 import { WebProviders } from "../web/page";
 import { providerCategories, providerCategory } from "./categories";
@@ -15,6 +16,7 @@ const components = {
   web: WebProviders,
   environments: EnvironmentProviders,
   connectors: ConnectorProviders,
+  memory: MemoryProviders,
 };
 export function ProvidersPage({
   scope,

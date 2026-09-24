@@ -1654,5 +1654,10 @@
   "{{count}} memories_other": "{{count}} memories",
   "{{count}} memories on this page": "{{count}} memories on this page",
   "{{count}} memories on this page_one": "{{count}} memory on this page",
-  "{{count}} memories on this page_other": "{{count}} memories on this page"
+  "{{count}} memories on this page_other": "{{count}} memories on this page",
+  "No memory providers yet": "No memory providers yet",
+  "Connect record memory backends, such as mem0.": "Connect record memory backends, such as mem0.",
+  "Add a backend, then create record memories on it.": "Add a backend, then create record memories on it.",
+  "Choose the backend that keeps record memories.": "Choose the backend that keeps record memories.",
+  "Lists records of a namespace no memory uses, without changing anything.": "Lists records of a namespace no memory uses, without changing anything."
 }
