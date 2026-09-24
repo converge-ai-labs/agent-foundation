@@ -1,25 +1,21 @@
-import {
-  CaretRightIcon,
-  FileTextIcon,
-  FolderIcon,
-} from "@phosphor-icons/react";
-import { SegmentedControl } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import type { Schema } from "../../../shared/api";
 import { ErrorNotice, Loading } from "../../../shared/feedback";
-import { MarkdownContent } from "../../../shared/markdown";
-import { archiveQuery } from "../archive";
 import {
+  FileBody,
+  FileBrowser,
+  FileHeader,
+  FileNotice,
+  FileText,
   fileTree,
-  markdownBody,
-  previewLimit,
-  readTextFile,
-  type FileNode,
-} from "../package-files";
-import styles from "../skills.module.css";
+  isMarkdown,
+  type FileView,
+} from "../../../shared/files";
+import { archiveQuery } from "../archive";
+import { previewLimit, readTextFile } from "../package-files";
 
 /** The published package: its tree at the left, the chosen file at the right. */
 export function SkillFiles({
@@ -35,70 +31,19 @@ export function SkillFiles({
   );
   const file = revision.config.files.find((item) => item.path === selected);
   return (
-    <div className={styles.browser}>
-      <nav
-        className={`${styles.tree} a13n-scrollbar`}
-        aria-label={t("Package files")}
-      >
-        <p className={styles.treeHeading}>
-          {t("Files")} <span>{revision.config.files.length}</span>
-        </p>
-        <FileTree nodes={nodes} selected={selected} select={setSelected} />
-      </nav>
-      <section className={styles.document} aria-label={selected}>
-        {file ? (
-          <FileContent key={file.path} file={file} revision={revision} />
-        ) : (
-          <p className={styles.notice}>
-            {t("File not found in this version.")}
-          </p>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function FileTree({
-  nodes,
-  selected,
-  select,
-}: {
-  nodes: FileNode[];
-  selected: string;
-  select: (path: string) => void;
-}) {
-  return (
-    <ul>
-      {nodes.map((node) => (
-        <li key={node.path}>
-          {node.children ? (
-            <details open>
-              <summary title={node.path}>
-                <CaretRightIcon size={12} aria-hidden="true" />
-                <FolderIcon size={14} aria-hidden="true" />
-                <span>{node.name}</span>
-              </summary>
-              <FileTree
-                nodes={node.children}
-                selected={selected}
-                select={select}
-              />
-            </details>
-          ) : (
-            <button
-              type="button"
-              className={styles.fileButton}
-              aria-current={selected === node.path ? "true" : undefined}
-              title={node.path}
-              onClick={() => select(node.path)}
-            >
-              <FileTextIcon size={14} aria-hidden="true" />
-              <span>{node.name}</span>
-            </button>
-          )}
-        </li>
-      ))}
-    </ul>
+    <FileBrowser
+      label={t("Package files")}
+      count={revision.config.files.length}
+      nodes={nodes}
+      selected={selected}
+      onSelect={setSelected}
+    >
+      {file ? (
+        <FileContent key={file.path} file={file} revision={revision} />
+      ) : (
+        <FileNotice>{t("File not found in this version.")}</FileNotice>
+      )}
+    </FileBrowser>
   );
 }
 
@@ -111,7 +56,7 @@ function FileContent({
 }) {
   const client = useClient(),
     { t } = useTranslation();
-  const [view, setView] = useState("preview");
+  const [view, setView] = useState<FileView>("preview");
   const large = file.size > previewLimit;
   const archive = useQuery({
     ...archiveQuery(client, revision),
@@ -125,36 +70,22 @@ function FileContent({
       return { error };
     }
   }, [archive.data, file, large, revision.config.root]);
-  const readable = typeof preview.text === "string";
-  const markdown = /\.md$/i.test(file.path) && !large;
+  const markdown = isMarkdown(file.path) && !large;
   return (
     <>
-      <header className={styles.documentHeader}>
-        <span className={styles.documentPath}>
-          <span title={file.path}>{file.path}</span>
-          <small>
-            {t("{{size}} bytes", { size: file.size.toLocaleString() })}
-          </small>
-        </span>
-        {markdown && (
-          <SegmentedControl
-            label={t("File view")}
-            value={view}
-            onValueChange={setView}
-            options={[
-              { value: "preview", label: t("Preview") },
-              { value: "source", label: t("Source") },
-            ]}
-          />
-        )}
-      </header>
-      <div className={styles.documentBody}>
+      <FileHeader
+        path={file.path}
+        size={file.size}
+        view={markdown ? view : undefined}
+        onViewChange={setView}
+      />
+      <FileBody>
         {large ? (
-          <p className={styles.notice}>
+          <FileNotice>
             {t(
               "This file is too large to preview. Download the ZIP to view it.",
             )}
-          </p>
+          </FileNotice>
         ) : archive.isPending ? (
           <Loading variant="code" />
         ) : archive.error || preview.error ? (
@@ -163,30 +94,16 @@ function FileContent({
             retry={() => void archive.refetch()}
           />
         ) : preview.text === null ? (
-          <p className={styles.notice}>
+          <FileNotice>
             {t("This file has no text preview. Download the ZIP to view it.")}
-          </p>
-        ) : readable ? (
-          markdown && view === "preview" ? (
-            <div className={styles.markdown}>
-              <MarkdownContent text={markdownBody(preview.text!)} />
-            </div>
-          ) : (
-            <Source text={preview.text!} />
-          )
+          </FileNotice>
+        ) : typeof preview.text === "string" ? (
+          <FileText
+            text={preview.text}
+            preview={markdown && view === "preview"}
+          />
         ) : null}
-      </div>
+      </FileBody>
     </>
-  );
-}
-
-function Source({ text }: { text: string }) {
-  const { t } = useTranslation();
-  return text ? (
-    <pre className={`${styles.source} a13n-scrollbar`}>
-      <code>{text}</code>
-    </pre>
-  ) : (
-    <p className={styles.notice}>{t("This file is empty.")}</p>
   );
 }

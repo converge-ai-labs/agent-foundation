@@ -167,38 +167,3 @@
 .observations span {
   font-variant-numeric: tabular-nums;
 }
-
-/* Patch ------------------------------------------------------------------ */
-.patch {
-  max-height: 280px;
-  overflow: auto;
-  border-radius: var(--a13n-radius-tile);
-  background: var(--a13n-elevated);
-}
-.patch pre {
-  margin: 0;
-  padding: 9px 0;
-  font-family: var(--a13n-mono);
-  font-size: 12px;
-  line-height: 1.55;
-}
-.hunk {
-  display: block;
-}
-.hunk + .hunk {
-  margin-top: 8px;
-}
-.patchLine {
-  display: block;
-  padding: 0 11px;
-  white-space: pre;
-}
-.patchLine[data-sign="added"] {
-  color: var(--a13n-success);
-}
-.patchLine[data-sign="removed"] {
-  color: var(--a13n-danger);
-}
-.patchLine[data-sign="hunk"] {
-  color: var(--a13n-secondary);
-}

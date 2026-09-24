@@ -1,32 +1,8 @@
 import { strToU8, zipSync } from "fflate";
 import { expect, it } from "vitest";
-import {
-  fileTree,
-  markdownBody,
-  previewLimit,
-  readTextFile,
-} from "./package-files";
+import { previewLimit, readTextFile } from "./package-files";
 
 const file = (path: string, size = 0) => ({ path, size });
-
-it("keeps nested paths distinct and sorts directories before files", () => {
-  const tree = fileTree([
-    file("SKILL.md"),
-    file("references/check.md"),
-    file("scripts/check.md"),
-    file("references/deep/example.txt"),
-  ]);
-  expect(tree.map((node) => node.name)).toEqual([
-    "references",
-    "scripts",
-    "SKILL.md",
-  ]);
-  expect(tree[0].children?.map((node) => node.path)).toEqual([
-    "references/deep",
-    "references/check.md",
-  ]);
-  expect(tree[1].children?.[0].path).toBe("scripts/check.md");
-});
 
 it("reads only the selected file below the package root and preserves UTF-8 source", () => {
   const text = "---\nname: 示例\ndescription: Review\n---\n# Review\n";
@@ -40,8 +16,6 @@ it("reads only the selected file below the package root and preserves UTF-8 sour
   expect(readTextFile(nested, "review/", file("SKILL.md", bytes.length))).toBe(
     text,
   );
-  expect(markdownBody(text)).toBe("# Review\n");
-  expect(markdownBody("---\nordinary markdown")).toBe("---\nordinary markdown");
 });
 
 it("does not render binary, invalid UTF-8, or oversized files as text", () => {

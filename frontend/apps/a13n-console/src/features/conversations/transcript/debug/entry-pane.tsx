@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../../shared/api";
 import { MarkdownContent } from "../../../../shared/markdown";
 import { formatCost } from "../../../../shared/cost";
+import { Patch } from "../../../../shared/diff";
 import { formatDuration, formatTokens, resultExcerpt } from "../../format";
 import type {
   ActionEntry,
@@ -16,7 +17,6 @@ import type { StepUsage } from "../../usage";
 import { readQuestions } from "../questions";
 import { workState } from "../entry-language";
 import { PaneSection, PaneStats, PaneValue, RawDialog } from "./pane-parts";
-import { Patch } from "./patch";
 import type { RunScope } from "./scope";
 import styles from "./pane.module.css";
 
@@ -227,7 +227,7 @@ function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
             <code className={styles.panePath}>{entry.edit.filePath}</code>
           }
         >
-          <Patch edit={entry.edit} />
+          <Patch hunks={entry.edit.diff.hunks} />
         </PaneSection>
       )}
       {entry.failure != null && (
