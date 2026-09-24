@@ -5,12 +5,11 @@ on:
     branches: [main]
     paths:
       - 'proto/a13n-service/openapi.json'
-      - 'proto/a13n-service/notification-client.schema.json'
-      - 'proto/a13n-service/run-stream-event.schema.json'
-      - 'proto/a13n-service/fixtures/wire.json'
+      - 'proto/a13n-service/thread-stream.schema.json'
       - 'spec/api-conventions.md'
-      - 'spec/a13n-service/21-native-streaming-and-notifications.md'
-      - 'spec/a13n-service/20-agent-control-queued-submissions.md'
+      - 'spec/a13n-service/05-runs.md'
+      - 'spec/a13n-service/07-facts-and-delivery.md'
+      - 'spec/a13n-service/10-api.md'
   workflow_dispatch:
     inputs:
       source_sha:

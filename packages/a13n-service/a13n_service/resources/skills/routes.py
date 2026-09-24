@@ -191,7 +191,16 @@ async def set_default_revision(
     return tagged(response, result)
 
 
-@router.get("/{skill_id}/revisions/{revision_id}/content", response_class=Response)
+@router.get(
+    "/{skill_id}/revisions/{revision_id}/content",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "The revision's package as a zip archive",
+            "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
+)
 async def read_archive(
     workspace_id: str, skill_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Response:
@@ -206,7 +215,16 @@ async def read_archive(
     )
 
 
-@router.get("/{skill_id}/revisions/{revision_id}/files/{path:path}", response_class=Response)
+@router.get(
+    "/{skill_id}/revisions/{revision_id}/files/{path:path}",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "One file of the revision's package",
+            "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
+)
 async def read_file(
     workspace_id: str, skill_id: str, revision_id: str, path: str, actor: Actor, runtime: CurrentRuntime
 ) -> Response:

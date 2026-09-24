@@ -21,30 +21,35 @@ def workflow() -> dict:
     "changed",
     [
         "proto/a13n-service/openapi.json",
-        "proto/a13n-service/notification-client.schema.json",
-        "proto/a13n-service/run-stream-event.schema.json",
-        "proto/a13n-service/fixtures/wire.json",
+        "proto/a13n-service/thread-stream.schema.json",
         "spec/api-conventions.md",
-        "spec/a13n-service/21-native-streaming-and-notifications.md",
-        "spec/a13n-service/20-agent-control-queued-submissions.md",
+        "spec/a13n-service/05-runs.md",
+        "spec/a13n-service/07-facts-and-delivery.md",
+        "spec/a13n-service/10-api.md",
     ],
 )
 def test_consumed_contract_changes_notify(changed: str) -> None:
+    assert (ROOT / changed).is_file()
     assert any(fnmatch.fnmatchcase(changed, pattern) for pattern in workflow()[True]["push"]["paths"])
 
 
 @pytest.mark.parametrize(
     "changed",
     [
-        "packages/a13n-service/a13n_service/gateway/native_streaming.py",
-        "packages/a13n-service/a13n_service/gateway/notifications.py",
-        "packages/a13n-service/a13n_service/run_stream/projector.py",
+        "packages/a13n-service/a13n_service/runs/routes.py",
+        "packages/a13n-service/a13n_service/runs/stream.py",
+        "packages/a13n-service/a13n_service/runs/display.py",
         "packages/a13n-harness/a13n_harness/stream.py",
         "packages/a13n-stream-protocol/a13n_stream_protocol/events.py",
         "uv.lock",
         "pyproject.toml",
         "proto/a13n-service/README.md",
-        "spec/a13n-service/37-service-sdks-and-clients.md",
+        "spec/a13n-service/README.md",
+        "proto/a13n-service/notification-client.schema.json",
+        "proto/a13n-service/run-stream-event.schema.json",
+        "proto/a13n-service/fixtures/wire.json",
+        "spec/a13n-service/21-native-streaming-and-notifications.md",
+        "spec/a13n-service/20-agent-control-queued-submissions.md",
         "scripts/export-a13n-service-openapi.py",
         ".github/workflows/notify-service-contract.yml",
     ],
