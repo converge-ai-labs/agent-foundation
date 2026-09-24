@@ -1,14 +1,15 @@
 """HTTP acceptance preserves durable mount receipts and resource authorization."""
 
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
 
 import httpx2
 import pytest
 from a13n_service.api import install_api_conventions
 from a13n_service.environments.router import router
-from a13n_service.environments.websocket.coordination import DEFAULT_LIMITS
 from a13n_service.iam import PrincipalRef
-from anyio import create_task_group, sleep
+from anyio import sleep
 from fastapi import FastAPI, Request
 
 from tests.environments.websocket.conftest import relay_redis as relay_redis
@@ -19,6 +20,33 @@ from .test_websocket_acceptance import _connect
 from .test_websocket_use_authorization import client_environment as client_environment
 
 pytestmark = pytest.mark.anyio
+HTTP_LEASE_MS = 5_000
+
+
+@asynccontextmanager
+async def _online_connection(coordination, environment_id):
+    # HTTP acceptance is not a lease-expiration test. Allow for busy CI workers.
+    coordination.limits = replace(coordination.limits, lease_ms=HTTP_LEASE_MS, candidate_ms=30_000)
+    connection = await _connect(coordination, environment_id)
+
+    async def keep_online():
+        while True:
+            observed = await coordination.renew(connection)
+            assert observed.value.connection == connection and observed.value.status == "online"
+            await sleep(coordination.limits.lease_ms / 3000)
+
+    # Do not keep an AnyIO cancel scope across a fixture yield: a keeper failure
+    # would cancel the shared pytest runner before it can report or clean up.
+    keeper = asyncio.create_task(keep_online())
+    try:
+        yield
+    finally:
+        keeper.cancel()
+        try:
+            with suppress(asyncio.CancelledError):
+                await keeper
+        finally:
+            await coordination.retire(connection)
 
 
 @pytest.fixture
@@ -39,30 +67,32 @@ async def mount_api(mount_run, process_runtime_factory, interaction_sessions, re
         if getattr(request, "param", "online") == "offline":
             yield client, app, runtime, f"/api/v1/runs/{run.id}/environment-mounts", environment.id
             return
-        # Construct the HTTP app before starting the short-lived online lease.
-        connection = await _connect(coordination, environment.id)
+        async with _online_connection(coordination, environment.id):
+            yield client, app, runtime, f"/api/v1/runs/{run.id}/environment-mounts", environment.id
 
-        async def keep_online():
-            while True:
-                await sleep(coordination.limits.lease_ms / 3000)
-                observed = await coordination.renew(connection)
-                assert observed.value.connection == connection and observed.value.status == "online"
 
-        try:
-            async with create_task_group() as tasks:
-                tasks.start_soon(keep_online)
-                try:
-                    yield client, app, runtime, f"/api/v1/runs/{run.id}/environment-mounts", environment.id
-                finally:
-                    tasks.cancel_scope.cancel()
-        finally:
-            await coordination.retire(connection)
+async def test_online_connection_reports_keeper_failure_and_retires(mount_run, monkeypatch):
+    _, coordination, _, _, environment = mount_run
+    failed = asyncio.Event()
+
+    async def fail_renew(connection):
+        failed.set()
+        raise RuntimeError("renewal failed")
+
+    monkeypatch.setattr(coordination, "renew", fail_renew)
+    with pytest.raises(RuntimeError, match="renewal failed"):
+        async with _online_connection(coordination, environment.id):
+            await asyncio.wait_for(failed.wait(), timeout=5)
+            # A failed keeper must not cancel the pytest runner or its teardown.
+            await sleep(0)
+    observed = await coordination.observe(environment.organization_id, environment.id)
+    assert observed.value.status == "offline"
 
 
 async def test_mount_http_current_replay_and_ordered_pagination(mount_api):
     client, _, _, path, environment_id = mount_api
     # An online fixture must survive the original connection lease.
-    await sleep(DEFAULT_LIMITS.lease_ms / 1000 + 0.1)
+    await sleep(HTTP_LEASE_MS / 1000 + 0.1)
     first = {
         "name": "computer",
         "environment_id": environment_id,

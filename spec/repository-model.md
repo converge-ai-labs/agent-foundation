@@ -114,7 +114,7 @@ The current cross-group requirements are:
 
 | Consumer                     | Dependency               | Published requirement                 |
 | ---------------------------- | ------------------------ | ------------------------------------- |
-| Harness UI                   | Harness, Stream Protocol | `>=0.0.27,<0.1.0`, identical for both |
+| Harness UI                   | Harness, Stream Protocol | `>=0.0.44,<0.1.0`, identical for both |
 | Harness UI, Harness          | `a13n-logging`           | `>=0.1.0,<0.2.0`                      |
 | Harness, Harness UI, Service | `a13n-envd-client`       | `>=0.0.6,<0.1.0`                      |
 
