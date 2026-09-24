@@ -10,12 +10,11 @@ from a13n_logging import LogFormat, configure_logging, get_logger
 configure_logging(
     log_format=LogFormat.json,
     logger_names=("my_application",),
-    context={"service": "example"},
 )
 get_logger("my_application.tasks").info("ready", extra={"task_id": "task-example"})
 ```
 
-Configure once at the executable boundary. Libraries only create namespaced loggers. JSON goes to stdout; `LogFormat.pretty` selects Rich terminal rendering. No logger namespace or root logger is configured by default, and this package does not redact secret values. Optional file output uses standard size-based rotation.
+Configure once at the executable boundary. Libraries only create namespaced loggers. JSON goes to stdout; `LogFormat.pretty` selects Rich terminal rendering. No logger namespace or root logger is configured by default, and this package does not redact secret values.
 
 The [Logging guide](../../docs/a13n-logging/index.md) documents the public exports, configuration defaults, field precedence, exception behavior, output ownership, and customization.
 
