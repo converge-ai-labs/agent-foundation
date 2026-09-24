@@ -114,12 +114,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "a13n-harness" },
-    { name = "a13n-logging" },
-    { name = "anyio" },
-    { name = "httpx2" },
-    { name = "openai" },
     { name = "pydantic" },
-    { name = "pydantic-ai" },
 ]
 
 [package.dev-dependencies]
@@ -132,12 +127,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-harness", editable = "../../packages/a13n-harness" },
-    { name = "a13n-logging", editable = "../../packages/a13n-logging" },
-    { name = "anyio", specifier = ">=4,<5" },
-    { name = "httpx2", specifier = ">=2,<3" },
-    { name = "openai", specifier = ">=3.8,<4" },
     { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "pydantic-ai", specifier = ">=2.46.0,<3" },
 ]
 
 [package.metadata.requires-dev]

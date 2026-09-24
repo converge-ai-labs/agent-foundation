@@ -10,7 +10,7 @@ def _files(environment):
 
 @pytest.mark.anyio
 async def test_installed_workspace_direct_operations_and_reuse(tmp_path):
-    """One installed plugin performs real operations without Service or an Agent Run."""
+    """One installed plugin performs real operations without an Agent Run."""
     definition = load_provider_plugins(("acme",))[0].manifest.environment[0]
     first = await definition.create({"directory": "notes"}, configuration={"root": str(tmp_path)})
     await first.prepare()  # Provisioning before binding is supported.

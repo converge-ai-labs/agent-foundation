@@ -2,7 +2,7 @@
 
 ## Design Position
 
-A Provider is an inert immutable value that declares how to reach one external capability and how to open it. `a13n_harness.providers` owns one shared core for four Provider domains: Model, Web, Connector, and Environment. Every domain reuses the same identity, typed input models, credential declaration, setup help, selection catalog, and installed-plugin contract, and adds only the operations its capability actually needs.
+A Provider is an inert immutable value that declares how to reach one external capability and how to open it. `a13n_harness.providers` owns one shared core for four Provider domains: Model, Web, Connector, and Environment. Every domain reuses the same identity, typed input models, credential declaration, setup help, and selection catalog, and adds only the operations its capability actually needs. Installed packages contribute Environment definitions through one plugin contract.
 
 Providers are values, not registries. Importing a definition performs no I/O, opens no client, and grants no authority. A Host selects the definitions its deployment trusts, supplies validated configuration and a current credential, and owns the resulting resource lifetime.
 
@@ -13,7 +13,7 @@ Providers are values, not registries. Importing a definition performs no I/O, op
 | Identity, typed input models, credential declaration          | `ProviderDefinition` in the owning domain module |
 | Domain operation contract                                     | The domain's definition type                     |
 | Native definitions shipped with Harness                       | Each domain's built-in tuple                     |
-| Installed third-party contributions                           | `ProviderManifest` under one entry-point group   |
+| Installed third-party Environment definitions                 | `ProviderManifest` under one entry-point group   |
 | Selection and unique type per domain                          | `ProviderCatalog`                                |
 | Credential storage, encryption, rotation, and current value   | Host                                             |
 | Resource records, authorization, and deployment configuration | Host                                             |
@@ -107,19 +107,16 @@ Catalog presence never authorizes use. A Host resolves an allowed type from trus
 
 ## Installed Plugins
 
-A third-party distribution contributes Providers through exactly one entry-point group, `a13n_harness.providers.plugins`, whose target is an immutable manifest value:
+A third-party distribution contributes Environment Providers through exactly one entry-point group, `a13n_harness.providers.plugins`, whose target is an immutable manifest value:
 
 ```python
 @dataclass(frozen=True, slots=True)
 class ProviderManifest:
     api_version: int
-    model: tuple[ModelProviderDefinition, ...] = ()
-    web: tuple[WebProviderDefinition, ...] = ()
     environment: tuple[EnvironmentProviderDefinition, ...] = ()
-    connector: tuple[ConnectorProviderDefinition, ...] = ()
 ```
 
-`api_version` is a fixed literal declared by the author, compared with the supported version rather than derived from the installed Harness. Each field must be an immutable tuple of that domain's definition type. One manifest may contribute to several domains; one distribution may publish several named entry points.
+`api_version` is a fixed literal declared by the author, compared with the supported version rather than derived from the installed Harness. `environment` must be an immutable tuple of `EnvironmentProviderDefinition` values. One distribution may publish several named entry points. Model, Web, and Connector definitions are composed by the Host in code.
 
 `load_provider_plugins(enabled)` imports only the entry-point names the deployment selected. It rejects a duplicate or malformed selected name, a selected name that is not installed, an ambiguous name matching several installed entry points, and a target that is not a `ProviderManifest`. An empty selection performs no metadata scan and imports nothing. The loader reports the entry-point name, distribution name, distribution version, and import target as diagnostic provenance; provenance is not authorization.
 
@@ -127,7 +124,7 @@ Installation alone activates nothing: the deployment names entry points, never a
 
 ## Host Composition
 
-A Host builds one `ProviderCatalog` per domain from its native definitions plus the selected manifests, so a plugin type and a native type collide loudly instead of shadowing each other. a13n Service performs this once at startup and fails before readiness on any selection error; the resulting catalogs are immutable process-local snapshots shared by its management and execution roles. [Distribution Composition and Extensions](../a13n-service/09-runtime.md#assembly) owns the Service deployment contract, and Harness UI selects the same loader for its local extensions.
+A Host builds one `ProviderCatalog` per domain from its native definitions plus, for Environment, the selected manifests, so a plugin type and a native type collide loudly instead of shadowing each other. Harness UI selects installed manifests through `load_provider_plugins()` for its local extensions. a13n Service registers its definitions in code through `Distribution.providers` ([Assembly](../a13n-service/09-runtime.md#assembly)).
 
 A Host projects safe metadata for each selected definition: `type`, `display_name`, the configuration and credential JSON Schemas, the `Authentication` declaration, `setup_url`, `setup_label`, and the domain's declared capabilities. The projection contains no credential value, no native client, and no import target.
 
@@ -148,7 +145,7 @@ Errors expose bounded Provider and distribution context. They never expose crede
 
 ## Compatibility
 
-Provider `type` values are stable serialized discriminators shared by configuration records, state envelopes, and host APIs. Adding a field to a definition is additive; adding a required declared capability is a breaking change for third-party definitions and advances the manifest API version. The current pre-release API 1 baseline includes the required Connector setup metadata snapshot and version-selecting catalogue keyword; plugin authors implement these contracts without a manifest version bump. Installed code provenance is diagnostic metadata, not a per-resource Python package lock.
+Provider `type` values are stable serialized discriminators shared by configuration records, state envelopes, and host APIs. Adding a field to a definition is additive; adding a required declared Environment capability is a breaking change for installed definitions and advances the manifest API version. Installed code provenance is diagnostic metadata, not a per-resource Python package lock.
 
 Definitions carry no configuration schema version. A Provider owns exactly one configuration model, one optional credential model, and, for Environment, one target recipe model; changing an input's meaning changes the Provider type rather than introducing a parallel versioned schema.
 
@@ -156,7 +153,7 @@ Definitions carry no configuration schema version. A Provider owns exactly one c
 
 01. One shared core declares identity, typed inputs, credential presence, and setup help for all four domains.
 02. Defining and selecting a Provider performs no external I/O and creates no client.
-03. `a13n_harness.providers.plugins` is the only Provider entry-point group and the only authoring surface for installed contributions.
+03. `a13n_harness.providers.plugins` is the only Provider entry-point group and the only authoring surface for installed Environment definitions.
 04. A deployment selects entry-point names; it never supplies an import target.
 05. One `ProviderCatalog` per domain owns the unique-type rule and is immutable after construction.
 06. Catalog membership never grants authority, and a missing type is a safe configuration error.

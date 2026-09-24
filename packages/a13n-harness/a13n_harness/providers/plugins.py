@@ -8,10 +8,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from .connector.definition import ConnectorProviderDefinition
 from .environment.definition import EnvironmentProviderDefinition
-from .model.definition import ModelProviderDefinition
-from .web.definition import WebProviderDefinition
 
 PROVIDER_API_VERSION = 1
 ENTRY_POINT_GROUP = "a13n_harness.providers.plugins"
@@ -20,22 +17,15 @@ ENTRY_POINT_GROUP = "a13n_harness.providers.plugins"
 @dataclass(frozen=True, slots=True)
 class ProviderManifest:
     api_version: int
-    model: tuple[ModelProviderDefinition[Any, Any], ...] = ()
-    web: tuple[WebProviderDefinition[Any, Any], ...] = ()
     environment: tuple[EnvironmentProviderDefinition[Any, Any, Any, Any], ...] = ()
-    connector: tuple[ConnectorProviderDefinition[Any, Any], ...] = ()
 
     def __post_init__(self) -> None:
         if self.api_version != PROVIDER_API_VERSION:
             raise ValueError(f"unsupported Provider API version {self.api_version!r}")
-        for label, definitions, kind in (
-            ("Web", self.web, WebProviderDefinition),
-            ("Model", self.model, ModelProviderDefinition),
-            ("Connector", self.connector, ConnectorProviderDefinition),
-            ("Environment", self.environment, EnvironmentProviderDefinition),
+        if not isinstance(self.environment, tuple) or not all(
+            isinstance(item, EnvironmentProviderDefinition) for item in self.environment
         ):
-            if not isinstance(definitions, tuple) or not all(isinstance(item, kind) for item in definitions):
-                raise TypeError(f"{label} definitions must be an immutable tuple")
+            raise TypeError("Environment definitions must be an immutable tuple")
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +60,7 @@ def selected_entry_points(enabled: Iterable[str]) -> tuple[importlib.metadata.En
 
 
 def load_provider_plugins(enabled: Iterable[str]) -> tuple[LoadedProviderPlugin, ...]:
-    """Import only the selected plugins; one ProviderCatalog per domain owns unique types."""
+    """Import only the selected plugins; the Host's ProviderCatalog owns unique types."""
     plugins = []
     for entry in selected_entry_points(enabled):
         manifest = entry.load()

@@ -1,16 +1,11 @@
 [project]
 name = "a13n-provider-acme-example"
 version = "0.1.0"
-description = "Installed deployment Provider plugin example for Agent Foundation"
+description = "Installed Environment Provider plugin example for Agent Foundation"
 requires-python = ">=3.13"
 dependencies = [
     "a13n-harness>=0,<1",
-    "a13n-logging>=0,<1",
-    "anyio>=4,<5",
-    "httpx2>=2,<3",
     "pydantic>=2.12,<3",
-    "openai>=3.8,<4",
-    "pydantic-ai>=2.46.0,<3",
 ]
 
 [dependency-groups]

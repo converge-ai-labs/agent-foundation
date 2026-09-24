@@ -1,4 +1,4 @@
-"""A project workspace provider usable directly or through Service templates."""
+"""A project workspace provider usable directly or through a Host that selects the manifest, such as Harness UI."""
 
 import asyncio
 from dataclasses import dataclass

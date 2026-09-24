@@ -1,1 +1,1 @@
-"""Example deployment Provider package."""
+"""Example installed Environment Provider package."""

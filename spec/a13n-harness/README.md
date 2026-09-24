@@ -29,12 +29,12 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [15-security-compatibility-and-tradeoffs.md](15-security-compatibility-and-tradeoffs.md) | Trust boundaries, authority, data safety, compatibility, and trade-offs                                                          |
 | [16-input-model-and-output.md](16-input-model-and-output.md)                             | Native input, thin model resolution, self-healing, semantic recovery, streaming, and output                                      |
 | [16a-model-authentication.md](16a-model-authentication.md)                               | SDK-first Model OAuth credentials, Host sources, refresh lifecycle, request isolation, and provider compatibility                |
-| [16b-model-provider-definitions.md](16b-model-provider-definitions.md)                   | Typed native Model construction, calling-API bindings, and installed Model contributions                                         |
+| [16b-model-provider-definitions.md](16b-model-provider-definitions.md)                   | Typed native Model construction, calling-API bindings, and bounded connection probes                                             |
 | [17-core-capability-catalog.md](17-core-capability-catalog.md)                           | Documentation catalog for mandatory and optional Capability composition roles                                                    |
 | [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch          |
 | [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry signals, trace levels, metrics, correlation, information boundary, Host profiles, and export-failure semantics     |
 | [20-async-components-and-lifecycle.md](20-async-components-and-lifecycle.md)             | Async subagent admission, observation, parent closure, wake, restart, loss, retention, and Host shutdown                         |
-| [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core, credential declaration, catalogs, and the installed-plugin manifest across all four domains                |
+| [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core across all four domains, credential declaration, catalogs, and the installed Environment manifest           |
 
 ## Reading Paths
 
@@ -48,7 +48,7 @@ Read `03`, `04`, `05`, and `14`. Hosted durable definitions are owned by [Servic
 
 ### Author or Select a Provider
 
-Read `22` for the shared Provider core, credential declaration, catalogs, and the installed-plugin manifest, then the owning domain: `16b` for Model, `08a` for Environment, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
+Read `22` for the shared Provider core, credential declaration, catalogs, and the installed Environment manifest, then the owning domain: `16b` for Model, `08a` for Environment, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
 
 ### Understand Models and Recovery
 

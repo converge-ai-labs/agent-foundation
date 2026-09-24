@@ -1,4 +1,4 @@
-"""Built-ins use the same definitions as installed Web extensions."""
+"""Built-in Web Provider definitions."""
 
 from .configuration import ApiKeyCredential, EmptyConfiguration
 from .definition import WebProviderDefinition

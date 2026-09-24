@@ -46,7 +46,7 @@ def test_importing_the_package_stays_inert() -> None:
     _run("import a13n_harness\nassert 'websockets' not in sys.modules\n")
 
 
-def test_five_domain_metadata_needs_no_optional_sdk() -> None:
+def test_domain_metadata_needs_no_optional_sdk() -> None:
     _run(
         "from a13n_harness.providers.plugins import ProviderManifest\n"
         "from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS\n"

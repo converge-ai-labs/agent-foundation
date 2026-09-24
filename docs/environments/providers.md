@@ -50,7 +50,7 @@ An `EnvironmentProviderDefinition` should:
 6. expose provider-neutral `EnvironmentOperations` after entry;
 7. declare `supports_managed`, `supports_stop`, `supports_destroy`, and `requires_keepalive` truthfully, keep `close()` non-destructive, and remove a target only in explicit `destroy()`.
 
-The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) shows one manifest contributing to several domains, with the same catalog, validation, construction, and Harness path. [Plugins and extensions](../a13n-harness/plugins.md#provider-plugins) covers the shared authoring contract.
+The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) shows one installed manifest with the same catalog, validation, construction, and Harness path. [Plugins and extensions](../a13n-harness/plugins.md#provider-plugins) covers the shared authoring contract.
 
 For complete Host-side built-in lifecycles, including Docker state re-entry and explicit destruction, follow the [Built-in Provider Examples](examples.md).
 

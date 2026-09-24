@@ -8,7 +8,7 @@ Agent Harness exposes focused extension points rather than one universal plugin 
 | Pydantic Capability          | Own or compose Toolsets, instructions, request hooks, Agent-loop state, and collaboration with other run Capabilities            | Native Pydantic Agent/run lifecycle                                             | Yes                                              |
 | `EnvironmentProviderBinding` | Implement one already selected provider-neutral Environment operation revision                                                   | One binding scope inside one `EnvironmentRuntime`                               | Only through explicit Environment tools/context  |
 | `EnvironmentRunExtension`    | Hold a resource that needs the complete entered Environment aggregate; use `EnvironmentRunCallbacks` for simple paired callbacks | Entered with the current aggregate; reverse-order exit before provider teardown | No                                               |
-| Provider plugin              | Add a Model, Web, Connector, or Environment Provider your Host can select                                                        | Inert definitions loaded once at Host startup                                   | No                                               |
+| Provider plugin              | Add an Environment Provider your Host can select                                                                                 | Inert definitions loaded once at Host startup                                   | No                                               |
 
 Installed entry-point metadata means code is available, not enabled or authorized. Importing `a13n_harness` scans no entry points and activates no extension.
 
@@ -214,7 +214,7 @@ To support optional grouped presentation, a plugin can expose source factories o
 
 ## Provider Plugins
 
-A Provider plugin adds one or more Providers your Host can select: a Model, a Web search or scrape backend, a Connector, or an Environment. All four domains use one authoring contract, one entry-point group, and one immutable manifest.
+A Provider plugin adds one or more Environment Providers your Host can select, through one entry-point group and one immutable manifest. Model, Web, and Connector definitions use the same definition contract, but a Host composes them in code and selects them through its own `ProviderCatalog`.
 
 A definition is a frozen value. It declares its stable `type`, a `display_name`, the typed configuration and credential models its inputs use, how credentials are required, and optional setup help. Importing it performs no I/O and creates no client:
 
@@ -239,18 +239,12 @@ ACME_SANDBOX = EnvironmentProviderDefinition(
 )
 ```
 
-One distribution exports one `ProviderManifest` per entry point, and the manifest may contribute to several domains at once:
+One distribution exports one `ProviderManifest` per entry point:
 
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(
-    api_version=1,
-    model=(ACME_MODEL,),
-    web=(ACME_SEARCH,),
-    connector=(ACME_CONNECTOR,),
-    environment=(ACME_SANDBOX,),
-)
+manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
 ```
 
 ```toml
@@ -258,7 +252,7 @@ manifest = ProviderManifest(
 acme = "acme_providers:manifest"
 ```
 
-A Host names the entry points it trusts and builds one catalog per domain:
+A Host names the entry points it trusts and builds one Environment catalog from its built-in and selected definitions:
 
 ```python
 from a13n_harness.providers.catalog import ProviderCatalog
@@ -273,7 +267,7 @@ definition = environments.require("acme_sandbox")
 
 Selection is explicit at every step. Installing the distribution activates nothing; an entry point you do not name is never imported; and a catalog rejects a type that duplicates another definition in the same domain. `require()` raises `ProviderNotSelected` for a type this deployment does not offer, so a Host can report a safe configuration error instead of failing unexpectedly.
 
-The runnable [plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) publishes one manifest and a separate Harness middleware plugin from the same project.
+The runnable [plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) publishes one manifest and a separate Harness middleware plugin from the same project. The [installed Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin) shows direct use and Harness UI loading.
 
 ## Harness Extras
 
