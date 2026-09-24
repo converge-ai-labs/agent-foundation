@@ -20,6 +20,8 @@ import { useAgent } from "../../../agents/queries";
 import { EnvironmentReference } from "../../../environments/reference";
 import { conversationQueries, runPath } from "../../api";
 import { RunEnvironmentMounts } from "../../environment-mounts";
+import { ThreadMemoryMounts } from "../../memory-mounts";
+import { MemoryMountRows } from "../../../memories/mounts";
 import { useRun } from "../../queries";
 import { formatDuration } from "../../format";
 import styles from "./details.module.css";
@@ -128,6 +130,18 @@ export function RunDetails({ runId }: { runId: string }) {
           ))
         )}
       </div>
+      <div className={styles.detailBlock}>
+        <span className={styles.detailLabel}>{t("Memory")}</span>
+        {!run.memory_mounts.length ? (
+          <p className={styles.detailNote}>{t("None")}</p>
+        ) : (
+          <MemoryMountRows
+            mounts={run.memory_mounts}
+            empty={t("None")}
+            runId={run.id}
+          />
+        )}
+      </div>
       <div className={styles.detailColumns}>
         <div className={styles.detailBlock}>
           <span className={styles.detailLabel}>{t("Attempts")}</span>
@@ -189,6 +203,7 @@ export function RunDetails({ runId }: { runId: string }) {
         )}
       </div>
       <RunEnvironmentMounts key={run.id} run={run} />
+      <ThreadMemoryMounts key={`memories-${run.id}`} run={run} />
       <DisclosureSection
         className={styles.detailDisclosure}
         title={<>{t("Raw metadata")}</>}

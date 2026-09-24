@@ -277,3 +277,56 @@ it("sends the chosen model and instructions as the run's overrides", async () =>
     },
   });
 });
+
+it("mounts initial memories on the new thread and changes their access before sending", async () => {
+  http.GET.mockImplementation(async (path: string) => ({
+    response: new Response(null),
+    data: {
+      items: path.endsWith("/memories")
+        ? [
+            { id: "mem_prefs", key: "user-prefs", name: "Preferences" },
+            { id: "mem_book", key: "handbook", name: "Handbook" },
+          ]
+        : [],
+      next_cursor: null,
+    },
+  }));
+  const submit = vi.fn();
+  mount(submit);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Options" }));
+  await user.click(await screen.findByRole("button", { name: /Memories/ }));
+  await user.click(screen.getByRole("combobox", { name: "Memory" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Preferences (user-prefs)" }),
+  );
+  // The mount name follows the memory's key until it is edited.
+  expect(
+    (screen.getByRole("textbox", { name: "Mount name" }) as HTMLInputElement)
+      .value,
+  ).toBe("user-prefs");
+  await user.click(screen.getByRole("button", { name: "Add memory" }));
+  await user.click(
+    await screen.findByRole("combobox", { name: "Access for user-prefs" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Read" }));
+  // A memory already mounted is not offered again.
+  await user.click(screen.getByRole("combobox", { name: "Memory" }));
+  expect(
+    screen.queryByRole("option", { name: "Preferences (user-prefs)" }),
+  ).toBeNull();
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  expect(
+    screen.getByRole("button", { name: "Memories: user-prefs" }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      memories: [
+        { name: "user-prefs", memory_id: "mem_prefs", access: "read" },
+      ],
+    }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});

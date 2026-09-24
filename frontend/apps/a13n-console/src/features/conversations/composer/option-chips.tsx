@@ -54,6 +54,13 @@ export function RunOptions({
           value={options.labels.environment ?? options.environment}
         />
       )}
+      {options.memories.length > 0 && (
+        <OptionChip
+          onClick={() => edit("memories")}
+          label={t("Memories")}
+          value={options.memories.map((mount) => mount.name).join(", ")}
+        />
+      )}
       {mediaKinds.map(({ kind, label }) => {
         const key = options.mediaUnderstanding[kind];
         return key ? (

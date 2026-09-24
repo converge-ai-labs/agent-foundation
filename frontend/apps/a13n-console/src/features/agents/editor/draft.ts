@@ -63,7 +63,8 @@ export function useAgentDraft(initial: AgentConfig) {
     ),
     [toolsets, setToolsets] = useState(initial.toolsets ?? {}),
     [skills, setSkills] = useState(initial.skills ?? []),
-    [connections, setConnections] = useState(initial.connection_tools ?? []);
+    [connections, setConnections] = useState(initial.connection_tools ?? []),
+    [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []);
   const dirty =
     mediaKinds.some(
       ({ kind }) =>
@@ -81,7 +82,9 @@ export function useAgentDraft(initial: AgentConfig) {
     advanced !== advancedConfig(initial) ||
     JSON.stringify(skills) !== JSON.stringify(initial.skills ?? []) ||
     JSON.stringify(connections) !==
-      JSON.stringify(initial.connection_tools ?? []);
+      JSON.stringify(initial.connection_tools ?? []) ||
+    JSON.stringify(memoryMounts) !==
+      JSON.stringify(initial.memory_mounts ?? []);
   return {
     initial,
     initialExtraSettings,
@@ -107,6 +110,8 @@ export function useAgentDraft(initial: AgentConfig) {
     setSkills,
     connections,
     setConnections,
+    memoryMounts,
+    setMemoryMounts,
     dirty,
   };
 }
@@ -168,6 +173,7 @@ export function buildDraftConfig(
             ? { media_understanding: draft.mediaUnderstanding }
             : {}),
           connection_tools: draft.connections,
+          memory_mounts: draft.memoryMounts,
           default_environment_template_id: draft.environmentTemplateId,
         },
         draft.advanced,

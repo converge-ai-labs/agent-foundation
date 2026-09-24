@@ -320,3 +320,54 @@ it("checks the reviewer and media models against the workspace's enabled models"
   // One model catalog read serves every model reference.
   expect(fetch).toHaveBeenCalledOnce();
 });
+
+it("checks default memory mounts and remaps only the memory", async () => {
+  const { client, fetch } = clientFor((url) => {
+    if (url.pathname.endsWith("/models"))
+      return {
+        items: [
+          { id: "mdl_local", key: "research", name: "Research", enabled: true },
+        ],
+      };
+    if (url.pathname.endsWith("/memories"))
+      return {
+        items: [{ id: "mem_local", key: "handbook", name: "Handbook" }],
+      };
+    throw new Error(`Unexpected catalog: ${url.pathname}`);
+  });
+  const config = {
+    ...initialConfig(),
+    model: { model_id: "mdl_local" },
+    memory_mounts: [
+      { name: "handbook", memory_id: "mem_local", access: "read" as const },
+      { name: "prefs", memory_id: "mem_source", access: "write" as const },
+    ],
+  };
+  const checks = await inspectAgentDependencies(
+    client,
+    "org_target",
+    "ws_target",
+    config,
+    signal,
+  );
+  expect(checks.map(({ path, available }) => [path, available])).toEqual([
+    ["model.model_id", true],
+    ["memory_mounts.0.memory_id", true],
+    ["memory_mounts.1.memory_id", false],
+  ]);
+  expect(checks[2]?.options).toEqual([
+    { value: "mem_local", label: "Handbook · handbook", id: "mem_local" },
+  ]);
+  expect(
+    fetch.mock.calls.filter(([request]) =>
+      new URL(new Request(request).url).pathname.endsWith("/memories"),
+    ),
+  ).toHaveLength(1);
+  const replaced = agentDependencies(config)
+    .find((item) => item.path === "memory_mounts.1.memory_id")!
+    .replace("mem_local");
+  expect(replaced.memory_mounts).toEqual([
+    config.memory_mounts[0],
+    { name: "prefs", memory_id: "mem_local", access: "write" },
+  ]);
+});

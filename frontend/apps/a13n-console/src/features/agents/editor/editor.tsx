@@ -13,6 +13,7 @@ import { AdvancedSection } from "./advanced";
 import { ConnectionsSection, SkillsSection } from "./capabilities";
 import { buildDraftConfig, thinkingEfforts, useAgentDraft } from "./draft";
 import { InstructionsSection } from "./instructions";
+import { MemorySection } from "./memory";
 import { ModelSection } from "./model";
 
 export interface AgentDraftSummary {
@@ -150,6 +151,7 @@ export function AgentEditor({
             choices={choices}
             readOnly={readonly}
           />
+          <MemorySection draft={draft} readOnly={readonly} />
           <AgentToolsets
             value={draft.toolsets}
             onChange={draft.setToolsets}

@@ -7,7 +7,13 @@ import { webProviderApi } from "../web/api";
 import type { AgentConfig } from "./configuration";
 
 type DependencyKind =
-  "model" | "skill" | "connection" | "agent" | "environment_template" | "web";
+  | "model"
+  | "skill"
+  | "connection"
+  | "memory"
+  | "agent"
+  | "environment_template"
+  | "web";
 export interface AgentDependency {
   path: string;
   kind: DependencyKind;
@@ -107,6 +113,18 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
         ...config,
         connection_tools: config.connection_tools?.map((item, i) =>
           i === index ? { ...item, connection_id: value } : item,
+        ),
+      }),
+    });
+  for (const [index, mount] of (config.memory_mounts ?? []).entries())
+    refs.push({
+      path: `memory_mounts.${index}.memory_id`,
+      kind: "memory",
+      value: mount.memory_id,
+      replace: (value) => ({
+        ...config,
+        memory_mounts: config.memory_mounts?.map((item, i) =>
+          i === index ? { ...item, memory_id: value } : item,
         ),
       }),
     });
@@ -232,6 +250,21 @@ export async function inspectAgentDependencies(
             label: `${item.name} · ${item.id}`,
             id: item.id,
           }));
+      }
+      case "memory": {
+        const items = await allPages((cursor) =>
+          client.http
+            .GET("/api/v1/workspaces/{workspace_id}/memories", {
+              params: { path, query: { cursor, limit: 100 } },
+              signal,
+            })
+            .then(data),
+        );
+        return items.map((item) => ({
+          value: item.id,
+          label: `${item.name} · ${item.key}`,
+          id: item.id,
+        }));
       }
       case "agent": {
         const items = await allPages((cursor) =>

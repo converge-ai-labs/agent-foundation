@@ -34,10 +34,11 @@ import {
   type MediaKind,
   type ModelIdentity,
 } from "../../models/media-understanding-fields";
+import { MemoryOptions } from "./memory-options";
 import styles from "./composer.module.css";
 
 export type OptionField =
-  "agent" | "model" | "environment" | "instructions" | MediaKind;
+  "agent" | "model" | "environment" | "memories" | "instructions" | MediaKind;
 
 /** Media rows own their identifiers in the shared selector. */
 export function optionFieldId(field: OptionField) {
@@ -55,7 +56,10 @@ export type EnvironmentChoice =
   Schema["ManagedEnvironmentCreate"] | Omit<Schema["MountCreate"], "name">;
 
 /** What a message chooses for the Run it starts, beside its payload. */
-type Options = Pick<Schema["NewThread"], "agent_revision_id" | "options"> & {
+type Options = Pick<
+  Schema["NewThread"],
+  "agent_revision_id" | "options" | "memories"
+> & {
   agent_id?: string;
   environment?: EnvironmentChoice;
 };
@@ -76,6 +80,7 @@ export function useRunOptions() {
   const [overrideInstructions, setOverrideInstructions] = useState(false);
   const [environment, setEnvironment] = useState("inherit"),
     [workingDirectory, setWorkingDirectory] = useState("");
+  const [memories, setMemories] = useState<Schema["MemoryMount"][]>([]);
   /** Chips name what was chosen, so the picked labels travel with the values. */
   const [labels, setLabels] = useState<{
     model?: string;
@@ -106,6 +111,8 @@ export function useRunOptions() {
     },
     workingDirectory,
     setWorkingDirectory,
+    memories,
+    setMemories,
     advanced,
     setAdvanced,
     labels,
@@ -138,6 +145,7 @@ export function useRunOptions() {
         ...(Object.keys(override).length
           ? { options: { overrides: override } }
           : {}),
+        ...(memories.length ? { memories } : {}),
         ...(environment === "inherit"
           ? {}
           : {
@@ -307,6 +315,7 @@ export function RunOptionsDialog({
             onChange={options.setWorkingDirectory}
           />
         )}
+        {open && <MemoryOptions options={options} focus={focus} />}
         <Label className={styles.optionSwitch}>
           <Switch
             id="run-option-instructions"

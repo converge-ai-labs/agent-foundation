@@ -111,3 +111,30 @@ it("checks model settings against the calling API's schema before publishing", (
     /must NOT have additional properties/,
   );
 });
+
+it("publishes default memory mounts and keeps them out of advanced JSON", () => {
+  const handbook = {
+    name: "handbook",
+    memory_id: "mem_0123456789abcdef0123",
+    access: "read" as const,
+  };
+  const draft = draftFor({ memory_mounts: [handbook] });
+  expect(draft.current.memoryMounts).toEqual([handbook]);
+  expect(draft.current.advanced).not.toContain("memory_mounts");
+  expect(draft.current.dirty).toBe(false);
+  act(() =>
+    draft.current.setMemoryMounts((previous) => [
+      ...previous,
+      { name: "prefs", memory_id: "mem_fedcba9876543210fedc", access: "write" },
+    ]),
+  );
+  expect(draft.current.dirty).toBe(true);
+  const built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.memory_mounts).toEqual([
+    handbook,
+    { name: "prefs", memory_id: "mem_fedcba9876543210fedc", access: "write" },
+  ]);
+  act(() => draft.current.setAdvanced('{"memory_mounts": []}'));
+  const restated = buildDraftConfig(draft.current, undefined, asIs);
+  expect(restated.ok).toBe(false);
+});
