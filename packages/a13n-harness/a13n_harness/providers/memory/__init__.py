@@ -1,4 +1,4 @@
-"""File memory: the store contract and the file format every store applies."""
+"""File memory: the store contract, the file format every store applies, and a local directory store."""
 
 from .contracts import (
     Changes,
@@ -13,10 +13,12 @@ from .contracts import (
     Origin,
     SearchableFileStore,
 )
+from .directory import DirectoryFileStore
 from .files import FileFormat, describe, validate_directory, validate_path
 
 __all__ = [
     "Changes",
+    "DirectoryFileStore",
     "FileEntry",
     "FileFormat",
     "FileStore",

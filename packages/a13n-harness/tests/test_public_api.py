@@ -10,6 +10,7 @@ import a13n_harness.models as models
 import a13n_harness.pricing as pricing
 import a13n_harness.providers as providers
 import a13n_harness.providers.environment as environment_provider
+import a13n_harness.providers.memory as memory_provider
 import a13n_harness.providers.model.oauth as model_auth
 import a13n_harness.tools as tools
 import a13n_harness.toolsets as toolsets
@@ -108,8 +109,13 @@ def test_feature_facades_export_documented_families() -> None:
         "CodeActCapability",
         "CodeActConfig",
         "CompactionCapability",
+        "DEFAULT_FILE_GUIDE",
         "DocumentsCapability",
+        "FILE_MEMORY_CAPABILITY_ID",
         "FileContextCapability",
+        "FileMemoryCapability",
+        "FileMemoryLimits",
+        "FileMount",
         "FileSkillSource",
         "HandoffCapability",
         "AsyncDelegateRequest",
@@ -119,6 +125,7 @@ def test_feature_facades_export_documented_families() -> None:
         "InlineSubagentState",
         "MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS",
         "MediaCapability",
+        "MemoryCursors",
         "RuntimeContextCapability",
         "AgentToolReviewer",
         "ToolReviewer",
@@ -342,6 +349,24 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
         "WebProviderDefinition",
     }
     assert all(hasattr(providers, name) for name in providers.__all__)
+    assert set(memory_provider.__all__) == {
+        "Changes",
+        "DirectoryFileStore",
+        "FileEntry",
+        "FileFormat",
+        "FileStore",
+        "FileText",
+        "FullResync",
+        "GrepMatch",
+        "MemoryAccess",
+        "MemoryErrorCode",
+        "MemoryStoreError",
+        "Origin",
+        "SearchableFileStore",
+        "describe",
+        "validate_directory",
+        "validate_path",
+    }
     assert {
         "BUILT_IN_ENVIRONMENT_PROVIDERS",
         "DirectLocalEnvironmentConfiguration",
