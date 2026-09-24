@@ -239,11 +239,26 @@
   color: var(--a13n-secondary);
   background: transparent;
 }
+.threadStar {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.threadStar[aria-pressed="true"] {
+  color: var(--warning-foreground);
+}
+.threadStar[aria-busy="true"] {
+  opacity: 0.5;
+  cursor: wait;
+}
 @media (hover: hover) and (pointer: fine) {
+  .threadStar:not([aria-pressed="true"]):not([aria-busy="true"]),
   .threadActions,
   .groupActions {
     opacity: 0;
   }
+  .threadRow:hover .threadStar:not([aria-busy="true"]),
+  .threadRow:focus-within .threadStar:not([aria-busy="true"]),
+  .threadRow:has(.selected) .threadStar:not([aria-busy="true"]),
   .threadRow:hover .threadActions,
   .threadRow:focus-within .threadActions,
   .threadRow:has(.selected) .threadActions,

@@ -89,6 +89,10 @@ async def test_promotion_never_adopts_previous_sidekicks_and_worker_is_terminal_
         with pytest.raises(StoreConflictError, match="independent"):
             await app.promote_coordinator(worker["thread_id"])
         assert (await app.get_thread(worker["thread_id"])).thread.role == "worker"
+        star = ThreadMetadataMutation.model_validate({"expected_version": 1, "patch": {"starred": True}})
+        with pytest.raises(ThreadError, match="Star the Coordinator"):
+            await app.update_thread_metadata(thread_id=worker["thread_id"], mutation=star)
+        assert (await app.update_thread_metadata(thread_id=ordinary.thread_id, mutation=star)).starred
 
 
 async def test_archive_and_project_constraints_do_not_change_roles(tmp_path: Path) -> None:

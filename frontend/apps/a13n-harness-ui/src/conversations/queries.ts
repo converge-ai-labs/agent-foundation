@@ -50,6 +50,7 @@ export function useThreads(
     limit = 30,
     archivedOnly = false,
     includeActive = false,
+    includeStarred = false,
     coordinatorThreadId,
     independentOnly = false,
   }: {
@@ -58,6 +59,7 @@ export function useThreads(
     limit?: number;
     archivedOnly?: boolean;
     includeActive?: boolean;
+    includeStarred?: boolean;
     coordinatorThreadId?: string;
     independentOnly?: boolean;
   } = {},
@@ -73,6 +75,7 @@ export function useThreads(
       limit,
       archivedOnly,
       includeActive,
+      includeStarred,
       coordinatorThreadId,
       independentOnly,
     ],
@@ -89,6 +92,7 @@ export function useThreads(
               include_archived: archived,
               archived_only: archivedOnly,
               include_active: includeActive,
+              include_starred: includeStarred,
               coordinator_thread_id: coordinatorThreadId,
               independent_only: independentOnly,
               cursor: pageParam,
@@ -117,6 +121,7 @@ export function useThreads(
     limit,
     archivedOnly,
     includeActive,
+    includeStarred,
     coordinatorThreadId,
     independentOnly,
   ]);

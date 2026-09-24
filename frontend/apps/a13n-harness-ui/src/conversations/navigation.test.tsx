@@ -37,6 +37,9 @@ function thread(id: string, project: string | null = "project-one") {
     configuration: { project_id: project },
     root_activity: { state: "inactive" },
     archived: false,
+    starred: false,
+    metadata_version: 1,
+    touched_at: undefined as string | undefined,
     role: "ordinary" as Schema<"ThreadSummary">["role"],
     coordinator_thread_id: null as string | null,
     auto_followup: null as boolean | null,
@@ -48,6 +51,14 @@ function page(
   project: string | null = "project-one",
 ) {
   return {
+    starred_rows: starredThreads
+      .filter(
+        (item) =>
+          item.configuration.project_id === project &&
+          item.starred &&
+          !item.archived,
+      )
+      .map((item) => ({ thread: item, project_name: project ?? "No project" })),
     active_rows: activeThreads
       .filter((item) => item.configuration.project_id === project)
       .map((item) => ({ thread: item, project_name: project ?? "No project" })),
@@ -70,6 +81,7 @@ let unsentThreads: ReturnType<typeof thread>[];
 let failDrafts: boolean;
 let activity: URL[];
 let activeThreads: ReturnType<typeof thread>[];
+let starredThreads: ReturnType<typeof thread>[];
 let writes: Request[];
 let sidekickEnabled: boolean;
 let coordinators: ReturnType<typeof thread>[];
@@ -88,6 +100,7 @@ beforeEach(() => {
   failDrafts = false;
   activity = [];
   activeThreads = [];
+  starredThreads = [];
   writes = [];
   sidekickEnabled = false;
   coordinators = [];
@@ -139,6 +152,15 @@ beforeEach(() => {
       }
       if (request.method !== "GET") {
         writes.push(request.clone());
+        if (url.pathname.endsWith("/metadata")) {
+          const id = decodeURIComponent(url.pathname.split("/")[3]);
+          const item = starredThreads.find((item) => item.thread_id === id);
+          if (item) {
+            Object.assign(item, (await request.json()).patch);
+            item.metadata_version++;
+            return json(item);
+          }
+        }
         if (url.pathname.endsWith("/coordinator")) {
           if (failSave)
             return json(
@@ -1461,4 +1483,91 @@ it("keeps an expanded archived owner mounted while pagination discovers another 
       .getAttribute("aria-expanded"),
   ).toBe("true");
   expect(screen.getByRole("link", { name: "earlier-worker" })).toBe(worker);
+});
+
+it("keeps all project stars above ordinary recent rows across More and shared updates", async () => {
+  starredThreads = Array.from({ length: 7 }, (_, index) => ({
+    ...thread(`Reference ${index}`),
+    starred: true,
+    touched_at: `2025-12-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+  }));
+  starredThreads.push({
+    ...thread("Other project star", "project-two"),
+    starred: true,
+  });
+  activeThreads = [
+    {
+      ...thread("Running starred"),
+      starred: true,
+      root_activity: { state: "running" },
+    },
+  ];
+  mount("/", true);
+  const group = await screen.findByRole("region", { name: "One" });
+  fireEvent.click(
+    within(group).getByRole("button", { name: /^One/, expanded: false }),
+  );
+  await within(group).findByText("Reference 0");
+  const names = () =>
+    within(group)
+      .getAllByRole("link")
+      .map((item) => item.querySelector("strong")!.textContent);
+  expect(names()).toEqual([
+    "Running starred",
+    ...Array.from({ length: 7 }, (_, i) => `Reference ${6 - i}`),
+    "Recent 1",
+    "Recent 2",
+    "Recent 3",
+    "Recent 4",
+    "Recent 5",
+  ]);
+  expect(activity[0].searchParams.get("include_starred")).toBe("true");
+  expect(within(group).queryByText("Other project star")).toBeNull();
+  await userEvent.click(
+    within(group).getByRole("button", {
+      name: "Show more conversations in One",
+    }),
+  );
+  await within(group).findByText("Older two");
+  expect(within(group).getAllByText("Reference 0")).toHaveLength(1);
+  // Another browser changes the shared metadata. A summary hint refreshes the same list.
+  starredThreads[0].archived = true;
+  starredThreads[1].starred = false;
+  await act(async () => {
+    vi.mocked(watchSummary).mock.calls.at(-1)![1]({
+      kind: "thread",
+      thread_id: "Reference 0",
+      epoch: "test",
+      sequence: 1,
+    });
+  });
+  await waitFor(() =>
+    expect(within(group).queryByText("Reference 0")).toBeNull(),
+  );
+  expect(within(group).queryByText("Reference 1")).toBeNull();
+  expect(within(group).getByText("Older two")).toBeTruthy();
+});
+
+it("moves a starred row only after its save and restores ordinary recency without navigation", async () => {
+  starredThreads = [{ ...thread("Recent 3"), starred: true }];
+  mount();
+  const group = await screen.findByRole("region", { name: "One" });
+  fireEvent.click(
+    within(group).getByRole("button", { name: /^One/, expanded: false }),
+  );
+  const button = await within(group).findByRole("button", {
+    name: "Unstar conversation: Recent 3",
+  });
+  expect(within(group).getAllByRole("link")[0].textContent).toContain(
+    "Recent 3",
+  );
+  await userEvent.click(button);
+  await within(group).findByRole("button", {
+    name: "Star conversation: Recent 3",
+  });
+  expect(within(group).getAllByRole("link")[0].textContent).toContain(
+    "Recent 1",
+  );
+  expect(within(group).getAllByText("Recent 3")).toHaveLength(1);
+  expect(screen.getByLabelText("Current route").textContent).toBe("/");
 });

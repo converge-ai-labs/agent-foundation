@@ -323,6 +323,7 @@ class ThreadRepository:
         projectless: bool = False,
         include_archived: bool = False,
         archived_only: bool = False,
+        starred: bool | None = None,
         project_ids: tuple[str, ...] | None = None,
         sort: Literal["updated", "activity", "touched"] = "updated",
         thread_ids: tuple[str, ...] | None = None,
@@ -381,6 +382,8 @@ class ThreadRepository:
                 predicates.append(ThreadRecord.archived.is_(True))
             elif not include_archived:
                 predicates.append(ThreadRecord.archived.is_(False))
+            if starred is not None:
+                predicates.append(ThreadRecord.starred.is_(starred))
             normalized = None if query is None else query.strip().casefold()
             if normalized:
                 pattern = f"%{_escape_like(normalized)}%"
@@ -469,6 +472,7 @@ class ThreadRepository:
         expected_version: int,
         title: str | None,
         archived: bool,
+        starred: bool | None = None,
         updated_at: datetime | None = None,
     ) -> Thread:
         now = _utc(updated_at)
@@ -479,12 +483,14 @@ class ThreadRepository:
                 raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
             if record.metadata_version != expected_version:
                 _conflict("thread_metadata_conflict", expected_version, record.metadata_version)
-            if record.title == title and record.archived is archived:
+            selected_starred = record.starred if starred is None else starred
+            if record.title == title and record.archived is archived and record.starred is selected_starred:
                 return _thread_value(record, _configuration_value(configuration))
             record.metadata_version += 1
             record.title = title
             record.search_text = _search_text(record)
             record.archived = archived
+            record.starred = selected_starred
             record.updated_at = now
             await session.flush()
             return _thread_value(record, _configuration_value(configuration))
@@ -1078,6 +1084,7 @@ def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> T
         activity_at=record.activity_at,
         touched_at=record.touched_at,
         archived=record.archived,
+        starred=record.starred,
         configuration=configuration,
         initial_state=ObjectRef(
             object_kind=ObjectKind.thread_initial_state,
