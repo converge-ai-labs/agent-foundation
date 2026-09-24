@@ -163,7 +163,7 @@ function RunBody({
                 "Saved message history is incomplete or unconfirmed. Some output may be unavailable.",
               )
             : t(
-                "Live replay resumed from saved messages. Earlier raw events may be unavailable.",
+                "Some live output was skipped. It appears when the run reaches its next checkpoint.",
               )}
         </p>
       )}
