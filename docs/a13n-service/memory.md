@@ -42,7 +42,7 @@ curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/threads/$THREAD/memories" \
 - Mount changes take the **thread's** `If-Match`, return the thread's new ETag, need `run`, and affect runs accepted afterwards. `GET …/threads/{thread_id}/memories` lists the mounts with the thread's ETag, and `DELETE …/threads/{thread_id}/memories/{name}` removes one.
 - New threads and forks take initial mounts in their `memories` field. A fork copies its origin thread's memory mounts. Archiving a thread removes them.
 
-To give every conversation of an agent a memory, set the agent's `memory_mounts` to `[{name, memory_id, access}]`. They join a thread when its first run is accepted, for each name and memory the thread does not use yet, within the thread's limit. Afterwards the thread's own mounts decide, so removing one keeps it removed. A default whose memory was deleted fails that first run with `invalid_argument`.
+To give every conversation of an agent a memory, set the agent's `memory_mounts` to `[{name, memory_id, access}]`. They join a thread when its first run is accepted, for each name and memory the thread does not use yet. Afterwards the thread's own mounts decide, so removing one keeps it removed. A default whose memory was deleted fails that first run with `invalid_argument`, and defaults that would take the thread over its limit fail it with `memory_mount_limit`.
 
 An async [subagent](agents-and-runs.md#subagents)'s thread starts with the parent run's memory mounts and then adds its own agent's defaults. Inline subagents get no memory tools or context.
 
