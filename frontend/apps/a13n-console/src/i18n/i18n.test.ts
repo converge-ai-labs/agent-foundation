@@ -22,14 +22,14 @@ afterEach(async () => {
 
 test("starts in English and supports Simplified Chinese", async () => {
   expect(i18n.language).toBe("en");
-  expect(i18n.t("welcome")).toBe(en.welcome);
+  expect(i18n.t("Session")).toBe(en.Session);
   await i18n.changeLanguage("zh-CN");
-  expect(i18n.t("welcome")).toBe(zhCN.welcome);
+  expect(i18n.t("Session")).toBe(zhCN.Session);
 });
 
 test("falls back to English for unsupported languages", async () => {
   await i18n.changeLanguage("fr");
-  expect(i18n.t("welcome")).toBe(en.welcome);
+  expect(i18n.t("Session")).toBe(en.Session);
 });
 
 test("translations have matching keys", () => {
@@ -53,5 +53,5 @@ test("distinguishes Session, Thread and Run in Chinese product labels", async ()
   expect(i18n.t("Session")).toBe("会话");
   expect(i18n.t("Thread")).toBe("对话");
   expect(i18n.t("Run")).toBe("运行");
-  expect(i18n.t("{{count}} threads", { count: 2 })).toBe("2 个对话");
+  expect(i18n.t("{{count}} runs", { count: 2 })).toBe("2 次运行");
 });

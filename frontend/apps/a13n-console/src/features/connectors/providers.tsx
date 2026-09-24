@@ -24,6 +24,7 @@ import {
   withSchemaValues,
 } from "../../shared/forms";
 import { useCredentialSection } from "../../shared/use-credential-section";
+import { CallbackUrlField } from "../connections/callback-url";
 import styles from "../../shared/shared.module.css";
 import {
   AddProviderDialog,
@@ -264,11 +265,11 @@ function OAuthCallbackSetup() {
   const { t } = useTranslation();
   return (
     <DisclosureSection title={t("OAuth callback setup")}>
-      <p className={styles.muted}>
-        {t(
-          "For OAuth, open that project's Settings → OAuth user verification and set the callback URL to your Service HTTPS origin followed by /connection-authorizations/browser. Local development can use an exact localhost or loopback-IP HTTP origin.",
+      <CallbackUrlField
+        description={t(
+          "For OAuth, open that project's Settings → OAuth user verification and set its callback URL to this exact address.",
         )}
-      </p>
+      />
       <p className={styles.muted}>
         {t(
           "Composio managed apps work without your own OAuth client. To use a custom app or different scopes, create an auth config in Composio Dashboard. Account credentials are collected on Composio's hosted page.",

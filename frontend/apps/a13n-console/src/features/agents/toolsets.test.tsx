@@ -234,7 +234,7 @@ it("shows why the Service would refuse the configuration, with its setup link", 
     within(alert)
       .getByRole("link", { name: "Manage Web Providers" })
       .getAttribute("href"),
-  ).toBe("/workspace/default/settings?section=providers&category=web");
+  ).toBe("/workspace/default/settings/providers?category=web");
   expect(http.POST).toHaveBeenCalledOnce();
 });
 

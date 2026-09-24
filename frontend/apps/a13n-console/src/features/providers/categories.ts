@@ -34,8 +34,7 @@ export const providerCategories = [
     emptyTitle: "No environment providers yet",
     icon: MonitorIcon,
     description: "Configure where your agents' environments run.",
-    empty:
-      "Add a provider before creating templates or registering external environments.",
+    empty: "Add a provider before creating templates.",
   },
   {
     value: "connectors",

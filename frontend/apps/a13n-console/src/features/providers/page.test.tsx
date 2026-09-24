@@ -31,7 +31,7 @@ function Location() {
   return <output>{useLocation().search}</output>;
 }
 function mount(
-  query = "section=providers&category=web",
+  query = "category=web",
   kind: "workspace" | "organization" = "workspace",
 ) {
   render(
@@ -91,13 +91,13 @@ it("restores category and scope, then switches domains without losing workspace 
   await user.click(screen.getByRole("tab", { name: "Connector" }));
   await screen.findByText("No connector providers yet");
   expect(screen.getByRole("status").textContent).toContain(
-    "section=providers&category=connectors",
+    "category=connectors",
   );
   expect(screen.queryByRole("combobox", { name: "Scope" })).toBeNull();
 });
 it("allows an organization writer to manage shared providers without a workspace", async () => {
   state.hasWorkspace = false;
-  mount("section=providers&category=web", "organization");
+  mount("category=web", "organization");
   await screen.findByText("No web providers yet");
   expect(screen.getByRole("button", { name: "Add provider" })).toBeTruthy();
   expect(
@@ -109,7 +109,7 @@ it("allows an organization writer to manage shared providers without a workspace
 });
 it("does not query organization resources when organization access is unavailable", () => {
   state.organizationWrite = false;
-  mount("section=providers&category=web", "organization");
+  mount("category=web", "organization");
   expect(screen.getByText("Access unavailable")).toBeTruthy();
   expect(state.GET).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();

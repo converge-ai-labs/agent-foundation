@@ -15,12 +15,10 @@ const destinations: Record<string, string> = {
   connections: "Connections",
   environments: "Environments",
   models: "Models",
-  schedules: "Schedules",
   sessions: "Sessions",
   settings: "Settings",
   skills: "Skills",
   traces: "Traces",
-  usage: "Usage",
 };
 
 /**

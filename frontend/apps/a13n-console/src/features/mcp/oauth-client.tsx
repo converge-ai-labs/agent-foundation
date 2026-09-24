@@ -1,14 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField, FormField, Input, ReadOnlyField } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
-import { CopyButton } from "../../shared/identity";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import { connectionPath } from "../connections/api";
+import { CallbackUrlField } from "../connections/callback-url";
 
 type AuthMethod = Schema["ClientAuthentication"];
 type GrantType = Schema["OAuthGrant"];
@@ -51,15 +51,6 @@ export function MCPOAuthClientEditor({
   // The Service keeps a stored secret while the server and client ID stay the same.
   const keepsSecret =
     connection.client_secret_configured && clientId === saved?.client_id;
-  const redirect = useQuery({
-    queryKey: ["connections", "redirect-uri"],
-    enabled: grant === "authorization_code",
-    staleTime: Infinity,
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/connections/redirect-uri", { signal })
-        .then(data),
-  });
   const save = useMutation({
     gcTime: 0,
     mutationFn: (remove: boolean) =>
@@ -136,28 +127,13 @@ export function MCPOAuthClientEditor({
         }))}
         onValueChange={chooseGrant}
       />
-      {grant === "authorization_code" && redirect.data && (
-        <ReadOnlyField
-          label={t("Callback URL")}
+      {grant === "authorization_code" && (
+        <CallbackUrlField
           description={t(
             "Add this exact callback URL to the OAuth app at the provider.",
           )}
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 break-all">
-              {redirect.data.redirect_uri}
-            </span>
-            <CopyButton
-              value={redirect.data.redirect_uri}
-              copyLabel={t("Copy callback URL")}
-            />
-          </span>
-        </ReadOnlyField>
+        />
       )}
-      <ErrorNotice
-        error={redirect.error}
-        retry={() => void redirect.refetch()}
-      />
       <FormField label={t("Client ID")}>
         <Input
           autoFocus

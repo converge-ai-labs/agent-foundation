@@ -4,13 +4,13 @@ The private React and TypeScript web application for Agent Foundation Service. C
 
 ## Local development
 
-From the repository root, prepare local PostgreSQL, Redis and Langfuse, upgrade the schema, prepare frontend dependencies, and run Service and Console together. Configuration comes from `dev/service/local.toml`; no `.env` or manual Langfuse setup is required:
+From the repository root, start this checkout's PostgreSQL and Redis, apply migrations, and run the local scripted model, the Service and Console in the background:
 
 ```bash
 make dev
 ```
 
-Keep the terminal open; Ctrl+C stops both application processes. If either process exits, the launcher stops the other and returns the exited process's status. The local Service configuration selects the Console origin for browser authentication. Use `make dev-reset STATE=seeded` before startup for fictional accounts and content, or `STATE=empty` for the initial administrator flow. See [local Service development](../../../dev/service/README.md).
+The command returns once all three accept connections and prints the Console URL; `make dev-stop` stops them and `make dev-foreground` runs them attached. It writes this checkout's Service settings to `var/dev/service.toml`, with the Console origin as the Service public URL; no `.env` is required. Use `make dev-reset STATE=seeded` for fictional accounts and content, or `STATE=empty` for the initial administrator flow. See [local Service development](../../../dev/service/README.md).
 
 To run only Console against an already running Service:
 
@@ -19,18 +19,18 @@ make frontend-sync
 pnpm --dir frontend --filter a13n-console dev
 ```
 
-The local launcher assigns a stable Console port per checkout and passes the matching Service upstream. Run `make dev-status` to discover both URLs. A direct Vite invocation still accepts `A13N_CONSOLE_SERVICE_URL`. Configure the Service public origin as the Console origin so invitation, recovery, email confirmation, connection authorization returns, cookies, and origin checks use the same browser boundary. Email flows require the Service SMTP configuration.
+The local launcher assigns a stable Console port per checkout and passes the matching Service upstream. Run `make dev-status` to discover both URLs. A direct Vite invocation reads the Service upstream from `A13N_CONSOLE_SERVICE_URL` (default `http://127.0.0.1:8000`). Configure the Service public origin as the Console origin so invitation, recovery, email confirmation, connection authorization returns, cookies, and origin checks use the same browser boundary. Email flows require the Service SMTP configuration.
 
 ## Application surfaces
 
 - Workspace Agents with configuration, immutable versions, and lifecycle controls.
-- Sessions with threads, runs, retained and live output, attachments, branching, waiting feedback, steering, interruption, and queued messages.
+- Sessions with threads, runs, retained and live output, attachments, waiting feedback, steering, interruption, and queued messages.
 - Models and providers, Skills and versions, and Environment providers, templates, and instances.
 - Connectors, and remote MCP connections and tool discovery.
 - Run attempt details and Traces.
 - Workspace, organization, and personal settings, membership, invitations, API keys, service accounts, sessions, and audit events.
 
-Usage and Schedules remain clearly marked as coming soon. Plugin, Secret, and Hook editors are outside the Console scope. Existing hidden configuration is preserved when editing supported fields.
+Existing hidden configuration is preserved when editing supported fields.
 
 Console uses Service permission hints for navigation and controls; the Service authorizes every request. API keys are workspace-bound, and one-time credentials are displayed only when created. The application has no demo data or embedded credentials.
 

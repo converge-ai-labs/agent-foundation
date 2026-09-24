@@ -1,14 +1,7 @@
 import { Button, ToastProvider, TooltipProvider } from "a13n-ui";
 import { lazy, Suspense, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  BrowserRouter,
-  Navigate,
-  Outlet,
-  Route,
-  Routes,
-  useLocation,
-} from "react-router";
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router";
 import "./app.css";
 import { AuthProvider, useAuth } from "./auth/context";
 import { AuthPage } from "./auth/pages";
@@ -134,21 +127,6 @@ function WorkspaceShell() {
     </WorkspaceProvider>
   );
 }
-function ComingSoon() {
-  const { t } = useTranslation(),
-    location = useLocation();
-  const title = location.pathname.endsWith("usage")
-    ? t("Usage")
-    : t("Schedules");
-  return (
-    <Page title={title}>
-      <Empty
-        title={t("Coming soon")}
-        description={t("This capability is planned for a future release.")}
-      />
-    </Page>
-  );
-}
 function NotFound() {
   const { t } = useTranslation();
   return (
@@ -251,8 +229,6 @@ function AppContent() {
                         path="settings/:section?"
                         element={<WorkspaceSettings />}
                       />
-                      <Route path="usage" element={<ComingSoon />} />
-                      <Route path="schedules" element={<ComingSoon />} />
                       <Route path="*" element={<NotFound />} />
                     </Route>
                     <Route element={<WorkspaceShell />}>

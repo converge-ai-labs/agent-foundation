@@ -3,7 +3,7 @@ import { Button, FormField, Input } from "a13n-ui";
 import { ArrowLeftIcon, CaretDownIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Link, Navigate, useLocation, useParams } from "react-router";
+import { Link, useLocation, useParams } from "react-router";
 import { PageActionsTarget, PageEmptyAction } from "../../shared/page";
 
 import { useTranslation } from "react-i18next";
@@ -56,20 +56,6 @@ export function SettingsLayout({
     ) ??
     current.sections.find((item) => item.value in content) ??
     current.sections[0];
-  // Sections used to be `?section=` values; those addresses still resolve.
-  const legacy = requested
-    ? undefined
-    : resolveSection(scope, search.get("section"));
-  if (legacy) {
-    search.delete("section");
-    const query = search.toString();
-    return (
-      <Navigate
-        replace
-        to={`${current.path}/${legacy}${query ? `?${query}` : ""}`}
-      />
-    );
-  }
   const term = filter.trim().toLocaleLowerCase();
   const visible = groups
     .map((group) => ({

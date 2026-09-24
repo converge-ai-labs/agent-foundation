@@ -226,7 +226,7 @@ it("uploads a file, validates its contents, and rejects unsupported versions wit
   );
   await user.click(screen.getByRole("button", { name: "Review" }));
   await screen.findByText(
-    "Unsupported Agent file version. Expected schema_version: 2.",
+    "Unsupported Agent file version. Expected schema_version: 1.",
   );
   expect(http.GET).not.toHaveBeenCalled();
   expect(http.POST).not.toHaveBeenCalled();

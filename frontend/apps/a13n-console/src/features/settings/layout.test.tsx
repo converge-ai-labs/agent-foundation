@@ -51,29 +51,6 @@ function mount(entry: string) {
   );
 }
 
-it("redirects a legacy section query to the section's own address", () => {
-  mount("/workspace/design/settings?section=members");
-  expect(screen.getByLabelText("Current address").textContent).toBe(
-    "/workspace/design/settings/members",
-  );
-  expect(screen.getByText("Workspace members")).toBeTruthy();
-});
-
-it("keeps other query parameters while redirecting", () => {
-  mount("/workspace/design/settings?section=providers&category=web");
-  expect(screen.getByLabelText("Current address").textContent).toBe(
-    "/workspace/design/settings/providers?category=web",
-  );
-});
-
-it("maps the retired profile section to General", () => {
-  mount("/workspace/design/settings?section=profile");
-  expect(screen.getByLabelText("Current address").textContent).toBe(
-    "/workspace/design/settings/general",
-  );
-  expect(screen.getByText("Workspace general")).toBeTruthy();
-});
-
 it("lists every scope the reader can reach without a disclosure", () => {
   mount("/workspace/design/settings/members");
   const navigation = screen.getByRole("navigation", {

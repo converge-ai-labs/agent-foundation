@@ -31,16 +31,6 @@ const curatedBrands: Record<string, Brand> = {
     hosts: ["mcp.linear.app", "linear.app"],
   },
   slack: { icon: `${svgl}slack.svg`, hosts: ["mcp.slack.com", "slack.com"] },
-  feishu: {
-    icon: "https://p1-hera.feishucdn.com/tos-cn-i-jbbdkfciu3/84a9f036fe2b44f99b899fff4beeb963~tplv-jbbdkfciu3-image:100:100.image",
-    aliases: ["lark"],
-    hosts: [
-      "feishu.cn",
-      "open.feishu.cn",
-      "larksuite.com",
-      "open.larksuite.com",
-    ],
-  },
   gmail: { icon: `${svgl}gmail.svg`, hosts: ["mail.google.com"] },
   googlecalendar: {
     icon: `${svgl}google-calendar.svg`,

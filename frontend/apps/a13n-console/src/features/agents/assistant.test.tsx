@@ -120,7 +120,7 @@ it("explains the missing model instead of opening a conversation", async () => {
   ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Open model setup" }));
   expect(screen.getByLabelText("Current path").textContent).toBe(
-    "?section=providers&category=models",
+    "?category=models",
   );
 });
 

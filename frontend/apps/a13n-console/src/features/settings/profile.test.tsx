@@ -41,8 +41,8 @@ function setup(
       <MemoryRouter
         initialEntries={[
           kind === "workspace"
-            ? "/workspace/design/settings?section=profile"
-            : "/organization/settings?section=profile",
+            ? "/workspace/design/settings"
+            : "/organization/settings",
         ]}
       >
         <Location />
