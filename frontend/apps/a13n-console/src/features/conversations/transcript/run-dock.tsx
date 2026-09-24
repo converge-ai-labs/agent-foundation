@@ -200,7 +200,7 @@ export function RunDock({
                 <LockSimpleIcon size={13} aria-hidden="true" />
                 <span>
                   {t(
-                    "This session is controlled by its originating application. Use New session to start your own debug session.",
+                    "This thread is driven by the run that delegated to it. Continue the work from the parent thread.",
                   )}
                 </span>
                 {stop}

@@ -260,7 +260,7 @@ it.each(["completed", "failed", "waiting", "running"] as const)(
   async (status) => {
     mount({ origin: "child", status });
     await screen.findByText(
-      "This session is controlled by its originating application. Use New session to start your own debug session.",
+      "This thread is driven by the run that delegated to it. Continue the work from the parent thread.",
     );
     expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Retry run" })).toBeNull();

@@ -1274,7 +1274,7 @@
   "Your own credentials for this workspace. Keep them private.": "Your own credentials for this workspace. Keep them private.",
   "Member keys appear here once someone creates one.": "Member keys appear here once someone creates one.",
   "Account actions": "Account actions",
-  "This session is controlled by its originating application. Use New session to start your own debug session.": "This session is controlled by its originating application. Use New session to start your own debug session.",
+  "This thread is driven by the run that delegated to it. Continue the work from the parent thread.": "This thread is driven by the run that delegated to it. Continue the work from the parent thread.",
   "Authorization in progress": "Authorization in progress",
   "Authorize this server to let agents call its tools.": "Authorize this server to let agents call its tools.",
   "Connection check": "Connection check",
