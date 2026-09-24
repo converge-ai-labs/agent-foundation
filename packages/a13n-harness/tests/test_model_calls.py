@@ -425,6 +425,127 @@ async def test_builtin_reviewer_checks_before_dispatch_and_reuses_receipt_identi
         assert review_checks[0].tool_id == "fixture.write" and review_checks[0].tool_call_id == "effect-1"
 
 
+@pytest.mark.parametrize("second_outcome", ["completed", "invalid", "cancelled"])
+async def test_shared_reviewer_isolates_overlapping_executions(reviewer_context, second_outcome):
+    from dataclasses import replace
+
+    from a13n_harness.capabilities.tool_review import (
+        AgentToolReviewer,
+        ToolReviewConfig,
+        ToolReviewError,
+        ToolReviewRequest,
+        ToolReviewResult,
+    )
+
+    checks = Checks()
+    owner = replace(reviewer_context, model_call_check=checks)
+    entered = 0
+    both_entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def provider(messages, info):
+        nonlocal entered
+        entered += 1
+        if entered == 2:
+            both_entered.set()
+        await release.wait()
+        if second_outcome == "invalid" and "review-second" in str(messages):
+            yield "not an assessment"
+        else:
+            yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"risk":"low"}')}
+
+    reviewer = AgentToolReviewer(FunctionModel(stream_function=provider), ToolReviewConfig(model="test:review"))
+    requests = [
+        ToolReviewRequest(
+            tool_id="fixture.write",
+            tool_call_id=f"review-{name}",
+            tool_name="write",
+            parameters_schema={},
+            arguments={},
+        )
+        for name in ("first", "second")
+    ]
+    tasks = [asyncio.create_task(reviewer.review(request, context=owner)) for request in requests]
+    try:
+        await asyncio.wait_for(both_entered.wait(), 5)
+        if second_outcome == "cancelled":
+            tasks[1].cancel()
+        release.set()
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    assert len(checks.calls) == 2
+    identities = {call.tool_call_id: call.call_id for call in checks.calls}
+    assert len(set(identities.values())) == 2
+    assert isinstance(results[0], ToolReviewResult)
+    if second_outcome == "cancelled":
+        assert isinstance(results[1], asyncio.CancelledError)
+    elif second_outcome == "invalid":
+        assert isinstance(results[1], ToolReviewError) and results[1].code == "tool_review_failed"
+    else:
+        assert isinstance(results[1], ToolReviewResult)
+    for request, result in zip(requests, results, strict=True):
+        if isinstance(result, (ToolReviewResult, ToolReviewError)):
+            assert len(result.usage) == 1
+            assert result.usage[0].usage_id == identities[request.tool_call_id]
+            measures = {measure.unit: measure.quantity for measure in result.usage[0].measures}
+            assert measures["requests"] == 1
+
+
+@pytest.mark.parametrize("preparation_fails", [False, True])
+async def test_reviewer_allocates_identity_only_after_request_preparation(
+    reviewer_context, monkeypatch, preparation_fails
+):
+    from dataclasses import replace
+
+    from a13n_harness import model_calls
+    from a13n_harness.capabilities import tool_review
+
+    events = []
+    allocate = model_calls.uuid4
+
+    def record_allocation():
+        events.append("allocate")
+        return allocate()
+
+    class Preparation(AbstractCapability):
+        async def before_model_request(self, ctx, request_context):
+            events.append("prepare")
+            if preparation_fails:
+                raise ValueError("preparation failed")
+            return request_context
+
+    class Policy:
+        async def check(self, call):
+            events.append("check")
+
+    async def provider(messages, info):
+        events.append("provider")
+        yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"risk":"low"}')}
+
+    monkeypatch.setattr(model_calls, "uuid4", record_allocation)
+    monkeypatch.setattr(tool_review, "_auxiliary_agent_capabilities", lambda: (Preparation(),))
+    reviewer = tool_review.AgentToolReviewer(
+        FunctionModel(stream_function=provider), tool_review.ToolReviewConfig(model="test:review")
+    )
+    request = tool_review.ToolReviewRequest(
+        tool_id="fixture.write", tool_call_id="review-1", tool_name="write", parameters_schema={}, arguments={}
+    )
+    owner = replace(reviewer_context, model_call_check=Policy())
+    if preparation_fails:
+        with pytest.raises(tool_review.ToolReviewError) as error:
+            await reviewer.review(request, context=owner)
+        assert error.value.code == "tool_review_failed" and error.value.usage == ()
+        assert events == ["prepare"]
+    else:
+        result = await reviewer.review(request, context=owner)
+        assert result.usage
+        assert events == ["prepare", "allocate", "check", "provider"]
+
+
 @pytest.mark.parametrize("deny", [False, True])
 async def test_compaction_dispatch_is_correlated_and_cannot_soften_host_veto(deny):
     from a13n_harness import HarnessState

@@ -203,11 +203,47 @@ def _review_prompt() -> str:
     return files("a13n_harness.toolsets.prompts").joinpath("tool_review.md").read_text(encoding="utf-8")
 
 
-class _ReviewCallCapability(AbstractCapability[ToolReviewRequest]):
-    def __init__(self, owner: AgentContext, request: ToolReviewRequest):
-        self.owner = owner
-        self.request = request
-        self.call_id: str | None = None
+class _ReviewExecution(AbstractCapability[ToolReviewRequest]):
+    """One review's dispatch identity, native execution and usage settlement; never reused."""
+
+    def __init__(self, owner: AgentContext, model: Model) -> None:
+        self._owner = owner
+        self._model = model
+        self._call_id: str | None = None
+        self._usage = RunUsage()
+
+    async def run(
+        self,
+        agent: Agent[ToolReviewRequest, ToolReviewAssessment | _ScoredToolReview],
+        request: ToolReviewRequest,
+        *,
+        timeout: float,
+    ) -> ToolReviewResult:
+        try:
+            async with asyncio.timeout(timeout):
+                result = await agent.run(
+                    request.to_prompt(),
+                    deps=request,
+                    usage=self._usage,
+                    usage_limits=UsageLimits(request_limit=1),
+                    capabilities=(*_auxiliary_agent_capabilities(), self),
+                    event_stream_handler=_drain_review_events,
+                )
+        except asyncio.CancelledError:
+            raise
+        except (ToolReviewError, ModelCallCheckError):
+            raise
+        except TimeoutError as exc:
+            raise ToolReviewError("tool_review_timeout", usage=self._usage_receipts()) from exc
+        except Exception as exc:
+            raise ToolReviewError("tool_review_failed", usage=self._usage_receipts()) from exc
+        output = result.output
+        assessment = (
+            ToolReviewAssessment(risk=ToolRiskLevel(output.severity.name))
+            if isinstance(output, _ScoredToolReview)
+            else output
+        )
+        return ToolReviewResult(assessment=assessment, usage=self._usage_receipts())
 
     async def wrap_model_request(
         self,
@@ -217,15 +253,44 @@ class _ReviewCallCapability(AbstractCapability[ToolReviewRequest]):
         handler: WrapModelRequestHandler,
     ) -> ModelResponse:
         call = await _check_model_call(
-            self.owner,
+            self._owner,
             request_context,
             model_run_id=ctx.run_id,
             source="tool.review",
-            tool_id=self.request.tool_id,
-            tool_call_id=self.request.tool_call_id,
+            tool_id=ctx.deps.tool_id,
+            tool_call_id=ctx.deps.tool_call_id,
         )
-        self.call_id = call.call_id
+        self._call_id = call.call_id
         return await handler(request_context)
+
+    def _usage_receipts(self) -> tuple[ProviderUsage, ...]:
+        # Settle only after the native run exits: interrupted streaming usage is
+        # committed after the model-request wrapper has unwound.
+        measures = tuple(
+            UsageMeasure(unit=unit, quantity=Decimal(value))
+            for unit, value in (
+                ("requests", self._usage.requests),
+                ("tool_calls", self._usage.tool_calls),
+                ("input_tokens", self._usage.input_tokens),
+                ("cache_write_tokens", self._usage.cache_write_tokens),
+                ("cache_read_tokens", self._usage.cache_read_tokens),
+                ("output_tokens", self._usage.output_tokens),
+            )
+            if value
+        )
+        if not measures:
+            return ()
+        if self._call_id is None:
+            raise RunError("Reviewer usage has no dispatch identity.", code="usage_identity_missing")
+        return (
+            ProviderUsage(
+                usage_id=self._call_id,
+                provider=self._model.system,
+                product=self._model.model_name,
+                timestamp=datetime.now(UTC),
+                measures=measures,
+            ),
+        )
 
 
 class AgentToolReviewer:
@@ -271,38 +336,8 @@ class AgentToolReviewer:
         return "\n\n".join(filter(None, (_review_prompt(), custom))) if self._scored else custom
 
     async def review(self, request: ToolReviewRequest, *, context: AgentContext) -> ToolReviewResult:
-        dispatch = _ReviewCallCapability(context, request)
-        usage = RunUsage()
-        try:
-            async with asyncio.timeout(self._config.timeout_seconds):
-                result = await self._agent.run(
-                    request.to_prompt(),
-                    deps=request,
-                    usage=usage,
-                    usage_limits=UsageLimits(request_limit=1),
-                    capabilities=(*_auxiliary_agent_capabilities(), dispatch),
-                    event_stream_handler=_drain_review_events,
-                )
-        except asyncio.CancelledError:
-            raise
-        except (ToolReviewError, ModelCallCheckError):
-            raise
-        except TimeoutError as exc:
-            raise ToolReviewError(
-                "tool_review_timeout", usage=_provider_usage_receipts(self._model, usage, call_id=dispatch.call_id)
-            ) from exc
-        except Exception as exc:
-            raise ToolReviewError(
-                "tool_review_failed", usage=_provider_usage_receipts(self._model, usage, call_id=dispatch.call_id)
-            ) from exc
-        output = result.output
-        assessment = (
-            ToolReviewAssessment(risk=ToolRiskLevel(output.severity.name))
-            if isinstance(output, _ScoredToolReview)
-            else output
-        )
-        return ToolReviewResult(
-            assessment=assessment, usage=_provider_usage_receipts(self._model, result.usage, call_id=dispatch.call_id)
+        return await _ReviewExecution(context, self._model).run(
+            self._agent, request, timeout=self._config.timeout_seconds
         )
 
 
@@ -310,31 +345,3 @@ async def _drain_review_events(ctx: RunContext[object], events: AsyncIterable[Ag
     del ctx
     async for _ in events:
         pass
-
-
-def _provider_usage_receipts(model: Model, usage: RunUsage, *, call_id: str | None) -> tuple[ProviderUsage, ...]:
-    measures = tuple(
-        UsageMeasure(unit=unit, quantity=Decimal(value))
-        for unit, value in (
-            ("requests", usage.requests),
-            ("tool_calls", usage.tool_calls),
-            ("input_tokens", usage.input_tokens),
-            ("cache_write_tokens", usage.cache_write_tokens),
-            ("cache_read_tokens", usage.cache_read_tokens),
-            ("output_tokens", usage.output_tokens),
-        )
-        if value
-    )
-    if not measures:
-        return ()
-    if call_id is None:
-        raise RunError("Reviewer usage has no dispatch identity.", code="usage_identity_missing")
-    return (
-        ProviderUsage(
-            usage_id=call_id,
-            provider=model.system,
-            product=model.model_name,
-            timestamp=datetime.now(UTC),
-            measures=measures,
-        ),
-    )
