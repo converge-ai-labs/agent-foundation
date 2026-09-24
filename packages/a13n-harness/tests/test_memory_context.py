@@ -6,12 +6,14 @@ from collections.abc import AsyncIterator, Callable
 from copy import deepcopy
 from typing import Any
 
+import httpx2
 import pytest
 from a13n_harness import (
     DeferredToolResume,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
+    ModelRecoveryPolicy,
     RunBindings,
 )
 from a13n_harness.capabilities import (
@@ -377,6 +379,36 @@ async def test_a_restored_history_clears_the_cursors_and_nested_runs_get_no_cont
 
     await executable.run("again", bindings=RunBindings.embedded(), previous_state=first.state)
     assert 'kind="full"' in _blocks(model.calls[-1])[-1]
+
+
+async def test_a_recovered_model_attempt_keeps_the_delivered_context() -> None:
+    store = FakeFileStore({"a.md": "a\n"})
+    cursors = MemoryCursors()
+
+    def reply(messages: list[ModelMessage]) -> str:
+        if len(model.calls) == 1:
+            store.put("late.md", "late\n")
+            raise httpx2.ReadError("interrupted")
+        return "done"
+
+    model = _Model(reply)
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model.stream),
+        capabilities=(FileMemoryCapability([FileMount("user", store, "write")], cursors=cursors),),
+        model_recovery=ModelRecoveryPolicy(
+            enabled=True, max_attempts=2, backoff_initial_seconds=0, backoff_max_seconds=0
+        ),
+    )
+
+    result = await executable.run("hi", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "done"
+    assert len(model.calls) == 2
+    assert _blocks(model.calls[1]) == _blocks(model.calls[0])
+    assert len(_blocks(model.calls[1])) == 1
+    assert cursors.get("user") == "1"
 
 
 class _TwiceProjection:
