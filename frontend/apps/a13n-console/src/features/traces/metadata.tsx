@@ -21,11 +21,6 @@ export function metadataChips(observation: Schema["Span"]) {
     "Environment",
     resource["deployment.environment.name"],
   );
-  add(
-    "a13n.run_attempt.number",
-    "Attempt",
-    attributes["a13n.run_attempt.number"],
-  );
   const labels = attributes["a13n.observation.labels"];
   if (Array.isArray(labels))
     labels.forEach((value, index) => add(`label:${index}`, "Label", value));

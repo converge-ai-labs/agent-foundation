@@ -150,9 +150,8 @@ it("distinguishes chat, tools, agents and phases without guessing unknown types"
   expect(kind("generation")).toBe("chat");
   expect(kind("TOOL")).toBe("tool");
   expect(kind("agent")).toBe("agent");
-  expect(kind("span", "a13n.service.run_attempt")).toBe("agent");
+  expect(kind("span", "harness.run")).toBe("agent");
   expect(kind("span", "harness.prepare")).toBe("phase");
-  expect(kind("span", "a13n.service.persist")).toBe("data");
   expect(kind("future-kind", "harness.prepare")).toBe("span");
 });
 

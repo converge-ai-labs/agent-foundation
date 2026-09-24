@@ -21,10 +21,8 @@ export function observationKind(
   if (type === "embedding" || type === "retriever") return "data";
   if (type === "event") return "event";
   if (type === "span") {
-    if (["a13n.service.run_attempt", "harness.run"].includes(observation.name))
-      return "agent";
-    if (observation.name === "a13n.service.persist") return "data";
-    if (/^(a13n\.service\.|harness\.)/.test(observation.name)) return "phase";
+    if (observation.name === "harness.run") return "agent";
+    if (observation.name.startsWith("harness.")) return "phase";
   }
   return "span";
 }

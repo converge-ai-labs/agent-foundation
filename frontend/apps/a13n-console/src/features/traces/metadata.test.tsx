@@ -11,7 +11,6 @@ it("uses only the observation's explicit metadata namespace and resource environ
   const observation = {
     attributes: {
       "deployment.environment.name": "wrong-scope",
-      "a13n.run_attempt.number": 2,
       "a13n.observation.labels": ["fast", "trial"],
       "a13n.observation.metadata.region": "west",
       "a13n.observation.metadata.enabled": false,
@@ -25,15 +24,14 @@ it("uses only the observation's explicit metadata namespace and resource environ
   } as unknown as Schema["Span"];
   expect(metadataChips(observation).map(({ value }) => value)).toEqual([
     "development",
-    "2",
     "fast",
     "trial",
     "west",
     "false",
   ]);
   render(<MetadataChips observation={observation} />);
-  expect(screen.getByText("+2")).toBeTruthy();
-  expect(screen.queryByText("west")).toBeNull();
+  expect(screen.getByText("+1")).toBeTruthy();
+  expect(screen.queryByText("false")).toBeNull();
   expect(screen.queryByText("wrong-scope")).toBeNull();
   expect(
     metadataChips({ ...observation, attributes: {}, resource_attributes: {} }),
