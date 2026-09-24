@@ -282,6 +282,7 @@ function ProjectGroup({
     enabled: enabled && expanded,
     limit: 5,
     includeActive: true,
+    includeStarred: true,
   });
   // The selected detail can arrive before a slower sidebar refresh. Use that
   // observation for this row, without replacing other Projects or page cursors.
@@ -291,13 +292,16 @@ function ProjectGroup({
     [
       ...(list.data?.pages.flatMap((page) => page.rows) ?? []),
       ...(list.data?.pages[0]?.active_rows ?? []),
+      ...(list.data?.pages[0]?.starred_rows ?? []),
     ].map((row) => [row.thread.thread_id, row]),
   );
   for (const { thread, observedAt } of results.threads.values()) {
     const page = list.data?.pages.find((page, index) =>
-      [...page.rows, ...(index === 0 ? (page.active_rows ?? []) : [])].some(
-        (row) => row.thread.thread_id === thread.thread_id,
-      ),
+      [
+        ...page.rows,
+        ...(index === 0 ? (page.active_rows ?? []) : []),
+        ...(index === 0 ? (page.starred_rows ?? []) : []),
+      ].some((row) => row.thread.thread_id === thread.thread_id),
     );
     if (observed.has(thread.thread_id) && observedAt <= (page?.observedAt ?? 0))
       continue;
@@ -317,7 +321,11 @@ function ProjectGroup({
   const selectedPage = selected
     ? list.data?.pages.find((page, index) =>
         (index === 0
-          ? [...page.rows, ...(page.active_rows ?? [])]
+          ? [
+              ...page.rows,
+              ...(page.active_rows ?? []),
+              ...(page.starred_rows ?? []),
+            ]
           : page.rows
         ).some((row) => row.thread.thread_id === selected.thread_id),
       )
@@ -357,6 +365,16 @@ function ProjectGroup({
     )
       observed.set(thread.thread_id, { thread });
   }
+  const activeOwnerIds = new Set(
+    [...observed.values()]
+      .filter(
+        ({ thread }) =>
+          !thread.archived &&
+          thread.role === "worker" &&
+          thread.root_activity.state !== "inactive",
+      )
+      .map(({ thread }) => thread.coordinator_thread_id),
+  );
   const activeRows: Row[] = [];
   const unreadRows: Row[] = [];
   const recentRows: Row[] = [];
@@ -367,7 +385,9 @@ function ProjectGroup({
     const unread = results.tracker?.isUnread(row.thread.thread_id);
     if (unread) unreadCount++;
     if (row.thread.role === "worker") continue;
-    (row.thread.root_activity.state !== "inactive"
+    (row.thread.root_activity.state !== "inactive" ||
+    (row.thread.role === "coordinator" &&
+      activeOwnerIds.has(row.thread.thread_id))
       ? activeRows
       : unread
         ? unreadRows
@@ -384,7 +404,10 @@ function ProjectGroup({
   };
   activeRows.sort(byTouch);
   unreadRows.sort(byTouch);
-  recentRows.sort(byTouch);
+  recentRows.sort(
+    (a, b) =>
+      Number(!!b.thread.starred) - Number(!!a.thread.starred) || byTouch(a, b),
+  );
   const rows = [...activeRows, ...unreadRows, ...recentRows];
   return (
     <section

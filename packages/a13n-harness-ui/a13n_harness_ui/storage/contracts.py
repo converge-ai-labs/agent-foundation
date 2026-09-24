@@ -150,6 +150,7 @@ class Thread(StoredContract):
     activity_at: datetime | None = None
     touched_at: datetime | None = None
     archived: bool = False
+    starred: bool = False
     configuration: ThreadConfiguration
     initial_state: ObjectRef
     continuation: ObjectRef | None = None

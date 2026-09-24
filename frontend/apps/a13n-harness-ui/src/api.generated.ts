@@ -4545,6 +4545,11 @@ export interface components {
              * @default []
              */
             active_rows?: components["schemas"]["ThreadActivityView"][];
+            /**
+             * Starred Rows
+             * @default []
+             */
+            starred_rows?: components["schemas"]["ThreadActivityView"][];
             /** Total */
             total: number;
             /** Next Cursor */
@@ -4831,6 +4836,11 @@ export interface components {
             touched_at?: string | null;
             /** Archived */
             archived: boolean;
+            /**
+             * Starred
+             * @default false
+             */
+            starred?: boolean;
             configuration: components["schemas"]["ThreadConfigurationView"];
             /**
              * Continuation State
@@ -5993,6 +6003,8 @@ export interface components {
             title?: string | null;
             /** Archived */
             archived?: boolean | null;
+            /** Starred */
+            starred?: boolean | null;
         };
         /** ThreadMetadataMutation */
         ThreadMetadataMutation: {
@@ -8784,6 +8796,7 @@ export interface operations {
                 include_archived?: boolean;
                 archived_only?: boolean;
                 include_active?: boolean;
+                include_starred?: boolean;
                 coordinator_thread_id?: string | null;
                 independent_only?: boolean;
                 cursor?: string | null;

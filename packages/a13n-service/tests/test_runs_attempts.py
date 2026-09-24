@@ -1,9 +1,10 @@
 """Attempts: the worker loop, claims, lease renewal and takeover, checkpoint commits and usage ingestion."""
 
 import asyncio
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from a13n_harness.usage import ModelUsageRecord, UsageRecord
@@ -12,7 +13,7 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.models import service as models_service
 from a13n_service.runs import seal as seal_module
 from a13n_service.runs import worker as worker_module
-from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost, renew
+from a13n_service.runs.attempts import AttemptControl, AuthorityRevoked, Lease, LeaseLost, renew
 from a13n_service.runs.checkpoints import FORMAT
 from a13n_service.runs.claim import claim
 from a13n_service.runs.execute import execute
@@ -22,7 +23,10 @@ from a13n_service.runs.seal import expire_leases, seal_attempt
 from a13n_service.runs.tables import AttemptRow, RunRow, UsageRecordRow
 from a13n_service.runs.usage import UsageBuffer, UsageReport, ingest_late
 from a13n_service.runs.worker import Worker
-from sqlalchemy import select, text, update
+from a13n_service.tenancy.access import RoleGrant
+from a13n_service.tenancy.authorize import Principal
+from a13n_service.tenancy.tables import GrantRow
+from sqlalchemy import delete, event, func, select, text, update
 
 pytestmark = pytest.mark.anyio
 
@@ -112,6 +116,102 @@ async def test_a_renewal_that_never_answers_stops_the_attempt(runtime, monkeypat
     loop.cancel()
     with pytest.raises(asyncio.CancelledError):
         await loop
+
+
+async def test_one_heartbeat_serves_every_attempt_and_a_missed_renewal_cancels_only_its_own(
+    runtime, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    runtime = _with_worker(runtime, slots=2, lease_seconds=1, authority_seconds=0.01, scan_seconds=5)
+    renewed, missed = LEASE, replace(LEASE, run_id="run_missed", attempt_id="rat_missed")
+    unclaimed = [renewed, missed]
+
+    async def claim_all(*args, **kwargs) -> list[Lease]:  # type: ignore[no-untyped-def]
+        claimed = list(unclaimed)
+        unclaimed.clear()
+        return claimed
+
+    heartbeats: list[list[Lease]] = []
+
+    async def renewing(storage, access, leases, *, extend, seconds) -> tuple[dict[str, Outcome], set[str]]:  # type: ignore[no-untyped-def]
+        heartbeats.append(leases)
+        return {renewed.attempt_id: Outcome.cancelled()}, set(extend) - {missed.attempt_id}
+
+    controls: dict[str, AttemptControl] = {}
+    cancellations = 0
+    cleanup, cleaned = asyncio.Event(), asyncio.Event()
+
+    async def attempt(runtime, lease, control) -> None:  # type: ignore[no-untyped-def]
+        nonlocal cancellations
+        controls[lease.attempt_id] = control
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancellations += 1
+            # Heartbeats go on during this cleanup; cancelling it again would interrupt it.
+            await cleanup.wait()
+            cleaned.set()
+            raise
+
+    monkeypatch.setattr(worker_module, "claim", claim_all)
+    monkeypatch.setattr(worker_module, "renew", renewing)
+    worker = Worker(runtime, attempt)
+    loop = asyncio.create_task(worker.run())
+    try:
+        await _until(lambda: cancellations == 1)
+        count = len(heartbeats)
+        await _until(lambda: len(heartbeats) >= count + 5)
+        cleanup.set()
+        async with asyncio.timeout(5):
+            await cleaned.wait()
+        await _until(lambda: set(worker.running) == {renewed.attempt_id})
+        assert cancellations == 1
+        assert {lease.attempt_id for lease in heartbeats[0]} == {renewed.attempt_id, missed.attempt_id}
+        control = controls[renewed.attempt_id]
+        assert control.stopped.is_set() and control.outcome == Outcome.cancelled()
+        assert not control.renewal_missed()
+    finally:
+        loop.cancel()
+        await asyncio.gather(loop, return_exceptions=True)
+
+
+async def test_heartbeats_continue_while_the_worker_drains(runtime, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    runtime = _with_worker(runtime, authority_seconds=0.01, scan_seconds=5, drain_seconds=5)
+    unclaimed = [LEASE]
+
+    async def claim_once(*args, **kwargs) -> list[Lease]:  # type: ignore[no-untyped-def]
+        return [unclaimed.pop()] if unclaimed else []
+
+    heartbeats = 0
+
+    async def renewing(*args, **kwargs) -> tuple[dict[str, Outcome], set[str]]:  # type: ignore[no-untyped-def]
+        nonlocal heartbeats
+        heartbeats += 1
+        return {}, set()
+
+    started, handed_off, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def attempt(runtime, lease, control) -> None:  # type: ignore[no-untyped-def]
+        started.set()
+        await control.handoff.wait()
+        handed_off.set()
+        await finish.wait()
+
+    monkeypatch.setattr(worker_module, "claim", claim_once)
+    monkeypatch.setattr(worker_module, "renew", renewing)
+    loop = asyncio.create_task(Worker(runtime, attempt).run())
+    try:
+        await started.wait()
+        loop.cancel()
+        await handed_off.wait()
+        count = heartbeats
+        await _until(lambda: heartbeats >= count + 3)
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await loop
+    finally:
+        finish.set()
+        loop.cancel()
+        await asyncio.gather(loop, return_exceptions=True)
 
 
 async def test_no_call_is_sent_once_the_lease_missed_its_renewal(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
@@ -248,9 +348,11 @@ async def test_a_stale_attempt_changes_nothing_after_a_takeover(service, scripte
 
     with pytest.raises(LeaseLost):
         await seal_attempt(runtime, stale, Outcome.cancelled())
-    with pytest.raises(LeaseLost):
-        await renew(runtime.storage, runtime.access, stale, seconds=30)
-    assert await renew(runtime.storage, runtime.access, current, seconds=30) is None
+    both = [stale, current]
+    stops, extended = await renew(
+        runtime.storage, runtime.access, both, extend={lease.attempt_id for lease in both}, seconds=30
+    )
+    assert (stops, extended) == ({}, {current.attempt_id})
     run = await runs_kit.get_run(service, run_id)
     assert run["status"] == "running" and run["attempts"] == 2
     attempts = (await service.client.get(f"{service.workspace}/runs/{run_id}/attempts")).json()["items"]
@@ -258,6 +360,133 @@ async def test_a_stale_attempt_changes_nothing_after_a_takeover(service, scripte
         ("failed", "initial"),
         ("leased", "recovery"),
     ]
+
+
+@contextmanager
+def _statements(runtime: Runtime) -> Iterator[list[str]]:
+    """The SQL statements this task sends; transaction control and other tasks' work are not counted."""
+    statements, owner = [], asyncio.current_task()
+
+    def record(connection, cursor, statement, parameters, context, executemany) -> None:  # type: ignore[no-untyped-def]
+        if asyncio.current_task() is owner:
+            statements.append(statement)
+
+    engine = runtime.storage.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        yield statements
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+
+async def _expiries(runtime: Runtime) -> dict[str, datetime]:
+    async with transaction(runtime.storage) as session:
+        return dict((await session.execute(select(AttemptRow.id, AttemptRow.lease_expires_at))).tuples().all())
+
+
+async def test_a_heartbeat_takes_the_same_statements_for_one_or_many_attempts(
+    service, scripted_model, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    runtime = service.runtime
+    agent = await runs_kit.create_agent(service, scripted_model)
+    for _ in range(8):
+        await runs_kit.start_thread(service, agent, "hi")
+    leases = await claim(runtime, worker_id="worker-test", worker_build="test", limit=8)
+    assert len(leases) == 8
+    for batch in (leases[:1], leases):
+        with _statements(runtime) as polled:
+            assert await renew(runtime.storage, runtime.access, batch, extend=(), seconds=30) == ({}, set())
+        # Runs, their workspaces, the principals and their grants.
+        assert len(polled) == 4, polled
+        due = {lease.attempt_id for lease in batch}
+        with _statements(runtime) as extending:
+            assert await renew(runtime.storage, runtime.access, batch, extend=due, seconds=30) == ({}, due)
+        # Then one lock and one update for every due lease.
+        assert len(extending) == 6, extending
+
+    before = await _expiries(runtime)
+    first = leases[0].attempt_id
+    await renew(runtime.storage, runtime.access, leases, extend={first}, seconds=30)
+    after = await _expiries(runtime)
+    assert {key for key in before if after[key] != before[key]} == {first}
+
+
+async def test_a_heartbeat_extends_only_leases_it_proves_and_never_waits(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    runtime = service.runtime
+    agent = await runs_kit.create_agent(service, scripted_model)
+    for _ in range(4):
+        await runs_kit.start_thread(service, agent, "hi")
+    healthy, expired, locked, forged = await claim(runtime, worker_id="worker-test", worker_build="test", limit=4)
+    async with transaction(runtime.storage) as session:
+        await session.execute(
+            update(AttemptRow).where(AttemptRow.id == expired.attempt_id).values(lease_expires_at=AttemptRow.created_at)
+        )
+    leases = [healthy, expired, locked, replace(forged, token="forged")]
+    before = await _expiries(runtime)
+    async with transaction(runtime.storage) as blocker:
+        # An execution's own write holds its run, or an attempt row, until it commits.
+        await blocker.execute(select(RunRow.id).where(RunRow.id == healthy.run_id).with_for_update())
+        await blocker.execute(select(AttemptRow.id).where(AttemptRow.id == locked.attempt_id).with_for_update())
+        async with asyncio.timeout(5):
+            _, extended = await renew(
+                runtime.storage, runtime.access, leases, extend={lease.attempt_id for lease in leases}, seconds=30
+            )
+    assert extended == {healthy.attempt_id}
+    after = await _expiries(runtime)
+    assert {key for key in before if after[key] != before[key]} == {healthy.attempt_id}
+    # The skipped lease is still due, and the next heartbeat extends it once its row is free.
+    _, extended = await renew(runtime.storage, runtime.access, [locked], extend={locked.attempt_id}, seconds=30)
+    assert extended == {locked.attempt_id}
+
+
+async def test_a_heartbeat_stops_cancelled_and_revoked_runs_and_renews_nothing_without_authority(
+    service, scripted_model, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    runtime = service.runtime
+    agent = await runs_kit.create_agent(service, scripted_model)
+    await runs_kit.start_thread(service, agent, "healthy")
+    cancelled = (await runs_kit.start_thread(service, agent, "cancel me"))["run"]["id"]
+    account = await service.client.post(f"{service.workspace}/service-accounts", json={"name": "bot"})
+    assert account.status_code == 201, account.text
+    bot = account.json()["id"]
+    key = await service.client.post(f"{service.workspace}/service-accounts/{bot}/keys", json={"name": "key"})
+    started = await service.client.post(
+        f"{service.workspace}/threads",
+        json=runs_kit.message(agent, "bot"),
+        headers={"authorization": "Bearer " + key.json()["secret"], "idempotency-key": "bot-run"},
+    )
+    assert started.status_code == 201, started.text
+    revoked = started.json()["run"]["id"]
+    leases = {lease.run_id: lease for lease in await claim(runtime, worker_id="w", worker_build="test", limit=3)}
+    async with transaction(runtime.storage) as session:
+        await session.execute(
+            update(RunRow).where(RunRow.id == cancelled).values(cancel_requested_at=func.clock_timestamp())
+        )
+        await session.execute(delete(GrantRow).where(GrantRow.principal_id == bot))
+    due = {lease.attempt_id for lease in leases.values()}
+
+    stops, extended = await renew(runtime.storage, runtime.access, list(leases.values()), extend=due, seconds=30)
+    assert stops == {
+        leases[cancelled].attempt_id: Outcome.cancelled(),
+        leases[revoked].attempt_id: AuthorityRevoked().outcome,
+    }
+    # A stopping run still renews: it seals its outcome under the lease.
+    assert extended == due
+
+    class Unavailable:
+        async def grants_for(self, principal: Principal) -> Sequence[RoleGrant]:
+            raise ServiceError("unavailable", "Directory cache is stale")
+
+    before = await _expiries(runtime)
+    with pytest.raises(ServiceError, match="stale"):
+        await renew(
+            runtime.storage,
+            replace(runtime.access, sources=(Unavailable(),)),
+            list(leases.values()),
+            extend=due,
+            seconds=30,
+        )
+    assert await _expiries(runtime) == before
 
 
 async def test_the_lease_expiry_sweep_passes_a_run_it_cannot_recover(

@@ -52,6 +52,7 @@ def test_navigation_migration_preserves_order_old_writers_and_incoming_reference
                 == 1
             )
             legacy.commit()
+            assert legacy.execute(text("SELECT starred FROM thread")).scalars().all() == [False, False, False]
         assert "ix_thread_touched_at" in {item["name"] for item in inspect(engine).get_indexes("thread")}
         migrator._run(lambda config: command.downgrade(config, "20e4b84abfd1"), write=True)
         with engine.connect() as connection:

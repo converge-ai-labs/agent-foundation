@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { useContext, useRef, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
@@ -13,11 +13,13 @@ import {
   PencilSimple,
   ShareNetwork,
   SlidersHorizontal,
+  Star,
 } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import { refreshThreadLists } from "./queries";
+import { refreshThread } from "./refresh";
 import { ComposerDrafts } from "./composer";
 import { conversationTitle } from "./local-input";
 import { NewConversationDrafts, newConversationPath } from "./new-conversation";
@@ -89,6 +91,41 @@ export function ThreadRow({
     row.thread,
     composers.get(row.thread.thread_id)?.localInputs,
   );
+  const starButton = useRef<HTMLButtonElement>(null);
+  const restoreStarFocus = useRef(false);
+  const canStar = row.thread.role !== "worker" && !row.thread.parent_thread_id;
+  const starLabel = row.thread.starred
+    ? "Unstar conversation"
+    : "Star conversation";
+  const star = useMutation({
+    mutationFn: () =>
+      result(
+        transport.client.PATCH("/api/threads/{thread_id}/metadata", {
+          params: { path: { thread_id: row.thread.thread_id } },
+          body: {
+            expected_version: row.thread.metadata_version,
+            patch: { starred: !row.thread.starred },
+          },
+        }),
+      ),
+    // Refetch, rather than replacing newer live activity with a mutation snapshot.
+    onSettled: async () => {
+      await Promise.all([
+        queries.invalidateQueries({
+          queryKey: ["thread", row.thread.thread_id],
+        }),
+        refreshThreadLists(queries),
+      ]);
+      if (restoreStarFocus.current && document.activeElement === document.body)
+        starButton.current?.focus();
+      restoreStarFocus.current = false;
+    },
+  });
+  const toggleStar = () => {
+    if (star.isPending) return;
+    restoreStarFocus.current = document.activeElement === starButton.current;
+    star.mutate();
+  };
   const archive = useMutation({
     mutationFn: () =>
       result(
@@ -110,9 +147,7 @@ export function ThreadRow({
         navigate(newConversationPath(row.thread.configuration.project_id));
     },
     onSettled: () => {
-      void queries.invalidateQueries({
-        queryKey: ["thread", row.thread.thread_id],
-      });
+      refreshThread(queries, row.thread.thread_id, "metadata");
       void refreshThreadLists(queries);
       void queries.invalidateQueries({ queryKey: ["unsent-threads"] });
     },
@@ -179,6 +214,22 @@ export function ThreadRow({
             {showRestore !== "compact" && "Restore"}
           </Button>
         )}
+        {canStar && (
+          <Button
+            ref={starButton}
+            variant="ghost"
+            size="icon-sm"
+            className={styles.threadStar}
+            title={`${starLabel} · Shared with everyone in this project`}
+            aria-label={`${starLabel}: ${title}`}
+            aria-pressed={!!row.thread.starred}
+            aria-disabled={star.isPending}
+            aria-busy={star.isPending}
+            onClick={toggleStar}
+          >
+            <Star weight={row.thread.starred ? "fill" : "regular"} />
+          </Button>
+        )}
         <Menu>
           <MenuTrigger
             render={<Button variant="ghost" size="icon-sm" />}
@@ -201,6 +252,12 @@ export function ThreadRow({
                 }
               >
                 <ChatCircle /> New worker
+              </MenuItem>
+            )}
+            {canStar && (
+              <MenuItem disabled={star.isPending} onClick={toggleStar}>
+                <Star weight={row.thread.starred ? "fill" : "regular"} />
+                {starLabel}
               </MenuItem>
             )}
             {(
@@ -259,7 +316,7 @@ export function ThreadRow({
           </MenuPopup>
         </Menu>
       </div>
-      <ErrorNotice error={archive.error || coordinator.error} />
+      <ErrorNotice error={star.error || archive.error || coordinator.error} />
       <CoordinatorPromotion
         open={promoting}
         close={() => setPromoting(false)}

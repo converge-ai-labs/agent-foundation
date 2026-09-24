@@ -28,7 +28,7 @@ def test_upgrade_preserves_coordinators_workers_settings_and_history(tmp_path):
             connection.execute(
                 text("INSERT INTO project_lead_worker (worker_thread_id, lead_thread_id) VALUES ('worker', 'lead')")
             )
-            before = connection.execute(text("SELECT * FROM thread ORDER BY thread_id")).all()
+            before = connection.execute(text("SELECT * FROM thread ORDER BY thread_id")).mappings().all()
         migrator.upgrade()
         migrator.upgrade()
         migrator.verify_current()
@@ -39,7 +39,9 @@ def test_upgrade_preserves_coordinators_workers_settings_and_history(tmp_path):
             assert connection.execute(
                 text("SELECT worker_thread_id, coordinator_thread_id FROM coordinator_worker")
             ).all() == [("worker", "lead")]
-            assert connection.execute(text("SELECT * FROM thread ORDER BY thread_id")).all() == before
+            after = connection.execute(text("SELECT * FROM thread ORDER BY thread_id")).mappings().all()
+            # Later additive migrations can add columns without changing any existing value.
+            assert [{key: row[key] for key in before[0]} for row in after] == before
         assert not {"project_lead", "project_lead_worker"} & set(inspect(engine).get_table_names())
         with pytest.raises(RuntimeError, match="Cannot downgrade"):
             migrator._run(lambda config: command.downgrade(config, "78e4e7206898"), write=True)

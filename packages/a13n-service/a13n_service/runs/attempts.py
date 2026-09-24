@@ -3,18 +3,24 @@
 import asyncio
 import hmac
 import math
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 
+from sqlalchemy import exists, func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import Storage, lock, now, transaction
-from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.errors import ServiceError, not_found
 from a13n_service.runs.schemas import Outcome
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
-from a13n_service.tenancy.access import Access, principal_for, require_active_workspace
+from a13n_service.tenancy.access import Access, principals_for, refuse_archived
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize
+from a13n_service.tenancy.tables import WorkspaceRow
+
+# Attempt statuses under which a lease can be held.
+_HOLDING = ("leased", "running")
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,18 +83,44 @@ class AuthorityRevoked(Exception):
         self.outcome = Outcome.failed("authority_revoked", str(self))
 
 
+async def execution_principals(
+    session: AsyncSession, access: Access, runs: Collection[RunRow]
+) -> dict[str, Principal | ServiceError]:
+    """Each run's principal while its workspace is not archived and the principal's current status and grants
+    still allow the frozen authority to run the run, or else the refusal, by run ID. Set reads serve any number of
+    runs. `unavailable` is raised: it refuses nothing."""
+    if not runs:
+        return {}
+    workspaces = {
+        workspace.id: workspace
+        for workspace in await session.scalars(
+            select(WorkspaceRow).where(WorkspaceRow.id.in_({run.workspace_id for run in runs}))
+        )
+    }
+    scopes = {run.id: WorkspaceScope(run.organization_id, run.workspace_id) for run in runs}
+    principals = await principals_for(session, access, [(run.principal_id, scopes[run.id]) for run in runs])
+    results: dict[str, Principal | ServiceError] = {}
+    for run in runs:
+        scope = scopes[run.id]
+        principal = principals[run.principal_id, scope]
+        try:
+            workspace = workspaces.get(run.workspace_id)
+            if workspace is None:
+                raise not_found("workspace", run.workspace_id)
+            refuse_archived(workspace)
+            if isinstance(principal, Principal):
+                authorize(principal, scope, "run", authority=ExecutionAuthority.model_validate(run.authority))
+        except ServiceError as refusal:
+            principal = refusal
+        results[run.id] = principal
+    return results
+
+
 async def authorize_execution(session: AsyncSession, access: Access, run: RunRow) -> Principal:
-    """The run's principal, while its current status and grants still allow the frozen authority to run the run
-    in a workspace that is not archived. Any refusal but `unavailable` is `AuthorityRevoked`."""
-    scope = WorkspaceScope(run.organization_id, run.workspace_id)
-    try:
-        await require_active_workspace(session, run.workspace_id)
-        principal = await principal_for(session, access, run.principal_id, confinement=scope)
-        authorize(principal, scope, "run", authority=ExecutionAuthority.model_validate(run.authority))
-    except ServiceError as error:
-        if error.code == "unavailable":
-            raise
-        raise AuthorityRevoked() from error
+    """The run's principal, while it may still run the run. Any refusal but `unavailable` is `AuthorityRevoked`."""
+    principal = (await execution_principals(session, access, [run]))[run.id]
+    if isinstance(principal, ServiceError):
+        raise AuthorityRevoked() from principal
     return principal
 
 
@@ -99,7 +131,7 @@ def holds(lease: Lease, run: RunRow, attempt: AttemptRow, current: datetime) -> 
         and run.status == "running"
         and run.current_attempt_id == attempt.id == lease.attempt_id
         and attempt.run_id == run.id
-        and attempt.status in {"leased", "running"}
+        and attempt.status in _HOLDING
         and attempt.worker_id == lease.worker_id
         and hmac.compare_digest(attempt.lease_token_hash, secret_hash(lease.token))
         and attempt.lease_expires_at > current
@@ -107,7 +139,7 @@ def holds(lease: Lease, run: RunRow, attempt: AttemptRow, current: datetime) -> 
 
 
 async def lock_lease(session: AsyncSession, lease: Lease) -> tuple[RunRow, AttemptRow, datetime]:
-    """Lock run → attempt and prove the lease; claim and heartbeat use this suffix of the lock order."""
+    """Lock run → attempt and prove the lease; claim uses this suffix of the lock order."""
     run = await lock(session, RunRow, lease.run_id)
     attempt = await lock(session, AttemptRow, lease.attempt_id)
     current = await now(session)
@@ -131,21 +163,72 @@ async def prove(storage: Storage, lease: Lease) -> None:
         await lock_lease(session, lease)
 
 
-async def renew(storage: Storage, access: Access, lease: Lease, *, seconds: float | None) -> Outcome | None:
-    """Prove the lease and, with `seconds`, extend it from database time. Returns the outcome the run must stop
-    with: cancelled once an interrupt was requested, failed once its principal lost the authority to run it.
+async def renew(
+    storage: Storage, access: Access, leases: Sequence[Lease], *, extend: Collection[str], seconds: float
+) -> tuple[dict[str, Outcome], set[str]]:
+    """One heartbeat of a worker's attempts. Returns, by attempt ID, the outcome each run must stop with (cancelled
+    once an interrupt was requested, failed once its principal lost the authority to run it) and the leases named
+    in `extend` that it extended by `seconds` from database time. Both hold only once this has returned.
 
-    An expired lease is never revived, even before the sweep closes it.
+    Cancellation and authority are read without locks. An `unavailable` authority check fails the heartbeat,
+    which then extends nothing.
     """
     async with transaction(storage) as session:
-        run, attempt, current = await lock_lease(session, lease)
-        if seconds is not None:
-            attempt.heartbeat_at = current
-            attempt.lease_expires_at = current + timedelta(seconds=seconds)
-        if run.cancel_requested_at is not None:
-            return Outcome.cancelled()
-        try:
-            await authorize_execution(session, access, run)
-        except AuthorityRevoked as revoked:
-            return revoked.outcome
-        return None
+        runs = {
+            run.id: run
+            for run in await session.scalars(select(RunRow).where(RunRow.id.in_({lease.run_id for lease in leases})))
+        }
+        principals = await execution_principals(
+            session, access, [run for run in runs.values() if run.cancel_requested_at is None]
+        )
+        stops: dict[str, Outcome] = {}
+        for lease in leases:
+            run = runs.get(lease.run_id)
+            if run is None:
+                continue
+            if run.cancel_requested_at is not None:
+                stops[lease.attempt_id] = Outcome.cancelled()
+            elif isinstance(principals[run.id], ServiceError):
+                stops[lease.attempt_id] = AuthorityRevoked().outcome
+        due = [lease for lease in leases if lease.attempt_id in extend]
+        extended = await _extend(session, due, seconds) if due else set()
+    return stops, extended
+
+
+async def _extend(session: AsyncSession, leases: Sequence[Lease], seconds: float) -> set[str]:
+    """Prove each lease on its locked attempt row and extend it, never reviving an expired one. Rows another
+    transaction holds are skipped rather than waited for, so a heartbeat never waits on, or deadlocks with, an
+    execution's own writes; those leases stay due for the next heartbeat."""
+    locked = (
+        await session.scalars(
+            select(AttemptRow.id)
+            .where(
+                tuple_(AttemptRow.id, AttemptRow.worker_id, AttemptRow.lease_token_hash).in_(
+                    [(lease.attempt_id, lease.worker_id, secret_hash(lease.token)) for lease in leases]
+                )
+            )
+            .order_by(AttemptRow.id)
+            .with_for_update(skip_locked=True)
+        )
+    ).all()
+    if not locked:
+        return set()
+    current = exists().where(
+        RunRow.id == AttemptRow.run_id, RunRow.status == "running", RunRow.current_attempt_id == AttemptRow.id
+    )
+    extended = await session.scalars(
+        update(AttemptRow)
+        .where(
+            AttemptRow.id.in_(locked),
+            AttemptRow.status.in_(_HOLDING),
+            AttemptRow.lease_expires_at > func.clock_timestamp(),
+            current,
+        )
+        .values(
+            heartbeat_at=func.clock_timestamp(),
+            lease_expires_at=func.clock_timestamp() + func.make_interval(0, 0, 0, 0, 0, 0, seconds),
+        )
+        .returning(AttemptRow.id)
+        .execution_options(synchronize_session=False)
+    )
+    return set(extended)

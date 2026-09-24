@@ -176,7 +176,7 @@ A `deliver_outbox` pass delivers its kinds side by side, so a slow kind never de
 
 Each executing process runs one claim loop with `worker.slots` local slots and a worker ID, `wrk_` plus 32 hex characters, new for each worker incarnation and recorded on each attempt; `run_attempts.worker_build` records its package version. The start log names the worker ID, host and build separately. The loop reserves capacity before claiming: it asks for at most as many runs as it has free slots, and a full worker waits for a slot to free before scanning again. [05](05-runs.md#claim-heartbeat-and-authority) owns the claim transaction. A claim that fails, for example during a database outage, is logged and tried again after `worker.scan_seconds`; running attempts keep their slots and leases.
 
-Each claimed attempt runs as its own task beside a supervisor that renews the lease and polls cancellation and the principal's authority every `worker.authority_seconds`, independently of the Harness task ([05](05-runs.md#claim-heartbeat-and-authority)). An error that escapes an attempt is logged and left to lease expiry and recovery. Shutdown drains the worker as described in [Startup, readiness and shutdown](#startup-readiness-and-shutdown).
+Each claimed attempt runs as its own task. One supervisor task renews the leases of all of them and polls cancellation and each principal's authority every `worker.authority_seconds`, independently of the Harness tasks ([05](05-runs.md#claim-heartbeat-and-authority)). An error that escapes an attempt is logged and left to lease expiry and recovery. Shutdown drains the worker as described in [Startup, readiness and shutdown](#startup-readiness-and-shutdown); the supervisor keeps renewing while it drains.
 
 ### Worker claim wakeups
 

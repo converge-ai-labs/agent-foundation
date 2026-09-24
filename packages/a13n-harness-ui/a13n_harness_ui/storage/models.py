@@ -140,6 +140,7 @@ class ThreadRecord(Base):
     activity_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True, index=True)
     touched_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True, index=True)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    starred: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False, index=True)
     initial_state_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)

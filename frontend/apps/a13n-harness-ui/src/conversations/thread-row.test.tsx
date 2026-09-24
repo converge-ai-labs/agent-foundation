@@ -75,13 +75,16 @@ function mount({
   running = false,
   selected = true,
   coordinator = false,
+  starred = false,
+  worker = false,
 } = {}) {
   const row = {
     thread: {
       thread_id: "thread-one",
       title: "Example",
-      role: coordinator ? "coordinator" : "ordinary",
+      role: coordinator ? "coordinator" : worker ? "worker" : "ordinary",
       archived,
+      starred,
       metadata_version: 3,
       configuration: { project_id: "project-one" },
       root_activity: { state: running ? "running" : "inactive" },
@@ -208,6 +211,58 @@ it.each([false, true])(
     }
   },
 );
+
+it.each([false, true])(
+  "toggles a shared star while running without navigation (starred=%s)",
+  async (starred) => {
+    mount({ starred, running: true });
+    const button = screen.getByRole("button", {
+      name: `${starred ? "Unstar" : "Star"} conversation: Example`,
+    });
+    expect(button.getAttribute("aria-pressed")).toBe(String(starred));
+    expect(screen.getByText("Running")).toBeTruthy();
+    await userEvent.click(button);
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(await requests[0].json()).toEqual({
+      expected_version: 3,
+      patch: { starred: !starred },
+    });
+    expect(screen.getByLabelText("Location").textContent).toBe(
+      "/threads/thread-one",
+    );
+  },
+);
+
+it("offers the same star action in the menu and keeps failed changes explicit", async () => {
+  fail = true;
+  mount();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Star conversation" }),
+  );
+  await screen.findByText("Conversation changed. Try again after refreshing.");
+  expect(requests).toHaveLength(1);
+  expect(
+    screen
+      .getByRole("button", { name: "Star conversation: Example" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+});
+
+it("does not offer stars for coordinator workers", async () => {
+  mount({ worker: true });
+  expect(
+    screen.queryByRole("button", { name: /Star conversation/ }),
+  ).toBeNull();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  expect(
+    screen.queryByRole("menuitem", { name: "Star conversation" }),
+  ).toBeNull();
+});
 
 it("opens a worker draft from a running Coordinator without sending it a message", async () => {
   mount({ coordinator: true, running: true });

@@ -121,3 +121,61 @@ def test_tool_attachment_visibility_survives_history_roundtrip_without_hiding_us
     assert not attachment.metadata.display
     assert authored.kind == "media"
     assert authored.metadata.display
+
+
+@pytest.mark.parametrize("kind", ["initial", "continuation", "display", "cleared"])
+def test_inspection_reuses_native_history_and_preserves_display_context_split(kind, monkeypatch) -> None:
+    from datetime import UTC, datetime
+
+    import a13n_harness.state as state_module
+    from a13n_harness import HarnessState
+    from a13n_harness_ui.display_history import DisplayHistory, DisplayHistoryCollector, with_display_history
+    from a13n_harness_ui.storage import ObjectKind, ObjectRef, StoredContinuation, StoredThreadInitialState
+    from a13n_harness_ui.storage.contracts import AgentResourceSource, Thread, ThreadConfiguration
+    from a13n_harness_ui.thread_projection import ThreadInspection, build_thread_inspection
+    from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+    from pydantic_ai.usage import RequestUsage
+
+    now = datetime.now(UTC)
+    messages = (
+        ModelRequest(parts=[UserPromptPart("Saved input")]),
+        ModelResponse(parts=[TextPart("Saved answer")], usage=RequestUsage(input_tokens=7, output_tokens=3)),
+    )
+    state = HarnessState.new(thread_id="thread_one", message_history=messages if kind != "cleared" else ())
+    if kind in {"display", "cleared"}:
+        display = DisplayHistoryCollector(messages).capture(messages, completed=True)
+        if kind == "cleared":
+            display = DisplayHistoryCollector((), DisplayHistory(messages=display.messages)).capture(())
+        state = with_display_history(state, display)
+    composition = ObjectRef(object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64)
+    initial = ObjectRef(object_kind=ObjectKind.thread_initial_state, object_schema_version="1", logical_digest="b" * 64)
+    continuation = ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="c" * 64)
+    thread = Thread(
+        thread_id="thread_one",
+        created_at=now,
+        updated_at=now,
+        metadata_version=1,
+        configuration=ThreadConfiguration(
+            version=1, agent_source=AgentResourceSource(id="agent-one"), environment_profile_id="environment-native"
+        ),
+        initial_state=initial,
+        continuation=None if kind == "initial" else continuation,
+    )
+    stored = (
+        StoredThreadInitialState(harness_state=state, created_at=now)
+        if kind == "initial"
+        else StoredContinuation(
+            harness_release="test", run_composition=composition, harness_state=state, created_at=now
+        )
+    )
+    decode = Mock(wraps=state_module.decode_messages)
+    monkeypatch.setattr(state_module, "decode_messages", decode)
+    inspection = build_thread_inspection(thread, stored)
+    # Saved display validation also checks the native mapping once. Projection
+    # itself reuses one decoded native history for context and token metadata.
+    assert decode.call_count == (2 if kind in {"display", "cleared"} else 1)
+    metadata = ThreadInspection.model_validate_json(inspection.metadata_json)
+    assert metadata.context_empty is (kind == "cleared")
+    assert metadata.latest_request_tokens == (None if kind == "cleared" else 10)
+    entries = [TranscriptEntry.model_validate_json(value) for value in inspection.entries]
+    assert [part.text for entry in entries for part in entry.parts] == ["Saved input", "Saved answer"]

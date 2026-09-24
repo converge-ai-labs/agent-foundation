@@ -152,6 +152,7 @@ class TerminalProjectionService:
         include_archived: bool = False,
         archived_only: bool = False,
         include_active: bool = False,
+        include_starred: bool = False,
         coordinator_thread_id: str | None = None,
         independent_only: bool = False,
         cursor: str | None = None,
@@ -188,6 +189,34 @@ class TerminalProjectionService:
                 active_cursor = active_page.next_cursor
                 if active_cursor is None:
                     break
+        starred_threads: list[ThreadSummary] = []
+        starred_total = 0
+        if include_starred:
+            starred_cursor = None
+            while True:
+                starred_page = await self._threads.list_threads(
+                    query=query,
+                    project_id=project_id,
+                    projectless=project_scope == "projectless",
+                    project_ids=unavailable,
+                    coordinator_thread_id=coordinator_thread_id,
+                    independent_only=independent_only,
+                    include_archived=include_archived,
+                    archived_only=archived_only,
+                    starred=True,
+                    sort="touched",
+                    active_only=False if include_active else None,
+                    active_thread_ids=active_ids,
+                    cursor=starred_cursor,
+                    limit=100 if cursor is None else 1,
+                )
+                starred_total = starred_page.total
+                if cursor is not None:
+                    break
+                starred_threads.extend(starred_page.threads)
+                starred_cursor = starred_page.next_cursor
+                if starred_cursor is None:
+                    break
         page = await self._threads.list_threads(
             query=query,
             project_id=project_id,
@@ -197,6 +226,7 @@ class TerminalProjectionService:
             independent_only=independent_only,
             include_archived=include_archived,
             archived_only=archived_only,
+            starred=False if include_starred else None,
             sort="touched",
             active_only=False if include_active else None,
             active_thread_ids=active_ids,
@@ -219,12 +249,14 @@ class TerminalProjectionService:
                 thread_ids=active_ids,
                 limit=1,
             )
-        rows = await self._activity_rows((*active_threads, *page.threads), source)
+        rows = await self._activity_rows((*active_threads, *starred_threads, *page.threads), source)
+        recent_offset = len(active_threads) + len(starred_threads)
         return ThreadActivityPage(
             project_id=project_id,
             active_rows=rows[: len(active_threads)],
-            rows=rows[len(active_threads) :],
-            total=page.total + active_total,
+            starred_rows=rows[len(active_threads) : recent_offset],
+            rows=rows[recent_offset:],
+            total=page.total + active_total + starred_total,
             next_cursor=page.next_cursor,
         )
 

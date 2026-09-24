@@ -73,6 +73,11 @@ function json(data: unknown, status = 200) {
   });
 }
 beforeEach(() => {
+  // jsdom has no Web Animations API used by the rename modal viewport.
+  Object.defineProperty(Element.prototype, "getAnimations", {
+    configurable: true,
+    value: () => [],
+  });
   writes = [];
   reads = [];
   ownerArchived = false;
@@ -1977,6 +1982,146 @@ it("keeps readable messages and an open execution reader through a multi-page ch
       .getAttribute("aria-expanded"),
   ).toBe("true");
   expect(turnPages).toBe(2);
+});
+
+it("acknowledges Agent changes without waiting for background detail or refetching saved history", async () => {
+  const fetcher = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      if (request.method === "PATCH") {
+        writes.push(request.clone());
+        const body = await request.json();
+        return json({
+          ...threadDetail.thread,
+          configuration: {
+            ...threadDetail.thread.configuration,
+            version: 2,
+            agent_source: { kind: "agent", id: body.patch.agent_id },
+          },
+        });
+      }
+      return fetcher(request);
+    }),
+  );
+  const user = userEvent.setup();
+  mount(`/threads/${id}`);
+  const agent = await screen.findByRole("combobox", { name: "Agent" });
+  await waitFor(() => expect(agent.textContent).toContain("Writer"));
+  const historyReads = reads.filter((path) =>
+    path.endsWith("/transcript"),
+  ).length;
+  let release!: () => void;
+  readPaused = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let refresh!: Promise<void>;
+  act(() => {
+    refresh = queries.invalidateQueries({
+      queryKey: ["thread", id, "detail"],
+      exact: true,
+    });
+  });
+  try {
+    await waitFor(() =>
+      expect(queries.getQueryState(["thread", id, "detail"])?.fetchStatus).toBe(
+        "fetching",
+      ),
+    );
+    expect((agent as HTMLButtonElement).disabled).toBe(false);
+    await user.click(agent);
+    await user.click(
+      await screen.findByRole("option", { name: /Reviewer.*agent-two/ }),
+    );
+    await waitFor(() => expect(agent.textContent).toContain("Reviewer"));
+    await waitFor(() =>
+      expect(screen.queryByText("Updating conversation settings…")).toBeNull(),
+    );
+    expect((agent as HTMLButtonElement).disabled).toBe(false);
+    expect(queries.getQueryState(["thread", id, "detail"])?.fetchStatus).toBe(
+      "fetching",
+    );
+    expect(reads.filter((path) => path.endsWith("/transcript"))).toHaveLength(
+      historyReads,
+    );
+    expect(writes).toHaveLength(1);
+    expect(await writes[0].json()).toEqual({
+      expected_version: 1,
+      patch: { agent_id: "agent-two" },
+    });
+  } finally {
+    release();
+    await act(() => refresh);
+  }
+  // The old detail response must not roll back the confirmed Agent/version.
+  expect(agent.textContent).toContain("Reviewer");
+  expect(
+    queries.getQueryData<Schema<"ThreadDetail">>(["thread", id, "detail"])
+      ?.thread.configuration.version,
+  ).toBe(2);
+});
+
+it("keeps private Model selection responsive during a background detail read", async () => {
+  const user = userEvent.setup();
+  mount(`/threads/${id}`);
+  const model = await screen.findByRole("button", { name: "Model settings" });
+  await waitFor(() => expect(model.textContent).toContain("Primary model"));
+  let release!: () => void;
+  readPaused = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let refresh!: Promise<void>;
+  act(() => {
+    refresh = queries.invalidateQueries({
+      queryKey: ["thread", id, "detail"],
+      exact: true,
+    });
+  });
+  try {
+    await user.click(model);
+    await user.click(screen.getByRole("button", { name: "Change model" }));
+    await user.click(screen.getByRole("button", { name: "Other model" }));
+    expect(model.textContent).toContain("Other model");
+    expect(drafts.get(id)?.modelId).toBe("model-two");
+    expect(writes).toHaveLength(0);
+  } finally {
+    release();
+    await act(() => refresh);
+  }
+});
+
+it("publishes a saved title before a follow-up read and leaves history untouched", async () => {
+  const fetcher = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      if (request.method === "PATCH") {
+        writes.push(request.clone());
+        return json({
+          ...threadDetail.thread,
+          title: "Renamed immediately",
+          metadata_version: 2,
+        });
+      }
+      return fetcher(request);
+    }),
+  );
+  const user = userEvent.setup();
+  mount(`/threads/${id}?dialog=rename`);
+  const title = await screen.findByRole("textbox", { name: "Title" });
+  await user.type(title, "Renamed immediately");
+  const before = reads.filter((path) => path.endsWith("/transcript")).length;
+  await user.click(screen.getByRole("button", { name: "Save title" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("textbox", { name: "Title" })).toBeNull(),
+  );
+  expect(
+    queries.getQueryData<Schema<"ThreadDetail">>(["thread", id, "detail"])
+      ?.thread.title,
+  ).toBe("Renamed immediately");
+  expect(reads.filter((path) => path.endsWith("/transcript"))).toHaveLength(
+    before,
+  );
 });
 
 it("stages Coordinator locally, restores it and creates directly before Goal submission without confirmation", async () => {

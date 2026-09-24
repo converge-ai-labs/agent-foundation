@@ -92,6 +92,7 @@ class _ThreadCursor(SurfaceModel):
     sort: Literal["updated", "activity", "touched"] = "updated"
     include_archived: bool
     archived_only: bool = False
+    starred: bool | None = None
     active_only: bool | None = None
     updated_at: datetime
     thread_id: str
@@ -156,6 +157,7 @@ class ThreadProjectionService:
         project_id: str | None = None,
         include_archived: bool = False,
         archived_only: bool = False,
+        starred: bool | None = None,
         project_ids: tuple[str, ...] | None = None,
         projectless: bool = False,
         coordinator_thread_id: str | None = None,
@@ -187,6 +189,7 @@ class ThreadProjectionService:
                 or decoded.project_id != project_id
                 or decoded.include_archived is not include_archived
                 or decoded.archived_only is not archived_only
+                or decoded.starred is not starred
                 or (
                     decoded.project_ids_digest != project_ids_digest
                     if decoded.project_ids_digest is not None
@@ -206,6 +209,7 @@ class ThreadProjectionService:
             project_id=project_id,
             include_archived=include_archived,
             archived_only=archived_only,
+            starred=starred,
             project_ids=project_ids,
             projectless=projectless,
             coordinator_thread_id=coordinator_thread_id,
@@ -243,6 +247,7 @@ class ThreadProjectionService:
                     project_id=project_id,
                     include_archived=include_archived,
                     archived_only=archived_only,
+                    starred=starred,
                     active_only=active_only,
                     updated_at={
                         "updated": last.updated_at,
@@ -532,6 +537,7 @@ class ThreadProjectionService:
             activity_at=thread.activity_at,
             touched_at=thread.touched_at,
             archived=thread.archived,
+            starred=thread.starred,
             configuration=_configuration(thread.configuration),
             continuation_state="initial" if thread.continuation is None else "selected",
             root_activity=activity,
@@ -666,7 +672,8 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
     if state.thread_id != thread.thread_id:
         raise ThreadError("Thread state belongs to another Thread.", code="thread_continuation_incompatible")
     display = stored.display_history if isinstance(stored, StoredContinuation) else None
-    history = display.messages if display is not None else state.message_history
+    model_history = state.message_history
+    history = display.messages if display is not None else model_history
     completed = display.completed_responses if display is not None else ()
     continuation_id = thread.continuation.logical_digest if thread.continuation else None
     notes = NotePage(continuation_id=continuation_id)
@@ -676,12 +683,12 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         working = WorkingState.model_validate(entry.data)
         tasks, notes = project_working_state(working, continuation_id)
     metadata = ThreadInspection(
-        context_empty=not state.message_history,
+        context_empty=not model_history,
         run_composition=stored.run_composition if isinstance(stored, StoredContinuation) else None,
         latest_request_tokens=next(
             (
                 message.usage.total_tokens
-                for message in reversed(state.message_history)
+                for message in reversed(model_history)
                 if isinstance(message, ModelResponse) and message.usage.total_tokens > 0
             ),
             None,

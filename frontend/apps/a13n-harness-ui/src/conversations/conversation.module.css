@@ -239,11 +239,26 @@
   color: var(--a13n-secondary);
   background: transparent;
 }
+.threadStar {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.threadStar[aria-pressed="true"] {
+  color: var(--warning-foreground);
+}
+.threadStar[aria-busy="true"] {
+  opacity: 0.5;
+  cursor: wait;
+}
 @media (hover: hover) and (pointer: fine) {
+  .threadStar:not([aria-pressed="true"]):not([aria-busy="true"]),
   .threadActions,
   .groupActions {
     opacity: 0;
   }
+  .threadRow:hover .threadStar:not([aria-busy="true"]),
+  .threadRow:focus-within .threadStar:not([aria-busy="true"]),
+  .threadRow:has(.selected) .threadStar:not([aria-busy="true"]),
   .threadRow:hover .threadActions,
   .threadRow:focus-within .threadActions,
   .threadRow:has(.selected) .threadActions,
@@ -471,9 +486,58 @@
   outline-offset: 4px;
   border-radius: 4px;
 }
+.threadMessage {
+  width: 640px;
+}
 .threadMessageToggle {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--a13n-secondary);
-  margin-bottom: 4px;
+  text-align: left;
+  cursor: pointer;
+}
+.threadMessageToggle:focus-visible {
+  outline: 2px solid var(--a13n-text);
+  outline-offset: 4px;
+}
+.threadMessagePreview {
+  display: block;
+  max-height: 4.8em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--a13n-text);
+  font-size: 14px;
+  line-height: 1.6;
+  mask-image: linear-gradient(to bottom, #000 2.4em, transparent 4.8em);
+}
+.threadMessageToggleLabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 0 2px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: color 150ms ease;
+}
+.threadMessageToggle:hover .threadMessageToggleLabel {
+  color: var(--a13n-text);
+}
+.threadMessageToggleLabel svg {
+  transition: transform 150ms ease;
+}
+.threadMessageToggle[aria-expanded="true"] .threadMessageToggleLabel svg {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .threadMessageToggleLabel,
+  .threadMessageToggleLabel svg {
+    transition: none;
+  }
 }
 .inputStatus {
   display: inline;

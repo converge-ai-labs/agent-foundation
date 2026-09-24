@@ -48,7 +48,14 @@ export function scheduleRefresh(
 }
 
 export type ThreadRefresh =
-  "reconcile" | "lifecycle" | "checkpoint" | "usage" | "children" | "work";
+  | "reconcile"
+  | "lifecycle"
+  | "checkpoint"
+  | "usage"
+  | "children"
+  | "work"
+  | "configuration"
+  | "metadata";
 export function refreshThread(
   client: QueryClient,
   threadId: string,
@@ -56,6 +63,8 @@ export function refreshThread(
 ) {
   const sections: Record<ThreadRefresh, readonly string[]> = {
     reconcile: [],
+    configuration: ["detail", "configuration", "skills"],
+    metadata: ["detail"],
     lifecycle: [
       "work",
       "detail",

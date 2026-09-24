@@ -168,9 +168,11 @@ Coverage starts with the first persisted observation. No record means unavailabl
 
 ## Thread Metadata Head
 
-Each Thread has one mutable metadata head containing `version`, nullable `title`, and `archived`. A title/archive mutation compares its required expected version, changes both supplied fields in one short transaction, and increments the version once. A no-op can retain the current version. Metadata changes update Thread recency independently from configuration and continuation selection.
+Each Thread has one mutable metadata head containing `version`, nullable `title`, `archived`, and `starred` (default false). A metadata mutation compares its required expected version, changes supplied fields in one short transaction, and increments the version once. Omitted fields remain unchanged; explicit null is invalid for archive and star flags. A no-op retains the current version. Metadata changes update `updated_at`, independently from configuration and continuation selection, without changing navigation `touched_at` or conversation `activity_at`.
 
-Metadata compare-and-select prevents a stale surface from silently overwriting a title or archive change. Process-local active status is not stored in this head. Root archive admission additionally checks current-process activity; another process remains an ordinary concurrent writer and is handled by the metadata version rather than a liveness protocol.
+Stars are shared instance metadata displayed within the Thread's current Project, not private browser preferences or Agent continuation state. Ordinary roots and Coordinators can be starred, including during active execution; workers and child Threads cannot. Archiving retains the star while hiding the conversation from ordinary navigation; restoring reveals it again. Checkpoint publication and unrelated metadata edits preserve the star.
+
+Metadata compare-and-select prevents a stale surface from silently overwriting a title, archive, or star change. Process-local active status is not stored in this head. Root archive admission additionally checks current-process activity; another process remains an ordinary concurrent writer and is handled by the metadata version rather than a liveness protocol.
 
 ## Thread Configuration Head
 

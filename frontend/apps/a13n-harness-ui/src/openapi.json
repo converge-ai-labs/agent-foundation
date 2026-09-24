@@ -3838,6 +3838,16 @@
             }
           },
           {
+            "name": "include_starred",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Starred"
+            }
+          },
+          {
             "name": "coordinator_thread_id",
             "in": "query",
             "required": false,
@@ -12899,6 +12909,14 @@
             "title": "Active Rows",
             "default": []
           },
+          "starred_rows": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadActivityView"
+            },
+            "type": "array",
+            "title": "Starred Rows",
+            "default": []
+          },
           "total": {
             "type": "integer",
             "minimum": 0.0,
@@ -13723,6 +13741,11 @@
           },
           "archived": {
             "title": "Archived",
+            "type": "boolean"
+          },
+          "starred": {
+            "default": false,
+            "title": "Starred",
             "type": "boolean"
           },
           "configuration": {
@@ -17123,6 +17146,17 @@
               }
             ],
             "title": "Archived"
+          },
+          "starred": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starred"
           }
         },
         "title": "ThreadMetadataPatch",

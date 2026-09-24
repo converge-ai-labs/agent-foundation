@@ -37,6 +37,9 @@ function thread(id: string, project: string | null = "project-one") {
     configuration: { project_id: project },
     root_activity: { state: "inactive" },
     archived: false,
+    starred: false,
+    metadata_version: 1,
+    touched_at: undefined as string | undefined,
     role: "ordinary" as Schema<"ThreadSummary">["role"],
     coordinator_thread_id: null as string | null,
     auto_followup: null as boolean | null,
@@ -48,6 +51,14 @@ function page(
   project: string | null = "project-one",
 ) {
   return {
+    starred_rows: starredThreads
+      .filter(
+        (item) =>
+          item.configuration.project_id === project &&
+          item.starred &&
+          !item.archived,
+      )
+      .map((item) => ({ thread: item, project_name: project ?? "No project" })),
     active_rows: activeThreads
       .filter((item) => item.configuration.project_id === project)
       .map((item) => ({ thread: item, project_name: project ?? "No project" })),
@@ -70,6 +81,7 @@ let unsentThreads: ReturnType<typeof thread>[];
 let failDrafts: boolean;
 let activity: URL[];
 let activeThreads: ReturnType<typeof thread>[];
+let starredThreads: ReturnType<typeof thread>[];
 let writes: Request[];
 let sidekickEnabled: boolean;
 let coordinators: ReturnType<typeof thread>[];
@@ -88,6 +100,7 @@ beforeEach(() => {
   failDrafts = false;
   activity = [];
   activeThreads = [];
+  starredThreads = [];
   writes = [];
   sidekickEnabled = false;
   coordinators = [];
@@ -139,6 +152,15 @@ beforeEach(() => {
       }
       if (request.method !== "GET") {
         writes.push(request.clone());
+        if (url.pathname.endsWith("/metadata")) {
+          const id = decodeURIComponent(url.pathname.split("/")[3]);
+          const item = starredThreads.find((item) => item.thread_id === id);
+          if (item) {
+            Object.assign(item, (await request.json()).patch);
+            item.metadata_version++;
+            return json(item);
+          }
+        }
         if (url.pathname.endsWith("/coordinator")) {
           if (failSave)
             return json(
@@ -1165,7 +1187,7 @@ it("keeps workers collapsed on direct navigation and pages them separately from 
   mount("/threads/worker-7");
   await screen.findByRole("link", { name: /coordinator-one/ });
   await screen.findByRole("link", { name: /ordinary-running/ });
-  expect(screen.getByText("Running · 1")).toBeTruthy();
+  expect(screen.getByText("Running · 2")).toBeTruthy();
   expect(screen.queryByRole("link", { name: /worker-/ })).toBeNull();
   expect(
     activity.filter((url) => url.searchParams.has("coordinator_thread_id")),
@@ -1208,6 +1230,92 @@ it("keeps workers collapsed on direct navigation and pages them separately from 
   expect(screen.getByRole("link", { name: /ordinary-running/ })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Recent 1" })).toBeTruthy();
   expect(writes).toHaveLength(0);
+});
+
+it("groups only owners of active unarchived workers under Running and returns them to Recent after completion", async () => {
+  coordinators = ["idle-owner", "busy-owner", "archived-worker-owner"].map(
+    (id) => ({ ...thread(id), role: "coordinator", auto_followup: false }),
+  );
+  workerThreads = [
+    {
+      ...thread("idle-worker"),
+      role: "worker",
+      coordinator_thread_id: "idle-owner",
+    },
+  ];
+  activeThreads = [
+    ...["worker-one", "worker-two"].map((id) => ({
+      ...thread(id),
+      role: "worker" as const,
+      coordinator_thread_id: "busy-owner",
+      root_activity: { state: "running" },
+    })),
+    {
+      ...thread("archived-worker"),
+      role: "worker",
+      coordinator_thread_id: "archived-worker-owner",
+      root_activity: { state: "running" },
+      archived: true,
+    },
+  ];
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const project = screen.getByRole("region", { name: "One" });
+  await within(project).findByText("Running · 1");
+  const owner = within(project).getByRole("link", { name: /busy-owner/ });
+  expect(within(project).getAllByRole("link")[0]).toBe(owner);
+  expect(within(owner).queryByText("Running")).toBeNull();
+  expect(
+    screen.queryByRole("link", { name: /worker-one|worker-two/ }),
+  ).toBeNull();
+  expect(
+    activity.some((url) => url.searchParams.has("coordinator_thread_id")),
+  ).toBe(false);
+
+  // One worker finishing does not move an owner with another active worker.
+  activeThreads = activeThreads.slice(1);
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  expect(within(project).getByText("Running · 1")).toBeTruthy();
+  expect(within(project).getAllByRole("link")[0]).toBe(owner);
+
+  activeThreads = [];
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  await waitFor(() =>
+    expect(within(project).queryByText(/Running ·/)).toBeNull(),
+  );
+  expect(within(project).getAllByRole("link")[0].textContent).toContain(
+    "idle-owner",
+  );
+  expect(within(project).getByRole("link", { name: /busy-owner/ })).toBe(owner);
+  expect(writes).toHaveLength(0);
+});
+
+it("keeps an off-page owner in Running while its worker is active without loading the worker disclosure", async () => {
+  coordinators = [
+    { ...thread("off-page-owner"), role: "coordinator", archived: true },
+  ];
+  activeThreads = [
+    {
+      ...thread("off-page-worker"),
+      role: "worker",
+      coordinator_thread_id: "off-page-owner",
+      root_activity: { state: "running" },
+    },
+  ];
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const project = screen.getByRole("region", { name: "One" });
+  await within(project).findByText("Running · 1");
+  expect(within(project).getAllByRole("link")[0].textContent).toContain(
+    "off-page-owner",
+  );
+  expect(
+    screen.getByRole("button", { name: "Restore off-page-owner" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("link", { name: /off-page-worker/ })).toBeNull();
+  expect(
+    activity.some((url) => url.searchParams.has("coordinator_thread_id")),
+  ).toBe(false);
 });
 
 it("shows worker fetch failures without claiming empty and retries inside the disclosure", async () => {
@@ -1461,4 +1569,91 @@ it("keeps an expanded archived owner mounted while pagination discovers another 
       .getAttribute("aria-expanded"),
   ).toBe("true");
   expect(screen.getByRole("link", { name: "earlier-worker" })).toBe(worker);
+});
+
+it("keeps all project stars above ordinary recent rows across More and shared updates", async () => {
+  starredThreads = Array.from({ length: 7 }, (_, index) => ({
+    ...thread(`Reference ${index}`),
+    starred: true,
+    touched_at: `2025-12-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+  }));
+  starredThreads.push({
+    ...thread("Other project star", "project-two"),
+    starred: true,
+  });
+  activeThreads = [
+    {
+      ...thread("Running starred"),
+      starred: true,
+      root_activity: { state: "running" },
+    },
+  ];
+  mount("/", true);
+  const group = await screen.findByRole("region", { name: "One" });
+  fireEvent.click(
+    within(group).getByRole("button", { name: /^One/, expanded: false }),
+  );
+  await within(group).findByText("Reference 0");
+  const names = () =>
+    within(group)
+      .getAllByRole("link")
+      .map((item) => item.querySelector("strong")!.textContent);
+  expect(names()).toEqual([
+    "Running starred",
+    ...Array.from({ length: 7 }, (_, i) => `Reference ${6 - i}`),
+    "Recent 1",
+    "Recent 2",
+    "Recent 3",
+    "Recent 4",
+    "Recent 5",
+  ]);
+  expect(activity[0].searchParams.get("include_starred")).toBe("true");
+  expect(within(group).queryByText("Other project star")).toBeNull();
+  await userEvent.click(
+    within(group).getByRole("button", {
+      name: "Show more conversations in One",
+    }),
+  );
+  await within(group).findByText("Older two");
+  expect(within(group).getAllByText("Reference 0")).toHaveLength(1);
+  // Another browser changes the shared metadata. A summary hint refreshes the same list.
+  starredThreads[0].archived = true;
+  starredThreads[1].starred = false;
+  await act(async () => {
+    vi.mocked(watchSummary).mock.calls.at(-1)![1]({
+      kind: "thread",
+      thread_id: "Reference 0",
+      epoch: "test",
+      sequence: 1,
+    });
+  });
+  await waitFor(() =>
+    expect(within(group).queryByText("Reference 0")).toBeNull(),
+  );
+  expect(within(group).queryByText("Reference 1")).toBeNull();
+  expect(within(group).getByText("Older two")).toBeTruthy();
+});
+
+it("moves a starred row only after its save and restores ordinary recency without navigation", async () => {
+  starredThreads = [{ ...thread("Recent 3"), starred: true }];
+  mount();
+  const group = await screen.findByRole("region", { name: "One" });
+  fireEvent.click(
+    within(group).getByRole("button", { name: /^One/, expanded: false }),
+  );
+  const button = await within(group).findByRole("button", {
+    name: "Unstar conversation: Recent 3",
+  });
+  expect(within(group).getAllByRole("link")[0].textContent).toContain(
+    "Recent 3",
+  );
+  await userEvent.click(button);
+  await within(group).findByRole("button", {
+    name: "Star conversation: Recent 3",
+  });
+  expect(within(group).getAllByRole("link")[0].textContent).toContain(
+    "Recent 1",
+  );
+  expect(within(group).getAllByText("Recent 3")).toHaveLength(1);
+  expect(screen.getByLabelText("Current route").textContent).toBe("/");
 });

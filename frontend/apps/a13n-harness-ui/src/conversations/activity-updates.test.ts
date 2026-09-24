@@ -15,6 +15,7 @@ const key = (project: string, query = "") => [
   5,
   false,
   true,
+  true,
 ];
 const row = (id: string, project = "one"): Row =>
   ({
@@ -118,3 +119,150 @@ it("reconciles empty destination lists after a failed lookup without waiting for
   client.clear();
   transport.close();
 });
+
+it("does not let unrelated slow pagination block dirty Thread lookups", async () => {
+  vi.useFakeTimers();
+  const client = new QueryClient();
+  client.setQueryData(key("one"), page([row("changed")]));
+  let release!: (value: InfiniteData<Page>) => void;
+  const pending = client.fetchQuery({
+    queryKey: key("two"),
+    queryFn: () =>
+      new Promise<InfiniteData<Page>>((resolve) => {
+        release = resolve;
+      }),
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      Response.json([
+        {
+          ...row("changed"),
+          latest_activity: { kind: "assistant", text: "Fresh" },
+        },
+      ]),
+    ),
+  );
+  const transport = createTransport("", vi.fn());
+  try {
+    refreshActivity(client, transport, "changed");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(
+      client.getQueryData<InfiniteData<Page>>(key("one"))?.pages[0].rows[0]
+        .latest_activity?.text,
+    ).toBe("Fresh");
+    expect(client.getQueryState(key("two"))?.fetchStatus).toBe("fetching");
+  } finally {
+    release(page([row("other", "two")]));
+    await pending;
+    client.clear();
+    transport.close();
+  }
+});
+
+it("reconciles an initial list read that finishes after its activity hint", async () => {
+  vi.useFakeTimers();
+  const client = new QueryClient();
+  let release!: (value: InfiniteData<Page>) => void;
+  const pending = client.fetchQuery({
+    queryKey: key("one"),
+    queryFn: () =>
+      new Promise<InfiniteData<Page>>((resolve) => {
+        release = resolve;
+      }),
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json([row("new")])),
+  );
+  const transport = createTransport("", vi.fn());
+  try {
+    refreshActivity(client, transport, "new");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(client.getQueryData(key("one"))).toBeUndefined();
+    release(page([]));
+    await pending;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.getQueryState(key("one"))?.isInvalidated).toBe(true);
+  } finally {
+    release(page([]));
+    await pending;
+    client.clear();
+    transport.close();
+  }
+});
+
+it("patches content-only updates in the starred supplement without refreshing", () => {
+  const client = new QueryClient();
+  const starred = row("starred");
+  starred.thread.starred = true;
+  const data = page([row("ordinary")]);
+  data.pages[0].starred_rows = [starred];
+  client.setQueryData(key("one"), data);
+  const changed = {
+    ...starred,
+    latest_activity: { kind: "assistant", text: "Updated star" },
+  } as Row;
+  applyActivityUpdates(client, [changed], ["starred"]);
+  expect(
+    client.getQueryData<InfiniteData<Page>>(key("one"))?.pages[0].starred_rows,
+  ).toEqual([changed]);
+  expect(client.getQueryState(key("one"))?.isInvalidated).toBe(false);
+  client.clear();
+});
+
+it.each(["archive", "move", "delete"])(
+  "removes a starred supplement row after a remote %s and reconciles membership",
+  async (operation) => {
+    vi.useFakeTimers();
+    const client = new QueryClient();
+    const starred = row("starred");
+    starred.thread.starred = true;
+    const data = page([row("ordinary")]);
+    data.pages[0].starred_rows = [starred];
+    client.setQueryData(key("one"), data);
+    client.setQueryData(key("two"), page([]));
+    const next = row("starred", operation === "move" ? "two" : "one");
+    next.thread.starred = true;
+    next.thread.archived = operation === "archive";
+    applyActivityUpdates(client, operation === "delete" ? [] : [next], [
+      "starred",
+    ]);
+    expect(
+      client.getQueryData<InfiniteData<Page>>(key("one"))?.pages[0]
+        .starred_rows,
+    ).toEqual([]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(client.getQueryState(key("one"))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(key("two"))?.isInvalidated).toBe(
+      operation === "move",
+    );
+    client.clear();
+  },
+);
+
+it.each([false, true])(
+  "reconciles the ordinary quota when starred changes from %s",
+  async (wasStarred) => {
+    vi.useFakeTimers();
+    const client = new QueryClient();
+    const old = row("changed");
+    old.thread.starred = wasStarred;
+    const data = page(wasStarred ? [] : [old]);
+    data.pages[0].starred_rows = wasStarred ? [old] : [];
+    client.setQueryData(key("one"), data);
+    client.setQueryData(key("two"), page([]));
+    const next = row("changed");
+    next.thread.starred = !wasStarred;
+    applyActivityUpdates(client, [next], ["changed"]);
+    const updated = client.getQueryData<InfiniteData<Page>>(key("one"))
+      ?.pages[0];
+    expect(wasStarred ? updated?.starred_rows : updated?.rows).toEqual([next]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(client.getQueryState(key("one"))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(key("two"))?.isInvalidated).toBe(false);
+    client.clear();
+  },
+);

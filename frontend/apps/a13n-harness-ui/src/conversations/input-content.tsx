@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Button } from "a13n-ui";
 import { Link } from "react-router";
-import { ArrowUpRight, Chats } from "@phosphor-icons/react";
+import { ArrowUpRight, CaretDown, Chats } from "@phosphor-icons/react";
 import { CopyMessage } from "./copy-message";
 import type { Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
@@ -280,14 +280,54 @@ export function InputContent({
   renderText: (text: string) => ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
   const visible = parts.filter((part) => part.metadata?.display !== false);
   const seen = new Set<string>();
   const copyText = inputCopyText(parts);
   const source = visible
     .map((part) => threadMessage(part.metadata))
     .find(Boolean);
+  const content = (!source || expanded) && (
+    <>
+      {visible.map((part, index) => {
+        const attachment = inputAttachment(part.metadata);
+        if (attachment && threadId) {
+          const identity = composerIdentity(part) ?? attachment.attachment_id;
+          if (seen.has(identity)) return null;
+          seen.add(identity);
+          const related = visible.filter(
+            (item) =>
+              (composerIdentity(item) ??
+                inputAttachment(item.metadata)?.attachment_id) === identity,
+          );
+          return (
+            <Attachment
+              key={`${threadId}:${identity}`}
+              threadId={threadId}
+              attachment={attachment}
+              related={related}
+            />
+          );
+        }
+        if (composerIdentity(part) && part.kind !== "media")
+          return (
+            <span key={index} className={styles.inputText}>
+              {part.text || ""}
+            </span>
+          );
+        return part.kind === "media" ? (
+          <Media key={index} part={part} />
+        ) : (
+          <div key={index}>{renderText(part.text || "")}</div>
+        );
+      })}
+      {copyText.trim() && <CopyMessage text={copyText} />}
+    </>
+  );
   return (
-    <div className={styles.userMessage}>
+    <div
+      className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}
+    >
       <header>
         {source ? (
           <Link
@@ -312,56 +352,32 @@ export function InputContent({
           </span>
         )}
       </header>
+      {source ? (
+        <div id={contentId} hidden={!expanded}>
+          {content}
+        </div>
+      ) : (
+        content
+      )}
       {source && (
-        <Button
-          variant="ghost"
-          size="sm"
+        <button
+          type="button"
           className={styles.threadMessageToggle}
           aria-label="Thread message details"
           aria-expanded={expanded}
-          title={expanded ? "Hide details" : "Show details"}
+          aria-controls={contentId}
           onClick={() => setExpanded(!expanded)}
         >
-          {expanded ? "Hide details" : "…"}
-        </Button>
-      )}
-      {(!source || expanded) && (
-        <>
-          {visible.map((part, index) => {
-            const attachment = inputAttachment(part.metadata);
-            if (attachment && threadId) {
-              const identity =
-                composerIdentity(part) ?? attachment.attachment_id;
-              if (seen.has(identity)) return null;
-              seen.add(identity);
-              const related = visible.filter(
-                (item) =>
-                  (composerIdentity(item) ??
-                    inputAttachment(item.metadata)?.attachment_id) === identity,
-              );
-              return (
-                <Attachment
-                  key={`${threadId}:${identity}`}
-                  threadId={threadId}
-                  attachment={attachment}
-                  related={related}
-                />
-              );
-            }
-            if (composerIdentity(part) && part.kind !== "media")
-              return (
-                <span key={index} className={styles.inputText}>
-                  {part.text || ""}
-                </span>
-              );
-            return part.kind === "media" ? (
-              <Media key={index} part={part} />
-            ) : (
-              <div key={index}>{renderText(part.text || "")}</div>
-            );
-          })}
-          {copyText.trim() && <CopyMessage text={copyText} />}
-        </>
+          {!expanded && copyText.trim() && (
+            <span className={styles.threadMessagePreview} aria-hidden="true">
+              {copyText}
+            </span>
+          )}
+          <span className={styles.threadMessageToggleLabel}>
+            {expanded ? "Show less" : "Show message"}
+            <CaretDown size={14} aria-hidden="true" />
+          </span>
+        </button>
       )}
     </div>
   );
