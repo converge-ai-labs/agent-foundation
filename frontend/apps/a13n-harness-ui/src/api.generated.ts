@@ -1017,6 +1017,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/clear-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear Context */
+        post: operations["clear_context_api_threads__thread_id__clear_context_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/context-usage": {
         parameters: {
             query?: never;
@@ -4609,7 +4626,7 @@ export interface components {
              * Available Actions
              * @default []
              */
-            available_actions?: ("run" | "respond" | "wait" | "steer" | "cancel" | "archive")[];
+            available_actions?: ("run" | "respond" | "wait" | "steer" | "cancel" | "archive" | "clear_context")[];
         };
         /** ThreadPage */
         ThreadPage: {
@@ -5749,6 +5766,11 @@ export interface components {
             body: string;
             /** Expected Version */
             expected_version: number;
+        };
+        /** ThreadContextClear */
+        ThreadContextClear: {
+            /** Expected Continuation Id */
+            expected_continuation_id: string;
         };
         /** ProjectDefaultsApply */
         ProjectDefaultsApply: {
@@ -8034,6 +8056,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SavedChildOutputPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_context_api_threads__thread_id__clear_context_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadContextClear"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadDetail"];
                 };
             };
             /** @description Validation Error */

@@ -111,6 +111,7 @@ class _InputCursor(SurfaceModel):
 
 
 class ThreadInspection(SurfaceModel):
+    context_empty: bool = False
     run_composition: ObjectRef | None = None
     latest_request_tokens: int | None = None
     notes: NotePage = Field(default_factory=NotePage)
@@ -270,12 +271,14 @@ class ThreadProjectionService:
             continuation_id = thread.continuation.logical_digest
             if thread.read_model is not None:
                 requests = _deferred_requests(thread.read_model.deferred_requests)
-        actions: list[Literal["run", "respond", "wait", "steer", "cancel", "archive"]] = []
+        actions: list[Literal["run", "respond", "wait", "steer", "cancel", "archive", "clear_context"]] = []
         if summary.root_activity.state is RootActivityState.inactive:
             if not thread.archived:
                 if thread.continuation is None or thread.read_model is not None:
                     actions.append("respond" if requests else "run")
                 actions.append("archive")
+                if thread.parent_thread_id is None and thread.continuation is not None:
+                    actions.append("clear_context")
         else:
             actions.extend(summary.root_activity.available_actions)
         return ThreadDetail(
@@ -523,7 +526,7 @@ class ThreadProjectionService:
         composition = await self._store.objects.read_model(inspection.run_composition, ResolvedRunComposition)
         latest = inspection.latest_request_tokens
         observed = await self._store.usage.latest_root_request(thread_id=thread_id)
-        if observed is not None:
+        if observed is not None and not inspection.context_empty:
             latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
         model = composition.root.model
         from a13n_harness_ui.model_thinking import summarize_thinking
@@ -649,6 +652,7 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         working = WorkingState.model_validate(entry.data)
         tasks, notes = project_working_state(working, continuation_id)
     metadata = ThreadInspection(
+        context_empty=not state.message_history,
         run_composition=stored.run_composition if isinstance(stored, StoredContinuation) else None,
         latest_request_tokens=next(
             (

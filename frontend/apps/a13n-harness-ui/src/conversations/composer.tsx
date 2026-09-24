@@ -38,6 +38,7 @@ import type { Profile } from "../shell/presence";
 import { ConfirmAction } from "../shell/confirm-action";
 import { ThreadDraft, values, type DraftCapture } from "./draft";
 import { ComposerEditor } from "./composer-editor";
+import { ClearContext } from "./clear-context";
 import {
   ComposerSettings,
   SettingsHome,
@@ -315,6 +316,8 @@ export function Composer({
   threadId,
   activity,
   canRun,
+  canClearContext = false,
+  continuationId,
   unavailableReason,
   profile,
   unauthorized,
@@ -323,6 +326,8 @@ export function Composer({
   threadId: string;
   activity: Schema<"RootActivityView">;
   canRun: boolean;
+  canClearContext?: boolean;
+  continuationId?: string | null;
   unavailableReason?: string;
   profile: Profile;
   unauthorized: () => void;
@@ -342,6 +347,8 @@ export function Composer({
   const draft = useDraft(threadId);
   const { tracker: results } = useResults();
   const [preparing, setPreparing] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [contextCleared, setContextCleared] = useState(false);
   const preparation = useRef<AbortController | null>(null);
   useEffect(() => () => preparation.current?.abort(), [threadId]);
   const transport = useTransport();
@@ -508,13 +515,21 @@ export function Composer({
     busy &&
     ready &&
     !preparing &&
+    !clearing &&
     !pending &&
     !unknown &&
     valid &&
     !!activity.available_actions?.includes("steer");
   const stopAction = busy && !hasInput;
   const canSend =
-    canRun && !busy && ready && !preparing && !pending && !unknown && valid;
+    canRun &&
+    !busy &&
+    ready &&
+    !preparing &&
+    !clearing &&
+    !pending &&
+    !unknown &&
+    valid;
   const blockedReason =
     hasInput &&
     !preparing &&
@@ -565,6 +580,7 @@ export function Composer({
     const localInput = beginInput(draft, action, metadata);
     try {
       setPreparing(true);
+      setContextCleared(false);
       onPreparing?.(true);
       setError("");
       const submitted = await submitDraft(
@@ -787,6 +803,12 @@ export function Composer({
       {attachments.some((attachment) => commentReference(attachment.data)) && (
         <p role="status" className={styles.composerConnection}>
           Comment added to your message. Review it below, then send when ready.
+        </p>
+      )}
+      {contextCleared && (
+        <p role="status" className={styles.composerConnection}>
+          Context cleared. Your next message starts fresh; chat history and your
+          draft are kept.
         </p>
       )}
       {showSyncStatus && draft.status !== "Connected" && (
@@ -1046,6 +1068,18 @@ export function Composer({
             {leadingControls}
             <SettingsHome>{goalToggle}</SettingsHome>
           </ComposerSettings>
+          {!local && (
+            <ClearContext
+              threadId={threadId}
+              continuationId={continuationId}
+              disabled={
+                !canClearContext || busy || preparing || pending || unknown
+              }
+              onPendingChange={setClearing}
+              onCleared={() => setContextCleared(true)}
+              reconcile={reconcile}
+            />
+          )}
           <Button
             ref={sendButton}
             size="icon"

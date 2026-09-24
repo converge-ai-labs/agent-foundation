@@ -105,3 +105,38 @@ it("offers continuation only for confirmed failure and disables unresolved submi
   expect(screen.getByRole("alert")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 });
+
+it.each([true, false])(
+  "retains failure details but removes retry after clearing context (checkpoint: %s)",
+  (checkpoint) => {
+    const operation = {
+      receipt: { receipt_id: "failed" },
+      status: "failed",
+      failure: { message: "Previous provider failure" },
+      outcome: checkpoint
+        ? { continuation: { status: "selected", continuation_id: "saved" } }
+        : undefined,
+    } as Schema<"RootOperationView">;
+    vi.mocked(useOperation).mockReturnValue({ data: operation } as ReturnType<
+      typeof useOperation
+    >);
+    const display = new FocusDisplay();
+    const retry = vi.fn();
+    const content = (continuationId: string) => (
+      <RootFailureNotice
+        threadId="thread"
+        receipt="failed"
+        display={display}
+        continuationId={continuationId}
+        completedContinuationId={checkpoint ? "previous" : "saved"}
+        retry={retry}
+      />
+    );
+    const view = render(content("saved"));
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    view.rerender(content("cleared"));
+    expect(screen.getByText("Previous provider failure")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(retry).not.toHaveBeenCalled();
+  },
+);

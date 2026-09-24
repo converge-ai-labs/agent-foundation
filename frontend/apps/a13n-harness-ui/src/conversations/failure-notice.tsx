@@ -37,12 +37,16 @@ export function RootFailureNotice({
   threadId,
   receipt,
   display,
+  continuationId,
+  completedContinuationId,
   retry,
   retryDisabled = false,
 }: {
   threadId: string;
   receipt?: string | null;
   display: FocusDisplay;
+  continuationId?: string | null;
+  completedContinuationId?: string | null;
   retry?: () => void;
   retryDisabled?: boolean;
 }) {
@@ -61,11 +65,17 @@ export function RootFailureNotice({
         current.outcome?.execution.failure?.message ??
         "The operation could not finish.")
       : undefined;
+  // A failure can leave either its own checkpoint or the previous completed
+  // result selected. Neither is retry authority after context clearing.
+  const retryContext =
+    current?.outcome?.continuation.continuation_id ?? completedContinuationId;
+  const contextChanged =
+    continuationId !== undefined && continuationId !== (retryContext ?? null);
   return (
     <FailureNotice
       message={live ?? saved}
       action={
-        current?.status === "failed" && retry ? (
+        current?.status === "failed" && retry && !contextChanged ? (
           <Button variant="outline" disabled={retryDisabled} onClick={retry}>
             Retry
           </Button>

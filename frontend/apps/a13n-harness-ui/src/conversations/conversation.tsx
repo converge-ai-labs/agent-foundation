@@ -694,6 +694,8 @@ function Conversation({
                 threadId={threadId}
                 receipt={receipt}
                 display={display}
+                continuationId={detail.data?.continuation_id}
+                completedContinuationId={thread?.completion?.continuation_id}
                 retry={
                   thread?.archived
                     ? undefined
@@ -808,6 +810,12 @@ function Conversation({
               !agentSelection.isError &&
               !detail.isError &&
               (detail.data?.available_actions?.includes("run") ?? false)
+            }
+            continuationId={detail.data?.continuation_id}
+            canClearContext={
+              !detail.isError &&
+              (detail.data?.available_actions?.includes("clear_context") ??
+                false)
             }
             unavailableReason={
               agentSelection.isPending

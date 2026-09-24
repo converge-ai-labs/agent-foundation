@@ -136,6 +136,7 @@ from a13n_harness_ui.surfaces import (
     ThreadActivityView,
     ThreadConfigurationMutationInput,
     ThreadConfigurationResolution,
+    ThreadContextClear,
     ThreadDetail,
     ThreadFocusSnapshot,
     ThreadLookup,
@@ -1230,6 +1231,15 @@ def create_webui(
         limit: Annotated[int, Query(ge=1, le=20)] = 20,
     ) -> SavedChildOutputPage:
         return await app().saved_child_outputs(thread_id, execution_id, cursor=cursor, limit=limit)
+
+    @server.post(
+        "/api/threads/{thread_id}/clear-context", response_model=ThreadDetail, openapi_extra=_body(ThreadContextClear)
+    )
+    async def clear_context(thread_id: str, request: Request) -> ThreadDetail:
+        command = await _document(request, ThreadContextClear)
+        return await app().clear_thread_context(
+            thread_id=thread_id, expected_continuation_id=command.expected_continuation_id
+        )
 
     @server.get("/api/threads/{thread_id}/context-usage", response_model=ContextUsageView)
     async def context_usage(thread_id: str) -> ContextUsageView:

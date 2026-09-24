@@ -2970,6 +2970,55 @@
         }
       }
     },
+    "/api/threads/{thread_id}/clear-context": {
+      "post": {
+        "summary": "Clear Context",
+        "operationId": "clear_context_api_threads__thread_id__clear_context_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadContextClear"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/context-usage": {
       "get": {
         "summary": "Context Usage",
@@ -13146,7 +13195,8 @@
                 "wait",
                 "steer",
                 "cancel",
-                "archive"
+                "archive",
+                "clear_context"
               ],
               "type": "string"
             },
@@ -16420,6 +16470,21 @@
           "expected_version"
         ],
         "title": "CommentEdit",
+        "type": "object"
+      },
+      "ThreadContextClear": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_continuation_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Continuation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_continuation_id"
+        ],
+        "title": "ThreadContextClear",
         "type": "object"
       },
       "ProjectDefaultsApply": {

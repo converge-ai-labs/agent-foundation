@@ -159,3 +159,48 @@ it("ticks the exact current receipt and paints live context without waiting for 
   view.unmount();
   queries.clear();
 });
+
+it("uses saved Goal state when idle and drops the old receipt Goal after clearing", () => {
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  const goal = {
+    objective: "Previous task",
+    status: "suspended",
+    iteration: 1,
+    max_iterations: 5,
+  } as Schema<"GoalView">;
+  queries.setQueryData(["thread", "one", "operation", "current"], {
+    receipt: { receipt_id: "current" },
+    status: "suspended",
+    goal,
+  });
+  queries.setQueryData(["thread", "one", "configuration"], {});
+  queries.setQueryData(["thread", "one", "context-usage"], {});
+  queries.setQueryData(["thread", "one", "usage"], {});
+  const transport = {
+    client: { GET: vi.fn(async () => ({ data: {} })) },
+  } as unknown as Transport;
+  const content = (savedGoal: Schema<"GoalView"> | null, busy = false) => (
+    <QueryClientProvider client={queries}>
+      <TransportContext value={transport}>
+        <ComposerStatus
+          threadId="one"
+          receipt="current"
+          savedGoal={savedGoal}
+          busy={busy}
+        />
+      </TransportContext>
+    </QueryClientProvider>
+  );
+  const view = render(content(goal));
+  expect(
+    screen.getByRole("button", { name: "Goal details" }).textContent,
+  ).toContain("Waiting for response");
+  view.rerender(content(null));
+  expect(screen.queryByRole("button", { name: "Goal details" })).toBeNull();
+  view.rerender(content(null, true));
+  expect(screen.getByRole("button", { name: "Goal details" })).toBeTruthy();
+  view.unmount();
+  queries.clear();
+});

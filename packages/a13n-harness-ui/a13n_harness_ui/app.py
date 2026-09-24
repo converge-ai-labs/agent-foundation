@@ -1365,6 +1365,17 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
 
+    async def clear_thread_context(self, *, thread_id: str, expected_continuation_id: str) -> ThreadDetail:
+        """Clear saved Agent context without running a model or deleting the transcript."""
+        async with self._operation():
+            async with self._root_runs.require_inactive(thread_id):
+                await self._threads.clear_context(
+                    thread_id=thread_id, expected_continuation_id=expected_continuation_id
+                )
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            await self._summary_hub.publish(kind="thread_work", thread_id=thread_id, work_sections=("tasks", "notes"))
+            return await self._projections.detail(thread_id)
+
     async def update_thread_metadata(
         self,
         *,

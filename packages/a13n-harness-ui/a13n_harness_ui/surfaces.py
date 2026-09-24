@@ -207,7 +207,7 @@ class ThreadDetail(SurfaceModel):
     thread: ThreadSummary
     continuation_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     deferred_requests: tuple[DeferredRequestView, ...] = ()
-    available_actions: tuple[Literal["run", "respond", "wait", "steer", "cancel", "archive"], ...] = ()
+    available_actions: tuple[Literal["run", "respond", "wait", "steer", "cancel", "archive", "clear_context"], ...] = ()
 
 
 class AppliedEditView(SurfaceModel):
@@ -451,6 +451,10 @@ class ExternalToolResult(SurfaceModel):
 
 
 type DeferredResponseItem = Annotated[ApprovalDecision | ExternalToolResult, Field(discriminator="kind")]
+
+
+class ThreadContextClear(SurfaceModel):
+    expected_continuation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ThreadDeferredResponse(SurfaceModel):

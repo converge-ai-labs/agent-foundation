@@ -211,12 +211,12 @@ class RootRunCoordinator:
 
     @asynccontextmanager
     async def require_inactive(self, thread_id: str) -> AsyncGenerator[None]:
-        """Serialize an archive transition against root admission for one Thread."""
+        """Serialize an idle-only mutation against root admission for one Thread."""
 
         async with self._lock:
             if thread_id in self._active_by_thread:
                 raise RunCoordinationError(
-                    "An active root Thread cannot be archived.",
+                    "Wait for the active root operation to finish before changing this Thread.",
                     code="thread_run_active",
                 )
             yield

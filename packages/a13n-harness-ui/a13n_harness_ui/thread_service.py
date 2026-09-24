@@ -7,9 +7,17 @@ from datetime import UTC, datetime
 from enum import Enum
 
 from a13n_harness import HarnessState
+from a13n_harness import __version__ as harness_version
+from anyio import CancelScope, to_thread
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, ProjectDefaults, canonical_digest
+from a13n_harness_ui.display_history import (
+    DisplayHistory,
+    DisplayHistoryCollector,
+    saved_display_history,
+    with_display_history,
+)
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID, built_in_environment_profile
 from a13n_harness_ui.errors import ThreadError
@@ -17,11 +25,13 @@ from a13n_harness_ui.storage import (
     AgentResourceSource,
     LocalStore,
     ObjectKind,
+    StoredContinuation,
     StoredThreadInitialState,
     Thread,
     ThreadConfiguration,
     ThreadConfigurationMutation,
 )
+from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.surfaces import (
     ConfigurationOrigin,
     ConfigurationProvenance,
@@ -198,6 +208,51 @@ class ThreadService:
         if thread is None:
             raise ThreadError("Thread does not exist.", code="thread_missing")
         return thread
+
+    async def clear_context(self, *, thread_id: str, expected_continuation_id: str) -> None:
+        """Replace root Agent state while retaining inspection history and Environment state.
+
+        The App serializes this command with root admission. Immutable publication
+        precedes the ordinary compare-and-select, so failures retain the old head.
+        """
+        thread = await self.get(thread_id)
+        if thread.parent_thread_id is not None:
+            raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
+        if thread.archived:
+            raise ThreadError("Restore this conversation before clearing context.", code="thread_archived")
+        if thread.continuation is None or thread.continuation.logical_digest != expected_continuation_id:
+            raise ThreadError(
+                "The conversation context changed. Review it before clearing context.",
+                code="thread_continuation_conflict",
+            )
+        stored = await self._store.objects.read_model(thread.continuation, StoredContinuation)
+        previous = stored.harness_state
+        if previous.thread_id != thread_id:
+            raise ThreadError("The selected state belongs to another Thread.", code="thread_continuation_incompatible")
+        saved = saved_display_history(previous)
+        display = DisplayHistoryCollector(
+            (), DisplayHistory(messages=previous.message_history if saved is None else saved.messages)
+        ).capture(())
+        state = with_display_history(
+            HarnessState.new(thread_id=thread_id, environment_states=previous.environment_states), display
+        )
+        replacement = StoredContinuation(
+            harness_release=harness_version,
+            run_composition=stored.run_composition,
+            harness_state=state,
+            excerpt=stored.excerpt,
+            created_at=datetime.now(UTC),
+        )
+        read_model = await to_thread.run_sync(project_continuation, replacement)
+        with CancelScope(shield=True):
+            published = await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=replacement)
+            await self._store.threads.select_continuation(
+                thread_id=thread_id,
+                expected=thread.continuation,
+                replacement=published.ref,
+                read_model=read_model,
+                activity_changed=False,
+            )
 
     async def update_metadata(
         self,

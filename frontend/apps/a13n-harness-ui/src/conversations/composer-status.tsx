@@ -44,7 +44,8 @@ export function ComposerStatus({
     activity.data?.pages
       .flatMap((page) => page.rows)
       .find((row) => row.thread.thread_id === threadId)?.latest_operation;
-  const goal = operation?.goal ?? savedGoal;
+  // Terminal receipts remain inspectable even after their working state is reset.
+  const goal = busy ? (operation?.goal ?? savedGoal) : savedGoal;
   const active =
     busy ||
     operation?.status === "running" ||
