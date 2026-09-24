@@ -5,7 +5,7 @@
 | [service](service/README.md)                   | Per-checkout local Service, Console and stores with empty or seeded state |
 | [harness](harness/README.md)                   | Harness SDK development environment and observation scenarios             |
 | [harness-ui](harness-ui/README.md)             | CLI/App development environment and scripted smoke workflow               |
-| fixtures                                       | Shared scripted model, MCP, OAuth and Composio development fixtures       |
+| fixtures                                       | Shared scripted model, MCP, OAuth, Composio and mem0 development fixtures |
 | [live_tests](live_tests/README.md)             | Opt-in HTTP integration and recovery journeys with their own fixtures     |
 | observability                                  | Local trace-backend infrastructure, including Langfuse                    |
 | [observation-demo](observation-demo/README.md) | Runnable observation demonstration                                        |

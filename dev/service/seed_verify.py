@@ -11,7 +11,7 @@ from dev.service.seed import Seeded
 from dev.service.seed_assets import examples
 from dev.service.seed_conversations import NATIVE, PLACED
 from dev.service.seed_identity import MEMBERS
-from dev.service.seed_memories import HANDBOOK
+from dev.service.seed_memories import FACTS, HANDBOOK, RECORDED
 from dev.service.seed_providers import KINDS
 from dev.service.seed_resources import SKILLS
 
@@ -255,8 +255,9 @@ def _memories(api: Api, ws: str, index: dict[str, str]) -> Iterator[Check]:
     mounts = api.items(f"{ws}/threads/{edited['thread_id']}/memories")
     yield (
         "The agent's default memory mounts joined its conversation",
-        [(mount["name"], mount["access"]) for mount in mounts] == [("handbook", "read"), ("prefs", "write")]
-        and [mount["name"] for mount in edited["memory_mounts"]] == ["handbook", "prefs"],
+        [(mount["name"], mount["access"]) for mount in mounts]
+        == [("facts", "write"), ("handbook", "read"), ("prefs", "write")]
+        and [mount["name"] for mount in edited["memory_mounts"]] == ["facts", "handbook", "prefs"],
     )
     [change] = api.items(f"{preferences}/revisions", run_id=edited["id"])
     detail = api.get(f"{preferences}/revisions/{change['seq']}")
@@ -270,6 +271,12 @@ def _memories(api: Api, ws: str, index: dict[str, str]) -> Iterator[Check]:
     revisions = api.items(f"{ws}/memories/{index['memory_handbook']}/revisions")
     releases = [(item["op"], item["run_id"]) for item in revisions if item["path"] == "process/releases.md"]
     yield "A person's edit shows in the handbook's history", releases == [("update", None), ("create", None)]
+    facts = f"{ws}/memories/{index['memory_facts']}"
+    texts = {record["text"] for record in api.items(f"{facts}/records")}
+    yield (
+        "A record memory in the fake mem0 holds its records and the one a run recorded",
+        api.get(facts)["kind"] == "record" and texts == {*FACTS, RECORDED},
+    )
 
 
 def _attached(items: list[Json], marker: str) -> set[str]:

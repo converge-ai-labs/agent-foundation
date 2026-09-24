@@ -1,7 +1,10 @@
-"""File memories: a team handbook agents read, preferences they edit, and an agent that mounts both by default.
+"""Memories: a team handbook agents read, preferences they edit, facts they record, and an agent that mounts all
+three by default.
 
-The conversation edits a preference through the memory tools, then a person edits the handbook, so both
-memories show history attributed to a run's tool call and to a person, with diffs to restore from.
+The conversation edits a preference through the memory tools, then a person edits the handbook, so both file
+memories show history attributed to a run's tool call and to a person, with diffs to restore from. The facts are a
+record memory in the scripted model process's fake mem0 server (`dev/fixtures/mem0.py`), the only mem0 a seeded
+state may call; another conversation recalls them and records one more through the record tools.
 """
 
 from __future__ import annotations
@@ -25,16 +28,20 @@ PREFERENCES = {
     "formatting.md": "Use bullet lists for steps.\n",
 }
 EDIT = '[memory-edit] prefs language.md "Reply in English." -> "Reply in Chinese."'
+FACTS = ("The team demo happens every Friday afternoon.", "Release notes are written in English and Chinese.")
+RECORDED = "The next team demo moves to Thursday."
+RECORD = f'[memory-record] facts "{RECORDED}"'
 
 
 @dataclass(frozen=True, slots=True)
 class Memories:
     handbook: Json
     preferences: Json
-    agent: Json  # mounts the preferences for writing and the handbook for reading by default
+    facts: Json
+    agent: Json  # mounts the preferences and facts for writing and the handbook for reading by default
 
 
-def seed_memories(api: Api, ws: str, model: Json) -> Memories:
+def seed_memories(api: Api, org: str, ws: str, model: Json, model_url: str) -> Memories:
     handbook = _memory(
         api,
         ws,
@@ -54,16 +61,18 @@ def seed_memories(api: Api, ws: str, model: Json) -> Memories:
         {"key": "user-prefs", "name": "User preferences", "description": "How the team likes answers."},
         PREFERENCES,
     )
+    facts = _facts(api, org, ws, model_url)
     mounts = [
         {"name": "prefs", "memory_id": preferences["id"], "access": "write"},
         {"name": "handbook", "memory_id": handbook["id"], "access": "read"},
+        {"name": "facts", "memory_id": facts["id"], "access": "write", "recall": True},
     ]
     agent = api.post(
         f"{ws}/agents",
         {
             "key": "team-assistant",
             "name": "Team assistant",
-            "description": "Remembers the team's preferences and reads its handbook.",
+            "description": "Remembers the team's preferences and facts, and reads its handbook.",
             "labels": {"team": "docs"},
             "config": {
                 "model": {"model_id": model["id"]},
@@ -72,7 +81,7 @@ def seed_memories(api: Api, ws: str, model: Json) -> Memories:
             },
         },
     )
-    return Memories(handbook, preferences, agent)
+    return Memories(handbook, preferences, facts, agent)
 
 
 def remembered(talk: Talk, memories: Memories) -> dict[str, str]:
@@ -90,6 +99,39 @@ def remembered(talk: Talk, memories: Memories) -> dict[str, str]:
         "memory_edit": edited["id"],
         "memory_changes": informed["id"],
     }
+
+
+def recorded(talk: Talk, memories: Memories) -> dict[str, str]:
+    """A conversation that recalls the facts at its start and records one more."""
+    run = talk.start(memories.agent, f"{RECORD}\nThe demo moves to Thursday; please remember it.")
+    return {"memory_facts": memories.facts["id"], "memory_record": run["id"]}
+
+
+def _facts(api: Api, org: str, ws: str, model_url: str) -> Json:
+    """A record memory in the fake mem0 server the scripted model process serves, with two records."""
+    provider = api.post(
+        f"{org}/memory-providers",
+        {
+            "workspace_id": None,
+            "type": "mem0_oss",
+            "name": "Local mem0 (fake)",
+            "config": {"base_url": model_url.removesuffix("/v1") + "/mem0"},
+        },
+    )
+    facts = api.post(
+        f"{ws}/memories",
+        {
+            "key": "team-facts",
+            "name": "Team facts",
+            "description": "Short facts about the team, recalled by similarity.",
+            "type": "mem0_oss",
+            "provider_id": provider["id"],
+            "guide": "Record one lasting fact about the team per record.",
+        },
+    )
+    for text in FACTS:
+        api.post(f"{ws}/memories/{facts['id']}/records", {"text": text})
+    return facts
 
 
 def _memory(api: Api, ws: str, body: Json, files: dict[str, str]) -> Json:

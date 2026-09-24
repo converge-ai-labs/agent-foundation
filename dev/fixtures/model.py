@@ -17,12 +17,15 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from .api import router as fixture_router
+from .mem0 import router as mem0_router
 from .process import fixture_process
 
 MODEL_PORT = 18080
 MODEL_URL = f"http://127.0.0.1:{MODEL_PORT}/v1"
 app = FastAPI()
 app.include_router(fixture_router)
+# A fake self-hosted mem0 server, which seeded record memories use.
+app.include_router(mem0_router, prefix="/mem0")
 app.state.request_count = 0
 app.state.last_message_roles = ()
 app.state.observations = []
@@ -188,6 +191,11 @@ def planned_tool(body: dict, prompt: str) -> dict | list[dict] | None:
         return workspace_step(body, tools)
     if "[memory-edit]" in prompt:
         return memory_step(body, tools)
+    if record := re.search(r'\[memory-record\] (\S+) "([^"]*)"', prompt):
+        # `[memory-record] name "text"`: add one record to a mounted record memory.
+        if any(tool["name"] == "memory_record_add" for tool in tools):
+            return call("memory_record_add", {"memory": record[1], "text": record[2]})
+        return None
     waiting = re.search(r"\[service-wait:(question|client|approval|mixed)\]", prompt)
     if waiting:
         kind = waiting[1]

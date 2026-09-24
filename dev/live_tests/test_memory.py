@@ -1,11 +1,17 @@
-"""File memory across processes: conversations on two workers editing one file, the changes their next run
-receives, recovery from committed memory cursors after a worker crash, and a memory deleted during a run."""
+"""Memory across processes: conversations on two workers editing one file, the changes their next run receives,
+recovery from committed memory cursors after a worker crash, and a memory deleted during a run; record memories in
+a fake mem0 server, recalled into a run's first input and written through the record tools, a recall that fails
+without failing its run, and a deleted record memory's namespace purged through the outbox."""
 
 import json
 import re
 import signal
+from collections.abc import AsyncIterator, Iterator
 
+import httpx2
 import pytest
+
+from dev.fixtures.process import fixture_process
 
 from .api import eventually, expect
 from .scripted import tool_results
@@ -16,6 +22,15 @@ pytestmark = pytest.mark.anyio
 CONTEXT = re.compile(
     r'<memory-context memory="([^"]+)" trust="untrusted" kind="(\w+)">\n[^\n]*\n(.*?)\n</memory-context>', re.S
 )
+RECALL = re.compile(r'<memory-recall memory="([^"]+)" trust="untrusted">\n[^\n]*\n(.*?)\n</memory-recall>', re.S)
+
+
+@pytest.fixture
+async def mem0() -> AsyncIterator[httpx2.AsyncClient]:
+    """A fake self-hosted mem0 server of the journey's own, with a client of its fixture controls."""
+    with fixture_process("dev.fixtures.mem0") as url:
+        async with httpx2.AsyncClient(base_url=url, trust_env=False, timeout=10) as client:
+            yield client
 
 
 async def create_memory(api, key: str, files: dict[str, str], **fields: object) -> dict:  # type: ignore[no-untyped-def]
@@ -32,16 +47,43 @@ async def history(api, memory: dict, path: str) -> list[tuple[str, str | None, s
     return [(item["op"], item["run_id"], item["tool_call_id"]) for item in expect(listing, 200)["items"]]
 
 
+def user_parts(request: dict) -> Iterator[str]:
+    for entry in request["body"]["messages"]:
+        if entry["role"] == "user":
+            content = entry["content"]
+            yield from [content] if isinstance(content, str) else [part.get("text", "") for part in content]
+
+
 def contexts(request: dict) -> list[tuple[str, str, dict]]:
     """The memory context blocks a model request carries, as (memory, kind, body)."""
-    found = []
-    for entry in request["body"]["messages"]:
-        if entry["role"] != "user":
-            continue
-        content = entry["content"]
-        for part in [content] if isinstance(content, str) else [part.get("text", "") for part in content]:
-            found += [(match[1], match[2], json.loads(match[3])) for match in CONTEXT.finditer(part)]
-    return found
+    return [
+        (match[1], match[2], json.loads(match[3])) for part in user_parts(request) for match in CONTEXT.finditer(part)
+    ]
+
+
+def recalls(request: dict) -> list[tuple[str, list[str]]]:
+    """The recall blocks a model request carries, as (memory, recalled texts)."""
+    return [
+        (match[1], [record["text"] for record in json.loads(match[2])["records"]])
+        for part in user_parts(request)
+        for match in RECALL.finditer(part)
+    ]
+
+
+async def record_memory(api, mem0: httpx2.AsyncClient, key: str, *texts: str) -> dict:  # type: ignore[no-untyped-def]
+    """A record memory in the journey's fake mem0 server, holding `texts`."""
+    body = {"workspace_id": None, "type": "mem0_oss", "name": key, "config": {"base_url": str(mem0.base_url)}}
+    provider = expect(await api.client.post(f"{api.organization}/memory-providers", json=body), 201)
+    body = {"key": key, "name": key, "type": "mem0_oss", "provider_id": provider["id"]}
+    memory = expect(await api.client.post(f"{api.path}/memories", json=body), 201)
+    for text in texts:
+        expect(await api.client.post(f"{api.path}/memories/{memory['id']}/records", json={"text": text}), 201)
+    return memory
+
+
+async def namespace(mem0: httpx2.AsyncClient, memory: dict) -> list[str]:
+    """What the fake mem0 server holds under the memory's namespace, even after the memory is gone."""
+    return expect(await mem0.get(f"/fixture/namespaces/{memory['namespace']}"), 200)["texts"]
 
 
 def result_of(request: dict, call_id: str) -> str:
@@ -179,3 +221,53 @@ async def test_a_memory_deleted_during_a_run_refuses_its_next_call(stack) -> Non
     mounted = await api.client.get(f"{api.path}/threads/{receipt['thread']['id']}/memories")
     assert expect(mounted, 200)["items"] == []
     assert (await api.client.get(path)).status_code == 404
+
+
+async def test_a_run_recalls_records_and_writes_through_the_record_tools(stack, mem0) -> None:  # type: ignore[no-untyped-def]
+    api, model = stack.api, stack.model
+    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    memory = await record_memory(api, mem0, "facts", "likes green tea", "lives in Lisbon")
+    mounts = [{"name": "facts", "memory_id": memory["id"], "access": "write"}]
+    add = {"memory": "facts", "text": "prefers window seats"}
+    await model.call("memory_record_add", add, call_id="call_add", to="[rec]")
+    await model.say("Noted.", to="[rec]")
+    receipt = await api.start(agent, "[rec] Which tea do I like? I prefer window seats.", memories=mounts)
+    run = await api.sealed(receipt["run"]["id"])
+    assert (run["status"], run["output"]) == ("completed", "Noted.")
+
+    first, second = await model.requests("[rec]")
+    # Only the run's first input carries the records closest to it, as untrusted data.
+    assert recalls(first) == [("facts", ["likes green tea"])]
+    assert recalls(second) == recalls(first)
+    assert '"id"' in result_of(second, "call_add")
+    assert await namespace(mem0, memory) == ["likes green tea", "lives in Lisbon", "prefers window seats"]
+
+
+async def test_a_failing_recall_does_not_fail_the_run(stack, mem0) -> None:  # type: ignore[no-untyped-def]
+    api, model = stack.api, stack.model
+    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    memory = await record_memory(api, mem0, "facts", "likes green tea")
+    expect(await mem0.put("/fixture/failing", json={"operations": ["search"]}), 200)
+    await model.say("No memories today.", to="[norecall]")
+    mounts = [{"name": "facts", "memory_id": memory["id"], "access": "read"}]
+    receipt = await api.start(agent, "[norecall] Which tea do I like?", memories=mounts)
+    run = await api.sealed(receipt["run"]["id"])
+    assert (run["status"], run["output"]) == ("completed", "No memories today.")
+    [request] = await model.requests("[norecall]")
+    assert recalls(request) == []
+
+
+async def test_deleting_a_record_memory_purges_its_namespace_through_the_outbox(stack, mem0) -> None:  # type: ignore[no-untyped-def]
+    api = stack.api
+    memory = await record_memory(api, mem0, "facts", "likes green tea", "lives in Lisbon")
+    kept = await record_memory(api, mem0, "other", "never purged")
+    path = f"{api.path}/memories/{memory['id']}"
+    expect(await api.client.delete(path, headers={"if-match": (await api.client.get(path)).headers["etag"]}), 204)
+
+    async def purged() -> bool:
+        return not await namespace(mem0, memory)
+
+    await eventually(purged)
+    assert await namespace(mem0, kept) == ["never purged"]
+    rows = read_rows(stack.database, "SELECT dedupe_key, status FROM outbox WHERE kind = 'memory_purge'")
+    assert rows == [{"dedupe_key": memory["id"], "status": "delivered"}]
