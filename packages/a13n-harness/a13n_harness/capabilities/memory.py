@@ -481,8 +481,10 @@ def _size(text: str) -> int:
 __all__ = [
     "DEFAULT_FILE_GUIDE",
     "FILE_MEMORY_CAPABILITY_ID",
+    "FILE_TOOL_KEYS",
     "FileMemoryCapability",
     "FileMemoryLimits",
     "FileMount",
+    "FileToolKey",
     "MemoryCursors",
 ]

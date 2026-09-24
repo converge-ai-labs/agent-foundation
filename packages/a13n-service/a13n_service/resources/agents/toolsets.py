@@ -7,6 +7,7 @@ with its defaults and validates each typed config, so readers never merge defaul
 from dataclasses import dataclass
 from typing import Annotated, Literal, TypedDict
 
+from a13n_harness.capabilities import FILE_TOOL_KEYS, FileToolKey
 from a13n_harness.capabilities.web import (
     WebConfiguration,
     WebDownloadConfiguration,
@@ -18,7 +19,6 @@ from a13n_harness.environment import DynamicEnvironmentConfiguration
 from a13n_harness.providers.web.domains import DomainRestrictions
 from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES
 from a13n_harness.tools import ToolPermissionMode, ToolPermissionSetting
-from a13n_harness.toolsets.memory_files import FILE_TOOL_KEYS, FileToolKey
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 from a13n_service.infra.ids import ObjectId

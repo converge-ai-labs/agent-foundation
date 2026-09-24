@@ -13,9 +13,8 @@ from dataclasses import dataclass, replace
 from functools import partial
 
 from a13n_harness import AgentContext, RunBindings
-from a13n_harness.capabilities import MemoryCursors
+from a13n_harness.capabilities import FileToolKey, MemoryCursors
 from a13n_harness.capabilities.web import WebBinding
-from a13n_harness.toolsets.memory_files import FileToolKey
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession

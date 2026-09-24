@@ -10,9 +10,8 @@ shares the attempt's cursors, which each checkpoint commits.
 from collections.abc import Collection
 from dataclasses import dataclass
 
-from a13n_harness.capabilities import FileMemoryCapability, FileMemoryLimits, FileMount, MemoryCursors
+from a13n_harness.capabilities import FileMemoryCapability, FileMemoryLimits, FileMount, FileToolKey, MemoryCursors
 from a13n_harness.providers.memory import MemoryStoreError, Origin
-from a13n_harness.toolsets.memory_files import FileToolKey
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
