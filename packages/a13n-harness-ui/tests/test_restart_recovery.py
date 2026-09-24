@@ -6,6 +6,7 @@ import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import RunCoordinationError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.storage import StoredContinuation, open_local_store
 from anyio import CancelScope, Event, create_task_group, fail_after, sleep
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
@@ -99,7 +100,7 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
     tmp_path, monkeypatch, finalization_failure, mode
 ):
     root = _write_configuration(tmp_path)
-    settings = _settings(tmp_path / "state")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state"), pricing_auto_update=False)
     started, release = Event(), Event()
     requests = []
 
@@ -134,6 +135,8 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
         group.start_soon(release_during_shutdown, app, release, receipt.receipt_id)
         if finalization_failure:
             fail_environment_finalization(monkeypatch, finalization_failure)
+    # Finalization failures must not pass because an earlier drain timed out.
+    assert app._restart.committing, app._restart.errors
     if finalization_failure:
         async with open_local_store(settings.storage) as store:
             batch = await store.restarts.get()
@@ -233,9 +236,9 @@ async def test_abnormal_exit_and_cli_do_not_arm_recovery(tmp_path, monkeypatch, 
         assert await store.restarts.get() is None
 
 
-async def test_stop_before_pause_never_arms_recovery(tmp_path, monkeypatch):
+async def test_drain_timeout_never_arms_recovery(tmp_path, monkeypatch):
     root = _write_configuration(tmp_path)
-    settings = _settings(tmp_path / "state")
+    settings = _settings(tmp_path / "state", shutdown_timeout_seconds=0.05)
     started = Event()
     requests = 0
 
@@ -252,8 +255,12 @@ async def test_stop_before_pause_never_arms_recovery(tmp_path, monkeypatch):
         await app.submit_thread(thread_id=thread.thread_id, prompt="Wait")
         with fail_after(10):
             await started.wait()
+    assert not app._restart.committing
+    assert "app" in app._restart.errors
+    async with open_local_store(settings.storage) as store:
+        assert await store.restarts.get() is None
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-        await sleep(0.05)
+        assert await app._root_runs.active_count() == 0
         assert requests == 1
 
 
@@ -265,7 +272,7 @@ async def test_child_restores_with_active_or_completed_parent(
     import yaml
 
     root = _write_configuration(tmp_path)
-    settings = _settings(tmp_path / "state")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state"), pricing_auto_update=False)
     agent_path = tmp_path / "agents/assistant.yaml"
     parent = yaml.safe_load(agent_path.read_text())
     parent["subagents"] = [{"agent": "agent-worker"}]
@@ -319,6 +326,8 @@ async def test_child_restores_with_active_or_completed_parent(
         group.start_soon(release_during_shutdown, app, release_child)
         if finalization_failure:
             fail_environment_finalization(monkeypatch, finalization_failure)
+    # Finalization failures must not pass because an earlier drain timed out.
+    assert app._restart.committing, app._restart.errors
     if finalization_failure:
         async with open_local_store(settings.storage) as store:
             batch = await store.restarts.get()
@@ -448,7 +457,7 @@ async def test_cancelled_task_is_excluded_from_planned_handoff(tmp_path, monkeyp
 
 async def test_incompatible_reconstruction_is_blocked_and_never_retried(tmp_path, monkeypatch):
     root = _write_configuration(tmp_path)
-    settings = _settings(tmp_path / "state")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state"), pricing_auto_update=False)
     started, release = Event(), Event()
     calls = 0
 
@@ -497,7 +506,7 @@ async def test_children_admitted_during_drain_require_complete_family_staging(tm
     from anyio import move_on_after
 
     root = _write_configuration(tmp_path)
-    settings = _settings(tmp_path / "state")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state"), pricing_auto_update=False)
     parent_path = tmp_path / "agents/assistant.yaml"
     parent = yaml.safe_load(parent_path.read_text())
     parent["subagents"] = [{"agent": "agent-worker"}]

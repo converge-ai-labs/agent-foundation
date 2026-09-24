@@ -7,7 +7,8 @@ import yaml
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import StoreConflictError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
-from a13n_harness_ui.storage import ThreadConfigurationMutation
+from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+from a13n_harness_ui.storage import ThreadConfigurationMutation, open_local_store
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus, ThreadMetadataMutation
 from anyio import Event, create_task_group, fail_after
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -219,7 +220,8 @@ async def test_restarted_worker_keeps_owner_and_rejects_configuration_move(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = coordinator_configuration(tmp_path)
-    settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
+    # Exercise successful recovery, not the shared test helper's one-second drain budget.
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
     started, release, notified = Event(), Event(), Event()
     worker_id = ""
     calls = []
@@ -270,9 +272,16 @@ async def test_restarted_worker_keeps_owner_and_rejects_configuration_move(
             )
         group.start_soon(release_during_shutdown, app, release)
     assert not notified_threads
+    async with open_local_store(settings.storage) as store:
+        batch = await store.restarts.get()
+        assert batch is not None and batch.state == "ready", batch
+        assert [item.thread_id for item in batch.items] == [worker_id]
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:
         with fail_after(15):
             await notified.wait()
+            target = await app._root_runs.active(lead.thread_id) or await app._root_runs.latest(lead.thread_id)
+            assert target is not None
+            assert (await app.wait_root_operation(target.receipt.receipt_id)).status is RootOperationStatus.completed
         assert notified_threads == [lead.thread_id]
         assert await app._root_runs.latest(other.thread_id) is None
         assert calls.count(worker_id) == 2
