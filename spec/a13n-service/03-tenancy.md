@@ -162,12 +162,12 @@ The verbs a principal holds on a target are computed as follows:
 
 What each verb covers, by example (the owning chapters name the verb of each operation):
 
-| Verb  | Covers                                                                                                                                                                                             |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| read  | listing and reading everything in scope, including other principals' sessions, threads and runs; run items, thread streams, usage and traces; secret metadata, never a value                       |
-| run   | submitting input, steering, interrupting, forking, resuming; creating sessions and threads; thread environments                                                                                    |
-| write | creating, updating and retiring resources: agents and revisions, skills, templates, providers and models, connections and their authorization, secrets, assets                                     |
-| admin | grants, invitations, service accounts and their keys, the workspace's API keys, workspace settings, webhook subscriptions, audit reads; at organization scope also workspaces and the organization |
+| Verb  | Covers                                                                                                                                                                                                            |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| read  | listing and reading everything in scope, including other principals' sessions, threads and runs; run items, thread streams, usage and traces; memory files and their history; secret metadata, never a value      |
+| run   | submitting input, steering, interrupting, forking, resuming; creating sessions and threads; thread environments and memory mounts; editing and restoring memory files                                             |
+| write | creating, updating and retiring resources: agents and revisions, skills, templates, providers and models, connections and their authorization, secrets, assets, memories and the purge of a memory file's history |
+| admin | grants, invitations, service accounts and their keys, the workspace's API keys, workspace settings, webhook subscriptions, audit reads; at organization scope also workspaces and the organization                |
 
 `admin` covers people, keys and delivery configuration. A builder can configure external models and tools; the roles do not promise data-loss prevention against a builder or against an authorized run, and deployment network policy constrains outbound destinations independently of roles ([08](08-providers.md)). Private secrets and private environments add an owner check to the workspace verb ([04](04-resources.md#secrets), [06](06-environments.md)).
 

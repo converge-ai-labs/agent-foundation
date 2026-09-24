@@ -277,6 +277,23 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/workspaces/{ws}/threads/{thread}/environments`        | GET, POST          | [06](06-environments.md#mounts)                                                                         |
 | `/workspaces/{ws}/threads/{thread}/environments/{name}` | DELETE             | [06](06-environments.md#mounts)                                                                         |
 
+### Memories
+
+| Path                                                         | Methods            | Owner                                                |
+| ------------------------------------------------------------ | ------------------ | ---------------------------------------------------- |
+| `/workspaces/{ws}/memories`                                  | GET, POST          | [11](11-memory.md#memories)                          |
+| `/workspaces/{ws}/memories/{memory}`                         | GET, PATCH, DELETE | [11](11-memory.md#memories)                          |
+| `/workspaces/{ws}/memories/{memory}/files`                   | GET, POST          | [11](11-memory.md#files-and-history-through-the-api) |
+| `/workspaces/{ws}/memories/{memory}/files/move`              | POST               | [11](11-memory.md#files-and-history-through-the-api) |
+| `/workspaces/{ws}/memories/{memory}/files/{path}`            | GET, PUT, DELETE   | [11](11-memory.md#files-and-history-through-the-api) |
+| `/workspaces/{ws}/memories/{memory}/revisions`               | GET, DELETE        | [11](11-memory.md#files-and-history-through-the-api) |
+| `/workspaces/{ws}/memories/{memory}/revisions/{seq}`         | GET                | [11](11-memory.md#files-and-history-through-the-api) |
+| `/workspaces/{ws}/memories/{memory}/revisions/{seq}/restore` | POST               | [11](11-memory.md#files-and-history-through-the-api) |
+| `/workspaces/{ws}/threads/{thread}/memories`                 | GET, POST          | [11](11-memory.md#mounts)                            |
+| `/workspaces/{ws}/threads/{thread}/memories/{name}`          | DELETE             | [11](11-memory.md#mounts)                            |
+
+A file `{path}` is the file's path in the memory, with its `/` separators. A file's ETag names its current version; creating a file takes no `If-Match`, and a restore takes one only when a file exists at the revision's path.
+
 ### Usage and traces
 
 | Path                                                   | Methods | Owner                                        |

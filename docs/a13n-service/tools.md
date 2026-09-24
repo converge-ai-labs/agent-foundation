@@ -2,7 +2,7 @@
 
 An agent's tools come from four places, all selected in its [revision](agents-and-runs.md#agent-configuration):
 
-- **Built-in toolsets**, which the Service runs itself: files, terminal, web, asset publication and agent configuration.
+- **Built-in toolsets**, which the Service runs itself: files, terminal, web, memory, asset publication and agent configuration.
 - **Connections**: remote MCP servers and app accounts of a connector provider such as Composio.
 - **Client tools**, which your application executes and answers through [resume](agents-and-runs.md#waits-approvals-and-questions).
 - **Skills**, which add instructions and files; see [Skills and secrets](skills.md).
@@ -18,10 +18,11 @@ Every tool has a [permission](agents-and-runs.md#tool-permissions) in the revisi
 | `files`            | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`      | Enabled                                                             |
 | `shell` (Terminal) | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                             | Enabled                                                             |
 | `web`              | `search`, `scrape`, `fetch`, `download`                                                             | Each tool disabled                                                  |
+| `memory`           | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`                      | Enabled                                                             |
 | `assets`           | `publish_asset`                                                                                     | Disabled                                                            |
 | `configuration`    | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision` | Disabled; see [Configuration assistant](configuration-assistant.md) |
 
-The files and terminal tools act on the run's mounted [environments](environments.md) and are offered to the model only when the run has one. `publish_asset` turns a file from an environment into a workspace [asset](files-and-webhooks.md#assets).
+The files and terminal tools act on the run's mounted [environments](environments.md) and are offered to the model only when the run has one. The memory tools act on the run's mounted [memories](memory.md), and a `read` mount offers only viewing and searching. `publish_asset` turns a file from an environment into a workspace [asset](files-and-webhooks.md#assets).
 
 ## Web search and scrape
 

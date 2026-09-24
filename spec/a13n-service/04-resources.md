@@ -1,16 +1,16 @@
 # Resources: what a tenant configures
 
-`resources/` holds what a tenant configures before submitting work: agents, skills, provider resources, models, environment templates, connections, secrets, uploads, assets and webhook subscriptions. Each kind is one package ([02](02-layout.md#a-resource-package)). This chapter owns their lifecycles, stored shape, validation and the rules they share. The exported contract ([10](10-api.md)) owns exact request and response shapes, [03](03-tenancy.md) owns verbs and credential encryption, and [08](08-providers.md) owns provider definitions, capability flags and runtime handles.
+`resources/` holds what a tenant configures before submitting work: agents, skills, provider resources, models, environment templates, connections, secrets, uploads, assets, webhook subscriptions and memories, whose files and mounts [11](11-memory.md) owns. Each kind is one package ([02](02-layout.md#a-resource-package)). This chapter owns their lifecycles, stored shape, validation and the rules they share. The exported contract ([10](10-api.md)) owns exact request and response shapes, [03](03-tenancy.md) owns verbs and credential encryption, and [08](08-providers.md) owns provider definitions, capability flags and runtime handles.
 
 ## Two lifecycles
 
 Every resource has one lifecycle, decided by one question: **does a run freeze it?** A run freezes only the content that execution, including recovery, re-reads to define the agent's behavior: its agent revision and the skill and subagent revisions that revision pins. Everything else is live: each use resolves the current row and checks it again, because credentials rotate, endpoints move and policies change.
 
-| Lifecycle         | Shape                                                                    | Kinds                                                                                  | Retirement                                                                                                          |
-| ----------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Revisioned        | a head plus immutable numbered revisions; the head points at its default | agents, skills                                                                         | `archived_at` on the head, reversed by `unarchive`                                                                  |
-| Live              | one mutable row with an ETag                                             | provider resources, models, environment templates, connections, secrets, subscriptions | `enabled = false` for provider resources, models, templates and connections; deletion for secrets and subscriptions |
-| Immutable content | one row over stored bytes                                                | assets                                                                                 | `retired_at`; the content stays readable                                                                            |
+| Lifecycle         | Shape                                                                    | Kinds                                                                                            | Retirement                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Revisioned        | a head plus immutable numbered revisions; the head points at its default | agents, skills                                                                                   | `archived_at` on the head, reversed by `unarchive`                                                                            |
+| Live              | one mutable row with an ETag                                             | provider resources, models, environment templates, connections, secrets, subscriptions, memories | `enabled = false` for provider resources, models, templates and connections; deletion for secrets, subscriptions and memories |
+| Immutable content | one row over stored bytes                                                | assets                                                                                           | `retired_at`; the content stays readable                                                                                      |
 
 A consumer that needs a live value to stay fixed copies it where it uses it: a webhook delivery copies its subscription's URL and signing secret ([07](07-facts-and-delivery.md#lifecycle-webhooks)), an environment instance keeps the recipe it was created with ([06](06-environments.md)), and a run freezes its thread's caller headers ([Caller headers](#caller-headers)).
 
@@ -65,7 +65,7 @@ agent_revisions   revision columns; config: AgentConfig
 
 - `model`: `model_id`, native `settings` for the model's calling API and context `characteristics`.
 - `instructions`.
-- `toolsets`: the built-in toolsets `files`, `shell`, `web`, `assets` and `configuration`, stored normalized against the catalogue `GET /workspaces/{ws}/toolsets` serves. Enabled web search and scrape name a web provider resource.
+- `toolsets`: the built-in toolsets `files`, `shell`, `web`, `memory`, `assets` and `configuration`, stored normalized against the catalogue `GET /workspaces/{ws}/toolsets` serves. Enabled web search and scrape name a web provider resource.
 - `skills`: `{skill_id, revision_id}` selections.
 - `connection_tools`: `{connection_id, tools, defer_loading, permission, permissions}` selections ([Connections](#connections)).
 - `client_tools`, whose results a client supplies through resume, and `user_questions`, which offers `ask_user_question`.
@@ -75,6 +75,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `plugins`: `{instance_name, plugin_key, config}` selections of installed Harness plugins ([08](08-providers.md#installed-harness-plugins)).
 - `output_spec`, `retries` and `secret_requirements` ([Secrets](#secrets)).
 - `default_environment_template_id`: referenced, not pinned; it is read when an environment is created from it, never during execution.
+- `memory_mounts`: default memory mounts `{name, memory_id, access}`, at most 32 with unique names and memories, which a thread takes at its first acceptance ([11](11-memory.md#mounts)). They are referenced, not pinned, and a run's override cannot change them.
 
 Tool permissions live on each selection and compile into one Harness tool-permission table.
 
@@ -82,15 +83,16 @@ Tool permissions live on each selection and compile into one Harness tool-permis
 
 Revision creation, `set-default`, duplication and `POST /agents/validate` apply one validation. It pins every skill and subagent edge whose `revision_id` is omitted to that head's current default, and it reports the first failure as `invalid_argument` with the field path relative to the configuration:
 
-1. Rules the configuration obeys on its own: enabled web search and scrape name `provider_id`; client tool names do not collide with built-in tool names, and their parameter schemas are valid, self-contained JSON Schemas; the `review` permission requires a `reviewer`; an async agent's edges set only `usage_limits.request_limit`.
-2. The output schema compiles, and each plugin's installed factory accepts its configuration.
-3. Skill and subagent edges name open heads and revisions of those heads.
-4. The model exists, is enabled and is usable by the author. `model.settings` must match the settings schema of the model's calling API (`providers/model_settings.py`, reached through the registry: the schema `GET /provider-types/model` publishes, [08](08-providers.md#provider-type-descriptions)); the reviewer's `model_settings` is checked against the reviewer model's API as `reviewer.model_settings`.
-5. Each media model is usable and declares the matching `{kind}_understanding` capability.
-6. Each connection selection passes the connection's own check, and the agent declares no more tool permissions than one agent may have.
-7. Each web provider is enabled and usable, and its type serves the selected operation (and domain restriction for scrape). Operation support is checked here, not at run time.
-8. The default template and every dedicated edge's template are usable.
-9. The inline subagent graph does not lead back to the agent itself, nests at most 16 deep and reaches at most 256 revisions.
+01. Rules the configuration obeys on its own: enabled web search and scrape name `provider_id`; client tool names do not collide with built-in tool names, and their parameter schemas are valid, self-contained JSON Schemas; the `review` permission requires a `reviewer`; an async agent's edges set only `usage_limits.request_limit`.
+02. The output schema compiles, and each plugin's installed factory accepts its configuration.
+03. Skill and subagent edges name open heads and revisions of those heads.
+04. The model exists, is enabled and is usable by the author. `model.settings` must match the settings schema of the model's calling API (`providers/model_settings.py`, reached through the registry: the schema `GET /provider-types/model` publishes, [08](08-providers.md#provider-type-descriptions)); the reviewer's `model_settings` is checked against the reviewer model's API as `reviewer.model_settings`.
+05. Each media model is usable and declares the matching `{kind}_understanding` capability.
+06. Each connection selection passes the connection's own check, and the agent declares no more tool permissions than one agent may have.
+07. Each web provider is enabled and usable, and its type serves the selected operation (and domain restriction for scrape). Operation support is checked here, not at run time.
+08. The default template and every dedicated edge's template are usable.
+09. Each default memory mount names a memory of the workspace, at `memory_mounts.{index}.memory_id`. Only authoring checks it; the acceptance that mounts a default checks its memory again.
+10. The inline subagent graph does not lead back to the agent itself, nests at most 16 deep and reaches at most 256 revisions.
 
 An author's references need `read`. A run's override (`options.overrides`, [05](05-runs.md#submit-and-accept)) passes the same validation on the configuration it produces, with verb `run` under the run's authority, and is frozen with the same pins. Credentials are resolved only at execution, where live references are checked again. Pinning direct edges keeps changed defaults from altering recovered execution without copying a second graph.
 

@@ -39,6 +39,7 @@ a13n_service/
     secrets/          tables  schemas  service  routes
     uploads/          schemas  service  routes
     assets/           tables  schemas  service  routes
+    memories/         tables  schemas  service  routes  store  files
     subscriptions/    tables  schemas  service  routes  delivery
 
   runs/               how input becomes sealed runs
@@ -51,6 +52,7 @@ a13n_service/
     schemas.py  routes.py  trace_routes.py
     environments/     tables  schemas  service  routes  lifecycle  maintenance  mounts  execution  adapters
                       external
+    memories/         tables  schemas  routes  mounts  execution
 
   providers/          what the Service calls
     registry.py       provider definitions by (kind, type)
@@ -65,7 +67,7 @@ a13n_service/
   migrations/         env.py  runner.py  script.py.mako  versions/
 ```
 
-Four business packages answer four questions. `tenancy`: who is asking and what may they do ([03](03-tenancy.md)). `resources`: what has the tenant configured ([04](04-resources.md)). `runs`: how does one input become one sealed run ([05](05-runs.md), [06](06-environments.md), [07](07-facts-and-delivery.md)). `providers`: what does the Service call ([08](08-providers.md)). Shared mechanisms live under `infra/`; configuration and assembly stay at the root ([09](09-runtime.md)).
+Four business packages answer four questions. `tenancy`: who is asking and what may they do ([03](03-tenancy.md)). `resources`: what has the tenant configured ([04](04-resources.md), [11](11-memory.md)). `runs`: how does one input become one sealed run ([05](05-runs.md), [06](06-environments.md), [07](07-facts-and-delivery.md)). `providers`: what does the Service call ([08](08-providers.md)). Shared mechanisms live under `infra/`; configuration and assembly stay at the root ([09](09-runtime.md)).
 
 Packages under `resources/` own tenant-configured records: identity, scope, configuration, encrypted credentials, enabled state and their API. `providers/` owns backend adapters and contracts that receive plain values. For example, `resources/providers/` stores a web provider account, and the Harness definition registered in `providers/registry.py` builds the backend that serves it.
 
@@ -99,7 +101,7 @@ Generic mechanisms belong in `infra`: the outbox table and its claim, settle and
 The resource packages depend on each other in one direction:
 
 ```
-agents     ->  connections, environment_templates, models, providers, secrets, skills
+agents     ->  connections, environment_templates, memories, models, providers, secrets, skills
 connections  ->  connector_providers, providers
 models, environment_templates, connector_providers, web_providers  ->  providers
 skills, assets  ->  uploads
@@ -160,7 +162,7 @@ Every service function follows the same conventions:
 | JSON columns are named for their content, never with a `_json` suffix.                                                                                                                                                                                                                                                | `config`, `payload`, `failure`, `labels`, `settings`                                                      |
 | A column holding an immutable object key ends in `_ref`; a run's state and display objects are named by the typed pointers `checkpoint` and `display`.                                                                                                                                                                | `package_ref`, `content_ref`, `runs.checkpoint`                                                           |
 | A content hash is `digest` (SHA-256, hex). A hashed secret is `secret_hash`.                                                                                                                                                                                                                                          | `agent_revisions.digest`, `api_keys.secret_hash`                                                          |
-| Counters: `number` for revisions and attempts, `version` for mutable-row concurrency, `position` for inbox order, `seq` for checkpoints, `generation` for invalidation.                                                                                                                                               | `run_attempts.number`, `inbox_entries.position`, `incorporated_checkpoint_seq`, `environments.generation` |
+| Counters: `number` for revisions and attempts, `version` for mutable-row concurrency, `position` for inbox order, `seq` for checkpoints and memory changes, `generation` for invalidation.                                                                                                                            | `run_attempts.number`, `inbox_entries.position`, `incorporated_checkpoint_seq`, `environments.generation` |
 | Who: `principal_id` is the identity something executes as or belongs to, `created_by_id` and `updated_by_id` are authors, `actor_id` is the audit subject.                                                                                                                                                            | `runs.principal_id`, `secrets.principal_id`                                                               |
 | Row classes end in `Row`; API types are the plain noun, except the read types of runs, threads, sessions, inbox entries, attempts, environments, mounts and grants, which end in `View` because their plain nouns already name Harness or domain types those modules use; frozen configuration types end in `Config`. | `AgentRow`, `Agent`, `RunView`, `AgentConfig`, `McpConfig`                                                |
 | Functions are verb phrases.                                                                                                                                                                                                                                                                                           | `create_agent`, `resolve_connection`, `accept`, `claim`, `execute`, `seal`                                |
@@ -189,8 +191,9 @@ Object IDs follow the platform's [data conventions](../data-conventions.md#servi
 | `cprov`             | connector_providers                                                   | `envoper`, `envrenew` | environment operations, environment renewals |
 | `wprov`             | web_providers                                                         | `wrk`                 | worker IDs                                   |
 | `ctl`               | control sweep claim owners (outbox delivery, environment maintenance) | `req`                 | request IDs                                  |
+| `mem`               | memories                                                              | `mfile`               | memory_files                                 |
 
-Uploads are `upl_` plus a 64-character SHA-256 derived from the upload's scope and request key ([04](04-resources.md#uploads-and-assets)). `passwords` and `thread_environments` are join tables without IDs, and `usage_records` keep the Harness's record IDs; every other table has a 72-character `id` primary key, and every workspace-owned row has a composite `(organization_id, workspace_id)` foreign key. Display items are `itm_` plus the first 32 hex characters of a SHA-256 of their run, kind and source, so they are stable across attempts ([07](07-facts-and-delivery.md#checkpoints-and-display)). Harness tool-call IDs, provider-owned IDs, secrets, cursors and digests keep their owners' formats.
+Uploads are `upl_` plus a 64-character SHA-256 derived from the upload's scope and request key ([04](04-resources.md#uploads-and-assets)). `passwords`, `thread_environments` and `thread_memories` are join tables without IDs, `memory_file_stores` and `memory_file_revisions` are keyed by their memory (and change `seq`), and `usage_records` keep the Harness's record IDs; every other table has a 72-character `id` primary key. Every workspace-owned row has a composite `(organization_id, workspace_id)` foreign key, except a memory's store row, files and revisions, which reach their scope through their memory ([11](11-memory.md#tables)). Display items are `itm_` plus the first 32 hex characters of a SHA-256 of their run, kind and source, so they are stable across attempts ([07](07-facts-and-delivery.md#checkpoints-and-display)). Harness tool-call IDs, provider-owned IDs, secrets, cursors and digests keep their owners' formats.
 
 ## Error codes
 

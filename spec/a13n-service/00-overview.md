@@ -20,14 +20,14 @@ flowchart LR
 ```
 
 1. A caller authenticates as a principal with grants in an organization and its workspaces ([03](03-tenancy.md)).
-2. The caller configures resources: agents and their immutable revisions, skills, provider accounts, models, environment templates, connections, secrets, assets and webhook subscriptions ([04](04-resources.md)).
+2. The caller configures resources: agents and their immutable revisions, skills, provider accounts, models, environment templates, connections, secrets, assets and webhook subscriptions ([04](04-resources.md)), and memories ([11](11-memory.md)).
 3. Input is appended to a thread's inbox. Acceptance selects a queued entry and creates the thread's next run, freezing the agent revision, pins, overrides and mounts it needs ([05](05-runs.md)).
 4. A worker claims the run as a leased, fenced attempt and executes it through the Harness against the run's environments ([06](06-environments.md)) and the providers its resources select ([08](08-providers.md)). At each safe boundary it commits a checkpoint that makes the consumed input and the resumable state durable together.
 5. Sealing records the terminal outcome, or a wait for approval, client tools or user input, and schedules any successor or parent delivery. Usage records, audit events, lifecycle webhooks, the provisional thread stream and trace queries report what happened ([07](07-facts-and-delivery.md)).
 
 ## Boundaries
 
-The Service owns tenancy, configured resources, durable run ownership and history, environment instances created through providers, and delivery of what happened. It is API-only: it hosts no browser assets and exposes no product API on worker-only processes.
+The Service owns tenancy, configured resources, durable run ownership and history, environment instances created through providers, the file memories agents keep across conversations ([11](11-memory.md)), and delivery of what happened. It is API-only: it hosts no browser assets and exposes no product API on worker-only processes.
 
 | Need                                                        | Served by                                                                                                                                                         |
 | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -36,7 +36,6 @@ The Service owns tenancy, configured resources, durable run ownership and histor
 | The agent loop, tool execution and provider implementations | the [Harness](../a13n-harness/README.md), embedded in executing processes; the Service registers its provider definitions and never implements a second catalogue |
 | An environment daemon                                       | `a13n-envd`, reached over HTTP(S) as a connect-only external target ([06](06-environments.md#external-targets))                                                   |
 | Chat platforms, schedules and event ingress                 | callers outside the Service, which submit input through the API and observe runs through the thread stream and webhooks                                           |
-| Agent memory                                                | not provided                                                                                                                                                      |
 | Hosted AG-UI or A2A endpoints                               | not provided; the thread stream uses AG-UI events as its vocabulary, and input goes through the native API                                                        |
 | Monetary budgets and billing                                | not provided; usage records carry price snapshots, and a distribution's admission policy may refuse paid calls ([09](09-runtime.md#extension-points))             |
 | Trace storage                                               | the operator's trace backend, which the Service exports to and queries ([08](08-providers.md#trace-backends))                                                     |
@@ -72,6 +71,7 @@ Operators read the user documentation in `docs/a13n-service/`, including the gen
 | provider resource, model                 | a tenant-configured backend account; one upstream model served by a model provider                                      | [04](04-resources.md#provider-resources)                              |
 | connection                               | a source of tools with one credential: a Remote MCP server or one account of a connector app                            | [04](04-resources.md#connections)                                     |
 | environment template, environment, mount | the live configuration instances are created from; a sandbox instance; an environment attached to a thread under a name | [04](04-resources.md#environment-templates), [06](06-environments.md) |
+| memory, memory mount                     | a workspace's tree of text files that agents read and write across conversations; a memory attached to a thread         | [11](11-memory.md)                                                    |
 | session, thread, inbox                   | a group of threads; one independently advancing history; its queued input                                               | [05](05-runs.md)                                                      |
 | run, attempt                             | one accepted advancement of a thread with one agent revision; one fenced execution of a run by one worker               | [05](05-runs.md)                                                      |
 | checkpoint, display                      | the resumable state and the folded display items, committed together as immutable objects at each boundary              | [07](07-facts-and-delivery.md)                                        |

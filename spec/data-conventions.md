@@ -67,8 +67,8 @@ The shared Service allocator owns these prefix assignments; callers cannot choos
 
 | Suffix length | Allocated prefixes                                                                                                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 20            | `ap`, `conn`, `cprov`, `envtpl`, `eprov`, `mdl`, `mprov`, `org`, `sa`, `sk`, `usr`, `wprov`, `ws`                                                                        |
-| 24            | `apr`, `ast`, `env`, `inv`, `rb`, `sess`, `skr`                                                                                                                          |
+| 20            | `ap`, `conn`, `cprov`, `envtpl`, `eprov`, `mdl`, `mem`, `mprov`, `org`, `sa`, `sk`, `usr`, `wprov`, `ws`                                                                 |
+| 24            | `apr`, `ast`, `env`, `inv`, `mfile`, `rb`, `sess`, `skr`                                                                                                                 |
 | 28            | `inb`, `rat`, `run`                                                                                                                                                      |
 | 32            | `ase`, `audit`, `connop`, `ctl`, `ect`, `envoper`, `key`, `obx`, `prt`, `req`, `sec`, `sub`, `thread`, `wrk`, `envrenew`; every other valid kind defaults to this length |
 

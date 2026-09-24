@@ -47,6 +47,7 @@ A revision's `config` holds:
 | `retries`                         | How many times the model may retry failed tool calls (`tools`) and invalid output (`output`), 0–100 each.                                                                     |
 | `secret_requirements`             | Secrets the agent's tools need; see [Secrets](skills.md#secrets).                                                                                                             |
 | `default_environment_template_id` | An [environment template](environments.md#templates) from which each new thread gets its own primary environment.                                                             |
+| `memory_mounts`                   | [Memories](memory.md#mount-a-memory-on-a-thread) each new thread mounts when its first run is accepted, `[{name, memory_id, access}]`.                                        |
 
 Saving validates the whole configuration against the workspace: every referenced model, skill, connection, provider and agent must exist and be usable by you, and skill and subagent references without a `revision_id` are pinned to the current default revision. A revision therefore always runs exactly what it was saved with.
 
@@ -120,7 +121,8 @@ curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/threads" \
 The response (`201`, or `200` for a replay) is `{thread, entry, run}`: the new thread, the inbox entry holding the message, and the run it started, or `null` when it could not start yet. The new thread also accepts:
 
 - `mcp_headers`: [caller headers](#caller-headers) for its MCP connections;
-- `environments`: initial [mounts](environments.md#mount-environments-on-a-thread), `[{name, environment_id, working_directory?}]`.
+- `environments`: initial [mounts](environments.md#mount-environments-on-a-thread), `[{name, environment_id, working_directory?}]`;
+- `memories`: initial [memory mounts](memory.md#mount-a-memory-on-a-thread), `[{name, memory_id, access}]`.
 
 `POST …/sessions` creates an empty session to pass as `session_id`. `GET …/sessions` lists sessions with a `preview` of the latest run and filters by `q` (a session or thread ID), `agent_id`, `status`, `trigger`, `updated_after`, `updated_before` and `label`. `GET …/threads?session_id=…` lists a session's threads, and `PATCH` changes session and thread `labels`.
 
@@ -243,14 +245,14 @@ The response is the successor run (`201`, or `200` for a replay). Answer every i
 ## Interrupt, fork and archive
 
 - **Interrupt**: `POST …/runs/{run_id}/interrupt` cancels a run. A run that has not started is `cancelled` at once; a running run is asked to stop at its next safe point and shows `cancel_requested_at` until then. Interrupting a cancelled run returns it; a completed, waiting or failed run answers `409` (`run_completed`, ...). Console's **Stop** interrupts the active run.
-- **Fork**: `POST …/runs/{run_id}/fork` starts a new thread in the same session whose first run continues from a `completed` or `waiting` run, with a new message (the same body as a submission) and an `Idempotency-Key`. A fork of a waiting run closes its pending calls with the default answers. The fork shares the origin thread's mounted environments unless `fresh_environments` is `true`, and `environments` adds more. Failed and cancelled runs cannot be forked.
+- **Fork**: `POST …/runs/{run_id}/fork` starts a new thread in the same session whose first run continues from a `completed` or `waiting` run, with a new message (the same body as a submission) and an `Idempotency-Key`. A fork of a waiting run closes its pending calls with the default answers. The fork shares the origin thread's mounted environments unless `fresh_environments` is `true`, and `environments` adds more. It copies the origin thread's memory mounts, and `memories` adds more. Failed and cancelled runs cannot be forked.
 - **Archive**: `POST …/threads/{thread_id}/archive` with the thread's `If-Match` ends a thread permanently: pending messages are withdrawn, its mounts are removed, and an active run is interrupted. Its history stays readable.
 
 A failed or cancelled run never becomes history: the thread's next run continues from its last completed or waiting run.
 
 ## Results
 
-`GET …/runs/{run_id}` returns the run: `status`, `trigger`, `lineage` (`root`, `continue` or `fork`), `parent_run_id`, the `input` or `resume` that started it, `options`, `environment_mounts`, `pending`, `output`, `failure {code, message}`, `usage_at_seal`, `labels` and timestamps. `output` is the agent's final text, or JSON matching its `output_spec`.
+`GET …/runs/{run_id}` returns the run: `status`, `trigger`, `lineage` (`root`, `continue` or `fork`), `parent_run_id`, the `input` or `resume` that started it, `options`, `environment_mounts`, `memory_mounts`, `pending`, `output`, `failure {code, message}`, `usage_at_seal`, `labels` and timestamps. `output` is the agent's final text, or JSON matching its `output_spec`.
 
 - `GET …/threads/{thread_id}/runs` lists a thread's runs, newest first. A thread's `head_run_id` is its latest completed or waiting run, `current_run_id` its active run.
 - `GET …/runs/{run_id}/items` returns the run's display items (text and reasoning messages, tool calls and observations) with `position` and `complete`. Items of a run that ended while they were in progress read `interrupted`. A display keeps at most 4096 items; `dropped` counts the oldest items it removed beyond that limit.

@@ -88,9 +88,21 @@ One word, one meaning. If a new word is needed, add it here first. Definitions a
 | Word               | Meaning                                                                          | Not                                              |
 | ------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------ |
 | **environment**    | a sandbox instance a thread mounts, possibly shared ([06](06-environments.md))   | a template, a provider, a deployment environment |
-| **mount**          | one environment attached to a thread under a name                                | a live mount                                     |
+| **mount**          | one environment attached to a thread under a name                                | a live mount, a memory mount                     |
 | **desired mount**  | a thread's selection for future runs                                             | evidence of current use                          |
 | **accepted mount** | a run's frozen mount, which pins active use while the run is accepted or running | separate environment ownership                   |
+
+## Memory
+
+| Word                     | Meaning                                                                                                                                           | Not                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| **memory**               | a workspace's tree of text files that agents read and write across conversations, of kind `file` and type `postgres` ([11](11-memory.md))         | a run's history, the Harness context       |
+| **memory mount**         | a memory attached to a thread under a name with `read` or `write` access; each run freezes its thread's memory mounts ([11](11-memory.md#mounts)) | an environment mount                       |
+| **guide**                | the owner's guidance on what belongs in a memory and how it is organized, placed in a run's instructions                                          | memory content, a skill                    |
+| **always-loaded file**   | a path the memory's owner names in `always_load`, whose content leads the memory's context in every thread                                        | a pinned file an agent chooses             |
+| **memory file revision** | the content one change of a memory file replaced, with the change's attribution                                                                   | an agent or skill revision, a file version |
+| **change feed**          | a memory's changes numbered without gaps, which lists the paths changed after a position                                                          | an event stream, the outbox                |
+| **memory cursor**        | a run's position in a memory's change feed up to which its history holds that memory's context ([11](11-memory.md#execution))                     | a list cursor, a pointer                   |
 
 ## Facts, delivery and runtime
 

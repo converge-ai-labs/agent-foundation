@@ -108,6 +108,7 @@ nav:
           - Tools and connections: a13n-service/tools.md
           - Skills and secrets: a13n-service/skills.md
           - Environments: a13n-service/environments.md
+          - Memory: a13n-service/memory.md
           - Files and webhooks: a13n-service/files-and-webhooks.md
       - Integrate:
           - HTTP conventions: a13n-service/http.md
