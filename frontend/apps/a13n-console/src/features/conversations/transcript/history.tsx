@@ -10,8 +10,8 @@ import type { Schema } from "../../../shared/api";
 import { useAgent } from "../../agents/queries";
 import { conversationQueries, runPath, type ViewLevel } from "../api";
 import { emptyExecution } from "../execution";
-import { compareCursors, mergeRetainedItems } from "../projection";
-import { useRunStream } from "../run-stream";
+import { presentItems } from "../projection";
+import { useRunDisplay } from "../run-display";
 import { runTimeline } from "../timeline";
 import { DebugRunSection } from "./debug/run-section";
 import { DroppedItems } from "./dropped-items";
@@ -24,7 +24,7 @@ import styles from "./transcript.module.css";
 /**
  * The Runs this one continues, above it. Chat reaches further back on its own
  * as the reader scrolls up; Debug asks first, because every ancestor section
- * replays that Run's display. The lineage is read a page at a time, only once
+ * reads that Run's whole display. The lineage is read a page at a time, only once
  * the reader reaches past what is loaded.
  */
 export function HistoryTranscript({
@@ -163,7 +163,7 @@ function DebugAncestor({
     { workspace } = useWorkspace(),
     queries = conversationQueries(client, workspace.id);
   const runQuery = useQuery({ ...queries.run(runId), staleTime: 60_000 });
-  const live = useRunStream(runId);
+  const live = useRunDisplay(runId);
   const run = runQuery.data;
   const own = useOwnThread(run, thread);
   const timeline = useMemo(
@@ -171,11 +171,12 @@ function DebugAncestor({
       run &&
       runTimeline({
         run,
+        attempts: live.attempts,
         items: live.items,
         execution: live.execution,
         coverage: live.execution.coverage,
       }),
-    [run, live.items, live.execution],
+    [run, live.attempts, live.items, live.execution],
   );
   if (runQuery.isPending || own.pending)
     return <Loading variant="list" rows={3} />;
@@ -218,10 +219,7 @@ function HistoricalRun({
   const agent = useAgent(runQuery.data?.agent_id);
   const retained = useQuery({ ...queries.items(runId), staleTime: 60_000 });
   const items = useMemo(
-    () =>
-      [
-        ...mergeRetainedItems(new Map(), retained.data?.items ?? []).values(),
-      ].sort((a, b) => compareCursors(a.firstCursor, b.firstCursor)),
+    () => presentItems(retained.data?.items ?? []),
     [retained.data],
   );
   const run = runQuery.data;

@@ -1,29 +1,15 @@
-import type { Client, ThreadDelta } from "../../service-client";
+import { isRecord, type Client, type ThreadDelta } from "../../service-client";
 import { data, type Schema } from "../../shared/api";
-import { compareCursors, isObject } from "./projection";
 
 /**
- * One fact the Item projection and the execution view fold, at its
- * `"{attempt}-{sequence}"` stream position. Live deltas and the committed
- * display both become these events, so the folds never know which they read.
+ * One item of a Run's display: a committed item as the Service returned it, or
+ * one the thread stream changed since. A live event that carried no time
+ * leaves its item's times unknown.
  */
-export interface RunEvent {
-  cursor: string;
-  event: {
-    event_id: string;
-    /** `agui.<lowercased AG-UI type>`, or a Run lifecycle fact. */
-    event_type: string;
-    run_attempt_id: string | null;
-    harness_run_id: string | null;
-    item_id: string | null;
-    /** Null for a live event that carried no time. */
-    occurred_at: string | null;
-    payload: Record<string, unknown>;
-  };
-}
-
-/** A Run's attempts by number: the identity every event of an attempt carries. */
-export type Attempts = ReadonlyMap<number, Schema["AttemptView"]>;
+export type DisplayItem = Omit<Schema["Item"], "started_at" | "ended_at"> & {
+  started_at: string | null;
+  ended_at?: string | null;
+};
 
 /** The whole committed display of a Run, with the Run it describes. */
 export function readDisplay(
@@ -40,6 +26,32 @@ export function readDisplay(
     .then(data);
 }
 
+const POSITION = /^(0|[1-9]\d*)-(0|[1-9]\d*)$/;
+
+/** Orders two decimal counters of any size, written without leading zeros. */
+function compareCounters(a: string, b: string) {
+  return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
+}
+
+/** Orders two `{attempt}-{sequence}` display positions by their sign. */
+export function comparePositions(a: string, b: string): number {
+  const left = POSITION.exec(a),
+    right = POSITION.exec(b);
+  if (!left || !right) throw new Error("Invalid display position.");
+  return (
+    compareCounters(left[1]!, right[1]!) || compareCounters(left[2]!, right[2]!)
+  );
+}
+
+/** Items in the order they first appeared. */
+export function inDisplayOrder<T extends Pick<DisplayItem, "first_stream_id">>(
+  items: Iterable<T>,
+): T[] {
+  return [...items].sort((a, b) =>
+    comparePositions(a.first_stream_id, b.first_stream_id),
+  );
+}
+
 /** A transport fragment of a large CUSTOM event; the display keeps its observation. */
 export function isFragment(delta: ThreadDelta) {
   return (
@@ -47,41 +59,17 @@ export function isFragment(delta: ThreadDelta) {
   );
 }
 
-function identity(attempts: Attempts, cursor: string) {
-  const attempt = attempts.get(Number(cursor.split("-")[0]));
-  return {
-    run_attempt_id: attempt?.id ?? null,
-    harness_run_id: attempt?.harness_run_id ?? null,
-  };
+/** The display dropped the content of its oldest Items to stay within its limit. */
+export function isOmitted(content: unknown) {
+  return (
+    isRecord(content) &&
+    content.omitted === true &&
+    Object.keys(content).length === 1
+  );
 }
 
-/** The one translation of a live delta into the event the folds consume. */
-export function deltaEvent(delta: ThreadDelta, attempts: Attempts): RunEvent {
-  const { type, timestamp, ...fields } = delta.event;
-  const cursor = `${delta.attempt}-${delta.sequence}`;
-  // Observations are execution facts, not presented Items.
-  const item = delta.item?.kind === "observation" ? null : delta.item;
-  return {
-    cursor,
-    event: {
-      event_id: `${delta.run_id}:${cursor}`,
-      event_type: `agui.${type.toLowerCase()}`,
-      ...identity(attempts, cursor),
-      item_id: item?.id ?? null,
-      occurred_at:
-        typeof timestamp === "number"
-          ? new Date(timestamp).toISOString()
-          : null,
-      payload: {
-        ...fields,
-        ...(item ? { item_kind: item.kind, item_state: item.state } : {}),
-      },
-    },
-  };
-}
-
-/** Fields the display copied from the AG-UI event that opened an Item. */
-const OPENING_FIELDS = [
+/** Fields the display copies from the AG-UI events of a message or tool call. */
+const COPIED = [
   "messageId",
   "role",
   "toolCallId",
@@ -89,139 +77,111 @@ const OPENING_FIELDS = [
   "parentMessageId",
   "metadata",
 ];
+/** Events that append their `delta` to one content field. */
+const ACCUMULATED: Record<string, string | undefined> = {
+  TEXT_MESSAGE_CONTENT: "text",
+  REASONING_MESSAGE_CONTENT: "text",
+  TOOL_CALL_ARGS: "arguments",
+};
 
 /**
- * The committed display as the events the folds consume, in stream order:
- * each observation is the CUSTOM event it recorded, and each message or tool
- * call is the event that opened it and, once finished, the event that last
- * changed it, each at the time the display recorded for it. The Run's later
- * attempts and its seal are its lifecycle facts. Folding these rebuilds the
- * execution view; the Items themselves are then read from the display.
+ * Fold one live delta into the display item it changed, the way the Service
+ * folds the same event into the display it commits: the delta names the item
+ * and its state after the event, and the event supplies the content. A delta
+ * at or before the item's latest position is already folded.
  */
-export function displayEvents(
-  read: Schema["RunItems"],
-  attempts: Attempts,
-): RunEvent[] {
-  const events = new Map<string, RunEvent>();
-  const put = (
-    cursor: string,
-    event: Pick<RunEvent["event"], "event_id" | "event_type" | "payload">,
-    item: Schema["Item"] | null,
-    occurredAt: string | null,
-  ) =>
-    events.set(cursor, {
-      cursor,
-      event: {
-        ...event,
-        ...identity(attempts, cursor),
-        item_id: item?.id ?? null,
-        occurred_at: occurredAt,
-      },
-    });
-  for (const item of read.items) {
-    if (item.kind !== "observation") continue;
+export function applyDelta(
+  items: Map<string, DisplayItem>,
+  delta: ThreadDelta,
+) {
+  const { item: ref, event } = delta;
+  if (!ref) return;
+  const position = `${delta.attempt}-${delta.sequence}`;
+  const at =
+    typeof event.timestamp === "number"
+      ? new Date(event.timestamp).toISOString()
+      : null;
+  // A tool result the Harness did not present fails its call: the Service
+  // keeps the observation and names only the call in the delta, so the
+  // observation is held under its position until the display replaces it.
+  if (event.type === "CUSTOM" && ref.kind !== "observation")
     put(
-      item.first_stream_id,
-      { event_id: item.id, event_type: "agui.custom", payload: item.content },
-      null,
-      item.started_at,
+      items,
+      { id: position, kind: "observation", state: "completed" },
+      position,
+      at,
+      event,
     );
-  }
-  for (const item of read.items) {
-    if (item.kind === "observation") continue;
-    const { content } = item;
-    const once = item.first_stream_id === item.last_stream_id;
-    put(
-      item.first_stream_id,
-      {
-        event_id: `${item.id}:start`,
-        event_type: `agui.${item.kind}_start`,
-        payload: {
-          ...Object.fromEntries(
-            OPENING_FIELDS.filter((field) => field in content).map((field) => [
-              field,
-              content[field],
-            ]),
-          ),
-          item_kind: item.kind,
-          item_state: once ? item.state : "in_progress",
-        },
-      },
-      item,
-      item.started_at,
-    );
-    if (once || item.state === "in_progress" || item.state === "interrupted")
-      continue;
-    const ending = { item_kind: item.kind, item_state: item.state };
-    // A failed call ends on the Harness event that reported the failure.
-    const shared = events.get(item.last_stream_id);
-    if (shared) {
-      shared.event.item_id = item.id;
-      shared.event.payload = { ...shared.event.payload, ...ending };
-      continue;
-    }
-    put(
-      item.last_stream_id,
-      {
-        event_id: `${item.id}:end`,
-        event_type:
-          item.kind !== "tool_call"
-            ? `agui.${item.kind}_end`
-            : "result" in content
-              ? "agui.tool_call_result"
-              : "agui.tool_call_end",
-        payload: { ...ending, content: content.result },
-      },
-      item,
-      item.ended_at ?? null,
-    );
-  }
-  for (const attempt of attempts.values())
-    if (attempt.number > 1)
-      put(
-        `${attempt.number}-0`,
-        {
-          event_id: attempt.id,
-          event_type: "run_attempt.leased",
-          payload: {
-            data: {
-              attempt_number: attempt.number,
-              start_reason: attempt.start_reason,
-            },
-          },
-        },
-        null,
-        attempt.started_at ?? attempt.created_at,
-      );
-  const { run, position } = read;
-  if (
-    run.sealed_at &&
-    position &&
-    ["completed", "failed", "cancelled"].includes(run.status)
-  ) {
-    // A sealed display is final: its seal follows everything it covers.
-    const [attempt, sequence] = position.split("-").map(Number);
-    put(
-      `${attempt}-${sequence! + 1}`,
-      {
-        event_id: `${run.id}:${run.status}`,
-        event_type: `run.${run.status}`,
-        payload: { data: { failure: run.failure } },
-      },
-      null,
-      run.sealed_at,
-    );
-  }
-  return [...events.values()].sort((a, b) =>
-    compareCursors(a.cursor, b.cursor),
-  );
+  put(items, ref, position, at, event);
 }
 
-/** The display dropped the content of its oldest Items to stay within its limit. */
-export function isOmitted(content: unknown) {
-  return (
-    isObject(content) &&
-    content.omitted === true &&
-    Object.keys(content).length === 1
-  );
+function put(
+  items: Map<string, DisplayItem>,
+  ref: NonNullable<ThreadDelta["item"]>,
+  position: string,
+  at: string | null,
+  event: ThreadDelta["event"],
+) {
+  const previous = items.get(ref.id);
+  if (previous && comparePositions(position, previous.last_stream_id) <= 0)
+    return;
+  const started = previous ? previous.started_at : at;
+  const finished = ref.state === "completed" || ref.state === "failed";
+  items.set(ref.id, {
+    id: ref.id,
+    kind: ref.kind,
+    state: ref.state,
+    first_stream_id: previous?.first_stream_id ?? position,
+    last_stream_id: position,
+    started_at: started,
+    // An observation is timed by its first event.
+    ended_at: finished ? (ref.kind === "observation" ? started : at) : null,
+    content: content(ref.kind, event, previous?.content),
+  });
+}
+
+function content(
+  kind: Schema["ItemKind"],
+  event: ThreadDelta["event"],
+  previous: Schema["Item"]["content"] = {},
+): Schema["Item"]["content"] {
+  if (event.type === "CUSTOM") {
+    // The observation that failed a tool call leaves the call's content as it was.
+    if (kind !== "observation") return previous;
+    if (!("name" in previous)) return { name: event.name, value: event.value };
+    // A repeated observation continues its streamed tool-call arguments.
+    const held = argumentStream(previous.value);
+    const next = argumentStream(event.value);
+    if (!held || !next) return previous;
+    return {
+      ...previous,
+      value: {
+        ...held.value,
+        event: {
+          ...held.event,
+          delta: { ...held.delta, args_delta: held.text + next.text },
+        },
+      },
+    };
+  }
+  const next = { ...previous };
+  for (const field of COPIED) if (field in event) next[field] = event[field];
+  const accumulated = ACCUMULATED[event.type];
+  if (accumulated)
+    next[accumulated] = String(next[accumulated] ?? "") + String(event.delta);
+  if (event.type === "REASONING_ENCRYPTED_VALUE")
+    next.encrypted_value = event.encryptedValue;
+  if (event.type === "TOOL_CALL_RESULT")
+    next.result = String(event.content ?? "");
+  return next;
+}
+
+/** A streamed tool-call argument observation and the text it holds so far. */
+function argumentStream(value: unknown) {
+  if (!isRecord(value)) return null;
+  const { event } = value;
+  if (!isRecord(event)) return null;
+  const { delta } = event;
+  if (!isRecord(delta) || typeof delta.args_delta !== "string") return null;
+  return { value, event, delta, text: delta.args_delta };
 }

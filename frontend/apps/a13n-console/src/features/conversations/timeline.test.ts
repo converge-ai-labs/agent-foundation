@@ -1,109 +1,20 @@
 import { expect, it } from "vitest";
 import type { Schema } from "../../shared/api";
-import type { RunEvent } from "./display";
-import { applyRun, emptyExecution, type RunFold } from "./execution";
-import { compareCursors, type PresentedItem } from "./projection";
+import {
+  capability,
+  custom,
+  display,
+  finish,
+  lifecycle,
+  message,
+  observation,
+  reasoning,
+  tool,
+} from "./display-fixture";
+import { emptyExecution, runExecution } from "./execution";
+import { presentItems } from "./projection";
 import { runTimeline, type ModelEntry, type TimelineEntry } from "./timeline";
-
-let sequence = 0;
-function event(
-  type: string,
-  payload: RunEvent["event"]["payload"],
-  item?: string,
-  scope = "root",
-  occurredAt = "2026-09-12T00:00:00Z",
-): RunEvent {
-  return {
-    cursor: `${++sequence}-0`,
-    event: {
-      event_type: type,
-      event_id: `event-${sequence}`,
-      occurred_at: occurredAt,
-      payload,
-      item_id: item ?? null,
-      run_attempt_id: "attempt",
-      harness_run_id: scope,
-    },
-  };
-}
-function custom(
-  name: string,
-  payload: Record<string, unknown>,
-  scope = "root",
-) {
-  return event(
-    "agui.custom",
-    { name, value: { event: { payload } } },
-    undefined,
-    scope,
-  );
-}
-function capability(
-  name: string,
-  fields: Record<string, unknown>,
-  scope = "root",
-) {
-  return event(
-    "agui.custom",
-    { name, value: { event: { kind: name, ...fields } } },
-    undefined,
-    scope,
-  );
-}
-function lifecycle(
-  type: string,
-  request = "model-request-1",
-  scope = "root",
-  extra: Record<string, unknown> = {},
-) {
-  return custom(
-    "a13n.harness.lifecycle",
-    { type, request_id: request, ...extra },
-    scope,
-  );
-}
-function text(
-  id: string,
-  role: string,
-  delta: string,
-  scope = "root",
-  metadata?: Record<string, unknown>,
-) {
-  return [
-    event(
-      "agui.text_message_start",
-      { item_kind: "text_message", role, ...(metadata ? { metadata } : {}) },
-      id,
-      scope,
-    ),
-    event("agui.text_message_content", { delta }, id, scope),
-    event("item.completed", { item_state: "completed" }, id, scope),
-  ];
-}
-function reasoning(id: string, delta: string, scope = "root") {
-  return [
-    event(
-      "agui.reasoning_message_start",
-      { item_kind: "reasoning_message" },
-      id,
-      scope,
-    ),
-    event("agui.reasoning_message_content", { delta }, id, scope),
-  ];
-}
-function tool(name: string, id: string, scope = "root", sourceId = id) {
-  return event(
-    "agui.tool_call_start",
-    {
-      item_kind: "tool_call",
-      toolCallName: name,
-      toolCallId: id,
-      source_tool_call_id: sourceId,
-    },
-    id,
-    scope,
-  );
-}
+import { fixtureAttempt } from "./transcript/fixture";
 
 const run = {
   id: "run",
@@ -115,17 +26,19 @@ const run = {
   sealed_at: "2026-09-12T00:00:09Z",
 } as unknown as Schema["RunView"];
 
-function timeline(...events: RunEvent[]) {
-  const state: RunFold = events.reduce(applyRun, {
-    items: new Map<string, PresentedItem>(),
-    execution: emptyExecution(),
-  });
+function timeline(...entries: Parameters<typeof display>) {
+  return timelineOf([], ...entries);
+}
+function timelineOf(
+  attempts: Schema["AttemptView"][],
+  ...entries: Parameters<typeof display>
+) {
+  const items = display(...entries);
   return runTimeline({
     run,
-    items: [...state.items.values()].sort((a, b) =>
-      compareCursors(a.firstCursor, b.firstCursor),
-    ),
-    execution: state.execution,
+    attempts,
+    items: presentItems(items),
+    execution: runExecution(run, items),
     coverage: "complete",
   });
 }
@@ -135,23 +48,26 @@ function kinds(entries: readonly TimelineEntry[]) {
 function models(entries: readonly TimelineEntry[]) {
   return entries.filter((entry): entry is ModelEntry => entry.kind === "model");
 }
+const text = (
+  id: string,
+  role: string,
+  value: string,
+  metadata?: Record<string, unknown>,
+) => message(id, role, { text: value, ...(metadata ? { metadata } : {}) });
 
 it("orders the Run and nests reasoning, tool calls and the reply under their request", () => {
+  const call = tool("read_file", "call");
   const { entries } = timeline(
-    ...text("input", "user", "Ship the release"),
-    lifecycle("model_request_started", "model-request-1", "root", {
+    text("input", "user", "Ship the release"),
+    lifecycle("model_request_started", "model-request-1", {
       message_count: 4,
     }),
-    ...reasoning("thought", "Check the changelog"),
-    tool("read_file", "call"),
-    event(
-      "agui.tool_call_result",
-      { content: "ok", item_state: "completed" },
-      "call",
-    ),
+    reasoning("thought", "Check the changelog"),
+    call,
+    finish(call, { result: "ok" }),
     lifecycle("model_request_completed"),
     lifecycle("model_request_started", "model-request-2"),
-    ...text("reply", "assistant", "Released"),
+    text("reply", "assistant", "Released"),
     lifecycle("model_request_completed", "model-request-2"),
   );
   expect(kinds(entries)).toEqual(["model", "model"]);
@@ -169,7 +85,7 @@ it("orders the Run and nests reasoning, tool calls and the reply under their req
 it("reads a failed request as an error and keeps an unknown model unknown", () => {
   const { entries } = timeline(
     lifecycle("model_request_started"),
-    lifecycle("model_request_failed", "model-request-1", "root", {
+    lifecycle("model_request_failed", "model-request-1", {
       error_code: "provider_timeout",
     }),
   );
@@ -183,12 +99,12 @@ it("reads a failed request as an error and keeps an unknown model unknown", () =
 
 it("treats later user text as guidance and never the Run input", () => {
   const { entries } = timeline(
-    ...text("input", "user", "Ship the release"),
+    text("input", "user", "Ship the release"),
     lifecycle("model_request_started"),
-    ...text("notice", "user", "A subagent finished", "root", {
+    text("notice", "user", "A subagent finished", {
       "a13n.steering-source": "async_subagent",
     }),
-    ...text("steer", "user", "Skip the changelog"),
+    text("steer", "user", "Skip the changelog"),
   );
   const guidance = entries.filter((entry) => entry.kind === "guidance");
   expect(guidance).toHaveLength(2);
@@ -203,53 +119,35 @@ it("treats later user text as guidance and never the Run input", () => {
   ).toBe(false);
 });
 
-it("nests inline subagent work in its child scope and keeps a dispatch a dispatch", () => {
+it("presents an inline delegation on its call and keeps a dispatch a dispatch", () => {
+  const inline = tool("delegate", "inline");
+  const dispatch = tool("delegate", "async");
   const { entries, totals } = timeline(
     lifecycle("model_request_started"),
-    tool("delegate", "inline", "root", "native-inline"),
-    custom(
-      "a13n.harness.delegation",
-      {
-        type: "inline_delegation",
-        invocation_id: "delegation-1",
-        action: "started",
-        subagent: "Researcher",
+    inline,
+    custom("a13n.harness.delegation", {
+      type: "inline_delegation",
+      invocation_id: "delegation-1",
+      action: "started",
+      subagent: "Researcher",
+      status: "running",
+      parent_tool_call_id: "inline",
+    }),
+    dispatch,
+    finish(dispatch, {
+      result: JSON.stringify({
+        execution_id: "execution-9",
+        subagent_name: "reviewer",
         status: "running",
-        parent_run_id: "root",
-        parent_tool_call_id: "native-inline",
-        child_run_id: "child",
-      },
-      "child",
-    ),
-    lifecycle("model_request_started", "model-request-1", "child"),
-    tool("grep", "child-call", "child"),
-    lifecycle("model_request_completed", "model-request-1", "child"),
-    tool("delegate", "async", "root"),
-    event(
-      "agui.tool_call_result",
-      {
-        item_state: "completed",
-        content: JSON.stringify({
-          execution_id: "execution-9",
-          subagent_name: "reviewer",
-          status: "running",
-        }),
-      },
-      "async",
-    ),
+      }),
+    }),
   );
   const [request] = models(entries);
-  const [inline, dispatch] = request!.children;
-  expect(inline).toMatchObject({ kind: "subagent", name: "Researcher" });
-  const child = (inline as { children: TimelineEntry[] }).children;
-  expect(kinds(child)).toEqual(["model"]);
-  expect(kinds(models(child)[0]!.children)).toEqual(["tool"]);
-  expect(dispatch).toMatchObject({
-    kind: "subagent",
-    dispatchOnly: true,
-    childExecutionId: "execution-9",
-  });
-  expect(totals).toMatchObject({ modelCalls: 2, toolCalls: 3 });
+  expect(request!.children).toMatchObject([
+    { kind: "subagent", name: "Researcher", dispatchOnly: false },
+    { kind: "subagent", dispatchOnly: true, childExecutionId: "execution-9" },
+  ]);
+  expect(totals).toMatchObject({ modelCalls: 1, toolCalls: 2 });
 });
 
 it("nests CodeAct inner calls without counting the outer call twice", () => {
@@ -291,7 +189,7 @@ it("nests CodeAct inner calls without counting the outer call twice", () => {
 it("treats a usage record without counters as unknown, never as zero", () => {
   const { entries, totals } = timeline(
     lifecycle("model_request_started"),
-    lifecycle("model_request_failed", "model-request-1", "root", {
+    lifecycle("model_request_failed", "model-request-1", {
       error_code: "provider_error",
     }),
     custom("a13n.harness.usage", {
@@ -379,11 +277,10 @@ it("computes a patch from the reported edit content", () => {
 });
 
 it("keeps only the lifecycle facts that carry information, observations last", () => {
-  const { entries, totals } = timeline(
-    event("run.accepted", {}),
-    event("run_attempt.leased", { data: { attempt_number: 1 } }),
+  const { entries, totals } = timelineOf(
+    [fixtureAttempt(1), fixtureAttempt(2)],
     lifecycle("model_request_started"),
-    lifecycle("model_request_failed", "model-request-1", "root", {
+    lifecycle("model_request_failed", "model-request-1", {
       error_code: "provider_error",
     }),
     custom("a13n.harness.recovery", {
@@ -392,39 +289,25 @@ it("keeps only the lifecycle facts that carry information, observations last", (
       max_attempts: 3,
       delay_seconds: 2,
     }),
-    event("run.recovery", { reason: "worker_replaced" }),
-    event("run_attempt.leased", {
-      data: { attempt_number: 2, start_reason: "recovery" },
-    }),
-    lifecycle("model_request_started", "model-request-1", "second"),
-    event("agui.custom", { name: "plugin.progress", value: "working" }),
-    event("run.failed", {
-      data: { failure: { code: "run_failed", message: "No" } },
-    }),
+    lifecycle("model_request_started", "model-request-1", {}, { attempt: 2 }),
+    observation("plugin.progress", "working", { attempt: 2 }),
   );
-  // Accepting the Run, leasing its first attempt and its terminal fact never
-  // become rows: the heading and the Run's own outcome already say them.
-  expect(kinds(entries)).toEqual([
-    "model",
-    "event",
-    "event",
-    "event",
-    "model",
-    "other",
+  // The first attempt and the Run's own outcome never become rows: the
+  // heading and `runOutcome` already say them.
+  expect(kinds(entries)).toEqual(["model", "event", "event", "model", "other"]);
+  const notices = entries.flatMap((entry) =>
+    entry.kind === "event" ? [entry.notice] : [],
+  );
+  expect(notices).toEqual([
+    {
+      kind: "retry",
+      tone: "warning",
+      attempt: 2,
+      maxAttempts: 3,
+      delaySeconds: 2,
+    },
+    { kind: "attempt", tone: "neutral", attempt: 2, reason: "recovery" },
   ]);
-  const events = entries.filter((entry) => entry.kind === "event");
-  expect(events.map((entry) => entry.type)).toEqual([
-    "model_retry_scheduled",
-    "run.recovery",
-    "run_attempt.leased",
-  ]);
-  expect(events[0]).toMatchObject({
-    attempt: 2,
-    maxAttempts: 3,
-    delaySeconds: 2,
-  });
-  expect(events[1]).toMatchObject({ code: "worker_replaced" });
-  expect(events[2]).toMatchObject({ attempt: 2, code: "recovery" });
   expect(entries.at(-1)).toMatchObject({ kind: "other", count: 1 });
   expect(totals.modelCalls).toBe(2);
 });
@@ -437,8 +320,8 @@ it("reads a retained tool-call Item as the call it recorded", () => {
         id: "item_call",
         kind: "tool_call",
         state: "completed",
-        firstCursor: "1-0",
-        lastCursor: "1-1",
+        firstPosition: "1-0",
+        lastPosition: "1-1",
         startedAt: null,
         endedAt: null,
         text: "",
@@ -461,24 +344,20 @@ it("reads a retained tool-call Item as the call it recorded", () => {
 });
 
 it("propagates the consumer's coverage instead of inferring it from content", () => {
-  const state: RunFold = [lifecycle("model_request_started")].reduce(applyRun, {
-    items: new Map<string, PresentedItem>(),
-    execution: emptyExecution(),
-  });
+  const execution = runExecution(
+    run,
+    display(lifecycle("model_request_started")),
+  );
   const partial = runTimeline({
     run,
     items: [],
-    execution: state.execution,
+    execution,
     coverage: "partial",
   });
   expect(partial.coverage).toBe("partial");
   expect(partial.totals.costComplete).toBe(false);
   expect(
-    runTimeline({
-      run,
-      items: [],
-      execution: state.execution,
-      coverage: "unavailable",
-    }).coverage,
+    runTimeline({ run, items: [], execution, coverage: "unavailable" })
+      .coverage,
   ).toBe("unavailable");
 });

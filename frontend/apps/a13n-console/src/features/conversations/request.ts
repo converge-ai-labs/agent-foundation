@@ -1,6 +1,6 @@
 import type { Schema } from "../../shared/api";
 import { inputText } from "./input";
-import { isObject } from "./projection";
+import { isRecord } from "../../service-client";
 
 /**
  * What a Run was asked to do, resolved once from its source. `trigger` names
@@ -48,7 +48,7 @@ export function runRequest(run: Run, thread?: Thread | null): RunRequest {
  * is shown as the compact value it is, never expanded into a JSON document.
  */
 function subagentResult(input: unknown): RunRequest {
-  const payload = isObject(input) ? input : {};
+  const payload = isRecord(input) ? input : {};
   return {
     kind: "subagent_result",
     subagent: text(payload.subagent),
@@ -75,7 +75,7 @@ function parseObject(source: string): Record<string, unknown> | null {
   if (!source.trimStart().startsWith("{")) return null;
   try {
     const parsed: unknown = JSON.parse(source);
-    return isObject(parsed) ? parsed : null;
+    return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
   }

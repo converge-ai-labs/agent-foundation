@@ -1,23 +1,12 @@
-import type { RunEvent } from "./display";
-import {
-  applyRunEvent,
-  compareCursors,
-  isObject,
-  parseItemValue,
-  type PresentedItem,
-} from "./projection";
-import { applyExecutionObservation } from "./execution-observations";
+import { isRecord } from "../../service-client";
+import type { Schema } from "../../shared/api";
+import { comparePositions, type DisplayItem } from "./display";
+import { applyObservation } from "./execution-observations";
+import { parseItemValue, presentItem, type PresentedItem } from "./projection";
 import type { StepUsage } from "./usage";
 
 export type ExecutionKind =
-  | "llm"
-  | "tool"
-  | "hitl"
-  | "subagent"
-  | "compaction"
-  | "handoff"
-  | "memory"
-  | "codeact";
+  "llm" | "tool" | "hitl" | "subagent" | "compaction" | "handoff" | "codeact";
 
 /** Actual text before and after one applied edit, as the Toolset reported it. */
 export interface StepEdit {
@@ -28,18 +17,18 @@ export interface StepEdit {
 
 export interface ExecutionStep {
   id: string;
+  /** The attempt that ran the step; request and call IDs are unique only within it. */
   scope: string;
   kind: ExecutionKind;
   name?: string;
   state: string;
   items: string[];
-  /** Cursor and timestamps of the creating and terminal observations. */
-  cursor: string;
+  /** Position and times of the creating and terminal facts. */
+  position: string;
   startedAt: string | null;
   endedAt: string | null;
   callId?: string;
   parentId?: string;
-  childScope?: string;
   dispatchOnly?: boolean;
   /** Execution identity returned by an asynchronous delegation dispatch. */
   childExecutionId?: string;
@@ -67,16 +56,12 @@ export interface ExecutionObservation {
   occurredAt: string | null;
   detail: unknown;
 }
-/** One Run or RunAttempt lifecycle fact observed on the stream. */
-export interface ExecutionEvent {
+/** A model request the Harness scheduled to send again. */
+export interface ModelRetry {
   id: string;
-  type: string;
-  cursor: string;
+  position: string;
   occurredAt: string | null;
-  code: string | null;
-  message: string | null;
   attempt: number | null;
-  /** Only a scheduled model retry reports a budget and a delay. */
   maxAttempts: number | null;
   delaySeconds: number | null;
 }
@@ -85,182 +70,165 @@ export interface ExecutionUsage {
   model: StepUsage[];
   /** Every provider receipt in report order, whether or not it named a call. */
   provider: StepUsage[];
-  /** Applied record IDs, because reports repeat across replay. */
+  /** Applied record IDs, because reports repeat across attempts. */
   recordIds: string[];
 }
 /**
  * How much of a Run's execution history a consumer actually observed.
- * `complete` requires an uninterrupted attachment from the stream origin;
- * retained Items alone never establish it.
+ * `complete` requires a display that kept every item and stream output
+ * without a gap; retained Items alone never establish it.
  */
 export type ExecutionCoverage = "complete" | "partial" | "unavailable";
 
 export interface Execution {
   steps: ExecutionStep[];
   observations: ExecutionObservation[];
-  events: ExecutionEvent[];
+  retries: ModelRetry[];
   usage: ExecutionUsage;
   /** Context snapshots keyed by the model-request step they precede. */
   contextTokens: Record<string, number>;
-  lastCursor?: string;
-  /** The tool-call argument stream the last observation holds, and the cursor of its latest delta. */
-  streamedArguments?: { stream: string; cursor: string };
 }
 
 export function emptyExecution(): Execution {
   return {
     steps: [],
     observations: [],
-    events: [],
+    retries: [],
     usage: { model: [], provider: [], recordIds: [] },
     contextTokens: {},
   };
 }
 
-export function executionScope(
-  entry: RunEvent,
-  harnessRunId = entry.event.harness_run_id ?? "",
-) {
-  return `${entry.event.run_attempt_id ?? ""}/${harnessRunId}`;
+/** Where and when one fact of the display occurred, and the attempt that reported it. */
+export interface Occurrence {
+  id: string;
+  position: string;
+  occurredAt: string | null;
+  scope: string;
 }
 
-/** An action is settled once a terminal observation fixed its outcome. */
+/** An action is settled once a terminal fact fixed its outcome. */
 function settled(state: string) {
   return !["running", "waiting", "prepared", "in_progress"].includes(state);
 }
 
+/*
+ * `runExecution` owns the execution it builds, so the helpers below update it
+ * in place and return it; a display of thousands of Items is read again on
+ * every published frame.
+ */
+
 export function updateStep(
   execution: Execution,
-  entry: RunEvent,
+  at: Occurrence,
   id: string,
   update: Partial<ExecutionStep>,
 ): Execution {
-  return {
-    ...execution,
-    steps: execution.steps.map((step) =>
-      step.id === id
-        ? {
-            ...step,
-            ...update,
-            endedAt:
-              update.state !== undefined && settled(update.state)
-                ? entry.event.occurred_at
-                : (update.endedAt ?? step.endedAt),
-            detail:
-              isObject(step.detail) && isObject(update.detail)
-                ? { ...step.detail, ...update.detail }
-                : (update.detail ?? step.detail),
-          }
-        : step,
-    ),
+  const index = execution.steps.findLastIndex((step) => step.id === id);
+  const step = execution.steps[index];
+  if (!step) return execution;
+  execution.steps[index] = {
+    ...step,
+    ...update,
+    endedAt:
+      update.state !== undefined && settled(update.state)
+        ? at.occurredAt
+        : (update.endedAt ?? step.endedAt),
+    detail:
+      isRecord(step.detail) && isRecord(update.detail)
+        ? { ...step.detail, ...update.detail }
+        : (update.detail ?? step.detail),
   };
+  return execution;
 }
 
 export function addStep(
   execution: Execution,
-  entry: RunEvent,
-  step: Omit<ExecutionStep, "cursor" | "startedAt" | "endedAt">,
+  at: Occurrence,
+  step: Omit<ExecutionStep, "position" | "startedAt" | "endedAt">,
 ): Execution {
-  return execution.steps.some((existing) => existing.id === step.id)
-    ? execution
-    : {
-        ...execution,
-        steps: [
-          ...execution.steps,
-          {
-            ...step,
-            cursor: entry.cursor,
-            startedAt: entry.event.occurred_at,
-            endedAt: null,
-          },
-        ],
-      };
+  if (execution.steps.findLastIndex((existing) => existing.id === step.id) < 0)
+    execution.steps.push({
+      ...step,
+      position: at.position,
+      startedAt: at.occurredAt,
+      endedAt: null,
+    });
+  return execution;
 }
 
 export function observe(
   execution: Execution,
-  entry: RunEvent,
+  at: Occurrence,
   name: string,
   detail: unknown,
 ): Execution {
-  return {
-    ...execution,
-    observations: [
-      ...execution.observations,
-      {
-        id: entry.event.event_id,
-        name,
-        occurredAt: entry.event.occurred_at,
-        detail,
-      },
-    ],
-  };
+  execution.observations.push({
+    id: at.id,
+    name,
+    occurredAt: at.occurredAt,
+    detail,
+  });
+  return execution;
 }
 
-const LIFECYCLE_EVENTS = [
-  "run.accepted",
-  "run_attempt.leased",
-  "run.recovery",
-  "run.waiting",
-  "run.completed",
-  "run.failed",
-  "run.cancelled",
-];
-const TERMINAL_EVENTS = ["run.completed", "run.failed", "run.cancelled"];
+/**
+ * One fact of the display, at its position: an observation, a message or
+ * tool call that opened, or a tool call that finished. A failed call finishes
+ * on the observation that reported the failure, before that observation.
+ */
+type Fact =
+  | { kind: "opened"; at: Occurrence; item: PresentedItem; callId?: string }
+  | { kind: "finished"; at: Occurrence; item: PresentedItem }
+  | { kind: "observation"; at: Occurrence; content: DisplayItem["content"] };
 
-/** Retain one lifecycle fact without creating an execution action or count. */
-export function recordEvent(
-  execution: Execution,
-  entry: RunEvent,
-  type: string,
-  fields: Pick<
-    ExecutionEvent,
-    "code" | "message" | "attempt" | "maxAttempts" | "delaySeconds"
-  >,
-): Execution {
-  return {
-    ...execution,
-    events: [
-      ...execution.events,
-      {
-        id: entry.event.event_id,
-        type,
-        cursor: entry.cursor,
-        occurredAt: entry.event.occurred_at,
-        ...fields,
-      },
-    ],
-  };
+const FACT_ORDER: Record<Fact["kind"], number> = {
+  opened: 0,
+  finished: 1,
+  observation: 2,
+};
+
+const attemptOf = (position: string) => position.split("-")[0]!;
+
+function occurrence(
+  id: string,
+  position: string,
+  occurredAt: string | null,
+): Occurrence {
+  return { id, position, occurredAt, scope: attemptOf(position) };
 }
 
-function lifecycleFact(entry: RunEvent): ExecutionEvent {
-  const { event } = entry;
-  const data = isObject(event.payload.data) ? event.payload.data : {};
-  const failure = isObject(data.failure) ? data.failure : {};
-  // Why this fact happened, in the order the observation reports it: a
-  // failure, a recovery reason, a wait reason, or why an attempt started.
-  const code =
-    typeof failure.code === "string"
-      ? failure.code
-      : typeof event.payload.reason === "string"
-        ? event.payload.reason
-        : typeof data.wait_reason === "string"
-          ? data.wait_reason
-          : typeof data.start_reason === "string"
-            ? data.start_reason
-            : null;
-  return {
-    id: event.event_id,
-    type: event.event_type,
-    cursor: entry.cursor,
-    occurredAt: event.occurred_at,
-    code,
-    message: typeof failure.message === "string" ? failure.message : null,
-    attempt:
-      typeof data.attempt_number === "number" ? data.attempt_number : null,
-    maxAttempts: null,
-    delaySeconds: null,
-  };
+function facts(items: readonly DisplayItem[]): Fact[] {
+  const list: Fact[] = [];
+  for (const item of items) {
+    const opened = occurrence(item.id, item.first_stream_id, item.started_at);
+    if (item.kind === "observation") {
+      list.push({ kind: "observation", at: opened, content: item.content });
+      continue;
+    }
+    const presented = presentItem(item);
+    const callId = item.content.toolCallId;
+    list.push({
+      kind: "opened",
+      at: opened,
+      item: presented,
+      ...(typeof callId === "string" ? { callId } : {}),
+    });
+    if (
+      item.kind === "tool_call" &&
+      (item.state === "completed" || item.state === "failed")
+    )
+      list.push({
+        kind: "finished",
+        at: occurrence(item.id, item.last_stream_id, item.ended_at ?? null),
+        item: presented,
+      });
+  }
+  return list.sort(
+    (a, b) =>
+      comparePositions(a.at.position, b.at.position) ||
+      FACT_ORDER[a.kind] - FACT_ORDER[b.kind],
+  );
 }
 
 /**
@@ -269,139 +237,126 @@ function lifecycleFact(entry: RunEvent): ExecutionEvent {
  */
 function attachToRequest(
   execution: Execution,
-  entry: RunEvent,
-  scope: string,
+  at: Occurrence,
+  itemId: string,
+): Execution {
+  const model = execution.steps.findLast(
+    (step) => step.scope === at.scope && step.kind === "llm",
+  );
+  model?.items.push(itemId);
+  return execution;
+}
+
+function opened(
+  execution: Execution,
+  at: Occurrence,
+  item: PresentedItem,
+  callId: string | undefined,
+): Execution {
+  if (item.display === false) return execution;
+  if (item.kind === "tool_call") {
+    const question = item.toolName === "ask_user_question";
+    const next = addStep(execution, at, {
+      id: item.id,
+      scope: at.scope,
+      kind: question
+        ? "hitl"
+        : item.toolName === "summarize"
+          ? "handoff"
+          : "tool",
+      name: item.toolName,
+      state: "running",
+      items: [item.id],
+      ...(question ? { hitl: "question" as const } : {}),
+      ...(callId ? { callId } : {}),
+    });
+    return attachToRequest(next, at, item.id);
+  }
+  return item.kind === "reasoning_message" ||
+    (item.kind === "text_message" && item.role === "assistant")
+    ? attachToRequest(execution, at, item.id)
+    : execution;
+}
+
+/** A finished call is the outcome of its step, unless a later fact specialized it. */
+function finished(
+  execution: Execution,
+  at: Occurrence,
   item: PresentedItem,
 ): Execution {
-  const itemId = item.id;
-  if (
-    item.firstCursor !== entry.cursor ||
-    execution.steps.some(
-      (step) => step.kind === "llm" && step.items.includes(itemId),
+  let next = execution;
+  if (item.display === false) return next;
+  if (item.toolName === "delegate") {
+    const result = parseItemValue(item.result);
+    if (
+      isRecord(result) &&
+      typeof result.execution_id === "string" &&
+      typeof result.subagent_name === "string"
     )
+      next = updateStep(next, at, item.id, {
+        kind: "subagent",
+        name: result.subagent_name,
+        state: item.state,
+        dispatchOnly: true,
+        childExecutionId: result.execution_id,
+      });
+  }
+  const step = next.steps.findLast((step) => step.id === item.id);
+  if (
+    step &&
+    step.state !== item.state &&
+    (["tool", "hitl"].includes(step.kind) ||
+      (step.kind === "handoff" && !isRecord(step.detail)))
+  )
+    next = updateStep(next, at, step.id, { state: item.state });
+  return next;
+}
+
+/** Actions a sealed Run left unresolved did not finish on their own. */
+function closeAtSeal(
+  execution: Execution,
+  run: Pick<Schema["RunView"], "status" | "sealed_at">,
+): Execution {
+  if (
+    !run.sealed_at ||
+    !["completed", "failed", "cancelled"].includes(run.status)
   )
     return execution;
-  const model = execution.steps.findLast(
-    (step) => step.scope === scope && step.kind === "llm",
-  );
-  if (!model) return execution;
   return {
     ...execution,
     steps: execution.steps.map((step) =>
-      step.id === model.id ? { ...step, items: [...step.items, itemId] } : step,
+      step.state === "running" || step.state === "waiting"
+        ? {
+            ...step,
+            state: run.status === "completed" ? "unknown" : "interrupted",
+            endedAt: run.sealed_at,
+          }
+        : step,
     ),
   };
 }
 
 /**
- * Fold one Run event into the execution view. `items` is the shared projection
- * already updated with this event; execution keeps no second copy.
+ * The execution view of one Run, read from its display in stream order: model
+ * requests, the calls and content they emitted, and what the observations
+ * reported about them. The Items themselves stay in the display; steps only
+ * name the Items they present.
  */
-function applyExecution(
-  current: Execution,
-  entry: RunEvent,
-  items: ReadonlyMap<string, PresentedItem>,
+export function runExecution(
+  run: Pick<Schema["RunView"], "status" | "sealed_at">,
+  items: readonly DisplayItem[],
 ): Execution {
-  if (
-    current.lastCursor &&
-    compareCursors(entry.cursor, current.lastCursor) <= 0
-  )
-    return current;
-  const { event } = entry;
-  const scope = executionScope(entry);
-  let next: Execution = { ...current, lastCursor: entry.cursor };
-  const item = event.item_id ? items.get(event.item_id) : undefined;
-  if (item?.kind === "tool_call" && item.display !== false) {
-    const id = `${scope}/item/${item.id}`;
-    if (event.event_type === "agui.tool_call_start") {
-      const question = item.toolName === "ask_user_question";
-      next = addStep(next, entry, {
-        id,
-        scope,
-        kind: question
-          ? "hitl"
-          : item.toolName === "summarize"
-            ? "handoff"
-            : "tool",
-        name: item.toolName,
-        state: "running",
-        items: [item.id],
-        ...(question ? { hitl: "question" as const } : {}),
-        callId:
-          typeof event.payload.source_tool_call_id === "string"
-            ? event.payload.source_tool_call_id
-            : typeof event.payload.toolCallId === "string"
-              ? event.payload.toolCallId
-              : undefined,
-      });
+  const presented = new Map<string, PresentedItem>();
+  let execution = emptyExecution();
+  for (const fact of facts(items)) {
+    if (fact.kind === "observation")
+      execution = applyObservation(execution, fact.at, fact.content, presented);
+    else if (fact.kind === "finished")
+      execution = finished(execution, fact.at, fact.item);
+    else {
+      presented.set(fact.item.id, fact.item);
+      execution = opened(execution, fact.at, fact.item, fact.callId);
     }
-    next = attachToRequest(next, entry, scope, item);
-    if (
-      item.toolName === "delegate" &&
-      event.event_type === "agui.tool_call_result"
-    ) {
-      const result = parseItemValue(item.result);
-      if (
-        isObject(result) &&
-        typeof result.execution_id === "string" &&
-        typeof result.subagent_name === "string"
-      ) {
-        next = updateStep(next, entry, id, {
-          kind: "subagent",
-          name: result.subagent_name,
-          state: item.state,
-          dispatchOnly: true,
-          childExecutionId: result.execution_id,
-        });
-      }
-    }
-    const step = next.steps.find((step) => step.id === id);
-    if (
-      step &&
-      (["tool", "hitl"].includes(step.kind) ||
-        (step.kind === "handoff" && !isObject(step.detail)))
-    ) {
-      const state = item.state === "in_progress" ? "running" : item.state;
-      if (step.state !== state) next = updateStep(next, entry, id, { state });
-    }
-  } else if (
-    item &&
-    item.display !== false &&
-    (item.kind === "reasoning_message" ||
-      (item.kind === "text_message" && item.role === "assistant"))
-  ) {
-    next = attachToRequest(next, entry, scope, item);
   }
-  if (event.event_type === "agui.custom")
-    next = applyExecutionObservation(next, entry, items);
-  if (LIFECYCLE_EVENTS.includes(event.event_type))
-    next = { ...next, events: [...next.events, lifecycleFact(entry)] };
-  if (TERMINAL_EVENTS.includes(event.event_type)) {
-    next = {
-      ...next,
-      steps: next.steps.map((step) =>
-        step.state === "running" || step.state === "waiting"
-          ? {
-              ...step,
-              state:
-                event.event_type === "run.completed"
-                  ? "unknown"
-                  : "interrupted",
-              endedAt: event.occurred_at,
-            }
-          : step,
-      ),
-    };
-  }
-  return next;
-}
-
-/** One stream event applied once: Items first, then the execution view. */
-export interface RunFold {
-  items: Map<string, PresentedItem>;
-  execution: Execution;
-}
-export function applyRun(state: RunFold, entry: RunEvent): RunFold {
-  const items = applyRunEvent(state.items, entry);
-  return { items, execution: applyExecution(state.execution, entry, items) };
+  return closeAtSeal(execution, run);
 }

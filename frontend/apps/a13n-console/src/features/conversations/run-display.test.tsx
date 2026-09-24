@@ -20,8 +20,12 @@ import {
 } from "../../service-client";
 import type { Schema } from "../../shared/api";
 import { conversationQueries, invalidateConversation } from "./api";
-import { useRunStream } from "./run-stream";
-import { fixtureRun, fixtureThread } from "./transcript/fixture";
+import { useRunDisplay } from "./run-display";
+import {
+  fixtureAttempt,
+  fixtureRun,
+  fixtureThread,
+} from "./transcript/fixture";
 
 let client: Client;
 let cache: QueryClient;
@@ -79,21 +83,9 @@ function response(request: Request) {
   if (path.endsWith("/items")) return Response.json(display);
   if (path.endsWith("/attempts"))
     return Response.json({
-      items: attempts.map((number) => ({
-        id: `att_${number}`,
-        run_id: "run_one",
-        number,
-        status: "running",
-        start_reason: number === 1 ? "initial" : "recovery",
-        yield_reason: null,
-        failure: null,
-        harness_run_id: `harness_${number}`,
-        worker_build: "build",
-        replaces_attempt_id: null,
-        started_at: null,
-        finished_at: null,
-        created_at: "2026-09-20T10:00:00.000Z",
-      })),
+      items: attempts.map((number) =>
+        fixtureAttempt(number, { run_id: "run_one", status: "running" }),
+      ),
     });
   if (path.endsWith("/threads/thread_one")) return Response.json(thread);
   return Response.json(display.run);
@@ -160,7 +152,7 @@ function Readers() {
   return <output data-testid="status">{current.data?.status}</output>;
 }
 function Live({ live }: { live: boolean }) {
-  const stream = useRunStream("run_one", { live });
+  const stream = useRunDisplay("run_one", { live });
   return (
     <>
       <output data-testid="live">{stream.state}</output>
@@ -173,6 +165,14 @@ function Live({ live }: { live: boolean }) {
           .join("|")}
       </output>
       <output data-testid="coverage">{stream.execution.coverage}</output>
+      <output data-testid="steps">
+        {stream.execution.steps
+          .map((step) => `${step.kind}:${step.state}`)
+          .join("|")}
+      </output>
+      <output data-testid="attempts">
+        {stream.attempts.map((attempt) => attempt.number).join("|")}
+      </output>
       <output data-testid="gap">{String(stream.gap)}</output>
       <output data-testid="incomplete">{String(stream.incomplete)}</output>
       <output data-testid="dropped">{stream.dropped}</output>
@@ -240,7 +240,7 @@ afterEach(() => {
 it("continues the committed display with the Thread's later deltas", async () => {
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
-  // The stream replays what the display already covers before what it does not.
+  // The stream repeats what the display already covers before what it does not.
   await act(async () => {
     frames.push(delta(1, 1, "Hello"), delta(1, 2, " world"));
   });
@@ -381,6 +381,74 @@ it("learns a new attempt's identity once before folding its deltas", async () =>
   });
   await waitFor(() => expect(text()).toBe("Hello|Second try"));
   expect(pathRequests("/attempts")).toHaveLength(2);
+  expect(screen.getByTestId("attempts").textContent).toBe("1|2");
+});
+
+const observed = (
+  sequence: number,
+  name: string,
+  value: unknown,
+): ThreadFrame => ({
+  type: "delta",
+  cursor: `c1-${sequence}`,
+  delta: {
+    run_id: "run_one",
+    attempt: 1,
+    sequence,
+    event: { type: "CUSTOM", name, value },
+    item: { id: `obs_${sequence}`, kind: "observation", state: "completed" },
+  },
+});
+
+it("reads the execution from the observations the stream delivers", async () => {
+  render(<View />);
+  await waitFor(() => expect(text()).toBe("Hello"));
+  const lifecycle = (sequence: number, type: string) =>
+    observed(sequence, "a13n.harness.lifecycle", {
+      event: { payload: { type, request_id: "model-request-1" } },
+    });
+  await act(async () => {
+    frames.push(lifecycle(2, "model_request_started"));
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId("steps").textContent).toBe("llm:running"),
+  );
+  await act(async () => {
+    frames.push(lifecycle(3, "model_request_completed"));
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId("steps").textContent).toBe("llm:completed"),
+  );
+});
+
+it("waits for the next boundary's display to hold an event the stream fragmented", async () => {
+  render(<View />);
+  await waitFor(() => expect(text()).toBe("Hello"));
+  expect(pathRequests("/items")).toHaveLength(1);
+  await act(async () => {
+    frames.push(observed(2, "a13n.stream.fragment", { part: 1 }));
+  });
+  display = {
+    ...display,
+    items: [
+      message("Hello", "1-0", "1-1"),
+      {
+        id: "obs_2",
+        kind: "observation",
+        state: "completed",
+        first_stream_id: "1-2",
+        last_stream_id: "1-2",
+        started_at: "2026-09-20T10:00:02.000Z",
+        ended_at: "2026-09-20T10:00:02.000Z",
+        content: { name: "plugin.large", value: "whole" },
+      },
+    ],
+    position: "1-2",
+  };
+  await act(async () => {
+    frames.push(boundary(1, 2));
+  });
+  await waitFor(() => expect(pathRequests("/items")).toHaveLength(2));
 });
 
 it("reconciles the sealed display once the Thread's current Run moves on", async () => {

@@ -1,25 +1,23 @@
 import { structuredPatch } from "diff";
 import { sumCosts } from "../../shared/cost";
+import { isRecord } from "../../service-client";
 import type { Schema } from "../../shared/api";
-import {
-  compareCursors,
-  isObject,
-  parseItemValue,
-  type PresentedItem,
-} from "./projection";
+import { comparePositions } from "./display";
+import { parseItemValue, type PresentedItem } from "./projection";
 import type {
   Execution,
   ExecutionCoverage,
   ExecutionObservation,
   ExecutionStep,
 } from "./execution";
-import { lifecycleNotice } from "./lifecycle";
+import { attemptEvent, retryEvent, type LifecycleNotice } from "./lifecycle";
 import { reportsTokens, type StepUsage } from "./usage";
 
 /**
  * One Run rendered as a single ordered timeline. This module is pure: it reads
- * the Item projection and the folded execution view and derives nothing the
- * stream did not report. Values the Run never reported stay `null`, never zero.
+ * the presented Items, the execution view and the Run's attempts, and derives
+ * nothing the Run did not report. Values the Run never reported stay `null`,
+ * never zero.
  */
 
 export interface TimelineEdit {
@@ -87,13 +85,7 @@ export interface ContentEntry extends EntryBase {
 
 export interface EventEntry extends EntryBase {
   kind: "event";
-  type: string;
-  code: string | null;
-  message: string | null;
-  attempt: number | null;
-  /** Only a scheduled model retry reports a budget and a delay. */
-  maxAttempts: number | null;
-  delaySeconds: number | null;
+  notice: LifecycleNotice;
   occurredAt: string | null;
 }
 
@@ -125,21 +117,19 @@ export interface RunTimeline {
   coverage: ExecutionCoverage;
 }
 
-/** Terminal Run facts are presented once, from the Run itself, at the end. */
-const RUN_OUTCOMES = [
-  "run.completed",
-  "run.failed",
-  "run.cancelled",
-  "run.waiting",
-];
-
+/**
+ * The Run's terminal fact is not an entry: `runOutcome` presents it once,
+ * from the Run itself, at the end.
+ */
 export function runTimeline({
   run,
+  attempts = [],
   items,
   execution,
   coverage,
 }: {
   run: Schema["RunView"];
+  attempts?: readonly Schema["AttemptView"][];
   items: readonly PresentedItem[];
   execution: Execution;
   coverage: ExecutionCoverage;
@@ -153,12 +143,6 @@ export function runTimeline({
   for (const step of execution.steps)
     if (step.kind === "llm")
       for (const id of step.items) requestOfItem.set(id, step);
-  const scopeOwner = new Map<string, string>(
-    execution.steps.flatMap((step) =>
-      step.childScope ? [[step.childScope, step.id] as const] : [],
-    ),
-  );
-
   /** Nesting uses explicit correlation only; nothing is inferred from order. */
   function parentOf(step: ExecutionStep): string | null {
     if (step.parentId) return step.parentId;
@@ -172,11 +156,11 @@ export function runTimeline({
         (candidate) =>
           candidate.kind === "llm" &&
           candidate.scope === step.scope &&
-          compareCursors(candidate.cursor, step.cursor) < 0,
+          comparePositions(candidate.position, step.position) < 0,
       );
       if (request) return request.id;
     }
-    return scopeOwner.get(step.scope) ?? null;
+    return null;
   }
 
   const children = new Map<string, Positioned[]>();
@@ -190,7 +174,7 @@ export function runTimeline({
   let requestIndex = 0;
   for (const step of execution.steps)
     place(parentOf(step), {
-      cursor: step.cursor,
+      position: step.position,
       entry:
         step.kind === "llm"
           ? modelEntry(step, ++requestIndex, execution)
@@ -201,7 +185,7 @@ export function runTimeline({
   // tool-family step already represents are that step, not a second entry.
   let firstUserText = true;
   for (const item of [...items].sort((a, b) =>
-    compareCursors(a.firstCursor, b.firstCursor),
+    comparePositions(a.firstPosition, b.firstPosition),
   )) {
     if (item.display === false || ownerOfItem.has(item.id)) continue;
     const content = contentEntry(item, () => {
@@ -215,36 +199,22 @@ export function runTimeline({
       content ?? (item.kind === "tool_call" ? retainedAction(item) : null);
     if (entry)
       place(requestOfItem.get(item.id)?.id ?? null, {
-        cursor: item.firstCursor,
+        position: item.firstPosition,
         entry,
       });
   }
 
-  for (const event of execution.events) {
-    const entry: EventEntry = {
-      kind: "event",
-      id: event.id,
-      type: event.type,
-      code: event.code,
-      message: event.message,
-      attempt: event.attempt,
-      maxAttempts: event.maxAttempts,
-      delaySeconds: event.delaySeconds,
-      occurredAt: event.occurredAt,
-      startedAt: event.occurredAt,
-      endedAt: event.occurredAt,
-      durationMs: null,
-      state: "observed",
-    };
-    // Routine lifecycle noise stays in the Details card, and the Run presents
-    // its own terminal fact once, through `runOutcome`.
-    if (RUN_OUTCOMES.includes(event.type) || !lifecycleNotice(entry)) continue;
-    place(null, { cursor: event.cursor, entry });
+  // A later attempt starts before anything it displayed.
+  for (const attempt of attempts) {
+    const entry = attemptEvent(attempt);
+    if (entry) place(null, { position: `${attempt.number}-0`, entry });
   }
+  for (const retry of execution.retries)
+    place(null, { position: retry.position, entry: retryEvent(retry) });
 
   function assemble(positioned: Positioned[]): TimelineEntry[] {
     return [...positioned]
-      .sort((a, b) => compareCursors(a.cursor, b.cursor))
+      .sort((a, b) => comparePositions(a.position, b.position))
       .map(({ entry }) => {
         const nested = children.get(entry.id);
         if (entry.kind === "model") {
@@ -263,7 +233,7 @@ export function runTimeline({
 }
 
 interface Positioned {
-  cursor: string;
+  position: string;
   entry: TimelineEntry;
 }
 
@@ -316,7 +286,7 @@ function actionEntry(
   byId: ReadonlyMap<string, PresentedItem>,
 ): ActionEntry {
   const item = step.items.map((id) => byId.get(id)).find(Boolean);
-  const detail = isObject(step.detail) ? step.detail : {};
+  const detail = isRecord(step.detail) ? step.detail : {};
   return {
     kind,
     id: step.id,

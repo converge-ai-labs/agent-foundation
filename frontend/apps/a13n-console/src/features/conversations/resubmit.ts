@@ -1,5 +1,5 @@
 import type { Schema } from "../../shared/api";
-import { isObject } from "./projection";
+import { isRecord } from "../../service-client";
 
 /**
  * There is no retry operation: running the same input again is submitting its
@@ -49,9 +49,9 @@ export function entryResubmission(
 export function messagePayload(
   input: unknown,
 ): Schema["MessagePayload"] | null {
-  if (!isObject(input) || !Array.isArray(input.content)) return null;
+  if (!isRecord(input) || !Array.isArray(input.content)) return null;
   const content = input.content.flatMap((part): Schema["Part"][] => {
-    if (!isObject(part)) return [];
+    if (!isRecord(part)) return [];
     if (part.type === "text" && typeof part.text === "string")
       return [{ type: "text", text: part.text }];
     if (part.type === "asset" && typeof part.asset_id === "string")

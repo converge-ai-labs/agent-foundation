@@ -12,8 +12,8 @@ function item(
     id,
     kind,
     state: "completed",
-    firstCursor: "1-0",
-    lastCursor: "1-0",
+    firstPosition: "1-0",
+    lastPosition: "1-0",
     startedAt: null,
     endedAt: null,
     text: "",
@@ -38,8 +38,8 @@ const blocksOf = (items: PresentedItem[], runState = "completed") =>
     retainedTimeline(
       items.map((entry, index) => ({
         ...entry,
-        firstCursor: `${index + 1}-0`,
-        lastCursor: `${index + 1}-0`,
+        firstPosition: `${index + 1}-0`,
+        lastPosition: `${index + 1}-0`,
       })),
     ).entries,
     runState,

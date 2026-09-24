@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import { CopyButton } from "../../../../shared/identity";
 import { MarkdownContent } from "../../../../shared/markdown";
 import { formatDuration, formatTokens } from "../../format";
-import { lifecycleNotice, type LifecycleNotice } from "../../lifecycle";
 import type {
   ActionEntry,
   ContentEntry,
@@ -251,19 +250,17 @@ export function EventRow({
   action?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const notice = lifecycleNotice(entry);
-  if (!notice) return null;
   const Glyph = entryGlyph(entry);
   // A fact with no known time has no offset to show.
   const offset = Math.max(0, Date.parse(entry.occurredAt ?? "") - scope.start);
   return (
     <div className={styles.entry} data-kind="event">
-      <div className={styles.eventRow} data-tone={notice.tone}>
+      <div className={styles.eventRow} data-tone={entry.notice.tone}>
         <span className={styles.marker} aria-hidden="true">
           <Glyph size={13} />
         </span>
         <span className={styles.rowBody}>
-          <span className={styles.eventName}>{noticeText(notice, t)}</span>
+          <span className={styles.eventName}>{entryLabel(entry, t).name}</span>
         </span>
         <span className={styles.rowMeta}>
           {action}
@@ -276,40 +273,4 @@ export function EventRow({
       </div>
     </div>
   );
-}
-
-/** The words a lifecycle fact is worth; the decision itself is `lifecycle.ts`. */
-function noticeText(notice: LifecycleNotice, t: TFunction): string {
-  if (notice.kind === "attempt")
-    return notice.reason
-      ? t("Attempt {{attempt}} started · {{reason}}", {
-          attempt: notice.attempt,
-          reason: notice.reason,
-        })
-      : t("Attempt {{attempt}} started", { attempt: notice.attempt });
-  if (notice.kind === "recovery")
-    return notice.reason
-      ? t("Recovery · {{reason}}: events before this point may be missing", {
-          reason: notice.reason,
-        })
-      : t("Recovery: events before this point may be missing");
-  if (notice.kind === "retry")
-    return notice.attempt !== null &&
-      notice.maxAttempts !== null &&
-      notice.delaySeconds !== null
-      ? t("Retry {{attempt}} of {{max}} in {{delay}}s", {
-          attempt: notice.attempt,
-          max: notice.maxAttempts,
-          delay: notice.delaySeconds,
-        })
-      : t("Model retry scheduled");
-  const head =
-    notice.status === "failed"
-      ? t("Run failed")
-      : notice.status === "cancelled"
-        ? t("Run cancelled")
-        : notice.waitingOn === "application"
-          ? t("Waiting for the application")
-          : t("Waiting for you");
-  return [head, notice.reason, notice.message].filter(Boolean).join(" · ");
 }

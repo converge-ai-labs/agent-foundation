@@ -1,4 +1,4 @@
-import { isObject } from "./projection";
+import { isRecord } from "../../service-client";
 
 /**
  * One usage receipt as the Console presents it. Tokens are the provider's own
@@ -69,7 +69,7 @@ function text(value: unknown): string | null {
 function modelRecord(record: Record<string, unknown>): ModelUsageRecord | null {
   const recordId = text(record.record_id);
   if (!recordId) return null;
-  const usage = isObject(record.request_usage) ? record.request_usage : {};
+  const usage = isRecord(record.request_usage) ? record.request_usage : {};
   return {
     recordId,
     responseOrdinal: count(record.response_ordinal),
@@ -90,12 +90,12 @@ function modelRecord(record: Record<string, unknown>): ModelUsageRecord | null {
 
 /** Provider measures are provider-neutral units; only named token units map. */
 function measure(record: Record<string, unknown>, unit: string): number {
-  const usage = isObject(record.usage) ? record.usage : {};
+  const usage = isRecord(record.usage) ? record.usage : {};
   if (!Array.isArray(usage.measures)) return 0;
   const found = usage.measures.find(
-    (entry) => isObject(entry) && entry.unit === unit,
+    (entry) => isRecord(entry) && entry.unit === unit,
   );
-  return isObject(found) ? count(Number(found.quantity)) : 0;
+  return isRecord(found) ? count(Number(found.quantity)) : 0;
 }
 
 function providerRecord(
@@ -103,7 +103,7 @@ function providerRecord(
 ): ProviderUsageRecord | null {
   const recordId = text(record.record_id);
   if (!recordId) return null;
-  const usage = isObject(record.usage) ? record.usage : {};
+  const usage = isRecord(record.usage) ? record.usage : {};
   return {
     recordId,
     toolCallId: text(record.tool_call_id),
@@ -133,7 +133,7 @@ export function parseUsageReport(
     provider: [],
   };
   for (const record of payload.records) {
-    if (!isObject(record)) continue;
+    if (!isRecord(record)) continue;
     if (record.kind === "model") {
       const parsed = modelRecord(record);
       if (parsed) report.model.push(parsed);

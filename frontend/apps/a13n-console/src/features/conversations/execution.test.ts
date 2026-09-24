@@ -1,131 +1,40 @@
 import { expect, it } from "vitest";
-import type { RunEvent } from "./display";
-import { applyRun, emptyExecution, type RunFold } from "./execution";
-import type { PresentedItem } from "./projection";
+import type { Schema } from "../../shared/api";
+import {
+  capability,
+  custom,
+  display,
+  finish,
+  lifecycle,
+  message,
+  observation,
+  TIME,
+  tool,
+} from "./display-fixture";
+import { runExecution } from "./execution";
 
-let sequence = 0;
-function event(
-  type: string,
-  payload: RunEvent["event"]["payload"],
-  item?: string,
-  scope = "root",
-  occurredAt = "2026-09-12T00:00:00Z",
-): RunEvent {
-  return {
-    cursor: `${++sequence}-0`,
-    event: {
-      event_type: type,
-      event_id: `event-${sequence}`,
-      occurred_at: occurredAt,
-      payload,
-      item_id: item ?? null,
-      run_attempt_id: "attempt",
-      harness_run_id: scope,
-    },
-  };
+const running = { status: "running", sealed_at: null } as const;
+function fold(...entries: Parameters<typeof display>) {
+  return runExecution(running, display(...entries));
 }
-function lifecycle(
-  type: string,
-  request = "model-request-1",
-  scope = "root",
-  extra: Record<string, unknown> = {},
-  occurredAt?: string,
+function foldRun(
+  run: Pick<Schema["RunView"], "status" | "sealed_at">,
+  ...entries: Parameters<typeof display>
 ) {
-  return event(
-    "agui.custom",
-    {
-      name: "a13n.harness.lifecycle",
-      value: { event: { payload: { type, request_id: request, ...extra } } },
-    },
-    undefined,
-    scope,
-    occurredAt,
-  );
-}
-function custom(
-  name: string,
-  payload: Record<string, unknown>,
-  scope = "root",
-) {
-  return event(
-    "agui.custom",
-    { name, value: { event: { payload } } },
-    undefined,
-    scope,
-  );
-}
-/** A native Capability event carries its fields on the envelope, not a payload. */
-function capability(
-  name: string,
-  fields: Record<string, unknown>,
-  scope = "root",
-) {
-  return event(
-    "agui.custom",
-    { name, value: { event: { kind: name, ...fields } } },
-    undefined,
-    scope,
-  );
-}
-function tool(name: string, id: string, scope = "root", sourceId = id) {
-  return event(
-    "agui.tool_call_start",
-    {
-      item_kind: "tool_call",
-      toolCallName: name,
-      toolCallId: id,
-      source_tool_call_id: sourceId,
-    },
-    id,
-    scope,
-  );
-}
-function args(id: string, text: string, scope = "root") {
-  return event("agui.tool_call_args", { delta: text }, id, scope);
-}
-function empty(): RunFold {
-  return {
-    items: new Map<string, PresentedItem>(),
-    execution: emptyExecution(),
-  };
-}
-function run(...events: RunEvent[]): RunFold {
-  return events.reduce(applyRun, empty());
-}
-function fold(...events: RunEvent[]) {
-  return run(...events).execution;
+  return runExecution(run, display(...entries));
 }
 
 it("counts model and tool calls independently and excludes input and context", () => {
+  const search = tool("search", "tool");
   const state = fold(
-    event(
-      "agui.text_message_start",
-      { role: "user", item_kind: "text_message" },
-      "input",
-    ),
+    message("input", "user"),
     lifecycle("model_request_started"),
-    event(
-      "agui.text_message_start",
-      { role: "user", item_kind: "text_message", metadata: { display: false } },
-      "context",
-    ),
-    event(
-      "agui.tool_call_start",
-      { item_kind: "tool_call", toolCallName: "search" },
-      "tool",
-    ),
+    message("context", "user", { metadata: { display: false } }),
+    search,
     lifecycle("model_request_completed"),
     lifecycle("model_request_started", "model-request-2"),
-    event(
-      "agui.tool_call_result",
-      { content: "Found", item_state: "completed" },
-      "tool",
-    ),
-    event(
-      "agui.text_message_start",
-      { role: "assistant", item_kind: "text_message" },
-      "reply",
-    ),
+    finish(search, { result: "Found" }),
+    message("reply", "assistant"),
     lifecycle("model_request_completed", "model-request-2"),
   );
   expect(state.steps.map(({ state, items }) => ({ state, items }))).toEqual([
@@ -135,76 +44,50 @@ it("counts model and tool calls independently and excludes input and context", (
   ]);
 });
 
-it("deduplicates starts and separates child requests with the same request ID", () => {
+it("deduplicates starts and separates each attempt's requests with the same request ID", () => {
   const state = fold(
     lifecycle("model_request_started"),
     lifecycle("model_request_started"),
-    lifecycle("model_request_started", "model-request-1", "child"),
-    lifecycle("model_request_failed", "model-request-1", "child", {
-      error_code: "provider_timeout",
-    }),
+    lifecycle("model_request_started", "model-request-1", {}, { attempt: 2 }),
+    lifecycle(
+      "model_request_failed",
+      "model-request-1",
+      { error_code: "provider_timeout" },
+      { attempt: 2 },
+    ),
   );
-  expect(state.steps).toHaveLength(2);
-  expect(state.steps.map((step) => step.state)).toEqual(["running", "failed"]);
+  expect(state.steps.map((step) => [step.scope, step.state])).toEqual([
+    ["1", "running"],
+    ["2", "failed"],
+  ]);
   expect(state.steps[1]?.errorCode).toBe("provider_timeout");
 });
 
-it("counts a replacement attempt independently and leaves prior snapshots unchanged", () => {
-  const first = run(lifecycle("model_request_started"));
-  const next = lifecycle("model_request_started");
-  next.event.run_attempt_id = "replacement-attempt";
-  const replacement = applyRun(first, next);
-  const completed = applyRun(replacement, lifecycle("model_request_completed"));
-  expect(first.execution.steps).toHaveLength(1);
-  expect(first.execution.steps[0]?.state).toBe("running");
-  expect(completed.execution.steps.map((step) => step.state)).toEqual([
-    "completed",
-    "running",
-  ]);
-});
-
-it("records the observed start and terminal time of every step and Item", () => {
-  const state = run(
+it("records the observed start and terminal time of every step", () => {
+  const search = tool("search", "tool", {}, "2026-09-12T00:00:01Z");
+  const state = fold(
     lifecycle(
       "model_request_started",
       "model-request-1",
-      "root",
       { message_count: 7 },
-      "2026-09-12T00:00:00Z",
+      { occurredAt: "2026-09-12T00:00:00Z" },
     ),
-    event(
-      "agui.tool_call_start",
-      { item_kind: "tool_call", toolCallName: "search" },
-      "tool",
-      "root",
-      "2026-09-12T00:00:01Z",
-    ),
-    event(
-      "agui.tool_call_result",
-      { content: "Found", item_state: "completed" },
-      "tool",
-      "root",
-      "2026-09-12T00:00:04Z",
-    ),
+    search,
+    finish(search, { result: "Found", occurredAt: "2026-09-12T00:00:04Z" }),
     lifecycle(
       "model_request_completed",
       "model-request-1",
-      "root",
       {},
-      "2026-09-12T00:00:05Z",
+      { occurredAt: "2026-09-12T00:00:05Z" },
     ),
   );
-  expect(state.execution.steps[0]).toMatchObject({
+  expect(state.steps[0]).toMatchObject({
     kind: "llm",
     messageCount: 7,
     startedAt: "2026-09-12T00:00:00Z",
     endedAt: "2026-09-12T00:00:05Z",
   });
-  expect(state.execution.steps[1]).toMatchObject({
-    startedAt: "2026-09-12T00:00:01Z",
-    endedAt: "2026-09-12T00:00:04Z",
-  });
-  expect(state.items.get("tool")).toMatchObject({
+  expect(state.steps[1]).toMatchObject({
     startedAt: "2026-09-12T00:00:01Z",
     endedAt: "2026-09-12T00:00:04Z",
   });
@@ -229,13 +112,12 @@ it("holds a context snapshot until its own request is observed", () => {
 function usageReport(
   records: Record<string, unknown>[],
   reason = "model_request",
-  scope = "root",
 ) {
-  return custom(
-    "a13n.harness.usage",
-    { type: "usage_report", reason, records },
-    scope,
-  );
+  return custom("a13n.harness.usage", {
+    type: "usage_report",
+    reason,
+    records,
+  });
 }
 function modelRecord(id: string, ordinal: number, cost: string | null = null) {
   return {
@@ -258,7 +140,7 @@ function modelRecord(id: string, ordinal: number, cost: string | null = null) {
 it("attaches a usage report to the request that just completed and skips a failed one", () => {
   const state = fold(
     lifecycle("model_request_started"),
-    lifecycle("model_request_failed", "model-request-1", "root", {
+    lifecycle("model_request_failed", "model-request-1", {
       error_code: "provider_error",
     }),
     lifecycle("model_request_started", "model-request-2"),
@@ -277,21 +159,16 @@ it("attaches a usage report to the request that just completed and skips a faile
   expect(state.usage.model).toHaveLength(1);
 });
 
-it("keeps an unpriced record unavailable rather than zero and deduplicates replays", () => {
-  const first = applyRun(
-    run(
-      lifecycle("model_request_started"),
-      lifecycle("model_request_completed"),
-    ),
+it("keeps an unpriced record unavailable rather than zero and deduplicates repeats", () => {
+  const state = fold(
+    lifecycle("model_request_started"),
+    lifecycle("model_request_completed"),
+    usageReport([modelRecord("record-1", 0)]),
     usageReport([modelRecord("record-1", 0)]),
   );
-  const replayed = applyRun(first, {
-    ...usageReport([modelRecord("record-1", 0)]),
-    cursor: "900-0",
-  });
-  expect(first.execution.steps[0]?.usage?.costUsd).toBeNull();
-  expect(replayed.execution.usage.model).toHaveLength(1);
-  expect(replayed.execution.usage.recordIds).toEqual(["record-1"]);
+  expect(state.steps[0]?.usage?.costUsd).toBeNull();
+  expect(state.usage.model).toHaveLength(1);
+  expect(state.usage.recordIds).toEqual(["record-1"]);
 });
 
 it("attaches a provider receipt to its tool call and retains uncorrelated receipts", () => {
@@ -330,7 +207,7 @@ it("attaches a provider receipt to its tool call and retains uncorrelated receip
   ]);
 });
 
-it("attaches an applied edit through native call correlation", () => {
+it("attaches an applied edit through its call ID", () => {
   const state = fold(
     tool("edit_file", "edit-call"),
     capability("a13n.filesystem.edit_applied", {
@@ -349,24 +226,19 @@ it("attaches an applied edit through native call correlation", () => {
 });
 
 it("falls back to the running call that named the path and otherwise observes the edit", () => {
+  const edit = {
+    file_path: "/repo/app.ts",
+    before: "one\n",
+    after: "two\n",
+  };
   const correlated = fold(
-    tool("edit_file", "edit-call"),
-    args("edit-call", '{"path":"/repo/app.ts"}'),
-    capability("a13n.filesystem.edit_applied", {
-      file_path: "/repo/app.ts",
-      before: "one\n",
-      after: "two\n",
-    }),
+    tool("edit_file", "edit-call", { arguments: '{"path":"/repo/app.ts"}' }),
+    capability("a13n.filesystem.edit_applied", edit),
   );
   expect(correlated.steps[0]?.edit?.filePath).toBe("/repo/app.ts");
   const uncorrelated = fold(
-    tool("edit_file", "edit-call"),
-    args("edit-call", '{"path":"/repo/other.ts"}'),
-    capability("a13n.filesystem.edit_applied", {
-      file_path: "/repo/app.ts",
-      before: "one\n",
-      after: "two\n",
-    }),
+    tool("edit_file", "edit-call", { arguments: '{"path":"/repo/other.ts"}' }),
+    capability("a13n.filesystem.edit_applied", edit),
   );
   expect(uncorrelated.steps[0]?.edit).toBeUndefined();
   expect(uncorrelated.observations.map((entry) => entry.name)).toEqual([
@@ -392,56 +264,36 @@ it("keeps deferred external execution distinct from human questions and approval
     ["hitl", "waiting"],
   ]);
   expect(state.steps[2]?.waitingReason).toBe("approval");
-  expect(state.steps).toHaveLength(3);
 });
 
-it("joins child delegation across envelopes with native call correlation and preserves child failure", () => {
+it("specializes the delegating call into its inline delegation and keeps the child's failure", () => {
+  const delegate = tool("delegate", "itm_delegate", { toolCallId: "call-1" });
+  const delegation = (action: string, status: string) =>
+    custom("a13n.harness.delegation", {
+      type: "inline_delegation",
+      invocation_id: "delegation-1",
+      action,
+      subagent: "Researcher",
+      status,
+      parent_run_id: "harness-root",
+      parent_tool_call_id: "call-1",
+      child_run_id: "harness-child",
+    });
   const state = fold(
-    tool("delegate", "presentation-id", "parent", "native-call"),
-    custom(
-      "a13n.harness.delegation",
-      {
-        type: "inline_delegation",
-        invocation_id: "delegation-1",
-        action: "started",
-        subagent: "Researcher",
-        status: "running",
-        parent_run_id: "parent",
-        parent_tool_call_id: "native-call",
-        child_run_id: "child",
-      },
-      "child",
-    ),
-    lifecycle("model_request_started", "model-request-1", "child"),
-    lifecycle("model_request_failed", "model-request-1", "child"),
-    custom(
-      "a13n.harness.delegation",
-      {
-        type: "inline_delegation",
-        invocation_id: "delegation-1",
-        action: "failed",
-        subagent: "Researcher",
-        status: "failed",
-        parent_run_id: "parent",
-        parent_tool_call_id: "native-call",
-        child_run_id: "child",
-      },
-      "parent",
-    ),
-    event(
-      "agui.tool_call_result",
-      { item_state: "completed", content: "Child failed" },
-      "presentation-id",
-      "parent",
-    ),
+    delegate,
+    delegation("started", "running"),
+    delegation("failed", "failed"),
+    finish(delegate, { result: "Child failed" }),
   );
-  expect(state.steps).toHaveLength(2);
-  expect(state.steps[0]).toMatchObject({
-    kind: "subagent",
-    name: "Researcher",
-    childScope: "attempt/child",
-    state: "failed",
-  });
+  expect(state.steps).toEqual([
+    expect.objectContaining({
+      id: "itm_delegate",
+      kind: "subagent",
+      name: "Researcher",
+      state: "failed",
+      dispatchOnly: false,
+    }),
+  ]);
 });
 
 it("keeps uncorrelated delegation observable without guessing a tool or inflating the count", () => {
@@ -451,7 +303,6 @@ it("keeps uncorrelated delegation observable without guessing a tool or inflatin
     custom("a13n.harness.delegation", {
       type: "inline_delegation",
       invocation_id: "delegation-1",
-      parent_run_id: "root",
       parent_tool_call_id: "missing",
       child_run_id: "child",
     }),
@@ -460,22 +311,8 @@ it("keeps uncorrelated delegation observable without guessing a tool or inflatin
   expect(state.observations).toHaveLength(1);
 });
 
-it("counts automatic context operations once and preserves compaction summary after completion", () => {
+it("counts a compaction once and keeps its summary after completion", () => {
   const state = fold(
-    custom("a13n.harness.context", {
-      type: "memory_recall_started",
-      operation_id: "recall-1",
-    }),
-    custom("a13n.harness.context", {
-      type: "memory_recall_completed",
-      operation_id: "recall-1",
-      result_count: 2,
-    }),
-    custom("a13n.harness.context", {
-      type: "memory_recall_skipped",
-      operation_id: "recall-2",
-      reason: "empty_query",
-    }),
     custom("a13n.harness.context", {
       type: "compaction_started",
       operation_id: "compaction-1",
@@ -490,16 +327,16 @@ it("counts automatic context operations once and preserves compaction summary af
     }),
   );
   expect(state.steps.map((step) => [step.kind, step.state])).toEqual([
-    ["memory", "completed"],
     ["compaction", "completed"],
   ]);
-  expect(state.steps[1]?.detail).toMatchObject({ summary: "Retained context" });
-  expect(state.observations).toHaveLength(1);
+  expect(state.steps[0]?.detail).toMatchObject({ summary: "Retained context" });
+  expect(state.observations).toHaveLength(0);
 });
 
 it("shows handoff preparation and application on its tool without a second step", () => {
-  const state = run(
-    tool("summarize", "summary"),
+  const summarize = tool("summarize", "summary");
+  const prepared = [
+    summarize,
     custom("a13n.harness.context", {
       type: "handoff_started",
       operation_id: "handoff-1",
@@ -509,26 +346,25 @@ it("shows handoff preparation and application on its tool without a second step"
       operation_id: "handoff-1",
       summary: "Continue here",
     }),
-    event("agui.tool_call_result", { item_state: "completed" }, "summary"),
-  );
-  expect(state.execution.steps).toHaveLength(1);
-  expect(state.execution.steps[0]).toMatchObject({
-    kind: "handoff",
-    state: "prepared",
-  });
-  const completed = applyRun(
-    state,
+    finish(summarize),
+  ];
+  const state = fold(...prepared);
+  expect(state.steps).toHaveLength(1);
+  expect(state.steps[0]).toMatchObject({ kind: "handoff", state: "prepared" });
+  const completed = fold(
+    ...prepared,
     custom("a13n.harness.context", {
       type: "handoff_completed",
       operation_id: "handoff-1",
     }),
   );
-  expect(completed.execution.steps[0]?.state).toBe("completed");
+  expect(completed.steps[0]?.state).toBe("completed");
 });
 
 it("nests CodeAct tool calls under their actual execution and retains execution failure", () => {
+  const outer = tool("run_code", "outer");
   const state = fold(
-    tool("run_code", "outer"),
+    outer,
     custom("a13n.harness.diagnostic", {
       type: "codeact_execution_started",
       execution_id: "codeact-1",
@@ -555,7 +391,7 @@ it("nests CodeAct tool calls under their actual execution and retains execution 
       duration_ms: 940,
       call_count: 1,
     }),
-    event("agui.tool_call_result", { item_state: "completed" }, "outer"),
+    finish(outer),
   );
   expect(state.steps).toHaveLength(2);
   expect(state.steps[0]).toMatchObject({
@@ -603,61 +439,92 @@ it("counts provider-native tool calls from explicit part boundaries without coun
   });
 });
 
-it("retains lifecycle facts and arbitrary custom observations outside the count", () => {
+it("records a scheduled model retry and keeps other observations outside the count", () => {
+  const retry = custom("a13n.harness.recovery", {
+    type: "model_retry_scheduled",
+    error_code: "provider_overloaded",
+    attempt: 2,
+    max_attempts: 3,
+    delay_seconds: 4,
+  });
   const state = fold(
-    event("run.accepted", {}),
-    event("run_attempt.leased", { data: { attempt_number: 2 } }),
-    custom("a13n.harness.recovery", {
-      type: "model_retry_scheduled",
-      attempt: 2,
-    }),
-    event("agui.custom", { name: "plugin.progress", value: "working" }),
+    retry,
+    observation("plugin.progress", "working"),
     custom("a13n.context.model_input", { content: ["internal context"] }),
   );
   expect(state.steps).toEqual([]);
-  expect(state.events.map((entry) => entry.type)).toEqual([
-    "run.accepted",
-    "run_attempt.leased",
-    "model_retry_scheduled",
+  expect(state.retries).toEqual([
+    {
+      id: retry.id,
+      position: retry.first_stream_id,
+      occurredAt: TIME,
+      attempt: 2,
+      maxAttempts: 3,
+      delaySeconds: 4,
+    },
   ]);
-  expect(state.events[1]?.attempt).toBe(2);
   expect(state.observations.map((entry) => entry.name)).toEqual([
     "plugin.progress",
   ]);
 });
 
-it("ignores stale replay and marks unresolved actions interrupted instead of claiming tool failure", () => {
-  const start = tool("shell", "call");
-  const first = run(start);
-  expect(applyRun(first, start).execution).toBe(first.execution);
-  const failed = applyRun(first, event("run.failed", {}));
-  expect(failed.execution.steps[0]?.state).toBe("interrupted");
-  expect(first.execution.steps[0]?.state).toBe("running");
+it("fails a call on the observation that reported it, before that observation", () => {
+  const read = tool("read_file", "call");
+  const failure = custom("a13n.pydantic_ai.function_tool_result", {});
+  const state = fold(
+    read,
+    failure,
+    finish(read, { state: "failed", on: failure }),
+  );
+  expect(state.steps[0]).toMatchObject({ state: "failed", endedAt: TIME });
+  expect(state.observations).toHaveLength(1);
+});
+
+it("closes the actions a sealed Run left unresolved without claiming tool failure", () => {
+  const sealed = "2026-09-12T00:01:00Z";
+  const items = () => [
+    tool("shell", "call"),
+    lifecycle("model_request_started"),
+  ];
+  expect(
+    foldRun({ status: "failed", sealed_at: sealed }, ...items()).steps.map(
+      (step) => [step.state, step.endedAt],
+    ),
+  ).toEqual([
+    ["interrupted", sealed],
+    ["interrupted", sealed],
+  ]);
+  expect(
+    foldRun({ status: "completed", sealed_at: sealed }, ...items()).steps[0]
+      ?.state,
+  ).toBe("unknown");
+  // A waiting Run still owes its open calls.
+  expect(
+    foldRun({ status: "waiting", sealed_at: sealed }, ...items()).steps[0]
+      ?.state,
+  ).toBe("running");
+  expect(fold(...items()).steps[0]?.state).toBe("running");
 });
 
 it("identifies an asynchronous delegation from its returned execution without inventing child completion", () => {
+  const dispatch = tool("delegate", "dispatch");
   const state = fold(
-    tool("delegate", "dispatch"),
-    event(
-      "agui.tool_call_result",
-      {
-        item_state: "completed",
-        content: JSON.stringify({
-          execution_id: "execution",
-          subagent_name: "reviewer",
-          status: "running",
-        }),
-      },
-      "dispatch",
-    ),
+    dispatch,
+    finish(dispatch, {
+      result: JSON.stringify({
+        execution_id: "execution",
+        subagent_name: "reviewer",
+        status: "running",
+      }),
+    }),
   );
-  expect(state.steps).toHaveLength(1);
-  expect(state.steps[0]).toMatchObject({
-    kind: "subagent",
-    name: "reviewer",
-    state: "completed",
-    dispatchOnly: true,
-    childExecutionId: "execution",
-  });
-  expect(state.steps[0]?.childScope).toBeUndefined();
+  expect(state.steps).toEqual([
+    expect.objectContaining({
+      kind: "subagent",
+      name: "reviewer",
+      state: "completed",
+      dispatchOnly: true,
+      childExecutionId: "execution",
+    }),
+  ]);
 });

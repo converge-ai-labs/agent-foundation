@@ -1,25 +1,28 @@
-import type { RunEvent } from "./display";
-import { isObject, type PresentedItem } from "./projection";
+import { isRecord } from "../../service-client";
+import type { DisplayItem } from "./display";
+import type { PresentedItem } from "./projection";
 import {
   addStep,
-  executionScope,
   observe,
-  recordEvent,
   updateStep,
   type Execution,
-  type ExecutionKind,
   type ExecutionStep,
+  type Occurrence,
 } from "./execution";
 import { parseUsageReport } from "./usage";
 
-export function applyExecutionObservation(
+/**
+ * Fold one observation into the execution view. `items` holds the messages and
+ * tool calls that opened before it.
+ */
+export function applyObservation(
   current: Execution,
-  entry: RunEvent,
+  at: Occurrence,
+  content: DisplayItem["content"],
   items: ReadonlyMap<string, PresentedItem>,
 ): Execution {
-  const { event } = entry;
-  const scope = executionScope(entry);
-  const { name, value } = event.payload;
+  const { scope } = at;
+  const { name, value } = content;
   if (typeof name !== "string") return current;
   if (
     [
@@ -29,11 +32,9 @@ export function applyExecutionObservation(
     ].includes(name)
   )
     return current;
-  const source = isObject(value) ? (value.event ?? value) : value;
-  const streamed = streamedArguments(name, value);
-  if (streamed) return foldArguments(current, entry, streamed, source);
-  const payload = isObject(source)
-    ? isObject(source.payload)
+  const source = isRecord(value) ? (value.event ?? value) : value;
+  const payload = isRecord(source)
+    ? isRecord(source.payload)
       ? source.payload
       : source
     : {};
@@ -42,13 +43,13 @@ export function applyExecutionObservation(
   if (
     (name === "a13n.pydantic_ai.part_start" ||
       name === "a13n.pydantic_ai.part_end") &&
-    isObject(payload.part)
+    isRecord(payload.part)
   ) {
     const part = payload.part;
     if (typeof part.tool_call_id === "string") {
       const id = `${scope}/native/${part.tool_call_id}`;
       if (part.part_kind === "builtin-tool-call") {
-        next = addStep(next, entry, {
+        next = addStep(next, at, {
           id,
           scope,
           kind: "tool",
@@ -57,7 +58,7 @@ export function applyExecutionObservation(
           state: "running",
           items: [],
         });
-        return updateStep(next, entry, id, {
+        return updateStep(next, at, id, {
           detail: { arguments: part.args },
         });
       }
@@ -65,7 +66,7 @@ export function applyExecutionObservation(
         part.part_kind === "builtin-tool-return" &&
         name.endsWith(".part_end")
       ) {
-        return updateStep(next, entry, id, {
+        return updateStep(next, at, id, {
           state: part.outcome === "success" ? "completed" : "failed",
           detail: { result: part.content },
         });
@@ -78,11 +79,11 @@ export function applyExecutionObservation(
       type === "context_snapshot" &&
       typeof payload.request_index === "number"
     )
-      return snapshotContext(next, entry, scope, payload);
+      return snapshotContext(next, at, scope, payload);
     if (typeof payload.request_id === "string") {
       const id = `${scope}/${payload.request_id}`;
       if (type === "model_request_started")
-        return addStep(next, entry, {
+        return addStep(next, at, {
           id,
           scope,
           kind: "llm",
@@ -95,9 +96,9 @@ export function applyExecutionObservation(
           contextTokens: next.contextTokens[id],
         });
       if (type === "model_request_completed")
-        return updateStep(next, entry, id, { state: "completed" });
+        return updateStep(next, at, id, { state: "completed" });
       if (type === "model_request_failed")
-        return updateStep(next, entry, id, {
+        return updateStep(next, at, id, {
           state: "failed",
           errorCode:
             typeof payload.error_code === "string"
@@ -106,29 +107,32 @@ export function applyExecutionObservation(
         });
     }
   }
-  if (name === "a13n.harness.recovery" && type === "model_retry_scheduled")
-    return recordEvent(next, entry, type, {
-      code: text(payload.error_code),
-      message: null,
+  if (name === "a13n.harness.recovery" && type === "model_retry_scheduled") {
+    next.retries.push({
+      id: at.id,
+      position: at.position,
+      occurredAt: at.occurredAt,
       attempt: numeric(payload.attempt) ?? null,
       maxAttempts: numeric(payload.max_attempts) ?? null,
       delaySeconds: numeric(payload.delay_seconds) ?? null,
     });
+    return next;
+  }
   if (name === "a13n.harness.usage" && type === "usage_report")
-    return applyUsageReport(next, entry, scope, payload);
+    return applyUsageReport(next, at, scope, payload);
   if (name === "a13n.filesystem.edit_applied")
-    return applyEdit(next, entry, scope, payload, items);
-  if (name === "a13n.harness.run_result" && isObject(payload.deferred)) {
+    return applyEdit(next, at, scope, payload, items);
+  if (name === "a13n.harness.run_result" && isRecord(payload.deferred)) {
     for (const category of ["calls", "approvals"] as const) {
       const calls = payload.deferred[category];
       if (!Array.isArray(calls)) continue;
       for (const call of calls) {
-        if (!isObject(call)) continue;
+        if (!isRecord(call)) continue;
         const step = next.steps.find(
           (step) => step.scope === scope && step.callId === call.tool_call_id,
         );
         if (step)
-          next = updateStep(next, entry, step.id, {
+          next = updateStep(next, at, step.id, {
             state: "waiting",
             waitingReason:
               category === "approvals" ? "approval" : "external_call",
@@ -150,37 +154,25 @@ export function applyExecutionObservation(
     type === "inline_delegation" &&
     typeof payload.invocation_id === "string"
   ) {
-    const parentScope =
-      typeof payload.parent_run_id === "string"
-        ? executionScope(entry, payload.parent_run_id)
-        : scope;
+    // The display observes one Harness run per attempt, so the delegating
+    // run is always this scope's own.
     const tool = next.steps.find(
       (step) =>
-        step.scope === parentScope &&
-        step.callId === payload.parent_tool_call_id,
+        step.scope === scope && step.callId === payload.parent_tool_call_id,
     );
-    const id = tool?.id ?? `${parentScope}/${payload.invocation_id}`;
+    const id = tool?.id ?? `${scope}/${payload.invocation_id}`;
     const fields = {
       kind: "subagent" as const,
       name: String(payload.subagent ?? ""),
       state: String(payload.status ?? "running"),
-      childScope:
-        typeof payload.child_run_id === "string"
-          ? executionScope(entry, payload.child_run_id)
-          : undefined,
       dispatchOnly: false,
       detail: payload,
     };
     if (tool || next.steps.some((step) => step.id === id))
-      return updateStep(next, entry, id, fields);
+      return updateStep(next, at, id, fields);
     // A delegation without a parent tool is an independently observed invocation.
     if (payload.parent_tool_call_id == null)
-      return addStep(next, entry, {
-        id,
-        scope: parentScope,
-        items: [],
-        ...fields,
-      });
+      return addStep(next, at, { id, scope, items: [], ...fields });
   }
   if (
     name === "a13n.context.handoff_summary" &&
@@ -190,7 +182,7 @@ export function applyExecutionObservation(
       (step) => step.scope === scope && step.callId === payload.tool_call_id,
     );
     if (tool)
-      return updateStep(next, entry, tool.id, {
+      return updateStep(next, at, tool.id, {
         kind: "handoff",
         state: "prepared",
         detail: payload,
@@ -200,24 +192,19 @@ export function applyExecutionObservation(
     name === "a13n.harness.context" &&
     typeof payload.operation_id === "string"
   ) {
-    const kind: ExecutionKind | undefined = type.startsWith("compaction_")
-      ? "compaction"
-      : type.startsWith("memory_recall_")
-        ? "memory"
-        : undefined;
-    if (kind && !type.endsWith("_skipped")) {
+    if (type.startsWith("compaction_")) {
       const id = `${scope}/${payload.operation_id}`;
       if (type.endsWith("_started"))
-        return addStep(next, entry, {
+        return addStep(next, at, {
           id,
           scope,
-          kind,
+          kind: "compaction",
           state: "running",
           items: [],
           detail: payload,
         });
       if (type.endsWith("_completed") || type.endsWith("_failed"))
-        return updateStep(next, entry, id, {
+        return updateStep(next, at, id, {
           state: type.endsWith("_failed") ? "failed" : "completed",
           detail: payload,
         });
@@ -227,11 +214,11 @@ export function applyExecutionObservation(
         (step) =>
           step.scope === scope &&
           step.kind === "handoff" &&
-          isObject(step.detail) &&
+          isRecord(step.detail) &&
           step.detail.operation_id === payload.operation_id,
       );
       if (tool)
-        return updateStep(next, entry, tool.id, {
+        return updateStep(next, at, tool.id, {
           state: type.endsWith("_completed")
             ? "completed"
             : type.endsWith("_failed")
@@ -253,7 +240,7 @@ export function applyExecutionObservation(
           step.scope === scope && step.callId === payload.outer_tool_call_id,
       );
       if (tool)
-        return updateStep(next, entry, tool.id, {
+        return updateStep(next, at, tool.id, {
           kind: "codeact",
           detail: payload,
         });
@@ -261,12 +248,12 @@ export function applyExecutionObservation(
     const outer = next.steps.find(
       (step) =>
         step.scope === scope &&
-        isObject(step.detail) &&
+        isRecord(step.detail) &&
         step.detail.execution_id === payload.execution_id &&
         step.kind === "codeact",
     );
     if (type === "codeact_execution_completed" && outer)
-      return updateStep(next, entry, outer.id, {
+      return updateStep(next, at, outer.id, {
         state: String(payload.status),
         outcome: String(payload.status),
         durationMs: numeric(payload.duration_ms),
@@ -276,7 +263,7 @@ export function applyExecutionObservation(
     if (typeof payload.nested_tool_call_id === "string" && outer) {
       const nestedId = `${id}/${payload.nested_tool_call_id}`;
       if (type === "codeact_tool_call_started")
-        return addStep(next, entry, {
+        return addStep(next, at, {
           id: nestedId,
           scope,
           parentId: outer.id,
@@ -287,7 +274,7 @@ export function applyExecutionObservation(
           detail: payload,
         });
       if (type === "codeact_tool_call_completed")
-        return updateStep(next, entry, nestedId, {
+        return updateStep(next, at, nestedId, {
           state: String(payload.outcome),
           outcome: String(payload.outcome),
           durationMs: numeric(payload.duration_ms),
@@ -301,87 +288,10 @@ export function applyExecutionObservation(
   ) {
     const id = `${scope}/${payload.operation_id}`;
     if (next.steps.some((step) => step.id === id))
-      return updateStep(next, entry, id, { detail: payload });
+      return updateStep(next, at, id, { detail: payload });
   }
   // Preserve custom observations without inventing an execution action or count.
-  return observe(next, entry, type || name, source);
-}
-
-const PART_DELTA = "a13n.pydantic_ai.part_delta";
-
-/**
- * A tool call's streamed argument delta, which the stream protocol reports as
- * a `part_delta` observation: the stream it continues and the text it appends.
- * Deltas of one stream differ only in that text and in when, and at which
- * source position, they occurred.
- */
-function streamedArguments(name: string, value: unknown) {
-  if (name !== PART_DELTA || !isObject(value) || !isObject(value.event))
-    return null;
-  const { delta } = value.event;
-  if (
-    !isObject(delta) ||
-    delta.part_delta_kind !== "tool_call" ||
-    typeof delta.args_delta !== "string" ||
-    delta.tool_name_delta
-  )
-    return null;
-  return {
-    stream: JSON.stringify([
-      value.thread_id,
-      value.run_id,
-      { ...value.event, delta: { ...delta, args_delta: null } },
-    ]),
-    text: delta.args_delta,
-  };
-}
-
-function follows(cursor: string, previous: string) {
-  const [attempt, sequence] = cursor.split("-").map(Number);
-  const [lastAttempt, lastSequence] = previous.split("-").map(Number);
-  return attempt === lastAttempt && sequence === lastSequence! + 1;
-}
-
-/**
- * Consecutive argument deltas of one stream extend one observation, as the
- * committed display folds them, so a live tool call shows one growing entry.
- */
-function foldArguments(
-  current: Execution,
-  entry: RunEvent,
-  fragment: { stream: string; text: string },
-  source: unknown,
-): Execution {
-  const open = current.streamedArguments,
-    last = current.observations.at(-1),
-    held = { stream: fragment.stream, cursor: entry.cursor };
-  if (
-    open?.stream !== fragment.stream ||
-    !follows(entry.cursor, open.cursor) ||
-    !isObject(last?.detail) ||
-    !isObject(last.detail.delta)
-  )
-    return {
-      ...observe(current, entry, PART_DELTA, source),
-      streamedArguments: held,
-    };
-  const { delta } = last.detail;
-  const detail = {
-    ...last.detail,
-    delta: {
-      ...delta,
-      args_delta: `${String(delta.args_delta)}${fragment.text}`,
-    },
-  };
-  return {
-    ...current,
-    observations: [...current.observations.slice(0, -1), { ...last, detail }],
-    streamedArguments: held,
-  };
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
+  return observe(next, at, type || name, source);
 }
 
 function numeric(value: unknown): number | undefined {
@@ -397,7 +307,7 @@ function numeric(value: unknown): number | undefined {
  */
 function snapshotContext(
   current: Execution,
-  entry: RunEvent,
+  at: Occurrence,
   scope: string,
   payload: Record<string, unknown>,
 ): Execution {
@@ -410,7 +320,7 @@ function snapshotContext(
     contextTokens: { ...current.contextTokens, [id]: tokens },
   };
   return next.steps.some((step) => step.id === id)
-    ? updateStep(next, entry, id, { contextTokens: tokens })
+    ? updateStep(next, at, id, { contextTokens: tokens })
     : next;
 }
 
@@ -421,7 +331,7 @@ function snapshotContext(
  */
 function applyEdit(
   current: Execution,
-  entry: RunEvent,
+  at: Occurrence,
   scope: string,
   payload: Record<string, unknown>,
   items: ReadonlyMap<string, PresentedItem>,
@@ -432,7 +342,7 @@ function applyEdit(
     typeof payload.before !== "string" ||
     typeof payload.after !== "string"
   )
-    return observe(current, entry, "edit_applied", payload);
+    return observe(current, at, "edit_applied", payload);
   const edit = { filePath, before: payload.before, after: payload.after };
   const step =
     (typeof payload.tool_call_id === "string"
@@ -448,8 +358,8 @@ function applyEdit(
         step.items.some((id) => items.get(id)?.arguments.includes(filePath)),
     );
   return step
-    ? updateStep(current, entry, step.id, { edit })
-    : observe(current, entry, "edit_applied", payload);
+    ? updateStep(current, at, step.id, { edit })
+    : observe(current, at, "edit_applied", payload);
 }
 
 /**
@@ -461,12 +371,12 @@ function applyEdit(
  */
 function applyUsageReport(
   current: Execution,
-  entry: RunEvent,
+  at: Occurrence,
   scope: string,
   payload: Record<string, unknown>,
 ): Execution {
   const report = parseUsageReport(payload);
-  if (!report) return observe(current, entry, "usage_report", payload);
+  if (!report) return observe(current, at, "usage_report", payload);
   const applied = new Set(current.usage.recordIds);
   let next = current;
   const model = [...current.usage.model];
@@ -480,7 +390,7 @@ function applyUsageReport(
     const step: ExecutionStep | undefined =
       scoped.findLast((step) => step.state === "completed" && !step.usage) ??
       scoped[record.responseOrdinal];
-    if (step) next = updateStep(next, entry, step.id, { usage: record.usage });
+    if (step) next = updateStep(next, at, step.id, { usage: record.usage });
     model.push(record.usage);
   }
   for (const record of report.provider) {
@@ -493,7 +403,7 @@ function applyUsageReport(
           (record.toolId !== null && step.name === record.toolId)),
     );
     if (step)
-      next = updateStep(next, entry, step.id, { providerUsage: record.usage });
+      next = updateStep(next, at, step.id, { providerUsage: record.usage });
     provider.push(record.usage);
   }
   return {

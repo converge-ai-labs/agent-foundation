@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { JsonView } from "../../../shared/forms";
 import { MarkdownContent } from "../../../shared/markdown";
 import { inputText } from "../input";
-import { isObject } from "../projection";
+import { isRecord } from "../../../service-client";
 import type { RunRequest } from "../request";
 import { AssetAttachment, AttachmentChip } from "./attachment";
 import styles from "./transcript.module.css";
@@ -91,11 +91,11 @@ export function InputContent({
   fallback?: string | null;
 }) {
   const { t } = useTranslation();
-  if (isObject(input) && Array.isArray(input.answers))
+  if (isRecord(input) && Array.isArray(input.answers))
     return (
       <div className={styles.resolutions}>
         {input.answers.map((answer, index) =>
-          isObject(answer) ? (
+          isRecord(answer) ? (
             <section key={index}>
               <strong>{String(answer.tool_call_id ?? t("Response"))}</strong> ·{" "}
               {t(String(answer.action ?? "Response"))}
@@ -108,13 +108,13 @@ export function InputContent({
         )}
       </div>
     );
-  if (!isObject(input) || !Array.isArray(input.content))
+  if (!isRecord(input) || !Array.isArray(input.content))
     return fallback ? (
       <div className={styles.prose}>{fallback}</div>
     ) : (
       <JsonView value={input} />
     );
-  const parts = input.content.filter(isObject);
+  const parts = input.content.filter(isRecord);
   const attachments = parts.flatMap((part, index) =>
     part.type === "asset" && typeof part.asset_id === "string"
       ? [<AssetAttachment key={index} assetId={part.asset_id} />]

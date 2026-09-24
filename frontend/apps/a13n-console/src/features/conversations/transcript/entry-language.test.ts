@@ -1,7 +1,16 @@
 import type { TFunction } from "i18next";
 import { expect, it } from "vitest";
-import type { ActionEntry, ContentEntry } from "../timeline";
 import {
+  ArrowsClockwiseIcon,
+  PauseIcon,
+  SquareIcon,
+  XIcon,
+} from "@phosphor-icons/react";
+import { attemptEvent, retryEvent, runOutcome } from "../lifecycle";
+import type { ActionEntry, ContentEntry, EventEntry } from "../timeline";
+import { fixtureAttempt, fixtureRun } from "./fixture";
+import {
+  entryGlyph,
   entryLabel,
   entrySubject,
   asksAQuestion,
@@ -52,13 +61,44 @@ it("keeps tool names in monospace and everything else in prose", () => {
   expect(entryLabel(action({ kind: "compaction" }), t).name).toBe(
     "Context compaction",
   );
-  expect(entryLabel(action({ kind: "memory" }), t).name).toBe("Memory recall");
   expect(entryLabel(action({ kind: "handoff" }), t).name).toBe(
     "Context handoff",
   );
   expect(entryLabel(action({ kind: "hitl", hitl: "approval" }), t).name).toBe(
     "Approval",
   );
+});
+
+it("words a lifecycle fact in prose and draws it by what it says", () => {
+  const outcome = (fields: Parameters<typeof fixtureRun>[0]) =>
+    runOutcome(fixtureRun(fields)) as EventEntry;
+  const attempt = attemptEvent(fixtureAttempt(2)) as EventEntry;
+  expect(entryLabel(attempt, t)).toEqual({
+    name: "Attempt 2 started · recovery",
+    mono: false,
+  });
+  expect(entryGlyph(attempt)).toBe(ArrowsClockwiseIcon);
+  const retry = retryEvent({
+    id: "obs_retry",
+    position: "1-4",
+    occurredAt: null,
+    attempt: 2,
+    maxAttempts: 3,
+    delaySeconds: 4,
+  });
+  expect(entryLabel(retry, t).name).toBe("Retry 2 of 3 in 4s");
+  const failed = outcome({
+    status: "failed",
+    failure: { code: "tool_failed", message: "No" },
+  });
+  expect(entryLabel(failed, t).name).toBe("Run failed · tool_failed · No");
+  expect(entryGlyph(failed)).toBe(XIcon);
+  expect(entryGlyph(outcome({ status: "cancelled" }))).toBe(SquareIcon);
+  const waiting = outcome({ status: "waiting", wait_reason: "client_tool" });
+  expect(entryLabel(waiting, t).name).toBe(
+    "Waiting for the application · client_tool",
+  );
+  expect(entryGlyph(waiting)).toBe(PauseIcon);
 });
 
 it("reads the subject from the call, the question or the result", () => {

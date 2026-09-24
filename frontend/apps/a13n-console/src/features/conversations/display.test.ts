@@ -1,46 +1,14 @@
 import { expect, it, vi } from "vitest";
 import { createClient, type ThreadDelta } from "../../service-client";
-import type { Schema } from "../../shared/api";
 import { fixtureRun } from "./transcript/fixture";
 import {
-  deltaEvent,
-  displayEvents,
+  applyDelta,
+  comparePositions,
   isFragment,
+  isOmitted,
   readDisplay,
-  type Attempts,
+  type DisplayItem,
 } from "./display";
-import { applyRun, emptyExecution, type RunFold } from "./execution";
-
-const attempt = (number: number): Schema["AttemptView"] => ({
-  id: `att_${number}`,
-  run_id: "run_2",
-  number,
-  status: "succeeded",
-  start_reason: number === 1 ? "initial" : "recovery",
-  yield_reason: null,
-  failure: null,
-  harness_run_id: `harness_${number}`,
-  worker_build: "build",
-  replaces_attempt_id: null,
-  started_at: `2026-09-20T10:00:0${number}.000Z`,
-  finished_at: null,
-  created_at: `2026-09-20T10:00:0${number}.000Z`,
-});
-const attempts: Attempts = new Map([
-  [1, attempt(1)],
-  [2, attempt(2)],
-]);
-
-const item = (fields: Partial<Schema["Item"]>): Schema["Item"] => ({
-  id: "item",
-  kind: "text_message",
-  state: "completed",
-  first_stream_id: "1-1",
-  last_stream_id: "1-1",
-  started_at: "2026-09-20T10:00:01.000Z",
-  content: {},
-  ...fields,
-});
 
 it("reads the committed display of one Run", async () => {
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
@@ -69,291 +37,324 @@ it("reads the committed display of one Run", async () => {
   expect(display).toMatchObject({ position: "1-4", complete: true });
 });
 
-it("replays the display as the events that opened and closed its Items, at their times", () => {
-  const events = displayEvents(
-    {
-      run: fixtureRun({
-        status: "failed",
-        failure: { code: "tool_failed", message: "The tool failed." },
-      }),
-      position: "2-4",
-      complete: true,
-      dropped: 0,
-      items: [
-        item({
-          id: "msg_1",
-          first_stream_id: "1-1",
-          last_stream_id: "1-3",
-          started_at: "2026-09-20T10:00:01.500Z",
-          ended_at: "2026-09-20T10:00:01.900Z",
-          content: {
-            messageId: "msg_1",
-            role: "assistant",
-            text: "Reading the file",
-          },
-        }),
-        item({
-          id: "call_1",
-          kind: "tool_call",
-          state: "failed",
-          first_stream_id: "2-1",
-          last_stream_id: "2-3",
-          started_at: "2026-09-20T10:00:03.000Z",
-          ended_at: "2026-09-20T10:00:07.000Z",
-          content: {
-            toolCallId: "call_1",
-            toolCallName: "read_file",
-            failure: { code: "tool_failed" },
-          },
-        }),
-        item({
-          id: "obs_1",
-          kind: "observation",
-          first_stream_id: "2-3",
-          last_stream_id: "2-3",
-          started_at: "2026-09-20T10:00:07.000Z",
-          ended_at: "2026-09-20T10:00:07.000Z",
-          content: { name: "a13n.harness.tool_failed", value: {} },
-        }),
-      ],
-    },
-    attempts,
-  );
+it("orders display positions numerically, at any size", () => {
+  expect(comparePositions("100-10", "100-2")).toBeGreaterThan(0);
+  expect(comparePositions("2-1", "10-0")).toBeLessThan(0);
+  expect(comparePositions("3-7", "3-7")).toBe(0);
   expect(
-    events.map(({ cursor, event }) => [
-      cursor,
-      event.event_type,
-      event.item_id,
-      event.harness_run_id,
-      event.occurred_at,
-    ]),
-  ).toEqual([
-    [
-      "1-1",
-      "agui.text_message_start",
-      "msg_1",
-      "harness_1",
-      "2026-09-20T10:00:01.500Z",
-    ],
-    [
-      "1-3",
-      "agui.text_message_end",
-      "msg_1",
-      "harness_1",
-      "2026-09-20T10:00:01.900Z",
-    ],
-    [
-      "2-0",
-      "run_attempt.leased",
-      null,
-      "harness_2",
-      "2026-09-20T10:00:02.000Z",
-    ],
-    [
-      "2-1",
-      "agui.tool_call_start",
-      "call_1",
-      "harness_2",
-      "2026-09-20T10:00:03.000Z",
-    ],
-    // The failed call ends on the observation that reported it.
-    ["2-3", "agui.custom", "call_1", "harness_2", "2026-09-20T10:00:07.000Z"],
-    ["2-5", "run.failed", null, "harness_2", fixtureRun().sealed_at],
-  ]);
-  expect(events[0]!.event.payload).toEqual({
-    messageId: "msg_1",
-    role: "assistant",
-    item_kind: "text_message",
-    item_state: "in_progress",
-  });
-  expect(events[4]!.event.payload).toMatchObject({
-    name: "a13n.harness.tool_failed",
-    item_kind: "tool_call",
-    item_state: "failed",
-  });
-});
-
-it("leaves an unfinished Item open", () => {
-  const events = displayEvents(
-    {
-      run: fixtureRun({ status: "running", sealed_at: null }),
-      position: "1-2",
-      complete: false,
-      dropped: 0,
-      items: [
-        item({
-          id: "msg_1",
-          state: "in_progress",
-          first_stream_id: "1-1",
-          last_stream_id: "1-2",
-        }),
-      ],
-    },
-    new Map([[1, attempt(1)]]),
+    comparePositions("9007199254740993-0", "9007199254740992-0"),
+  ).toBeGreaterThan(0);
+  expect(() => comparePositions("1-01", "1-2")).toThrow(
+    "Invalid display position.",
   );
-  expect(events.map((entry) => entry.event.event_type)).toEqual([
-    "agui.text_message_start",
-  ]);
+  expect(() => comparePositions("1", "1-2")).toThrow();
 });
 
-const delta = (fields: Partial<ThreadDelta>): ThreadDelta => ({
-  run_id: "run_2",
-  attempt: 2,
-  sequence: 7,
-  event: { type: "TEXT_MESSAGE_CONTENT", messageId: "msg_1", delta: "Hi" },
-  item: { id: "msg_1", kind: "text_message", state: "in_progress" },
-  ...fields,
-});
+const time = (second: number) =>
+  Date.parse("2026-09-20T10:00:00.000Z") + second * 1000;
+const iso = (second: number) => new Date(time(second)).toISOString();
 
-it("translates a live delta into the event the folds consume", () => {
-  expect(
-    deltaEvent(
-      delta({
-        event: {
-          type: "TEXT_MESSAGE_CONTENT",
-          messageId: "msg_1",
-          delta: "Hi",
-          timestamp: Date.parse("2026-09-20T10:00:03.000Z"),
-        },
-      }),
-      attempts,
+function delta(
+  sequence: number,
+  event: ThreadDelta["event"],
+  item: ThreadDelta["item"],
+): ThreadDelta {
+  return {
+    run_id: "run_2",
+    attempt: 1,
+    sequence,
+    event: { timestamp: time(sequence), ...event },
+    item,
+  };
+}
+
+const message = (state: "in_progress" | "completed") =>
+  ({ id: "itm_message", kind: "text_message", state }) as const;
+const call = (state: "in_progress" | "completed" | "failed") =>
+  ({ id: "itm_call", kind: "tool_call", state }) as const;
+
+function fold(deltas: ThreadDelta[], items = new Map<string, DisplayItem>()) {
+  for (const next of deltas) applyDelta(items, next);
+  return items;
+}
+
+it("folds live deltas into the Items the committed display records", () => {
+  const items = fold([
+    delta(
+      1,
+      { type: "TEXT_MESSAGE_START", messageId: "msg_1", role: "assistant" },
+      message("in_progress"),
     ),
-  ).toEqual({
-    cursor: "2-7",
-    event: {
-      event_id: "run_2:2-7",
-      event_type: "agui.text_message_content",
-      run_attempt_id: "att_2",
-      harness_run_id: "harness_2",
-      item_id: "msg_1",
-      occurred_at: "2026-09-20T10:00:03.000Z",
-      payload: {
-        messageId: "msg_1",
-        delta: "Hi",
-        item_kind: "text_message",
-        item_state: "in_progress",
+    delta(
+      2,
+      { type: "TEXT_MESSAGE_CONTENT", messageId: "msg_1", delta: "Reading " },
+      message("in_progress"),
+    ),
+    delta(
+      3,
+      { type: "TEXT_MESSAGE_CONTENT", messageId: "msg_1", delta: "it" },
+      message("in_progress"),
+    ),
+    delta(
+      4,
+      { type: "TEXT_MESSAGE_END", messageId: "msg_1" },
+      message("completed"),
+    ),
+    delta(
+      5,
+      {
+        type: "TOOL_CALL_START",
+        toolCallId: "call_1",
+        toolCallName: "read_file",
+        parentMessageId: "msg_1",
+      },
+      call("in_progress"),
+    ),
+    delta(
+      6,
+      { type: "TOOL_CALL_ARGS", toolCallId: "call_1", delta: '{"path":' },
+      call("in_progress"),
+    ),
+    delta(
+      7,
+      { type: "TOOL_CALL_ARGS", toolCallId: "call_1", delta: '"a.md"}' },
+      call("in_progress"),
+    ),
+    delta(
+      8,
+      { type: "TOOL_CALL_END", toolCallId: "call_1" },
+      call("in_progress"),
+    ),
+    delta(
+      9,
+      { type: "TOOL_CALL_RESULT", toolCallId: "call_1", content: "# A" },
+      call("completed"),
+    ),
+    delta(
+      10,
+      {
+        type: "CUSTOM",
+        name: "a13n.harness.usage",
+        value: { type: "usage_report" },
+      },
+      { id: "itm_usage", kind: "observation", state: "completed" },
+    ),
+    // Only an Item's delta changes the display.
+    delta(11, { type: "RUN_FINISHED" }, null),
+  ]);
+  expect([...items.values()]).toEqual([
+    {
+      id: "itm_message",
+      kind: "text_message",
+      state: "completed",
+      first_stream_id: "1-1",
+      last_stream_id: "1-4",
+      started_at: iso(1),
+      ended_at: iso(4),
+      content: { messageId: "msg_1", role: "assistant", text: "Reading it" },
+    },
+    {
+      id: "itm_call",
+      kind: "tool_call",
+      state: "completed",
+      first_stream_id: "1-5",
+      last_stream_id: "1-9",
+      started_at: iso(5),
+      ended_at: iso(9),
+      content: {
+        toolCallId: "call_1",
+        toolCallName: "read_file",
+        parentMessageId: "msg_1",
+        arguments: '{"path":"a.md"}',
+        result: "# A",
       },
     },
-  });
-  // An observation is an execution fact, never a presented Item.
-  expect(
-    deltaEvent(
-      delta({
-        event: { type: "CUSTOM", name: "a13n.harness.usage", value: {} },
-        item: { id: "obs_1", kind: "observation", state: "completed" },
-      }),
-      attempts,
-    ).event,
-  ).toMatchObject({ item_id: null, occurred_at: null });
+    {
+      id: "itm_usage",
+      kind: "observation",
+      state: "completed",
+      first_stream_id: "1-10",
+      last_stream_id: "1-10",
+      started_at: iso(10),
+      ended_at: iso(10),
+      content: { name: "a13n.harness.usage", value: { type: "usage_report" } },
+    },
+  ]);
 });
 
-it("recognizes the transport fragments of a large event", () => {
-  expect(
-    isFragment(
-      delta({
-        event: { type: "CUSTOM", name: "a13n.stream.fragment", value: {} },
-      }),
+it("keeps protected reasoning and leaves times unknown without a timestamp", () => {
+  const reasoning = {
+    id: "itm_reasoning",
+    kind: "reasoning_message",
+    state: "in_progress",
+  } as const;
+  const items = fold([
+    {
+      ...delta(1, { type: "REASONING_MESSAGE_START" }, reasoning),
+      event: { type: "REASONING_MESSAGE_START", messageId: "rsn_1" },
+    },
+    {
+      ...delta(2, { type: "REASONING_ENCRYPTED_VALUE" }, reasoning),
+      event: {
+        type: "REASONING_ENCRYPTED_VALUE",
+        entityId: "rsn_1",
+        encryptedValue: "sealed",
+      },
+    },
+  ]);
+  expect(items.get("itm_reasoning")).toMatchObject({
+    started_at: null,
+    ended_at: null,
+    content: { messageId: "rsn_1", encrypted_value: "sealed" },
+  });
+});
+
+it("continues the committed display and skips what it already folded", () => {
+  const committed: DisplayItem = {
+    id: "itm_message",
+    kind: "text_message",
+    state: "in_progress",
+    first_stream_id: "1-1",
+    last_stream_id: "1-2",
+    started_at: iso(1),
+    content: { messageId: "msg_1", role: "assistant", text: "Hel" },
+  };
+  const items = fold(
+    [
+      delta(
+        2,
+        { type: "TEXT_MESSAGE_CONTENT", messageId: "msg_1", delta: "Hel" },
+        message("in_progress"),
+      ),
+      delta(
+        3,
+        { type: "TEXT_MESSAGE_CONTENT", messageId: "msg_1", delta: "lo" },
+        message("in_progress"),
+      ),
+    ],
+    new Map([[committed.id, committed]]),
+  );
+  expect(items.get("itm_message")).toMatchObject({
+    first_stream_id: "1-1",
+    last_stream_id: "1-3",
+    started_at: iso(1),
+    content: { text: "Hello" },
+  });
+});
+
+it("fails a call on the observation that reported it and holds that observation", () => {
+  const items = fold([
+    delta(
+      1,
+      {
+        type: "TOOL_CALL_START",
+        toolCallId: "call_1",
+        toolCallName: "read_file",
+      },
+      call("in_progress"),
     ),
-  ).toBe(true);
-  expect(isFragment(delta({}))).toBe(false);
+    delta(
+      2,
+      {
+        type: "CUSTOM",
+        name: "a13n.pydantic_ai.function_tool_result",
+        value: { event: { part: { tool_call_id: "call_1" } } },
+      },
+      call("failed"),
+    ),
+  ]);
+  expect(items.get("itm_call")).toMatchObject({
+    state: "failed",
+    last_stream_id: "1-2",
+    ended_at: iso(2),
+    content: { toolCallId: "call_1", toolCallName: "read_file" },
+  });
+  expect(items.get("1-2")).toMatchObject({
+    kind: "observation",
+    first_stream_id: "1-2",
+    content: { name: "a13n.pydantic_ai.function_tool_result" },
+  });
 });
 
 const PART_DELTA = "a13n.pydantic_ai.part_delta";
-const start = Date.parse("2026-09-20T10:00:03.000Z");
 
 /** A tool call's streamed argument delta, as the stream protocol reports it. */
-function argumentDelta(sequence: number, args: string, index = 1): ThreadDelta {
-  const timestamp = start + sequence;
-  return delta({
-    attempt: 1,
+function argumentDelta(sequence: number, args: string, id = "itm_arguments") {
+  return delta(
     sequence,
-    event: {
+    {
       type: "CUSTOM",
-      timestamp,
       name: PART_DELTA,
       value: {
         thread_id: "thr_1",
         run_id: "harness_1",
         sequence,
-        occurred_at: new Date(timestamp).toISOString(),
         event: {
-          index,
-          delta: {
-            tool_name_delta: null,
-            args_delta: args,
-            tool_call_id: null,
-            part_delta_kind: "tool_call",
-          },
+          index: 1,
+          delta: { args_delta: args, part_delta_kind: "tool_call" },
           event_kind: "part_delta",
         },
       },
     },
-    item: { id: `obs_${sequence}`, kind: "observation", state: "completed" },
-  });
+    { id, kind: "observation", state: "completed" },
+  );
 }
 
-function observed(events: ReturnType<typeof deltaEvent>[]) {
-  const fold = events.reduce<RunFold>(applyRun, {
-    items: new Map(),
-    execution: emptyExecution(),
-  });
-  return fold.execution.observations.map(({ name, occurredAt, detail }) => ({
-    name,
-    occurredAt,
-    detail,
-  }));
-}
-
-it("folds a streamed tool call's argument deltas live as the committed display does", () => {
-  const attemptsOne: Attempts = new Map([[1, attempt(1)]]);
+it("extends one observation with the argument deltas the display merged", () => {
   const pieces = Array.from({ length: 300 }, (_, index) => `${index},`);
-  const each = pieces.map((piece, index) =>
-    deltaEvent(argumentDelta(index + 1, piece), attemptsOne),
+  const items = fold(
+    pieces.map((piece, index) => argumentDelta(index + 1, piece)),
   );
-  // The Service coalesced the same deltas into two stream events.
-  const merged = [
-    argumentDelta(1, pieces.slice(0, 200).join("")),
-    argumentDelta(2, pieces.slice(200).join("")),
-  ].map((entry) => deltaEvent(entry, attemptsOne));
-  const whole = argumentDelta(1, pieces.join("")).event;
-  const committed = displayEvents(
+  // The display commits the first delta's observation with every piece.
+  expect([...items.values()]).toEqual([
     {
-      run: fixtureRun(),
-      position: "1-300",
-      complete: false,
-      dropped: 0,
-      items: [
-        item({
-          id: "obs_arguments",
-          kind: "observation",
-          first_stream_id: "1-1",
-          last_stream_id: "1-300",
-          started_at: new Date(start + 1).toISOString(),
-          ended_at: new Date(start + 1).toISOString(),
-          content: { name: PART_DELTA, value: whole.value },
-        }),
-      ],
+      id: "itm_arguments",
+      kind: "observation",
+      state: "completed",
+      first_stream_id: "1-1",
+      last_stream_id: "1-300",
+      started_at: iso(1),
+      ended_at: iso(1),
+      content: {
+        name: PART_DELTA,
+        value: {
+          thread_id: "thr_1",
+          run_id: "harness_1",
+          sequence: 1,
+          event: {
+            index: 1,
+            delta: {
+              args_delta: pieces.join(""),
+              part_delta_kind: "tool_call",
+            },
+            event_kind: "part_delta",
+          },
+        },
+      },
     },
-    attemptsOne,
-  );
-
-  expect(observed(each)).toEqual(observed(committed));
-  expect(observed(merged)).toEqual(observed(committed));
-  expect(observed(each)).toHaveLength(1);
+  ]);
+  // A delta the display kept apart is its own observation.
+  fold([argumentDelta(302, "{}", "itm_other")], items);
+  expect(items.get("itm_other")?.content.value).toMatchObject({
+    event: { delta: { args_delta: "{}" } },
+  });
 });
 
-it("keeps apart the argument deltas of other parts or separated by other events", () => {
-  const attemptsOne: Attempts = new Map([[1, attempt(1)]]);
-  const events = [
-    argumentDelta(1, "{"),
-    argumentDelta(2, "}", 2),
-    argumentDelta(4, "{"),
-    argumentDelta(5, "}"),
-  ].map((entry) => deltaEvent(entry, attemptsOne));
+it("recognizes the transport fragments of a large event", () => {
+  expect(
+    isFragment(
+      delta(
+        1,
+        { type: "CUSTOM", name: "a13n.stream.fragment", value: {} },
+        null,
+      ),
+    ),
+  ).toBe(true);
+  expect(isFragment(argumentDelta(1, "{"))).toBe(false);
+});
 
-  expect(observed(events).map((entry) => entry.detail)).toMatchObject([
-    { index: 1, delta: { args_delta: "{" } },
-    { index: 2, delta: { args_delta: "}" } },
-    { index: 1, delta: { args_delta: "{}" } },
-  ]);
+it("recognizes content the display omitted over its limit", () => {
+  expect(isOmitted({ omitted: true })).toBe(true);
+  expect(isOmitted({ omitted: true, text: "kept" })).toBe(false);
+  expect(isOmitted({})).toBe(false);
 });

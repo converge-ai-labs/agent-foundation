@@ -7,7 +7,6 @@ import {
   CircleNotchIcon,
   CodeIcon,
   CpuIcon,
-  DatabaseIcon,
   DiamondIcon,
   DotsThreeIcon,
   FileTextIcon,
@@ -22,7 +21,6 @@ import {
   TerminalWindowIcon,
   UsersThreeIcon,
   WarningCircleIcon,
-  WarningIcon,
   WrenchIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -31,6 +29,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../shared/api";
 import { primaryArgument, resultExcerpt } from "../format";
+import type { LifecycleNotice } from "../lifecycle";
 import type { ActionEntry, TimelineEntry } from "../timeline";
 import { readQuestions } from "./questions";
 import styles from "./entry-language.module.css";
@@ -98,7 +97,7 @@ export function entryLabel(entry: TimelineEntry, t: TFunction): EntryLabel {
         mono: false,
       };
     case "event":
-      return { name: entry.type, mono: true };
+      return { name: noticeText(entry.notice, t), mono: false };
     case "subagent":
       return {
         name: t("Delegated to {{name}}", {
@@ -108,8 +107,6 @@ export function entryLabel(entry: TimelineEntry, t: TFunction): EntryLabel {
       };
     case "compaction":
       return { name: t("Context compaction"), mono: false };
-    case "memory":
-      return { name: t("Memory recall"), mono: false };
     case "handoff":
       return { name: t("Context handoff"), mono: false };
     case "hitl":
@@ -166,15 +163,13 @@ export function entryGlyph(entry: TimelineEntry): Icon {
     case "other":
       return DotsThreeIcon;
     case "event":
-      return eventGlyph(entry.type);
+      return noticeGlyph(entry.notice);
     case "hitl":
       return entry.hitl === "question" ? QuestionIcon : HandPalmIcon;
     case "subagent":
       return UsersThreeIcon;
     case "compaction":
       return ArrowsInLineVerticalIcon;
-    case "memory":
-      return DatabaseIcon;
     case "handoff":
       return ArrowBendUpRightIcon;
     case "codeact":
@@ -190,12 +185,41 @@ export function entryGlyph(entry: TimelineEntry): Icon {
   }
 }
 
-function eventGlyph(type: string): Icon {
-  if (type.includes("fail") || type.includes("error")) return XIcon;
-  if (type.includes("waiting")) return PauseIcon;
-  if (type.includes("cancel") || type.includes("stop")) return SquareIcon;
-  if (type.includes("recovery") || type.includes("gap")) return WarningIcon;
-  return ArrowsClockwiseIcon;
+/** The words a lifecycle fact is worth; the decision itself is `lifecycle.ts`. */
+function noticeText(notice: LifecycleNotice, t: TFunction): string {
+  if (notice.kind === "attempt")
+    return t("Attempt {{attempt}} started · {{reason}}", {
+      attempt: notice.attempt,
+      reason: notice.reason,
+    });
+  if (notice.kind === "retry")
+    return notice.attempt !== null &&
+      notice.maxAttempts !== null &&
+      notice.delaySeconds !== null
+      ? t("Retry {{attempt}} of {{max}} in {{delay}}s", {
+          attempt: notice.attempt,
+          max: notice.maxAttempts,
+          delay: notice.delaySeconds,
+        })
+      : t("Model retry scheduled");
+  const head =
+    notice.status === "failed"
+      ? t("Run failed")
+      : notice.status === "cancelled"
+        ? t("Run cancelled")
+        : notice.waitingOn === "application"
+          ? t("Waiting for the application")
+          : t("Waiting for you");
+  return [head, notice.reason, notice.message].filter(Boolean).join(" · ");
+}
+
+function noticeGlyph(notice: LifecycleNotice): Icon {
+  if (notice.kind !== "outcome") return ArrowsClockwiseIcon;
+  return notice.status === "failed"
+    ? XIcon
+    : notice.status === "waiting"
+      ? PauseIcon
+      : SquareIcon;
 }
 
 /** How an entry ended, in one mark the eye can scan down the right edge. */

@@ -7,6 +7,7 @@ import { MemoryRouter } from "react-router";
 import { createClient, type Client } from "../../../../service-client";
 import { DebugRunSection } from "./run-section";
 import {
+  fixtureAttempt,
   fixtureExecution,
   fixtureRun,
   fixtureThread,
@@ -266,40 +267,15 @@ it("reads a child thread's run as the task its parent delegated", () => {
   ).toBeTruthy();
 });
 
-it("shows a later attempt and its recovery gap, and nothing for the first", () => {
-  const execution = fixtureExecution();
-  execution.events = [
-    ...execution.events,
-    {
-      id: "event_recovery",
-      type: "run.recovery",
-      cursor: "0-2",
-      occurredAt: "2026-09-20T10:00:04.000Z",
-      code: "worker_replaced",
-      message: null,
-      attempt: null,
-      maxAttempts: null,
-      delaySeconds: null,
-    },
-    {
-      id: "event_attempt_2",
-      type: "run_attempt.started",
-      cursor: "0-3",
-      occurredAt: "2026-09-20T10:00:04.000Z",
-      code: "recovery",
-      message: null,
-      attempt: 2,
-      maxAttempts: null,
-      delaySeconds: null,
-    },
-  ];
+it("shows a later attempt, and nothing for the first", () => {
   const run = fixtureRun({ attempts: 2 });
-  show({ run, timeline: fixtureTimeline({ run, execution }) });
-  expect(
-    screen.getByText(
-      "Recovery · worker_replaced: events before this point may be missing",
-    ),
-  ).toBeTruthy();
+  show({
+    run,
+    timeline: fixtureTimeline({
+      run,
+      attempts: [fixtureAttempt(1), fixtureAttempt(2)],
+    }),
+  });
   expect(screen.getByText("Attempt 2 started · recovery")).toBeTruthy();
   expect(screen.queryByText(/Attempt 1/)).toBeNull();
   expect(screen.getByText("2 attempts")).toBeTruthy();

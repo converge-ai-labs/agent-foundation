@@ -2,7 +2,7 @@ import { createClient } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
 import { emptyExecution } from "../execution";
 import type { PresentedItem } from "../projection";
-import type { RunExecution } from "../run-stream";
+import type { RunExecution } from "../run-display";
 import { runTimeline, type RunTimeline } from "../timeline";
 import type { StepUsage } from "../usage";
 
@@ -78,6 +78,29 @@ export function fixtureThread(
     updated_at: at(12),
     version: 4,
     workspace_id: "ws_1",
+    ...overrides,
+  };
+}
+
+/** An attempt of the fixture Run: the first starts it, a later one recovers it. */
+export function fixtureAttempt(
+  number: number,
+  overrides: Partial<Schema["AttemptView"]> = {},
+): Schema["AttemptView"] {
+  return {
+    id: `att_${number}`,
+    run_id: "run_2",
+    number,
+    status: "succeeded",
+    start_reason: number === 1 ? "initial" : "recovery",
+    yield_reason: null,
+    failure: null,
+    harness_run_id: `harness_${number}`,
+    worker_build: "build",
+    replaces_attempt_id: number === 1 ? null : `att_${number - 1}`,
+    started_at: at(number),
+    finished_at: null,
+    created_at: at(number),
     ...overrides,
   };
 }
@@ -208,11 +231,11 @@ export function fixtureExecution(
     steps: [
       {
         id: "step_model",
-        scope: "attempt/harness",
+        scope: "1",
         kind: "llm",
         state: "completed",
         items: [],
-        cursor: "1-0",
+        position: "1-0",
         startedAt: at(1),
         endedAt: at(2),
         messageCount: 2,
@@ -220,12 +243,12 @@ export function fixtureExecution(
       },
       {
         id: "step_edit",
-        scope: "attempt/harness",
+        scope: "1",
         kind: "tool",
         name: "edit_file",
         state: "completed",
         items: ["item_edit"],
-        cursor: "2-0",
+        position: "2-0",
         startedAt: at(2),
         endedAt: at(3),
         parentId: "step_model",
@@ -234,19 +257,6 @@ export function fixtureExecution(
           before: "const a = 1;\n",
           after: "const a = 2;\nconst b = 3;\n",
         },
-      },
-    ],
-    events: [
-      {
-        id: "event_1",
-        type: "run_attempt.started",
-        cursor: "0-1",
-        occurredAt: START,
-        code: null,
-        message: null,
-        attempt: 1,
-        maxAttempts: null,
-        delaySeconds: null,
       },
     ],
     usage: { model: [usage], provider: [], recordIds: ["rec_1"] },
@@ -261,8 +271,8 @@ function fixtureItems(): PresentedItem[] {
       id: "item_edit",
       kind: "tool_call",
       state: "completed",
-      firstCursor: "2-0",
-      lastCursor: "2-1",
+      firstPosition: "2-0",
+      lastPosition: "2-1",
       startedAt: at(2),
       endedAt: at(3),
       text: "",
@@ -276,8 +286,8 @@ function fixtureItems(): PresentedItem[] {
       id: "item_reply",
       kind: "text_message",
       state: "completed",
-      firstCursor: "3-0",
-      lastCursor: "3-1",
+      firstPosition: "3-0",
+      lastPosition: "3-1",
       startedAt: at(3),
       endedAt: at(4),
       text: "Patched the fold.",
@@ -292,14 +302,22 @@ function fixtureItems(): PresentedItem[] {
 /** The one reading of a Run both disclosure levels render. */
 export function fixtureTimeline({
   run = fixtureRun(),
+  attempts = [fixtureAttempt(1)],
   items = fixtureItems(),
   execution = fixtureExecution(),
 }: {
   run?: Schema["RunView"];
+  attempts?: Schema["AttemptView"][];
   items?: PresentedItem[];
   execution?: RunExecution;
 } = {}): RunTimeline {
-  return runTimeline({ run, items, execution, coverage: execution.coverage });
+  return runTimeline({
+    run,
+    attempts,
+    items,
+    execution,
+    coverage: execution.coverage,
+  });
 }
 
 /** A Run read from retained Items alone, with no execution history. */

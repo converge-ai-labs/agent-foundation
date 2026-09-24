@@ -1,11 +1,11 @@
-import { isObject } from "./projection";
+import { isRecord } from "../../service-client";
 
 export function inputText(input: unknown, fallback?: string | null): string {
-  if (!isObject(input) || !Array.isArray(input.content)) return fallback ?? "";
+  if (!isRecord(input) || !Array.isArray(input.content)) return fallback ?? "";
   return (
     input.content
       .flatMap((block) =>
-        isObject(block) &&
+        isRecord(block) &&
         block.type === "text" &&
         typeof block.text === "string"
           ? [block.text]

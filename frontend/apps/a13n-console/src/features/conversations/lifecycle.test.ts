@@ -1,26 +1,7 @@
 import { expect, it } from "vitest";
 import type { Schema } from "../../shared/api";
-import { lifecycleNotice, runOutcome } from "./lifecycle";
-import type { EventEntry } from "./timeline";
-
-function fact(type: string, fields: Partial<EventEntry> = {}): EventEntry {
-  return {
-    kind: "event",
-    id: "event",
-    type,
-    code: null,
-    message: null,
-    attempt: null,
-    maxAttempts: null,
-    delaySeconds: null,
-    occurredAt: "2026-09-20T10:00:00.000Z",
-    startedAt: "2026-09-20T10:00:00.000Z",
-    endedAt: "2026-09-20T10:00:00.000Z",
-    durationMs: null,
-    state: "observed",
-    ...fields,
-  };
-}
+import { attemptEvent, retryEvent, runOutcome } from "./lifecycle";
+import { fixtureAttempt } from "./transcript/fixture";
 
 const run = (overrides: Partial<Schema["RunView"]>) =>
   ({
@@ -33,73 +14,60 @@ const run = (overrides: Partial<Schema["RunView"]>) =>
     ...overrides,
   }) as Schema["RunView"];
 
-it("says nothing about the facts every run reports", () => {
-  expect(lifecycleNotice(fact("run.accepted"))).toBe(null);
-  expect(lifecycleNotice(fact("run_attempt.leased", { attempt: 1 }))).toBe(
-    null,
-  );
-  expect(lifecycleNotice(fact("run_attempt.started"))).toBe(null);
-  expect(lifecycleNotice(fact("run.running"))).toBe(null);
-  expect(lifecycleNotice(fact("run.completed"))).toBe(null);
+it("says nothing about the first attempt every run starts with", () => {
+  expect(attemptEvent(fixtureAttempt(1))).toBe(null);
 });
 
-it("reports a later attempt, a recovery gap and a scheduled retry", () => {
+it("reports a later attempt with why it started", () => {
   expect(
-    lifecycleNotice(
-      fact("run_attempt.leased", { attempt: 2, code: "recovery" }),
-    ),
-  ).toEqual({
-    kind: "attempt",
-    tone: "neutral",
-    attempt: 2,
-    reason: "recovery",
-  });
-  expect(
-    lifecycleNotice(fact("run.recovery", { code: "worker_replaced" })),
-  ).toEqual({ kind: "recovery", tone: "warning", reason: "worker_replaced" });
-  expect(
-    lifecycleNotice(
-      fact("model_retry_scheduled", {
-        attempt: 2,
-        maxAttempts: 3,
-        delaySeconds: 1.5,
+    attemptEvent(
+      fixtureAttempt(2, {
+        created_at: "2026-09-20T10:00:02.000Z",
+        started_at: "2026-09-20T10:00:03.000Z",
       }),
     ),
-  ).toEqual({
-    kind: "retry",
-    tone: "warning",
-    attempt: 2,
-    maxAttempts: 3,
-    delaySeconds: 1.5,
+  ).toMatchObject({
+    kind: "event",
+    id: "att_2",
+    notice: {
+      kind: "attempt",
+      tone: "neutral",
+      attempt: 2,
+      reason: "recovery",
+    },
+    occurredAt: "2026-09-20T10:00:03.000Z",
   });
-});
-
-it("keeps the terminal facts a reader has to act on", () => {
-  expect(lifecycleNotice(fact("run.failed", { code: "boom" }))).toMatchObject({
-    kind: "outcome",
-    status: "failed",
-    tone: "danger",
-  });
-  expect(lifecycleNotice(fact("run.cancelled"))).toMatchObject({
-    status: "cancelled",
-    tone: "warning",
-  });
-  expect(lifecycleNotice(fact("run.waiting"))).toMatchObject({
-    status: "waiting",
-  });
-});
-
-it("says who a waiting run is waiting on", () => {
-  for (const reason of ["approval", "user_input", "multiple", null])
-    expect(
-      lifecycleNotice(fact("run.waiting", { code: reason })),
-    ).toMatchObject({ status: "waiting", waitingOn: "reader" });
-  // Only the application that holds the client tool can return its result.
+  // An attempt not yet started is placed when it was created.
   expect(
-    lifecycleNotice(fact("run.waiting", { code: "client_tool" })),
-  ).toMatchObject({ status: "waiting", waitingOn: "application" });
-  expect(lifecycleNotice(fact("run.failed"))).toMatchObject({
-    waitingOn: null,
+    attemptEvent(
+      fixtureAttempt(2, {
+        created_at: "2026-09-20T10:00:02.000Z",
+        started_at: null,
+      }),
+    )?.occurredAt,
+  ).toBe("2026-09-20T10:00:02.000Z");
+});
+
+it("reports a scheduled model retry", () => {
+  expect(
+    retryEvent({
+      id: "obs_retry",
+      position: "1-4",
+      occurredAt: "2026-09-20T10:00:04.000Z",
+      attempt: 2,
+      maxAttempts: 3,
+      delaySeconds: 1.5,
+    }),
+  ).toMatchObject({
+    id: "obs_retry",
+    notice: {
+      kind: "retry",
+      tone: "warning",
+      attempt: 2,
+      maxAttempts: 3,
+      delaySeconds: 1.5,
+    },
+    occurredAt: "2026-09-20T10:00:04.000Z",
   });
 });
 
@@ -114,9 +82,19 @@ it("reads the run's own outcome, and only when it has one to report", () => {
       }),
     ),
   ).toMatchObject({
-    type: "run.failed",
-    code: "model_rate_limited",
-    message: "Upstream said no.",
+    id: "run_1:outcome",
+    notice: {
+      kind: "outcome",
+      status: "failed",
+      tone: "danger",
+      waitingOn: null,
+      reason: "model_rate_limited",
+      message: "Upstream said no.",
+    },
+  });
+  expect(runOutcome(run({ status: "cancelled" }))?.notice).toMatchObject({
+    status: "cancelled",
+    tone: "warning",
   });
   expect(
     runOutcome(
@@ -127,8 +105,18 @@ it("reads the run's own outcome, and only when it has one to report", () => {
       }),
     ),
   ).toMatchObject({
-    type: "run.waiting",
-    code: "approval",
+    notice: { status: "waiting", reason: "approval", message: null },
     occurredAt: "2026-09-20T10:00:05.000Z",
   });
+});
+
+it("says who a waiting run is waiting on", () => {
+  for (const reason of ["approval", "user_input", "multiple", null] as const)
+    expect(
+      runOutcome(run({ status: "waiting", wait_reason: reason }))?.notice,
+    ).toMatchObject({ status: "waiting", waitingOn: "reader" });
+  // Only the application that holds the client tool can return its result.
+  expect(
+    runOutcome(run({ status: "waiting", wait_reason: "client_tool" }))?.notice,
+  ).toMatchObject({ status: "waiting", waitingOn: "application" });
 });

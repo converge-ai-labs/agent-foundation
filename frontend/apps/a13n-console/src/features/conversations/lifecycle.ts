@@ -1,4 +1,5 @@
 import type { Schema } from "../../shared/api";
+import type { ModelRetry } from "./execution";
 import { resultExcerpt } from "./format";
 import type { EventEntry } from "./timeline";
 
@@ -9,8 +10,12 @@ import type { EventEntry } from "./timeline";
  * reads. This decision is pure so both disclosure levels agree on it.
  */
 export type LifecycleNotice =
-  | { kind: "attempt"; tone: Tone; attempt: number; reason: string | null }
-  | { kind: "recovery"; tone: Tone; reason: string | null }
+  | {
+      kind: "attempt";
+      tone: Tone;
+      attempt: number;
+      reason: Schema["AttemptView"]["start_reason"];
+    }
   | {
       kind: "retry";
       tone: Tone;
@@ -39,90 +44,93 @@ export type WaitingAudience = "reader" | "application";
 
 const APPLICATION_WAITS = ["client_tool"];
 
-/** Attempt facts that start an attempt; the wording is never "leased". */
-const ATTEMPT_STARTS = ["leased", "started"];
-
-export function lifecycleNotice(entry: EventEntry): LifecycleNotice | null {
-  if (entry.type === "model_retry_scheduled")
-    return {
-      kind: "retry",
-      tone: "warning",
-      attempt: entry.attempt,
-      maxAttempts: entry.maxAttempts,
-      delaySeconds: entry.delaySeconds,
-    };
-  if (entry.type === "run.recovery")
-    return { kind: "recovery", tone: "warning", reason: entry.code };
-  const [resource, action = ""] = entry.type.split(".");
-  if (resource === "run_attempt") {
-    const attempt = entry.attempt ?? 1;
-    // The first attempt is how every Run starts; a later one explains itself.
-    return ATTEMPT_STARTS.includes(action) && attempt > 1
-      ? { kind: "attempt", tone: "neutral", attempt, reason: entry.code }
-      : null;
-  }
-  if (resource !== "run") return null;
-  if (action === "failed")
-    return outcome("failed", "danger", entry.code, entry.message);
-  if (action === "cancelled")
-    return outcome("cancelled", "warning", entry.code, entry.message);
-  if (action === "waiting")
-    return outcome("waiting", "warning", entry.code, entry.message);
-  return null;
+function eventEntry(
+  id: string,
+  notice: LifecycleNotice,
+  occurredAt: string | null,
+): EventEntry {
+  return {
+    kind: "event",
+    id,
+    notice,
+    occurredAt,
+    startedAt: occurredAt,
+    endedAt: occurredAt,
+    durationMs: null,
+    state: "observed",
+  };
 }
 
-function outcome(
-  status: "failed" | "cancelled" | "waiting",
-  tone: Tone,
-  reason: string | null,
-  message: string | null,
-): LifecycleNotice {
+/** The first attempt is how every Run starts; a later one explains itself. */
+export function attemptEvent(
+  attempt: Schema["AttemptView"],
+): EventEntry | null {
+  if (attempt.number < 2) return null;
+  return eventEntry(
+    attempt.id,
+    {
+      kind: "attempt",
+      tone: "neutral",
+      attempt: attempt.number,
+      reason: attempt.start_reason,
+    },
+    attempt.started_at ?? attempt.created_at,
+  );
+}
+
+export function retryEvent(retry: ModelRetry): EventEntry {
+  return eventEntry(
+    retry.id,
+    {
+      kind: "retry",
+      tone: "warning",
+      attempt: retry.attempt,
+      maxAttempts: retry.maxAttempts,
+      delaySeconds: retry.delaySeconds,
+    },
+    retry.occurredAt,
+  );
+}
+
+const OUTCOME_TONES: Record<string, Tone | undefined> = {
+  failed: "danger",
+  cancelled: "warning",
+  waiting: "warning",
+};
+
+/**
+ * The Run's own terminal fact, in the timeline's row language. It is read from
+ * the Run rather than from its display, so a Run whose display was never read
+ * still says how it ended.
+ */
+export function runOutcome(run: Schema["RunView"]): EventEntry | null {
+  const tone = OUTCOME_TONES[run.status];
+  if (!tone) return null;
+  const status = run.status as "failed" | "cancelled" | "waiting";
+  const failure = run.failure as { code?: unknown; message?: unknown } | null;
+  const reason =
+    status === "waiting"
+      ? run.wait_reason
+      : typeof failure?.code === "string"
+        ? failure.code
+        : null;
+  const message =
+    status === "waiting"
+      ? null
+      : typeof failure?.message === "string"
+        ? failure.message
+        : run.failure != null
+          ? resultExcerpt(run.failure, 160)
+          : null;
   const waitingOn: WaitingAudience | null =
     status !== "waiting"
       ? null
       : reason && APPLICATION_WAITS.includes(reason)
         ? "application"
         : "reader";
-  return { kind: "outcome", tone, status, waitingOn, reason, message };
-}
-
-const TERMINAL_TYPES: Record<string, string | undefined> = {
-  failed: "run.failed",
-  cancelled: "run.cancelled",
-  waiting: "run.waiting",
-};
-
-/**
- * The Run's own terminal fact, in the timeline's row language. It is read from
- * the Run rather than from the stream, so a Run whose events were never
- * replayed still says how it ended, and the stream's copy never repeats it.
- */
-export function runOutcome(run: Schema["RunView"]): EventEntry | null {
-  const type = TERMINAL_TYPES[run.status];
-  if (!type) return null;
-  const waiting = run.status === "waiting";
-  const failure = run.failure as { code?: unknown; message?: unknown } | null;
-  const code = typeof failure?.code === "string" ? failure.code : null;
-  const message =
-    typeof failure?.message === "string"
-      ? failure.message
-      : run.failure != null
-        ? resultExcerpt(run.failure, 160)
-        : null;
-  const at = run.sealed_at ?? run.updated_at;
-  return {
-    kind: "event",
-    id: `${run.id}:outcome`,
-    type,
-    code: waiting ? run.wait_reason : code,
-    message: waiting ? null : message,
-    attempt: null,
-    maxAttempts: null,
-    delaySeconds: null,
-    occurredAt: at,
-    startedAt: at,
-    endedAt: at,
-    durationMs: null,
-    state: "observed",
-  };
+  return eventEntry(
+    `${run.id}:outcome`,
+    { kind: "outcome", tone, status, waitingOn, reason, message },
+    run.sealed_at ?? run.updated_at,
+  );
 }

@@ -6,27 +6,19 @@ import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { conversationQueries, invalidateConversation } from "./api";
 import {
-  deltaEvent,
-  displayEvents,
+  applyDelta,
+  comparePositions,
   isFragment,
   isOmitted,
-  type Attempts,
-  type RunEvent,
+  type DisplayItem,
 } from "./display";
 import {
-  compareCursors,
-  mergeRetainedItems,
-  type PresentedItem,
-} from "./projection";
-import {
-  applyRun,
   emptyExecution,
+  runExecution,
   type Execution,
   type ExecutionCoverage,
-  type RunFold,
 } from "./execution";
-
-export type { ExecutionCoverage };
+import { presentItems, type PresentedItem } from "./projection";
 
 export interface RunExecution extends Execution {
   coverage: ExecutionCoverage;
@@ -35,17 +27,20 @@ export interface RunExecution extends Execution {
 /** How long an active Run may go unconfirmed while its Thread reports no change. */
 const SEAL_CHECK_MS = 10_000;
 
+const positionOf = (delta: ThreadDelta) => `${delta.attempt}-${delta.sequence}`;
+
 /**
- * One consumer per Run. The committed display is folded as the events it
- * recorded, so the Item projection and the execution view can never disagree,
- * and the Thread stream's deltas continue both after the display's position.
+ * One consumer per Run. The committed display is read as the Service returned
+ * it, and the Thread stream's deltas change its Items after the display's
+ * position; the Items and the execution view are both read from that one
+ * display, so they can never disagree.
  *
  * `live` follows the Thread stream while the page shows this Run: the Run's
  * own output while it is active, and the Thread's changes at any time. An
  * attempt reset discards provisional output; a gap re-reads the display and
  * heals at the next boundary, whose display covers what the stream skipped.
  */
-export function useRunStream(
+export function useRunDisplay(
   runId: string,
   { live = false }: { live?: boolean } = {},
 ) {
@@ -58,6 +53,7 @@ export function useRunStream(
       ...emptyExecution(),
       coverage: "partial",
     })),
+    [attempts, setAttempts] = useState<Schema["AttemptView"][]>([]),
     [state, setState] = useState<
       "connecting" | "connected" | "closed" | "disconnected"
     >("connecting"),
@@ -74,15 +70,17 @@ export function useRunStream(
     if (identity.current !== selected) {
       identity.current = selected;
       setItems([]);
+      setAttempts([]);
       setGap(false);
       setIncomplete(false);
       setDropped(0);
     }
     let read: Schema["RunItems"] | undefined;
-    let attempts: Attempts = new Map();
-    let fold: RunFold = { items: new Map(), execution: emptyExecution() };
+    let known: Schema["AttemptView"][] = [];
+    // The committed display with the stream's changes since its position.
+    let display = new Map<string, DisplayItem>();
     // Deltas beyond the display's position.
-    let provisional: RunEvent[] = [];
+    let provisional: ThreadDelta[] = [];
     const asked = new Set<number>();
     // The display omitted content, or the stream skipped deltas not yet covered.
     let omitted = false;
@@ -94,13 +92,15 @@ export function useRunStream(
       if (frame !== undefined) return;
       frame = requestAnimationFrame(() => {
         frame = undefined;
-        if (signal.aborted) return;
-        setItems(sorted(fold.items));
+        if (signal.aborted || !read) return;
+        const current = [...display.values()];
+        setItems(presentItems(current));
+        setAttempts(known);
         setExecution({
-          ...fold.execution,
+          ...runExecution(read.run, current),
           // Items the display dropped took their execution facts with them.
           coverage:
-            omitted || skipped || !!read?.dropped ? "partial" : "complete",
+            omitted || skipped || !!read.dropped ? "partial" : "complete",
         });
       });
     }
@@ -116,7 +116,7 @@ export function useRunStream(
         }
       }
     }
-    /** Read the display again and fold it with the output it does not cover yet. */
+    /** Read the display again, with the output it does not cover yet. */
     async function reconcile(discard = false) {
       const [next, list] = await Promise.all([
         current(() =>
@@ -128,26 +128,17 @@ export function useRunStream(
       ]);
       signal.throwIfAborted();
       read = next;
-      attempts = new Map(list.map((attempt) => [attempt.number, attempt]));
+      known = list;
       cache.setQueryData(queries.run(runId).queryKey, next.run);
       const { position } = next;
       provisional = discard
         ? []
         : provisional.filter(
-            (entry) => !position || compareCursors(entry.cursor, position) > 0,
+            (delta) =>
+              !position || comparePositions(positionOf(delta), position) > 0,
           );
-      fold = { items: new Map(), execution: emptyExecution() };
-      for (const entry of displayEvents(next, attempts))
-        fold = applyRun(fold, entry);
-      // The display is authoritative for Items.
-      fold = {
-        ...fold,
-        items: mergeRetainedItems(
-          fold.items,
-          next.items.filter((item) => item.kind !== "observation"),
-        ),
-      };
-      for (const entry of provisional) fold = applyRun(fold, entry);
+      display = new Map(next.items.map((item) => [item.id, item]));
+      for (const delta of provisional) applyDelta(display, delta);
       omitted = next.items.some((item) => isOmitted(item.content));
       setIncomplete(omitted);
       setGap(omitted || skipped);
@@ -155,27 +146,30 @@ export function useRunStream(
       publish();
       return next;
     }
-    function covered(cursor: string) {
-      const last = provisional.at(-1)?.cursor ?? read?.position;
-      return !!last && compareCursors(cursor, last) <= 0;
+    function covered(position: string) {
+      const last = provisional.at(-1);
+      const through = last ? positionOf(last) : read?.position;
+      return !!through && comparePositions(position, through) <= 0;
     }
     async function receive(delta: ThreadDelta) {
-      const cursor = `${delta.attempt}-${delta.sequence}`;
-      if (covered(cursor)) return;
-      if (!attempts.has(delta.attempt) && !asked.has(delta.attempt)) {
-        // A new attempt: learn its identity, and the Run's status, first.
+      const position = positionOf(delta);
+      if (covered(position)) return;
+      if (
+        !known.some((attempt) => attempt.number === delta.attempt) &&
+        !asked.has(delta.attempt)
+      ) {
+        // A new attempt: learn it, and the Run's status, first.
         asked.add(delta.attempt);
         await reconcile();
-        if (covered(cursor)) return;
+        if (covered(position)) return;
       }
       if (isFragment(delta)) {
         // Only the display holds a large observation, from the next boundary.
         if (delta.item) stale = true;
         return;
       }
-      const entry = deltaEvent(delta, attempts);
-      provisional.push(entry);
-      fold = applyRun(fold, entry);
+      provisional.push(delta);
+      applyDelta(display, delta);
       publish();
     }
     async function follow(threadId: string) {
@@ -249,6 +243,7 @@ export function useRunStream(
   return {
     items,
     execution,
+    attempts,
     state,
     gap,
     incomplete,
@@ -257,10 +252,4 @@ export function useRunStream(
     error,
     reconnect: () => setGeneration((value) => value + 1),
   };
-}
-
-function sorted(items: ReadonlyMap<string, PresentedItem>) {
-  return [...items.values()].sort((a, b) =>
-    compareCursors(a.firstCursor, b.firstCursor),
-  );
 }

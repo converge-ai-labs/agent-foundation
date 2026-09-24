@@ -30,14 +30,14 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 vi.mock("../agents/queries", () => ({ useAgent: () => ({ data: null }) }));
-vi.mock("../run-stream", () => ({
-  useRunStream: () => ({
+vi.mock("../run-display", () => ({
+  useRunDisplay: () => ({
     items: [],
     state: "connected",
     execution: {
       steps: [],
       observations: [],
-      events: [],
+      retries: [],
       usage: { model: [], provider: [], recordIds: [] },
       contextTokens: {},
       coverage: "complete",
@@ -227,7 +227,7 @@ it("reads the next lineage page only once the reader reaches past the loaded one
   cache.clear();
 });
 
-it("reveals an ancestor as a debug section, replayed on its own", async () => {
+it("reveals an ancestor as a debug section that reads its own display", async () => {
   const requests: URL[] = [];
   client = createClient({
     baseUrl: "https://test.invalid",
@@ -253,7 +253,7 @@ it("reveals an ancestor as a debug section, replayed on its own", async () => {
   );
   expect(await screen.findByText("Run")).toBeTruthy();
   expect(screen.getByText("state.completed")).toBeTruthy();
-  // The ancestor's own Items are never fetched: its stream replays them.
+  // The section reads the ancestor's display itself; the list never fetches it.
   expect(requests.some((url) => url.pathname.endsWith("/items"))).toBe(false);
   cache.clear();
 });

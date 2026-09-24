@@ -1,199 +1,102 @@
-import { describe, expect, it } from "vitest";
-import type { RunEvent } from "./display";
-import {
-  applyRunEvent,
-  compareCursors,
-  mergeRetainedItems,
-  type PresentedItem,
-} from "./projection";
-function event(
-  cursor: string,
-  event_type: string,
-  payload: Record<string, unknown>,
-): RunEvent {
-  return {
-    cursor,
-    event: {
-      event_id: `rse_${cursor}`,
-      event_type,
-      run_attempt_id: null,
-      harness_run_id: null,
-      item_id: "itm_message",
-      occurred_at: "2026-09-08T00:00:00Z",
-      payload,
-    },
-  };
-}
-describe("Run presentation checkpoints", () => {
-  it("compares stream sequence numbers numerically without losing precision", () => {
-    expect(compareCursors("100-10", "100-2")).toBeGreaterThan(0);
-    expect(
-      compareCursors("9007199254740993-0", "9007199254740992-0"),
-    ).toBeGreaterThan(0);
-  });
-  it("deduplicates replay against retained item boundaries before appending new deltas", () => {
-    let items = mergeRetainedItems(new Map(), [
-      {
-        id: "itm_message",
-        kind: "text_message",
-        state: "interrupted",
-        first_stream_id: "100-0",
-        last_stream_id: "100-1",
-        started_at: "2026-09-08T00:00:00Z",
-        content: { text: "Hello" },
-      },
-    ]);
-    items = applyRunEvent(
-      items,
-      event("100-1", "agui.text_message_content", { delta: "Hello" }),
-    );
-    items = applyRunEvent(
-      items,
-      event("100-2", "agui.text_message_content", { delta: " world" }),
-    );
-    items = applyRunEvent(
-      items,
-      event("100-3", "item.completed", { item_state: "completed" }),
-    );
-    expect(items.get("itm_message")?.text).toBe("Hello world");
-    expect(items.get("itm_message")?.lastCursor).toBe("100-3");
-    expect(items.get("itm_message")?.state).toBe("completed");
-  });
-  it("does not let an older snapshot overwrite newer streamed content", () => {
-    let items = new Map<string, PresentedItem>();
-    items = applyRunEvent(
-      items,
-      event("200-1", "agui.text_message_content", {
-        item_kind: "text_message",
-        delta: "New",
-      }),
-    );
-    items = mergeRetainedItems(items, [
-      {
-        id: "itm_message",
-        kind: "text_message",
-        state: "interrupted",
-        first_stream_id: "100-0",
-        last_stream_id: "100-1",
-        started_at: "2026-09-08T00:00:00Z",
-        content: {},
-      },
-    ]);
-    expect(items.get("itm_message")?.text).toBe("New");
-  });
-  it("retains tool arguments and distinguishes interrupted presentation from tool success", () => {
-    let items = applyRunEvent(
-      new Map(),
-      event("100-0", "agui.tool_call_start", {
-        item_kind: "tool_call",
-        toolCallName: "read_file",
-      }),
-    );
-    items = applyRunEvent(
-      items,
-      event("100-1", "agui.tool_call_args", { delta: '{"path":' }),
-    );
-    items = applyRunEvent(
-      items,
-      event("100-2", "item.interrupted", {
-        item_state: "interrupted",
-        interruption: { code: "run_closed" },
-      }),
-    );
-    expect(items.get("itm_message")).toMatchObject({
-      toolName: "read_file",
-      arguments: '{"path":',
-      state: "interrupted",
-    });
-    expect(items.get("itm_message")?.result).toBeUndefined();
-  });
+import { expect, it } from "vitest";
+import type { DisplayItem } from "./display";
+import { parseItemValue, presentItem, presentItems } from "./projection";
+
+const item = (fields: Partial<DisplayItem>): DisplayItem => ({
+  id: "itm_message",
+  kind: "text_message",
+  state: "completed",
+  first_stream_id: "1-1",
+  last_stream_id: "1-2",
+  started_at: "2026-09-08T00:00:01Z",
+  ended_at: "2026-09-08T00:00:04Z",
+  content: {},
+  ...fields,
 });
 
-it("does not interrupt an Item already read beyond a replayed recovery event", () => {
-  const items = mergeRetainedItems(new Map(), [
-    {
-      id: "new",
-      kind: "text_message",
-      state: "in_progress",
-      first_stream_id: "6-0",
-      last_stream_id: "8-0",
-      started_at: "2026-09-17T00:00:01Z",
-      content: { text: "after recovery" },
-    },
-  ]);
-  const recovered = applyRunEvent(items, {
-    cursor: "5-0",
-    event: {
-      event_id: "event_recovery",
-      event_type: "run.recovery",
-      run_attempt_id: null,
-      harness_run_id: null,
-      item_id: null,
-      occurred_at: "2026-09-17T00:00:00Z",
-      payload: {},
-    },
-  });
-  expect(recovered.get("new")?.state).toBe("in_progress");
-});
-
-it("times an Item from its first and terminal events, and a committed Item from the display", () => {
-  let items = applyRunEvent(
-    new Map(),
-    event("300-0", "agui.text_message_start", {
-      item_kind: "text_message",
-      role: "assistant",
-    }),
-  );
-  expect(items.get("itm_message")).toMatchObject({
-    startedAt: "2026-09-08T00:00:00Z",
-    endedAt: null,
-  });
-  items = applyRunEvent(
-    items,
-    event("300-1", "item.completed", { item_state: "completed" }),
-  );
-  expect(items.get("itm_message")?.endedAt).toBe("2026-09-08T00:00:00Z");
-  const retained = mergeRetainedItems(new Map(), [
-    {
-      id: "itm_snapshot",
-      kind: "text_message",
-      state: "completed",
-      first_stream_id: "100-0",
-      last_stream_id: "100-1",
-      started_at: "2026-09-08T00:00:01Z",
-      ended_at: "2026-09-08T00:00:04Z",
-      content: { text: "Hello" },
-    },
-    {
-      id: "itm_open",
-      kind: "text_message",
-      state: "interrupted",
-      first_stream_id: "100-2",
-      last_stream_id: "100-2",
-      started_at: "2026-09-08T00:00:05Z",
-      ended_at: null,
-      content: { text: "Cut" },
-    },
-  ]);
-  expect(retained.get("itm_snapshot")).toMatchObject({
+it("presents a message, a tool call and protected reasoning from their content", () => {
+  expect(
+    presentItem(
+      item({ content: { messageId: "msg_1", role: "user", text: "Hello" } }),
+    ),
+  ).toEqual({
+    id: "itm_message",
+    kind: "text_message",
+    state: "completed",
+    firstPosition: "1-1",
+    lastPosition: "1-2",
     startedAt: "2026-09-08T00:00:01Z",
     endedAt: "2026-09-08T00:00:04Z",
+    text: "Hello",
+    role: "user",
+    toolName: "",
+    arguments: "",
+    result: undefined,
+    failure: undefined,
+    protectedReasoning: false,
   });
-  // An Item that never finished has no end, even once its Run has sealed.
-  expect(retained.get("itm_open")).toMatchObject({
-    startedAt: "2026-09-08T00:00:05Z",
-    endedAt: null,
+  expect(
+    presentItem(
+      item({
+        kind: "tool_call",
+        state: "failed",
+        content: {
+          toolCallName: "read_file",
+          arguments: '{"path":',
+          failure: { code: "tool_failed", message: "Retry" },
+        },
+      }),
+    ),
+  ).toMatchObject({
+    role: "assistant",
+    toolName: "read_file",
+    arguments: '{"path":',
+    failure: { code: "tool_failed", message: "Retry" },
   });
+  expect(
+    presentItem(
+      item({ kind: "reasoning_message", content: { encrypted_value: null } }),
+    ).protectedReasoning,
+  ).toBe(true);
+});
+
+it("leaves an unfinished or untimed Item without the times it never reported", () => {
+  expect(
+    presentItem(item({ state: "interrupted", ended_at: null })),
+  ).toMatchObject({ startedAt: "2026-09-08T00:00:01Z", endedAt: null });
+  expect(
+    presentItem(item({ started_at: null, ended_at: undefined })),
+  ).toMatchObject({ startedAt: null, endedAt: null });
 });
 
 it("keeps steering provenance so an enqueued notice is not read as authored input", () => {
-  const items = applyRunEvent(
-    new Map(),
-    event("400-0", "agui.text_message_start", {
-      item_kind: "text_message",
-      role: "user",
-      metadata: { "a13n.steering-source": "async_subagent" },
-    }),
-  );
-  expect(items.get("itm_message")?.steeringSource).toBe("async_subagent");
+  expect(
+    presentItem(
+      item({
+        content: {
+          role: "user",
+          metadata: {
+            "a13n.steering-source": "async_subagent",
+            display: false,
+          },
+        },
+      }),
+    ),
+  ).toMatchObject({ steeringSource: "async_subagent", display: false });
+});
+
+it("presents the messages and tool calls in the order they first appeared", () => {
+  expect(
+    presentItems([
+      item({ id: "second", first_stream_id: "2-1" }),
+      item({ id: "observation", kind: "observation", first_stream_id: "1-5" }),
+      item({ id: "first", first_stream_id: "1-10" }),
+    ]).map((presented) => presented.id),
+  ).toEqual(["first", "second"]);
+});
+
+it("parses a JSON value and keeps any other text as it is", () => {
+  expect(parseItemValue('{"path":"a.md"}')).toEqual({ path: "a.md" });
+  expect(parseItemValue('{"path":')).toBe('{"path":');
+  expect(parseItemValue({ already: true })).toEqual({ already: true });
 });

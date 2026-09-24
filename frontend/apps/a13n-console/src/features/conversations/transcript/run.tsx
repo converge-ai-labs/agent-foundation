@@ -11,7 +11,7 @@ import { ErrorNotice, Loading } from "../../../shared/feedback";
 import { JsonView } from "../../../shared/forms";
 import { useAgent } from "../../agents/queries";
 import { conversationQueries, isActiveRun, type ViewLevel } from "../api";
-import { useRunStream } from "../run-stream";
+import { useRunDisplay } from "../run-display";
 import { useRun, useSession } from "../queries";
 import { runResubmission, type Resubmission } from "../resubmit";
 import { runTimeline } from "../timeline";
@@ -119,7 +119,7 @@ function RunBody({
   const { t } = useTranslation();
   const { can } = useWorkspace();
   const transcript = useRef<HTMLDivElement>(null);
-  const live = useRunStream(run.id, { live: true });
+  const live = useRunDisplay(run.id, { live: true });
   const scroll = useTranscriptScroll(transcript, true);
   const { number } = useThreadRuns(level === "debug" ? thread.id : "");
   // One reading of the run for both levels: Chat and Debug present the same
@@ -128,11 +128,12 @@ function RunBody({
     () =>
       runTimeline({
         run,
+        attempts: live.attempts,
         items: live.items,
         execution: live.execution,
         coverage: live.execution.coverage,
       }),
-    [run, live.items, live.execution],
+    [run, live.attempts, live.items, live.execution],
   );
   const active = isActiveRun(run.status);
   const stopped = ["failed", "cancelled"].includes(run.status);
