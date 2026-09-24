@@ -10,6 +10,7 @@ An agent needs relevant input now and enough state to continue later. Harness ke
 | Current instructions or selected files  | File context                          | Unlimited recursive repository ingestion |
 | Long conversations                      | Handoff and compaction                | Recovery of unsaved side effects         |
 | Tasks and notes across turns            | Working state in `HarnessState`       | Cross-worker scheduling or locks         |
+| Durable facts shared by conversations   | [File memory](memory.md)              | Semantic search or silent merging        |
 | Smaller requests after idle time        | Cold-start filter                     | Provider cache-lifetime detection        |
 
 A model context budget does not enable tools by itself. Select the corresponding Capability, then configure its thresholds. For continuation serialization and human decisions, use [State and Resume](state-and-resume.md).

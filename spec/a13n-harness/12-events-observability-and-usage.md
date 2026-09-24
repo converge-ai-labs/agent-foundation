@@ -97,6 +97,8 @@ One code-owned mandatory lifecycle observer emits `lifecycle` payloads at the pu
 
 The Compaction Capability emits one `context_snapshot` before an eligible ordinary model request only when the required latest provider-reported usage and effective threshold can be resolved. It contains `request_index`, `request_tokens`, and `trigger_tokens`; `request_tokens` is the latest response's input-plus-output token count, while `trigger_tokens` is either the explicit absolute policy or the current context window multiplied by the effective ratio. Exact deferred/provider-suspended boundaries and histories without the required usage or context window emit no snapshot. One eligible request emits at most one snapshot. The values are observations of provider accounting and current policy, not an estimate of the next outgoing request or a guarantee that the provider will accept it.
 
+The File Memory Capability emits one `memory_context` payload when it delivers memory context at a run's first input. `memories` has one entry per mount in mount order with `memory`, `context` (`full`, `changes`, `unchanged`, or `unavailable`), and, except for `unavailable`, the delivered block's `bytes`. It carries no memory content. [File Memory](21-file-memory.md#context-projection-and-cursors) owns when context is delivered.
+
 Handoff and compaction have disjoint event lifecycles:
 
 | Operation  | Event sequence                                                                      |

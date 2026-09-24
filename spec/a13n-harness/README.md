@@ -34,6 +34,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch          |
 | [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry signals, trace levels, metrics, correlation, information boundary, Host profiles, and export-failure semantics     |
 | [20-async-components-and-lifecycle.md](20-async-components-and-lifecycle.md)             | Async subagent admission, observation, parent closure, wake, restart, loss, retention, and Host shutdown                         |
+| [21-file-memory.md](21-file-memory.md)                                                   | File memory store contract, file format, mounts, tools, context cursors, and the local directory store                           |
 | [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core across all four domains, credential declaration, catalogs, and the installed Environment manifest           |
 
 ## Reading Paths
@@ -57,6 +58,10 @@ Read `06`, `10`, and `16`. Read `16a` for OAuth-backed native Models and Host cr
 ### Integrate Tools or Environments
 
 Read `07`, `08`, `13`, and `15`, then `08a` for Provider definitions, adapter lifecycle, and built-ins, and `22` for the shared Provider core. For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `08` solely owns background-process semantics. A Run receives fresh Environment adapters and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Service runs](../a13n-service/05-runs.md).
+
+### Add Agent Memory
+
+Read `21` for file memory, then `09` for the model context projection it uses and `07` for tool permissions over `memory.file.*`.
 
 ### Implement Hosting or Persistence
 
