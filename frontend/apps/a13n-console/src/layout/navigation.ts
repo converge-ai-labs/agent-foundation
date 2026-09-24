@@ -1,5 +1,6 @@
 import {
   type Icon,
+  BrainIcon,
   PulseIcon,
   HeartIcon,
   CubeIcon,
@@ -24,6 +25,7 @@ export const navigationGroups: {
     entries: [
       ["models", "Models", CubeIcon],
       ["skills", "Skills", PuzzlePieceIcon],
+      ["memories", "Memories", BrainIcon],
       [
         "environments",
         "Environments",
@@ -58,12 +60,13 @@ export function routeSkeleton(
     "/sessions": 4,
     "/models": 4,
     "/skills": 3,
+    "/memories": 5,
     "/environments": 4,
     "/connections": 3,
     "/traces": 5,
   };
   if (tail in lists) return { variant: "page", columns: lists[tail] };
-  if (/^\/(agents|traces|environments)\/[^/]+$/.test(tail))
+  if (/^\/(agents|traces|environments|memories)\/[^/]+$/.test(tail))
     return { variant: "detail", columns: 4 };
   return undefined;
 }

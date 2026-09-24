@@ -26,6 +26,18 @@ function reasonCopy(error: ApiError, t: TFunction) {
         "A thread can mount at most {{limit}} environments. Remove one before adding another.",
         { limit },
       );
+    case "memory_mount_limit":
+      return t(
+        "A thread can mount at most {{limit}} memories. Remove one before adding another.",
+        { limit },
+      );
+    case "already_mounted":
+      return t("The thread already mounts it under another name.");
+    case "memory_full":
+      return t(
+        "This memory is full: its files may hold at most {{limit}} bytes. Shorten or delete files, then try again.",
+        { limit },
+      );
     case "environment_limit":
       return t(
         "This workspace has reached its limit of {{limit}} managed environments. Delete one it no longer needs, then try again.",

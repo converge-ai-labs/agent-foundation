@@ -132,7 +132,7 @@ it("keeps resource categories in sidebar links and restores the selected categor
         <Routes>
           <Route path="/workspace/:workspaceKey" element={<Shell />}>
             <Route path="models" element={<p>Model directory</p>} />
-
+            <Route path="memories" element={<p>Memory directory</p>} />
             <Route path="environments" element={<p>Template directory</p>} />
             <Route
               path="environments/instances"
@@ -146,6 +146,8 @@ it("keeps resource categories in sidebar links and restores the selected categor
   expect(screen.queryByRole("link", { name: "Providers" })).toBeNull();
   await user.click(screen.getByRole("link", { name: "Models" }));
   expect(screen.getByText("Model directory")).toBeTruthy();
+  await user.click(screen.getByRole("link", { name: "Memories" }));
+  expect(screen.getByText("Memory directory")).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "Environments" }));
   await user.click(screen.getByRole("link", { name: "Instances" }));
   expect(screen.getByText("Instance directory")).toBeTruthy();

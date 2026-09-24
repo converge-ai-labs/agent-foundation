@@ -58,6 +58,16 @@ const SkillDetail = lazy(() =>
     default: module.SkillDetail,
   })),
 );
+const MemoriesPage = lazy(() =>
+  import("./features/memories/page").then((module) => ({
+    default: module.MemoriesPage,
+  })),
+);
+const MemoryDetail = lazy(() =>
+  import("./features/memories/page").then((module) => ({
+    default: module.MemoryDetail,
+  })),
+);
 const EnvironmentsPage = lazy(() =>
   import("./features/environments/page").then((module) => ({
     default: module.EnvironmentsPage,
@@ -219,6 +229,11 @@ function AppContent() {
                       <Route
                         path="skills/:skillKey"
                         element={<SkillDetail />}
+                      />
+                      <Route path="memories" element={<MemoriesPage />} />
+                      <Route
+                        path="memories/:memoryId"
+                        element={<MemoryDetail />}
                       />
                       <Route path="models" element={<ModelsPage />} />
                       <Route

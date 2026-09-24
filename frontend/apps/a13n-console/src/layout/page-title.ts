@@ -14,6 +14,7 @@ const destinations: Record<string, string> = {
   agents: "Agents",
   connections: "Connections",
   environments: "Environments",
+  memories: "Memories",
   models: "Models",
   sessions: "Sessions",
   settings: "Settings",

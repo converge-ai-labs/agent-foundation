@@ -36,6 +36,7 @@ export function fixtureRun(
     input: textInput("Run the checks"),
     labels: {},
     lineage: "continue",
+    memory_mounts: [],
     options: {},
     output: "Patched the fold.",
     parent_run_id: "run_1",

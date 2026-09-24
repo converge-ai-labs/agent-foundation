@@ -25,7 +25,7 @@ The local launcher assigns a stable Console port per checkout and passes the mat
 
 - Workspace Agents with configuration, immutable versions, and lifecycle controls.
 - Sessions with threads, runs, retained and live output, attachments, waiting feedback, steering, interruption, and queued messages.
-- Models and providers, Skills and versions, and Environment providers, templates, and instances.
+- Models and providers, Skills and versions, file Memories with their history, and Environment providers, templates, and instances.
 - Connectors, and remote MCP connections and tool discovery.
 - Run attempt details and Traces.
 - Workspace, organization, and personal settings, membership, invitations, API keys, service accounts, sessions, and audit events.

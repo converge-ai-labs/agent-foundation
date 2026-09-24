@@ -29,6 +29,7 @@ const names: Record<Definition["key"], string> = {
   files: "Files",
   shell: "Terminal",
   web: "Web",
+  memory: "Memory",
   assets: "Assets",
   configuration: "Configuration",
 };
@@ -36,6 +37,7 @@ const groupDescriptions: Record<Definition["key"], string> = {
   files: "Read, write, and organize files.",
   shell: "Run commands and manage processes.",
   web: "Search and retrieve online content.",
+  memory: "Read and change the memories a conversation mounts.",
   assets: "Publish files as agent assets.",
   configuration: "Find resources and create agents and versions.",
 };
@@ -65,6 +67,15 @@ const toolDescriptions: Record<string, Record<string, string>> = {
     scrape: "Extract page content",
     fetch: "Fetch URL content",
     download: "Download a resource",
+  },
+  memory: {
+    file_view: "View memory files",
+    file_grep: "Search memory files",
+    file_create: "Create a memory file",
+    file_edit: "Edit a memory file",
+    file_append: "Append to a memory file",
+    file_move: "Move a memory file",
+    file_delete: "Delete a memory file",
   },
   assets: { publish: "Publish an asset" },
   configuration: {

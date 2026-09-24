@@ -5,6 +5,7 @@ it("names the destination behind a workspace path", () => {
   expect(pageName("/workspace/design/agents")).toBe("Agents");
   expect(pageName("/workspace/design/agents/release-reviewer")).toBe("Agents");
   expect(pageName("/workspace/design/traces")).toBe("Traces");
+  expect(pageName("/workspace/design/memories/mem_1")).toBe("Memories");
   expect(pageName("/workspace/design/settings/members")).toBe("Settings");
 });
 
