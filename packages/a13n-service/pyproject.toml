@@ -27,12 +27,14 @@ dependencies = [
     "opentelemetry-sdk>=1.39,<2",
     "pydantic[email]>=2.12,<3",
     "pydantic-ai-slim>=2.48.0,<3",
+    "pydantic-core>=2.41,<3",
     "psycopg[binary]>=3.2,<4",
     "python-multipart>=0.0.32,<1",
     "pyyaml>=6.0,<7",
     "redis>=8.1,<9",
     "referencing>=0.37,<1",
     "sqlalchemy[asyncio]>=2.0.41,<3",
+    "starlette>=0.52,<2",
     "uvicorn>=0.35,<1",
 ]
 
@@ -46,8 +48,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["a13n_service"]
 
+# SQLAlchemy loads psycopg through its configured driver; FastAPI loads
+# python-multipart to parse the upload endpoints' multipart forms.
 [tool.deptry.per_rule_ignores]
-DEP002 = ["psycopg"]
+DEP002 = ["psycopg", "python-multipart"]
 
 [tool.deptry]
 known_first_party = ["a13n_service"]
