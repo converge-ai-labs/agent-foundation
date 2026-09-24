@@ -22,6 +22,7 @@ from dev.service.seed_conversations import Talk, scenarios
 from dev.service.seed_identity import MEMBERS, seed_identity
 from dev.service.seed_lifecycle import revise_after_runs
 from dev.service.seed_local import seed_local, stopped_environment
+from dev.service.seed_memories import remembered, seed_memories
 from dev.service.seed_providers import seed_providers
 from dev.service.seed_resources import seed_configuration, seed_skills, seed_subscription
 
@@ -49,9 +50,14 @@ def seed(api: Api, model_url: str, environments: Path) -> Seeded:
     connections = seed_connections(api, ws, model_url, providers["connector"]["composio"])
     search = providers["web"]["brave"]
     cast = seed_agents(api, ws, local, skills, connections["ready"], search)
+    memories = seed_memories(api, ws, local.model)
     assets = {example.name: store(api, ws, example) for example in examples()}
     talk = Talk(api, ws)
-    jobs = (*scenarios(talk, cast, local.environment, assets), partial(stopped_environment, api, ws, local.template))
+    jobs = (
+        *scenarios(talk, cast, local.environment, assets),
+        partial(remembered, talk, memories),
+        partial(stopped_environment, api, ws, local.template),
+    )
     with ThreadPoolExecutor(PARALLEL_CONVERSATIONS) as pool:
         for found in pool.map(lambda job: job(), jobs):
             index |= found

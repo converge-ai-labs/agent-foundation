@@ -64,7 +64,8 @@ async def completion(request: Request):
     )
     tool_call = (
         planned_tool(body, prompt)
-        if tool_result is None or any(flag in prompt for flag in ("[structured-invalid]", "[delegate]", "[workspace]"))
+        if tool_result is None
+        or any(flag in prompt for flag in ("[structured-invalid]", "[delegate]", "[workspace]", "[memory-edit]"))
         else None
     )
     tool_calls = tool_call if isinstance(tool_call, list) else [tool_call] if tool_call is not None else []
@@ -185,6 +186,8 @@ def planned_tool(body: dict, prompt: str) -> dict | list[dict] | None:
     tools = [item["function"] for item in body.get("tools", [])]
     if "[workspace]" in prompt:
         return workspace_step(body, tools)
+    if "[memory-edit]" in prompt:
+        return memory_step(body, tools)
     waiting = re.search(r"\[service-wait:(question|client|approval|mixed)\]", prompt)
     if waiting:
         kind = waiting[1]
@@ -288,6 +291,25 @@ def workspace_step(body: dict, tools: list[dict]) -> dict | None:
         ("write", {"file_path": f"/workspace/{note}", "content": "# Fictional review\n\n- Navigation\n- Keyboard\n"}),
         ("shell_exec", {"command": f"wc -l {note} && head -n 1 {note}", "cwd": "/workspace"}),
     ]
+    if made >= len(steps):
+        return None
+    name, arguments = steps[made]
+    return call(name, arguments) if any(tool["name"] == name for tool in tools) else None
+
+
+def memory_step(body: dict, tools: list[dict]) -> dict | None:
+    """`[memory-edit] name path "old" -> "new"`: view a mounted memory's file, then edit it, one call per request."""
+    messages = body.get("messages", [])
+    marked = max(index for index, message in enumerate(messages) if "[memory-edit]" in text_of(message))
+    edit = re.search(r'\[memory-edit\] (\S+) (\S+) "([^"]*)" -> "([^"]*)"', text_of(messages[marked]))
+    if edit is None:
+        return None
+    memory, path, old, new = edit.groups()
+    steps = [
+        ("memory_file_view", {"memory": memory, "path": path}),
+        ("memory_file_edit", {"memory": memory, "path": path, "old_string": old, "new_string": new}),
+    ]
+    made = sum(len(message.get("tool_calls") or []) for message in messages[marked:])
     if made >= len(steps):
         return None
     name, arguments = steps[made]

@@ -11,6 +11,7 @@ from dev.service.seed import Seeded
 from dev.service.seed_assets import examples
 from dev.service.seed_conversations import NATIVE, PLACED
 from dev.service.seed_identity import MEMBERS
+from dev.service.seed_memories import HANDBOOK
 from dev.service.seed_providers import KINDS
 from dev.service.seed_resources import SKILLS
 
@@ -29,6 +30,7 @@ def verify(api: Api, seeded: Seeded) -> list[Check]:
         *_providers(api, org, ws),
         *_resources(api, org, ws, index),
         *_execution(api, ws, index),
+        *_memories(api, ws, index),
     ]
 
 
@@ -239,6 +241,35 @@ def _execution(api: Api, ws: str, index: dict[str, str]) -> Iterator[Check]:
         run("member_conversation")["principal_id"] == index["member_runner"],
     )
     yield "Usage is recorded and priced per model", any(model["cost"] for model in api.get(f"{ws}/usage")["models"])
+
+
+def _memories(api: Api, ws: str, index: dict[str, str]) -> Iterator[Check]:
+    handbook = api.get(f"{ws}/memories/{index['memory_handbook']}")
+    preferences = f"{ws}/memories/{index['memory_preferences']}"
+    yield (
+        "Memories: a handbook with an always-loaded README, and preferences",
+        (handbook["always_load"], handbook["file_count"]) == (["README.md"], len(HANDBOOK))
+        and api.get(preferences)["file_count"] > 0,
+    )
+    edited = api.get(f"{ws}/runs/{index['memory_edit']}")
+    mounts = api.items(f"{ws}/threads/{edited['thread_id']}/memories")
+    yield (
+        "The agent's default memory mounts joined its conversation",
+        [(mount["name"], mount["access"]) for mount in mounts] == [("handbook", "read"), ("prefs", "write")]
+        and [mount["name"] for mount in edited["memory_mounts"]] == ["handbook", "prefs"],
+    )
+    [change] = api.items(f"{preferences}/revisions", run_id=edited["id"])
+    detail = api.get(f"{preferences}/revisions/{change['seq']}")
+    yield (
+        "A run's tool call edited a preference, with history and a diff",
+        change["op"] == "update"
+        and change["tool_call_id"] is not None
+        and "Reply in Chinese." in api.get(f"{preferences}/files/language.md")["content"]
+        and any("+- Reply in Chinese." in hunk for hunk in detail["hunks"]),
+    )
+    revisions = api.items(f"{ws}/memories/{index['memory_handbook']}/revisions")
+    releases = [(item["op"], item["run_id"]) for item in revisions if item["path"] == "process/releases.md"]
+    yield "A person's edit shows in the handbook's history", releases == [("update", None), ("create", None)]
 
 
 def _attached(items: list[Json], marker: str) -> set[str]:
