@@ -32,7 +32,7 @@ Generate a compact continuation summary for the conversation history. Return onl
 
     - [Key interactions already completed, including actions and outcomes]
 
-09. Activated Skills: [List only Skills that were activated and remain relevant to unfinished work, and remind the next agent to re-read them. Do not include Skills that were merely inspected or rejected as candidates.]
+09. Skills for Continuation: [List only skills actually used that remain relevant to unfinished work. For each, include the SKILL.md path, its role in the current work, and supporting file paths needed for the immediate next step. Remind the resumed agent to re-read the relevant instructions before continuing work that depends on them. Do not include skills merely inspected, rejected, or no longer relevant.]
 
 10. Files to Inspect on Resume: [List only file paths that may need to be inspected when resuming. Do not include file contents.]
 

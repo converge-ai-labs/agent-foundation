@@ -18,9 +18,11 @@ Explain the transition naturally. Do not mention context windows or token limits
 <before-summarizing>
 - Reconcile stale notes and task statuses first.
 - Preserve the user's intent, completed work, key decisions, unresolved work, relevant past interactions, and immediate next step.
+- Preserve the SKILL.md paths and brief roles of skills actually used that remain relevant to unfinished work. Include supporting file paths only when needed for the immediate next step.
+- Make re-reading those instructions part of the continuation's next steps; do not carry forward merely inspected or irrelevant skills.
 - Do not mechanically duplicate all notes or tasks. Include a noted fact only when the handoff narrative or next step depends on it.
 - Do not write the complete handoff summary into a note.
 </before-summarizing>
 <files-to-inspect>
-List only files likely to require immediate inspection after continuation. Paths are reminders; contents are not loaded.
+List only files likely to require immediate inspection after continuation, including relevant skill files to read on resume. Paths are reminders; contents are not loaded.
 </files-to-inspect>

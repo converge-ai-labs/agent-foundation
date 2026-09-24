@@ -16,6 +16,8 @@ from pydantic_ai.models import ModelRequestContext
 from a13n_harness.context import AgentContext
 
 COLD_START_FILTER_CAPABILITY_ID = "a13n.filter.cold-start"
+# Result-local retention only; never execution authority or a compaction exemption.
+COLD_START_RETENTION_METADATA_KEY = "a13n.cold-start"
 
 
 class ColdStartFilterConfiguration(BaseModel):
@@ -95,6 +97,8 @@ def _trim_consumed_tool_returns(
         part_changed = False
         for part_index, part in enumerate(parts):
             if type(part) is not ToolReturnPart:
+                continue
+            if isinstance(part.metadata, dict) and part.metadata.get(COLD_START_RETENTION_METADATA_KEY) == "preserve":
                 continue
             content, content_changed = _trim_value(part.content, configuration)
             if not content_changed:

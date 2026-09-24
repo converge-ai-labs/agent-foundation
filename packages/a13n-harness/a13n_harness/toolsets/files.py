@@ -21,6 +21,7 @@ from a13n_harness.environment._resources import EnvironmentResources
 from a13n_harness.environment.providers import BoundEnvironment, FileScopeProvider
 from a13n_harness.errors import HarnessError
 from a13n_harness.events import FileChangeProjection, FilesystemChangedValue, emit_tool_event
+from a13n_harness.filters.cold_start import COLD_START_RETENTION_METADATA_KEY
 from a13n_harness.providers.environment.files import (
     FileMetadata,
     FileOperator,
@@ -139,6 +140,7 @@ FILE_VIEW_RULES = ToolMetadataKey("a13n.files.view-rules", FileViewRule)
 
 @dataclass(frozen=True, slots=True)
 class _FileViewProfile:
+    preserve_on_cold_start: bool
     initial_line_limit: int
     max_line_length: int
     page_bytes: int
@@ -442,6 +444,8 @@ class FileToolset:
                 retry_hint="request_change",
                 details={"tool": "pdf_convert"},
             )
+        profile = _file_view_profile(ctx.deps, file_path)
+        retention_metadata = {COLD_START_RETENTION_METADATA_KEY: "preserve"} if profile.preserve_on_cold_start else None
         media_type = _MEDIA_TYPES.get(extension)
         if media_type is not None:
             try:
@@ -477,6 +481,7 @@ class FileToolset:
                 message = f"The {media_type} file {file_path} is attached in the user message."
                 return ToolReturn(
                     return_value=message,
+                    metadata=retention_metadata,
                     # Native tool attachments may be stored in a UserPromptPart,
                     # but they are model content, not a new authored user turn.
                     content=[BinaryContent(data=data, media_type=media_type, vendor_metadata={"display": False})],
@@ -517,9 +522,8 @@ class FileToolset:
             except ValidationError:
                 return _media_understanding_error("media_understanding_response_invalid")
             await _record_media_understanding_usage(ctx, result.usage)
-            return ToolReturn(return_value=result.text)
+            return ToolReturn(return_value=result.text, metadata=retention_metadata)
 
-        profile = _file_view_profile(ctx.deps, file_path)
         effective_line_limit = line_limit
         if line_offset in {None, 0}:
             effective_line_limit = max(effective_line_limit, profile.initial_line_limit)
@@ -546,7 +550,7 @@ class FileToolset:
                 limit=profile.semantic_output_chars,
             )
 
-        return await self._execute(
+        viewed = await self._execute(
             file_path,
             lambda files: self._read_text_page(
                 files,
@@ -566,6 +570,9 @@ class FileToolset:
             },
             disclose=disclose,
         )
+        if viewed.get("ok") is True and retention_metadata is not None:
+            return ToolReturn(return_value=viewed, metadata=retention_metadata)
+        return viewed
 
     async def _read_text_page(
         self,
@@ -1274,6 +1281,7 @@ def _file_view_profile(context: AgentContext, file_path: str) -> _FileViewProfil
     preserve_complete_lines = False
     if not isinstance(context, AgentContext):
         return _FileViewProfile(
+            preserve_on_cold_start=False,
             initial_line_limit=initial_line_limit,
             max_line_length=max_line_length,
             page_bytes=page_bytes,
@@ -1284,6 +1292,7 @@ def _file_view_profile(context: AgentContext, file_path: str) -> _FileViewProfil
         candidate = context.environment.resolve_path(file_path)
     except EnvironmentError:
         return _FileViewProfile(
+            preserve_on_cold_start=False,
             initial_line_limit=initial_line_limit,
             max_line_length=max_line_length,
             page_bytes=page_bytes,
@@ -1291,10 +1300,9 @@ def _file_view_profile(context: AgentContext, file_path: str) -> _FileViewProfil
             preserve_complete_lines=preserve_complete_lines,
         )
 
+    is_skill_file = any(_is_within_environment_root(candidate, skill.directory) for skill in context.skill_paths.values)
     suffix = PurePosixPath(candidate.path).suffix.casefold()
-    if suffix == ".md" and any(
-        _is_within_environment_root(candidate, skill.directory) for skill in context.skill_paths.values
-    ):
+    if suffix == ".md" and is_skill_file:
         initial_line_limit = _SKILL_MARKDOWN_LINE_LIMIT
         max_line_length = _SKILL_MARKDOWN_MAX_LINE_LENGTH
         page_bytes = _MAX_MODEL_TEXT_RULE_PAGE_BYTES
@@ -1318,6 +1326,7 @@ def _file_view_profile(context: AgentContext, file_path: str) -> _FileViewProfil
         preserve_complete_lines = preserve_complete_lines or rule.preserve_complete_lines
 
     return _FileViewProfile(
+        preserve_on_cold_start=is_skill_file,
         initial_line_limit=initial_line_limit,
         max_line_length=max_line_length,
         page_bytes=page_bytes,

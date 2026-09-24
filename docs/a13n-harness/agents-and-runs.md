@@ -89,6 +89,8 @@ spec = AgentSpec(cold_start_filter=ColdStartFilterConfiguration(idle_seconds=3_6
 disabled = spec.with_updates(cold_start_filter=None)
 ```
 
+Successful direct `view` results for files under published skill directories are marked at read time and exempt from cold-start trimming, regardless of file extension. The marker survives saved-history resume; it does not bypass initial output limits, prove the file was read completely, or prevent compaction and handoff from replacing the history. Older unmarked results keep the ordinary trimming behavior, and CodeAct does not transfer an inner read's exemption to its combined output.
+
 Plain Pydantic AI specs receive the same default. An explicitly composed `ColdStartFilterCapability` keeps its policy; `None` disables automatic installation rather than removing an authored Capability.
 
 ### Usage limits and retries

@@ -273,6 +273,38 @@ async def test_cold_start_filter_trims_only_consumed_tool_return_string_leaves()
     assert old.content["content"] == old_text
 
 
+@pytest.mark.parametrize(
+    ("metadata", "preserved"),
+    [
+        ({"a13n.cold-start": "preserve", "other": {"value": 1}}, True),
+        (None, False),
+        ({}, False),
+        ({"a13n.cold-start": True}, False),
+        ({"a13n.cold-start": "unknown"}, False),
+        ("preserve", False),
+        (["preserve"], False),
+    ],
+)
+async def test_cold_start_only_honors_result_metadata_not_content(metadata, preserved: bool) -> None:
+    part = ToolReturnPart(
+        "view",
+        {"content": "x" * 4000, "a13n.cold-start": "preserve"},
+        metadata=metadata,
+    )
+    request = _request_context(
+        [
+            ModelRequest(parts=[part]),
+            ModelResponse(parts=[TextPart("consumed")], timestamp=datetime.now(UTC) - timedelta(hours=2)),
+        ]
+    )
+    filtered = await ColdStartFilterCapability().before_model_request(None, request)
+    actual = filtered.messages[0].parts[0]
+    assert actual.metadata == metadata
+    assert ("chars removed after cold start" in actual.content["content"]) is not preserved
+    assert (filtered is request) is preserved
+    assert part.content["content"] == "x" * 4000
+
+
 @pytest.mark.parametrize("kind", ["integrity", "cold_start", "content"])
 @pytest.mark.parametrize("changed", [False, True])
 async def test_filters_copy_only_changed_history_and_detach_all_nested_values(kind, changed, monkeypatch):

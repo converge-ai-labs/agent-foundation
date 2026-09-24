@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from a13n_harness import (
     HarnessEvent,
     HarnessExtensionEvent,
     HarnessRunResultEvent,
+    HarnessState,
     RunBindings,
     SubagentDefinition,
 )
@@ -46,15 +48,18 @@ from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalRootConfiguration,
 )
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+from a13n_harness.spec import AgentSpec as HarnessAgentSpec
+from a13n_harness.spec import HarnessModelCharacteristics, ModelCapability
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from a13n_harness.toolsets import (
     FILE_VIEW_RULES,
     FileViewRule,
+    MediaUnderstandingResult,
 )
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
 from .environment_helpers import (
@@ -1068,6 +1073,209 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
     provider.shutdown()
 
 
+@pytest.mark.parametrize("external", [False, True])
+async def test_skill_file_views_survive_cold_resume_without_current_skill_catalog(
+    tmp_path: Path, external: bool
+) -> None:
+    root = "external-skill" if external else ".agents/skills/review"
+    content = "".join(f"line {index}: {'x' * 90}\n" for index in range(40))
+    protected = [f"{root}/{name}" for name in ("SKILL.md", "nested/guide.md", "data.json", "script.py", "README")]
+    ordinary = [f"{root}-other/guide.md", "notes.md"]
+    for path in (*protected, *ordinary):
+        target = tmp_path / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    (tmp_path / root / "SKILL.md").write_text(
+        "---\nname: review\ndescription: Review code.\n---\n" + content,
+        encoding="utf-8",
+    )
+    # A discovered but unselected package must not receive retention treatment.
+    other = tmp_path / ".agents/skills/unselected"
+    other.mkdir(parents=True)
+    (other / "SKILL.md").write_text(
+        "---\nname: unselected\ndescription: Another workflow.\n---\n" + content,
+        encoding="utf-8",
+    )
+    ordinary.append(".agents/skills/unselected/SKILL.md")
+    failed = f"{root}/missing.txt"
+    paths = [*protected, *ordinary, failed]
+    observed: dict[str, ToolReturnPart] = {}
+
+    async def read_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns:
+            yield {
+                index: DeltaToolCall(
+                    name="view",
+                    json_args=json.dumps({"file_path": f"/workspace/{path}"}),
+                    tool_call_id=f"read-{index}",
+                )
+                for index, path in enumerate(paths)
+            }
+        else:
+            observed.update({part.tool_call_id: part for part in returns})
+            yield "read complete"
+
+    reader = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=read_stream),
+        capabilities=(
+            DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
+            _ExternalSkillPathsCapability() if external else SkillsCapability(_manager()),
+        ),
+    )
+    first = await reader.run(
+        "Read skill files",
+        bindings=RunBindings.embedded(
+            environment=_binding(tmp_path),
+            skill_selection=None if external else frozenset({"review"}),
+            capabilities=(InvocationPolicyCapability(evaluator=_Allow()),),
+        ),
+    )
+    assert first.output_or_raise() == "read complete"
+    assert first.state is not None
+    for index, path in enumerate(paths):
+        part = observed[f"read-{index}"]
+        assert part.metadata == ({"a13n.cold-start": "preserve"} if path in protected else None)
+        assert part.content["ok"] is (path != failed)
+        if path != failed:
+            assert part.content["content"] == (tmp_path / path).read_text(encoding="utf-8")
+            assert "a13n.cold-start" not in part.content
+
+    history = list(first.state.message_history)
+    assert isinstance(history[-1], ModelResponse)
+    history[-1] = replace(history[-1], timestamp=datetime.now(UTC) - timedelta(hours=2))
+    state = HarnessState.new(
+        thread_id=first.state.thread_id,
+        message_history=history,
+        agent_context_state=first.state.agent_context_state,
+        environment_states=first.state.environment_states,
+    )
+    previous = HarnessState.model_validate_json(state.model_dump_json())
+    saved = previous.model_dump_json()
+
+    def assert_retention(messages) -> None:
+        returns = {
+            part.tool_call_id: part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        }
+        for index, path in enumerate(paths):
+            part = returns[f"read-{index}"]
+            if path in ordinary:
+                assert "chars removed after cold start" in part.content["content"]
+            else:
+                assert part.content == observed[f"read-{index}"].content
+                assert part.metadata == observed[f"read-{index}"].metadata
+
+    resumed_requests: list[list[ModelMessage]] = []
+
+    async def resume_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        resumed_requests.append(messages)
+        yield "continued"
+
+    # No current files, skill owner, or directory lookup is needed to retain old results.
+    resumed = (
+        await HarnessBuilder()
+        .build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=resume_stream),
+        )
+        .run("Continue", previous_state=previous, bindings=RunBindings.embedded())
+    )
+    assert resumed.output_or_raise() == "continued"
+    assert resumed.state is not None
+    assert len(resumed_requests) == 1
+    assert_retention(resumed_requests[0])
+    assert_retention(resumed.state.message_history)
+    assert previous.model_dump_json() == saved
+
+
+@pytest.mark.parametrize("native", [False, True])
+async def test_skill_media_views_mark_only_successful_results(tmp_path: Path, native: bool) -> None:
+    skill = tmp_path / "external-skill"
+    skill.mkdir()
+    for path in (skill / "image.png", tmp_path / "image.png"):
+        path.write_bytes(b"\x89PNG")
+    paths = ["external-skill/image.png", "image.png", "external-skill/missing.png", "external-skill/manual.pdf"]
+    observed: list[ToolReturnPart] = []
+    understanding_calls = []
+
+    class UnderstandingProvider:
+        async def understand(self, request):
+            understanding_calls.append(request)
+            return MediaUnderstandingResult(text="Image description. " * 200)
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns:
+            yield {
+                index: DeltaToolCall(
+                    name="view",
+                    json_args=json.dumps({"file_path": f"/workspace/{path}"}),
+                    tool_call_id=f"media-{index}",
+                )
+                for index, path in enumerate(paths)
+            }
+        else:
+            observed.extend(returns)
+            yield "done"
+
+    result = (
+        await HarnessBuilder()
+        .build(
+            HarnessAgentSpec(
+                model_characteristics=HarnessModelCharacteristics(
+                    capabilities=frozenset({ModelCapability.IMAGE_UNDERSTANDING}) if native else frozenset(),
+                )
+            ),
+            output_type=str,
+            model=FunctionModel(stream_function=stream),
+            capabilities=(
+                DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
+                _ExternalSkillPathsCapability(),
+            ),
+        )
+        .run(
+            "View skill media",
+            bindings=RunBindings.embedded(
+                environment=_binding(tmp_path),
+                capabilities=(InvocationPolicyCapability(evaluator=_Allow()),),
+                file_media_understanding=UnderstandingProvider(),
+            ),
+        )
+    )
+    assert result.output_or_raise() == "done"
+    by_id = {part.tool_call_id: part for part in observed}
+    assert by_id["media-0"].metadata == {"a13n.cold-start": "preserve"}
+    assert by_id["media-1"].metadata is None
+    for call_id in ("media-2", "media-3"):
+        assert by_id[call_id].metadata is None
+        assert by_id[call_id].content["ok"] is False
+    assert len(understanding_calls) == (0 if native else 2)
+    if not native:
+        assert by_id["media-0"].content == by_id["media-1"].content == "Image description. " * 200
+
+
 async def test_external_capability_can_publish_skill_paths_for_relaxed_markdown_view(tmp_path: Path) -> None:
     skill = tmp_path / "external-skill"
     skill.mkdir()
@@ -1191,6 +1399,7 @@ async def test_large_selected_skill_markdown_continues_without_skipping_lines(tm
             if isinstance(part, ToolReturnPart)
         ]
         if returns:
+            assert returns[-1].metadata == {"a13n.cold-start": "preserve"}
             latest = returns[-1].content
             assert isinstance(latest, dict)
             if len(pages) < len(returns):

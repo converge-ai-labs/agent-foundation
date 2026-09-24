@@ -499,7 +499,8 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff(
             assert "Original long task" in _user_text(messages)
             assert "Continue" in _user_text(messages)
             assert "## Condensed conversation summary" in _user_text(messages)
-            assert "9. Activated Skills:" in _user_text(messages)
+            assert "9. Skills for Continuation:" in _user_text(messages)
+            assert "include the SKILL.md path" in _user_text(messages)
             assert "11. Relevant Note Keys" in _user_text(messages)
             assert "Do not call any tools or investigate unresolved questions yourself." in _user_text(messages)
             assert "Record any uncertainties in the summary for the resumed agent to investigate." in _user_text(

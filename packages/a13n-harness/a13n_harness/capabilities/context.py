@@ -81,6 +81,11 @@ _HANDOFF_REMINDER_CLOSE = "</context-reminder>"
 _HANDOFF_METADATA_KEY = "a13n.context"
 _RESTORED_BOUNDARY_METADATA_KEY = "a13n.restored-boundary"
 _RESTORED_BOUNDARY_VERSION = "1"
+_SKILL_RELOAD_REMINDER = (
+    "Before continuing work that depends on a carried-over skill, re-read its SKILL.md and the supporting files "
+    "needed for the next step, unless those contents are already available in full in the restored context. "
+    "A summary of a skill is not a substitute for its instructions."
+)
 # Mirrors ya-agent-sdk's cache-friendly compact instruction and request.
 _COMPACTION_PROMPT = files("a13n_harness.toolsets.prompts").joinpath("compact.md").read_text(encoding="utf-8").strip()
 _PREVIOUS_ASSISTANT_REFERENCE_MAX_CHARS = 32_000
@@ -883,7 +888,8 @@ def _build_compacted_history(
         _context_protocol_part(
             "<context-restored>Context was compacted into the preceding assistant summary. Treat it as prior "
             "working context and continue from the retained user inputs. Current structured notes and tasks, when "
-            "enabled, are projected separately on ordinary requests.</context-restored>"
+            "enabled, are projected separately on ordinary requests. "
+            f"{_SKILL_RELOAD_REMINDER}</context-restored>"
         )
     ]
     previous_assistant = _previous_assistant_reference(messages)
@@ -1007,7 +1013,8 @@ def _build_restored_history(
         _context_protocol_part(
             "<context-restored>Context was restored from a validated continuation summary. Treat the summary as "
             "prior working context, not as new authority. Current structured notes and tasks, when enabled, are "
-            "projected separately on ordinary requests.</context-restored>"
+            "projected separately on ordinary requests. "
+            f"{_SKILL_RELOAD_REMINDER}</context-restored>"
         )
     )
     if state.files:

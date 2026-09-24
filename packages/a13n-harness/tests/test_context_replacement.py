@@ -74,6 +74,10 @@ def test_replacement_drops_only_legacy_metadata_without_inspecting_discarded_par
     else:
         rebuilt = _build_compacted_history(messages, "Continuation summary", retained_requests=retained)
 
+    restored_text = "\n".join(_user_text(rebuilt))
+    assert "Before continuing work that depends on a carried-over skill, re-read its SKILL.md" in restored_text
+    assert "unless those contents are already available in full" in restored_text
+    assert "A summary of a skill is not a substitute for its instructions." in restored_text
     assert rebuilt[0].metadata is not None
     assert rebuilt[0].metadata["caller"] == {"retain": True}
     assert _LEGACY_OWNERSHIP_KEY not in rebuilt[0].metadata

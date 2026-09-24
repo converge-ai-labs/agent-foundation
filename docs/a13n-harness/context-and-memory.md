@@ -229,6 +229,8 @@ Use content filtering only for provider/model multimodal compatibility. Cold-sta
 
 ## Handoff versus automatic compaction
 
+Both handoff and compaction ask the Agent to carry forward the `SKILL.md` paths, brief roles, and immediately needed supporting file paths for skills actually used and still relevant. On resume, the Agent is reminded to reread those instructions before dependent work unless the full content is already available. This is guidance, not an automatic reload or tool gate; merely inspected skills are not promoted to active workflows, and complete reads still in context can be reused.
+
 `HandoffCapability` exposes an explicit `summarize` tool; `CompactionCapability` reacts to request context usage. Both are optional. Configure their usual thresholds through [model characteristics](models.md#model-characteristics), or supply explicit token thresholds when the Agent needs a fixed policy.
 
 A summary is narrative continuation, not a substitute for task/note state. Neither summarization nor compaction commits application storage. Persist the resulting safe `HarnessState` only under your Host's acceptance policy.
