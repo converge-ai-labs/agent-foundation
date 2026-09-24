@@ -255,6 +255,8 @@ class ThreadService:
         if thread.parent_thread_id is not None:
             raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
         patch = mutation.patch
+        if "starred" in patch.model_fields_set and await self._store.threads.worker_owners((thread_id,)):
+            raise ThreadError("Star the Coordinator rather than its workers.", code="worker_star_unsupported")
         title = patch.title if "title" in patch.model_fields_set else thread.title
         archived = patch.archived if "archived" in patch.model_fields_set else thread.archived
         assert archived is not None
@@ -263,6 +265,7 @@ class ThreadService:
             expected_version=mutation.expected_version,
             title=title,
             archived=archived,
+            starred=patch.starred,
         )
 
     async def update_configuration(

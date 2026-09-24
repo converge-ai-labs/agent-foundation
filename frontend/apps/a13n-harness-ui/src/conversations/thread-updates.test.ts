@@ -1,6 +1,7 @@
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { Schema } from "../transport/client";
+import { applyActivityUpdates } from "./activity-updates";
 import {
   applyThreadMutation,
   mergeThreadSelections,
@@ -14,6 +15,7 @@ const thread: Schema<"ThreadSummary"> = {
   title: "Before",
   metadata_version: 1,
   archived: false,
+  starred: true,
   continuation_state: "initial",
   root_activity: { state: "inactive" },
   configuration: {
@@ -22,6 +24,8 @@ const thread: Schema<"ThreadSummary"> = {
     environment_profile_id: "environment-native",
   },
 };
+
+afterEach(() => vi.useRealTimers());
 
 it("merges independent versions without rolling back activity or unrelated threads", () => {
   const current = {
@@ -59,6 +63,9 @@ it("publishes confirmed fields in detail and loaded navigation without invalidat
       {
         rows: [{ thread, latest_activity: { text: "Keep activity" } }],
         active_rows: [],
+        starred_rows: [
+          { thread, latest_activity: { text: "Keep star activity" } },
+        ],
         total: 1,
         next_cursor: "next",
         observedAt: 12,
@@ -86,6 +93,12 @@ it("publishes confirmed fields in detail and loaded navigation without invalidat
             latest_activity: { text: "Keep activity" },
           },
         ],
+        starred_rows: [
+          {
+            thread: { title: "Renamed", starred: true, metadata_version: 2 },
+            latest_activity: { text: "Keep star activity" },
+          },
+        ],
         next_cursor: "next",
         observedAt: 12,
       },
@@ -98,12 +111,61 @@ it("publishes confirmed fields in detail and loaded navigation without invalidat
   expect(
     retainThreadSelections(client, {
       ...thread,
+      starred: false,
       root_activity: { state: "running", run_id: "run-two" },
     }),
   ).toMatchObject({
     title: "Renamed",
     metadata_version: 2,
+    starred: true,
     root_activity: { run_id: "run-two" },
   });
   client.clear();
 });
+
+it.each([false, true])(
+  "reconciles collection membership when a configuration response also changes starred from %s",
+  async (wasStarred) => {
+    vi.useFakeTimers();
+    const client = new QueryClient();
+    const old = { ...thread, starred: wasStarred };
+    const key = ["threads", "", "", false, "all"];
+    const unrelatedKey = ["threads", "", "unrelated", false, "all"];
+    client.setQueryData(key, {
+      pages: [
+        {
+          rows: wasStarred ? [] : [{ thread: old }],
+          starred_rows: wasStarred ? [{ thread: old }] : [],
+          total: 1,
+        },
+      ],
+      pageParams: [undefined],
+    });
+    client.setQueryData(unrelatedKey, {
+      pages: [{ rows: [], starred_rows: [], total: 0 }],
+      pageParams: [undefined],
+    });
+    const updated = {
+      ...old,
+      starred: !wasStarred,
+      metadata_version: 2,
+      configuration: {
+        ...old.configuration,
+        version: 2,
+        default_model_id: "model-two",
+      },
+    };
+    applyThreadMutation(client, updated);
+    // The lookup now observes already-patched metadata. It must not consume the
+    // membership transition carried by the independent configuration response.
+    applyActivityUpdates(
+      client,
+      [{ thread: updated } as Schema<"ThreadActivityView">],
+      [thread.thread_id],
+    );
+    await vi.advanceTimersByTimeAsync(200);
+    expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(unrelatedKey)?.isInvalidated).toBe(false);
+    client.clear();
+  },
+);

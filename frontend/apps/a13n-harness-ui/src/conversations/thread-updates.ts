@@ -1,5 +1,6 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import type { Schema } from "../transport/client";
+import { scheduleRefresh } from "./refresh";
 
 type Thread = Schema<"ThreadSummary">;
 
@@ -17,6 +18,7 @@ export function mergeThreadSelections(thread: Thread, known?: Thread): Thread {
       ? {
           title: known.title,
           archived: known.archived,
+          starred: known.starred,
           metadata_version: known.metadata_version,
         }
       : {}),
@@ -60,8 +62,10 @@ export function applyThreadMutation(client: QueryClient, updated: Thread) {
         current.map((thread) => mergeThreadSelections(thread, updated)),
       );
     } else if (current?.pages) {
+      let membershipChanged = false;
       const update = (row: Schema<"ThreadActivityView">) => {
         const thread = mergeThreadSelections(row.thread, updated);
+        if (thread.starred !== row.thread.starred) membershipChanged = true;
         return thread === row.thread ? row : { ...row, thread };
       };
       client.setQueryData(query.queryKey, {
@@ -70,8 +74,13 @@ export function applyThreadMutation(client: QueryClient, updated: Thread) {
           ...page,
           rows: page.rows.map(update),
           active_rows: page.active_rows?.map(update),
+          starred_rows: page.starred_rows?.map(update),
         })),
       });
+      // A configuration response can carry a concurrent star change. Once it
+      // is patched, a later lookup cannot detect the old recent/starred quota.
+      if (membershipChanged)
+        scheduleRefresh(client, (candidate) => candidate === query);
     }
   }
 }

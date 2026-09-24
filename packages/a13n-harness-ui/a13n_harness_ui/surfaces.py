@@ -151,6 +151,7 @@ class ThreadSummary(SurfaceModel):
     activity_at: datetime | None = None
     touched_at: datetime | None = None
     archived: bool
+    starred: bool = False
     configuration: ThreadConfigurationView
     continuation_state: Literal["initial", "selected"]
     root_activity: RootActivityView
@@ -180,6 +181,7 @@ class ThreadMetadataPatch(SurfaceModel):
 
     title: str | None = Field(default=None, max_length=512)
     archived: bool | None = None
+    starred: bool | None = None
 
     @model_validator(mode="after")
     def _valid_patch(self) -> Self:
@@ -187,6 +189,8 @@ class ThreadMetadataPatch(SurfaceModel):
             raise ValueError("Thread metadata patch must not be empty")
         if "archived" in self.model_fields_set and self.archived is None:
             raise ValueError("archived cannot be null when supplied")
+        if "starred" in self.model_fields_set and self.starred is None:
+            raise ValueError("starred cannot be null when supplied")
         return self
 
 
@@ -692,6 +696,7 @@ class ThreadActivityPage(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     rows: tuple[ThreadActivityView, ...]
     active_rows: tuple[ThreadActivityView, ...] = ()
+    starred_rows: tuple[ThreadActivityView, ...] = ()
     total: int = Field(ge=0)
     next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
 

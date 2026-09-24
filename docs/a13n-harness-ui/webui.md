@@ -30,6 +30,12 @@ Use **Pause automatic follow-up** / **Enable automatic follow-up** on each Coord
 
 When follow-up is enabled, an owned worker's execution ending causes one best-effort Host notification to run or steer its owner, including failures, cancellations and waiting for input. Independent conversations never trigger this routing. Worker reports and lifecycle notices are separate; the Coordinator checks saved outcomes before treating work as complete. This continues when you switch conversations or close the browser. Notifications use ordinary admission and steering, without a queue, retry or restart replay. Stopping a Coordinator does not stop workers or pause future notifications. Existing question and approval deadlines still apply; ordinary messages cannot reverse a denied approval.
 
+## Star important conversations
+
+Hover or focus a conversation row and click the star beside its **…** menu, or choose **Star conversation** from that menu. On touch screens the button is visible without hovering. Filled stars stay visible; click again to unstar. Stars are shared with everyone using the instance, not personal bookmarks, and survive browser changes and server restarts.
+
+Within each Project, starred conversations stay at the top of **Recent**, without using its five ordinary conversation slots or being hidden behind **More**. Running and unread **New results** still take priority without duplicate rows. Star and unstar do not open the conversation or change its last-visited time. Archiving hides a starred conversation but keeps its star for restoration. Ordinary conversations and Coordinators support stars; workers remain nested under their Coordinator instead of gaining separate top-level shortcuts.
+
 ## Find unfinished input
 
 **Unsent (N)** at the top of the conversation sidebar links to saved conversations with unfinished shared input, even when their Projects are collapsed or they are outside the recent list. Each shortcut includes its Project name. A pencil marker labeled **Unsent input** also appears beside the conversation in ordinary lists, without replacing running or unread-result indicators. The shortcut section stays visible while searching or filtering the lists below it.

@@ -33,6 +33,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20260924_6fb2512c92a3_add_shared_thread_stars.py").unlink()
     (newer / "versions/20260924_0a7582171995_replace_project_leads_with_thread_.py").unlink()
     (newer / "versions/20260923_78e4e7206898_add_project_lead_worker_ownership.py").unlink()
     (newer / "versions/20260923_027c7c879425_add_canonical_project_lead.py").unlink()
@@ -80,6 +81,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("ALTER TABLE thread ADD COLUMN completion_digest VARCHAR(64)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN completed_at DATETIME"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN touched_at DATETIME"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN starred BOOLEAN NOT NULL DEFAULT 0"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_digest VARCHAR(64)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_schema_version VARCHAR(64)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_json TEXT"))

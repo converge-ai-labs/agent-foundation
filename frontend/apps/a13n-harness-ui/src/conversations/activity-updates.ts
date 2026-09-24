@@ -62,7 +62,11 @@ export function applyActivityUpdates(
     }
     const existing = new Map(
       data.pages
-        .flatMap((page) => [...page.rows, ...(page.active_rows ?? [])])
+        .flatMap((page) => [
+          ...page.rows,
+          ...(page.active_rows ?? []),
+          ...(page.starred_rows ?? []),
+        ])
         .map((row) => [row.thread.thread_id, row]),
     );
     let reconcile = false;
@@ -81,6 +85,7 @@ export function applyActivityUpdates(
         query.queryKey[1] ||
         old.thread.touched_at !== next.thread.touched_at ||
         old.thread.archived !== next.thread.archived ||
+        old.thread.starred !== next.thread.starred ||
         old.thread.configuration.project_id !==
           next.thread.configuration.project_id ||
         (old.thread.root_activity.state === "inactive") !==
@@ -108,6 +113,12 @@ export function applyActivityUpdates(
           return next && belongs(query, next, client) ? [next] : [];
         }),
         active_rows: (page.active_rows ?? []).flatMap((row) => {
+          const id = row.thread.thread_id;
+          if (!ids.includes(id)) return [row];
+          const next = updates.get(id);
+          return next && belongs(query, next, client) ? [next] : [];
+        }),
+        starred_rows: (page.starred_rows ?? []).flatMap((row) => {
           const id = row.thread.thread_id;
           if (!ids.includes(id)) return [row];
           const next = updates.get(id);
