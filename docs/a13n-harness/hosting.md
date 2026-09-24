@@ -62,11 +62,17 @@ For each logical run, reconstruct:
 - authenticated `AgentInstanceContext` when the embedded default is insufficient;
 - current Provider selection, configuration, authoritative `EnvironmentState`, and runtime collaborators;
 - one fresh already constructed `Environment` per mount, or an advanced Host-owned `EnvironmentRuntime`;
-- current model resolver and credentials;
+- current model resolver and credentials, plus an optional `RunBindings.model_call_check`;
 - run Capabilities for invocation policy, approvals, media/documents/Web, monitoring, delegation, or Skill selection;
 - bounded non-authoritative metadata.
 
 Saved messages and Capability state never restore these values. A resume must re-evaluate current policy and Provider availability before constructing fresh adapters. Model-cost policy is definition-scoped rather than a fresh run collaborator: the Builder inserts the default catalog policy or accepts exactly one code-first replacement, and inline descendants inherit the parent's effective policy.
+
+### Check Model Calls Before Dispatch
+
+A Host can supply a collaborator implementing `ModelCallCheck.check(ModelCall)` from `a13n_harness.model_calls` through fresh `RunBindings.model_call_check`. Harness allocates a call ID and awaits this check after model preparation and before the native model-request handler. Returning permits the call; raising prevents dispatch. The value contains model, source, and lineage correlation, not messages, arguments, or credentials. Inline children inherit the check, and supported built-in auxiliary calls such as compaction and tool review cannot soften a Host refusal into an optional failure.
+
+The boundary is one native handler invocation, not each HTTP request or hidden SDK retry. Passing the check does not prove provider execution or a charge. A committed usage record can carry the same optional `call_id`; see [usage correlation](usage-and-limits.md#usage). The Host owns current authorization, admission, and durable reconciliation; the collaborator and its authority never enter `HarnessState`.
 
 ## Durable State Boundary
 
@@ -77,11 +83,11 @@ Persist a complete `HarnessState` candidate only as one part of a Host checkpoin
 - current generation, lease, and opaque fence;
 - selected checkpoint reference and producing provenance;
 - desired Environment mount definitions and authoritative `EnvironmentState` values;
-- pending deferred calls, approvals, or external delivery records;
+- pending deferred calls, approvals, or external delivery records, including accepted native results not yet incorporated into the selected history;
 - durable asynchronous-child state;
 - usage/accounting and terminal output records.
 
-The state candidate itself remains portable process-local continuation data.
+The state candidate itself remains portable process-local continuation data. For an interrupted deferred resume, retain the accepted request/result batch with the checkpoint and restore it using `DeferredToolResume(..., recovery=True)`. [Recover an interrupted deferred resume](state-and-resume.md#recover-an-interrupted-deferred-resume) explains when to remove incorporated input and why old approval grants never authorize replay.
 
 ## Attempts and Recovery
 

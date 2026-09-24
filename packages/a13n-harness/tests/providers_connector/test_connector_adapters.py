@@ -14,6 +14,53 @@ from pydantic import ValidationError
 pytestmark = pytest.mark.anyio
 
 
+async def test_credential_setup_captures_resolved_auth_config():
+    def respond(request):
+        path = request.url.path
+        if path.endswith("/toolkits/github"):
+            return httpx2.Response(
+                200,
+                json={
+                    "slug": "github",
+                    "name": "GitHub",
+                    "meta": {"version": "20260903_01"},
+                    "auth_schemes": ["API_KEY"],
+                    "auth_config_details": [
+                        {
+                            "mode": "API_KEY",
+                            "fields": {
+                                "connected_account_initiation": {"required": [{"name": "api_key", "is_secret": True}]}
+                            },
+                        }
+                    ],
+                },
+            )
+        if path.endswith("/auth_configs"):
+            return httpx2.Response(
+                200,
+                json={
+                    "items": [
+                        {"id": "ac_key", "toolkit": {"slug": "github"}, "status": "ENABLED", "auth_scheme": "API_KEY"}
+                    ]
+                },
+            )
+        assert request.method == "POST" and path.endswith("/connected_accounts")
+        body = json.loads(request.content)
+        assert body["auth_config"] == {"id": "ac_key"}
+        assert body["connection"]["state"]["val"]["api_key"] == "account-secret"
+        return httpx2.Response(200, json={"id": "ca_key"})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        started = await _composio(http).start_setup(
+            setup={"auth_config_id": "ac_key", "toolkit_version": "20260903_01"},
+            context=_context(),
+            credentials={"api_key": "account-secret"},
+        )
+    assert started.expected_metadata == {"auth_config_id": "ac_key", "auth_scheme": "API_KEY"}
+    assert started.completion_method == "polling"
+    assert "account-secret" not in started.model_dump_json()
+
+
 async def allow_dispatch():
     return None
 
@@ -173,6 +220,7 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
             before_dispatch=allow_dispatch,
         )
 
+    assert started.expected_metadata == {"auth_config_id": "ac_github", "auth_scheme": "OAUTH2"}
     assert inspection.status == "ready"
     assert "state" not in inspection.safe_metadata
     assert "access_token" not in inspection.safe_metadata
@@ -415,6 +463,39 @@ async def test_malformed_completion_response_retains_unknown_outcome() -> None:
                 session_uri="session", context=_context(callback=True), expected_external_ref="account-1"
             )
         assert raised.value.outcome_unknown
+
+
+@pytest.mark.parametrize(
+    ("response", "code", "unknown"),
+    [
+        pytest.param(httpx2.Response(200, content=b"not-json"), "invalid_provider_response", True, id="invalid-json"),
+        pytest.param(httpx2.Response(200, json={}), "invalid_provider_response", True, id="missing-fields"),
+        pytest.param(httpx2.Response(503), "provider_unavailable", True, id="unavailable"),
+        pytest.param(
+            httpx2.Response(200, json={"id": "another-account"}),
+            "connection_substitution",
+            False,
+            id="substitution",
+        ),
+    ],
+)
+async def test_completion_followup_read_preserves_effect_evidence(response, code, unknown):
+    calls = []
+
+    def respond(request):
+        calls.append(request.method)
+        if request.method == "POST":
+            return httpx2.Response(200, json={"connected_account_id": "account-1", "toolkit_slug": "github"})
+        return response
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        with pytest.raises(ConnectorProviderError) as raised:
+            await _composio(http).complete_setup(
+                session_uri="session", context=_context(callback=True), expected_external_ref="account-1"
+            )
+    assert calls == ["POST", "GET"]
+    assert raised.value.code == code
+    assert raised.value.outcome_unknown is unknown
 
 
 async def test_composio_details_are_bounded_parallel_and_keep_catalog_order():

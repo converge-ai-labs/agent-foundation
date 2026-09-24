@@ -128,6 +128,7 @@ async def authorize(
             browser=start.browser,
             account=AccountSecret(account_ref=started.external_ref or started.setup_ref, correlation=connection.id),
             completion=started.completion_method,
+            expected_metadata=started.expected_metadata,
         )
         store_flow(keys, row, start, flow, _expiry(current, started, settings))
 
@@ -159,6 +160,8 @@ async def complete(
     context = SetupContext(connector_key=connection.config.app, external_user_correlation=flow.account.correlation)
 
     async def send() -> AccountSecret:
+        if flow.expected_metadata is None:
+            raise ConnectorProviderError("setup_restart_required")
         async with open_connector_provider(
             connection.provider,
             keys=keys,
@@ -178,6 +181,8 @@ async def complete(
         # The provider checked that the inspected account is the one the setup created, for this app and user.
         if inspection is None or inspection.status is not AdapterConnectionStatus.ready:
             raise ConnectorProviderError("account_not_ready")
+        if any(inspection.safe_metadata.get(key) != value for key, value in flow.expected_metadata.items()):
+            raise ConnectorProviderError("account_metadata_mismatch")
         return flow.account
 
     replaced: list[AccountSecret] = []

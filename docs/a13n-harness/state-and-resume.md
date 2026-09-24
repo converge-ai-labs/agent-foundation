@@ -88,7 +88,7 @@ async with executable.stream("Work", bindings=fresh_bindings()) as stream:
 
 ## Resume Unanswered Tool Calls
 
-A checkpoint can contain tool calls whose results were never recorded. After a crash, those operations may have run even though their results are missing. `run()` and `stream()` use the per-run `tool_recovery` option to decide which unanswered calls may execute again:
+A checkpoint can contain tool calls whose results were never recorded. After a crash, those operations may have run even though their results are missing. Supply any [accepted deferred input](#recover-an-interrupted-deferred-resume) retained by the Host before treating a call as unknown: external results, failures, and explicit denials remain authoritative under every recovery mode. For the remaining unresolved calls, `run()` and `stream()` use the per-run `tool_recovery` option to decide which may execute again:
 
 | Mode                   | Unanswered restored calls                                                                    |
 | ---------------------- | -------------------------------------------------------------------------------------------- |
@@ -133,7 +133,7 @@ result = await executable.run(
 )
 ```
 
-You may also supply new input. Native Pydantic AI continuation processes the retained calls and partial results before the next model request. Recovery uses native `ToolApproved` values as programmatic permission to replay selected calls. Native argument validation still runs, tools currently requiring approval or external execution still suspend, and managed invocations are checked against fresh policy and resources. Recovery permission does not substitute for resource-bound approval evidence. Explicit `deferred_resume` and provider-suspended responses retain their existing continuation paths.
+You may also supply new input. Native Pydantic AI continuation processes the retained calls and partial results before the next model request. Recovery uses native `ToolApproved` values as programmatic permission to replay selected calls. Native argument validation still runs, tools currently requiring approval or external execution still suspend, and managed invocations are checked against fresh policy and resources. Recovery permission does not substitute for resource-bound approval evidence. A fresh `DeferredToolResume` uses the supplied approval/result batch independently of `tool_recovery`; an interrupted resume uses `recovery=True` and the current recovery policy. Provider-suspended responses retain their native continuation path.
 
 This option belongs to the run, not serialized state or model retry policy. It does not guarantee exactly-once effects or stop a later model decision from requesting another call.
 
@@ -182,6 +182,33 @@ Resume validates that:
 A prior approval does not bypass current policy. Standard Environment-backed approvals bind the tool, arguments, resource kinds, and resolved paths, not mount IDs, connection generations, or backing identities. Reconnecting or replacing the backing environment does not by itself invalidate approval during HITL resume. Harness does not guarantee that the same path still refers to the same underlying target; Hosts needing that restriction use their invocation policy or approval verifier. Downloads bind their destination directory; document conversion binds its source and output parent directory. Pending approvals recorded with the old backing- or mount-based revisions, and legacy download/document approvals without revision facts, require fresh approval once.
 
 This native resume flow also applies to Host-managed children when current bindings support deferred tools. [Built-in inline children](delegation-and-codeact.md#host-managed-feedback) disable deferred tools and support ordinary prompt continuation only. Hosts without a deferred lifecycle explicitly set `deferred_tools_supported=False`; lineage alone does not disable interaction.
+
+## Recover an Interrupted Deferred Resume
+
+An external result can be accepted before native history records it. For example, a batch may contain both an external result and a local approved action, and execution can stop at a checkpoint before that action runs. The intermediate `HarnessState` alone is not a complete record of the accepted batch. Harness does not keep a second deferred-result representation inside Capability state.
+
+The Host retains the correlated native `DeferredToolRequests` and `DeferredToolResults` alongside the selected checkpoint, or in its existing durable input records, until history incorporates them. When publishing a new checkpoint, `accepted.remaining(checkpoint.message_history)` returns the unincorporated batch, or `None` when it has been incorporated or superseded by a later response. Persist this value with the checkpoint under the Host's normal publication rules; receiving input or calling `export_state()` alone does not save it.
+
+For recovery from an interrupted resumed Run, provide the retained batch with `recovery=True`:
+
+```python
+from a13n_harness import DeferredToolResume
+
+# Loaded from the Host's checkpoint and accepted-input storage.
+recovery_input = (
+    DeferredToolResume(accepted.requests, accepted.results, recovery=True)
+    if accepted is not None
+    else None
+)
+result = await executable.run(
+    bindings=fresh_bindings(),
+    previous_state=checkpoint,
+    deferred_resume=recovery_input,
+    tool_recovery="declared",
+)
+```
+
+Recovery filters out results already in history, validates the remaining correlation and current tool surface, and consumes retained external facts and explicit denials even with `tool_recovery="never"`. It never reuses a positive approval as permission to replay. Unresolved local work follows the current recovery policy and requires fresh approval where applicable. This also applies to Host-managed child checkpoints; it does not create an exactly-once side-effect guarantee or recover input the Host never saved.
 
 ## Safe Failure Candidates
 

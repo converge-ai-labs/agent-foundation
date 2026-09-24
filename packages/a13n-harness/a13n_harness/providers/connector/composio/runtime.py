@@ -114,6 +114,7 @@ class ComposioProvider:
                 external_ref=required_string(response, "connected_account_id"),
                 expires_at=_link_expiry(response),
                 redirect_url=_authorization_url(response.get("redirect_url")),
+                expected_metadata={"auth_config_id": auth_config.id, "auth_scheme": auth_config.scheme},
                 completion_method=SetupCompletionMethod.oauth_verifier
                 if auth_config.scheme == "OAUTH2"
                 else SetupCompletionMethod.browser_confirmation,
@@ -154,7 +155,10 @@ class ComposioProvider:
         except ValueError as error:
             raise ConnectorProviderError("invalid_provider_response", outcome_unknown=True) from error
         return SetupStarted(
-            setup_ref=identifier, external_ref=identifier, completion_method=SetupCompletionMethod.polling
+            setup_ref=identifier,
+            external_ref=identifier,
+            completion_method=SetupCompletionMethod.polling,
+            expected_metadata={"auth_config_id": auth_config.id, "auth_scheme": auth_config.scheme},
         )
 
     async def complete_setup(
@@ -188,7 +192,13 @@ class ComposioProvider:
             return await self.inspect_setup(setup_ref=expected_external_ref, context=context)
         except ConnectorProviderError as error:
             # Redemption succeeded; a failed follow-up read cannot prove rejection.
-            if error.code in {"provider_unavailable", "rate_limited", "provider_rejected", "response_too_large"}:
+            if error.code in {
+                "provider_unavailable",
+                "rate_limited",
+                "provider_rejected",
+                "response_too_large",
+                "invalid_provider_response",
+            }:
                 raise ConnectorProviderError(error.code, outcome_unknown=True) from error
             raise
 

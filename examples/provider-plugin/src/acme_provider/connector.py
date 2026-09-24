@@ -94,7 +94,10 @@ class Provider:
     async def start_setup(self, *, setup, context, resume_ref=None, before_shared_setup=None, credentials=None):
         value = await self.request("POST", "/connections", body={"user": context.external_user_correlation}, write=True)
         return SetupStarted(
-            setup_ref=value["id"], external_ref=value["id"], completion_method=SetupCompletionMethod.polling
+            setup_ref=value["id"],
+            external_ref=value["id"],
+            completion_method=SetupCompletionMethod.polling,
+            expected_metadata={},
         )
 
     async def inspect_setup(self, *, setup_ref, context):

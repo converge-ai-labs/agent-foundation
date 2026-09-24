@@ -75,6 +75,8 @@ class AccountFlow(_Flow):
     kind: Literal["account"] = "account"
     account: AccountSecret
     completion: SetupCompletionMethod
+    # None decodes old pending flows only; completion requires a fresh setup snapshot.
+    expected_metadata: dict[str, str] | None = None
 
 
 _FLOW: TypeAdapter[OAuthFlow | AccountFlow] = TypeAdapter(

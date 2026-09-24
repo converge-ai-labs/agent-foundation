@@ -89,7 +89,11 @@ A Connector runtime exposes `tool_catalog(connector_key, *, provider_version=Non
 
 Composio versions use the dated `YYYYMMDD_NN` format. Saved setup options may select a supported older version after current application metadata advances. Setup still validates the live application, enabled authentication configuration, and instance fields; an older version requires matching native tool definitions. Account enrollment does not silently change the saved tool version. Execution supplies its selected version explicitly.
 
-Composio account inspection exposes bounded authentication configuration ID and scheme in safe metadata, and maps a disabled authentication configuration to disabled account status. Hosts check these values against their selected configuration before granting account authority. Account state, credentials, and provider parameters are not safe metadata.
+### Connector Setup Identity
+
+`SetupStarted.expected_metadata` is a required `dict[str, str]` of provider-resolved identity predicates captured when setup starts. A Provider explicitly returns `{}` when no additional metadata predicates apply. Hosts retain this snapshot with the pending setup and require every key to have the same value in the ready account's `ConnectionInspection.safe_metadata` before granting account authority. Missing or null inspection values do not satisfy a string predicate; extra display metadata is ignored. This check supplements the Provider's account, application, and user identity checks.
+
+Composio captures the actual authentication configuration ID and scheme selected by setup, including the concrete configuration resolved from `create:SCHEME`. Account inspection exposes these bounded values in safe metadata and maps a disabled authentication configuration to disabled account status. Hosts compare against the captured values, not a later catalogue lookup or the unresolved setup selector. Account state, credentials, and provider parameters are not safe metadata.
 
 ## Catalogs
 
@@ -146,7 +150,7 @@ Errors expose bounded Provider and distribution context. They never expose crede
 
 ## Compatibility
 
-Provider `type` values are stable serialized discriminators shared by configuration records, state envelopes, and host APIs. Adding a field to a definition is additive; adding a required declared capability is a breaking change for third-party definitions and advances the manifest API version. Installed code provenance is diagnostic metadata, not a per-resource Python package lock.
+Provider `type` values are stable serialized discriminators shared by configuration records, state envelopes, and host APIs. Adding a field to a definition is additive; adding a required declared capability is a breaking change for third-party definitions and advances the manifest API version. The current pre-release API 1 baseline includes the required Connector setup metadata snapshot and version-selecting catalogue keyword; plugin authors implement these contracts without a manifest version bump. Installed code provenance is diagnostic metadata, not a per-resource Python package lock.
 
 Definitions carry no configuration schema version. A Provider owns exactly one configuration model, one optional credential model, and, for Environment, one target recipe model; changing an input's meaning changes the Provider type rather than introducing a parallel versioned schema.
 

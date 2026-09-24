@@ -16,12 +16,13 @@ import pytest
 import uvicorn
 from a13n_harness import AgentSpec, DefinitionError, HarnessBuilder, RunBindings
 from a13n_service.infra.audit import AuditEventRow
+from a13n_service.infra.crypto import SecretLocation
 from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.tools import ToolDispatch
 from a13n_service.providers.tools.oauth import OAuthClient, OAuthError, renew_access
-from a13n_service.resources.connections.credentials import HeadersSecret, OAuthTokens, protect, reveal
+from a13n_service.resources.connections.credentials import AccountFlow, HeadersSecret, OAuthTokens, protect, reveal
 from a13n_service.resources.connections.operations import claim_operation, recover_operations
 from a13n_service.resources.connections.runtime import open_connections, resolve_connections
 from a13n_service.resources.connections.schemas import ConnectionCreate, ConnectionSelection, ConnectionUpdate
@@ -1239,11 +1240,18 @@ class Composio:
         self.executed: list[dict] = []
         self.revoked: list[str] = []
         self.listed = 0
+        self.scheme = "OAUTH2"
+        self.account_auth: dict = {"id": "ac_github", "auth_scheme": self.scheme}
+        self.auth_config_reads = 0
+        self.has_auth_config = True
+        self.completions = 0
+        self.inspections = 0
         app = FastAPI()
         app.middleware("http")(self._authenticate)
         app.get("/api/v3.1/toolkits")(self._toolkits)
         app.get("/api/v3.1/toolkits/github")(self._toolkit)
         app.get("/api/v3.1/auth_configs")(self._auth_configs)
+        app.post("/api/v3.1/auth_configs")(self._create_auth_config)
         app.get("/api/v3.1/tools")(self._tools)
         app.post("/api/v3.1/connected_accounts/link")(self._link)
         app.post("/api/v3.1/connected_accounts/complete_auth")(self._complete)
@@ -1267,13 +1275,20 @@ class Composio:
             "slug": "github",
             "name": "GitHub",
             "meta": {"version": VERSION, "description": "Code hosting"},
-            "auth_schemes": ["OAUTH2"],
-            "composio_managed_auth_schemes": ["OAUTH2"],
+            "auth_schemes": [self.scheme],
+            "composio_managed_auth_schemes": [self.scheme],
         }
 
     def _auth_configs(self) -> dict:
-        config = {"id": "ac_github", "toolkit": {"slug": "github"}, "status": "ENABLED", "auth_scheme": "OAUTH2"}
-        return {"items": [{**config, "is_composio_managed": True}]}
+        self.auth_config_reads += 1
+        config = {"id": "ac_github", "toolkit": {"slug": "github"}, "status": "ENABLED", "auth_scheme": self.scheme}
+        return {"items": [{**config, "is_composio_managed": True}] if self.has_auth_config else []}
+
+    async def _create_auth_config(self, request: Request) -> dict:
+        body = await request.json()
+        assert body["auth_config"]["type"] == "use_composio_managed_auth"
+        self.has_auth_config = True
+        return {"toolkit": {"slug": "github"}, "auth_config": self._auth_configs()["items"][0]}
 
     def _tools(self) -> dict:
         tool = {
@@ -1295,12 +1310,20 @@ class Composio:
         return {"connected_account_id": self.accounts[-1], "expires_at": expires, "redirect_url": f"{self.url}/link/1"}
 
     async def _complete(self, request: Request) -> dict:
+        self.completions += 1
         body = await request.json()
         assert body == {"session_uri": "verifier-session", "user_id": self.user_id}
         return {"connected_account_id": self.accounts[-1], "toolkit_slug": "github"}
 
     def _account(self, account: str) -> dict:
-        return {"id": account, "toolkit": {"slug": "github"}, "user_id": self.user_id, "status": "ACTIVE"}
+        self.inspections += 1
+        return {
+            "id": account,
+            "toolkit": {"slug": "github"},
+            "user_id": self.user_id,
+            "status": "ACTIVE",
+            "auth_config": self.account_auth,
+        }
 
     def _revoke(self, account: str) -> dict:
         self.revoked.append(account)
@@ -1309,6 +1332,167 @@ class Composio:
     async def _execute(self, request: Request) -> dict:
         self.executed.append(await request.json())
         return {"successful": True, "data": {"number": 7}}
+
+
+@asynccontextmanager
+async def composio_connection(  # type: ignore[no-untyped-def]
+    service, monkeypatch: pytest.MonkeyPatch, *, scheme: str = "OAUTH2", selector: str = "ac_github"
+) -> AsyncIterator[tuple[Composio, dict]]:
+    from a13n_harness.providers.connector.composio import catalog, runtime
+
+    composio = Composio()
+    composio.scheme = scheme
+    composio.has_auth_config = not selector.startswith("create:")
+    composio.account_auth = {"id": "ac_github", "auth_scheme": scheme}
+    async with serve(composio.app) as url:
+        composio.url = url
+        monkeypatch.setattr(runtime, "COMPOSIO_ENDPOINT", url)
+        monkeypatch.setattr(catalog, "COMPOSIO_ENDPOINT", url)
+        monkeypatch.setattr(runtime, "COMPOSIO_CONNECT_ENDPOINT", url)
+        response = await service.client.post(
+            service.organization + "/connector-providers",
+            json={
+                "workspace_id": None,
+                "type": "composio",
+                "name": "Composio",
+                "credential": {"api_key": COMPOSIO_KEY},
+            },
+        )
+        assert response.status_code == 201, response.text
+        created = await post(
+            service,
+            "/connections",
+            {
+                "type": "composio",
+                "name": "GitHub",
+                "connector_provider_id": response.json()["id"],
+                "auth": "account",
+                "config": {
+                    "app": "github",
+                    "actions": ["GITHUB_CREATE"],
+                    "setup": {"auth_config_id": selector, "toolkit_version": VERSION},
+                },
+            },
+            status=201,
+        )
+        yield composio, created
+
+
+async def complete_account(service, composio: Composio) -> dict:  # type: ignore[no-untyped-def]
+    state = parse_qs(urlsplit(composio.callback_url).query)["state"][0]
+    callback = await service.client.get(CALLBACK_PATH, params={"state": state, "session_uri": "verifier-session"})
+    assert callback.status_code == 200, callback.text
+    return callback.json()
+
+
+@pytest.mark.parametrize(
+    "scheme,selector", [("OAUTH2", "ac_github"), ("OAUTH2", "create:OAUTH2"), ("API_KEY", "ac_github")]
+)
+@pytest.mark.parametrize(
+    "change", ["valid", "wrong_id", "wrong_scheme", "missing_id", "missing_scheme", "null", "empty"]
+)
+async def test_account_completion_checks_setup_identity(  # type: ignore[no-untyped-def]
+    service, monkeypatch: pytest.MonkeyPatch, scheme: str, selector: str, change: str
+) -> None:
+    async with composio_connection(service, monkeypatch, scheme=scheme, selector=selector) as (composio, created):
+        item = f"/connections/{created['id']}"
+        await post(service, item + "/authorize", {}, **{"If-Match": etag(created)})
+        stored = await row(service, created["id"])
+        flow = reveal(
+            service.runtime.keys, stored.organization_id, stored.id, "authorization", stored.authorization, AccountFlow
+        )
+        assert flow.expected_metadata == {"auth_config_id": "ac_github", "auth_scheme": scheme}
+        reads = composio.auth_config_reads
+        if change == "wrong_id":
+            composio.account_auth["id"] = "ac_other"
+        elif change == "wrong_scheme":
+            composio.account_auth["auth_scheme"] = "BASIC"
+        elif change == "missing_id":
+            del composio.account_auth["id"]
+        elif change == "missing_scheme":
+            del composio.account_auth["auth_scheme"]
+        elif change == "null":
+            composio.account_auth = {"id": None, "auth_scheme": None}
+        elif change == "empty":
+            composio.account_auth = {}
+        # The callback must not resolve a mutable selector again.
+        composio.scheme = "BASIC"
+        result = await complete_account(service, composio)
+        valid = change == "valid"
+        assert result["error"] == (None if valid else "account_metadata_mismatch")
+        assert composio.auth_config_reads == reads
+        assert composio.completions == (1 if scheme == "OAUTH2" else 0)
+        assert composio.inspections == 1
+        stored = await row(service, created["id"])
+        assert (stored.credential is not None) is valid
+        assert stored.status == ("ready" if valid else "pending")
+        assert stored.authorization is None and stored.operation_id is None
+        if not valid:
+            assert stored.failure["reason"] == "rejected"
+
+
+@pytest.mark.parametrize("existing_credential", [False, True])
+async def test_legacy_account_flow_requires_restart_without_provider_io(  # type: ignore[no-untyped-def]
+    service, monkeypatch: pytest.MonkeyPatch, existing_credential: bool
+) -> None:
+    async with composio_connection(service, monkeypatch) as (composio, created):
+        item = f"/connections/{created['id']}"
+        if existing_credential:
+            await post(service, item + "/authorize", {}, **{"If-Match": etag(created)})
+            assert (await complete_account(service, composio))["error"] is None
+            created = await view(service, created["id"])
+        previous = (await row(service, created["id"])).credential
+        await post(service, item + "/authorize", {}, **{"If-Match": etag(created)})
+        async with transaction(service.runtime.storage) as session:
+            stored = await session.get(ConnectionRow, created["id"], with_for_update=True)
+            assert stored is not None and stored.authorization is not None
+            keys = service.runtime.keys
+            flow = reveal(keys, stored.organization_id, stored.id, "authorization", stored.authorization, AccountFlow)
+            legacy = flow.model_dump_json(exclude={"expected_metadata"}).encode()
+            location = SecretLocation(stored.organization_id, "connections", "authorization", stored.id)
+            stored.authorization = keys.protect(legacy, location).model_dump(mode="json")
+        calls = (composio.completions, composio.inspections)
+        result = await complete_account(service, composio)
+        assert result["error"] == "setup_restart_required"
+        assert (composio.completions, composio.inspections) == calls
+        stored = await row(service, created["id"])
+        assert stored.authorization is None and stored.operation_id is None
+        assert stored.credential == previous
+        assert stored.failure["reason"] == "rejected"
+        assert composio.revoked == []
+
+
+@pytest.mark.parametrize(
+    "expected,actual,valid",
+    [
+        ({}, {}, True),
+        ({"realm": "chosen"}, {"realm": "chosen"}, True),
+        ({"realm": "chosen"}, {"realm": "other"}, False),
+    ],
+)
+async def test_account_metadata_predicates_are_provider_neutral(  # type: ignore[no-untyped-def]
+    service, monkeypatch: pytest.MonkeyPatch, expected: dict, actual: dict, valid: bool
+) -> None:
+    from a13n_harness.providers.connector.composio.runtime import ComposioProvider
+
+    start_setup = ComposioProvider.start_setup
+    inspect_setup = ComposioProvider.inspect_setup
+
+    async def start(self, **kwargs):  # type: ignore[no-untyped-def]
+        started = await start_setup(self, **kwargs)
+        return started.model_copy(update={"expected_metadata": expected})
+
+    async def inspect(self, **kwargs):  # type: ignore[no-untyped-def]
+        inspection = await inspect_setup(self, **kwargs)
+        return inspection.model_copy(update={"safe_metadata": {**actual, "display_name": "Account"}})
+
+    monkeypatch.setattr(ComposioProvider, "start_setup", start)
+    monkeypatch.setattr(ComposioProvider, "inspect_setup", inspect)
+    async with composio_connection(service, monkeypatch) as (composio, created):
+        await post(service, f"/connections/{created['id']}/authorize", {}, **{"If-Match": etag(created)})
+        result = await complete_account(service, composio)
+        assert result["error"] == (None if valid else "account_metadata_mismatch")
+        assert ((await row(service, created["id"])).credential is not None) is valid
 
 
 async def test_composio_account_is_set_up_through_hosted_flow_and_runs_its_pinned_actions(  # type: ignore[no-untyped-def]

@@ -65,7 +65,7 @@ Read `10`, `12`, `13`, `14`, and `20`, then the a13n Service catalog. A Host own
 
 ### Integrate Document Memory
 
-Read `21`, the memory boundary in `09`, and Environment file access in `08`. Hosted integrations also read Service `42` for storage bindings, authorization, organization completion, change-query metadata, and publication semantics. Native record adapters retain their contract in `09`.
+Read `21`, the memory boundary in `09`, and Environment file access in `08`. Embedded Hosts own storage bindings, authorization, organization completion, and publication; the current Service does not offer memory. Native record adapters retain their contract in `09`.
 
 ### Integrate Observation
 
