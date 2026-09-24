@@ -365,6 +365,16 @@ function ProjectGroup({
     )
       observed.set(thread.thread_id, { thread });
   }
+  const activeOwnerIds = new Set(
+    [...observed.values()]
+      .filter(
+        ({ thread }) =>
+          !thread.archived &&
+          thread.role === "worker" &&
+          thread.root_activity.state !== "inactive",
+      )
+      .map(({ thread }) => thread.coordinator_thread_id),
+  );
   const activeRows: Row[] = [];
   const unreadRows: Row[] = [];
   const recentRows: Row[] = [];
@@ -375,7 +385,9 @@ function ProjectGroup({
     const unread = results.tracker?.isUnread(row.thread.thread_id);
     if (unread) unreadCount++;
     if (row.thread.role === "worker") continue;
-    (row.thread.root_activity.state !== "inactive"
+    (row.thread.root_activity.state !== "inactive" ||
+    (row.thread.role === "coordinator" &&
+      activeOwnerIds.has(row.thread.thread_id))
       ? activeRows
       : unread
         ? unreadRows

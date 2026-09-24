@@ -1187,7 +1187,7 @@ it("keeps workers collapsed on direct navigation and pages them separately from 
   mount("/threads/worker-7");
   await screen.findByRole("link", { name: /coordinator-one/ });
   await screen.findByRole("link", { name: /ordinary-running/ });
-  expect(screen.getByText("Running · 1")).toBeTruthy();
+  expect(screen.getByText("Running · 2")).toBeTruthy();
   expect(screen.queryByRole("link", { name: /worker-/ })).toBeNull();
   expect(
     activity.filter((url) => url.searchParams.has("coordinator_thread_id")),
@@ -1230,6 +1230,92 @@ it("keeps workers collapsed on direct navigation and pages them separately from 
   expect(screen.getByRole("link", { name: /ordinary-running/ })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Recent 1" })).toBeTruthy();
   expect(writes).toHaveLength(0);
+});
+
+it("groups only owners of active unarchived workers under Running and returns them to Recent after completion", async () => {
+  coordinators = ["idle-owner", "busy-owner", "archived-worker-owner"].map(
+    (id) => ({ ...thread(id), role: "coordinator", auto_followup: false }),
+  );
+  workerThreads = [
+    {
+      ...thread("idle-worker"),
+      role: "worker",
+      coordinator_thread_id: "idle-owner",
+    },
+  ];
+  activeThreads = [
+    ...["worker-one", "worker-two"].map((id) => ({
+      ...thread(id),
+      role: "worker" as const,
+      coordinator_thread_id: "busy-owner",
+      root_activity: { state: "running" },
+    })),
+    {
+      ...thread("archived-worker"),
+      role: "worker",
+      coordinator_thread_id: "archived-worker-owner",
+      root_activity: { state: "running" },
+      archived: true,
+    },
+  ];
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const project = screen.getByRole("region", { name: "One" });
+  await within(project).findByText("Running · 1");
+  const owner = within(project).getByRole("link", { name: /busy-owner/ });
+  expect(within(project).getAllByRole("link")[0]).toBe(owner);
+  expect(within(owner).queryByText("Running")).toBeNull();
+  expect(
+    screen.queryByRole("link", { name: /worker-one|worker-two/ }),
+  ).toBeNull();
+  expect(
+    activity.some((url) => url.searchParams.has("coordinator_thread_id")),
+  ).toBe(false);
+
+  // One worker finishing does not move an owner with another active worker.
+  activeThreads = activeThreads.slice(1);
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  expect(within(project).getByText("Running · 1")).toBeTruthy();
+  expect(within(project).getAllByRole("link")[0]).toBe(owner);
+
+  activeThreads = [];
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  await waitFor(() =>
+    expect(within(project).queryByText(/Running ·/)).toBeNull(),
+  );
+  expect(within(project).getAllByRole("link")[0].textContent).toContain(
+    "idle-owner",
+  );
+  expect(within(project).getByRole("link", { name: /busy-owner/ })).toBe(owner);
+  expect(writes).toHaveLength(0);
+});
+
+it("keeps an off-page owner in Running while its worker is active without loading the worker disclosure", async () => {
+  coordinators = [
+    { ...thread("off-page-owner"), role: "coordinator", archived: true },
+  ];
+  activeThreads = [
+    {
+      ...thread("off-page-worker"),
+      role: "worker",
+      coordinator_thread_id: "off-page-owner",
+      root_activity: { state: "running" },
+    },
+  ];
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const project = screen.getByRole("region", { name: "One" });
+  await within(project).findByText("Running · 1");
+  expect(within(project).getAllByRole("link")[0].textContent).toContain(
+    "off-page-owner",
+  );
+  expect(
+    screen.getByRole("button", { name: "Restore off-page-owner" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("link", { name: /off-page-worker/ })).toBeNull();
+  expect(
+    activity.some((url) => url.searchParams.has("coordinator_thread_id")),
+  ).toBe(false);
 });
 
 it("shows worker fetch failures without claiming empty and retries inside the disclosure", async () => {

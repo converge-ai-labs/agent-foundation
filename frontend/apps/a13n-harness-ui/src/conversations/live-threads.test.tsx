@@ -31,12 +31,22 @@ let continuations: Map<string, string>;
 let queries: QueryClient;
 let reads: string[];
 let maxConnections: number;
-function thread(id: string) {
+function thread(id: string): Schema<"ThreadSummary"> {
   return {
     thread_id: id,
     parent_thread_id: null,
+    created_at: "2026-09-01",
+    updated_at: "2026-09-01",
+    metadata_version: 1,
+    archived: false,
+    continuation_state: "selected",
+    configuration: {
+      version: 1,
+      agent_source: { kind: "agent", id: "agent-one" },
+      environment_profile_id: "environment-native",
+    },
     root_activity: { state: active.includes(id) ? "running" : "inactive" },
-  } as Schema<"ThreadSummary">;
+  };
 }
 function Reader() {
   const { id = "" } = useParams();

@@ -240,3 +240,96 @@ async def test_navigation_touch_is_explicit_and_never_disguises_accepted_steerin
         await coordinator.wait(receipt.receipt_id)
     finally:
         await coordinator.close(timeout_seconds=1)
+
+
+@pytest.mark.parametrize("capture_fails", [False, True])
+async def test_root_snapshots_do_not_wait_for_unrelated_admission(capture_fails, monkeypatch) -> None:
+    from anyio import create_task_group
+
+    executor = _RunningExecutor()
+    coordinator = RootRunCoordinator(cast(Any, executor))
+    await coordinator.start()
+    entered, release, finished = Event(), Event(), Event()
+    try:
+        terminal = await coordinator.submit_prompt(thread_id="terminal", prompt="first")
+        await executor.started.wait()
+        assert (await coordinator.cancel(terminal.receipt_id)).accepted
+        await coordinator.wait(terminal.receipt_id)
+        executor.started = Event()
+        running = await coordinator.submit_prompt(thread_id="running", prompt="second")
+        await executor.started.wait()
+
+        async def slow_capture(**kwargs):
+            entered.set()
+            await release.wait()
+            if capture_fails:
+                raise RunCoordinationError("Rejected capture", code="capture_failed")
+            return await capture(**kwargs)
+
+        monkeypatch.setattr(executor, "capture", slow_capture)
+
+        async def submit():
+            try:
+                await coordinator.submit_prompt(thread_id="slow", prompt="third")
+            except RunCoordinationError as error:
+                assert capture_fails and error.code == "capture_failed"
+            finally:
+                finished.set()
+
+        async with create_task_group() as tasks:
+            tasks.start_soon(submit)
+            await entered.wait()
+            try:
+                with fail_after(1):
+                    assert await coordinator.active_count() == 1
+                    assert await coordinator.active_thread_ids() == ("running",)
+                    assert (await coordinator.get(running.receipt_id)).status is RootOperationStatus.running
+                    assert (await coordinator.active("running")).receipt == running
+                    assert await coordinator.active("slow") is None
+                    states = await coordinator.activities(("running", "slow"))
+                    assert states["running"].state is RootActivityState.running
+                    assert states["slow"].state is RootActivityState.inactive
+                    assert (await coordinator.latest("terminal")).receipt == terminal
+                    assert set(await coordinator.latest_many(("terminal", "running"))) == {"terminal"}
+                    assert await coordinator.interaction_expiry("slow", "a" * 64) is None
+                    assert (await coordinator.wait(running.receipt_id, timeout_seconds=0)).receipt == running
+                assert not finished.is_set()
+            finally:
+                release.set()
+            await finished.wait()
+        assert (await coordinator.active("slow") is None) is capture_fails
+    finally:
+        release.set()
+        await coordinator.close(timeout_seconds=1)
+
+
+async def test_idle_mutations_and_shutdown_keep_their_admission_fence() -> None:
+    from anyio import create_task_group, wait_all_tasks_blocked
+
+    executor = _PreparingExecutor()
+    coordinator = RootRunCoordinator(cast(Any, executor))
+    await coordinator.start()
+    submitted = Event()
+
+    async def submit():
+        await coordinator.submit_prompt(thread_id="one", prompt="queued")
+        submitted.set()
+
+    try:
+        async with create_task_group() as tasks:
+            async with coordinator.require_inactive("one"):
+                tasks.start_soon(submit)
+                await wait_all_tasks_blocked()
+                assert not submitted.is_set()
+                # Read-only observation is not authority to bypass the fence.
+                assert await coordinator.active("one") is None
+            await submitted.wait()
+        with pytest.raises(RunCoordinationError, match="active root"):
+            async with coordinator.require_inactive("one"):
+                pytest.fail("admitted operation must exclude idle-only mutation")
+        await coordinator.stop_admission()
+        with pytest.raises(RunCoordinationError) as error:
+            await coordinator.submit_prompt(thread_id="two", prompt="rejected")
+        assert error.value.code == "app_stopping"
+    finally:
+        await coordinator.close(timeout_seconds=1)

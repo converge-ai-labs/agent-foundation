@@ -7,7 +7,8 @@ caller may see, and runs administrative changes with the `admin` check inside th
 
 import asyncio
 import re
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections import defaultdict
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, replace
 from typing import Protocol
@@ -156,13 +157,61 @@ async def principal_for(
     )
     if row is None or row.status != "active":
         raise unauthenticated()
+    home = await session.get_one(WorkspaceRow, row.home_workspace_id) if row.kind == "service_account" else None
+    grants = (await session.scalars(select(GrantRow).where(GrantRow.principal_id == row.id))).all()
+    return await _principal(access, row, home, grants, confinement)
+
+
+async def principals_for(
+    session: AsyncSession, access: Access, identities: Iterable[tuple[str, WorkspaceScope]]
+) -> dict[tuple[str, WorkspaceScope], Principal | ServiceError]:
+    """`principal_for` without locks for many principal IDs and confinements, with set reads. A refusal is
+    returned in its identity's place; `unavailable` is raised, since it refuses nothing."""
+    identities = set(identities)
+    ids = {principal_id for principal_id, _ in identities}
+    rows = {
+        row.id: (row, home)
+        for row, home in (
+            await session.execute(
+                select(PrincipalRow, WorkspaceRow)
+                .outerjoin(WorkspaceRow, WorkspaceRow.id == PrincipalRow.home_workspace_id)
+                .where(PrincipalRow.id.in_(ids))
+            )
+        ).tuples()
+    }
+    grants: dict[str, list[GrantRow]] = defaultdict(list)
+    for grant in await session.scalars(select(GrantRow).where(GrantRow.principal_id.in_(ids))):
+        grants[grant.principal_id].append(grant)
+    principals: dict[tuple[str, WorkspaceScope], Principal | ServiceError] = {}
+    for principal_id, confinement in identities:
+        row, home = rows.get(principal_id, (None, None))
+        try:
+            if row is None or row.status != "active":
+                raise unauthenticated()
+            principals[principal_id, confinement] = await _principal(
+                access, row, home, grants[principal_id], confinement
+            )
+        except ServiceError as error:
+            if error.code == "unavailable":
+                raise
+            principals[principal_id, confinement] = error
+    return principals
+
+
+async def _principal(
+    access: Access,
+    row: PrincipalRow,
+    home: WorkspaceRow | None,
+    grants: Sequence[GrantRow],
+    confinement: WorkspaceScope | None,
+) -> Principal:
+    """An active principal from its row, its home workspace when it is a service account, and its stored grants."""
     if row.kind == "service_account":
-        home = await session.get_one(WorkspaceRow, row.home_workspace_id)
+        assert home is not None  # The `account_home` constraint gives every service account a home.
         home_scope = WorkspaceScope(home.organization_id, home.id)
         if confinement not in {None, home_scope}:
             raise ServiceError("forbidden", "Service account cannot leave its home workspace")
         confinement = home_scope
-    grants = (await session.scalars(select(GrantRow).where(GrantRow.principal_id == row.id))).all()
     principal = Principal(
         row.id,
         "user" if row.kind == "user" else "service_account",
@@ -235,7 +284,7 @@ def refuse_archived(workspace: WorkspaceRow) -> None:
 
 
 async def require_active_workspace(session: AsyncSession, workspace_id: str) -> None:
-    """Execution refuses an archived workspace as every change does: acceptance, attempts and authority renewal."""
+    """Acceptance refuses an archived workspace as every change does; execution rechecks it with its authority."""
     workspace = await session.get(WorkspaceRow, workspace_id)
     if workspace is None:
         raise not_found("workspace", workspace_id)

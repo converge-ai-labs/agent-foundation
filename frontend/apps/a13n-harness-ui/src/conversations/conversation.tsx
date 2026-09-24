@@ -27,7 +27,10 @@ import {
 } from "./coordinator-settings";
 import { WorkInspector } from "./work-inspector";
 import { RootFailureNotice } from "./failure-notice";
-import { refreshThreadLists, useHistory, useThread } from "./queries";
+import { useHistory, useThread } from "./queries";
+import { refreshThread } from "./refresh";
+import { refreshActivity } from "./activity-updates";
+import { applyThreadMutation } from "./thread-updates";
 import { showFocusedOutput } from "./stream";
 import { useLiveThread } from "./live-threads";
 import { LiveConnectionNotice } from "./live-connection";
@@ -89,23 +92,12 @@ function Conversation({
     onSuccess: (updated) => {
       draft.controls = {};
       draft.notify();
-      queries.setQueryData<Schema<"ThreadDetail">>(
-        ["thread", threadId, "detail"],
-        (current) => {
-          if (
-            !current ||
-            current.thread.configuration.version > updated.configuration.version
-          )
-            return current;
-          return {
-            ...current,
-            thread: { ...current.thread, configuration: updated.configuration },
-          };
-        },
-      );
+      applyThreadMutation(queries, updated);
     },
-    onSettled: () =>
-      queries.invalidateQueries({ queryKey: ["thread", threadId] }),
+    onSettled: () => {
+      refreshThread(queries, threadId, "configuration");
+      refreshActivity(queries, transport, threadId);
+    },
   });
   const [search, setSearch] = useSearchParams();
   const dialog = search.get("dialog");
@@ -220,10 +212,9 @@ function Conversation({
     scrollToLatest();
   };
   const reconcile = useCallback(() => {
-    void queries.invalidateQueries({ queryKey: ["thread", threadId] });
-    void refreshThreadLists(queries);
-    void queries.invalidateQueries({ queryKey: ["child-saved-output"] });
-  }, [queries, threadId]);
+    refreshThread(queries, threadId, "reconcile");
+    refreshActivity(queries, transport, threadId);
+  }, [queries, transport, threadId]);
   const decisions = useDecisionPlacement(
     detail.data?.deferred_requests?.length ? (
       <Decisions
@@ -543,11 +534,14 @@ function Conversation({
           },
         }),
       ),
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      applyThreadMutation(queries, updated);
       setRename(false);
-      reconcile();
     },
-    onError: reconcile,
+    onSettled: () => {
+      refreshThread(queries, threadId, "metadata");
+      refreshActivity(queries, transport, threadId);
+    },
   });
   const thread = detail.data?.thread;
   if (thread?.parent_thread_id)
@@ -865,7 +859,6 @@ function Conversation({
                 }}
                 disabled={
                   !thread ||
-                  detail.isFetching ||
                   draft.submission.kind === "pending" ||
                   draft.submission.kind === "unknown"
                 }
@@ -886,7 +879,6 @@ function Conversation({
                 disabled={
                   !thread ||
                   agentSelection.isPending ||
-                  detail.isFetching ||
                   draft.submission.kind === "pending" ||
                   draft.submission.kind === "unknown"
                 }

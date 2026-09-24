@@ -1,7 +1,10 @@
 import { reasoningModeLabel } from "./reasoning-mode-picker";
 import { useState } from "react";
 import { Link } from "react-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { applyThreadMutation } from "./thread-updates";
+import { refreshThread } from "./refresh";
+import { refreshActivity } from "./activity-updates";
 import { Button, ChoiceField } from "a13n-ui";
 import { useProjects, useSelectors, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -218,7 +221,6 @@ export function ConversationConfiguration({
               key={threadId}
               threadId={threadId}
               configuration={data.next_run.configuration}
-              reconcile={reconcile}
             />
             <Link to="/settings/resources">Manage shared resources</Link>
           </section>
@@ -301,23 +303,27 @@ export function ConversationConfiguration({
 export function ThreadSelections({
   threadId,
   configuration: current,
-  reconcile,
 }: {
   threadId: string;
   configuration: Schema<"ThreadConfiguration">;
-  reconcile: () => void;
 }) {
-  const { client } = useTransport();
+  const transport = useTransport();
+  const { client } = transport;
+  const queries = useQueryClient();
   const selectors = useSelectors();
   const projects = useProjects();
+  const [saved, setSaved] = useState<Schema<"ThreadConfiguration"> | null>(
+    null,
+  );
+  const latest = saved && saved.version > current.version ? saved : current;
   const [base, setBase] = useState<Schema<"ThreadConfiguration"> | null>(null);
-  const configuration = base ?? current;
+  const configuration = base ?? latest;
   const [patch, updatePatch] = useState<Schema<"ThreadConfigurationPatch">>({});
   const setPatch = (next: Schema<"ThreadConfigurationPatch">) => {
     setBase(configuration);
     updatePatch(next);
   };
-  const stale = base !== null && base.version !== current.version;
+  const stale = base !== null && base.version !== latest.version;
   const mutation = useMutation({
     mutationFn: () =>
       result(
@@ -326,12 +332,16 @@ export function ThreadSelections({
           body: { expected_version: configuration.version, patch },
         }),
       ),
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      applyThreadMutation(queries, updated);
+      setSaved(updated.configuration);
       updatePatch({});
       setBase(null);
-      reconcile();
     },
-    onError: reconcile,
+    onSettled: () => {
+      refreshThread(queries, threadId, "configuration");
+      refreshActivity(queries, transport, threadId);
+    },
   });
   return (
     <details className={styles.activity}>
@@ -481,16 +491,16 @@ export function ThreadSelections({
               Review the latest selections below before applying your changes.
               No write was retried.
             </p>
-            <h4>Latest selections · version {current.version}</h4>
-            <ConfigurationSummary configuration={current} />
+            <h4>Latest selections · version {latest.version}</h4>
+            <ConfigurationSummary configuration={latest} />
             <Button
               variant="outline"
               onClick={() => {
-                setBase(current);
+                setBase(latest);
                 mutation.reset();
               }}
             >
-              Keep my edits against version {current.version}
+              Keep my edits against version {latest.version}
             </Button>
           </div>
         )}

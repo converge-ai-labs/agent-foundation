@@ -93,7 +93,12 @@ class _InteractionWait:
 
 
 class RootRunCoordinator:
-    """Own App-lifetime root tasks and correlate every control to one receipt."""
+    """Own App-lifetime root tasks and correlate every control to one receipt.
+
+    State belongs to one event loop. Read-only snapshots do not suspend and
+    must not wait behind admission I/O. Mutations retain the admission lock;
+    publication of each operation transition is synchronous under that lock.
+    """
 
     def __init__(
         self,
@@ -151,23 +156,20 @@ class RootRunCoordinator:
 
     async def interaction_expiry(self, thread_id: str, continuation_id: str) -> datetime | None:
         """Return only the current process's deadline for this exact continuation."""
-        async with self._lock:
-            pending = self._interaction_waits.get(thread_id)
-            if pending is None or pending.response.expected_continuation_id != continuation_id:
-                return None
-            return pending.expires_at
+        pending = self._interaction_waits.get(thread_id)
+        if pending is None or pending.response.expected_continuation_id != continuation_id:
+            return None
+        return pending.expires_at
 
     async def active_thread_ids(self) -> tuple[str, ...]:
         """Snapshot all preparing, running and cancelling roots in this App."""
 
-        async with self._lock:
-            return tuple(self._active_by_thread)
+        return tuple(self._active_by_thread)
 
     async def active_count(self) -> int:
         """Return the number of process-local active root operations."""
 
-        async with self._lock:
-            return len(self._active_by_thread)
+        return len(self._active_by_thread)
 
     async def close(self, *, timeout_seconds: float) -> None:
         if timeout_seconds <= 0:
@@ -359,58 +361,53 @@ class RootRunCoordinator:
         return receipt.model_copy(deep=True)
 
     async def get(self, receipt_id: str) -> RootOperationView:
-        async with self._lock:
-            operation = self._operations.get(receipt_id)
-            if operation is None:
-                raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
-            return _view(operation)
+        operation = self._operations.get(receipt_id)
+        if operation is None:
+            raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
+        return _view(operation)
 
     async def active(self, thread_id: str) -> RootOperationView | None:
-        async with self._lock:
-            receipt_id = self._active_by_thread.get(thread_id)
-            if receipt_id is None:
-                return None
-            operation = self._operations.get(receipt_id)
-            return None if operation is None else _view(operation)
+        receipt_id = self._active_by_thread.get(thread_id)
+        if receipt_id is None:
+            return None
+        operation = self._operations.get(receipt_id)
+        return None if operation is None else _view(operation)
 
     async def activity(self, thread_id: str) -> RootActivityView:
         return (await self.activities((thread_id,)))[thread_id]
 
     async def activities(self, thread_ids: tuple[str, ...]) -> dict[str, RootActivityView]:
-        async with self._lock:
-            result: dict[str, RootActivityView] = {}
-            for thread_id in thread_ids:
-                receipt_id = self._active_by_thread.get(thread_id)
-                operation = None if receipt_id is None else self._operations.get(receipt_id)
-                if operation is None:
-                    result[thread_id] = RootActivityView(state=RootActivityState.inactive)
-                elif operation.status is RootOperationStatus.preparing:
-                    result[thread_id] = RootActivityView(
-                        state=RootActivityState.preparing,
-                        receipt_id=operation.receipt.receipt_id,
-                        available_actions=("wait", "cancel"),
-                    )
-                else:
-                    result[thread_id] = RootActivityView(
-                        state=RootActivityState.running,
-                        receipt_id=operation.receipt.receipt_id,
-                        run_id=operation.run_id,
-                        available_actions=("wait", "steer", "cancel"),
-                    )
-            return result
+        result: dict[str, RootActivityView] = {}
+        for thread_id in thread_ids:
+            receipt_id = self._active_by_thread.get(thread_id)
+            operation = None if receipt_id is None else self._operations.get(receipt_id)
+            if operation is None:
+                result[thread_id] = RootActivityView(state=RootActivityState.inactive)
+            elif operation.status is RootOperationStatus.preparing:
+                result[thread_id] = RootActivityView(
+                    state=RootActivityState.preparing,
+                    receipt_id=operation.receipt.receipt_id,
+                    available_actions=("wait", "cancel"),
+                )
+            else:
+                result[thread_id] = RootActivityView(
+                    state=RootActivityState.running,
+                    receipt_id=operation.receipt.receipt_id,
+                    run_id=operation.run_id,
+                    available_actions=("wait", "steer", "cancel"),
+                )
+        return result
 
     async def latest(self, thread_id: str) -> RootOperationView | None:
-        async with self._lock:
-            value = self._latest_terminal.get(thread_id)
-            return None if value is None else value.model_copy(deep=True)
+        value = self._latest_terminal.get(thread_id)
+        return None if value is None else value.model_copy(deep=True)
 
     async def latest_many(self, thread_ids: tuple[str, ...]) -> dict[str, RootOperationView]:
-        async with self._lock:
-            return {
-                thread_id: value.model_copy(deep=True)
-                for thread_id in thread_ids
-                if (value := self._latest_terminal.get(thread_id)) is not None
-            }
+        return {
+            thread_id: value.model_copy(deep=True)
+            for thread_id in thread_ids
+            if (value := self._latest_terminal.get(thread_id)) is not None
+        }
 
     async def wait(
         self,
@@ -420,11 +417,10 @@ class RootRunCoordinator:
     ) -> RootOperationView:
         if timeout_seconds is not None and not 0 <= timeout_seconds <= _MAX_WAIT_SECONDS:
             raise RunCoordinationError("Root wait timeout is outside supported bounds.", code="root_wait_invalid")
-        async with self._lock:
-            operation = self._operations.get(receipt_id)
-            if operation is None:
-                raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
-            done = operation.done
+        operation = self._operations.get(receipt_id)
+        if operation is None:
+            raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
+        done = operation.done
         if timeout_seconds is None:
             await done.wait()
         elif timeout_seconds > 0:
