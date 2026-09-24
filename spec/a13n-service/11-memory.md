@@ -69,7 +69,7 @@ thread_memories
 
 A memory is created (`write`) with `{key, name, description?, labels, type: "postgres", guide?, always_load}`, which also creates its store row. `key` is unique in the workspace (`already_exists`). A guide is at most `memory.guide_bytes` UTF-8 bytes (`invalid_argument` at `guide`). Each `always_load` path must be a valid [file path](../a13n-harness/21-file-memory.md#file-format) (`invalid_argument` at `always_load.{index}`) and the paths must be unique; at most 64, and a path need not exist.
 
-Memory paths take the memory's ID. The view adds `effective_guide`, the guide a run uses: the memory's own, else `memory.default_guide.file`, else the Harness's built-in default; and `file_count`, `content_bytes` and `history_bytes` from the store row. Lists filter by `label`, ordered by ID.
+Memory paths take the memory's ID. The view adds `inherited_guide`, what a null `guide` resolves to: `memory.default_guide.file`, else the Harness's built-in default; and `file_count`, `content_bytes` and `history_bytes` from the store row. Lists filter by `label`, ordered by ID.
 
 `PATCH` (`write`, `If-Match`) changes `name`, `description`, `labels`, `guide` and `always_load`; `description: null` clears the description and `guide: null` returns to the inherited guide. A change applies to attempts that start afterwards.
 
@@ -132,7 +132,7 @@ The attempt's plan session reads each frozen mount's memory, skipping memories d
 
 The attempt builds the Harness `FileMemoryCapability` with:
 
-- one `PostgresFileStore` per mount, bound to its memory, and a `FileMount` with the mount's name and access, the memory's `effective_guide`, its `always_load` paths and the memory ID as cursor key;
+- one `PostgresFileStore` per mount, bound to its memory, and a `FileMount` with the mount's name and access, the memory's `guide`, or its `inherited_guide` when null, its `always_load` paths and the memory ID as cursor key;
 - limits from `memory.*`: the file format, `context_bytes`, `always_load_bytes` and `write_retries`;
 - the enabled tools of the `memory` toolset, whose tools are `file_view`, `file_grep`, `file_create`, `file_edit`, `file_append`, `file_move` and `file_delete`; tool permissions apply to their tool IDs `memory.file.*`. With the toolset disabled the run still receives its memories' context, with no tools;
 - `Origin(run_id, principal_id)`, to which each tool call adds its ID;

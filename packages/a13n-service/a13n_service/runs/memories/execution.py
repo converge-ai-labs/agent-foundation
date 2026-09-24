@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import Storage
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.memories.schemas import MemoryMount
-from a13n_service.resources.memories.service import effective_guide
+from a13n_service.resources.memories.service import inherited_guide
 from a13n_service.resources.memories.store import PostgresFileStore, file_format
 from a13n_service.resources.memories.tables import MemoryRow
 from a13n_service.runs.tables import RunRow
@@ -84,7 +84,7 @@ def file_memory(
             name=memory.mount.name,
             store=PostgresFileStore(storage, memory.mount.memory_id, settings, gate=gate),
             access=memory.mount.access,
-            guide=effective_guide(memory.guide, settings),
+            guide=inherited_guide(settings) if memory.guide is None else memory.guide,
             always_load=memory.always_load,
             cursor_key=memory.mount.memory_id,
         )

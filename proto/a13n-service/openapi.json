@@ -5121,10 +5121,6 @@
             ],
             "title": "Description"
           },
-          "effective_guide": {
-            "title": "Effective Guide",
-            "type": "string"
-          },
           "file_count": {
             "title": "File Count",
             "type": "integer"
@@ -5146,6 +5142,10 @@
           },
           "id": {
             "title": "Id",
+            "type": "string"
+          },
+          "inherited_guide": {
+            "title": "Inherited Guide",
             "type": "string"
           },
           "key": {
@@ -5205,7 +5205,7 @@
           "kind",
           "type",
           "guide",
-          "effective_guide",
+          "inherited_guide",
           "always_load",
           "labels",
           "file_count",

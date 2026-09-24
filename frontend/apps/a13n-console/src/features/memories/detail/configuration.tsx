@@ -122,11 +122,7 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
             readOnly={readOnly}
             value={draft.guide}
             onChange={(guide) => change({ guide })}
-            // The effective guide is the inherited one only while the saved
-            // memory inherits.
-            inherited={
-              memory.guide === null ? memory.effective_guide : undefined
-            }
+            inherited={memory.inherited_guide}
           />
         </Section>
         <Section

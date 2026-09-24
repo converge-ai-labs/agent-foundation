@@ -86,7 +86,7 @@ function setup(search = "", allowed = ["read", "run", "write"]) {
     kind: "file",
     type: "postgres",
     guide: null,
-    effective_guide: "Keep one topic per file.",
+    inherited_guide: "Keep one topic per file.",
     always_load: ["README.md"],
     labels: { team: "docs" },
     file_count: 3,

@@ -64,7 +64,7 @@ export function GuideField({
 }: {
   value: GuideDraft;
   onChange: (value: GuideDraft) => void;
-  /** The deployment's guide, when the memory already inherits it. */
+  /** The deployment's guide, which a memory without its own receives. */
   inherited?: string;
   readOnly?: boolean;
 }) {

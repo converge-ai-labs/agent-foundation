@@ -4463,8 +4463,6 @@ export interface components {
       created_by_id: string;
       /** Description */
       description: string | null;
-      /** Effective Guide */
-      effective_guide: string;
       /** File Count */
       file_count: number;
       /** Guide */
@@ -4473,6 +4471,8 @@ export interface components {
       history_bytes: number;
       /** Id */
       id: string;
+      /** Inherited Guide */
+      inherited_guide: string;
       /** Key */
       key: string;
       /**

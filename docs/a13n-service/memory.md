@@ -19,7 +19,7 @@ curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/memories" \
 ```
 
 - `key` is unique in the workspace. `type` is `postgres`, the only type.
-- `guide` tells agents what belongs in this memory and how to organize it, up to `memory.guide_bytes`. Leave it out or set it to `null` to use the deployment's guide (`memory.default_guide.file`, else the built-in one); `""` gives the memory no guide. The memory's `effective_guide` shows the guide runs use.
+- `guide` tells agents what belongs in this memory and how to organize it, up to `memory.guide_bytes`. Leave it out or set it to `null` to use the deployment's guide (`memory.default_guide.file`, else the built-in one); `""` gives the memory no guide. The memory's `inherited_guide` shows the guide `null` resolves to.
 - `always_load` names up to 64 paths whose full content leads the memory's context in every run. A path need not exist yet. Only people who may change the memory choose them, so a conversation cannot pin its own writes into every later one.
 - `PATCH …/memories/{memory_id}` with the memory's `If-Match` changes `name`, `description`, `labels`, `guide` and `always_load`. Runs that start afterwards use the change.
 - `DELETE …/memories/{memory_id}` with `If-Match` deletes the memory with its files, history and thread mounts. A running run that uses it gets `memory_deleted` from its next memory tool call.

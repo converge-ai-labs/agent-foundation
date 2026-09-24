@@ -27,10 +27,8 @@ from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope, authorize
 
 
-def effective_guide(guide: str | None, settings: MemorySettings) -> str:
-    """The memory's own guide, else the deployment's default, else the one built into the Harness."""
-    if guide is not None:
-        return guide
+def inherited_guide(settings: MemorySettings) -> str:
+    """The guide of a memory without its own: the deployment's default, else the one built into the Harness."""
     return DEFAULT_FILE_GUIDE if settings.default_guide.file is None else settings.default_guide.file
 
 
@@ -45,7 +43,7 @@ def memory_view(row: MemoryRow, store: MemoryFileStoreRow, settings: MemorySetti
         kind="file",
         type="postgres",
         guide=row.guide,
-        effective_guide=effective_guide(row.guide, settings),
+        inherited_guide=inherited_guide(settings),
         always_load=row.always_load,
         labels=row.labels,
         file_count=store.file_count,

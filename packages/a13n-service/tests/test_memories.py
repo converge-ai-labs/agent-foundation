@@ -71,7 +71,7 @@ async def test_memories_are_configured_with_preconditions_and_guides(service) ->
     base = f"{service.workspace}/memories"
     memory = await create_memory(service, always_load=["README.md"], labels={"team": "a"})
     assert (memory["kind"], memory["type"], memory["guide"]) == ("file", "postgres", None)
-    assert memory["effective_guide"] == DEFAULT_FILE_GUIDE
+    assert memory["inherited_guide"] == DEFAULT_FILE_GUIDE
     assert (memory["file_count"], memory["content_bytes"], memory["history_bytes"]) == (0, 0, 0)
     assert memory["always_load"] == ["README.md"]
     duplicate = await service.client.post(base, json={"key": "team", "name": "Other"})
@@ -86,12 +86,12 @@ async def test_memories_are_configured_with_preconditions_and_guides(service) ->
     assert (await service.client.patch(item, json={"guide": "Keep it short."})).status_code == 428
     guided = await service.client.patch(item, json={"guide": "Keep it short."}, headers={"if-match": etag(memory)})
     assert guided.status_code == 200, guided.text
-    assert (guided.json()["guide"], guided.json()["effective_guide"]) == ("Keep it short.", "Keep it short.")
+    assert (guided.json()["guide"], guided.json()["inherited_guide"]) == ("Keep it short.", DEFAULT_FILE_GUIDE)
     assert guided.headers["etag"] == etag(guided.json())
     silenced = await service.client.patch(item, json={"guide": ""}, headers={"if-match": etag(guided.json())})
-    assert silenced.json()["effective_guide"] == ""
+    assert (silenced.json()["guide"], silenced.json()["inherited_guide"]) == ("", DEFAULT_FILE_GUIDE)
     inherited = await service.client.patch(item, json={"guide": None}, headers={"if-match": etag(silenced.json())})
-    assert inherited.json()["effective_guide"] == DEFAULT_FILE_GUIDE
+    assert inherited.json()["guide"] is None
     unchanged = await service.client.patch(item, json={"name": "team"}, headers={"if-match": etag(inherited.json())})
     assert unchanged.json()["version"] == inherited.json()["version"]
 
@@ -115,7 +115,7 @@ async def test_the_default_guide_comes_from_startup_configuration(serve, setting
     configured = MemorySettings.model_validate({"default_guide": {"file": "One fact per file."}})
     async with serve(settings=settings.model_copy(update={"memory": configured})) as service:
         memory = await create_memory(service)
-        assert (memory["guide"], memory["effective_guide"]) == (None, "One fact per file.")
+        assert (memory["guide"], memory["inherited_guide"]) == (None, "One fact per file.")
 
 
 async def test_files_change_under_their_etags_and_each_change_is_one_revision(service) -> None:  # type: ignore[no-untyped-def]

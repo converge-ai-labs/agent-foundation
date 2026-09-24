@@ -58,8 +58,8 @@ class Memory(BaseModel):
     kind: Literal["file"]
     type: Literal["postgres"]
     guide: str | None
-    # The guide runs receive: the memory's own, else the deployment's default.
-    effective_guide: str
+    # What a null `guide` resolves to, shown even while the memory has its own.
+    inherited_guide: str
     always_load: list[str]
     labels: dict[str, str]
     file_count: int
