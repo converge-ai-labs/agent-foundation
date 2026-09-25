@@ -164,7 +164,7 @@ def reset(checkout: Checkout, args: argparse.Namespace) -> None:
         stores.delete(checkout.instance)
         for directory in (checkout.objects, checkout.environments):
             shutil.rmtree(directory, ignore_errors=True)
-        for path in (checkout.seed_report, checkout.state / "dev-resources.json"):
+        for path in (checkout.seed_report, checkout.state / "dev-resources.json", checkout.mem0_records):
             path.unlink(missing_ok=True)
         _prepare(checkout, args.traces)
         if args.state == "seeded":

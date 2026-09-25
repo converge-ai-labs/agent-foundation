@@ -1,13 +1,16 @@
 """A loopback fake of the self-hosted mem0 REST server; it never contacts mem0 and does no inference.
 
-It keeps records in memory and serves the routes the `mem0_oss` Memory Provider calls. Search scores a record by
+It keeps records in memory, or also in a file when its server calls `keep`, and serves the routes the `mem0_oss`
+Memory Provider calls. Search scores a record by
 the share of the query's words it contains. `/fixture/*` routes let a journey fail operations and read what a
 namespace holds after the Service can no longer show it.
 """
 
 import argparse
+import json
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import uvicorn
@@ -19,6 +22,21 @@ router = APIRouter()
 RECORDS: dict[str, dict] = {}
 # Operations (`add`, `list`, `search`, `update`, `delete`, `purge`) that answer 503 until cleared.
 FAILING: set[str] = set()
+# The file RECORDS survive restarts in, once `keep` names one.
+STATE: Path | None = None
+
+
+def keep(path: Path) -> None:
+    """Load the records `path` holds and rewrite it after every change, as a checkout's scripted model does."""
+    global STATE
+    STATE = path
+    if path.exists():
+        RECORDS.update(json.loads(path.read_text()))
+
+
+def _changed() -> None:
+    if STATE is not None:
+        STATE.write_text(json.dumps(RECORDS))
 
 
 def _refused(operation: str) -> JSONResponse | None:
@@ -43,6 +61,7 @@ async def add(body: dict):
     text = "\n".join(message["content"] for message in body["messages"])
     record = {"id": str(uuid4()), "memory": text, "user_id": body["user_id"], "created_at": now, "updated_at": now}
     RECORDS[record["id"]] = record
+    _changed()
     return {"results": [{"id": record["id"], "memory": text, "event": "ADD"}]}
 
 
@@ -63,6 +82,7 @@ async def update(record_id: str, body: dict):
     if (record := RECORDS.get(record_id)) is None:
         return JSONResponse({"detail": "Memory not found"}, status_code=404)
     record.update(memory=body["text"], updated_at=datetime.now(UTC).isoformat())
+    _changed()
     return {"message": "Memory updated successfully!"}
 
 
@@ -72,6 +92,7 @@ async def delete(record_id: str):
         return refused
     if RECORDS.pop(record_id, None) is None:
         return JSONResponse({"detail": "Memory not found"}, status_code=404)
+    _changed()
     return {"message": "Memory deleted successfully"}
 
 
@@ -81,6 +102,7 @@ async def purge(user_id: str):
         return refused
     for record in _owned(user_id):
         del RECORDS[record["id"]]
+    _changed()
     return {"message": "All relevant memories deleted"}
 
 

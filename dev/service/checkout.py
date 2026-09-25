@@ -61,6 +61,11 @@ class Checkout:
         return self.state / "objects"
 
     @property
+    def mem0_records(self) -> Path:
+        """The records of the scripted model's fake mem0 server, kept across application restarts."""
+        return self.state / "mem0.json"
+
+    @property
     def environments(self) -> Path:
         """The base directory of seeded `local` environment templates."""
         return self.state / "environments"

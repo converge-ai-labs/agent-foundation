@@ -17,6 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from .api import router as fixture_router
+from .mem0 import keep as keep_mem0_records
 from .mem0 import router as mem0_router
 from .process import fixture_process
 
@@ -358,7 +359,9 @@ def model_process(port: int = MODEL_PORT):
                 os.environ[name] = value
 
 
-def serve_model(port: int = MODEL_PORT) -> None:
+def serve_model(port: int = MODEL_PORT, mem0_records: str | None = None) -> None:
+    if mem0_records:
+        keep_mem0_records(Path(mem0_records))
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", access_log=False)
 
 

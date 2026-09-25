@@ -6,6 +6,7 @@ project, so it never touches a developer's instance. Requires Docker.
 
 import json
 from collections.abc import Iterator
+from contextlib import AbstractContextManager
 from pathlib import Path
 
 import pytest
@@ -30,20 +31,29 @@ def instance(checkout_root: Path) -> Iterator[Checkout]:
         migrate(checkout)
         assert create_administrator(checkout) is True
         assert create_administrator(checkout) is False
-        # The application commands import repository code, so they run from the repository root.
-        with lifecycle.running(ROOT, applications(checkout, console=False), checkout.logs):
-            yield checkout
+        yield checkout
     finally:
         stores.delete(checkout.instance)
 
 
-def test_seeded_state_verifies_and_private_resources_apply_once(instance: Checkout, tmp_path: Path) -> None:
-    with Api(instance.service_url) as api:
+def running(checkout: Checkout) -> AbstractContextManager[None]:
+    # The application commands import repository code, so they run from the repository root.
+    return lifecycle.running(ROOT, applications(checkout, console=False), checkout.logs)
+
+
+def test_seeded_state_verifies_after_a_restart_and_private_resources_apply_once(
+    instance: Checkout, tmp_path: Path
+) -> None:
+    with running(instance), Api(instance.service_url) as api:
         api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
         seeded = seed(api, instance.model_url, instance.environments)
         checks = verify(api, seeded)
         assert [name for name, passed in checks if not passed] == []
         write_report(instance.seed_report, instance.console_url, seeded, checks)
+    # `make dev` starts the applications again, so what the fixtures hold must outlive their processes.
+    with running(instance), Api(instance.service_url) as api:
+        api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
+        assert [name for name, passed in verify(api, seeded) if not passed] == []
 
         resources = tmp_path / "dev-resources.toml"
         resources.write_text(f"""version = 1

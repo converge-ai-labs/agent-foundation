@@ -31,7 +31,9 @@ def service_environment(checkout: Checkout) -> dict[str, str]:
 
 def applications(checkout: Checkout, *, console: bool) -> tuple[Application, ...]:
     ports = checkout.instance.ports
-    serve_model = f"from dev.fixtures.model import serve_model; serve_model({ports.model})"
+    serve_model = (
+        f"from dev.fixtures.model import serve_model; serve_model({ports.model}, {str(checkout.mem0_records)!r})"
+    )
     selected = [
         Application("model", (sys.executable, "-c", serve_model), ports.model, dict(os.environ)),
         Application(
