@@ -191,7 +191,7 @@ export function MemoryMountRows({
                 <ChoiceField
                   label={t("Access for {{name}}", { name: mount.name })}
                   hideLabel
-                  className="w-28 min-w-0"
+                  className="w-28 [&_[data-slot=select-trigger]]:min-w-0"
                   value={mount.access}
                   onValueChange={(value) =>
                     onAccessChange(
