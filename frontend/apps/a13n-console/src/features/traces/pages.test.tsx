@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -39,7 +40,14 @@ afterEach(() => {
   caches.forEach((cache) => cache.clear());
   caches.length = 0;
   vi.resetAllMocks();
+  vi.useRealTimers();
 });
+/** The list applies edited filters after a 350 ms pause; fake time skips it. */
+function typingUser() {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+}
+const pause = () => act(() => vi.advanceTimersByTimeAsync(350));
 function mount(element: React.ReactNode, entry = "/") {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -103,7 +111,7 @@ const isBackend = (path: string) => path.endsWith("/trace-backend");
 const isSpans = (path: string) => path.endsWith("/spans");
 
 it("searches identifiers automatically and preserves empty-page continuation", async () => {
-  const user = userEvent.setup();
+  const user = typingUser();
   http.GET.mockImplementation(async (path, options) =>
     isSpans(path)
       ? response({ items: [], next_cursor: null })
@@ -121,6 +129,7 @@ it("searches identifiers automatically and preserves empty-page continuation", a
   await screen.findByRole("link", { name: /root/ }, { timeout: 3000 });
   const search = screen.getByRole("searchbox", { name: "Search by ID" });
   await user.type(search, "thread_abc");
+  await pause();
   await waitFor(() =>
     expect(http.GET).toHaveBeenLastCalledWith(
       expect.stringContaining("/traces"),
@@ -138,6 +147,7 @@ it("searches identifiers automatically and preserves empty-page continuation", a
   );
   await user.clear(search);
   await user.type(search, "sess_123");
+  await pause();
   await waitFor(() =>
     expect(http.GET).toHaveBeenLastCalledWith(
       expect.stringContaining("/traces"),
@@ -154,6 +164,7 @@ it("searches identifiers automatically and preserves empty-page continuation", a
   );
   await user.clear(search);
   await user.type(search, "run_xyz");
+  await pause();
   await waitFor(() =>
     expect(http.GET).toHaveBeenLastCalledWith(
       expect.stringContaining("/traces"),
@@ -170,7 +181,7 @@ it("searches identifiers automatically and preserves empty-page continuation", a
 });
 
 it("applies metadata key=value filters from the popover", async () => {
-  const user = userEvent.setup();
+  const user = typingUser();
   http.GET.mockImplementation(async (path, options) =>
     isSpans(path)
       ? response({ items: [], next_cursor: null })
@@ -200,6 +211,7 @@ it("applies metadata key=value filters from the popover", async () => {
     screen.getByRole("textbox", { name: "Metadata value 2" }),
     "true",
   );
+  await pause();
   await waitFor(() =>
     expect(http.GET).toHaveBeenCalledWith(
       expect.stringContaining("/traces"),
@@ -214,6 +226,7 @@ it("applies metadata key=value filters from the popover", async () => {
     ),
   );
   await user.click(screen.getByRole("button", { name: "Remove filter 1" }));
+  await pause();
   await waitFor(() =>
     expect(http.GET).toHaveBeenCalledWith(
       expect.stringContaining("/traces"),
