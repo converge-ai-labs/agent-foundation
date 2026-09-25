@@ -86,6 +86,11 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             for relative in (MODELS, SETTINGS, TEST_FILE)
         },
         "dynamic": {},
+        "durations": {
+            f"{TEST_FILE}::test_value": 0.5,
+            f"{TEST_FILE}::test_other": 1.5,
+            f"{TEST_FILE}::test_settings": 1,
+        },
     }
     target = impact.map_path(PACKAGE, document["ref"])
     target.parent.mkdir(parents=True)
@@ -219,9 +224,23 @@ def test_verify_plan_prefers_the_map_and_falls_back_for_unmapped_files(repo: Pat
     result = verify.plan([MODELS, TEST_FILE, "packages/a13n-core/tests/conftest.py"], graph=verify.PythonGraph(repo))
     assert result.python_tests == {"packages/a13n-core/tests"}
     steps = verify.steps_for(verify.plan([MODELS], graph=verify.PythonGraph(repo)))
-    listing = steps[-1].command[-1]
+    listing = steps[-1].command[2]
     assert listing.startswith("PYTHON_TEST_DIRS=@")
     assert Path(listing.split("@", 1)[1]).read_text().strip() == f"{TEST_FILE}::test_value"
+
+
+def test_short_recorded_selections_run_without_xdist_workers(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    found = impact.find_map(PACKAGE)
+    assert found is not None
+    assert impact.recorded_seconds(found, [f"{TEST_FILE}::test_value", TEST_FILE]) == 3.5
+    assert impact.recorded_seconds(found, ["packages/a13n-core/tests"]) == 3
+    assert impact.recorded_seconds(found, [f"{TEST_FILE}::test_unrelated_a"]) is None
+    (repo / MODELS).write_text(SOURCE.replace("LIMIT = 1", "LIMIT = 2"))
+    result = verify.plan([MODELS], graph=verify.PythonGraph(repo))
+    assert result.python_seconds == 2
+    assert verify.steps_for(result)[-1].command[-1] == "PYTHON_TEST_WORKERS=0"
+    monkeypatch.setattr(verify, "SERIAL_SECONDS", 1)
+    assert "PYTHON_TEST_WORKERS=0" not in verify.steps_for(result)[-1].command
 
 
 def test_recording_under_xdist_writes_a_map_without_group_suffixes(tmp_path: Path) -> None:
@@ -242,5 +261,6 @@ def test_recording_under_xdist_writes_a_map_without_group_suffixes(tmp_path: Pat
     nodeids = set(document["tests"])
     assert any(nodeid.endswith("::test_parent_directory_absorbs_child_selections") for nodeid in nodeids)
     assert not any("@" in nodeid for nodeid in nodeids)
+    assert set(document["durations"]) >= nodeids
     assert "plan" in set(document["funcmaps"]["scripts/verify.py"].values())
     assert document["ref"] == _git(root, "rev-parse", "HEAD")

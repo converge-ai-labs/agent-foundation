@@ -38,6 +38,8 @@ FRONTEND_SUFFIXES = {".ts", ".tsx", ".mjs", ".js", ".css", ".json"}
 FRONTEND_PROJECTS = ("apps/a13n-console", "apps/a13n-harness-ui", "packages/a13n-ui")
 COMPACT_PYTEST = "-q --tb=short --no-header"
 DEFAULT_BASE = "origin/main"
+# Below this much recorded (coverage-traced) test time, xdist worker startup costs more than it saves.
+SERIAL_SECONDS = 10.0
 # Per-worktree record of the last tree verify passed on, and whether consumers were included.
 PASSED_RECORD = "a13n-verify-passed"
 
@@ -54,6 +56,8 @@ class Plan:
     frontend_files: set[str] = field(default_factory=set)
     markdown_files: set[str] = field(default_factory=set)
     notes: list[str] = field(default_factory=list)
+    # Recorded serial time of the Python selection, None when some selected test was never measured.
+    python_seconds: float | None = None
 
     @property
     def frontend_projects(self) -> set[str]:
@@ -361,7 +365,8 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
                 for candidate in affected:
                     result.frontend_related[candidate].add(posix)
 
-    mapped = _impact_selection(package_python, result, consumers=consumers) if package_python else set()
+    maps: dict[str, impact.ImpactMap | None] = {}
+    mapped = _impact_selection(package_python, result, maps, consumers=consumers) if package_python else set()
     for path in package_python:
         posix = path.relative_to(REPOSITORY_ROOT).as_posix()
         if path in mapped:
@@ -420,15 +425,37 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
     for project in result.frontend_full:
         result.frontend_related.pop(project, None)
     _collapse_python_selection(result)
+    result.python_seconds = _recorded_seconds(result.python_tests, maps)
     return result
 
 
-def _impact_selection(paths: list[Path], result: Plan, *, consumers: bool) -> set[Path]:
+def _recorded_seconds(tests: set[str], maps: dict[str, impact.ImpactMap | None]) -> float | None:
+    """Recorded serial time of package test selections; None when any part was never measured."""
+    by_package: dict[str, list[str]] = defaultdict(list)
+    for entry in tests:
+        if not entry.startswith("packages/"):
+            return None
+        by_package[entry.split("/")[1]].append(entry)
+    total = 0.0
+    for package, entries in by_package.items():
+        if package not in maps:
+            maps[package] = impact.find_map(package)
+        found = maps[package]
+        seconds = impact.recorded_seconds(found, entries) if found else None
+        if seconds is None:
+            return None
+        total += seconds
+    return total if by_package else None
+
+
+def _impact_selection(
+    paths: list[Path], result: Plan, maps: dict[str, impact.ImpactMap | None], *, consumers: bool
+) -> set[Path]:
     """Select node ids from recorded impact maps; returns the paths the owning package's map covered."""
     handled: set[Path] = set()
     posix = {path: path.relative_to(REPOSITORY_ROOT).as_posix() for path in paths}
     owners = {path: posix[path].split("/")[1] for path in paths}
-    maps = {package: impact.find_map(package) for package in impact.packages_with_tests()}
+    maps.update((package, impact.find_map(package)) for package in impact.packages_with_tests())
     for package in sorted(set(owners.values())):
         if maps.get(package) is None:
             result.notes.append(f"no impact map for {package}; selecting by import graph (make impact-record)")
@@ -540,7 +567,10 @@ def steps_for(result: Plan) -> list[Step]:
                 selection = f"@{listing.name}"
             else:
                 selection = " ".join(entries)
-            steps.append(Step("python tests", ["make", "test", f"PYTHON_TEST_DIRS={selection}"], env=env))
+            command = ["make", "test", f"PYTHON_TEST_DIRS={selection}"]
+            if result.python_seconds is not None and result.python_seconds < SERIAL_SECONDS:
+                command.append("PYTHON_TEST_WORKERS=0")
+            steps.append(Step("python tests", command, env=env))
     for project in sorted(result.frontend_full):
         steps.append(
             Step(
@@ -650,6 +680,8 @@ def verify_changes(args: argparse.Namespace, tree: str | None) -> int:
             if result.python_tests == {"ALL"}
             else f"{len(result.python_tests)} Python test target(s)"
         )
+        if result.python_seconds is not None:
+            targets += f", recorded at {result.python_seconds:.1f}s"
         print(f"  selected: {targets}")
     for project in sorted(result.frontend_projects):
         scope = (

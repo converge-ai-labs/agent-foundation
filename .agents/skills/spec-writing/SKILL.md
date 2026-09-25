@@ -44,7 +44,7 @@ For spec-only changes, format the affected files and run:
 
 ```bash
 uv run --locked mdformat --number <changed-spec-files>
-make lint
+make verify
 git diff --check -- spec
 ```
 

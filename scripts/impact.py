@@ -25,6 +25,7 @@ import pytest
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 MAP_VARIABLE = "A13N_IMPACT_MAP"
 COVERAGE_VARIABLE = "A13N_IMPACT_COVERAGE"
+NODEID_PROPERTY = "a13n-impact-nodeid"
 KEEP_MAPS = 5
 SEARCH_COMMITS = 500
 STALE_COMMITS = 50
@@ -64,6 +65,8 @@ class ImpactMap:
     tests: dict[str, dict[str, set[str]]]
     funcmaps: dict[str, dict[int, str]]
     dynamic: dict[str, list[str]]
+    # Seconds each test took while recording (setup, call and teardown, under coverage).
+    durations: dict[str, float] = field(default_factory=dict)
 
     @property
     def tests_dir(self) -> str:
@@ -88,6 +91,7 @@ def load_map(path: Path, package: str, distance: int) -> ImpactMap:
         tests={nodeid: {f: set(q) for f, q in files.items()} for nodeid, files in data["tests"].items()},
         funcmaps={p: {int(line): q for line, q in table.items()} for p, table in data["funcmaps"].items()},
         dynamic=data.get("dynamic", {}),
+        durations=data.get("durations", {}),
     )
 
 
@@ -161,6 +165,20 @@ def select(impact: ImpactMap, files: Iterable[str]) -> Selection:
     return result
 
 
+def recorded_seconds(impact: ImpactMap, entries: Iterable[str]) -> float | None:
+    """Recorded time of the selected node ids, files or directories; None when any entry is unmeasured."""
+    total = 0.0
+    for entry in entries:
+        if "::" in entry:
+            seconds = [impact.durations[entry]] if entry in impact.durations else []
+        else:
+            seconds = [s for n, s in impact.durations.items() if n.startswith((entry + "/", entry + "::"))]
+        if not seconds:
+            return None
+        total += sum(seconds)
+    return total
+
+
 def _class_names(source: str | None) -> set[str]:
     """Qualified names, as tia's line map spells them, of the classes the source defines."""
     names: set[str] = set()
@@ -215,6 +233,8 @@ class _Recorder:
 
     @pytest.hookimpl(wrapper=True)
     def pytest_runtest_setup(self, item: pytest.Item):
+        # Reports reach the controller with xdist's group suffix; carry the plain node id along.
+        item.user_properties.append((NODEID_PROPERTY, _nodeid(item)))
         self.cov.switch_context(_nodeid(item))
         return (yield)
 
@@ -241,10 +261,15 @@ class _Controller:
     def __init__(self, data_file: str, target: Path) -> None:
         self.data_file = data_file
         self.target = target
+        self.durations: dict[str, float] = {}
+
+    def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
+        nodeid = str(dict(report.user_properties).get(NODEID_PROPERTY, report.nodeid))
+        self.durations[nodeid] = self.durations.get(nodeid, 0.0) + report.duration
 
     @pytest.hookimpl(trylast=True)
     def pytest_sessionfinish(self) -> None:
-        write_map(self.data_file, self.target)
+        write_map(self.data_file, self.target, self.durations)
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -259,7 +284,7 @@ def pytest_configure(config: pytest.Config) -> None:
         config.pluginmanager.register(_Controller(data_file, Path(target)), "a13n-impact-controller")
 
 
-def write_map(data_file: str, target: Path) -> None:
+def write_map(data_file: str, target: Path, durations: dict[str, float]) -> None:
     import coverage
     from tia import astmap, dynscan
 
@@ -301,6 +326,7 @@ def write_map(data_file: str, target: Path) -> None:
         "reads": {},
         "funcmaps": {p: {str(n): q for n, q in sorted(t.items())} for p, t in sorted(funcmaps.items())},
         "dynamic": dynamic,
+        "durations": {nodeid: round(seconds, 3) for nodeid, seconds in sorted(durations.items())},
     }
     target.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(target, "wt", encoding="utf-8") as handle:
