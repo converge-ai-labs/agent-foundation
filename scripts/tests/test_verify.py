@@ -294,3 +294,24 @@ def test_verify_covers_the_changes_since_the_last_passing_run(tmp_path: Path, mo
     assert planned[-1] == ["first.py", "second.py"]
     assert verify.main(["--base", "HEAD"]) == 0
     assert planned[-1] == ["first.py", "second.py"]
+
+
+def test_snapshot_sees_a_same_size_edit_made_in_the_indexed_second(tmp_path: Path, monkeypatch) -> None:
+    import os
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True).stdout
+
+    monkeypatch.setattr(verify, "REPOSITORY_ROOT", tmp_path)
+    source = tmp_path / "tracked.py"
+    source.write_text("value = 1\n")
+    os.utime(source, (1_000_000_000, 1_000_000_000))
+    git("init")
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "add", ".")
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-m", "initial")
+    # Same size and timestamp as the index entry: only Git's same-second check can notice the edit.
+    os.utime(tmp_path / ".git/index", (1_000_000_000, 1_000_000_000))
+    source.write_text("value = 2\n")
+    os.utime(source, (1_000_000_000, 1_000_000_000))
+    assert verify.changes_between("HEAD", verify.snapshot()) == ["tracked.py"]

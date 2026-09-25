@@ -94,8 +94,9 @@ def snapshot() -> str:
     """A tree object of the working tree, untracked files included, written without touching the index."""
     with tempfile.TemporaryDirectory() as scratch:
         index = Path(scratch) / "index"
-        # A copy of the real index keeps its stat cache, so only modified files are hashed.
-        shutil.copyfile(_git_path("index"), index)
+        # A copy of the real index keeps its stat cache, so only modified files are hashed; keeping its
+        # modification time keeps Git's check for files changed within the same second as the index.
+        shutil.copy2(_git_path("index"), index)
         env = {**os.environ, "GIT_INDEX_FILE": str(index)}
         _git("add", "--all", env=env)
         return _git("write-tree", env=env).strip()
