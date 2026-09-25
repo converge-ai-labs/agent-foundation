@@ -33,6 +33,10 @@ from .test_app import _settings, _write_configuration
 pytestmark = pytest.mark.anyio
 TOKEN = "fixture-device-token"
 HEADERS = {"Authorization": "Bearer test-only-key"}
+# Decide before any App or listener starts, so the default suite pays nothing for these tests.
+requires_envd = pytest.mark.skipif(
+    "A13N_ENVD_TEST_BINARY" not in os.environ, reason="Set A13N_ENVD_TEST_BINARY for real Device integration tests"
+)
 
 
 def device_path(path: Path) -> str:
@@ -91,10 +95,7 @@ async def app_listener(tmp_path, recipe=None):
 
 @asynccontextmanager
 async def daemon(tmp_path, carrier, *, endpoint):
-    configured = os.environ.get("A13N_ENVD_TEST_BINARY")
-    if configured is None:
-        pytest.skip("Set A13N_ENVD_TEST_BINARY for real Device integration tests")
-    executable = Path(configured).resolve()
+    executable = Path(os.environ["A13N_ENVD_TEST_BINARY"]).resolve()
     root = tmp_path / "remote"
     root.mkdir()
     (root / "alpha").mkdir()
@@ -154,6 +155,7 @@ async def daemon(tmp_path, carrier, *, endpoint):
         assert TOKEN.encode() not in stderr
 
 
+@requires_envd
 @pytest.mark.parametrize("carrier", ["http", "websocket"])
 async def test_device_browsing_and_independent_sessions_share_carrier(tmp_path, monkeypatch, carrier):
     monkeypatch.setenv("DEVICE_TOKEN", TOKEN)
@@ -304,6 +306,7 @@ async def test_reverse_attachment_rejects_invalid_auth_before_upgrade(tmp_path, 
         assert failure.value.response.status_code == 403
 
 
+@requires_envd
 @pytest.mark.parametrize("carrier", ["http", "websocket"])
 @pytest.mark.parametrize("default_environment", ["workspace", "build"])
 @pytest.mark.parametrize("mode", ["normal", "goal"])
@@ -445,6 +448,7 @@ async def test_root_runs_use_remote_tools_skills_and_fresh_sessions(
             assert captures[0].environment_bindings == captures[1].environment_bindings
 
 
+@requires_envd
 @pytest.mark.parametrize("mode", ["normal", "goal"])
 async def test_restart_reuses_captured_device_recipe_and_opens_a_fresh_session(tmp_path, monkeypatch, mode):
     """A restart restores accepted bindings, not the edited configuration catalog."""
