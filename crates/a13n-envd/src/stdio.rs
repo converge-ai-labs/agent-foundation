@@ -36,7 +36,15 @@ pub(crate) struct ControlResponse {
 pub(crate) async fn serve(daemon: Arc<Daemon>, config: &Config) -> io::Result<()> {
     let reader = BufReader::new(tokio::io::stdin());
     let writer = tokio::io::stdout();
-    serve_io(reader, writer, daemon, config, shutdown_signal()).await
+    serve_io(
+        reader,
+        writer,
+        daemon,
+        config,
+        SHUTDOWN_DRAIN_TIMEOUT,
+        shutdown_signal(),
+    )
+    .await
 }
 
 async fn serve_io<R, W, S>(
@@ -44,6 +52,7 @@ async fn serve_io<R, W, S>(
     writer: W,
     daemon: Arc<Daemon>,
     config: &Config,
+    drain_timeout: Duration,
     shutdown: S,
 ) -> io::Result<()>
 where
@@ -123,7 +132,7 @@ where
                     if permit.is_none() {
                         let payload = daemon.busy_response(&payload);
                         timeout(
-                            SHUTDOWN_DRAIN_TIMEOUT,
+                            drain_timeout,
                             control_tx.send(ControlResponse {
                                 payload,
                                 handoff: None,
@@ -157,7 +166,7 @@ where
                             payload: Vec::new(),
                             reset_status: Some(reset_status(error)),
                         };
-                        timeout(SHUTDOWN_DRAIN_TIMEOUT, data_tx.send(reset))
+                        timeout(drain_timeout, data_tx.send(reset))
                             .await
                             .map_err(|_| io::ErrorKind::TimedOut)?
                             .map_err(|_| io::ErrorKind::BrokenPipe)?;
@@ -181,7 +190,7 @@ where
     drop(control_tx);
     drop(data_tx);
     drop(carrier);
-    let written = match timeout(SHUTDOWN_DRAIN_TIMEOUT, &mut writer_task).await {
+    let written = match timeout(drain_timeout, &mut writer_task).await {
         Ok(result) => result.map_err(io::Error::other)?,
         Err(_) => {
             writer_task.abort();
@@ -576,6 +585,7 @@ mod tests {
             output_server,
             daemon,
             &config,
+            super::SHUTDOWN_DRAIN_TIMEOUT,
             pending::<io::Result<()>>(),
         )
         .await
@@ -609,7 +619,15 @@ mod tests {
         let (mut client, server) = duplex(128 * 1024);
         let (reader, writer) = tokio::io::split(server);
         let serving = tokio::spawn(async move {
-            serve_io(reader, writer, daemon, &config, pending::<io::Result<()>>()).await
+            serve_io(
+                reader,
+                writer,
+                daemon,
+                &config,
+                super::SHUTDOWN_DRAIN_TIMEOUT,
+                pending::<io::Result<()>>(),
+            )
+            .await
         });
         write_json_frame(&mut client, serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
             "supported_protocol_versions":["0.1"],"client":{"name":"stdio-test","version":"1"},"expected_device_id":"env-test"
@@ -712,12 +730,22 @@ mod tests {
         let (mut input_client, input_server) = duplex(512 * 1024);
         let (output_server, mut output_client) = duplex(1024);
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        // Stalled stdout always waits out the drain deadline, so a short one keeps this fast;
+        // it still exceeds the 20 ms pause before shutdown so the signal path stays exercised.
+        let drain_timeout = Duration::from_millis(100);
         let serving = tokio::spawn(async move {
-            serve_io(input_server, output_server, daemon, &config, async move {
-                shutdown_rx.await.map_err(|_| {
-                    io::Error::new(io::ErrorKind::BrokenPipe, "test shutdown sender dropped")
-                })
-            })
+            serve_io(
+                input_server,
+                output_server,
+                daemon,
+                &config,
+                drain_timeout,
+                async move {
+                    shutdown_rx.await.map_err(|_| {
+                        io::Error::new(io::ErrorKind::BrokenPipe, "test shutdown sender dropped")
+                    })
+                },
+            )
             .await
         });
 
