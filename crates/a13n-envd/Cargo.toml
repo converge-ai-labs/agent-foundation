@@ -11,6 +11,10 @@ readme = "README.md"
 keywords = ["agents", "ai", "cloud", "daemon", "sandbox"]
 categories = ["command-line-utilities", "development-tools"]
 
+[lib]
+# The library has no documentation examples, so `cargo test` skips the empty doc-test pass.
+doctest = false
+
 [[bin]]
 name = "a13n-envd"
 path = "src/main.rs"
