@@ -353,7 +353,7 @@ class Replying(BaseHTTPRequestHandler):
 def serving(handler: type[Replying]) -> Iterator[int]:
     """`handler` on a loopback port, for the length of the block."""
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         yield server.server_port
     finally:

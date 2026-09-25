@@ -101,7 +101,7 @@ def backend() -> Iterator[Backend]:
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     fake = Backend(f"http://127.0.0.1:{server.server_port}")
-    Thread(target=server.serve_forever, daemon=True).start()
+    Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         yield fake
     finally:

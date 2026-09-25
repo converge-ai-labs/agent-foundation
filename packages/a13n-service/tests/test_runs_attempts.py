@@ -123,7 +123,8 @@ async def test_a_renewal_that_never_answers_stops_the_attempt(runtime, monkeypat
 async def test_one_heartbeat_serves_every_attempt_and_a_missed_renewal_cancels_only_its_own(
     runtime, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
-    runtime = _with_worker(runtime, slots=2, lease_seconds=1, authority_seconds=0.01, scan_seconds=5)
+    # The renewed attempt ignores its stop, so the final cancel drains only briefly.
+    runtime = _with_worker(runtime, slots=2, lease_seconds=1, authority_seconds=0.01, scan_seconds=5, drain_seconds=0.1)
     renewed, missed = LEASE, replace(LEASE, run_id="run_missed", attempt_id="rat_missed")
     unclaimed = [renewed, missed]
 

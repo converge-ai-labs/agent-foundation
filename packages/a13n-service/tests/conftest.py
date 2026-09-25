@@ -294,9 +294,12 @@ class ScriptedModel:
 
 @asynccontextmanager
 async def listening(app: Any) -> AsyncIterator[str]:
-    """Serve an ASGI app on a loopback port, for clients that need a real socket (streams, provider adapters)."""
+    """Serve an ASGI app on a loopback port, for clients that need a real socket (streams, provider adapters).
+
+    Responses still streaming when the block exits, such as a gated model turn, are cancelled after 0.1 s.
+    """
     config = uvicorn.Config(
-        app, host="127.0.0.1", port=0, log_level="warning", lifespan="off", timeout_graceful_shutdown=1
+        app, host="127.0.0.1", port=0, log_level="warning", lifespan="off", timeout_graceful_shutdown=0.1
     )
     server = uvicorn.Server(config)
     task = asyncio.create_task(server.serve())
