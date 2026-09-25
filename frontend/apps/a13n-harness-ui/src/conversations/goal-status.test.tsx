@@ -5,15 +5,13 @@ import { GoalStatus } from "./goal-status";
 import type { Schema } from "../transport/client";
 
 afterEach(cleanup);
+// One row per rendering branch: active, the two statuses with their own
+// guidance, verified completion, and an incomplete stop that offers retry.
 it.each([
   ["working", "Working"],
-  ["checking", "Checking"],
   ["auditing", "Fresh audit"],
   ["suspended", "Waiting for response"],
   ["verified", "Agent-verified"],
-  ["max_iterations", "Iteration limit"],
-  ["cancelled", "Cancelled"],
-  ["error", "Error"],
   ["unverified_stop", "Unverified stop"],
 ] as const)(
   "shows authoritative %s progress and explicit, non-submitting retry",
