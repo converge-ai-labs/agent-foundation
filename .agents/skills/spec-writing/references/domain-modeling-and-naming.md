@@ -18,9 +18,9 @@ Persisted and public types describe domain facts. Resolution, preparation, loadi
 
 Use one owning specification, canonical model, and term for each concept; other documents link to it. Compare meaning before consolidating names: similar fields may represent distinct authority or compatibility boundaries.
 
-Names state what a concept is without repeating the project or module namespace. Add a qualifier only when it distinguishes real concepts at the same boundary. For implementation naming and domain suffixes, follow [DEVELOPMENT.md](../../../../DEVELOPMENT.md#naming).
+Names state what a concept is without repeating the project or module namespace. Add a qualifier only when it distinguishes real concepts at the same boundary. For implementation naming, follow [DEVELOPMENT.md](../../../../DEVELOPMENT.md#naming).
 
-Keep `Id`, `Ref`, `Revision`, `Request`, `Selection`, `Lock`, `State`, `Event`, and `Receipt` meanings consistent with their owners. A reference or receipt does not confer authority unless its contract says so.
+Domain suffixes such as `Ref`, `Revision`, `Request`, `Selection`, `Lock`, `State`, `Event` and `Receipt` keep the meanings defined by [Platform Data Conventions](../../../../spec/data-conventions.md#public-and-internal-naming). A reference or receipt does not confer authority unless its contract says so.
 
 Preserve distinct identity domains in conceptual schemas even when wire encodings are strings:
 
@@ -37,7 +37,7 @@ Do not rename stable wire fields merely to improve internal names. A terminology
 
 Read [Platform Data Conventions](../../../../spec/data-conventions.md) for Foundation identity, Revision, Snapshot, and version rules, and [Platform API Conventions](../../../../spec/api-conventions.md#mutations-and-retries) for mutation preconditions.
 
-These contracts own the primary `version` axis, independently qualified axes such as Thread `queue_version`, head/Revision version agreement, and strong ETags for mutable representations. Do not invent another counter or freeze independently mutable metadata to satisfy a naming pattern. Protocols, artifacts, packages, and external systems retain their own version semantics.
+These contracts own the primary `version` axis, the qualification of any independent secondary axis, head/Revision version agreement, and strong ETags for mutable representations. Do not invent another counter or freeze independently mutable metadata to satisfy a naming pattern. Protocols, artifacts, packages, and external systems retain their own version semantics.
 
 ## Model Review
 
