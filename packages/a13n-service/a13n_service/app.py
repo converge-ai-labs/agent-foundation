@@ -32,11 +32,13 @@ from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.infra.objects.local import LocalObjects
 from a13n_service.infra.objects.s3 import open_s3
 from a13n_service.infra.sweeps import require_unique, run_sweeps
+from a13n_service.infra.tasks import Tasks
 from a13n_service.infra.telemetry import open_instrumentation
 from a13n_service.migrations.runner import heads, upgrade
 from a13n_service.providers.environments import offered
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels
+from a13n_service.runs.checkpoints import Cleanup
 from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import ThreadHub
@@ -165,9 +167,16 @@ async def open_runtime(
             content=HarnessTraceContent(telemetry.trace_content),
         )
     )
+    objects = await open_objects(stack, config.objects)
+    tasks = Tasks()
+    stack.push_async_callback(tasks.close, timeout=config.server.shutdown_timeout)
+    cleanup = Cleanup(timeout=config.objects.timeout)
+    tasks.start(cleanup.run(), name="checkpoint-cleanup")
     return Runtime(
         storage=storage,
-        objects=await open_objects(stack, config.objects),
+        objects=objects,
+        tasks=tasks,
+        cleanup=cleanup,
         redis=redis,
         keys=_key_ring(config.encryption),
         settings=config,
@@ -268,8 +277,12 @@ def build_app(
                 app.state.started = False
                 for task in background:
                     task.cancel()
-                async with asyncio.timeout(config.server.shutdown_timeout):
-                    await asyncio.gather(*background, return_exceptions=True)
+                deadline = asyncio.get_running_loop().time() + config.server.shutdown_timeout
+                try:
+                    async with asyncio.timeout_at(deadline):
+                        await asyncio.gather(*background, return_exceptions=True)
+                finally:
+                    await runtime.tasks.close(timeout=max(0, deadline - asyncio.get_running_loop().time()))
 
     app = FastAPI(
         title="a13n Service",

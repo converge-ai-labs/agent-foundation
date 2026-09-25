@@ -739,3 +739,81 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
     external = [message for message in returns if message["tool_call_id"] == "call_lookup"]
     assert len(external) == 1 and "accepted once" in external[0]["content"]
     assert len([message for message in returns if message["tool_call_id"] == "call_create"]) == 1
+
+
+async def test_slow_object_deletion_does_not_block_tool_boundaries_or_successor_acceptance(
+    service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"enabled": True}})
+    gate, deleting, finish_delete = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate)
+    scripted_model.say("Done")
+    submitted = await runs_kit.start_thread(service, agent, "look around")
+    run_id, thread_id = submitted["run"]["id"], submitted["thread"]["id"]
+    original_delete = service.runtime.objects.delete
+
+    async def slow_delete(key: str) -> None:
+        deleting.set()
+        await finish_delete.wait()
+        await original_delete(key)
+
+    monkeypatch.setattr(service.runtime.objects, "delete", slow_delete)
+    running = await runs_kit.attempt(service)
+    try:
+        await scripted_model.request()
+        next_entry = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "next", delivery="next_run"))
+        gate.set()
+        async with asyncio.timeout(4):
+            await deleting.wait()
+            await running
+        assert not finish_delete.is_set()
+        run = await runs_kit.get_run(service, run_id)
+        assert run["status"] == "completed"
+        entries = {entry["id"]: entry for entry in await runs_kit.inbox(service, thread_id)}
+        assert entries[next_entry.json()["entry"]["id"]]["status"] == "assigned"
+    finally:
+        gate.set()
+        finish_delete.set()
+        await asyncio.gather(running, return_exceptions=True)
+        await service.runtime.cleanup.queue.join()
+
+
+async def test_mount_handoff_returns_while_process_keeps_the_cancelled_child_owned(
+    service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.runs.schemas import RunInput
+
+    agent = await runs_kit.create_agent(service, scripted_model)
+    await runs_kit.start_thread(service, agent, "hi")
+    (lease,) = await claim(service.runtime, worker_id="worker-test", worker_build="test", limit=1)
+    plan = await execute_module._plan(service.runtime, lease)
+    assert isinstance(plan.run, RunInput)
+    plan = replace(
+        plan,
+        run=plan.run.model_copy(update={"environment_mounts": ({"name": "workspace", "environment_id": "env_test"},)}),
+    )
+    control = AttemptControl(deadline=asyncio.get_running_loop().time() + 60, renewal_margin=10)
+    started, cleaning, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def prepare(*args) -> list:  # type: ignore[no-untyped-def]
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleaning.set()
+            await finish.wait()
+
+    monkeypatch.setattr(execute_module, "prepare_mounts", prepare)
+    attempt = execute_module._Attempt(service.runtime, lease, control, plan)
+    waiting = asyncio.create_task(attempt._prepare_mounts())
+    try:
+        await started.wait()
+        control.handoff.set()
+        assert await waiting is None
+        await cleaning.wait()
+        assert any(task.get_name() == f"prepare-mounts-{lease.attempt_id}" for task in service.runtime.tasks.pending)
+    finally:
+        finish.set()
+        await asyncio.gather(waiting, return_exceptions=True)
+        await service.runtime.tasks.close(timeout=5)

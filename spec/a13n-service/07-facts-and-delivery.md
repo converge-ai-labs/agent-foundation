@@ -54,11 +54,12 @@ Publication writes the bytes outside any database session, then commits the refe
 
 **Run state and display cleanup is owner-driven.** Only a run's own attempts write under its prefix, and only its pointers make an object reachable:
 
-1. After a checkpoint commit, the worker deletes the objects the pointers no longer name, best effort.
-2. A takeover attempt, before entering the Harness, and every seal, after commit, delete every state and display object of the run that the pointers do not name.
-3. No attempt starts an object write within `objects.timeout` of its local lease deadline, so a stale attempt's bytes land before a takeover cleans.
+1. After a checkpoint commit, the worker queues replaced objects for best-effort deletion by a process-owned background task. Boundary acknowledgement and successor acceptance do not wait for object deletion. State sequences and display positions advance monotonically; a replaced display at the same position is retained until takeover or seal so a delayed deletion cannot race reuse of its digest.
+2. A takeover attempt cleans before entering the Harness. Every seal queues cleanup using its frozen pointer pair. Both remove only objects the pointers do not name, with at most 1000 keys per kind and one total `objects.timeout` budget per cleanup job. Takeover and seal reclaim objects left by failed or skipped checkpoint cleanup.
+3. The process buffers at most 256 cleanup hints. A full buffer drops a hint and logs the overflow; a failed or timed-out job is logged. Reclamation is best effort: process interruption, timeout or overflow can leave unused objects, including after seal. No loss of a cleanup hint affects committed state or execution progress.
+4. No attempt starts an object write within `objects.timeout` of its local lease deadline, so a stale attempt's bytes land before a takeover cleans.
 
-A run normally holds one state and one display object, briefly two of each between a commit and the deletion. Objects named by frozen pointers are never deleted: a completed or waiting run keeps its final pair because fork and continuation start from it, and a failed or cancelled run keeps its last pair as inspection evidence.
+A run normally holds one state and one display object, plus replaced objects awaiting reclamation. Objects named by frozen pointers are never deleted: a completed or waiting run keeps its final pair because fork and continuation start from it, and a failed or cancelled run keeps its last pair as inspection evidence.
 
 There is no other object reclamation: no age-based upload expiry, orphan inventory or physical purge of history, assets or images. Unused uploads and replaced images stay stored; upload limits still apply.
 
@@ -85,7 +86,7 @@ Item
 - A tool result the model sees as a failure (a retry prompt or denial) leaves its item `failed` with `content.failure = {code: "tool_failed", message}`.
 - A tool call is committed as `in_progress` before it executes, so evidence of an attempted side effect never disappears.
 - Each Harness observation is one `observation` item, except a tool call's streamed arguments: the stream protocol reports each argument delta of a model response part as an `a13n.pydantic_ai.part_delta` observation and completes the call only at the part's end, and the consecutive argument deltas of one part fold into one item. It is the first delta's observation with `value.event.delta.args_delta` holding all their text, and the first delta's time.
-- A display keeps at most 4096 items: the oldest are dropped first and counted in `dropped`. When the rest exceed `worker.display_bytes`, the oldest items give up their content first, replaced by `{"omitted": true}`. The display is a view, and the state keeps every message: its limits never fail a run.
+- A display keeps at most 4096 items: the oldest are dropped first and counted in `dropped`. When the remaining items' serialized UTF-8 bytes exceed `worker.display_bytes`, the oldest items give up their content first, replaced by `{"omitted": true}`. The display is a view, and the state keeps every message: its limits never fail a run.
 - An attempt that ends without finishing its items marks them `interrupted`; a later attempt continuing the same item returns it to `in_progress`.
 
 A worker that seals a run failed or cancelled may write its in-memory display as one more object, with unfinished items interrupted. A run sealed by the sweep, interrupt, archive, a parent's cancel or recovery keeps its last committed display; readers show its `in_progress` items as `interrupted`. [05](05-runs.md#reads) owns `GET …/runs/{run}/items`.

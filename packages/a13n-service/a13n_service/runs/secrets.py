@@ -21,13 +21,13 @@ from a13n_harness.tools.metadata import HarnessToolMetadata
 from a13n_service.resources.secrets.schemas import SecretRequirement
 from a13n_service.resources.secrets.service import resolve_secrets
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tables import RunRow
+from a13n_service.runs.schemas import RunInput
 
 # Requirements by the definition ID of the agent node declaring them: the run's revision and inline children's.
 type Requirements = Mapping[str, Sequence[SecretRequirement]]
 
 
-async def require_secrets(runtime: Runtime, run: RunRow, requirements: Requirements) -> None:
+async def require_secrets(runtime: Runtime, run: RunInput, requirements: Requirements) -> None:
     """Fail before the run starts, with the missing key, when a declared secret is not set."""
     declared = {(item.key, item.scope): item for items in requirements.values() for item in items}
     await resolve_secrets(
@@ -39,7 +39,7 @@ async def require_secrets(runtime: Runtime, run: RunRow, requirements: Requireme
     )
 
 
-def secrets_policy(runtime: Runtime, run: RunRow, requirements: Requirements) -> InvocationPolicyCapability:
+def secrets_policy(runtime: Runtime, run: RunInput, requirements: Requirements) -> InvocationPolicyCapability:
     """The run's invocation policy, for `RunBindings.capabilities`; inline children inherit it."""
     broker = _Broker(runtime, run, requirements)
     # No automatic redispatch, as without a policy: a repeated provider call could repeat its effect and cost.
@@ -47,7 +47,7 @@ def secrets_policy(runtime: Runtime, run: RunRow, requirements: Requirements) ->
 
 
 class _Broker:
-    def __init__(self, runtime: Runtime, run: RunRow, requirements: Requirements):
+    def __init__(self, runtime: Runtime, run: RunInput, requirements: Requirements):
         self.runtime = runtime
         self.workspace_id, self.principal_id, self.root = run.workspace_id, run.principal_id, run.agent_revision_id
         self.requirements = {node: {item.key: item for item in items} for node, items in requirements.items()}

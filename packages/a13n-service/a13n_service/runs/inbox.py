@@ -15,7 +15,7 @@ from pydantic import BaseModel, JsonValue
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found, rate_limited
+from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conflict, invalid, not_found, rate_limited
 from a13n_service.infra.ids import new_object_id
 from a13n_service.runs.schemas import EntryUpdate, Failure, Message, RunOptions, canonical_json
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
@@ -91,7 +91,7 @@ def check_replay(entry: InboxEntryRow, request: Request) -> None:
         request.target,
         request.digest,
     ):
-        raise conflict("request", request.key, "idempotency_key_reused")
+        raise conflict("request", request.key, IDEMPOTENCY_KEY_REUSED)
 
 
 async def _next_position(session: AsyncSession, thread_id: str) -> int:

@@ -19,7 +19,7 @@ from pydantic import (
 
 from a13n_service.infra.ids import ObjectId
 from a13n_service.providers.tools import MAX_TOOLS, ToolInfo, unique
-from a13n_service.providers.tools.mcp import McpConfig, ToolName
+from a13n_service.providers.tools.mcp import MAX_HEADERS, McpConfig, ToolName
 from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.connections.tables import ConnectionAuth, ConnectionStatus, OperationKind
 
@@ -59,7 +59,7 @@ class BearerCredential(BaseModel):
 class HeadersCredential(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    headers: dict[str, SecretStr] = Field(min_length=1, max_length=32)
+    headers: dict[str, SecretStr] = Field(min_length=1, max_length=MAX_HEADERS)
 
     @field_validator("headers")
     @classmethod

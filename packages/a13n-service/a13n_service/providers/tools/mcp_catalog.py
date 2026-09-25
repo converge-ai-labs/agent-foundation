@@ -11,7 +11,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 
 from a13n_service.infra import cursors
 from a13n_service.providers.tools import unique
-from a13n_service.providers.tools.mcp import HeaderName, McpAuth
+from a13n_service.providers.tools.mcp import MAX_HEADERS, HeaderName, McpAuth
 
 # People open these links, so only web URLs are accepted.
 WebUrl = Annotated[str, StringConstraints(max_length=2048, pattern=r"^https?://\S+$")]
@@ -26,7 +26,7 @@ class McpServer(BaseModel):
     url: WebUrl
     auth: McpAuth
     # With `auth = 'headers'`, the credential headers the server expects.
-    header_names: Annotated[tuple[HeaderName, ...], AfterValidator(unique)] = Field(default=(), max_length=32)
+    header_names: Annotated[tuple[HeaderName, ...], AfterValidator(unique)] = Field(default=(), max_length=MAX_HEADERS)
     documentation_url: WebUrl | None = None
     logo_url: WebUrl | None = None
     # What the person connecting needs, such as an account or a token with certain access.

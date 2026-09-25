@@ -24,6 +24,15 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, St
 from a13n_service.infra.ids import ObjectId
 from a13n_service.providers.registry import WebOperation
 
+PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
+CONFIGURATION_TOOL_IDS = {
+    "find": "service.configuration.find",
+    "read": "service.configuration.read",
+    "describe": "service.configuration.describe",
+    "create_agent": "service.configuration.create_agent",
+    "create_revision": "service.configuration.create_revision",
+}
+
 type ToolsetKey = Literal["files", "shell", "web", "memory", "assets", "configuration"]
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 JsonObject = dict[str, JsonValue]
@@ -219,26 +228,26 @@ _TOOLSETS: tuple[_Toolset, ...] = (
         "assets",
         "Asset publication",
         False,
-        (_Tool("publish", "Publish asset", "service.publish_asset", "publish_asset"),),
+        (_Tool("publish", "Publish asset", PUBLISH_ASSET_TOOL_ID, "publish_asset"),),
     ),
     _Toolset(
         "configuration",
         "Agent configuration",
         False,
         (
-            _Tool("find", "Find resources", "service.configuration.find", "find_resources"),
-            _Tool("read", "Read resource", "service.configuration.read", "read_resource"),
+            _Tool("find", "Find resources", CONFIGURATION_TOOL_IDS["find"], "find_resources"),
+            _Tool("read", "Read resource", CONFIGURATION_TOOL_IDS["read"], "read_resource"),
             _Tool(
-                "describe", "Describe agent configuration", "service.configuration.describe", "describe_agent_config"
+                "describe", "Describe agent configuration", CONFIGURATION_TOOL_IDS["describe"], "describe_agent_config"
             ),
             # Writes act with the run principal's authority, so each one waits for the user's approval.
             _Tool(
-                "create_agent", "Create agent", "service.configuration.create_agent", "create_agent", permission="ask"
+                "create_agent", "Create agent", CONFIGURATION_TOOL_IDS["create_agent"], "create_agent", permission="ask"
             ),
             _Tool(
                 "create_revision",
                 "Create agent revision",
-                "service.configuration.create_revision",
+                CONFIGURATION_TOOL_IDS["create_revision"],
                 "create_agent_revision",
                 permission="ask",
             ),

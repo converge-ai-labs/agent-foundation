@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import transaction, violated_constraint
-from a13n_service.infra.errors import ServiceError, conflict
+from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conflict
 from a13n_service.runs.accept import Source, start_run
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
@@ -79,7 +79,7 @@ async def _replay(session: AsyncSession, workspace_id: str, actor: Principal, ke
         )
     )
     if found is not None and found.request_digest != digest:
-        raise conflict("request", key, "idempotency_key_reused")
+        raise conflict("request", key, IDEMPOTENCY_KEY_REUSED)
     return found
 
 

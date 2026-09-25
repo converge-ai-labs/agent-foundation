@@ -7,8 +7,11 @@ from sqlalchemy import ColumnElement, true
 
 from a13n_service.infra.errors import invalid
 
-_Key = Annotated[str, StringConstraints(min_length=1, max_length=128)]
-Labels = Annotated[dict[_Key, Annotated[str, StringConstraints(max_length=128)]], Field(max_length=32)]
+MAX_KEY_CHARS = 128
+MAX_VALUE_CHARS = 128
+
+_Key = Annotated[str, StringConstraints(min_length=1, max_length=MAX_KEY_CHARS)]
+Labels = Annotated[dict[_Key, Annotated[str, StringConstraints(max_length=MAX_VALUE_CHARS)]], Field(max_length=32)]
 
 
 def label_filter(column: Any, selectors: list[str]) -> ColumnElement[bool]:
@@ -18,7 +21,7 @@ def label_filter(column: Any, selectors: list[str]) -> ColumnElement[bool]:
     wanted: dict[str, str] = {}
     for selector in selectors:
         key, separator, value = selector.partition(":")
-        if not separator or not key or len(key) > 128 or len(value) > 128:
+        if not separator or not key or len(key) > MAX_KEY_CHARS or len(value) > MAX_VALUE_CHARS:
             raise invalid("label", "selectors are key:value")
         wanted[key] = value
     return column.contains(wanted) if wanted else true()

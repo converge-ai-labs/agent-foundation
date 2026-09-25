@@ -39,6 +39,7 @@ from a13n_service.resources.memories.store import PostgresFileStore, file_format
 from a13n_service.resources.memories.tables import MemoryRow
 from a13n_service.resources.providers.tables import MemoryProviderRow
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schemas import RunInput
 from a13n_service.runs.tables import RunRow
 from a13n_service.settings import MemorySettings
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope, authorize
@@ -89,7 +90,7 @@ async def resolve_memories(session: AsyncSession, run: RunRow) -> tuple[PlannedM
     return tuple(planned)
 
 
-def _gate(run: RunRow, principal: Principal, authority: ExecutionAuthority) -> Gate:
+def _gate(run: RunInput, principal: Principal, authority: ExecutionAuthority) -> Gate:
     """The per-call check of the run principal under the run's frozen authority."""
     scope = WorkspaceScope(run.organization_id, run.workspace_id)
 
@@ -115,7 +116,7 @@ def file_memory(
     settings: MemorySettings,
     planned: tuple[PlannedMemory, ...],
     *,
-    run: RunRow,
+    run: RunInput,
     principal: Principal,
     authority: ExecutionAuthority,
     cursors: MemoryCursors,
@@ -206,7 +207,7 @@ async def record_memory_capability(
     runtime: Runtime,
     planned: tuple[PlannedMemory, ...],
     *,
-    run: RunRow,
+    run: RunInput,
     principal: Principal,
     authority: ExecutionAuthority,
     tools: Collection[RecordToolKey],

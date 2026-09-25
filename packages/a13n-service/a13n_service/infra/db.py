@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, ClassVar
 
 import anyio
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from sqlalchemy import BigInteger, DateTime, FetchedValue, MetaData, Table, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -156,12 +156,16 @@ async def transaction(storage: Storage) -> AsyncIterator[AsyncSession]:
     async with short_session(storage) as session:
         async with session.begin():
             yield session
-        for callback in session.info.pop(_AFTER_COMMIT, ()):
-            try:
-                await callback()
-            except Exception as error:
-                # Callbacks are hints such as wakeups; the committed state is already durable and sweeps recover.
-                logger.warning("After-commit callback failed", extra={"error_type": type(error).__name__})
+        callbacks = session.info.pop(_AFTER_COMMIT, ())
+    for callback in callbacks:
+        try:
+            await callback()
+        except Exception as error:
+            # Callbacks are hints such as wakeups; the committed state is already durable and sweeps recover.
+            logger.warning(
+                "After-commit callback failed",
+                extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+            )
 
 
 def after_commit(session: AsyncSession, callback: Callable[[], Awaitable[object]]) -> None:

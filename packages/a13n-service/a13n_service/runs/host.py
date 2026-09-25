@@ -39,6 +39,7 @@ from a13n_service.runs.memories.execution import (
     resolve_memories,
 )
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schemas import RunInput
 from a13n_service.runs.secrets import Requirements, secrets_policy
 from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
 from a13n_service.runs.tables import RunRow
@@ -102,7 +103,7 @@ async def resolve_host(
 class Host:
     runtime: Runtime
     lease: Lease
-    run: RunRow
+    run: RunInput
     principal: Principal
     authority: ExecutionAuthority
     plan: HostPlan
@@ -153,7 +154,7 @@ async def open_host(
     plan: HostPlan,
     models: Mapping[str, Model],
     *,
-    run: RunRow,
+    run: RunInput,
     principal: Principal,
     authority: ExecutionAuthority,
     cursors: MemoryCursors,

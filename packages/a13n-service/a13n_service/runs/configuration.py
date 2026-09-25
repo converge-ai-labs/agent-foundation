@@ -21,6 +21,7 @@ from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.http import etag
 from a13n_service.resources.agents import service as agents
 from a13n_service.resources.agents.schemas import AgentConfig, AgentCreate, AgentRevisionCreate
+from a13n_service.resources.agents.toolsets import CONFIGURATION_TOOL_IDS
 from a13n_service.resources.connections import service as connections
 from a13n_service.resources.environment_templates import service as templates
 from a13n_service.resources.models import service as models
@@ -107,7 +108,7 @@ class ConfigurationCapability(AbstractCapability[AgentContext]):
             takes_ctx=False,
             description=description,
             harness_metadata=HarnessToolMetadata(
-                tool_id=f"service.configuration.{key}",
+                tool_id=CONFIGURATION_TOOL_IDS[key],
                 effects=frozenset({"read", "write"} if write else {"read"}),
                 credential_audiences=(),
                 idempotency="none" if write else "read_only",

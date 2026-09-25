@@ -279,6 +279,8 @@ async def test_sweep_passes_are_counted_and_their_records_name_the_sweep(
     assert measured(reader, "a13n.sweep.passes", passes["failed"]) == before["failed"] + 1
     [failure] = messages(logged, "Sweep failed")
     assert (failure["sweep"], failure["error_type"]) == ("flaky", "RuntimeError")
+    assert failure["exception_details"][0]["frames"][-1]["function"] == "flaky"
+    assert "first pass fails" not in json.dumps(failure)
 
 
 def test_the_executable_serves_metrics_in_the_prometheus_format() -> None:
@@ -357,3 +359,29 @@ async def test_the_usage_dashboard_reads_the_facts_of_a_run(
             expanded = re.sub(r"\$__timeFilter\(([^)]+)\)", r"\1 > now() - interval '1 day'", query)
             rows = (await session.execute(text(expanded))).all()
             assert rows or title == "Failed runs by reason", title
+
+
+async def test_after_commit_closes_its_session_and_logs_stack_locations_without_secrets(
+    runtime, tenant, logged
+) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.infra.db import after_commit
+    from a13n_service.tenancy.tables import PrincipalRow
+    from sqlalchemy import inspect
+
+    async def fail() -> None:
+        assert inspect(principal).detached
+        raise RuntimeError("credential-that-must-not-be-logged")
+
+    async with transaction(runtime.storage) as session:
+        principal = await session.get_one(PrincipalRow, tenant.principal_id)
+        after_commit(session, fail)
+    [failure] = messages(logged, "After-commit callback failed")
+    assert failure["exception_details"][0]["frames"][-1]["function"] == "fail"
+    assert failure["error_type"] == "RuntimeError"
+    assert "credential-that-must-not-be-logged" not in json.dumps(failure)
+
+    with pytest.raises(ValueError):
+        async with transaction(runtime.storage) as session:
+            after_commit(session, fail)
+            raise ValueError("rollback")
+    assert len(messages(logged, "After-commit callback failed")) == 1

@@ -38,6 +38,7 @@ from a13n_service.resources.environment_templates.routes import router as enviro
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
 from a13n_service.resources.memories.purge import MemoryPurger
 from a13n_service.resources.memories.routes import router as memories_router
+from a13n_service.resources.memories.service import PURGE as MEMORY_PURGE
 from a13n_service.resources.memories.tables import (
     MemoryFileRevisionRow,
     MemoryFileRow,
@@ -219,7 +220,7 @@ def _deliver_outbox(runtime: Runtime) -> Sweep:
                 "webhook": webhooks,
                 "child_result": child_results(runtime),
                 "email": mail,
-                "memory_purge": MemoryPurger(runtime),
+                MEMORY_PURGE: MemoryPurger(runtime),
             },
             owner=new_object_id("ctl"),
             limit=control.outbox_batch,

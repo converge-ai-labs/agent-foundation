@@ -1603,3 +1603,11 @@ async def test_mcp_native_runs_have_independent_authenticated_client_lifetimes(s
         ) as capabilities:
             assert (await run_tool(capabilities, "echo", {"text": "four"}))["results"] == ["four"]
         assert server.requests[-1]["x-trace"] == "next-attempt"
+
+
+def test_overlong_header_value_reports_its_size_without_echoing_the_value() -> None:
+    from a13n_service.resources.connections.headers import normalize_headers
+
+    with pytest.raises(ValueError, match="at most 4096 ASCII bytes") as error:
+        normalize_headers({"x-api-key": "s" * 4097})
+    assert "s" * 100 not in str(error.value)

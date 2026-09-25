@@ -5,15 +5,17 @@ them reachable, and only a transaction proving the worker lease moves those poin
 late bytes are garbage, never state.
 """
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from functools import partial
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from a13n_harness import HarnessState
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,9 +27,12 @@ from a13n_service.infra.objects.interface import ObjectRef, ObjectStore, read
 from a13n_service.runs import inbox
 from a13n_service.runs.attempts import Lease, LeaseLost
 from a13n_service.runs.display import Display, StreamPosition
-from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schemas import RunInput
 from a13n_service.runs.tables import AttemptRow, RunRow
 from a13n_service.runs.usage import UsageReport, ingest
+
+if TYPE_CHECKING:
+    from a13n_service.runs.runtime import Runtime
 
 logger = get_logger(__name__)
 
@@ -35,6 +40,10 @@ logger = get_logger(__name__)
 FORMAT = 1
 
 type ObjectKind = Literal["state", "display"]
+
+
+# Readers accept the row while in persistence, or detached values after the session closes.
+type RunObjects = RunRow | RunInput | _Objects
 
 
 class _Frozen(BaseModel):
@@ -81,7 +90,7 @@ async def publish(objects: ObjectStore, organization_id: str, run_id: str, kind:
     return await objects.put(f"{prefix(organization_id, run_id, kind)}/{digest}", data, content_type="application/json")
 
 
-def _ref(run: RunRow, kind: ObjectKind, pointer: Pointer) -> ObjectRef:
+def _ref(run: RunObjects, kind: ObjectKind, pointer: Pointer) -> ObjectRef:
     return ObjectRef(
         key=f"{prefix(run.organization_id, run.id, kind)}/{pointer.digest}",
         digest=pointer.digest,
@@ -90,7 +99,7 @@ def _ref(run: RunRow, kind: ObjectKind, pointer: Pointer) -> ObjectRef:
     )
 
 
-def compatible(run: RunRow) -> bool:
+def compatible(run: RunObjects) -> bool:
     """Whether this build can continue from the run's checkpoint; a run without one always can."""
     return run.checkpoint is None or StatePointer.model_validate(run.checkpoint).format == FORMAT
 
@@ -107,12 +116,12 @@ def claimable() -> ColumnElement[bool]:
     return or_(and_(RunRow.checkpoint.is_(None), ~newer_parent), RunRow.checkpoint["format"].as_integer() <= FORMAT)
 
 
-def require_compatible(run: RunRow) -> None:
+def require_compatible(run: RunObjects) -> None:
     if run.checkpoint is None or not compatible(run):
         raise conflict("run", run.id, "checkpoint_incompatible")
 
 
-async def load_state(objects: ObjectStore, run: RunRow) -> RunState | None:
+async def load_state(objects: ObjectStore, run: RunObjects) -> RunState | None:
     if run.checkpoint is None:
         return None
     require_compatible(run)
@@ -120,7 +129,7 @@ async def load_state(objects: ObjectStore, run: RunRow) -> RunState | None:
     return RunState.model_validate_json(await read(objects, _ref(run, "state", pointer)))
 
 
-async def load_display(objects: ObjectStore, run: RunRow) -> Display | None:
+async def load_display(objects: ObjectStore, run: RunObjects) -> Display | None:
     if run.display is None:
         return None
     pointer = DisplayPointer.model_validate(run.display)
@@ -134,7 +143,7 @@ class Committed(_Frozen):
     display: DisplayPointer
 
     @classmethod
-    def of(cls, run: RunRow) -> "Committed | None":
+    def of(cls, run: RunObjects) -> Committed | None:
         if run.checkpoint is None or run.display is None:
             return None
         return cls(
@@ -165,7 +174,7 @@ async def publish_checkpoint(runtime: Runtime, lease: Lease, state: RunState, di
 
 async def commit(
     session: AsyncSession,
-    objects: ObjectStore,
+    runtime: Runtime,
     run: RunRow,
     attempt: AttemptRow,
     *,
@@ -183,8 +192,8 @@ async def commit(
     state incorporated and ingests pending usage, so pointers, cursors, consumption and usage move together or
     not at all; it is the checkpoint's durability point. `previous` must still be the run's pointers: any other
     value means another writer moved them, which the lease predicate already rules out, but consuming input
-    against the wrong state would break at-most-once incorporation. The replaced objects are deleted after
-    commit, best effort: takeover and seal cleanup reclaim what a failed deletion leaves.
+    against the wrong state would break at-most-once incorporation. After commit, the process queues replaced
+    objects for best-effort deletion; takeover and seal cleanup reclaim what failed or skipped deletion leaves.
     """
     if Committed.of(run) != previous:
         raise LeaseLost()
@@ -194,7 +203,10 @@ async def commit(
     await inbox.consume(session, run.id, consumed, checkpoint_seq=committed.state.seq, at=at)
     await ingest(session, run, attempt, usage)
     if previous is not None:
-        after_commit(session, partial(_discard, objects, run.organization_id, run.id, previous, committed))
+        after_commit(
+            session,
+            partial(runtime.cleanup.discard, runtime.objects, run.organization_id, run.id, previous, committed),
+        )
 
 
 async def _discard(
@@ -207,16 +219,29 @@ async def _discard(
     for kind, old, new in replaced:
         if old.digest == new.digest:
             continue
+        # Display bytes can repeat while no event advances the stream. Only retire an older position:
+        # later checkpoints never return to it, even if the item content itself repeats.
+        if (
+            isinstance(old, DisplayPointer)
+            and isinstance(new, DisplayPointer)
+            and (old.position.attempt, old.position.sequence) >= (new.position.attempt, new.position.sequence)
+        ):
+            continue
         try:
             await objects.delete(f"{prefix(organization_id, run_id, kind)}/{old.digest}")
         except Exception as error:
             logger.warning(
                 "Replaced checkpoint object was not deleted",
-                extra={"run_id": run_id, "kind": kind, "error_type": type(error).__name__},
+                extra={
+                    "run_id": run_id,
+                    "kind": kind,
+                    "error_type": type(error).__name__,
+                    "exception_details": exception_details(error),
+                },
             )
 
 
-async def clean(objects: ObjectStore, run: RunRow, *, limit: int = 1000) -> None:
+async def clean(objects: ObjectStore, run: RunObjects, *, limit: int = 1000) -> None:
     """Delete every state/display object of this run that its pointers do not name.
 
     Callers are the run's owners only: a worker after its own commit, a takeover before entering the
@@ -228,3 +253,55 @@ async def clean(objects: ObjectStore, run: RunRow, *, limit: int = 1000) -> None
         for key in await objects.keys(prefix(run.organization_id, run.id, kind), limit=limit):
             if key not in keep:
                 await objects.delete(key)
+
+
+class _Objects(_Frozen):
+    id: str
+    organization_id: str
+    checkpoint: dict | None
+    display: dict | None
+
+
+class Cleanup:
+    """Best-effort reclamation off the commit path, owned by the process lifespan.
+
+    One consumer bounds object-store load. A full buffer drops hints; takeover and seal still reclaim the
+    prefix. Each job gets one total object-I/O budget, rather than one budget for every deletion.
+    """
+
+    BUFFER = 256
+
+    def __init__(self, *, timeout: float):
+        self.timeout = timeout
+        self.queue: asyncio.Queue[Callable[[], Awaitable[None]]] = asyncio.Queue(self.BUFFER)
+
+    async def discard(
+        self, objects: ObjectStore, organization_id: str, run_id: str, previous: Committed, committed: Committed
+    ) -> None:
+        self._offer(partial(_discard, objects, organization_id, run_id, previous, committed))
+
+    async def sealed(self, objects: ObjectStore, run: RunObjects) -> None:
+        frozen = _Objects(
+            id=run.id, organization_id=run.organization_id, checkpoint=run.checkpoint, display=run.display
+        )
+        self._offer(partial(clean, objects, frozen))
+
+    def _offer(self, work: Callable[[], Awaitable[None]]) -> None:
+        try:
+            self.queue.put_nowait(work)
+        except asyncio.QueueFull:
+            logger.warning("Checkpoint cleanup buffer full")
+
+    async def run(self) -> None:
+        while True:
+            work = await self.queue.get()
+            try:
+                async with asyncio.timeout(self.timeout):
+                    await work()
+            except Exception as error:
+                logger.warning(
+                    "Checkpoint cleanup failed",
+                    extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+                )
+            finally:
+                self.queue.task_done()

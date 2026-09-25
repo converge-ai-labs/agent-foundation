@@ -11,7 +11,7 @@ import random
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
-from a13n_logging import get_logger, log_context
+from a13n_logging import exception_details, get_logger, log_context
 
 from a13n_service.infra.telemetry import meter
 
@@ -41,7 +41,10 @@ async def _loop(sweep: Sweep) -> None:
             except asyncio.CancelledError:
                 raise
             except Exception as error:
-                logger.warning("Sweep failed", extra={"error_type": type(error).__name__})
+                logger.warning(
+                    "Sweep failed",
+                    extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+                )
                 PASSES.add(1, {"sweep": sweep.name, "result": "failed"})
             else:
                 PASSES.add(1, {"sweep": sweep.name, "result": "succeeded"})

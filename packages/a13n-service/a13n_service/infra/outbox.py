@@ -67,7 +67,7 @@ class OutboxRow(Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str | None] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str | None]
-    kind: Mapped[str]
+    kind: Mapped[OutboxKind] = mapped_column(String)
     dedupe_key: Mapped[str]
     # Everything delivery needs is copied here; `subscription_id` is diagnostic provenance, not a foreign key.
     target: Mapped[dict] = mapped_column(JSONB)
@@ -87,7 +87,7 @@ class OutboxRow(Base):
 @dataclass(frozen=True, slots=True)
 class Claim:
     id: str
-    kind: str
+    kind: OutboxKind
     organization_id: str | None
     workspace_id: str | None
     target: dict

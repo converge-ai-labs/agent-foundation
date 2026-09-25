@@ -23,6 +23,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, immutable, rules, trigger
+from a13n_service.runs.schemas import EntryStatus, RunStatus
 
 _TOUCH_THREADS = """
 CREATE FUNCTION touch_threads() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -294,7 +295,7 @@ class InboxEntryRow(Base):
     request_digest: Mapped[str | None]
     request_kind: Mapped[str | None]
     request_target: Mapped[str | None]
-    status: Mapped[str]
+    status: Mapped[EntryStatus] = mapped_column(String)
     assigned_run_id: Mapped[str | None] = mapped_column(String(72))
     incorporated_checkpoint_seq: Mapped[int | None] = mapped_column(BigInteger)
     failure: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
@@ -442,7 +443,7 @@ class RunRow(Stamped, Base):
     trigger: Mapped[str]
     lineage: Mapped[str]
     parent_run_id: Mapped[str | None] = mapped_column(String(72))
-    status: Mapped[str]
+    status: Mapped[RunStatus] = mapped_column(String)
     wait_reason: Mapped[str | None]
     pending: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

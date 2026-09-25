@@ -37,6 +37,7 @@ type PendingKind = Literal["approval", "client_tool", "user_input"]
 type WaitReason = Literal["approval", "client_tool", "user_input", "multiple"]
 type Sealed = Literal["waiting", "completed", "failed", "cancelled"]
 
+MAX_FAILURE_MESSAGE_CHARS = 4096
 MAX_JSON_DEPTH = 32
 MAX_RESUME_BYTES = 262144
 
@@ -52,13 +53,15 @@ class _Frozen(BaseModel):
 
 class Failure(_Frozen):
     code: str = Field(min_length=1, max_length=128)
-    message: str = Field(max_length=4096)
+    message: str = Field(max_length=MAX_FAILURE_MESSAGE_CHARS)
 
     @classmethod
     def of(cls, error: ServiceError) -> "Failure":
         """A refusal as a failure; a conflict's reason names it more precisely than `conflict`."""
         reason = error.details.get("reason") if error.code == "conflict" else None
-        return cls(code=reason if isinstance(reason, str) else error.code, message=error.message[:4096])
+        return cls(
+            code=reason if isinstance(reason, str) else error.code, message=error.message[:MAX_FAILURE_MESSAGE_CHARS]
+        )
 
 
 class TextPart(_Frozen):
@@ -274,9 +277,19 @@ class Outcome(_Frozen):
     pending: Pending | None = None
     failure: Failure | None = None
 
+    @model_validator(mode="after")
+    def consistent(self) -> "Outcome":
+        if (self.status == "waiting") != (self.pending is not None):
+            raise ValueError("Only a waiting outcome carries pending requests, and it requires them")
+        if (self.status in {"failed", "cancelled"}) != (self.failure is not None):
+            raise ValueError("Failed and cancelled outcomes require failure details; other outcomes cannot carry them")
+        if self.status != "completed" and self.output is not None:
+            raise ValueError("Only a completed outcome carries output")
+        return self
+
     @classmethod
     def failed(cls, code: str, message: str) -> "Outcome":
-        return cls(status="failed", failure=Failure(code=code, message=message[:4096]))
+        return cls(status="failed", failure=Failure(code=code, message=message[:MAX_FAILURE_MESSAGE_CHARS]))
 
     @classmethod
     def refused(cls, error: ServiceError) -> "Outcome":
@@ -291,6 +304,27 @@ class EnvironmentMount(_Frozen):
     name: str
     environment_id: str
     working_directory: str | None = None
+
+
+class RunInput(_Frozen):
+    """Detached facts needed to restore and execute an attempt, never a writable persistence row."""
+
+    model_config = ConfigDict(from_attributes=True, frozen=True, extra="ignore")
+    id: str
+    organization_id: str
+    workspace_id: str
+    session_id: str
+    thread_id: str
+    principal_id: str
+    agent_revision_id: str
+    source_entry_id: str | None
+    lineage: Lineage
+    resume: dict | None
+    pending: dict | None
+    checkpoint: dict | None
+    display: dict | None
+    environment_mounts: tuple[dict, ...]
+    memory_cursors: dict[str, str | None]
 
 
 class SessionCreate(_Frozen):

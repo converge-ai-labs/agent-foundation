@@ -19,6 +19,8 @@ from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
 from a13n_service.providers.tools import MAX_TOOLS, CheckedToolset, DispatchCheck, ToolInfo, unique
 
+MAX_HEADERS = 32
+
 _HEADER_NAME = r"^[!#$%&'*+.^_`|~0-9a-z-]{1,128}$"
 # Headers the HTTP client and the MCP transport own; only an entered bearer token sets `authorization`.
 _RESERVED_HEADERS = frozenset(
@@ -94,7 +96,7 @@ class McpConfig(BaseModel):
         None
     )
     # With `auth = 'headers'`, the names of the credential headers; their values stay write-only.
-    headers: Annotated[tuple[HeaderName, ...], AfterValidator(unique)] = Field(default=(), max_length=32)
+    headers: Annotated[tuple[HeaderName, ...], AfterValidator(unique)] = Field(default=(), max_length=MAX_HEADERS)
     # With `auth = 'oauth'`, how the authorization flow identifies the client.
     oauth: OAuthSettings | None = None
 

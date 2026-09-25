@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import JsonValue
 
+IDEMPOTENCY_KEY_REUSED = "idempotency_key_reused"
+
 type ErrorCode = Literal[
     "invalid_argument",
     "invalid_cursor",

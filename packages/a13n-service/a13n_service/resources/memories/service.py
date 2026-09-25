@@ -23,7 +23,7 @@ from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.infra.outbox import OutboxKind, OutboxRow, enqueue
-from a13n_service.resources.memories.schemas import Memory, MemoryCreate, MemoryPage, MemoryUpdate
+from a13n_service.resources.memories.schemas import POSTGRES, Memory, MemoryCreate, MemoryPage, MemoryUpdate
 from a13n_service.resources.memories.store import file_format
 from a13n_service.resources.memories.tables import MemoryFileStoreRow, MemoryKind, MemoryRow
 from a13n_service.resources.providers.service import resolve_provider
@@ -33,8 +33,6 @@ from a13n_service.settings import MemorySettings
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope, authorize
 
-# The Service's own store; every other type is a Memory Provider's.
-POSTGRES = "postgres"
 PURGE: OutboxKind = "memory_purge"
 
 

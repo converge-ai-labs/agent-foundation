@@ -79,6 +79,7 @@ from a13n_service.runs.schemas import (
     Pending,
     Resume,
     ResumeRequest,
+    RunInput,
     RunOptions,
     canonical_json,
 )
@@ -97,7 +98,7 @@ logger = get_logger(__name__)
 class _Plan:
     """What an attempt runs and where it continues from, read and restored before anything is delivered."""
 
-    run: RunRow
+    run: RunInput
     principal: Principal
     authority: ExecutionAuthority
     agent: ResolvedAgent
@@ -203,21 +204,24 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         assigned = [Offered.of(entry) for entry in await inbox.assigned_entries(session, run.id)]
         used = (await totals(session, run.id))["requests"]
         root = (await delegation(session, thread, run.id)).root_run_id
-        parent = await session.get(RunRow, run.parent_run_id) if run.parent_run_id is not None else None
-    await require_secrets(runtime, run, host.secrets)
-    # Bytes an earlier attempt wrote after its last commit are never read, and never outlive a takeover.
-    await checkpoints.clean(runtime.objects, run)
-    if (own := await checkpoints.load_state(runtime.objects, run)) is not None:
+        parent_row = await session.get(RunRow, run.parent_run_id) if run.parent_run_id is not None else None
+        parent = RunInput.model_validate(parent_row) if parent_row is not None else None
+        prepared_run = RunInput.model_validate(run)
+    await require_secrets(runtime, prepared_run, host.secrets)
+    # Unreferenced bytes from earlier attempts are never read; reclaim them within one I/O budget.
+    with anyio.move_on_after(runtime.settings.objects.timeout):
+        await checkpoints.clean(runtime.objects, prepared_run)
+    if (own := await checkpoints.load_state(runtime.objects, prepared_run)) is not None:
         state, seq = own.harness, own.seq
         # Answers remain Host-owned input until incorporated, even when a pre-effect
         # checkpoint supersedes the waiting parent's continuation. Never replay its grant.
-        _, accepted = await _initial(runtime, run, parent)
+        _, accepted = await _initial(runtime, prepared_run, parent)
         resume = replace(accepted, recovery=True).remaining(state.message_history) if accepted is not None else None
-        display = await checkpoints.load_display(runtime.objects, run) or Display()
+        display = await checkpoints.load_display(runtime.objects, prepared_run) or Display()
     else:
-        (state, resume), seq, display = await _initial(runtime, run, parent), 0, Display()
+        (state, resume), seq, display = await _initial(runtime, prepared_run, parent), 0, Display()
     return _Plan(
-        run=run,
+        run=prepared_run,
         principal=principal,
         authority=authority,
         agent=resolved,
@@ -229,13 +233,13 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         state=state,
         resume=resume,
         display=display,
-        committed=Committed.of(run),
+        committed=Committed.of(prepared_run),
         seq=seq,
     )
 
 
 async def _initial(
-    runtime: Runtime, run: RunRow, parent: RunRow | None
+    runtime: Runtime, run: RunInput, parent: RunInput | None
 ) -> tuple[HarnessState, DeferredToolResume | None]:
     """A run's first state: its parent's, forked into this thread for fork lineage, or a new history.
 
@@ -404,8 +408,9 @@ class _Attempt:
         mounts = [EnvironmentMount.model_validate(mount) for mount in self.plan.run.environment_mounts]
         if not mounts:
             return []
-        preparing = asyncio.create_task(
-            prepare_mounts(self.runtime, self.lease, self.plan.principal, self.plan.authority, mounts)
+        preparing = self.runtime.tasks.start(
+            prepare_mounts(self.runtime, self.lease, self.plan.principal, self.plan.authority, mounts),
+            name=f"prepare-mounts-{self.lease.attempt_id}",
         )
         stopped = asyncio.create_task(self.control.stopped.wait())
         handoff = asyncio.create_task(self.control.handoff.wait())
@@ -481,7 +486,7 @@ class _Attempt:
             thread, run, attempt, current = await lock_thread_lease(session, self.lease)
             await checkpoints.commit(
                 session,
-                self.runtime.objects,
+                self.runtime,
                 run,
                 attempt,
                 previous=self.committed,

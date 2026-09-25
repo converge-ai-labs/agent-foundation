@@ -11,7 +11,7 @@ import json
 from pydantic import ValidationError
 
 from a13n_service.infra.db import Storage, short_session
-from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
+from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conflict, invalid, not_found
 from a13n_service.infra.objects.interface import ObjectRef, ObjectStore, read
 from a13n_service.resources.uploads.schemas import Upload, UploadReceipt
 from a13n_service.tenancy.access import workspace_scope
@@ -87,7 +87,7 @@ async def store(
         await objects.put(key + _RECEIPT, _canonical(receipt.model_dump(mode="json")), content_type="application/json")
     except ServiceError as error:
         if error.code == "conflict":
-            raise conflict("upload", receipt.id, "idempotency_key_reused") from None
+            raise conflict("upload", receipt.id, IDEMPOTENCY_KEY_REUSED) from None
         raise
     return receipt
 

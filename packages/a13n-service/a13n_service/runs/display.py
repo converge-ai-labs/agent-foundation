@@ -114,7 +114,7 @@ def _bounded(content: dict[str, JsonValue], field: str, value: str) -> None:
 
 
 def _size(item: Item) -> int:
-    return len(item.model_dump_json())
+    return len(item.model_dump_json().encode("utf-8"))
 
 
 def _json_size(value: JsonValue) -> int:

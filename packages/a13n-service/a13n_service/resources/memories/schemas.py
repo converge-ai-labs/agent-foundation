@@ -11,6 +11,9 @@ from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.resources.memories.tables import MemoryKind
 
+# The Service-owned file store; other types belong to Memory Providers.
+POSTGRES = "postgres"
+
 MemoryKey = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")]
 MemoryName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 Description = Annotated[str, StringConstraints(max_length=2048)]
@@ -50,7 +53,7 @@ class MemoryCreate(BaseModel):
     name: MemoryName
     description: Description | None = None
     labels: Labels = Field(default_factory=dict)
-    type: str = Field(default="postgres", min_length=1, max_length=64)
+    type: str = Field(default=POSTGRES, min_length=1, max_length=64)
     provider_id: ObjectId | None = None
     namespace: Namespace | None = None
     # Null inherits the deployment's default guide; "" gives the memory none.

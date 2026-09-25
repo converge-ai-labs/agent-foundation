@@ -132,7 +132,8 @@ class ThreadStream:
                 await self.buffer.join()
         except TimeoutError:
             pass
-        self.writer.cancel()
+        finally:
+            self.writer.cancel()
 
     def delta(self, observed: Observed) -> None:
         event = json.dumps(observed.event, separators=(",", ":"))

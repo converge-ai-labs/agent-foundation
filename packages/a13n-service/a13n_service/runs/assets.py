@@ -23,6 +23,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.toolsets import FunctionToolset
 
+from a13n_service.resources.agents.toolsets import PUBLISH_ASSET_TOOL_ID
 from a13n_service.resources.assets.schemas import AssetCreate
 from a13n_service.resources.assets.service import create_asset
 from a13n_service.resources.uploads import service as uploads
@@ -30,8 +31,6 @@ from a13n_service.runs.attempts import Lease
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tools import tool_failures
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize
-
-TOOL_ID = "service.publish_asset"
 
 
 class AssetsCapability(AbstractCapability[AgentContext]):
@@ -48,7 +47,7 @@ class AssetsCapability(AbstractCapability[AgentContext]):
             name="publish_asset",
             description="Publish a regular file from the environment as an immutable asset of the workspace.",
             harness_metadata=HarnessToolMetadata(
-                tool_id=TOOL_ID,
+                tool_id=PUBLISH_ASSET_TOOL_ID,
                 effects=frozenset({"read", "write"}),
                 credential_audiences=(),
                 idempotency="none",

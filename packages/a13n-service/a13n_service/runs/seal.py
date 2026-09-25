@@ -143,7 +143,7 @@ async def seal(
             payload={"child_run_id": run.id},
         )
     await notify_subscribers(session, runtime, run, kinds, at=at, attempt=attempt)
-    after_commit(session, partial(checkpoints.clean, runtime.objects, run))
+    after_commit(session, partial(runtime.cleanup.sealed, runtime.objects, run))
     after_commit(session, partial(advance, runtime, thread.id))
 
 

@@ -376,3 +376,30 @@ async def test_a_live_reader_skipped_past_removed_entries_gets_a_gap(service, sc
                 pipe.xtrim(key, minid=f"{milliseconds}-1", approximate=False)
                 await pipe.execute()
             assert await _frames(stream, 3) == [("gap", None), ("boundary", 2), ("delta", 3)]
+
+
+async def test_cancelling_stream_close_still_signals_its_writer(runtime: Runtime, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    stream = ThreadStream(runtime.redis, runtime.settings, thread_id="thread_close", run_id=RUN, attempt=1)
+    joining = asyncio.Event()
+
+    async def blocked_writer() -> None:
+        await asyncio.Event().wait()
+
+    async def blocked_join() -> None:
+        joining.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(stream, "_write", blocked_writer)
+    monkeypatch.setattr(stream.buffer, "join", blocked_join)
+    await stream.__aenter__()
+    closing = asyncio.create_task(stream.__aexit__())
+    try:
+        await joining.wait()
+        closing.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await closing
+        assert stream.writer is not None and stream.writer.cancelling()
+    finally:
+        assert stream.writer is not None
+        stream.writer.cancel()
+        await asyncio.gather(stream.writer, return_exceptions=True)
