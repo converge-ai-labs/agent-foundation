@@ -212,6 +212,7 @@ class StoredContinuation(StoredContract):
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     deferred_requests: DeferredToolRequests | None = None
     accepted_input: StoredDeferredInput | None = None
+    memory_cursors: dict[str, str | None] = Field(default_factory=dict, exclude_if=lambda value: not value)
     created_at: datetime
 
     @property
@@ -268,6 +269,7 @@ class StoredChildCheckpoint(StoredContract):
     harness_state: HarnessState
     deferred_requests: DeferredToolRequests | None = None
     accepted_input: StoredDeferredInput | None = None
+    memory_cursors: dict[str, str | None] = Field(default_factory=dict, exclude_if=lambda value: not value)
     display: CompactChildDisplay
     terminal: bool
     created_at: datetime

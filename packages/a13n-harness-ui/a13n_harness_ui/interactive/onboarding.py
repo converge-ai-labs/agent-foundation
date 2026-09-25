@@ -513,6 +513,12 @@ async def run_setup(
                     checked_provider = provider
                 selection = SetupSelection.model_validate(wizard.selection(str(directory)))
                 preview = await app.preview_setup(selection)
+                if not (add_agent or add_model):
+                    emit(
+                        "File memory and automatic organization are enabled by default. WebUI may make additional "
+                        "background model requests that consume quota or incur costs. Existing choices are preserved; "
+                        "configure memory in General settings or the root YAML. CLI does not organize automatically."
+                    )
                 emit("Saving agent…" if add_agent else "Saving model…" if add_model else "Saving your configuration…")
                 if not (add_agent or add_model) and selection.environment_profile == "environment-sandbox":
                     emit("Checking Sandbox prerequisites. Ctrl+C cancels; no fallback to Full Control.")

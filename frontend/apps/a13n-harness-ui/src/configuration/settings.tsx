@@ -1,7 +1,7 @@
 import { useContext, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ChoiceField, Skeleton } from "a13n-ui";
+import { ChoiceField, SettingsSection, Skeleton } from "a13n-ui";
 import {
   useSelectors,
   useSources,
@@ -99,7 +99,16 @@ export function SettingsLayout() {
 
 export function GeneralSettings() {
   const sources = useSources();
-  const status = useStatus();
+  const status = useStatus(5000);
+  const memory = status.data?.app.memory_organization;
+  const memoryAvailability = {
+    ready: "Ready when changed files are eligible",
+    disabled: "Disabled",
+    model_not_configured:
+      "Choose an organization model to enable background requests",
+    webui_only: "Available in WebUI only",
+    configuration_unavailable: "Configuration unavailable",
+  };
   const root = sources.data?.sources.find(
     (item) => item.resource_kind === "root",
   );
@@ -120,6 +129,22 @@ export function GeneralSettings() {
           <p>Create your first agent and choose defaults to get started.</p>
           <Link to="/setup">Start setup</Link>
         </Panel>
+      )}
+      {memory && (
+        <SettingsSection
+          title="Memory organization status"
+          description="This server process only. Internal maintenance does not create conversations."
+        >
+          <p role="status" className={styles.fieldGroup}>
+            {(memory.active_scopes?.length ?? 0) > 0
+              ? `Organizing: ${memory.active_scopes?.join(", ")}`
+              : memoryAvailability[memory.availability]}
+            {memory.last_outcome &&
+              ` · Last outcome: ${memory.last_outcome.replaceAll("_", " ")}`}
+            {` · ${memory.attempts ?? 0} attempts · ${memory.requests ?? 0} model requests`}
+            {` · ${memory.input_tokens ?? 0} input / ${memory.output_tokens ?? 0} output tokens`}
+          </p>
+        </SettingsSection>
       )}
       <InstallSettings />
       <details className={styles.details}>

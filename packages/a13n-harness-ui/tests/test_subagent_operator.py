@@ -236,7 +236,9 @@ async def test_child_finalization_failure_preserves_checkpoint_without_success(
     from unittest.mock import AsyncMock
 
     from a13n_harness import AgentIdentityRef, HarnessBuilder, HarnessState
+    from a13n_harness_ui.composition import ReconstructedAgent
     from a13n_harness_ui.environment_runtime import EnvironmentFinalization
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
     from opentelemetry.trace import INVALID_SPAN
     from pydantic_ai.agent.spec import AgentSpec
     from pydantic_ai.models.test import TestModel
@@ -295,7 +297,7 @@ async def test_child_finalization_failure_preserves_checkpoint_without_success(
         head=head,
         scope=cast(Any, SimpleNamespace(agent_instance_id="parent-agent")),
         composition=unavailable,
-        reconstructed=unavailable,
+        reconstructed=ReconstructedAgent(executable, HarnessUiModelResolver({}), frozenset()),
         input="work",
         usage_limits=None,
         identity=AgentIdentityRef(issuer="test", subject="child"),

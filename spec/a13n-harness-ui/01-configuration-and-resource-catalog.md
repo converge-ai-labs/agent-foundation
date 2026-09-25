@@ -37,6 +37,8 @@ Each resource file defines one resource except MCP files, which also accept a mu
 
 The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its exact UTF-8 content participates in the accepted generation fingerprint and source digest, under the same stable regular-file read and size limits as other primary sources. Edits and removal take effect on later accepted generations; captured Runs remain immutable. `RULES.md` and `AGENTS.override.md` are not instruction sources. Harness UI does not import guidance from ambient Codex configuration. [Composition](02-agent-composition-and-snapshots.md#resolution) owns injection and capture.
 
+[File Memory](08-file-memory.md) owns the root `memory` mapping, default-on switches, Model selection, and the runtime `memory/` directory beside this root. Memory files and maintenance bookkeeping are not resource sources or accepted-generation inputs.
+
 The root file owns restart-bound process settings, user-input delivery, global defaults, application tool switches, and WebUI collaboration preferences:
 
 ```yaml

@@ -1007,3 +1007,24 @@ async def test_add_agent_initializes_absent_root_shortcut_without_mutating_exist
     assert yaml.safe_load(preview.files[path.name])["security"]["shell_review"]["model"] == "model-codex-review"
     assert (await publish_setup(path, addition, validate_candidate=_validate())).completed
     assert agent.read_bytes() == baseline
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "authored", [{}, {"enabled": False, "auto_organize": {"enabled": False, "instructions": "Keep custom guidance."}}]
+)
+async def test_setup_seeds_memory_and_preserves_explicit_choices(tmp_path: Path, authored: dict) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump({"schema_version": "1", "memory": authored}))
+    preview = await preview_setup(path, _selection(tmp_path), validate_candidate=_validate())
+    memory = yaml.safe_load(preview.files[path.name])["memory"]
+    assert memory["enabled"] is authored.get("enabled", True)
+    assert memory["auto_organize"]["enabled"] is authored.get("auto_organize", {}).get("enabled", True)
+    assert memory["auto_organize"]["model"] == "model-codex"
+    assert memory["auto_organize"]["instructions"] == authored.get("auto_organize", {}).get("instructions", "")
+    assert (await publish_setup(path, _selection(tmp_path), validate_candidate=_validate())).completed
+    before = yaml.safe_load(path.read_text())["memory"]
+    await publish_setup(
+        path, _selection(tmp_path, new_model_id="model-added", new_model_name="Added"), validate_candidate=_validate()
+    )
+    assert yaml.safe_load(path.read_text())["memory"] == before

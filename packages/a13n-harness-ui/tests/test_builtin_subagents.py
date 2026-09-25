@@ -288,6 +288,18 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
     (tmp_path / "models/worker.yaml").write_text(yaml.safe_dump(model))
     calls = 0
     child_models = []
+    memory_restores = []
+    from a13n_harness_ui.composition import AgentReconstructor
+    from a13n_harness_ui.storage import StoredChildCheckpoint
+
+    reconstruct = AgentReconstructor.reconstruct
+
+    def capture_memory(self, composition, **kwargs):
+        if kwargs.get("memory_positions"):
+            memory_restores.append(dict(kwargs["memory_positions"]))
+        return reconstruct(self, composition, **kwargs)
+
+    monkeypatch.setattr(AgentReconstructor, "reconstruct", capture_memory)
 
     async def build(self, recipe, authentication):
         async def stream(messages, info):
@@ -358,6 +370,11 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
         for execution in page.executions:
             child = await app.get_thread(execution.child_thread_id)
             assert child.thread.configuration.local_roots == (str(selected_root),)
+            head = await app._store.child_executions.get(execution.execution_id)
+            assert head is not None and head.selected_checkpoint is not None
+            checkpoint = await app._store.objects.read_model(head.selected_checkpoint, StoredChildCheckpoint)
+            assert "global" in checkpoint.memory_cursors
+        assert any("global" in positions for positions in memory_restores)
         usage = await app.thread_usage(thread_id=thread.thread_id)
         assert usage.root.model_requests == 5
         assert usage.descendants.model_requests == 2

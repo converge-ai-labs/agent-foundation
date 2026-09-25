@@ -28,6 +28,8 @@ Harness UI depends on the [Harness](../a13n-harness/README.md), including its [E
 | [06-setup-and-environment-readiness.md](06-setup-and-environment-readiness.md)                   | First-use discovery, reviewed starter files, explicit defaults, and selected Environment preflight/recovery                                  |
 | [07-interactive-cli.md](07-interactive-cli.md)                                                   | Full-terminal ownership, commands, display modes, startup, cwd sessions, and context choices                                                 |
 
+[File Memory and Automatic Organization](08-file-memory.md) owns global/Project file scopes, foreground cursor persistence, and bounded input-triggered WebUI maintenance without ordinary Threads.
+
 The [WebUI catalog](webui/README.md) indexes the browser workbench, page presence and collaborative conversations, saved-output comments, native computer sharing, and bundled/Docker distribution contracts. Listener and HTTP/API behavior remain owned by `05`; transient drafts and durable comments retain their separate storage boundaries in `03`.
 
 ## Reading Paths

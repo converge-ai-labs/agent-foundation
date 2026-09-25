@@ -33,6 +33,8 @@ class CapturedConfiguration(SurfaceModel):
     project_id: str | None
     project_roots: tuple[str, ...]
     webui_sidekick: SidekickConfiguration | None = None
+    memory_enabled: bool = False
+    memory_scopes: tuple[str, ...] = ()
     agent: CapturedAgentSelection
     capability_ids: tuple[str, ...]
     harness_plugin_ids: tuple[str, ...]
@@ -72,6 +74,12 @@ def captured_configuration(composition_id: str, value: ResolvedRunComposition) -
         project_id=value.project_id,
         project_roots=value.project_roots,
         webui_sidekick=value.webui_sidekick,
+        memory_enabled=value.memory_enabled,
+        memory_scopes=(
+            ("global", *((f"project:{value.project_id}",) if value.project_id is not None else ()))
+            if value.memory_enabled
+            else ()
+        ),
         agent=CapturedAgentSelection(
             name=root.roster_name,
             source_kind=root.source_kind,

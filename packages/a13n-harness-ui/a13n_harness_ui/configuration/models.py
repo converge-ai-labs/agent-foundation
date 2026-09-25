@@ -228,6 +228,28 @@ class MediaUnderstandingConfiguration(ConfigurationModel):
         return {kind: value for kind, value in values.items() if value is not None}
 
 
+class MemoryOrganizationConfiguration(ConfigurationModel):
+    """WebUI-only background maintenance using a separately selected Model."""
+
+    enabled: bool = True
+    model: ResourceId | None = None
+    instructions: str = Field(default="", max_length=64 * 1024)
+
+    @field_validator("model")
+    @classmethod
+    def _model_id(cls, value: str | None) -> str | None:
+        if value is not None:
+            _require_id_prefix(value, "model-")
+        return value
+
+
+class MemoryConfiguration(ConfigurationModel):
+    """Shared file memory and independently configurable organization."""
+
+    enabled: bool = True
+    auto_organize: MemoryOrganizationConfiguration = Field(default_factory=MemoryOrganizationConfiguration)
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
@@ -243,6 +265,7 @@ class HarnessUiDocument(ConfigurationModel):
     media_understanding: MediaUnderstandingConfiguration = Field(
         default_factory=MediaUnderstandingConfiguration, exclude_if=lambda value: not value.selections()
     )
+    memory: MemoryConfiguration = Field(default_factory=MemoryConfiguration)
     max_goal_iterations: int = 10
 
 
@@ -758,6 +781,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     @model_validator(mode="after")
     def _validate_graph(self) -> Self:
         defaults = self.document.defaults
+        _require_reference(self.document.memory.auto_organize.model, self.models, "memory.auto_organize.model")
         _require_reference(defaults.project, self.projects, "defaults.project")
         _require_reference(defaults.agent, self.agents, "defaults.agent")
         for kind, model_id in self.document.media_understanding.selections().items():

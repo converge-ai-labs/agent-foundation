@@ -5719,6 +5719,16 @@
             "type": "array",
             "title": "Capability Warnings",
             "default": []
+          },
+          "memory_organization": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryOrganizationStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -5974,6 +5984,19 @@
                 "type": "null"
               }
             ]
+          },
+          "memory_enabled": {
+            "type": "boolean",
+            "title": "Memory Enabled",
+            "default": false
+          },
+          "memory_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Memory Scopes",
+            "default": []
           },
           "agent": {
             "$ref": "#/components/schemas/CapturedAgentSelection"
@@ -9498,6 +9521,72 @@
           "id"
         ],
         "title": "MarkdownSubagentSource"
+      },
+      "MemoryOrganizationStatus": {
+        "properties": {
+          "availability": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "disabled",
+              "model_not_configured",
+              "webui_only",
+              "configuration_unavailable"
+            ],
+            "title": "Availability"
+          },
+          "active_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Scopes",
+            "default": []
+          },
+          "last_outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "completed",
+                  "failed",
+                  "cancelled",
+                  "concurrent_change"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Outcome"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts",
+            "default": 0
+          },
+          "requests": {
+            "type": "integer",
+            "title": "Requests",
+            "default": 0
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens",
+            "default": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "availability"
+        ],
+        "title": "MemoryOrganizationStatus"
       },
       "ModelAuthentication": {
         "oneOf": [

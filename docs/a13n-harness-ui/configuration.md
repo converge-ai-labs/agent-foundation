@@ -71,6 +71,12 @@ process:
   max_object_bytes: 268435456
 input:
   long_text_threshold_chars: 8000
+memory:
+  enabled: true
+  auto_organize:
+    enabled: true
+    model: null
+    instructions: ""
 media_understanding:
   image: null
   video: null
@@ -104,6 +110,29 @@ subagents:
 webui:
   sidekick: {}
 ```
+
+### File memory
+
+File memory is enabled by default in CLI and WebUI. It stores cross-conversation preferences and stable facts under `memory/global/` beside the selected root YAML, plus Project-specific files under `memory/projects/<project-id>/`. A conversation without a Project uses only global memory. `MEMORY.md` is a concise always-loaded index; detailed topics can use separate files. Memory files are not configuration resources or conversation history. Broader Full Control and human filesystem access remain unchanged.
+
+Configure **Settings → General → Memory**, or edit:
+
+```yaml
+memory:
+  enabled: true
+  auto_organize:
+    enabled: true
+    model: model-primary
+    instructions: Keep decisions concise and preserve useful source references.
+```
+
+Choose an existing **Model**, not an Agent. Setup explicitly enables both switches and selects the setup connection Model when available, preserving existing choices. Older configurations without an organization Model still work: foreground memory is available, but automatic requests remain unavailable until you select a Model. There is no fallback to the current conversation Model.
+
+Automatic organization is **WebUI-only**. New conversation inputs offer parallel background maintenance for changed files in their scopes. It does not read old conversations, sweep other Projects, or create conversations in your sidebar. Its only tools are scoped memory tools; your Agent's other tools and instructions are not inherited. It may make additional model requests and consume quota or incur cost. General settings shows current-process availability, activity, outcomes and reported usage.
+
+Unchanged, empty, busy, or cooling-down memory makes no background model request. A successful attempt has a one-hour cooldown; failure, cancellation, or a crash leaves a fifteen-minute retry delay. Retries require another input. Each attempt is bounded to twelve requests and five minutes. New inputs do not interrupt an active organizer. Disabling either switch or stopping the server cancels maintenance, retaining partial file edits for a later fresh attempt. Foreground runs already admitted keep their captured memory setting.
+
+To keep memory without automatic requests, set `auto_organize.enabled: false`. Set `memory.enabled: false` to stop binding memory on later Runs; neither option deletes files. Back up the selected configuration root's `memory/` directory separately from the application data root. `.a13n-memory/` contains internal locking and organization state, not user memory. Optional Git supplies only a bounded diff hint over one snapshot; it is not required, does not touch your repository, and stores no revision history.
 
 ### Media understanding
 

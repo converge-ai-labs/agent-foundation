@@ -309,6 +309,89 @@ export function ResourceFields({
         document.has("schema_version") &&
         !document.has("mcpServers") && (
           <>
+            <SettingsSection
+              title="Memory"
+              description="Shared file memory lives beside this configuration: global preferences across conversations, plus separate memory for each Project."
+            >
+              <SettingsRow
+                label="File memory"
+                description="Enabled by default in CLI and WebUI. Disabling keeps existing files and takes effect on future runs."
+              >
+                <ChoiceField
+                  label="File memory"
+                  hideLabel
+                  className={styles.settingControl}
+                  value={
+                    get(["memory", "enabled"]) !== false
+                      ? "enabled"
+                      : "disabled"
+                  }
+                  onValueChange={(value) =>
+                    set(["memory", "enabled"], value === "enabled")
+                  }
+                  options={[
+                    { value: "enabled", label: "Enabled" },
+                    { value: "disabled", label: "Disabled" },
+                  ]}
+                />
+              </SettingsRow>
+              {get(["memory", "enabled"]) !== false && (
+                <>
+                  <SettingsRow
+                    label="Automatic organization"
+                    description="WebUI only. New inputs may start parallel, bounded maintenance of changed memory files. Uses additional model requests; does not read conversation history."
+                  >
+                    <ChoiceField
+                      label="Automatic organization"
+                      hideLabel
+                      className={styles.settingControl}
+                      value={
+                        get(["memory", "auto_organize", "enabled"]) !== false
+                          ? "enabled"
+                          : "disabled"
+                      }
+                      onValueChange={(value) =>
+                        set(
+                          ["memory", "auto_organize", "enabled"],
+                          value === "enabled",
+                        )
+                      }
+                      options={[
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ]}
+                    />
+                  </SettingsRow>
+                  {scalar(
+                    "Organization model",
+                    ["memory", "auto_organize", "model"],
+                    models,
+                    "Not configured — no automatic requests",
+                  )}
+                  <div className={styles.fieldGroup}>
+                    <FormField
+                      label="Organization instructions"
+                      description="Optional guidance for consolidation. The organizer only has memory tools, not your Agent's tools or instructions."
+                    >
+                      <Textarea
+                        value={text([
+                          "memory",
+                          "auto_organize",
+                          "instructions",
+                        ])}
+                        rows={4}
+                        onChange={(event) =>
+                          set(
+                            ["memory", "auto_organize", "instructions"],
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </FormField>
+                  </div>
+                </>
+              )}
+            </SettingsSection>
             <SettingsSection title="Sidekick">
               <SettingsRow
                 label="Sidekick"

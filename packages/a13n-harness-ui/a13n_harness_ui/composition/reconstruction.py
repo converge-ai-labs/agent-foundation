@@ -18,6 +18,7 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness.capabilities import SubagentCapability, SubagentOperator, ToolProxyPlan, ToolProxySelection
+from a13n_harness.capabilities.memory import MemoryCursors
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
@@ -46,6 +47,7 @@ from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
 from a13n_harness_ui.media_understanding import FileMediaUnderstanding
+from a13n_harness_ui.memory import bind_memory
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver, SubscriptionSource, model_recipe_id
 
@@ -60,6 +62,7 @@ class ReconstructedAgent:
     model_resolver: HarnessUiModelResolver
     definition_capability_ids: frozenset[str]
     media_models: Mapping[NativeInputMediaKind, ResolvedModelRecipe] = field(default_factory=dict)
+    memory_cursors: MemoryCursors = field(default_factory=MemoryCursors)
 
     def file_media_understanding(self, thread_id: str) -> FileMediaUnderstanding | None:
         if not self.media_models:
@@ -192,7 +195,16 @@ class AgentReconstructor:
         root_capabilities: Sequence[AbstractCapability[Any]] = (),
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         pricing_catalog: PricingCatalog | None = None,
+        memory_positions: Mapping[str, str | None] | None = None,
     ) -> ReconstructedAgent:
+        memory, cursors = bind_memory(
+            self._configuration_root,
+            enabled=composition.memory_enabled,
+            project_id=composition.project_id,
+            positions=memory_positions,
+        )
+        if memory is not None:
+            root_capabilities = (*root_capabilities, memory)
         plugin_keys = tuple(
             dict.fromkeys(
                 recipe.plugin_key for node in _walk_nodes(composition.root) for recipe in node.harness_plugins
@@ -245,6 +257,7 @@ class AgentReconstructor:
                 code="run_composition_reconstruction_failed",
             ) from exc
         return ReconstructedAgent(
+            memory_cursors=cursors,
             executable=cast(ExecutableAgent[str], executable),
             model_resolver=HarnessUiModelResolver(
                 model_recipes,

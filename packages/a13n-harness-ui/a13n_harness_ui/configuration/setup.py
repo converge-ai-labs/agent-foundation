@@ -329,6 +329,15 @@ async def preview_setup(
         }
         files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     if not selection.is_addition:
+        memory = root.setdefault("memory", {})
+        if isinstance(memory, dict):
+            memory.setdefault("enabled", True)
+            organize = memory.setdefault("auto_organize", {})
+            if isinstance(organize, dict):
+                organize.setdefault("enabled", True)
+                organize.setdefault("instructions", "")
+                if connection_model is not None:
+                    organize.setdefault("model", connection_model)
         webui = root.setdefault("webui", {})
         if isinstance(webui, dict):
             webui.setdefault("sidekick", {})

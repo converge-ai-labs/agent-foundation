@@ -835,6 +835,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         reconstructed = self._agents.reconstruct(
             published.value,
             pricing_catalog=pricing_catalog,
+            memory_positions=checkpoint.memory_cursors,
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
             root_capabilities=()
@@ -956,6 +957,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         reconstructed = self._agents.reconstruct(
             composition,
             pricing_catalog=pricing,
+            memory_positions=checkpoint.memory_cursors,
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
             root_capabilities=() if self._restart is None else (RestartPauseCapability(self._restart, item.thread_id),),
@@ -1096,6 +1098,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     assert state is not None and deferred is not None
                     expected_checkpoint = await self._publish_checkpoint(
                         head=current.head,
+                        memory_positions=current.reconstructed.memory_cursors.snapshot(),
                         run_id=result.run_id,
                         state=state,
                         deferred_requests=deferred,
@@ -1147,6 +1150,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     expected_checkpoint,
                     terminal_events,
                     accepted=current.accepted_input,
+                    memory_positions=current.reconstructed.memory_cursors.snapshot(),
                 )
                 await self._publish_summary(current.head)
                 await self._publish_live(current, durable_events)
@@ -1175,6 +1179,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     state = await current.stream.export_state()
                     checkpoint = await self._publish_checkpoint_object(
                         head=current.head,
+                        memory_positions=current.reconstructed.memory_cursors.snapshot(),
                         run_id=current.stream.run_id,
                         state=state,
                         deferred_requests=None,
@@ -1226,6 +1231,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         assert restart_coordinator is not None
         checkpoint = await self._publish_checkpoint_object(
             head=prepared.head,
+            memory_positions=prepared.reconstructed.memory_cursors.snapshot(),
             run_id=prepared.stream.run_id,
             state=state,
             deferred_requests=None,
@@ -1362,6 +1368,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         terminal_events: tuple[AguiEvent, ...],
         *,
         accepted: DeferredToolResume | None = None,
+        memory_positions: Mapping[str, str | None] | None = None,
     ) -> tuple[AguiEvent, ...]:
         if result.status == "completed":
             state = result.state
@@ -1370,6 +1377,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             try:
                 checkpoint = await self._publish_checkpoint_object(
                     head=head,
+                    memory_positions=memory_positions,
                     run_id=result.run_id,
                     state=state,
                     deferred_requests=None,
@@ -1404,6 +1412,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 failure=failure,
                 expected=expected,
                 accepted=accepted,
+                memory_positions=memory_positions,
             )
             return terminal_events
 
@@ -1417,6 +1426,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 failure=None,
                 expected=expected,
                 accepted=accepted,
+                memory_positions=memory_positions,
             )
             return terminal_events
 
@@ -1435,6 +1445,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         failure: SafeFailure | None,
         expected: ObjectRef | None,
         accepted: DeferredToolResume | None = None,
+        memory_positions: Mapping[str, str | None] | None = None,
     ) -> None:
         checkpoint: ObjectRef | None = None
         state = result.state
@@ -1442,6 +1453,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             try:
                 checkpoint = await self._publish_checkpoint_object(
                     head=head,
+                    memory_positions=memory_positions,
                     run_id=result.run_id,
                     state=state,
                     deferred_requests=None,
@@ -1470,9 +1482,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
         display: CompactChildDisplay,
         terminal: bool,
         expected: ObjectRef | None,
+        memory_positions: Mapping[str, str | None] | None = None,
     ) -> ObjectRef:
         reference = await self._publish_checkpoint_object(
             head=head,
+            memory_positions=memory_positions,
             run_id=run_id,
             state=state,
             deferred_requests=deferred_requests,
@@ -1499,6 +1513,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         display: CompactChildDisplay,
         terminal: bool,
         accepted: DeferredToolResume | None = None,
+        memory_positions: Mapping[str, str | None] | None = None,
     ) -> ObjectRef:
         value = StoredChildCheckpoint(
             harness_release=harness_version,
@@ -1508,6 +1523,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             segment_index=head.segment_index,
             run_composition=head.run_composition,
             harness_state=state,
+            memory_cursors=dict(memory_positions or {}),
             accepted_input=StoredDeferredInput.capture(accepted, state),
             deferred_requests=deferred_requests,
             display=display,

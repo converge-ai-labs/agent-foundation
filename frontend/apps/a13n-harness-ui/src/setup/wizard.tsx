@@ -521,6 +521,14 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                             ))}
                           </>
                         )}
+                        <p>
+                          File memory and automatic organization are enabled by
+                          default. WebUI may use the selected setup model for
+                          additional background requests when memory files
+                          change. This can consume quota or incur costs.
+                          Existing choices are preserved; change these settings
+                          under General settings → Memory.
+                        </p>
                         <details className={styles.advanced}>
                           <summary>
                             Generated files (

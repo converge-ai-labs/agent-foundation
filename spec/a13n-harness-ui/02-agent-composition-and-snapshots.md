@@ -237,6 +237,10 @@ Exact `tools` filtering applies to the actual callable target directory before p
 
 Legacy nodes missing `tool_proxy` mean direct presentation. Reading them does not insert a serialized field, replace their stored composition digest/reference, or rewrite history. Changes affect subsequent Runs only.
 
+## Application File Memory
+
+[File Memory](08-file-memory.md#foreground-composition-and-continuation) is an application-owned binding independent of Agent Capability YAML. New compositions capture the global memory-enabled switch and Project identity. Reconstruction adds fresh scoped file-memory collaborators; ordinary tool allowlists still apply. Internal automatic organization builds a separate restricted definition rather than reconstructing this user Agent graph.
+
 ## Subagent Resources and Selection
 
 An Agent roster can select another Agent resource or one canonical Markdown subagent:

@@ -1849,6 +1849,7 @@ export interface components {
              * @default []
              */
             capability_warnings?: string[];
+            memory_organization?: components["schemas"]["MemoryOrganizationStatus"] | null;
         };
         /**
          * AppliedEditView
@@ -1949,6 +1950,16 @@ export interface components {
             /** Project Roots */
             project_roots: string[];
             webui_sidekick?: components["schemas"]["SidekickConfiguration"] | null;
+            /**
+             * Memory Enabled
+             * @default false
+             */
+            memory_enabled?: boolean;
+            /**
+             * Memory Scopes
+             * @default []
+             */
+            memory_scopes?: string[];
             agent: components["schemas"]["CapturedAgentSelection"];
             /** Capability Ids */
             capability_ids: string[];
@@ -3263,6 +3274,41 @@ export interface components {
             kind?: "markdown";
             /** Id */
             id: string;
+        };
+        /** MemoryOrganizationStatus */
+        MemoryOrganizationStatus: {
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "ready" | "disabled" | "model_not_configured" | "webui_only" | "configuration_unavailable";
+            /**
+             * Active Scopes
+             * @default []
+             */
+            active_scopes?: string[];
+            /** Last Outcome */
+            last_outcome?: ("completed" | "failed" | "cancelled" | "concurrent_change") | null;
+            /**
+             * Attempts
+             * @default 0
+             */
+            attempts?: number;
+            /**
+             * Requests
+             * @default 0
+             */
+            requests?: number;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens?: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens?: number;
         };
         ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
         /** ModelCatalogSnapshot */

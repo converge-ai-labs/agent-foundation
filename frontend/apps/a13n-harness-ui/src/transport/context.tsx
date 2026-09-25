@@ -8,10 +8,11 @@ export function useTransport() {
   if (!transport) throw new Error("Authenticated transport is missing.");
   return transport;
 }
-export function useStatus() {
+export function useStatus(refetchInterval?: number) {
   const { client } = useTransport();
   return useQuery({
     queryKey: ["status"],
+    refetchInterval,
     queryFn: ({ signal }) => result(client.GET("/api/status", { signal })),
   });
 }

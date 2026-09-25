@@ -1496,7 +1496,14 @@ async def _candidate_error(path: Path):
 
 class _CompletedReconstructor:
     def reconstruct(
-        self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None, pricing_catalog=None
+        self,
+        composition,
+        *,
+        subagent_operator,
+        root_capabilities=(),
+        subscription_sources=None,
+        pricing_catalog=None,
+        memory_positions=None,
     ):
         del composition, subagent_operator, subscription_sources
 
@@ -1509,7 +1516,14 @@ class _CompletedReconstructor:
 
 class _DeferredReconstructor:
     def reconstruct(
-        self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None, pricing_catalog=None
+        self,
+        composition,
+        *,
+        subagent_operator,
+        root_capabilities=(),
+        subscription_sources=None,
+        pricing_catalog=None,
+        memory_positions=None,
     ):
         del composition, subagent_operator, subscription_sources
 
@@ -1574,7 +1588,14 @@ class _SlowReconstructor:
         self._started = started
 
     def reconstruct(
-        self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None, pricing_catalog=None
+        self,
+        composition,
+        *,
+        subagent_operator,
+        root_capabilities=(),
+        subscription_sources=None,
+        pricing_catalog=None,
+        memory_positions=None,
     ):
         del composition, subagent_operator, subscription_sources
 

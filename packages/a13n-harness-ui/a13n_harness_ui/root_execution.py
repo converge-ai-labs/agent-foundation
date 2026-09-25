@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from functools import partial
 from typing import Any, Literal
@@ -112,6 +112,7 @@ class RootRunAdmission:
     deferred_resume: DeferredToolResume | None
     prompt: RunInputValue | None
     response: ThreadDeferredResponse | None
+    memory_positions: dict[str, str | None] = field(default_factory=dict)
 
 
 class RootRunExecutor:
@@ -193,7 +194,7 @@ class RootRunExecutor:
             thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
         if restart is not None and (thread.continuation != restart.checkpoint or thread_id != restart.thread_id):
             raise RunCoordinationError("The saved restart continuation changed.", code="restart_conflict")
-        previous_state, deferred, previous_composition, accepted = await self._load_run_state(thread)
+        previous_state, deferred, previous_composition, accepted, positions = await self._load_run_state(thread)
         deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
         if deferred_resume is None and accepted is not None:
             deferred_resume = accepted.recover()
@@ -266,7 +267,7 @@ class RootRunExecutor:
             )
             envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
             published = PublishedRunComposition(value=captured, reference=envelope.ref)
-        return RootRunAdmission(thread, source, published, previous_state, deferred_resume, prompt, response)
+        return RootRunAdmission(thread, source, published, previous_state, deferred_resume, prompt, response, positions)
 
     async def execute(
         self,
@@ -303,6 +304,7 @@ class RootRunExecutor:
                 selected = await self._select_state(
                     thread=thread,
                     composition=published.reference,
+                    memory_positions=reconstructed.memory_cursors.snapshot(),
                     accepted=deferred_resume,
                     state=state,
                     display=display,
@@ -322,6 +324,7 @@ class RootRunExecutor:
             reconstructed = self._agents.reconstruct(
                 published.value,
                 pricing_catalog=pricing_catalog,
+                memory_positions=admission.memory_positions,
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
                     goal_capability,
@@ -474,6 +477,7 @@ class RootRunExecutor:
                     continuation = await self._select_state(
                         thread=thread,
                         composition=published.reference,
+                        memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume,
                         state=paused_state,
                         display=display,
@@ -518,6 +522,7 @@ class RootRunExecutor:
                     continuation = await self._select_state(
                         thread=thread,
                         composition=published.reference,
+                        memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume,
                         state=result.state,
                         display=display,
@@ -543,6 +548,7 @@ class RootRunExecutor:
                         continuation = await self._select_state(
                             thread=thread,
                             composition=published.reference,
+                            memory_positions=reconstructed.memory_cursors.snapshot(),
                             accepted=deferred_resume,
                             state=state,
                             display=display,
@@ -648,8 +654,11 @@ class RootRunExecutor:
 
     async def _load_run_state(
         self, thread: Thread
-    ) -> tuple[HarnessState, DeferredToolRequests | None, ObjectRef | None, StoredDeferredInput | None]:
+    ) -> tuple[
+        HarnessState, DeferredToolRequests | None, ObjectRef | None, StoredDeferredInput | None, dict[str, str | None]
+    ]:
         accepted = None
+        positions: dict[str, str | None] = {}
         if thread.continuation is None:
             stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
             state = stored.harness_state
@@ -661,12 +670,13 @@ class RootRunExecutor:
             deferred = stored_continuation.deferred_requests
             composition = stored_continuation.run_composition
             accepted = stored_continuation.accepted_input
+            positions = stored_continuation.memory_cursors
         if state.thread_id != thread.thread_id:
             raise ThreadError(
                 "The selected Thread state belongs to another Thread.",
                 code="thread_continuation_incompatible",
             )
-        return state, deferred, composition, accepted
+        return state, deferred, composition, accepted, positions
 
     async def _select_state(
         self,
@@ -680,6 +690,7 @@ class RootRunExecutor:
         excerpt: ConversationExcerpt,
         activity_changed: bool,
         completed_run_id: str | None = None,
+        memory_positions: Mapping[str, str | None] | None = None,
     ) -> RootContinuationSelection:
         if state is None:
             return RootContinuationSelection(status="not_available")
@@ -688,6 +699,7 @@ class RootRunExecutor:
             continuation = StoredContinuation(
                 harness_release=harness_version,
                 run_composition=composition,
+                memory_cursors=dict(memory_positions or {}),
                 harness_state=with_display_history(
                     state, display.capture(state.message_history, completed=completed_run_id is not None)
                 )

@@ -133,6 +133,7 @@ from a13n_harness_ui.live import (
     SummaryCursor,
     SummarySubscription,
 )
+from a13n_harness_ui.memory_organization import MemoryOrganizationStatus, MemoryOrganizer
 from a13n_harness_ui.model_accounts import (
     DEFAULT_GROK_OAUTH_SCOPE,
     AccountProjection,
@@ -309,6 +310,7 @@ class AppStatus(BaseModel):
     candidate_error_message: str | None = None
     content_plugin_diagnostics: tuple[str, ...] = ()
     capability_warnings: tuple[str, ...] = ()
+    memory_organization: MemoryOrganizationStatus | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -367,9 +369,11 @@ class HarnessUiApp:
         share_computer: bool = False,
         web_push: WebPush | None = None,
         restart_coordinator: GracefulRestart,
+        memory_organizer: MemoryOrganizer,
     ) -> None:
         self._settings = settings
         self._restart = restart_coordinator
+        self._memory_organizer = memory_organizer
         self._web_push = web_push
         self._store = store
         self._api_keys = ApiKeyStore(store.layout.root / "auth.json")
@@ -488,6 +492,7 @@ class HarnessUiApp:
             return AppStatus(
                 content_plugin_diagnostics=(() if configuration is None else configuration.content_plugin_diagnostics),
                 capability_warnings=self._configurations.capability_warnings,
+                memory_organization=self._memory_organizer.status(configuration),
                 state=self._state,
                 object_count=await self._store.object_count(),
                 accepted_generation_digest=current_digest,
@@ -535,6 +540,7 @@ class HarnessUiApp:
                     expected_current_digest=current,
                 )
                 generation_changed = True
+                self._memory_organizer.configuration_changed(candidate)
             await self._devices.synchronize_registrations(candidate.devices.values())
             candidate_error: HarnessUiError | None = None
         except HarnessUiError as exc:
@@ -2438,6 +2444,7 @@ class HarnessUiApp:
                 await self._summary_hub.publish(kind="configuration")
             raise
         self._replace_candidate_error(None)
+        self._memory_organizer.configuration_changed(result.configuration)
         self._configuration_fingerprint = await configuration_tree_fingerprint(self._require_configuration_path())
         await self._summary_hub.publish(kind="configuration")
         await self._summary_hub.publish(kind="project")
@@ -2526,6 +2533,7 @@ class HarnessUiApp:
                 return
             self._state = AppState.stopping
             idle = self._operations_idle
+        self._memory_organizer.stop()
         await self._root_runs.stop_admission()
         if graceful:
             await self._restart.drain(self._settings.shutdown_timeout_seconds)
@@ -2772,10 +2780,20 @@ async def open_harness_ui_app(
                     httpx2.AsyncClient(timeout=10, follow_redirects=False)
                 )
                 web_push = WebPush(store, push_client)
+            memory_organizer = MemoryOrganizer(
+                configuration_root=configuration_path.expanduser().resolve().parent if configuration_path else None,
+                current=configurations.current,
+                resolver=resolver,
+                api_keys=ApiKeyStore(store.layout.root / "auth.json"),
+                subscription_sources=subscription_sources,
+                instrumentation=observation.instrumentation,
+                webui=host_mode == "webui",
+            )
             root_runs = RootRunCoordinator(
                 root_executor,
                 restart_coordinator=restart_coordinator,
                 notify=web_push.enqueue if web_push is not None else None,
+                on_input_admitted=memory_organizer.offer if host_mode == "webui" else None,
                 on_human_admitted=(
                     lambda admission, operation: thread_tools.notify_worker_admitted(admission, operation)
                 )
@@ -2827,6 +2845,7 @@ async def open_harness_ui_app(
                     errors[Provider.GROK] = exc
                 root_executor.replace_subscription_sources(sources)
                 operator.replace_subscription_sources(sources)
+                memory_organizer.replace_subscription_sources(sources)
                 return discovered_codex, discovered_grok, errors
 
             app = HarnessUiApp(
@@ -2858,6 +2877,7 @@ async def open_harness_ui_app(
                 candidate_error=candidate_error,
                 share_computer=share_computer,
                 web_push=web_push,
+                memory_organizer=memory_organizer,
                 restart_coordinator=restart_coordinator,
             )
             if host_mode == "webui":
@@ -2881,6 +2901,7 @@ async def open_harness_ui_app(
                 await root_runs.start()
                 app._state = AppState.ready
                 async with create_task_group() as background:
+                    memory_organizer.start(background)
                     app._logins = LoginSessions(background, app._account)
                     background.start_soon(app._prune_thread_files_periodically)
                     background.start_soon(app._maintain_read_models)

@@ -113,6 +113,7 @@ class RootRunCoordinator:
         on_settled: Callable[[str | None, RootOperationView], Awaitable[None]] | None = None,
         on_human_admitted: Callable[[RootRunAdmission, RootOperationView], Awaitable[None]] | None = None,
         restart_coordinator: GracefulRestart | None = None,
+        on_input_admitted: Callable[[str | None], None] | None = None,
     ) -> None:
         if terminal_retention < 1:
             raise ValueError("terminal_retention must be positive")
@@ -124,6 +125,7 @@ class RootRunCoordinator:
         self._notify = notify
         self._on_settled = on_settled
         self._on_human_admitted = on_human_admitted
+        self._on_input_admitted = on_input_admitted
         self._lock = Lock()
         self._operations: dict[str, _RootOperation] = {}
         self._active_by_thread: dict[str, str] = {}
@@ -362,6 +364,11 @@ class RootRunCoordinator:
                 self._operations[receipt.receipt_id] = operation
                 self._active_by_thread[thread_id] = receipt.receipt_id
                 self._task_group.start_soon(self._run_operation, operation, admission)
+                if prompt is not None and self._on_input_admitted is not None:
+                    try:
+                        self._on_input_admitted(admission.published.value.project_id)
+                    except Exception:
+                        get_logger(__name__).warning("Could not offer memory maintenance opportunity")
                 if human_input and self._on_human_admitted is not None:
                     self._task_group.start_soon(self._notify_human_admitted, admission, _view(operation))
         await self._publish_change(operation)

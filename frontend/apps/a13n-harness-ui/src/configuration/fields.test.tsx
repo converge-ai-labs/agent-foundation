@@ -327,3 +327,47 @@ it("authors HTTP and reverse WebSocket Devices with credential references", asyn
     authentication: { kind: "api_key", credential_ref: "key-device" },
   });
 });
+
+it("shows default-on memory without rewriting YAML and preserves organizer choices when disabled", async () => {
+  const initial =
+    'schema_version: "1"\nmemory:\n  auto_organize:\n    model: model-saved\n    instructions: Keep decisions concise.\n';
+  renderFields(initial);
+  const user = userEvent.setup();
+  expect(
+    (await screen.findByRole("combobox", { name: "File memory" })).textContent,
+  ).toContain("Enabled");
+  expect(
+    screen.getByRole("combobox", { name: "Automatic organization" })
+      .textContent,
+  ).toContain("Enabled");
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Organization instructions" }),
+    { target: { value: "Preserve decisions and preferences." } },
+  );
+  await user.click(
+    screen.getByRole("combobox", { name: "Automatic organization" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Disabled" }));
+  await user.click(screen.getByRole("combobox", { name: "File memory" }));
+  await user.click(await screen.findByRole("option", { name: "Disabled" }));
+  expect(parse(screen.getByTestId("source").textContent!).memory).toEqual({
+    enabled: false,
+    auto_organize: {
+      enabled: false,
+      model: "model-saved",
+      instructions: "Preserve decisions and preferences.",
+    },
+  });
+  expect(
+    screen.queryByRole("combobox", { name: "Organization model" }),
+  ).toBeNull();
+});
+
+it("does not silently use the conversation model when organization has no selection", async () => {
+  renderFields('schema_version: "1"\n');
+  expect(
+    (await screen.findByRole("combobox", { name: "Organization model" }))
+      .textContent,
+  ).toContain("Not configured");
+});

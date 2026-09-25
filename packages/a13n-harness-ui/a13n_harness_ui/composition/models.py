@@ -160,6 +160,8 @@ class ResolvedRunComposition(CompositionModel):
     thread_configuration_version: int = Field(ge=1)
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     project_roots: tuple[str, ...] = Field(default=(), max_length=64)
+    # Missing in old captures means memory was not attached to that Run.
+    memory_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     webui_sidekick: SidekickConfiguration | None = None
     role: Literal["ordinary", "coordinator", "worker"] | None = None
     coordinator_thread_id: str | None = None
