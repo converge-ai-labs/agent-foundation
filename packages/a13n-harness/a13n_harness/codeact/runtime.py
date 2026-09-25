@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Any
@@ -35,9 +36,12 @@ class CodeActRunState:
     @property
     def limits(self) -> ResourceLimits:
         return {
-            "max_duration_secs": self.config.timeout_seconds,
+            "max_feed_duration_secs": self.config.timeout_seconds,
             "max_memory": self.config.max_memory_bytes,
             "max_recursion_depth": self.config.max_recursion_depth,
+            # Harness budgets calls per execution, not over the inline session's lifetime.
+            # Monty's cumulative suspension limit cannot be disabled.
+            "max_suspensions": sys.maxsize,
         }
 
     async def _get_pool(self) -> AsyncMonty:

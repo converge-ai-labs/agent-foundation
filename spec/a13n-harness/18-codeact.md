@@ -4,7 +4,7 @@
 
 CodeAct lets model-authored restricted Python coordinate multiple tools in one model tool call. It provides an inline `run_code` surface and a file-backed `run_program` surface while preserving the executing Agent's final Pydantic tool policy.
 
-CodeAct is an optional Harness Capability, not a second tool router, general CPython, Environment shell, or Environment mount. Sandboxed code has no ambient filesystem, network, process, environment-variable, credential, or clock authority. Every host action enters through an explicitly eligible tool and the current Pydantic `RunContext.tool_manager`.
+CodeAct is an optional Harness Capability, not a second tool router, general CPython, Environment shell, or Environment mount. Sandboxed code may read system time through Monty's supported standard-library APIs. It has no ambient filesystem, network, process, environment-variable, or credential authority. Host tool actions enter through an explicitly eligible tool and the current Pydantic `RunContext.tool_manager`.
 
 A saved program is reusable source. Running it again executes current tools against current external state; it is not recorded-output replay, a transaction, exactly-once execution, or continuation from an earlier program counter.
 
@@ -192,7 +192,7 @@ Preflight rejects loaded references to `open`, `input`, `eval`, `exec`, `compile
 
 ## Sandbox and Value Boundary
 
-Monty receives no Host filesystem mount, environment mapping, network/process callback, credential resolver, or clock API. It receives only validated program inputs and callbacks for the immutable eligible catalog. Pure sandbox-supported builtins and modules such as `asyncio` remain available.
+Monty receives no Host filesystem mount, environment mapping, network/process callback, or credential resolver. It receives only validated program inputs and callbacks for the immutable eligible catalog. Sandbox-supported builtins and modules such as `asyncio` remain available, including Monty's default system-time access through `datetime` and `time`, with UTC as the default sandbox timezone.
 
 The boundary value algebra is JSON null, boolean, integer, finite float, UTF-8 string, list, and string-keyed map. Non-finite numbers, non-string keys, bytes, cycles, and arbitrary Host objects fail closed. Values are measured by a cycle-safe bounded traversal before an unbounded complete JSON encoding is allocated.
 
@@ -206,7 +206,7 @@ For a nested `ToolReturn`, `return_value` is the value visible to restricted cod
 
 External task cancellation follows the same drain rule and then re-raises `asyncio.CancelledError`. Timeout returns a bounded typed tool failure. Neither outcome implies rollback. A provider may have accepted a side effect before cancellation became observable.
 
-Memory, recursion, and pure-compute duration limits are passed through Monty's public `ResourceLimits`. The Capability closes failed inline sessions and all run-local Monty sessions at logical-run cleanup. No interpreter frame, callback, `ToolManager`, credential, catalog, or Context object enters a reusable global pool or portable state.
+Memory, recursion, and per-feed pure-compute duration limits are passed through Monty's public `ResourceLimits`. The per-feed duration excludes Host callback waits; the outer `timeout_seconds` deadline covers the complete execution. The Capability closes failed inline sessions and all run-local Monty sessions at logical-run cleanup. No interpreter frame, callback, `ToolManager`, credential, catalog, or Context object enters a reusable global pool or portable state.
 
 ## Approval, Deferred Calls, and Retry
 
@@ -239,7 +239,7 @@ CodeAct source is written for Monty's supported Python subset, not CPython. Chan
 05. Root, child, fork, and independent Harness runs never share a catalog or interpreter state.
 06. A failed inline feed clears its session; `restart=True` clears it before evaluation.
 07. Each program invocation rereads bounded strict UTF-8 source through the current Environment and uses a fresh session.
-08. Restricted code has no ambient Host filesystem, network, process, environment, credential, or clock authority.
+08. Restricted code may read system time but has no ambient Host filesystem, network, process, environment, or credential authority.
 09. Inputs, arguments, results, supplemental content, printed output, and final values cross finite explicit boundaries.
 10. Call count, concurrency, parent usage, deadline, memory, and recursion limits fail closed before they can be bypassed.
 11. A response containing a runner and another executable call is rejected before either begins.

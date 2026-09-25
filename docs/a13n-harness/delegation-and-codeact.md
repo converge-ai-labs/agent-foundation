@@ -114,7 +114,7 @@ Usage limits are independent per child Run. Each child receives the strictest pe
 - `run_code`, for inline restricted Python;
 - `run_program`, for a `*.codeact.py` program read through the current Environment.
 
-The runtime is based on Monty and has no ambient filesystem, network, process, environment, credential, or clock access.
+The runtime is based on Monty. Its supported `datetime` and `time` APIs can read system time, with UTC as the default sandbox timezone. It has no ambient filesystem, network, process, environment, or credential access.
 
 ### Publish Eligible Tools
 

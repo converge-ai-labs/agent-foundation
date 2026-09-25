@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -387,6 +389,133 @@ async def test_run_program_reads_direct_local_source_and_dispatches_current_tool
     assert calls == [5]
     returns = [part for part in _tool_returns(result.all_messages(), "run_program")]
     assert [part.content for part in returns] == [10]
+
+
+@pytest.mark.parametrize("runner", ["run_code", "run_program"])
+async def test_codeact_can_read_system_time(tmp_path: Path, runner: str) -> None:
+    imports = "from datetime import date, datetime, timezone\nimport time\n"
+    expression = (
+        "{'time': time.time(), 'datetime': datetime.now(timezone.utc).timestamp(), 'date': date.today().isoformat()}"
+    )
+    if runner == "run_program":
+        (tmp_path / "clock.codeact.py").write_text(
+            imports + f"async def main(inputs):\n    return {expression}\n", encoding="utf-8"
+        )
+        arguments = {"path": "/workspace/clock.codeact.py"}
+    else:
+        arguments = {"code": imports + expression}
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        if not _tool_returns(messages, runner):
+            yield {0: DeltaToolCall(name=runner, json_args=json.dumps(arguments), tool_call_id="clock-1")}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(CodeActCapability(),),
+    )
+    before_time = time.time()
+    result = await executable.run(
+        "read system time", bindings=RunBindings.embedded(environment=_local_environment(tmp_path))
+    )
+    after_time = time.time()
+
+    assert result.output_or_raise() == "done"
+    returned = _tool_returns(result.all_messages(), runner)[0]
+    assert returned.outcome == "success"
+    assert isinstance(returned.content, dict)
+    assert before_time <= returned.content["time"] <= after_time
+    assert before_time <= returned.content["datetime"] <= after_time
+    assert (
+        datetime.fromtimestamp(before_time, UTC).date().isoformat()
+        <= returned.content["date"]
+        <= datetime.fromtimestamp(after_time, UTC).date().isoformat()
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "config"),
+    [
+        pytest.param("while True:\n    pass", CodeActConfig(timeout_seconds=1), id="compute-timeout"),
+        pytest.param("[0] * 10_000_000", CodeActConfig(max_memory_bytes=1024 * 1024), id="memory-limit"),
+    ],
+)
+async def test_codeact_resource_failure_resets_inline_state(source: str, config: CodeActConfig) -> None:
+    requests = 0
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests
+        del info
+        requests += 1
+        if requests == 1:
+            code = "saved = 42\n" + source
+        elif requests == 2:
+            assert any(
+                isinstance(part, RetryPromptPart) and part.tool_name == "run_code"
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+            )
+            code = "retained = False\ntry:\n    saved\n    retained = True\nexcept NameError:\n    pass\nretained"
+        else:
+            assert _tool_returns(messages, "run_code")[-1].content is False
+            yield "reset"
+            return
+        yield {
+            0: DeltaToolCall(name="run_code", json_args=json.dumps({"code": code}), tool_call_id=f"limit-{requests}")
+        }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(CodeActCapability(config),),
+    )
+    result = await executable.run("test resource limits", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "reset"
+    assert requests == 3
+
+
+async def test_inline_state_survives_many_individually_budgeted_feeds() -> None:
+    calls = 0
+
+    def increment(value: int) -> int:
+        nonlocal calls
+        calls += 1
+        return value + 1
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = _tool_returns(messages, "run_code")
+        if not returns:
+            code = "saved = 42\nsaved"
+        elif len(returns) < 7:
+            # Each feed stays below max_tool_calls, but six feeds exceed Monty's
+            # default 1000 cumulative external-call/future-resolution suspensions.
+            code = "for i in range(100):\n    saved = await increment(value=saved)\nsaved"
+        else:
+            assert [part.content for part in returns] == [42, 142, 242, 342, 442, 542, 642]
+            yield "done"
+            return
+        yield {
+            0: DeltaToolCall(name="run_code", json_args=json.dumps({"code": code}), tool_call_id=f"feed-{len(returns)}")
+        }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(CodeActCapability(), _codeact_tools(increment, allowed=("increment",))),
+    )
+    result = await executable.run("keep inline state across feeds", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "done"
+    assert calls == 600
 
 
 async def test_inline_delegation_gives_root_and_child_independent_codeact_runtimes() -> None:
