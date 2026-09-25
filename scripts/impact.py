@@ -128,11 +128,8 @@ def select(impact: ImpactMap, files: Iterable[str]) -> Selection:
     result.unmapped = {path for path in wanted if path not in impact.funcmaps}
     mapped = wanted - result.unmapped
     deleted = {path for path in mapped if not (REPOSITORY_ROOT / path).is_file()}
-    changed = {
-        p: k
-        for p, k in diff.changed_lines(impact.commit, cwd=str(REPOSITORY_ROOT)).items()
-        if p in mapped and p not in deleted
-    }
+    since_map = diff.changed_lines(impact.commit, cwd=str(REPOSITORY_ROOT))
+    changed = {p: k for p, k in since_map.items() if p in mapped and p not in deleted}
     recorded: dict[str, str | None] = {}
     for path in list(changed):
         old = recorded[path] = resolve._git_show(impact.commit, path, str(REPOSITORY_ROOT))
@@ -152,11 +149,12 @@ def select(impact: ImpactMap, files: Iterable[str]) -> Selection:
             module_files.add(path)
     module_files, _ = tia_select.escalate_dynamic(func_changes, module_files, impact.dynamic)
     module_files.update(deleted)
-    selected = {
-        nodeid
-        for nodeid in tia_select.select_tests(impact.tests, func_changes, module_files, set())
-        if (REPOSITORY_ROOT / nodeid.split("::", 1)[0]).is_file()
-    }
+    selected: set[str] = set()
+    for nodeid in tia_select.select_tests(impact.tests, func_changes, module_files, set()):
+        test_file = nodeid.split("::", 1)[0]
+        if (REPOSITORY_ROOT / test_file).is_file():
+            # A test file changed since the recording may have renamed or reparametrized the recorded node ids.
+            selected.add(test_file if test_file in since_map else nodeid)
     if len(selected) > WIDEN_RATIO * len(impact.tests):
         result.tests = {impact.tests_dir}
         result.widened = True

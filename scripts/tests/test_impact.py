@@ -210,6 +210,14 @@ def test_renamed_source_keeps_old_path_for_selecting_dependents(repo: Path) -> N
     assert _select(repo, MODELS).tests == {f"{TEST_FILE}::test_value", f"{TEST_FILE}::test_other"}
 
 
+def test_test_file_changed_since_the_recording_runs_in_full(repo: Path) -> None:
+    # The recorded node ids of a test file edited after the recording may no longer exist.
+    (repo / TEST_FILE).write_text(TESTS.replace("test_value", "test_renamed"))
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qam", "rename")
+    (repo / MODELS).write_text(SOURCE.replace("    return LIMIT", "    return LIMIT + 0"))
+    assert _select(repo).tests == {TEST_FILE}
+
+
 def test_deleted_tests_are_not_selected_from_old_maps(repo: Path) -> None:
     (repo / MODELS).write_text(SOURCE.replace("return LIMIT", "return LIMIT + 1"))
     (repo / TEST_FILE).unlink()
