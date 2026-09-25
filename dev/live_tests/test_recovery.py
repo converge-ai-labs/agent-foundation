@@ -106,6 +106,11 @@ async def test_a_draining_worker_hands_its_run_to_another(stack) -> None:  # typ
         run_id = receipt["run"]["id"]
         await model.arrived("[drain]", status="held")
 
+    async def checkpointed() -> bool:
+        return [entry["status"] for entry in await api.inbox(receipt["thread"]["id"])] == ["consumed"]
+
+    # The request starts before its boundary's checkpoint commits, and a drain before that commit yields there.
+    await eventually(checkpointed)
     # Shutdown begins while the model request is outstanding; the attempt yields at its next model boundary.
     draining.signal(signal.SIGTERM)
     await eventually(lambda: asyncio.sleep(0, not draining.listening()))
