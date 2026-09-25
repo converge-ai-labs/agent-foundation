@@ -7,6 +7,7 @@ revisions build the same schema, so tests using the template exercise the migrat
 
 import asyncio
 import base64
+import gc
 import json
 import os
 from collections.abc import AsyncIterator, Callable, Iterator
@@ -154,6 +155,17 @@ def pytest_runtest_teardown() -> None:
     for loop in list(_ANYIO_RUN_VARS):
         if loop.is_closed():
             del _ANYIO_RUN_VARS[loop]
+
+
+def pytest_collection_finish() -> None:
+    """Leave what collection loaded, the imported modules and the collected tests, out of later garbage collections.
+
+    Those objects live until the process exits, yet every full collection would scan them again. Frozen, a full
+    collection scans only what tests allocate, and the collections pytest and the interpreter run at exit are
+    quick. Objects tests allocate are never frozen, so their leaks stay visible to the collector.
+    """
+    gc.collect()
+    gc.freeze()
 
 
 @pytest.fixture
