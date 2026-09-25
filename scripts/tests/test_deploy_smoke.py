@@ -26,6 +26,9 @@ def test_compose_smoke_checks_both_starts_and_always_removes_the_stack(monkeypat
 
     monkeypatch.setattr(deploy_smoke, "compose", compose)
     monkeypatch.setattr(deploy_smoke, "check", check)
+    # compose_smoke exports the port for docker compose; owning the variable here removes it after the test, so
+    # later tests in this process do not load it as a Service setting.
+    monkeypatch.setenv("A13N_PORT", "18123")
     if failing:
         with pytest.raises(RuntimeError, match="sign-in failed"):
             deploy_smoke.compose_smoke("18123")
