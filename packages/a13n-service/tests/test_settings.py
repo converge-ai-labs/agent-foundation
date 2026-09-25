@@ -8,7 +8,9 @@ from a13n_logging import LogFormat
 from a13n_service.settings import Server, Settings, load_settings
 
 
-def test_environment_overrides_the_file_and_unknown_keys_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_environment_overrides_the_file_and_unknown_keys_fail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_environment: None
+) -> None:
     config = tmp_path / "service.toml"
     config.write_text('[worker]\nslots = 2\n[telemetry]\nlog_format = "pretty"\n')
     monkeypatch.setenv("A13N_WORKER__SLOTS", "6")
@@ -23,7 +25,9 @@ def test_environment_overrides_the_file_and_unknown_keys_fail(tmp_path: Path, mo
         load_settings(config)
 
 
-def test_environment_variables_carry_lists_maps_and_sections_as_json(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_environment_variables_carry_lists_maps_and_sections_as_json(
+    monkeypatch: pytest.MonkeyPatch, clean_environment: None
+) -> None:
     key = "a" * 44
     for name, value in {
         "A13N_PLUGINS__KEYS": '["notes"]',

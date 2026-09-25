@@ -12,7 +12,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 
-def test_bootstrap_then_operator_disables_and_enables_a_user(settings: Settings, tmp_path: Path) -> None:
+def test_bootstrap_then_operator_disables_and_enables_a_user(
+    settings: Settings, tmp_path: Path, clean_environment: None
+) -> None:
     config = tmp_path / "service.toml"
     config.write_text(f'[database]\nurl = "{settings.database.url.get_secret_value()}"\nauto_migrate = false\n')
     runner = CliRunner()

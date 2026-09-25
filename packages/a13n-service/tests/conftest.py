@@ -8,6 +8,7 @@ revisions build the same schema, so tests using the template exercise the migrat
 import asyncio
 import base64
 import json
+import os
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from functools import partial
@@ -110,6 +111,14 @@ def redis_url() -> Iterator[str]:
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture
+def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Removes inherited `A13N_` variables, which loading settings refuses, such as the impact recorder's."""
+    for name in list(os.environ):
+        if name.startswith("A13N_"):
+            monkeypatch.delenv(name)
 
 
 @pytest.fixture
