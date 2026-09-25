@@ -61,9 +61,19 @@ async def _review_model(messages: list[ModelMessage], info: AgentInfo) -> AsyncI
     yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"risk":"low","reason":"safe"}')}
 
 
-@pytest.mark.parametrize("kind", ["shell", "image", "video", "audio"])
-@pytest.mark.parametrize("nested", [False, True])
-@pytest.mark.parametrize("content", list(HarnessTraceContent))
+# Review and media understanding are the two auxiliary paths; the media kinds share one. Redaction is
+# checked where it differs: no private text without content, and no media bytes below full content.
+@pytest.mark.parametrize(
+    ("kind", "nested", "content"),
+    [
+        ("shell", False, HarnessTraceContent.NONE),
+        ("shell", True, HarnessTraceContent.NONE),
+        ("image", False, HarnessTraceContent.NONE),
+        ("image", True, HarnessTraceContent.NONE),
+        ("video", False, HarnessTraceContent.STANDARD),
+        ("audio", True, HarnessTraceContent.FULL),
+    ],
+)
 async def test_auxiliary_models_are_native_descendants_of_the_invoking_tool(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str, nested: bool, content: HarnessTraceContent
 ) -> None:

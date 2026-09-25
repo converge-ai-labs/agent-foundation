@@ -9,7 +9,8 @@ from pydantic_ai.models.google import GoogleModel
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("provider", ["google", "gemini", "google-gla", "google-vertex", "google-cloud"])
+# The gemini, google-gla and google-vertex aliases share one lookup into google-cloud; keep one alias.
+@pytest.mark.parametrize("provider", ["google", "gemini", "google-cloud"])
 async def test_google_routes_preserve_developer_and_cloud_transports(provider):
     model = await build_api_key_model(
         f"{provider}:gemini-2.5-pro", ApiKeyCredential(api_key="fixture"), base_url="https://127.0.0.1"
@@ -28,15 +29,13 @@ def test_credentials_reject_blank_keys_and_invalid_service_account_pem():
         GoogleServiceAccount(project_id="fixture", client_email="fixture@example.com", private_key="invalid-pem")
 
 
+# Routes with a default endpoint are built and checked in the next test.
 @pytest.mark.parametrize(
     ("name", "provider_type", "model_api", "default_base_url"),
     [
         ("openai", "openai", "openai.responses", None),
         ("openai-chat", "openai", "openai.chat_completions", None),
         ("anthropic", "anthropic", "anthropic.messages", None),
-        ("zai", "zhipu", "openai.chat_completions", "https://api.z.ai/api/paas/v4"),
-        ("moonshotai", "moonshot", "openai.chat_completions", "https://api.moonshot.ai/v1"),
-        ("grok", "openai", "openai.chat_completions", "https://api.x.ai/v1"),
     ],
 )
 def test_declared_routes_own_their_provider_api_and_endpoint(name, provider_type, model_api, default_base_url):

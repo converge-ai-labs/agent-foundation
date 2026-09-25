@@ -6,7 +6,8 @@ import os
 import subprocess
 import sys
 
-CONFIGURED_VALUES = (None, "0", "1", "")
+# Unset takes the default; explicit values, including an empty one, are preserved.
+CONFIGURED_VALUES = (None, "0", "")
 
 
 def test_pydantic_ai_banner_default_preserves_explicit_values() -> None:

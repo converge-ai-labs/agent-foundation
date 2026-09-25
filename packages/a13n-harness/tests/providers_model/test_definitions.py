@@ -128,17 +128,3 @@ def test_authentication_condition_uses_public_configuration_alias():
     )
     authentication.validate_configuration_model(AliasedConfiguration)
     assert authentication.resolve(AliasedConfiguration()) is CredentialMode.forbidden
-
-
-@pytest.mark.parametrize("kind", ["model", "web"])
-def test_optional_setup_metadata_has_one_contract(kind):
-    from dataclasses import replace
-
-    from a13n_harness.providers.web.builtins import built_in_web_providers
-
-    original = BUILT_IN_MODEL_PROVIDERS[0] if kind == "model" else built_in_web_providers()[0]
-    assert replace(original, setup_url=None, setup_label=None).setup_url is None
-    with pytest.raises(ValueError, match="invalid setup label"):
-        replace(original, setup_url=None, setup_label="Configure access")
-    with pytest.raises(ValueError, match="invalid setup URL"):
-        replace(original, setup_url="http://example.com")

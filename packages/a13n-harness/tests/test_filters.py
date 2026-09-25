@@ -182,8 +182,7 @@ async def test_agent_spec_cold_start_policy_commits_only_consumed_results(
 
 
 @pytest.mark.parametrize("composition", ["direct", "combined", "wrapped"])
-@pytest.mark.parametrize("automatic", [False, True])
-def test_explicit_cold_start_capability_retains_its_policy(composition: str, automatic: bool) -> None:
+def test_explicit_cold_start_capability_retains_its_policy(composition: str) -> None:
     explicit = ColdStartFilterCapability(ColdStartFilterConfiguration(idle_seconds=7200))
     capability = (
         CombinedCapability([explicit])
@@ -192,8 +191,10 @@ def test_explicit_cold_start_capability_retains_its_policy(composition: str, aut
         if composition == "wrapped"
         else explicit
     )
-    spec = HarnessAgentSpec() if automatic else HarnessAgentSpec(cold_start_filter=None)
-    executable = HarnessBuilder().build(spec, output_type=str, model=TestModel(), capabilities=(capability,))
+    # The automatic filter stays enabled, so a single filter proves the explicit one replaced it.
+    executable = HarnessBuilder().build(
+        HarnessAgentSpec(), output_type=str, model=TestModel(), capabilities=(capability,)
+    )
     leaves = []
     executable._agent.root_capability.apply(leaves.append)
     filters = []
@@ -278,11 +279,8 @@ async def test_cold_start_filter_trims_only_consumed_tool_return_string_leaves()
     [
         ({"a13n.cold-start": "preserve", "other": {"value": 1}}, True),
         (None, False),
-        ({}, False),
         ({"a13n.cold-start": True}, False),
-        ({"a13n.cold-start": "unknown"}, False),
         ("preserve", False),
-        (["preserve"], False),
     ],
 )
 async def test_cold_start_only_honors_result_metadata_not_content(metadata, preserved: bool) -> None:

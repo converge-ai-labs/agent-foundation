@@ -436,8 +436,18 @@ async def test_custom_resource_revision_can_bind_backing_across_run_connections(
         assert "Approved resources changed" in result.output
 
 
-@pytest.mark.parametrize("kind", ["file", "mount"])
-@pytest.mark.parametrize("change", ["connection", "path", "arguments", "deny"])
+# The resource kind changes the outcome only for a path change; argument changes and live denials apply to both.
+@pytest.mark.parametrize(
+    ("kind", "change"),
+    [
+        ("file", "connection"),
+        ("mount", "connection"),
+        ("file", "path"),
+        ("mount", "path"),
+        ("file", "arguments"),
+        ("mount", "deny"),
+    ],
+)
 async def test_environment_approval_ignores_connection_identity(kind, change):
     from a13n_harness.environment._resources import selection_resource
     from a13n_harness.environment.providers import FileScopeSelection

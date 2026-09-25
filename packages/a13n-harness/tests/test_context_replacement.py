@@ -53,8 +53,11 @@ def _user_text(messages: list[ModelMessage]) -> list[str]:
     ]
 
 
-@pytest.mark.parametrize("kind", ["handoff", "compaction"])
-@pytest.mark.parametrize("ownership", [{"version": "1", "parts": [{"index": 999, "sha256": "stale"}]}, "invalid"])
+# Both builders drop the legacy key uninspected, so each ownership form needs only one builder.
+@pytest.mark.parametrize(
+    ("kind", "ownership"),
+    [("handoff", {"version": "1", "parts": [{"index": 999, "sha256": "stale"}]}), ("compaction", "invalid")],
+)
 def test_replacement_drops_only_legacy_metadata_without_inspecting_discarded_parts(
     kind: str, ownership: object
 ) -> None:
@@ -88,8 +91,8 @@ def test_replacement_drops_only_legacy_metadata_without_inspecting_discarded_par
     assert ModelMessagesTypeAdapter.dump_json(messages) == before
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-@pytest.mark.parametrize("resume", [False, True])
+# Compaction drops legacy metadata before either handoff path, so the two dimensions are covered pairwise.
+@pytest.mark.parametrize(("legacy", "resume"), [(False, True), (True, False)])
 async def test_compaction_then_handoff_preserves_raw_input_not_old_overlays(legacy: bool, resume: bool) -> None:
     shared_text = "User input identical to an old overlay"
     original = ModelRequest(parts=[SystemPromptPart("Stable instructions"), UserPromptPart("Old task")])

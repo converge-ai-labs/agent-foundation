@@ -27,13 +27,7 @@ from pydantic import ValidationError
 pytestmark = pytest.mark.anyio
 
 
-def test_unused_schema_is_replaced_not_accepted_as_aliases():
-    for value in ({"egress": {}}, {"egress": {"enabled": True}}, {"sandbox": {"enabled": True}}):
-        with pytest.raises(ValidationError):
-            LocalEnvdLaunchConfiguration.model_validate(value)
-    for value in ({}, {"allow_hosts": []}, {"destinations": {"mode": "public"}, "unrestricted": True}):
-        with pytest.raises(ValidationError):
-            EnvdEgressConfiguration.model_validate(value)
+def test_execution_uid_and_gid_are_configured_together():
     with pytest.raises(ValidationError, match="configured together"):
         LocalEnvdLaunchConfiguration.model_validate({"execution": {"uid": 1000}})
 

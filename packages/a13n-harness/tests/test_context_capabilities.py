@@ -482,8 +482,8 @@ async def test_handoff_replays_delivered_multimodal_steering_in_order() -> None:
     assert protocol and all(content.metadata["display"] is False for content in protocol)
 
 
-@pytest.mark.parametrize("tool_choice", [None, "auto", "none"])
-@pytest.mark.parametrize("codeact_enabled", [False, True])
+# tool_choice passes through one settings merge: an absent and an explicit value suffice. CodeAct is independent.
+@pytest.mark.parametrize(("tool_choice", "codeact_enabled"), [(None, False), ("auto", True)])
 async def test_compaction_uses_same_agent_plain_text_run_without_handoff(
     tool_choice: str | None, codeact_enabled: bool
 ) -> None:
@@ -1157,9 +1157,11 @@ async def test_context_mutation_waits_for_exact_provider_and_deferred_boundaries
     assert not _requires_exact_history(integrated)
 
 
-@pytest.mark.parametrize("native_completed", [False, True])
-@pytest.mark.parametrize("local_pending", [False, True])
-@pytest.mark.parametrize("suspended", [False, True])
+# A suspended response requires exact history whatever its parts, so one suspended case suffices.
+@pytest.mark.parametrize(
+    ("native_completed", "local_pending", "suspended"),
+    [(False, False, False), (False, True, False), (True, False, False), (True, True, False), (True, False, True)],
+)
 def test_exact_history_tracks_native_results_without_clearing_other_pending_calls(
     native_completed: bool, local_pending: bool, suspended: bool
 ) -> None:

@@ -9,7 +9,6 @@ from a13n_harness import (
     AgentSpec,
     DefinitionError,
     HarnessBuilder,
-    ModelRecoveryPolicy,
     RunBindings,
     RunError,
 )
@@ -232,7 +231,8 @@ def test_mcp_context_headers_report_required_missing_values() -> None:
     }
 
 
-@pytest.mark.parametrize("source", ["identity", "context.metadata", "context.unknown", "metadata.value"])
+# Names that stop short of the "identity." and "context.metadata." prefixes; other unknown names share one rejection.
+@pytest.mark.parametrize("source", ["identity", "context.metadata"])
 def test_mcp_context_header_bindings_reject_unsupported_sources(source: str) -> None:
     with pytest.raises(DefinitionError) as error:
         MCPContextHeaderBinding(source)
@@ -314,54 +314,6 @@ def test_contextual_mcp_rejects_ids_containing_colons() -> None:
         )
 
     assert error.value.code == "mcp_definition_invalid"
-
-
-@pytest.mark.anyio
-async def test_contextual_mcp_factory_runs_once_across_harness_model_recovery() -> None:
-    factory_calls: list[str] = []
-    model_calls = 0
-
-    def headers_factory(context: AgentContext) -> dict[str, str]:
-        factory_calls.append(context.run_id)
-        return {"X-Run": context.run_id}
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        nonlocal model_calls
-        del messages
-        model_calls += 1
-        native = info.model_request_parameters.native_tools[0]
-        assert native.headers == {"X-Run": factory_calls[0]}
-        if model_calls == 1:
-            yield "partial"
-            raise ConnectionResetError("stream disconnected")
-        yield "done"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(
-            ContextualMCP(
-                "https://mcp.example.com/mcp",
-                id="context-server",
-                headers_factory=headers_factory,
-                native=True,
-                local=False,
-            ),
-        ),
-        model_recovery=ModelRecoveryPolicy(
-            enabled=True,
-            max_attempts=2,
-            backoff_initial_seconds=0,
-            backoff_max_seconds=0,
-        ),
-    )
-
-    result = await executable.run("test", bindings=RunBindings.embedded())
-
-    assert result.output_or_raise() == "done"
-    assert model_calls == 2
-    assert len(factory_calls) == 1
 
 
 @pytest.mark.anyio

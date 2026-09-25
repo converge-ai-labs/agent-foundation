@@ -76,7 +76,8 @@ def _history(state):
     return ReviewHistory.model_validate(state.agent_context_state.entries[REVIEW_HISTORY_ID].data)
 
 
-@pytest.mark.parametrize("risk", list(ToolRiskLevel))
+# Every grade below extra_high allows, so high stands for them at the threshold.
+@pytest.mark.parametrize("risk", [ToolRiskLevel.HIGH, ToolRiskLevel.EXTRA_HIGH])
 async def test_opted_in_review_only_denies_extra_high_by_default(risk):
     reviewer = Reviewer(risk=risk)
     executed = []
@@ -99,8 +100,7 @@ async def test_opted_in_review_only_denies_extra_high_by_default(risk):
         assert actions[0].outcome == "tool_returned"
 
 
-@pytest.mark.parametrize("permissions", [None, ToolPermissions(), ToolPermissions(default="inherit")])
-async def test_reviewer_and_risk_rules_do_not_opt_tools_into_review(permissions):
+async def test_reviewer_and_risk_rules_do_not_opt_tools_into_review():
     reviewer = Reviewer(risk=ToolRiskLevel.EXTRA_HIGH)
     executed = []
 
@@ -111,7 +111,7 @@ async def test_reviewer_and_risk_rules_do_not_opt_tools_into_review(permissions)
     result = await _agent(
         reviewer,
         execute,
-        permissions=permissions,
+        permissions=None,
         policy=ToolReviewPolicy(rules={"*": ToolReviewRule(risk_threshold="low")}),
     ).run("Go", bindings=RunBindings.embedded())
     assert result.status == "completed"
@@ -433,7 +433,8 @@ def test_xml_preserves_json_types_and_empty_container_shapes():
     assert "<object></object>" in prompts[4]
 
 
-@pytest.mark.parametrize("mode", [None, "allow", "deny", "review"])
+# An unset mode defaults to allow, so None covers both.
+@pytest.mark.parametrize("mode", [None, "deny", "review"])
 async def test_identity_wrapper_preserves_external_defaults_and_explicit_modes(mode):
     from a13n_harness.errors import DefinitionError
     from a13n_harness.tools import ToolIdentityToolset

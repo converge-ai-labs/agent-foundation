@@ -272,8 +272,8 @@ async def test_web_text_fetch_distinguishes_transport_and_disclosure_truncation(
     assert spilled["truncated"] is False
 
 
-@pytest.mark.parametrize("cancel_caller", [False, True])
-@pytest.mark.parametrize("fail_close", [False, True])
+# Caller cancellation and late close failure act on independent paths, so each value appears once.
+@pytest.mark.parametrize(("cancel_caller", "fail_close"), [(False, False), (True, True)])
 async def test_response_cleanup_retains_late_tasks_until_completion(cancel_caller: bool, fail_close: bool) -> None:
     import asyncio
     import gc

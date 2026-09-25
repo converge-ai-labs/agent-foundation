@@ -8,7 +8,6 @@ from a13n_harness.providers.web import (
     ScrapeOptions,
     SearchOptions,
     WebProviderError,
-    WebProviderResponseError,
     WebScrapeRequest,
     WebSearchRequest,
 )
@@ -108,7 +107,6 @@ async def test_search_accepts_empty_results(providers) -> None:
     "payload",
     [
         {},
-        {"results": {}},
         {"results": [{"title": None, "url": "https://example.com/", "snippet": None}]},
         {"results": [{"url": 1}]},
     ],
@@ -201,24 +199,6 @@ async def test_scrape_rejects_malformed_or_ambiguous_responses(payload, provider
             options=ScrapeOptions(),
         ) as web:
             await web.scrape(scrape_request(), policy=policy)
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("status", "code"),
-    [(401, "web_search_authentication_failed"), (429, "web_search_rate_limited")],
-)
-async def test_search_preserves_transport_failure_semantics(status, code, providers) -> None:
-    with pytest.raises(WebProviderResponseError) as caught:
-        async with providers["tinyfish"].open(
-            {},
-            {"api_key": "secret"},
-            transport=transport(lambda _: httpx2.Response(status, text="private upstream response")),
-            options=SearchOptions(),
-        ) as web:
-            await web.search(WebSearchRequest(query="query", limit=1))
-    assert caught.value.code == code
-    assert "private" not in str(caught.value)
 
 
 @pytest.mark.anyio

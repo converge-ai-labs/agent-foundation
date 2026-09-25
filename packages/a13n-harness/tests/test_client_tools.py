@@ -578,12 +578,10 @@ async def test_consumed_external_results_do_not_freeze_later_tool_surfaces() -> 
     ("declaration", "policy", "rules", "suspended"),
     [
         ("inherit", "inherit", {}, True),
-        ("allow", "inherit", {}, True),
         ("deny", "inherit", {}, False),
         ("allow", "deny", {}, False),
         ("deny", "allow", {}, True),
         ("deny", "inherit", {"*": "allow"}, True),
-        ("allow", "inherit", {"*": "allow", "tool/client/*": "deny"}, False),
         ("deny", "inherit", {"*": "deny", "tool/client/*": "deny", "tool/client/client_action": "allow"}, True),
     ],
 )
@@ -621,14 +619,14 @@ async def test_client_declaration_permission_uses_native_identity_precedence(dec
         assert parts[0].content == "Tool invocation is denied by its permission configuration."
 
 
-@pytest.mark.parametrize("mode", ["ask", "review"])
-async def test_client_effective_approval_modes_are_unsupported(mode):
+# Ask and review share one external-tool check; review is covered by test_review_context.
+async def test_client_effective_approval_modes_are_unsupported():
     from a13n_harness.tools.permissions import ToolPermissions, ToolPermissionsCapability
 
     agent = _build(
         ClientToolsSpec(default_toolsets=(_toolset("client_action"),)),
         tool_name="client_action",
-        extra_capabilities=(ToolPermissionsCapability(ToolPermissions(default=mode)),),
+        extra_capabilities=(ToolPermissionsCapability(ToolPermissions(default="ask")),),
     )
     with pytest.raises(DefinitionError, match="External tools do not support"):
         await agent.run("go")

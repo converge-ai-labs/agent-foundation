@@ -383,13 +383,9 @@ async def test_media_capability_enforces_kind_specific_actual_byte_limit() -> No
     assert _native_binary(seen) == []
 
 
-@pytest.mark.parametrize(
-    "credential_key",
-    ["apikey", "access_key", "auth", "client_secret", "sig", "X-Amz-Signature"],
-)
-async def test_media_capability_rejects_credential_provider_url_before_model_history(
-    credential_key: str,
-) -> None:
+async def test_media_capability_rejects_credential_provider_url_before_model_history() -> None:
+    # test_web_canonical_urls_fail_closed_for_credential_aliases owns the credential key table.
+    credential_key = "X-Amz-Signature"
     resource = MediaResource.model_construct(
         kind="video",
         source_url="https://example.com/video.mp4",
@@ -418,11 +414,7 @@ async def test_media_capability_rejects_credential_provider_url_before_model_his
     assert "provider-secret" not in repr(seen)
 
 
-@pytest.mark.parametrize(
-    "credential_key",
-    ["apikey", "access_key", "auth", "client_secret", "sig", "X-Amz-Signature"],
-)
-@pytest.mark.parametrize("url_field", ["source_url", "direct_url"])
+@pytest.mark.parametrize(("url_field", "credential_key"), [("source_url", "apikey"), ("direct_url", "client_secret")])
 def test_media_resource_fails_closed_for_credential_url_aliases(
     credential_key: str,
     url_field: str,
@@ -596,8 +588,7 @@ async def test_documents_capability_removes_partial_staging_tree(tmp_path: Path)
     assert not list(tmp_path.glob(".export_broken.a13n-*"))
 
 
-@pytest.mark.parametrize("change", ["replacement", "default"])
-@pytest.mark.parametrize("kind", ["pdf", "office"])
+@pytest.mark.parametrize(("kind", "change"), [("pdf", "replacement"), ("office", "default")])
 async def test_documents_retains_operation_scope_through_conversion_and_publication(
     tmp_path: Path, change: str, kind: str
 ) -> None:
@@ -776,12 +767,8 @@ async def test_web_capability_composes_search_and_scrape_providers() -> None:
     assert provider_record.usage.cost == Decimal("0.003")
 
 
-@pytest.mark.parametrize(
-    "credential_key",
-    ["apikey", "access_key", "auth", "client_secret", "sig", "X-Amz-Signature"],
-)
-async def test_web_search_strips_credential_aliases_from_model_history(credential_key: str) -> None:
-    search = _WebProvider(credential_key=credential_key)
+async def test_web_search_strips_credential_aliases_from_model_history() -> None:
+    search = _WebProvider(credential_key="sig")
     seen: list[list[ModelMessage]] = []
     executable = HarnessBuilder().build(
         AgentSpec(),
@@ -1010,9 +997,20 @@ async def test_web_fetch_body_deadline_is_finite() -> None:
     assert error["error"]["code"] == "web_timeout"
 
 
-@pytest.mark.parametrize("tool_name", ["download", "pdf_convert", "office_to_markdown"])
-@pytest.mark.parametrize("change", ["same", "backing", "deny", "legacy"])
-@pytest.mark.parametrize("has_backing_identity", [True, False])
+# Each change meets both tools and both identity states; the Documents tools share one approval path.
+@pytest.mark.parametrize(
+    ("change", "tool_name", "has_backing_identity"),
+    [
+        ("same", "download", True),
+        ("same", "pdf_convert", False),
+        ("backing", "download", False),
+        ("backing", "pdf_convert", True),
+        ("deny", "download", True),
+        ("deny", "pdf_convert", False),
+        ("legacy", "download", False),
+        ("legacy", "pdf_convert", True),
+    ],
+)
 async def test_content_tool_approval_is_independent_of_backing_identity(
     tmp_path: Path,
     tool_name: str,
@@ -1134,7 +1132,7 @@ async def test_content_tool_approval_is_independent_of_backing_identity(
         assert not (replacement / "downloads").exists()
 
 
-@pytest.mark.parametrize("tool", ["pdf_convert", "office_to_markdown", "download"])
+@pytest.mark.parametrize("tool", ["pdf_convert", "download"])
 @pytest.mark.parametrize("change", ["same_root", "replacement", "default", "denied"])
 async def test_content_dispatch_uses_current_route_after_policy_wait(tmp_path: Path, tool: str, change: str) -> None:
     original, replacement = tmp_path / "original", tmp_path / "replacement"

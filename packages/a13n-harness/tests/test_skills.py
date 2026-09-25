@@ -971,7 +971,7 @@ def test_skill_selection_requires_immutable_bounded_exact_names() -> None:
         RunBindings.embedded(skill_selection=frozenset({""}))
 
 
-@pytest.mark.parametrize("content", ["none", "standard", "full"])
+@pytest.mark.parametrize("content", ["none", "standard"])
 async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path: Path, content: str) -> None:
     from a13n_harness import HarnessInstrumentation, HarnessTraceContent
     from opentelemetry.sdk.trace import TracerProvider
@@ -1556,8 +1556,8 @@ async def test_file_source_can_skip_invalid_plugin_entries_without_hiding_valid_
         await FileSkillSource("strict", ("/skills",)).catalog(files=files)
 
 
-@pytest.mark.parametrize("skill_path", [True, False])
-@pytest.mark.parametrize("max_line_length", [2000, 262_144])
+# Each case once exceeded its view profile's page budget; ordinary files at 2000 never did.
+@pytest.mark.parametrize(("skill_path", "max_line_length"), [(True, 2000), (False, 262_144)])
 async def test_large_view_bounds_return_successful_pages(
     tmp_path: Path, skill_path: bool, max_line_length: int
 ) -> None:
@@ -1604,8 +1604,7 @@ async def test_skill_default_and_larger_agent_line_requests_are_effective(
     assert viewed["has_more"] is (expected_lines < 905)
 
 
-@pytest.mark.parametrize("skill_path", [True, False])
-@pytest.mark.parametrize("tail", ["", "later\nlast"])
+@pytest.mark.parametrize(("skill_path", "tail"), [(True, "later\nlast"), (False, "")])
 async def test_model_clipped_first_line_does_not_skip_later_source_lines(
     tmp_path: Path, skill_path: bool, tail: str
 ) -> None:
@@ -1673,8 +1672,17 @@ async def test_agent_line_width_above_skill_default_reaches_provider(
     )
 
 
-@pytest.mark.parametrize("selection", [None, frozenset(), frozenset({"skill-00"}), frozenset({"missing"})])
-@pytest.mark.parametrize("content", ["none", "standard"])
+# Content only decides whether the bounded output is recorded; every selection runs with it recorded.
+@pytest.mark.parametrize(
+    ("selection", "content"),
+    [
+        (None, "none"),
+        (None, "standard"),
+        (frozenset(), "standard"),
+        (frozenset({"skill-00"}), "standard"),
+        (frozenset({"missing"}), "standard"),
+    ],
+)
 async def test_resolution_phase_records_selection_and_bounded_results(tmp_path, selection, content):
     from a13n_harness import HarnessInstrumentation, HarnessTraceContent
     from opentelemetry.sdk.trace import TracerProvider

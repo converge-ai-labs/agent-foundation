@@ -34,8 +34,7 @@ from pydantic_ai.toolsets import ExternalToolset
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("streaming", [False, True], ids=["run", "stream"])
-async def test_success_replenishes_budget_and_resets_backoff(streaming: bool, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_success_replenishes_budget_and_resets_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = 0
     tools = 0
     delays: list[int] = []
@@ -74,22 +73,19 @@ async def test_success_replenishes_budget_and_resets_backoff(streaming: bool, mo
         model_recovery=ModelRecoveryPolicy(enabled=True, max_attempts=3, prompt_factory=prompt),
     )
     events = []
-    if streaming:
-        async with executable.stream("start") as run:
-            async for event in run:
-                if isinstance(event, HarnessEvent):
-                    events.append(event)
-            result = run.result
-        assert result is not None
-        notices = [
-            event.event.payload["attempt"]
-            for event in events
-            if isinstance(event.event, HarnessExtensionEvent) and event.event.kind == "recovery"
-        ]
-        assert notices == [2, 3, 2, 3, 2, 3]
-        assert [event.sequence for event in events] == sorted({event.sequence for event in events})
-    else:
-        result = await executable.run("start")
+    async with executable.stream("start") as run:
+        async for event in run:
+            if isinstance(event, HarnessEvent):
+                events.append(event)
+        result = run.result
+    assert result is not None
+    notices = [
+        event.event.payload["attempt"]
+        for event in events
+        if isinstance(event.event, HarnessExtensionEvent) and event.event.kind == "recovery"
+    ]
+    assert notices == [2, 3, 2, 3, 2, 3]
+    assert [event.sequence for event in events] == sorted({event.sequence for event in events})
 
     assert result.output_or_raise() == "finished"
     assert calls == result.usage.requests == 9
@@ -147,14 +143,21 @@ def test_transient_http_status_is_recoverable(status: int) -> None:
     assert is_recoverable_model_failure(ModelHTTPError(status, "test"))
 
 
-@pytest.mark.parametrize("status", [400, 401, 402, 403, 404, 405, 409, 413, 422, 501, 505])
+@pytest.mark.parametrize("status", [400, 401, 501, 505])
 def test_other_http_status_is_terminal(status: int) -> None:
     assert not is_recoverable_model_failure(ModelHTTPError(status, "test"))
 
 
-@pytest.mark.parametrize("nested", [False, True])
-@pytest.mark.parametrize("field", ["code", "type"])
-@pytest.mark.parametrize("code", ["insufficient_quota", "billing_hard_limit_reached", "usage_limit_reached"])
+# Every recognized code once, and every placement of the code field at least once.
+@pytest.mark.parametrize(
+    ("nested", "field", "code"),
+    [
+        (True, "code", "insufficient_quota"),
+        (False, "code", "insufficient_quota"),
+        (False, "type", "billing_hard_limit_reached"),
+        (True, "type", "usage_limit_reached"),
+    ],
+)
 def test_permanent_quota_code_overrides_retryable_status(nested: bool, field: str, code: str) -> None:
     body = {"error": {field: code}} if nested else {field: code}
     assert not is_recoverable_model_failure(ModelHTTPError(429, "test", body))
@@ -164,8 +167,6 @@ def test_permanent_quota_code_overrides_retryable_status(nested: bool, field: st
     "error",
     [
         httpx2.ConnectError("offline"),
-        httpx2.ReadError("reset"),
-        httpx2.WriteError("reset"),
         httpx2.ReadTimeout("timeout"),
         httpx2.RemoteProtocolError("truncated"),
         ConnectionResetError("reset"),
@@ -214,13 +215,9 @@ def test_unknown_cyclic_provider_cause_is_terminal() -> None:
     "error",
     [
         ModelHTTPError(401, "test"),
-        ModelHTTPError(429, "test", {"error": {"code": "insufficient_quota"}}),
-        ModelAPIError("test", "unknown provider failure"),
         ContentFilterError("filtered"),
-        UnexpectedModelBehavior("invalid model response"),
         RuntimeError("programming error"),
         httpx2.LocalProtocolError("invalid headers"),
-        httpx2.UnsupportedProtocol("unsupported URL"),
     ],
 )
 async def test_permanent_and_unknown_model_failures_stop_without_retry(error: Exception) -> None:

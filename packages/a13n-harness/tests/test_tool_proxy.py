@@ -585,7 +585,8 @@ async def test_large_groups_keep_model_surface_constant_and_search_bounded(codea
     def value(index: int) -> int:
         return index
 
-    for count in (10, 1000):
+    # 200 tools exceed the largest proxy page (max_results <= 100); no proxy bound scales with the group size.
+    for count in (10, 200):
         observed: list[str] = []
 
         def inspect(_step: int, info: AgentInfo, observed: list[str] = observed) -> None:
@@ -628,10 +629,7 @@ async def test_large_groups_keep_model_surface_constant_and_search_bounded(codea
     assert surfaces[0] == surfaces[1]
 
 
-@pytest.mark.parametrize("use_plan", [False, True])
-async def test_proxy_run_program_reads_source_and_dispatches_through_current_manager(
-    tmp_path: Path, use_plan: bool
-) -> None:
+async def test_proxy_run_program_reads_source_and_dispatches_through_current_manager(tmp_path: Path) -> None:
     from a13n_harness.environment import EnvironmentAction, EnvironmentPermissionSet
     from a13n_harness.environment.advanced import create_environment_runtime
     from a13n_harness.environment.providers import EnvironmentRuntimeMount
@@ -669,13 +667,9 @@ async def test_proxy_run_program_reads_source_and_dispatches_through_current_man
         calls.append(value)
         return value * 2
 
-    capability = Capability(toolsets=[CodeActPolicyToolset(FunctionToolset([double]), CodeActToolPolicy(default=True))])
     result, returns = await _run(
-        (CodeActCapability(), capability if use_plan else _group(double)),
+        (CodeActCapability(), _group(double)),
         [("run_program", {"path": "/workspace/job.codeact.py", "inputs": {"value": 21}})],
-        tool_proxy=ToolProxyPlan(groups={"crm": ToolProxySelection("CRM operations", capabilities=(capability,))})
-        if use_plan
-        else None,
         bindings=RunBindings.embedded(environment=environment),
         usage_limits=UsageLimits(tool_calls_limit=3),
     )

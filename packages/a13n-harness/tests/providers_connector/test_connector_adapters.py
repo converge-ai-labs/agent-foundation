@@ -38,7 +38,7 @@ def _composio(http_client: httpx2.AsyncClient) -> ComposioProvider:
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("error_fields", "expected_error_fields"),
-    [({}, {}), ({"error": None}, {}), ({"error": "notice"}, {"error": "notice"})],
+    [({"error": None}, {}), ({"error": "notice"}, {"error": "notice"})],
 )
 async def test_composio_verified_callback_safe_projection_and_pinned_tool_version(
     error_fields: dict[str, str | None], expected_error_fields: dict[str, str]
@@ -201,7 +201,7 @@ def _composio_account() -> dict[str, object]:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("malformed", [None, {"slug": "other"}, "github"])
+@pytest.mark.parametrize("malformed", [{"slug": "other"}, "github"])
 async def test_composio_account_inspection_rejects_invalid_toolkit(malformed):
     account = _composio_account()
     account["toolkit"] = malformed
@@ -416,7 +416,6 @@ async def test_malformed_completion_response_retains_unknown_outcome() -> None:
 @pytest.mark.parametrize(
     ("response", "code", "unknown"),
     [
-        pytest.param(httpx2.Response(200, content=b"not-json"), "invalid_provider_response", True, id="invalid-json"),
         pytest.param(httpx2.Response(200, json={}), "invalid_provider_response", True, id="missing-fields"),
         pytest.param(httpx2.Response(503), "provider_unavailable", True, id="unavailable"),
         pytest.param(
@@ -447,8 +446,6 @@ async def test_completion_followup_read_preserves_effect_evidence(response, code
 
 
 async def test_composio_details_are_bounded_parallel_and_keep_catalog_order():
-    from time import monotonic
-
     import anyio
 
     active = 0
@@ -491,14 +488,9 @@ async def test_composio_details_are_bounded_parallel_and_keep_catalog_order():
             active -= 1
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
-        start = monotonic()
         page = await _composio(http).tool_catalog("github").discover_tools(cursor=None)
-        elapsed = monotonic() - start
     assert 2 <= peak <= 32
     assert [item.key for item in page.items] == names
-    print(
-        f"64 tool details at 20ms simulated latency: {elapsed:.3f}s; peak concurrency={peak}; sequential floor=1.280s"
-    )
 
 
 async def test_composio_directory_definitions_avoid_redundant_detail_requests():

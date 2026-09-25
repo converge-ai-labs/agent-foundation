@@ -34,8 +34,9 @@ from pydantic_ai.toolsets import FunctionToolset
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("state", ["complete", "interrupted"])
-@pytest.mark.parametrize("mode", [None, "declared", "never", "always"])
+# The saved response state never changes the outcome, and the default mode is "declared";
+# both states stay represented across the three distinct modes.
+@pytest.mark.parametrize(("state", "mode"), [("complete", None), ("interrupted", "never"), ("interrupted", "always")])
 async def test_partial_recovery_preserves_results_and_retries_only_selected_calls(state, mode) -> None:
     executed = []
     histories = []

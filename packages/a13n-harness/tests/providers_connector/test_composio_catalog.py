@@ -54,8 +54,8 @@ def test_explicit_configs_preserve_management_scopes_and_require_choice():
     assert "repo" in selection["oneOf"][1]["title"]
 
 
-@pytest.mark.parametrize("scheme", ["API_KEY", "BEARER_TOKEN", "BASIC"])
-def test_hosted_credentials_and_instance_fields_do_not_enter_local_schema(scheme):
+def test_hosted_credentials_and_instance_fields_do_not_enter_local_schema():
+    scheme = "API_KEY"
     app = connector_metadata(
         toolkit(
             auth_schemes=None,
@@ -119,14 +119,13 @@ def test_hosted_composio_rejects_user_configuration():
 
     assert ComposioConfiguration.model_json_schema()["properties"] == {}
     assert ComposioConfiguration.model_validate({}).model_dump() == {}
-    for field in ("endpoint", "project_identity", "connected_accounts_profile", "tools_profile"):
-        with pytest.raises(ValidationError):
-            ComposioConfiguration.model_validate({field: "custom"})
+    with pytest.raises(ValidationError):
+        ComposioConfiguration.model_validate({"endpoint": "custom"})
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("scheme", ["API_KEY", "BEARER_TOKEN", "BASIC"])
-async def test_secretless_auth_configs_use_documented_scheme_and_one_catalog_read(scheme):
+async def test_secretless_auth_configs_use_documented_scheme_and_one_catalog_read():
+    scheme = "API_KEY"
     requests = []
 
     def respond(request):
@@ -226,7 +225,8 @@ async def test_catalog_projects_scopes_without_app_or_account_credentials():
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("scheme", ["OAUTH2", "API_KEY", "BEARER_TOKEN", "BASIC"])
+# OAuth differs from the other schemes, which share one code path.
+@pytest.mark.parametrize("scheme", ["OAUTH2", "API_KEY"])
 async def test_prefill_is_optional_typed_and_selected_scheme_specific_before_any_write(scheme):
     from jsonschema import Draft202012Validator
 

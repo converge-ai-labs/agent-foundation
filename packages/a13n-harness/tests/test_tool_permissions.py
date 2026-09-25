@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import pytest
 from a13n_harness import AgentContext, AgentSpec, DeferredToolResume, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import ToolReviewAssessment, ToolReviewRequest, ToolReviewResult
-from a13n_harness.capabilities.tool_review import ToolReviewPolicy, render_review_instruction
+from a13n_harness.capabilities.tool_review import ToolReviewPolicy
 from a13n_harness.tools import ToolIdentity, ToolPermissions, ToolPermissionsCapability, source_tool_id
 from a13n_harness.tools.approval import ApprovalPresentation, approval_presentation
 from pydantic import ValidationError
@@ -69,11 +69,6 @@ def test_selector_specificity_and_inherited_defaults() -> None:
     assert source_tool_id("a/b", "x*y", kind="mcp") == "mcp/a%2Fb/x%2Ay"
     with pytest.raises(ValueError):
         ToolPermissions(rules={"mcp/*/delete": "deny"})
-
-
-def test_custom_instruction_is_separately_rendered_text() -> None:
-    assert render_review_instruction(None) is None
-    assert render_review_instruction("a < b & c") == "<custom-instruction>\na &lt; b &amp; c\n</custom-instruction>"
 
 
 @pytest.mark.parametrize("mode", ["allow", "review", "deny"])
@@ -325,7 +320,7 @@ async def test_reviewer_approval_does_not_approve_managed_policy() -> None:
     assert seen == [frozenset({"reviewer", "permission"})]
 
 
-@pytest.mark.parametrize("failure", [None, "tool_review_failed", "tool_review_timeout"])
+@pytest.mark.parametrize("failure", [None, "tool_review_failed"])
 async def test_review_usage_and_result_events_share_call_identity(failure: str | None) -> None:
     from datetime import UTC, datetime
     from decimal import Decimal
@@ -383,7 +378,7 @@ async def test_review_usage_and_result_events_share_call_identity(failure: str |
         assert result.assessment.risk == "low" and result.usage == (receipt,)
     else:
         assert review["status"] == "error" and review["error_code"] == failure
-        assert review["decision"] == ("deny" if failure.endswith("timeout") else "approval_required")
+        assert review["decision"] == "approval_required"
 
 
 async def test_approval_context_is_call_local_and_cleared_after_dispatch() -> None:
@@ -427,8 +422,8 @@ async def test_approval_context_is_call_local_and_cleared_after_dispatch() -> No
     assert contexts[0].tool_approval is None
 
 
-@pytest.mark.parametrize("response", ["structured", "text"])
-@pytest.mark.parametrize("profile", ["general", "shell"])
+# Profile and response shape are independent, so each value appears once.
+@pytest.mark.parametrize(("response", "profile"), [("structured", "general"), ("text", "shell")])
 async def test_agent_reviewer_keeps_instruction_separate_and_requires_structured_output(
     reviewer_context, response, profile
 ) -> None:

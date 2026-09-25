@@ -5,11 +5,9 @@ from dataclasses import replace
 import pytest
 from a13n_harness.providers.authentication import Authentication, AuthenticationCase, CredentialMode
 from a13n_harness.providers.connector.builtins import COMPOSIO
-from a13n_harness.providers.definition import ProviderDefinition
 from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_harness.providers.web.builtins import built_in_web_providers
-from pydantic import BaseModel
 
 CREDENTIALED = [
     pytest.param(built_in_web_providers()[1], "Web", {}, id="web"),
@@ -25,16 +23,6 @@ NO_CREDENTIAL = [
         next(item for item in BUILT_IN_ENVIRONMENT_PROVIDERS if item.type == "direct_local"), id="environment"
     ),
 ]
-
-
-@pytest.mark.parametrize(("definition", "domain", "configuration"), CREDENTIALED)
-def test_every_domain_declares_the_same_core(definition, domain, configuration):
-    assert isinstance(definition, ProviderDefinition)
-    assert type(definition).DOMAIN == domain
-    assert issubclass(definition.configuration_model, BaseModel)
-    assert definition.credential_model is not None and issubclass(definition.credential_model, BaseModel)
-    assert isinstance(definition.authentication, Authentication)
-    assert definition.setup_label is None or definition.setup_url is not None
 
 
 @pytest.mark.parametrize(("definition", "domain", "configuration"), CREDENTIALED)

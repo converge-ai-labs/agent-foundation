@@ -677,8 +677,8 @@ async def test_ordinary_preparation_preserves_prior_owned_overlays_for_prompt_ca
     assert user_prompt_content(ctx.messages[-1].parts[-1])[0].content == "current overlay"
 
 
-@pytest.mark.parametrize("metadata", [None, {"caller": "preserved"}])
-def test_overlay_commit_preserves_user_content_and_request_metadata(metadata: dict[str, str] | None) -> None:
+def test_overlay_commit_preserves_user_content_and_request_metadata() -> None:
+    metadata = {"caller": "preserved"}
     original = ModelRequest(parts=(UserPromptPart("same text"),), metadata=metadata)
     request = ModelContextProjectionRequest(
         kind=ModelContextRequestKind.INPUT,

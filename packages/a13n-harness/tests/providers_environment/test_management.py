@@ -312,8 +312,8 @@ async def test_unconfirmed_destroy_preserves_state_after_runtime_cleanup() -> No
     assert runtime.closed == 1
 
 
-@pytest.mark.parametrize("borrowed", [False, True])
-@pytest.mark.parametrize("allow_create", [False, True])
+# allow_create is passed through independently of runtime ownership; each value appears once.
+@pytest.mark.parametrize(("borrowed", "allow_create"), [(False, True), (True, False)])
 async def test_creation_policy_and_operation_belong_to_the_adapter(borrowed: bool, allow_create: bool) -> None:
     created: list[_Runtime] = []
     observed: list[dict[str, object]] = []

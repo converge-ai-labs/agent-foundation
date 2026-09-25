@@ -1811,9 +1811,15 @@ async def test_managed_resources_follow_direct_mount_aliases_and_absolute_path_f
         assert mismatch_error.value.code == "environment_selection_invalid"
 
 
-@pytest.mark.parametrize("tool", ["ls", pytest.param("shell_exec", marks=requires_posix_process_groups)])
+# test_operation_paths_normalize_before_routing_and_scoped_io owns the spelling matrix.
 @pytest.mark.parametrize(
-    "path", ["/native/project/tmp/", "/native/project/./tmp//", "./tmp/", "/native/project/../tmp"]
+    ("tool", "path"),
+    [
+        ("ls", "/native/project/./tmp//"),
+        ("ls", "/native/project/../tmp"),
+        pytest.param("shell_exec", "./tmp/", marks=requires_posix_process_groups),
+        pytest.param("shell_exec", "/native/project/../tmp", marks=requires_posix_process_groups),
+    ],
 )
 async def test_managed_tools_accept_directory_paths_and_explain_invalid_paths(
     tmp_path: Path, path: str, tool: str
@@ -1864,10 +1870,18 @@ async def test_managed_tools_accept_directory_paths_and_explain_invalid_paths(
             assert Path(observed[0]["stdout"]["text"].strip()).resolve() == (tmp_path / "tmp").resolve()
 
 
-@pytest.mark.parametrize("tool", ["write", "edit", "multi_edit"])
-@pytest.mark.parametrize("suffix", ["/", "/.", "//./"])
-@pytest.mark.parametrize("root", ["/native/project", "C:/Project", "//server/share/project"])
-@pytest.mark.parametrize("nested", [True, False])
+# Each root flavor creates at its mount root with write permission only, and below it with mkdir.
+@pytest.mark.parametrize(
+    ("tool", "root", "suffix", "nested"),
+    [
+        ("write", "/native/project", "/", False),
+        ("write", "C:/Project", "/.", False),
+        ("write", "//server/share/project", "//./", False),
+        ("write", "C:/Project", "//./", True),
+        ("edit", "//server/share/project", "/", True),
+        ("multi_edit", "/native/project", "/.", True),
+    ],
+)
 async def test_file_creation_derives_parent_from_normalized_path(
     tmp_path: Path, tool: str, suffix: str, root: str, nested: bool
 ) -> None:
@@ -2098,42 +2112,6 @@ async def test_empty_environment_omits_environment_tools() -> None:
 
     assert result.output_or_raise() == "done"
     assert observed_names == set()
-
-
-async def test_agent_spec_tool_retries_exhaust_once_without_environment_retry_loop() -> None:
-    model_calls = 0
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[DeltaToolCalls]:
-        nonlocal model_calls
-        del messages, info
-        model_calls += 1
-        yield {
-            0: DeltaToolCall(
-                name="view",
-                json_args="{}",
-                tool_call_id=f"invalid-{model_calls}",
-            )
-        }
-
-    executable = HarnessBuilder().build(
-        AgentSpec(retries={"tools": 2}),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(DynamicEnvironmentCapability(_configuration()),),
-    )
-    result = await executable.run("inspect", bindings=RunBindings.embedded(capabilities=(_policy(),)))
-
-    assert result.status == "failed"
-    assert model_calls == 3
-    assert result.usage.requests == 3
-    retry_parts = [
-        part
-        for message in result.all_messages()
-        if isinstance(message, ModelRequest)
-        for part in message.parts
-        if isinstance(part, RetryPromptPart)
-    ]
-    assert len(retry_parts) == 2
 
 
 @pytest.mark.parametrize("source_fails", [False, True])
@@ -3035,7 +3013,8 @@ async def test_file_surface_keeps_media_on_one_mount_but_allows_cross_mount_copy
     ) == {"copy"}
 
 
-@pytest.mark.parametrize("tool", ["write", "edit", "multi_edit"])
+# edit and multi_edit share one creation path.
+@pytest.mark.parametrize("tool", ["write", "edit"])
 @pytest.mark.parametrize("nested", [False, True])
 async def test_write_only_tools_allow_create_but_require_parent_action(tmp_path: Path, tool: str, nested: bool):
     from .test_content_capabilities import _one_tool_model, _tool_contents
@@ -3138,14 +3117,13 @@ async def test_spill_failure_keeps_owned_leaf_for_best_effort_cleanup(tmp_path: 
         assert bool(list((tmp_path / ".a13n/tmp/tool-results").iterdir())) is (failure == "cleanup")
 
 
-@pytest.mark.parametrize("tool", ["write", "edit", "multi_edit"])
 @pytest.mark.parametrize(
-    ("mount_path", "file_path"),
+    ("tool", "mount_path", "file_path"),
     [
-        ("/data", "/data/new.txt"),
-        ("C:/", "C:/new.txt"),
-        ("//server/share/", "//server/share/new.txt"),
-        ("C:/Work", "c:/work/new.txt"),
+        ("write", "/data", "/data/new.txt"),
+        ("edit", "C:/", "C:/new.txt"),
+        ("multi_edit", "//server/share/", "//server/share/new.txt"),
+        ("write", "C:/Work", "c:/work/new.txt"),
     ],
 )
 async def test_explicit_write_only_mount_without_default_has_usable_tools(

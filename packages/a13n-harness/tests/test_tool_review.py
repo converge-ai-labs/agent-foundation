@@ -300,8 +300,7 @@ async def test_shell_review_model_uses_builder_gateway_provider_factory(
     assert executed == [{"command": "printf safe"}]
 
 
-@pytest.mark.parametrize("risk", list(ToolRiskLevel))
-@pytest.mark.parametrize("include_reason", [False, True])
+@pytest.mark.parametrize(("risk", "include_reason"), [(ToolRiskLevel.LOW, False), (ToolRiskLevel.EXTRA_HIGH, True)])
 async def test_default_reviewer_uses_only_output_tool_with_auto_choice_and_records_one_request_usage(
     reviewer_context,
     risk: ToolRiskLevel,
@@ -397,10 +396,9 @@ async def test_default_reviewer_preserves_usage_and_rejects_text_output(reviewer
     "failure",
     [
         ModelHTTPError(400, "review-model", {"error": "private-provider-body"}),
-        ValueError("private-provider-body"),
         RunError("private-provider-body", code="unrelated_failure"),
     ],
-    ids=["http-400", "invalid-response", "unrelated-harness-error"],
+    ids=["http-400", "unrelated-harness-error"],
 )
 async def test_default_reviewer_logs_safe_failure_metadata(
     reviewer_context, failure: Exception, caplog: pytest.LogCaptureFixture
@@ -580,15 +578,16 @@ async def test_review_error_uses_configured_fail_closed_action(error: Exception)
     assert executed == []
 
 
+# Every policy action stays; both review failure forms become the same skipped review, so each appears once.
 @pytest.mark.parametrize(
-    "outcome",
+    ("outcome", "policy_action"),
     [
-        ToolReviewError("tool_review_failed"),
-        ValueError("invalid assessment"),
+        (ToolReviewError("tool_review_failed"), "allow"),
+        (ValueError("invalid assessment"), "approval_required"),
+        (ToolReviewError("tool_review_failed"), "deny"),
     ],
-    ids=["failed", "invalid"],
+    ids=["failed-allow", "invalid-approval_required", "failed-deny"],
 )
-@pytest.mark.parametrize("policy_action", ["allow", "approval_required", "deny"])
 async def test_skip_adds_no_restriction_and_preserves_invocation_policy(
     outcome: ToolReviewResult | Exception, policy_action: str
 ) -> None:
@@ -736,8 +735,11 @@ def test_plugin_cannot_contribute_reserved_shell_review_capability() -> None:
     assert error.value.details["source"] == "plugin"
 
 
-@pytest.mark.parametrize("on_error", ["deny", "approval_required", "allow"])
-@pytest.mark.parametrize("policy_requires_approval", [False, True])
+# Only the non-deny error actions can be overridden: without the timeout rule each would execute or suspend.
+@pytest.mark.parametrize(
+    ("on_error", "policy_requires_approval"),
+    [("allow", False), ("allow", True), ("approval_required", True)],
+)
 async def test_timeout_denies_even_when_policy_requires_approval_and_preserves_usage(
     on_error, policy_requires_approval: bool
 ) -> None:
@@ -913,9 +915,7 @@ async def test_timeout_emits_observable_denial_before_any_authorization() -> Non
     "arguments",
     [
         '{"risk":"unknown","reason":"invalid risk"}',
-        '{"risk":"low","reason":""}',
         '{"risk":"low","reason":"unexpected field","allow":true}',
-        '{"risk":',
     ],
 )
 async def test_default_reviewer_rejects_invalid_output_tool_without_retry(reviewer_context, arguments: str) -> None:

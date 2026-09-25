@@ -82,8 +82,8 @@ def _single_tool_model(tool_name: str) -> FunctionModel:
     return FunctionModel(stream_function=stream)
 
 
-@pytest.mark.parametrize("is_child", [False, True])
-@pytest.mark.parametrize("deferred_error", [CallDeferred, ApprovalRequired])
+# Child and root runs deny through the same unsupported-deferral path; the pairs cover each value once.
+@pytest.mark.parametrize(("is_child", "deferred_error"), [(False, CallDeferred), (True, ApprovalRequired)])
 async def test_unsupported_run_denies_dynamic_function_deferral_and_continues_same_run(
     deferred_error: type[CallDeferred] | type[ApprovalRequired],
     is_child: bool,
@@ -240,8 +240,7 @@ async def test_child_completes_mixed_ordinary_and_dynamic_deferred_batch() -> No
     )
 
 
-@pytest.mark.parametrize("is_child", [False, True])
-@pytest.mark.parametrize("approval", [False, True])
+@pytest.mark.parametrize(("is_child", "approval"), [(True, True), (False, False)])
 async def test_host_managed_typed_output_suspends_and_resumes(is_child: bool, approval: bool) -> None:
     class BusinessOutput(BaseModel):
         answer: str

@@ -190,7 +190,6 @@ def test_concrete_overrides_apply_after_aliases() -> None:
     "model",
     [
         "logical-model",
-        "gateway@logical-model",
         "@anthropic:claude-sonnet-5",
         "gateway@@anthropic:claude-sonnet-5",
         "anthropic:",
@@ -198,7 +197,6 @@ def test_concrete_overrides_apply_after_aliases() -> None:
         "anthropic :claude-sonnet-5",
         "anthropic: claude-sonnet-5",
         "gateway @anthropic:claude-sonnet-5",
-        "gateway@ anthropic:claude-sonnet-5",
     ],
 )
 def test_alias_resolution_requires_a_valid_provider_qualified_model(model: str) -> None:

@@ -658,10 +658,18 @@ async def test_direct_mount_paths_route_by_longest_prefix_without_legacy_aliases
         assert mismatch.value.code == "environment_selection_invalid"
 
 
+# Every root flavor, at and below its mount root, with each harmless spelling at least once.
 @pytest.mark.parametrize(
-    "root", ["/native/project", "C:/Users/Example", "//server/share/project", "/", "C:/", "//server/share/"]
+    ("root", "suffix"),
+    [
+        ("/native/project", "src/"),
+        ("C:/Users/Example", "src//"),
+        ("//server/share/project", "./src/./"),
+        ("/", "src//./"),
+        ("C:/", "./src/./"),
+        ("//server/share/", "src//./"),
+    ],
 )
-@pytest.mark.parametrize("suffix", ["src/", "src//", "./src/./", "src//./"])
 async def test_operation_paths_normalize_before_routing_and_scoped_io(root: str, suffix: str) -> None:
     received: list[str] = []
 

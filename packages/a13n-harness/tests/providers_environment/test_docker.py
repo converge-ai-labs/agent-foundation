@@ -292,16 +292,9 @@ def test_mounts_cannot_replace_private_storage(target):
         DockerMountConfiguration(source="/data", target=target)
 
 
-def test_configuration_excludes_old_envd_and_named_volume_options():
-    for values in (
-        {"root_mount_id": "root"},
-        {"pull_policy": "never"},
-        {"memory_mib": 256},
-        {"bootstrap": {}},
-        {"mounts": [{"source": {"kind": "volume", "name": "x"}, "target": "/data"}]},
-    ):
-        with pytest.raises(ValueError):
-            DockerEnvironmentConfiguration.model_validate(values)
+def test_mount_beside_private_storage_is_accepted():
+    # Only path components count: a shared string prefix is not the private directory.
+    assert str(DockerMountConfiguration(source="/data", target="/tmp/a13n-cache").target) == "/tmp/a13n-cache"
 
 
 async def test_missing_external_target_never_adopts_same_name_replacement(native):
