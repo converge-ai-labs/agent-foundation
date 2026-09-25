@@ -8,6 +8,7 @@ from pathlib import Path
 import http_ece
 import httpx2
 import pytest
+from a13n_harness_ui import web_push
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.live import RootOperationNotice
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
@@ -167,10 +168,16 @@ async def test_push_encrypts_preview_and_signs_valid_vapid_with_port(tmp_path: P
     ],
 )
 async def test_provider_failures_are_bounded_and_expired_subscriptions_removed(
-    tmp_path: Path, status: int, attempts: int, removed: bool
+    tmp_path: Path, status: int, attempts: int, removed: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _, device = subscription()
     requests = []
+    backoffs = []
+
+    async def backoff(seconds):
+        backoffs.append(seconds)
+
+    monkeypatch.setattr(web_push, "sleep", backoff)
 
     def respond(request):
         requests.append(request)
@@ -182,6 +189,7 @@ async def test_provider_failures_are_bounded_and_expired_subscriptions_removed(
             await push.repository.save(device)
             assert (await push.test(device.subscription_id)).accepted is (status == 201)
             assert len(requests) == attempts
+            assert backoffs == [1] * (attempts - 1)
             assert (await push.repository.get(device.subscription_id) is None) is removed
             await push.repository.remove(device.subscription_id)
             assert not await push._deliver(device, {"tag": "removed"})
