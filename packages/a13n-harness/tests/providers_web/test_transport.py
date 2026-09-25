@@ -61,7 +61,10 @@ async def test_client_ownership_on_success_and_invalid_response(borrowed):
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("cleanup", ["normal", "hang", "fail"])
-async def test_cancellation_preserved_and_cleanup_bounded(cleanup, caplog):
+async def test_cancellation_preserved_and_cleanup_bounded(cleanup, caplog, monkeypatch):
+    # Shrink the shielded close bound so the hanging cleanup is cut short quickly.
+    monkeypatch.setattr("a13n_harness.providers.web.transport._CLOSE_TIMEOUT_SECONDS", 0.01)
+
     async def handler(request):
         await sleep_forever()
 

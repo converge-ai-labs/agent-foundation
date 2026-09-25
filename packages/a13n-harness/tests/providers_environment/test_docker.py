@@ -316,13 +316,13 @@ async def test_missing_external_target_never_adopts_same_name_replacement(native
 
 async def test_cancelled_engine_acquisition_closes_the_engine_it_owns(monkeypatch):
     """A cancelled caller must never leave an acquired Docker client open."""
-    acquiring, closed = threading.Event(), asyncio.Event()
+    acquiring, release, closed = threading.Event(), threading.Event(), asyncio.Event()
     engine = DockerSDKEngine(Mock())
 
     def connect(docker_host, *, timeout_seconds=60):
         del docker_host, timeout_seconds
         acquiring.set()
-        threading.Event().wait(0.2)
+        release.wait(5)
         return engine
 
     def close() -> None:
@@ -333,6 +333,8 @@ async def test_cancelled_engine_acquisition_closes_the_engine_it_owns(monkeypatc
     acquisition = asyncio.create_task(DOCKER.create({}, configuration={"docker_host": "unix:///var/run/docker.sock"}))
     await asyncio.to_thread(acquiring.wait, 5)
     acquisition.cancel()
+    # The connect call is still in flight; let it finish only after the caller was cancelled.
+    release.set()
     with pytest.raises(asyncio.CancelledError):
         await acquisition
     await asyncio.wait_for(closed.wait(), 5)

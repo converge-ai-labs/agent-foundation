@@ -4,7 +4,6 @@ import asyncio
 import json
 import sys
 import threading
-import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -2808,26 +2807,19 @@ async def test_large_exact_edit_transformation_runs_off_event_loop(
     )
     toolset = FileToolset(files)
     ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace(environment=SimpleNamespace(files=files)), capabilities={}))
-    started = threading.Event()
+    threads: list[int] = []
     original = file_toolset_module._apply_text_edits
 
-    def slow_transform(content, edits, start_index=1):
-        started.set()
-        time.sleep(0.1)
+    def recording_transform(content, edits, start_index=1):
+        threads.append(threading.get_ident())
         return original(content, edits, start_index)
 
-    monkeypatch.setattr(file_toolset_module, "_apply_text_edits", slow_transform)
-    edit_task = asyncio.create_task(toolset.edit(ctx, "/value.txt", "before", "after"))
-    for _ in range(200):
-        if started.is_set():
-            break
-        await asyncio.sleep(0.01)
+    monkeypatch.setattr(file_toolset_module, "_apply_text_edits", recording_transform)
+    result = await toolset.edit(ctx, "/value.txt", "before", "after")
 
-    assert started.is_set()
-    await asyncio.sleep(0.01)
-    assert not edit_task.done()
-    result = await edit_task
     assert result["ok"] is True
+    assert threads and threading.get_ident() not in threads
+    assert target.read_text() == "after\n"
 
 
 @requires_posix_process_groups

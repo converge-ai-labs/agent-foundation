@@ -19,11 +19,12 @@ from a13n_harness.providers.web.contracts import (
 from .errors import WebProviderResponseError
 
 _logger = get_logger(__name__)
+_CLOSE_TIMEOUT_SECONDS = 1
 
 
 async def _close(close: Callable[[], Awaitable[None]]) -> None:
     try:
-        with move_on_after(1, shield=True) as scope:
+        with move_on_after(_CLOSE_TIMEOUT_SECONDS, shield=True) as scope:
             await close()
         if scope.cancel_called:
             _logger.warning("Web transport cleanup timed out")
