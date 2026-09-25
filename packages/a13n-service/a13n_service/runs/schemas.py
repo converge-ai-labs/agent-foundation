@@ -121,8 +121,8 @@ class RunOptions(_Frozen):
 
     labels: Labels = Field(default_factory=dict)
     max_usage: UsageLimit | None = None
-    # Changes to the revision's configuration for this run only. Submission validates them; acceptance
-    # validates them again and freezes them into the run's options with their pins resolved.
+    # Changes to the revision's configuration for this run only. Submission validates them; acceptance freezes
+    # them into the run's options with their pins resolved, validating them again in any later transaction.
     overrides: AgentOverride | None = None
 
     def digest(self) -> str:

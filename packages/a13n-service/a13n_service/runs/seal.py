@@ -17,7 +17,7 @@ from a13n_service.infra.db import after_commit, lock, now, transaction
 from a13n_service.infra.outbox import enqueue_once
 from a13n_service.runs import checkpoints, inbox
 from a13n_service.runs.accept import advance
-from a13n_service.runs.attempts import Lease, LeaseLost, lock_thread_lease
+from a13n_service.runs.attempts import Lease, lock_thread_lease
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Failure, Outcome, Sealed
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
@@ -152,22 +152,16 @@ async def stop(session: AsyncSession, runtime: Runtime, thread: ThreadRow, run: 
 
 
 async def seal_attempt(
-    runtime: Runtime,
-    lease: Lease,
-    outcome: Outcome,
-    *,
-    committed: checkpoints.Committed | None = None,
-    display: checkpoints.DisplayPointer | None = None,
+    runtime: Runtime, lease: Lease, outcome: Outcome, *, display: checkpoints.DisplayPointer | None = None
 ) -> None:
-    """The worker's seal. A completed or waiting outcome seals the checkpoint the attempt committed with it.
+    """The worker's seal of a failure or cancellation; a completed or waiting outcome seals in its final checkpoint's
+    transaction instead.
 
     A failed or cancelled attempt may pass the display of its interrupted tail, which becomes the run's final
     display in the same transaction; the state pointer stays at the last checkpoint as inspection evidence.
     """
     async with transaction(runtime.storage) as session:
         thread, run, attempt, current = await lock_thread_lease(session, lease)
-        if outcome.status in {"completed", "waiting"} and checkpoints.Committed.of(run) != committed:
-            raise LeaseLost()
         if display is not None:
             run.display = display.model_dump(mode="json")
         await seal(session, runtime, thread, run, attempt, outcome, at=current)

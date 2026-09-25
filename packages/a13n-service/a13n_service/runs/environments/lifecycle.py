@@ -128,8 +128,8 @@ def settled(environment: EnvironmentRow) -> bool:
 
 async def lock_reservations(session: AsyncSession, workspace_id: str) -> None:
     """The workspace's reservation lock. It serializes reservations, so concurrent ones cannot pass the managed
-    count together, and in the lock order it precedes every environment row lock: thread → run → attempt →
-    reservations → environments in ID order. A transaction that may reserve takes it before any environment row."""
+    count together. Only reservations take it, and no transaction that locks an instance exclusively reserves, so
+    new use, which share-locks instances, may reserve before or after locking them without a cycle."""
     await advisory_lock(session, "environments", workspace_id)
 
 

@@ -11,6 +11,8 @@ from a13n_harness.usage import ModelUsageRecord, UsageRecord
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.models import service as models_service
+from a13n_service.runs import checkpoints
+from a13n_service.runs import execute as execute_module
 from a13n_service.runs import seal as seal_module
 from a13n_service.runs import worker as worker_module
 from a13n_service.runs.attempts import AttemptControl, AuthorityRevoked, Lease, LeaseLost, renew
@@ -608,6 +610,35 @@ async def test_url_input_that_cannot_be_reached_is_fetched_by_a_later_attempt(
     (entry,) = await runs_kit.inbox(service, response.json()["thread"]["id"])
     assert (entry["status"], entry["assigned_run_id"]) == ("assigned", run_id), entry
     assert scripted_model.requests.empty()
+
+
+async def test_an_outcome_commits_only_with_its_seal(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The final checkpoint and the seal are one transaction: when the seal fails neither lands, and a later attempt
+    continues from the checkpoint before the model request that produced the outcome."""
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
+    sealing = execute_module.seal
+
+    async def failing(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("The seal failed")
+
+    monkeypatch.setattr(execute_module, "seal", failing)
+    scripted_model.say("Lost")
+    await (await runs_kit.attempt(service))
+    attempts = await _released(service, run_id)
+    assert [(item["status"], item["failure"]["code"]) for item in attempts] == [("failed", "attempt_failed")]
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get_one(RunRow, run_id)
+        state = await checkpoints.load_state(service.runtime.objects, run)
+        assert state is not None and state.seq == 1
+        await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
+
+    monkeypatch.setattr(execute_module, "seal", sealing)
+    scripted_model.say("Sealed")
+    await (await runs_kit.attempt(service))
+    sealed = await runs_kit.get_run(service, run_id)
+    assert sealed["status"] == "completed" and sealed["output"] == "Sealed" and sealed["attempts"] == 2, sealed
 
 
 async def test_takeover_keeps_external_answer_without_replaying_local_approval(

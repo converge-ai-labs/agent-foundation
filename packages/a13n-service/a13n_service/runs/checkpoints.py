@@ -8,23 +8,25 @@ late bytes are garbage, never state.
 import asyncio
 import hashlib
 from collections.abc import Sequence
+from datetime import datetime
+from functools import partial
 from typing import Literal
 
 from a13n_harness import HarnessState
 from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from a13n_service.infra.db import transaction
+from a13n_service.infra.db import after_commit
 from a13n_service.infra.errors import conflict
 from a13n_service.infra.objects.interface import ObjectRef, ObjectStore, read
 from a13n_service.runs import inbox
-from a13n_service.runs.attempts import Lease, LeaseLost, lock_thread_lease
+from a13n_service.runs.attempts import Lease, LeaseLost
 from a13n_service.runs.display import Display, StreamPosition
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Outcome
-from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tables import AttemptRow, RunRow
 from a13n_service.runs.usage import UsageReport, ingest
 
 logger = get_logger(__name__)
@@ -65,8 +67,6 @@ class RunState(_Frozen):
     harness: HarnessState
     seq: int = Field(ge=1)
     attempt: int = Field(ge=1)
-    # A completed or waiting outcome, committed with the state that produced it so the seal writes nothing.
-    outcome: Outcome | None = None
     # The Harness deferred requests of a waiting outcome, which the successor's resume answers.
     deferred: JsonValue = None
 
@@ -149,64 +149,71 @@ async def publish_display(runtime: Runtime, lease: Lease, display: Display) -> D
     return DisplayPointer(digest=ref.digest, size=ref.size, format=FORMAT, position=display.position)
 
 
-async def save(
-    runtime: Runtime,
-    lease: Lease,
-    *,
-    previous: Committed | None,
-    state: RunState,
-    display: Display,
-    memory_cursors: dict[str, str | None],
-    consumed: Sequence[str],
-    usage: Sequence[UsageReport],
-) -> Committed:
-    """The checkpoint commit: publish both objects, then move their pointers in one fenced transaction.
-
-    The transaction also stores the memory cursors the state's history was delivered, consumes the entries the
-    state incorporated and ingests pending usage, so pointers, cursors, consumption and usage move together or
-    not at all; it is the checkpoint's durability point. `previous`
-    must still be the run's pointers: any other value means another writer moved them, which the lease
-    predicate already rules out, but consuming input against the wrong state would break at-most-once
-    incorporation. The replaced objects are deleted after commit, best effort: takeover and seal cleanup
-    reclaim what a failed deletion leaves.
-    """
-    org, run_id = lease.organization_id, lease.run_id
+async def publish_checkpoint(runtime: Runtime, lease: Lease, state: RunState, display: Display) -> Committed:
+    """Write the checkpoint's objects outside any session; `commit` makes them the run's checkpoint."""
     state_ref, display_pointer = await asyncio.gather(
-        publish(runtime.objects, org, run_id, "state", state.model_dump_json().encode()),
+        publish(runtime.objects, lease.organization_id, lease.run_id, "state", state.model_dump_json().encode()),
         publish_display(runtime, lease, display),
     )
-    committed = Committed(
+    return Committed(
         state=StatePointer(
             digest=state_ref.digest, size=state_ref.size, format=FORMAT, seq=state.seq, attempt=state.attempt
         ),
         display=display_pointer,
     )
-    async with transaction(runtime.storage) as session:
-        # Thread first: consuming entries fires the thread-version trigger, which updates the thread row.
-        _, run, attempt, current = await lock_thread_lease(session, lease)
-        if Committed.of(run) != previous:
-            raise LeaseLost()
-        run.checkpoint = committed.state.model_dump(mode="json")
-        run.display = committed.display.model_dump(mode="json")
-        run.memory_cursors = memory_cursors
-        await inbox.consume(session, run.id, consumed, checkpoint_seq=state.seq, at=current)
-        await ingest(session, run, attempt, usage)
+
+
+async def commit(
+    session: AsyncSession,
+    objects: ObjectStore,
+    run: RunRow,
+    attempt: AttemptRow,
+    *,
+    previous: Committed | None,
+    committed: Committed,
+    memory_cursors: dict[str, str | None],
+    consumed: Sequence[str],
+    usage: Sequence[UsageReport],
+    at: datetime,
+) -> None:
+    """The checkpoint commit, in the caller's transaction under the thread → run → attempt lease locks: move the
+    pointers to the published objects.
+
+    The transaction also stores the memory cursors the state's history was delivered, consumes the entries the
+    state incorporated and ingests pending usage, so pointers, cursors, consumption and usage move together or
+    not at all; it is the checkpoint's durability point. `previous` must still be the run's pointers: any other
+    value means another writer moved them, which the lease predicate already rules out, but consuming input
+    against the wrong state would break at-most-once incorporation. The replaced objects are deleted after
+    commit, best effort: takeover and seal cleanup reclaim what a failed deletion leaves.
+    """
+    if Committed.of(run) != previous:
+        raise LeaseLost()
+    run.checkpoint = committed.state.model_dump(mode="json")
+    run.display = committed.display.model_dump(mode="json")
+    run.memory_cursors = memory_cursors
+    await inbox.consume(session, run.id, consumed, checkpoint_seq=committed.state.seq, at=at)
+    await ingest(session, run, attempt, usage)
     if previous is not None:
-        replaced: tuple[tuple[ObjectKind, Pointer, Pointer], ...] = (
-            ("state", previous.state, committed.state),
-            ("display", previous.display, committed.display),
-        )
-        for kind, old, new in replaced:
-            if old.digest == new.digest:
-                continue
-            try:
-                await runtime.objects.delete(f"{prefix(org, run_id, kind)}/{old.digest}")
-            except Exception as error:
-                logger.warning(
-                    "Replaced checkpoint object was not deleted",
-                    extra={"run_id": run_id, "kind": kind, "error_type": type(error).__name__},
-                )
-    return committed
+        after_commit(session, partial(_discard, objects, run.organization_id, run.id, previous, committed))
+
+
+async def _discard(
+    objects: ObjectStore, organization_id: str, run_id: str, previous: Committed, committed: Committed
+) -> None:
+    replaced: tuple[tuple[ObjectKind, Pointer, Pointer], ...] = (
+        ("state", previous.state, committed.state),
+        ("display", previous.display, committed.display),
+    )
+    for kind, old, new in replaced:
+        if old.digest == new.digest:
+            continue
+        try:
+            await objects.delete(f"{prefix(organization_id, run_id, kind)}/{old.digest}")
+        except Exception as error:
+            logger.warning(
+                "Replaced checkpoint object was not deleted",
+                extra={"run_id": run_id, "kind": kind, "error_type": type(error).__name__},
+            )
 
 
 async def clean(objects: ObjectStore, run: RunRow, *, limit: int = 1000) -> None:

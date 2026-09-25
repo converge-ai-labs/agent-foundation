@@ -165,7 +165,8 @@ class ChildRuns(SubagentOperator):
                 request=None,
                 control=self.runtime.settings.control,
             )
-            first = await start_run(session, self.runtime, child, Source.message(entry, "spawned"))
+            source = await Source.load(session, self.runtime, child, entry, "spawned")
+            first = await start_run(session, self.runtime, child, source)
             return _view(_Execution(child, first, 0, None))
 
     async def info(
@@ -263,7 +264,8 @@ class ChildRuns(SubagentOperator):
                 if thread.current_run_id is not None or thread.last_run_id != run.id:
                     raise conflict("run", run.id, "execution_not_resumable")
                 entry = await self._append(session, thread, run, request.prompt, delivery="next_run")
-                successor = await accept(session, self.runtime, thread, explicit=entry)
+                source = await Source.load(session, self.runtime, thread, entry, "input")
+                successor = await accept(session, self.runtime, thread, explicit=source)
                 if successor is None:
                     raise conflict("run", run.id, "execution_not_resumable")
                 segment = await _segments(session, thread.id) - 1

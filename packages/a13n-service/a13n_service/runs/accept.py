@@ -1,7 +1,8 @@
 """Turning a thread's eligible source into its next run.
 
 `start_run` is the only function that creates a run; `accept` picks a queued source for it, and resume,
-fork and spawn call it with their own source. Both are SQL-only and run under the caller's thread lock.
+fork and spawn call it with their own source. A source arrives loaded and checked: the principal it runs as,
+the revision and the options it runs with. Both are SQL-only and run under the caller's thread lock.
 """
 
 from dataclasses import dataclass
@@ -15,8 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
-from a13n_service.resources.agents.schemas import AgentConfig
-from a13n_service.resources.agents.service import select_revision, validate_override
+from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride
+from a13n_service.resources.agents.service import SelectedRevision, select_revision, validate_override
 from a13n_service.runs import inbox
 from a13n_service.runs.admission import AcceptedIntent
 from a13n_service.runs.attachments import require_readable
@@ -27,7 +28,7 @@ from a13n_service.runs.schemas import Failure, MessagePayload, Pending, Resume, 
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.webhooks import notify_subscribers
 from a13n_service.tenancy.access import principal_for, require_active_workspace
-from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope, authorize
+from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize
 
 logger = get_logger(__name__)
 
@@ -55,17 +56,53 @@ def paused(last: RunRow | None) -> bool:
     return last is not None and last.status in {"failed", "cancelled"}
 
 
+async def run_revision(
+    session: AsyncSession,
+    runtime: Runtime,
+    principal: Principal,
+    scope: WorkspaceScope,
+    agent_id: str,
+    revision_id: str | None,
+    overrides: AgentOverride | None,
+    *,
+    authority: ExecutionAuthority,
+) -> tuple[SelectedRevision, AgentOverride | None]:
+    """The revision a message selects, and its overrides validated against it as a run freezes them."""
+    revision = await select_revision(session, scope.workspace_id, agent_id, revision_id)
+    if overrides is not None:
+        overrides = await validate_override(
+            session,
+            principal,
+            scope,
+            revision,
+            overrides,
+            authority=authority,
+            registry=runtime.registry,
+            plugins=runtime.plugins,
+        )
+    return revision, overrides
+
+
+async def _authorized(
+    session: AsyncSession, runtime: Runtime, scope: WorkspaceScope, principal_id: str, authority: ExecutionAuthority
+) -> Principal:
+    """The principal with its current grants, which must still allow its frozen authority to run."""
+    principal = await principal_for(session, runtime.access, principal_id, confinement=scope)
+    authorize(principal, scope, "run", authority=authority)
+    return principal
+
+
 @dataclass(frozen=True, slots=True)
 class Source:
-    """What a run starts from: a queued entry, or the answers resuming a waiting run."""
+    """What a run starts from, a queued entry or the answers resuming a waiting run, with the principal it runs
+    as and the revision and options it runs with, loaded and checked by whoever built it."""
 
     trigger: Trigger
-    principal_id: str
+    principal: Principal
     authority: ExecutionAuthority
-    agent_id: str
-    agent_revision_id: str | None
+    revision: SelectedRevision
     revision_selection: Literal["pinned", "default", "inherited"]
-    # A message's options as submitted; inherited options were frozen by the run they come from.
+    # Frozen: a message's overrides validated against `revision`; inherited options as their run froze them.
     options: RunOptions
     # The digest of the options as submitted, which inherited sources keep from the run they come from.
     options_digest: str
@@ -76,24 +113,47 @@ class Source:
     request_digest: str | None = None
 
     @classmethod
-    def message(cls, entry: InboxEntryRow, trigger: Trigger) -> "Source":
-        assert entry.agent_id is not None
+    def message(
+        cls,
+        entry: InboxEntryRow,
+        trigger: Trigger,
+        principal: Principal,
+        revision: SelectedRevision,
+        overrides: AgentOverride | None,
+    ) -> "Source":
+        """A message whose principal the caller authorized and whose revision and overrides it validated."""
         options = RunOptions.model_validate(entry.options)
         return cls(
             trigger=trigger,
-            principal_id=entry.principal_id,
+            principal=principal,
             authority=ExecutionAuthority.model_validate(entry.authority),
-            agent_id=entry.agent_id,
-            agent_revision_id=entry.agent_revision_id,
+            revision=revision,
             revision_selection="pinned" if entry.agent_revision_id else "default",
-            options=options,
+            options=options.model_copy(update={"overrides": overrides}),
             options_digest=options.digest(),
             entry=entry,
         )
 
     @classmethod
-    def inherited(
+    async def load(
+        cls, session: AsyncSession, runtime: Runtime, thread: ThreadRow, entry: InboxEntryRow, trigger: Trigger
+    ) -> "Source":
+        """A message as its principal's current grants and its agent's current revisions accept it now."""
+        assert entry.agent_id is not None
+        scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
+        authority = ExecutionAuthority.model_validate(entry.authority)
+        principal = await _authorized(session, runtime, scope, entry.principal_id, authority)
+        overrides = RunOptions.model_validate(entry.options).overrides
+        revision, overrides = await run_revision(
+            session, runtime, principal, scope, entry.agent_id, entry.agent_revision_id, overrides, authority=authority
+        )
+        return cls.message(entry, trigger, principal, revision, overrides)
+
+    @classmethod
+    async def inherited(
         cls,
+        session: AsyncSession,
+        runtime: Runtime,
         run: RunRow,
         trigger: Trigger,
         *,
@@ -103,13 +163,15 @@ class Source:
         request_key: str | None = None,
         request_digest: str | None = None,
     ) -> "Source":
-        """Resume and child results continue with the identity, revision and options of an earlier run."""
+        """Resume and child results continue with the identity, revision and options of an earlier run, while its
+        principal's current grants allow them and its agent is not archived."""
+        scope = WorkspaceScope(run.organization_id, run.workspace_id)
+        authority = ExecutionAuthority.model_validate(run.authority)
         return cls(
             trigger=trigger,
-            principal_id=run.principal_id,
-            authority=ExecutionAuthority.model_validate(run.authority),
-            agent_id=run.agent_id,
-            agent_revision_id=run.agent_revision_id,
+            principal=await _authorized(session, runtime, scope, run.principal_id, authority),
+            authority=authority,
+            revision=await select_revision(session, run.workspace_id, run.agent_id, run.agent_revision_id),
             revision_selection="inherited",
             options=RunOptions.model_validate(run.options),
             options_digest=run.options_digest,
@@ -175,22 +237,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     """
     scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
     await require_active_workspace(session, thread.workspace_id)
-    principal = await principal_for(session, runtime.access, source.principal_id, confinement=scope)
-    authorize(principal, scope, "run", authority=source.authority)
-    revision = await select_revision(session, thread.workspace_id, source.agent_id, source.agent_revision_id)
-    options = source.options
-    if source.revision_selection != "inherited" and options.overrides is not None:
-        frozen = await validate_override(
-            session,
-            principal,
-            scope,
-            revision,
-            options.overrides,
-            authority=source.authority,
-            registry=runtime.registry,
-            plugins=runtime.plugins,
-        )
-        options = options.model_copy(update={"overrides": frozen})
+    principal, revision, options = source.principal, source.revision, source.options
     parent, lineage = await parent_of(session, thread)
     # An instance reserved here is a new row that a refusal discards with it; freezing checks the mounts are usable.
     template_id = primary_template(thread, revision.config)
@@ -198,7 +245,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         await reserve_primary(
             session, principal, thread, template_id=template_id, limit=runtime.settings.environments.managed_count
         )
-    mounts = await freeze_mounts(session, thread, principal_id=source.principal_id)
+    mounts = await freeze_mounts(session, thread, principal_id=principal.id)
     memories = await freeze_memories(
         session, thread, revision.config.memory_mounts, limit=runtime.settings.memory.mounts_per_thread
     )
@@ -223,7 +270,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
                 session_id=thread.session_id,
                 thread_id=thread.id,
                 run_id=run_id,
-                principal_id=source.principal_id,
+                principal_id=principal.id,
                 agent_id=revision.agent_id,
                 agent_revision_id=revision.revision_id,
                 trigger=source.trigger,
@@ -240,7 +287,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         agent_id=revision.agent_id,
         agent_revision_id=revision.revision_id,
         revision_selection=source.revision_selection,
-        principal_id=source.principal_id,
+        principal_id=principal.id,
         authority=source.authority.model_dump(mode="json"),
         options=options.model_dump(mode="json", exclude_none=True),
         options_digest=source.options_digest,
@@ -278,22 +325,27 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     return run
 
 
-async def _source(session: AsyncSession, entry: InboxEntryRow, explicit: InboxEntryRow | None) -> Source | Failure:
+async def _source(
+    session: AsyncSession, runtime: Runtime, thread: ThreadRow, entry: InboxEntryRow, explicit: Source | None
+) -> Source | Failure:
+    if explicit is not None and entry is explicit.entry:
+        return explicit
     if entry.kind == "message":
-        return Source.message(entry, "input" if entry is explicit else "queued")
+        return await Source.load(session, runtime, thread, entry, "queued")
     origin = await _run(session, entry.origin_run_id)
     if origin is None or origin.status not in {"completed", "waiting"}:
         return Failure(code="origin_not_committed", message="The spawning run never became thread history")
-    return Source.inherited(origin, "child_result", entry=entry)
+    return await Source.inherited(session, runtime, origin, "child_result", entry=entry)
 
 
 async def accept(
-    session: AsyncSession, runtime: Runtime, thread: ThreadRow, *, explicit: InboxEntryRow | None = None
+    session: AsyncSession, runtime: Runtime, thread: ThreadRow, *, explicit: Source | None = None
 ) -> RunRow | None:
     """Start the thread's next run from its eligible queued source, if any. Rejected entries fail in place.
 
-    A transient refusal (`unavailable`) is not the entry's fault: it aborts the transaction, so a retry of the
-    caller's operation or the advance sweep can still start the entry.
+    `explicit` is the source of the entry the caller just appended, already loaded and checked. A transient
+    refusal (`unavailable`) is not the entry's fault: it aborts the transaction, so a retry of the caller's
+    operation or the advance sweep can still start the entry.
     """
     head = await _run(session, thread.head_run_id)
     kind = eligibility(thread, head)
@@ -301,20 +353,20 @@ async def accept(
         return None
     if paused(await _run(session, thread.last_run_id)):
         # An explicit submission may start that new message; unrelated pending entries never replace it.
-        sources = [explicit] if explicit is not None else []
+        entries = [explicit.entry] if explicit is not None and explicit.entry is not None else []
     else:
-        sources = await inbox.pending_entries(session, thread.id, limit=SCAN, messages_only=kind is Eligible.MESSAGES)
-    for entry in sources:
-        source = await _source(session, entry, explicit)
-        if isinstance(source, Source):
-            try:
+        entries = await inbox.pending_entries(session, thread.id, limit=SCAN, messages_only=kind is Eligible.MESSAGES)
+    for entry in entries:
+        try:
+            source = await _source(session, runtime, thread, entry, explicit)
+            if isinstance(source, Source):
                 # A savepoint makes one entry's rejection its own; database errors still abort the transaction.
                 async with session.begin_nested():
                     return await start_run(session, runtime, thread, source)
-            except ServiceError as error:
-                if error.code == "unavailable":
-                    raise
-                source = Failure.of(error)
+        except ServiceError as error:
+            if error.code == "unavailable":
+                raise
+            source = Failure.of(error)
         inbox.fail(entry, source, at=await now(session))
         await session.flush()
     return None

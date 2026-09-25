@@ -99,19 +99,17 @@ async def resume(
             if not (waiting.status == "waiting" and thread.head_run_id == waiting.id and thread.current_run_id is None):
                 raise conflict("run", waiting.id, "not_idle_waiting_head")
             answers = normalize(Pending.model_validate(waiting.pending), request)
-            successor = await start_run(
+            source = await Source.inherited(
                 session,
                 runtime,
-                thread,
-                Source.inherited(
-                    waiting,
-                    "resume",
-                    resume=answers,
-                    resumed_by_id=actor.id,
-                    request_key=request_key,
-                    request_digest=digest,
-                ),
+                waiting,
+                "resume",
+                resume=answers,
+                resumed_by_id=actor.id,
+                request_key=request_key,
+                request_digest=digest,
             )
+            successor = await start_run(session, runtime, thread, source)
             return await run_view(session, successor), True
     except IntegrityError as error:
         if violated_constraint(error) != "uq_runs_resume_request":

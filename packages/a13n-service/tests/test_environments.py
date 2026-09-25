@@ -293,8 +293,9 @@ async def test_managed_sandboxes_are_bounded_per_workspace(env) -> None:  # type
 
 
 async def test_acceptances_that_reserve_and_mount_in_one_workspace_do_not_deadlock(env, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """A new thread mounting a sandbox and a message whose run reserves a primary take the same locks in the
-    same order: the workspace's reservation lock, then the environment rows."""
+    """A new thread that mounts a sandbox and then reserves its primary, and a message whose run reserves a primary
+    and then freezes that sandbox, lock in opposite orders. Neither waits for the other's sandbox lock: new use
+    only share-locks a sandbox, and nothing that locks one exclusively reserves."""
     shared = await reserve(env, env.template["id"])
     data = {"name": "data", "environment_id": shared["id"]}
     # Thread Y mounts the shared sandbox and, without its primary, reserves a new one at its next acceptance.
@@ -320,7 +321,8 @@ async def test_acceptances_that_reserve_and_mount_in_one_workspace_do_not_deadlo
     )
     async with asyncio.timeout(10):
         await held.wait()
-    # While the message's acceptance holds the reservation lock, a new thread mounting the shared sandbox waits.
+    # While the message's acceptance holds the reservation lock, a new thread that mounts the shared sandbox waits
+    # to reserve its own primary.
     created = asyncio.create_task(new_thread(env, "x", environments=[data]))
     async with asyncio.timeout(10):
         while True:
@@ -337,6 +339,23 @@ async def test_acceptances_that_reserve_and_mount_in_one_workspace_do_not_deadlo
     release.set()
     for response in (await message, await created):
         assert response.status_code == 201 and response.json()["run"] is not None, response.text
+
+
+async def test_new_use_of_a_sandbox_waits_for_no_reservation_and_no_other_use(env) -> None:  # type: ignore[no-untyped-def]
+    """A run of a thread that already has its sandbox freezes it while another transaction reserves in the
+    workspace and uses the same sandbox."""
+    submitted = await start(env)
+    thread_id, run_id = submitted["thread"]["id"], submitted["run"]["id"]
+    environment_id = submitted["run"]["environment_mounts"][0]["environment_id"]
+    await interrupt(env, run_id)
+    async with transaction(env.runtime.storage) as session:
+        await lifecycle.lock_reservations(session, env.tenant.workspace_id)
+        await session.execute(
+            select(EnvironmentRow.id).where(EnvironmentRow.id == environment_id).with_for_update(read=True)
+        )
+        async with asyncio.timeout(10):
+            follow = await follow_up(env, thread_id, "again")
+    assert follow.status_code == 201 and follow.json()["run"] is not None, follow.text
 
 
 async def test_a_thread_mounts_a_bounded_number_of_environments(env) -> None:  # type: ignore[no-untyped-def]

@@ -5,10 +5,11 @@ run persistence, and no database session survives an external call.
 
 1. Plan: revalidate the run's principal, authority, revision and model in one short session, clean the run's
    object prefix and restore its checkpoint, or start from its parent's state.
-2. Stream: offer the entries assigned to the run as the input, commit a checkpoint at every boundary the
-   `Boundaries` capability marks, then assign and offer compatible pending steers.
-3. End: seal a completed or waiting outcome after committing it as the final checkpoint; seal a failure or
-   cancellation with the display's interrupted tail; give the run back on handoff or a transient failure.
+2. Stream: offer the entries assigned to the run as the input; at every boundary the `Boundaries` capability
+   marks, commit a checkpoint and assign compatible pending steers in one transaction, then offer them.
+3. End: seal a completed or waiting outcome in the transaction that commits it as the final checkpoint; seal a
+   failure or cancellation with the display's interrupted tail; give the run back on handoff or a transient
+   failure.
 """
 
 import asyncio
@@ -75,12 +76,13 @@ from a13n_service.runs.schemas import (
     EnvironmentMount,
     Failure,
     Outcome,
+    Pending,
     Resume,
     ResumeRequest,
     RunOptions,
     canonical_json,
 )
-from a13n_service.runs.seal import release_attempt, seal_attempt
+from a13n_service.runs.seal import release_attempt, seal, seal_attempt
 from a13n_service.runs.secrets import require_secrets
 from a13n_service.runs.stream import ThreadStream
 from a13n_service.runs.subagents import ChildRuns
@@ -111,8 +113,6 @@ class _Plan:
     display: Display
     committed: Committed | None
     seq: int
-    # A completed or waiting outcome the restored checkpoint already holds.
-    outcome: Outcome | None
 
 
 async def execute(runtime: Runtime, lease: Lease, control: AttemptControl) -> None:
@@ -127,10 +127,6 @@ async def execute(runtime: Runtime, lease: Lease, control: AttemptControl) -> No
             await _release(runtime, lease, error)
         else:
             await seal_attempt(runtime, lease, outcome)
-        return
-    if plan.outcome is not None:
-        # An earlier attempt committed the outcome but did not seal it; executing again would repeat work.
-        await seal_attempt(runtime, lease, plan.outcome, committed=plan.committed)
         return
     await _Attempt(runtime, lease, control, plan).run()
 
@@ -212,14 +208,14 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
     # Bytes an earlier attempt wrote after its last commit are never read, and never outlive a takeover.
     await checkpoints.clean(runtime.objects, run)
     if (own := await checkpoints.load_state(runtime.objects, run)) is not None:
-        state, seq, outcome = own.harness, own.seq, own.outcome
+        state, seq = own.harness, own.seq
         # Answers remain Host-owned input until incorporated, even when a pre-effect
         # checkpoint supersedes the waiting parent's continuation. Never replay its grant.
         _, accepted = await _initial(runtime, run, parent)
         resume = replace(accepted, recovery=True).remaining(state.message_history) if accepted is not None else None
         display = await checkpoints.load_display(runtime.objects, run) or Display()
     else:
-        (state, resume), seq, outcome, display = await _initial(runtime, run, parent), 0, None, Display()
+        (state, resume), seq, display = await _initial(runtime, run, parent), 0, Display()
     return _Plan(
         run=run,
         principal=principal,
@@ -235,7 +231,6 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         display=display,
         committed=Committed.of(run),
         seq=seq,
-        outcome=outcome,
     )
 
 
@@ -254,12 +249,12 @@ async def _initial(
     if base is None:
         raise conflict("run", parent.id, "checkpoint_missing")
     state = base.harness if run.lineage == "continue" else base.harness.fork(thread_id=run.thread_id)
-    if base.outcome is None or base.outcome.pending is None:
+    if parent.pending is None:
         return state, None
     if run.resume is not None:
         answers = Resume.model_validate(run.resume)
     else:
-        answers = normalize(base.outcome.pending, ResumeRequest())
+        answers = normalize(Pending.model_validate(parent.pending), ResumeRequest())
     return state, deferred.resume(deferred.load(base.deferred), answers)
 
 
@@ -447,16 +442,16 @@ class _Attempt:
             self.offers.requested = True
         output.flush()  # The checkpoint's display covers every event observed before the boundary.
         staged = self.boundaries.take(boundary.token)
-        await self._commit(staged.state, cursors=staged.cursors)
+        steers = await self._commit(staged.state, cursors=staged.cursors)
         output.boundary()
         if boundary.at == "model" and self.control.handoff.is_set():
             # Yield where the request in flight is simply sent again; at a tool boundary recovery would have to
-            # treat calls that never ran as unknown effects.
+            # treat calls that never ran as unknown effects. Steers just assigned stay with the run.
             self.yielding = True
             stream.cancel()
             return
         # A tool boundary waits for the acknowledgement, so steers pending there join the request after the tools.
-        await self._deliver(stream)
+        await self._offer(stream, steers)
         self.boundaries.acknowledge(boundary.token)
 
     async def _commit(
@@ -466,41 +461,57 @@ class _Attempt:
         cursors: dict[str, str | None],
         outcome: Outcome | None = None,
         deferred: JsonValue = None,
-    ) -> None:
+    ) -> list[Offered]:
+        """Commit a checkpoint and what follows it in one fenced transaction: a completed or waiting outcome seals
+        the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned."""
         if self._near_deadline():
             raise LeaseLost()
         consumed = self.offers.incorporated(state)
         usage = self.usage.pending()
-        self.committed = await checkpoints.save(
+        committed = await checkpoints.publish_checkpoint(
             self.runtime,
             self.lease,
-            previous=self.committed,
-            state=RunState(
-                harness=state, seq=self.seq + 1, attempt=self.lease.number, outcome=outcome, deferred=deferred
-            ),
-            display=self.fold.snapshot(),
-            memory_cursors=cursors,
-            consumed=consumed,
-            usage=usage,
+            RunState(harness=state, seq=self.seq + 1, attempt=self.lease.number, deferred=deferred),
+            self.fold.snapshot(),
         )
-        self.seq += 1
+        worker = self.runtime.settings.worker
+        steers: list[Offered] = []
+        async with transaction(self.runtime.storage) as session:
+            # Thread first: consuming entries fires the thread-version trigger, which updates the thread row.
+            thread, run, attempt, current = await lock_thread_lease(session, self.lease)
+            await checkpoints.commit(
+                session,
+                self.runtime.objects,
+                run,
+                attempt,
+                previous=self.committed,
+                committed=committed,
+                memory_cursors=cursors,
+                consumed=consumed,
+                usage=usage,
+                at=current,
+            )
+            if outcome is not None:
+                await seal(session, self.runtime, thread, run, attempt, outcome, at=current)
+            else:
+                entries = await inbox.assign_steers(
+                    session,
+                    thread,
+                    run,
+                    max_count=worker.delivery_count,
+                    max_bytes=worker.delivery_bytes,
+                    scan=self.runtime.settings.control.inbox_count,
+                )
+                steers = [Offered.of(entry) for entry in entries]
+        self.committed, self.seq = committed, self.seq + 1
         self.offers.consumed(consumed)
         self.usage.ingested(usage)
+        return steers
 
-    async def _deliver(self, stream: HarnessRunStream) -> None:
-        """Assign a bounded batch of compatible pending steers to the run and offer them to its next request."""
-        worker = self.runtime.settings.worker
-        async with transaction(self.runtime.storage) as session:
-            thread, run, _, _ = await lock_thread_lease(session, self.lease)
-            entries = await inbox.assign_steers(
-                session,
-                thread,
-                run,
-                max_count=worker.delivery_count,
-                max_bytes=worker.delivery_bytes,
-                scan=self.runtime.settings.control.inbox_count,
-            )
-        self.offers.unsent.extend(Offered.of(entry) for entry in entries)
+    async def _offer(self, stream: HarnessRunStream, steers: list[Offered]) -> None:
+        """Offer the steers assigned at this boundary, and any the Harness could not take before, to the run's next
+        request."""
+        self.offers.unsent.extend(steers)
         while self.offers.unsent:
             entry = self.offers.unsent[0]
             content = await self._read(entry, stream.context.environment)
@@ -577,7 +588,6 @@ class _Attempt:
                 outcome=outcome,
                 deferred=deferred.dump(result.deferred),
             )
-        await seal_attempt(self.runtime, self.lease, outcome, committed=self.committed)
 
     async def _seal_interrupted(self, outcome: Outcome) -> None:
         """Seal a failure or cancellation with the display this attempt folded, its unfinished items interrupted."""

@@ -1,7 +1,7 @@
 """Desired thread mounts and the immutable mount set a run freezes at acceptance.
 
 The frozen `runs.environment_mounts` of accepted and running runs is the durable active-use evidence that
-stop and destroy check under the environment lock; acceptance takes the same locks before installing it.
+stop and destroy check under the environment row lock; acceptance share-locks the same rows before installing it.
 Desired mount edits are thread operations under the thread `If-Match`, and affect later acceptance only; a
 new thread or fork takes its initial mounts through the same checks before its first acceptance.
 """
@@ -15,7 +15,7 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.infra.http import require_match
-from a13n_service.runs.environments.lifecycle import lock_reservations, require_usable_state, reserve
+from a13n_service.runs.environments.lifecycle import require_usable_state, reserve
 from a13n_service.runs.environments.schemas import MAX_MOUNTS, MountCreate, MountPage, MountView
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.schemas import EnvironmentMount
@@ -88,18 +88,18 @@ def require_usable(environment: EnvironmentRow, principal_id: str) -> None:
 async def lock_environments(
     session: AsyncSession, workspace_id: str, environment_ids: Sequence[str], *, principal_id: str
 ) -> list[EnvironmentRow]:
-    """Lock the workspace's instances in ID order, the order every multi-environment writer uses, and check each
-    is usable. The reservation lock comes first, so acceptance may still reserve a primary sandbox afterwards."""
+    """Share-lock the workspace's instances in ID order, the order every multi-environment writer uses, and check
+    each is usable. New use waits for a stop, delete or lifecycle step, which lock the row exclusively, but never
+    for other new use."""
     ids = sorted(set(environment_ids))
     if not ids:
         return []
-    await lock_reservations(session, workspace_id)
     rows = (
         await session.scalars(
             select(EnvironmentRow)
             .where(EnvironmentRow.workspace_id == workspace_id, EnvironmentRow.id.in_(ids))
             .order_by(EnvironmentRow.id)
-            .with_for_update()
+            .with_for_update(read=True)
             .execution_options(populate_existing=True)
         )
     ).all()
