@@ -1,4 +1,8 @@
-"""Real SIGTERM -> exit -> same-data startup, without a preparation request."""
+"""Real SIGTERM -> exit -> same-data startup, without a preparation request.
+
+In-process restart tests own family staging and the no-replay check after a later graceful close;
+this file keeps the one real signal -> lifespan -> handoff boundary.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +17,6 @@ from contextlib import contextmanager
 
 import httpx
 import pytest
-import yaml
 
 from .test_app import _write_configuration
 
@@ -32,30 +35,19 @@ from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 root = Path(sys.argv[1])
-mode = sys.argv[3]
 owner = None
 async def stream(messages, info):
     returned = [p for m in messages for p in m.parts if isinstance(p, ToolReturnPart)]
-    role = 'root' if mode == 'root' or 'delegate' in {t.name for t in info.function_tools} else 'child'
     with (root / 'requests.jsonl').open('a') as log:
-        log.write(json.dumps({'role': role, 'returns': len(returned)}) + '\n')
-    if role == 'root' and mode == 'family':
-        if not returned:
-            yield {0: DeltaToolCall(name='delegate', tool_call_id='delegate-once', json_args=json.dumps({'subagent_name':'agent-worker','prompt':'Bounded work'}))}
-        elif len(returned) == 1:
-            (root / 'parent-waiting').touch()
-            yield {0: DeltaToolCall(name='wait_subagent', tool_call_id='wait-once', json_args='{"timeout_seconds":120}')}
-        else:
-            yield 'Parent continued'
-            (root / 'root-completed').touch()
-    elif not returned:
-        (root / f'{role}-started').touch()
+        log.write(json.dumps({'returns': len(returned)}) + '\n')
+    if not returned:
+        (root / 'root-started').touch()
         await owner._restart.pause_requested.wait()
         yield {0: DeltaToolCall(name='store', tool_call_id='effect-once', json_args='{"key":"saved-effect","value":1}')}
     else:
         assert len([p for p in returned if p.tool_call_id == 'effect-once']) == 1
         yield 'Continued after graceful restart'
-        (root / f'{role}-completed').touch()
+        (root / 'root-completed').touch()
 async def resolve(self, context, model_id):
     return FunctionModel(stream_function=stream)
 async def bundled():
@@ -77,12 +69,12 @@ except KeyboardInterrupt:
 
 
 @contextmanager
-def listener(root, mode):
+def listener(root):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     process = subprocess.Popen(
-        [sys.executable, "-u", "-c", _SERVER, str(root), str(port), mode],
+        [sys.executable, "-u", "-c", _SERVER, str(root), str(port)],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -124,40 +116,19 @@ def wait_for_file(path):
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX SIGTERM")
-@pytest.mark.parametrize("mode", ["root", "family"])
-def test_sigterm_restarts_tasks_once_across_three_processes(tmp_path, mode):
+def test_sigterm_restarts_task_once_in_the_next_process(tmp_path):
     _write_configuration(tmp_path)
-    if mode == "family":
-        parent_path = tmp_path / "agents/assistant.yaml"
-        parent = yaml.safe_load(parent_path.read_text())
-        parent["subagents"] = [{"agent": "agent-worker"}]
-        parent_path.write_text(yaml.safe_dump(parent))
-        (tmp_path / "agents/worker.yaml").write_text(
-            yaml.safe_dump(
-                {
-                    "schema_version": "1",
-                    "kind": "agent",
-                    "id": "agent-worker",
-                    "name": "Worker",
-                    "model": "model-primary",
-                }
-            )
-        )
-    with listener(tmp_path, mode) as api:
+    with listener(tmp_path) as api:
         response = api.post("/api/threads", json={})
         assert response.status_code == 200, response.text
         thread_id = response.json()["thread_id"]
         response = api.post(f"/api/threads/{thread_id}/submit", json={"prompt": "Continue my work"})
         assert response.status_code == 200, response.text
-        wait_for_file(tmp_path / ("child-started" if mode == "family" else "root-started"))
-        if mode == "family":
-            wait_for_file(tmp_path / "parent-waiting")
+        wait_for_file(tmp_path / "root-started")
         # No prepare request, release file, or browser replay. The context sends
         # SIGTERM and waits for the real server's entire lifespan shutdown.
-    with listener(tmp_path, mode) as api:
+    with listener(tmp_path) as api:
         wait_for_file(tmp_path / "root-completed")
-        if mode == "family":
-            wait_for_file(tmp_path / "child-completed")
         deadline = time.monotonic() + 10
         while True:
             response = api.get(f"/api/threads/{thread_id}/transcript")
@@ -171,11 +142,5 @@ def test_sigterm_restarts_tasks_once_across_three_processes(tmp_path, mode):
                     break
             assert time.monotonic() < deadline
             time.sleep(0.02)
-    before = (tmp_path / "requests.jsonl").read_text()
-    requests = [json.loads(line) for line in before.splitlines()]
-    assert [r["returns"] for r in requests if r["role"] == "root"] == ([0, 1, 2] if mode == "family" else [0, 1])
-    if mode == "family":
-        assert [r["returns"] for r in requests if r["role"] == "child"] == [0, 1]
-    with listener(tmp_path, mode):
-        time.sleep(0.1)
-    assert (tmp_path / "requests.jsonl").read_text() == before
+    requests = [json.loads(line) for line in (tmp_path / "requests.jsonl").read_text().splitlines()]
+    assert [request["returns"] for request in requests] == [0, 1]
