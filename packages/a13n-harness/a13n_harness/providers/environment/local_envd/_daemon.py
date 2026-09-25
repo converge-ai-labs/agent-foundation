@@ -190,7 +190,8 @@ async def _stop_validation_process(process: asyncio.subprocess.Process) -> None:
                 os.killpg(process.pid, signal.SIGKILL)
             elif process.returncode is None:
                 process.kill()
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
+            # macOS reports EPERM when every group member has exited but is not yet reaped.
             pass
         async with asyncio.timeout(_TERMINATE_GRACE_SECONDS):
             await asyncio.gather(drain(process.stdout), drain(process.stderr), process.wait())
