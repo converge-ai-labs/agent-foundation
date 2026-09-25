@@ -1,6 +1,6 @@
 # Logging
 
-`a13n-logging` supplies standard-library loggers, one process configuration call, and pretty or JSON formatting. Use it when embedding Foundation packages in your own executable. It does not provide a log server, trace exporter, centralized storage or automatic secret redaction.
+`a13n-logging` supplies standard-library loggers, one process configuration call, pretty or JSON formatting, an optional rotating file, and fields bound to the current context. Use it when embedding Foundation packages in your own executable. It does not provide a log server, trace exporter, centralized storage or automatic secret redaction.
 
 ## Install and emit a record
 
@@ -43,6 +43,44 @@ Calling `configure_logging()` applies `logging.config.dictConfig()` immediately.
 
 The default `logger_names=()` selects **no namespaces**. The helper does not configure the root logger or infer which Foundation packages to capture. Supply actual logger namespaces; distribution names such as `a13n-harness` are not necessarily Python logger names.
 
+## Bind fields to a unit of work
+
+`log_context(**fields)` adds fields to every record logged in its block, by any configured logger, including records of libraries and of tasks started inside the block:
+
+```python
+from a13n_logging import get_logger, log_context
+
+logger = get_logger("my_application.jobs")
+
+
+async def run_job(job_id: str) -> None:
+    with log_context(job_id=job_id):
+        logger.info("job_started")  # carries job_id
+        await step()  # its records carry job_id too
+```
+
+The fields live in a context variable, so concurrent tasks never see each other's fields. An inner block adds to the outer one's fields and replaces a field of the same name. A field passed in `extra`, or a standard record attribute of the same name, wins over a bound field.
+
+The handlers `configure_logging()` creates add the bound fields. A handler you attach yourself, such as a test's capture handler, adds them only with `ContextFilter` from `a13n_logging.context`.
+
+## Write a rotating file
+
+Pass a `LogFile` to write JSON records to a file, instead of or besides stdout:
+
+```python
+from pathlib import Path
+
+from a13n_logging import LogFile, LogFormat, configure_logging
+
+configure_logging(
+    log_format=LogFormat.pretty,
+    logger_names=("my_application",),
+    file=LogFile(path=Path("/var/log/my-application/app.log"), max_bytes=100 * 1024 * 1024, backups=5),
+)
+```
+
+The file is always JSON, whatever `log_format` selects for stdout. When a record would take the active file past `max_bytes`, it becomes `app.log.1`, older files shift up, and the oldest beyond `backups` is deleted; the active file is not counted in `backups`. Both values must be at least 1, because standard logging never rotates when either is zero. The directory must exist and be writable, or configuration fails. One process owns one file: processes that share a path rotate it under each other.
+
 ## Configuration reference
 
 `configure_logging()` accepts keyword-only arguments:
@@ -51,9 +89,13 @@ The default `logger_names=()` selects **no namespaces**. The helper does not con
 | ----------------------------- | ------------------ | --------------------------------------------------------------------------------------- |
 | `level: str`                  | `"INFO"`           | Uppercased before passing to standard logging; invalid levels fail during configuration |
 | `log_format: LogFormat`       | `LogFormat.pretty` | Use the enum member `pretty` or `json`, not an arbitrary string                         |
-| `logger_names: Sequence[str]` | `()`               | Exact namespaces to attach to the generated `default` handler                           |
+| `logger_names: Sequence[str]` | `()`               | Exact namespaces to attach to the generated handlers                                    |
+| `stdout: bool`                | `True`             | Write records to stdout in `log_format`                                                 |
+| `file: LogFile \| None`       | `None`             | Also write JSON records to a rotating file                                              |
 
-The configuration uses logging schema version `1` and `disable_existing_loggers=False`. Each selected logger receives the chosen level, the output handler, and `propagate=False`, preventing a second emission through ancestors. Other loggers are not disabled.
+At least one output is required: `stdout=False` without a `file` fails.
+
+The configuration uses logging schema version `1` and `disable_existing_loggers=False`. Each selected logger receives the chosen level, the output handlers, and `propagate=False`, preventing a second emission through ancestors. Other loggers are not disabled.
 
 ### Pretty output
 
@@ -91,6 +133,8 @@ Use `exception_details(error)` when a structured diagnostic needs exception type
 | `LogFormat`                | Enum containing `pretty` and `json`                             |
 | `get_logger(name)`         | Return the standard-library logger without configuring it       |
 | `configure_logging(...)`   | Configure the selected namespaces of the current process        |
+| `LogFile`                  | A rotating JSON log file: path, size limit and backups          |
+| `log_context(**fields)`    | Bind fields to every record logged in a block                   |
 | `JsonFormatter`            | Produce structured JSON records                                 |
 | `PrettyFormatter`          | Produce event-style text for Rich                               |
 | `exception_details(error)` | Return bounded exception structure without messages or payloads |

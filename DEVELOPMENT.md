@@ -141,9 +141,9 @@ These values apply only to migration connections. Override them only for a revie
 
 ## Logging
 
-Configure Python logging once in the executable before Uvicorn or a worker starts. Libraries only obtain namespaced loggers through `a13n-logging`. Use Rich-backed `pretty` output locally and structured `json` output in deployments, writing to stdout or stderr.
+Configure Python logging once in the executable before Uvicorn or a worker starts. Libraries only obtain namespaced loggers through `a13n-logging`. Use Rich-backed `pretty` output locally and structured `json` output in deployments, writing to stdout, to a size-rotated JSON file, or both.
 
-Prefer stable event names and structured fields. Include service, role, build version, request or trace ID, and applicable session, thread, run, and attempt IDs. Log exceptions with stack traces at the boundary that handles them. Never log credentials, authorization headers, password-bearing URLs, cookies, raw prompts, model output, tool payloads, or uploaded content by default.
+Prefer stable event names and structured fields. Bind the IDs of a unit of work, such as a request, run or attempt, with `log_context` at the boundary that owns it, instead of passing them to every call. Include service, role, build version, request or trace ID, and applicable session, thread, run, and attempt IDs. Log exceptions with stack traces at the boundary that handles them. Never log credentials, authorization headers, password-bearing URLs, cookies, raw prompts, model output, tool payloads, or uploaded content by default.
 
 ## Container Image
 
