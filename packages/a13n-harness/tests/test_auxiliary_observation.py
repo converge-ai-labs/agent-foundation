@@ -402,9 +402,10 @@ async def test_instrumented_review_preserves_failure_policy_and_cancellation(fai
         else:
             await asyncio.Event().wait()
 
+    # The deadline also covers review setup; it must expire only once the review request is in flight.
     reviewer = AgentToolReviewer(
         FunctionModel(stream_function=review),
-        config=ToolReviewConfig(model="test:review", timeout_seconds=0.01 if failure == "timeout" else 120),
+        config=ToolReviewConfig(model="test:review", timeout_seconds=0.5 if failure == "timeout" else 120),
     )
 
     def shell_exec(command: str) -> str:
@@ -435,6 +436,7 @@ async def test_instrumented_review_preserves_failure_policy_and_cancellation(fai
         result = await task
         assert result.status == ("completed" if failure == "timeout" else "suspended")
         if failure == "timeout":
+            assert started.is_set()
             assert "Tool review timed out; the tool was not executed" in str(result.all_messages())
         if failure == "invalid":
             # The review request that answered is the calling agent's model usage, as its own requests are.
