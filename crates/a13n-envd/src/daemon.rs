@@ -3574,6 +3574,53 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn expired_disconnect_grace_rejects_attach_but_allows_open() {
+        let config = Config::for_test("env-test");
+        let fixture = Fixture::new(&config, 7);
+        initialize(&fixture).await;
+        let original = fixture.descriptor.clone();
+        fixture.device.detach(&fixture.carrier).await;
+        // The next carrier stays uninitialized while the previous Session's grace expires.
+        let (sender, _receiver) = tokio::sync::mpsc::channel(16);
+        let carrier = fixture.device.carrier(sender);
+        fixture.session.state().detached_at = Some(super::Instant::now() - config.disconnect_grace);
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(
+                &carrier,
+                &request(json!(1), "initialize", initialize_params()),
+            )
+            .await;
+        assert!(
+            serde_json::from_slice::<Value>(&response.payload)
+                .unwrap()
+                .get("result")
+                .is_some()
+        );
+        let mut attach: Value =
+            serde_json::from_str(&request(json!(2), "session.attach", json!({}))).unwrap();
+        attach["eip_session"] = json!(original.session_id);
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(&carrier, &attach.to_string())
+            .await;
+        let expired: Value = serde_json::from_slice(&response.payload).unwrap();
+        assert_eq!(
+            expired["error"]["data"]["error_type"], "not_initialized",
+            "{expired}"
+        );
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(
+                &carrier,
+                &request(json!(3), "session.open", fixture.open_params(json!([]))),
+            )
+            .await;
+        let opened: Value = serde_json::from_slice(&response.payload).unwrap();
+        assert_eq!(opened["result"]["descriptor"]["generation"], 7);
+    }
+
     #[test]
     fn dispatch_fits_a_windows_sized_thread_stack() {
         std::thread::Builder::new()

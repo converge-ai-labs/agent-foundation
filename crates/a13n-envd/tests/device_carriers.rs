@@ -358,7 +358,7 @@ async fn http_sessions_are_not_tcp_affine_and_close_is_scoped() {
 }
 
 #[tokio::test]
-async fn reverse_websocket_reattaches_sessions_and_expires_disconnected_owners() {
+async fn reverse_websocket_reattaches_sessions_within_disconnect_grace() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let device = DeviceProcess::start(
         "reverse_websocket",
@@ -413,29 +413,6 @@ async fn reverse_websocket_reattaches_sessions_and_expires_disconnected_owners()
         ws_control(
             &mut socket,
             request(Some(&session), "session.keepalive", json!({})),
-        )
-        .await,
-    );
-    socket.close(None).await.unwrap();
-    drop(socket);
-    // The next carrier remains uninitialized while the previous Session's grace expires.
-    let mut socket = accept(&listener).await;
-    tokio::time::sleep(Duration::from_millis(1800)).await;
-    result(ws_control(&mut socket, request(None, "initialize", initialize())).await);
-    let expired = ws_control(
-        &mut socket,
-        request(Some(&session), "session.attach", json!({})),
-    )
-    .await;
-    assert!(expired.get("error").is_some(), "{expired}");
-    result(
-        ws_control(
-            &mut socket,
-            request(
-                None,
-                "session.open",
-                open_params(&descriptor, &device.path("beta")),
-            ),
         )
         .await,
     );
