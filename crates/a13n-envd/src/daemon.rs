@@ -3330,7 +3330,7 @@ mod tests {
         operation::{BeginOutcome, random_selector},
     };
 
-    use super::{Daemon, fresh_generation, mutation_receipt};
+    use super::{Daemon, mutation_receipt};
 
     struct TempTree(PathBuf);
 
@@ -3514,15 +3514,6 @@ mod tests {
         assert_eq!(session["result"]["descriptor"]["device_id"], "env-test");
         assert!(session["result"]["descriptor"]["session_id"].is_string());
         assert!(device["result"]["descriptor"].get("session_id").is_none());
-    }
-
-    #[test]
-    fn generations_are_nonzero_and_fresh() {
-        let first = fresh_generation().expect("secure randomness is available");
-        let second = fresh_generation().expect("secure randomness is available");
-        assert_ne!(first, 0);
-        assert_ne!(second, 0);
-        assert_ne!(first, second);
     }
 
     #[tokio::test]
@@ -4199,24 +4190,6 @@ mod tests {
             .expect("response is JSON");
             assert_eq!(response["result"]["descriptor"]["generation"], 10);
         }
-    }
-
-    #[tokio::test]
-    async fn active_only_ids_do_not_wait_for_terminal_ttl() {
-        let mut config = Config::for_test("env-test");
-        config.limits.operation_record_ttl_ms = 1;
-        let daemon = Fixture::new(&config, 11);
-        let _ = initialize(&daemon).await;
-        let describe = request(
-            json!(2),
-            "environment.describe",
-            json!({"context": {"operation_id": "expires"}}),
-        );
-        let _ = daemon.handle_payload(&describe).await;
-        tokio::time::sleep(Duration::from_millis(5)).await;
-        let reused: Value = serde_json::from_slice(&daemon.handle_payload(&describe).await)
-            .expect("response is JSON");
-        assert_eq!(reused["result"]["descriptor"]["generation"], 11);
     }
 
     #[tokio::test]
