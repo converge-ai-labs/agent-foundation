@@ -406,6 +406,8 @@ A supplied meter provider enables these low-cardinality Harness instruments unde
 | `a13n.harness.run.model_attempts` | Histogram     | `{attempt}` | `a13n.run.outcome`    |
 | `a13n.harness.operation.duration` | Histogram     | `s`         | `a13n.operation.kind` |
 
+The duration histograms advise bucket boundaries in seconds, from 1 s to 1 h for runs and from 5 ms to 5 min for operations, instead of the OpenTelemetry defaults sized for milliseconds; a Host's metric views can replace them.
+
 Pydantic AI separately owns native token usage, cost, and time-to-first-chunk metrics. The Harness does not duplicate them. IDs, Agent names, failure codes, content, paths, and error text are never Harness metric dimensions.
 
 ## Instrumentation ownership

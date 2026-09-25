@@ -747,6 +747,8 @@ async def test_metrics_only_records_exact_low_cardinality_harness_registry() -> 
     attempts_point = metrics["a13n.harness.run.model_attempts"].data.data_points[0]
     active_point = metrics["a13n.harness.run.active"].data.data_points[0]
     assert dict(duration_point.attributes) == {"a13n.run.outcome": "completed"}
+    # Seconds get buckets sized for seconds, not the OpenTelemetry defaults sized for milliseconds.
+    assert duration_point.explicit_bounds[:3] == (1, 2.5, 5)
     assert dict(attempts_point.attributes) == {"a13n.run.outcome": "completed"}
     assert attempts_point.sum == 1
     assert active_point.value == 0

@@ -66,6 +66,9 @@ _MAX_OBSERVATION_METADATA_ENTRIES = 16
 _MAX_OBSERVATION_METADATA_KEY_LENGTH = 64
 _MAX_OBSERVATION_METADATA_STRING_BYTES = 256
 _OBSERVATION_METADATA_KEY_PATTERN = r"[a-z][a-z0-9_.-]*"
+# Durations are in seconds; the OpenTelemetry default buckets are sized for milliseconds.
+_RUN_SECONDS_BUCKETS = (1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600)
+_OPERATION_SECONDS_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300)
 
 OperationKind = Literal["recovery", "delegation", "handoff", "compaction", "tool_review"]
 RunOutcome = Literal["completed", "suspended", "failed", "cancelled"]
@@ -513,6 +516,7 @@ class _ObservationRuntime:
                 "a13n.harness.run.duration",
                 unit="s",
                 description="Duration of one logical Harness run",
+                explicit_bucket_boundaries_advisory=_RUN_SECONDS_BUCKETS,
             )
             self._run_active = meter.create_up_down_counter(
                 "a13n.harness.run.active",
@@ -528,6 +532,7 @@ class _ObservationRuntime:
                 "a13n.harness.operation.duration",
                 unit="s",
                 description="Duration of one independently meaningful Harness operation",
+                explicit_bucket_boundaries_advisory=_OPERATION_SECONDS_BUCKETS,
             )
 
         pydantic_tracing = configuration.tracer_provider is not None
