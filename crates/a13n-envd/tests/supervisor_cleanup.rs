@@ -57,15 +57,17 @@ fn assert_broken_event_pipe_cleans_the_command_group(output: bool) {
     writeln!(input, "{}", json!({"type":"start"})).unwrap();
     input.flush().unwrap();
     let deadline = Instant::now() + Duration::from_secs(15);
-    while !root.join("descendant").exists() {
+    // The shell creates the file before it writes the PID, so wait for a complete number.
+    let pid: i32 = loop {
+        if let Some(pid) = std::fs::read_to_string(root.join("descendant"))
+            .ok()
+            .and_then(|text| text.trim().parse().ok())
+        {
+            break pid;
+        }
         assert!(Instant::now() < deadline, "payload did not start");
         std::thread::sleep(Duration::from_millis(10));
-    }
-    let pid: i32 = std::fs::read_to_string(root.join("descendant"))
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    };
     // Keep stdin open: only the failed event write triggers cleanup here.
     drop(events);
     std::fs::write(root.join("proceed"), "").unwrap();
