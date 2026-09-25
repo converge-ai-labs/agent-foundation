@@ -183,10 +183,16 @@ def verify_cleanup(binary, failure):
                 ]
                 assert len(workers) == 1, workers
                 os.kill(workers[0], signal.SIGKILL)
-            time.sleep(3)
+            # The payload appends every 0.05 s, so a size unchanged across 0.3 s proves it stopped.
+            deadline = time.monotonic() + 3
             size = heartbeat.stat().st_size
-            time.sleep(0.3)
-            assert heartbeat.stat().st_size == size, f"payload survived {failure}"
+            while True:
+                time.sleep(0.3)
+                current = heartbeat.stat().st_size
+                if current == size:
+                    break
+                assert time.monotonic() < deadline, f"payload survived {failure}"
+                size = current
         finally:
             device.shutdown()
     print(f"PASS {failure}: managed command stops")
