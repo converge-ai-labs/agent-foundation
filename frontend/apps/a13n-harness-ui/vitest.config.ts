@@ -5,7 +5,8 @@ export default defineConfig({
     // Local measurements favor threads; preserve the existing CI pool.
     pool: process.env.CI ? "forks" : "threads",
     // CI uses an eight-core runner; leave capacity for the real Python App fixtures.
-    maxWorkers: process.env.CI ? 4 : 2,
+    // Locally, Vitest's default (one per core, minus one) runs about twice as fast as two.
+    maxWorkers: process.env.CI ? 4 : undefined,
     deps: {
       optimizer: {
         client: {
