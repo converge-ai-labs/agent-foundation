@@ -73,6 +73,22 @@ def test_roles_share_one_image_and_start_after_the_migration_job():
 
 
 @helm
+def test_every_service_pod_serves_metrics_on_its_own_port():
+    documents = render("local")
+    deployments = {d["metadata"]["name"]: d for d in documents if d["kind"] == "Deployment"}
+    for role in ("control", "worker"):
+        template = deployments[f"a13n-a13n-{role}"]["spec"]["template"]
+        container = template["spec"]["containers"][0]
+        assert {"name": "A13N_TELEMETRY__METRICS_PORT", "value": "9464"} in container["env"]
+        assert {"name": "metrics", "containerPort": 9464} in container["ports"]
+        assert template["metadata"]["annotations"]["prometheus.io/port"] == "9464"
+    # The API Service exposes only the API.
+    service = next(d for d in documents if d["kind"] == "Service" and d["metadata"]["name"] == "a13n-a13n-control")
+    assert [port["name"] for port in service["spec"]["ports"]] == ["http"]
+    assert not any(d["kind"] == "PodMonitor" for d in documents)
+
+
+@helm
 def test_s3_objects_require_a_bucket():
     result = subprocess.run(
         ["helm", "template", "a13n", str(CHART), "--set", "objects.backend=s3"], capture_output=True, text=True

@@ -68,6 +68,16 @@ resources:
   limits:
     cpu: "2"
     memory: 2Gi
+# Prometheus metrics of every Service Pod, on their own port, which no Service or Ingress exposes. Pods carry
+# prometheus.io scrape annotations; a PodMonitor serves the Prometheus or VictoriaMetrics operator instead.
+metrics:
+  enabled: true
+  port: 9464
+  podMonitor:
+    enabled: false
+    interval: 30s
+    # Labels the operator's podMonitorSelector matches, such as release: kube-prometheus-stack.
+    labels: {}
 # Additional non-secret TOML sections, such as [providers] or [telemetry]. The chart writes [server], [database],
 # [objects] and, with bundled Redis, [redis]; set their other fields as A13N_<SECTION>__<FIELD> Secret keys.
 extraConfig: ""

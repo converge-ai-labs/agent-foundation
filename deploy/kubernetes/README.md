@@ -28,6 +28,10 @@ Every install and upgrade creates the Job `a13n-a13n-migrate-<revision>`, which 
 
 With `objects.backend: local`, every Service Pod mounts the claim `a13n-a13n-objects` at `/app/var/objects`. The Chart's claim is ReadWriteOnce, which shares it only among Pods on one node; kind has one node. On multi-node clusters set `persistence.existingClaim` to a ReadWriteMany claim (adapt `examples/objects-pvc.yaml`) or use `objects.backend: s3`. The local claim has Helm's `keep` policy. Switching backends does not migrate stored objects.
 
+### Metrics
+
+Control and Worker Pods serve Prometheus metrics at `/metrics` on the container port `metrics` (`metrics.port`, 9464 by default), set as `A13N_TELEMETRY__METRICS_PORT` so a `[telemetry]` section in `extraConfig` still applies. No Service or Ingress exposes that port. The Pods carry `prometheus.io` scrape annotations, and `metrics.podMonitor.enabled` adds a PodMonitor for the Prometheus or VictoriaMetrics operator, carrying `metrics.podMonitor.labels`. `metrics.enabled: false` turns metrics off. The [monitoring bundle](../monitoring/README.md) holds alert rules and dashboards for these metrics.
+
 ## Configuration and secrets
 
 The Chart renders `service.toml` from values: `[server]` (including `publicUrl` and `trustedProxies`), `[database]`, `[objects]` and, with bundled Redis, `[redis]`. `extraConfig` appends other non-secret sections such as `[providers]` or `[telemetry]`. The Secret named by `existingSecret` supplies credentials as Service settings, `A13N_<SECTION>__<FIELD>`, which override the file. Unknown `A13N_` variables stop the Service, so Pods disable Kubernetes service-link variables. See the [configuration reference](../../docs/a13n-service/configuration-reference.md).

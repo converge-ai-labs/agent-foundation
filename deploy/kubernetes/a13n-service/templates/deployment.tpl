@@ -24,6 +24,11 @@ spec:
         app.kubernetes.io/component: {{ $role }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.tpl") . | sha256sum }}
+        {{- if .Values.metrics.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.metrics.port | quote }}
+        prometheus.io/path: /metrics
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -44,9 +49,19 @@ spec:
         - name: service
           {{- include "a13n.container" . | nindent 10 }}
           args: ["a13n-service", "--config", "/app/service.toml", "run", "--role", {{ $role | quote }}]
+          {{- if .Values.metrics.enabled }}
+          # A setting of its own, so a [telemetry] section in extraConfig still applies.
+          env:
+            - name: A13N_TELEMETRY__METRICS_PORT
+              value: {{ .Values.metrics.port | quote }}
+          {{- end }}
           ports:
             - name: http
               containerPort: 8000
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+            {{- end }}
           startupProbe:
             httpGet:
               path: /readyz
