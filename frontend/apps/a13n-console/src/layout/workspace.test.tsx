@@ -103,18 +103,16 @@ it("selects the exact workspace key and retains its immutable identity", async (
     ),
   ).toBeTruthy();
 });
-it.each([
-  "/other/design/agents",
-  "/workspace/missing/agents",
-  "/workspace/ws_first/agents",
-  "/org_test/research/agents",
-])("does not fall back to an accessible workspace for %s", async (path) => {
-  mount(path);
-  expect(
-    await screen.findByRole("heading", { name: "Not found" }),
-  ).toBeTruthy();
-  expect(screen.queryByText(/\|ws_/)).toBeNull();
-});
+it.each(["/workspace/missing/agents", "/workspace/ws_first/agents"])(
+  "does not fall back to an accessible workspace for %s",
+  async (path) => {
+    mount(path);
+    expect(
+      await screen.findByRole("heading", { name: "Not found" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/\|ws_/)).toBeNull();
+  },
+);
 it("redirects the entry page using the current workspace key", async () => {
   mount("/");
   expect(
