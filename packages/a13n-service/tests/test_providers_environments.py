@@ -45,26 +45,27 @@ async def test_hosted_accounts_name_no_endpoint(service) -> None:  # type: ignor
         assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "config", refused.text
 
 
-@pytest.mark.parametrize("type_", sorted(ACCOUNTS))
-async def test_hosted_accounts_seal_their_credential_and_check_their_recipes(service, type_: str) -> None:  # type: ignore[no-untyped-def]
-    config, credential, broken = ACCOUNTS[type_]
+async def test_hosted_accounts_seal_their_credential_and_check_their_recipes(service) -> None:  # type: ignore[no-untyped-def]
     collection = f"{service.organization}/environment-providers"
-    body = {"workspace_id": None, "type": type_, "name": type_, "config": config}
-    missing = await service.client.post(collection, json=body)
-    assert missing.status_code == 400 and missing.json()["error"]["details"]["field"] == "credential"
-    created = await service.client.post(collection, json={**body, "credential": credential})
-    assert created.status_code == 201, created.text
-    provider = created.json()
-    assert provider["credential_configured"] and SECRET not in created.text
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(EnvironmentProviderRow, provider["id"])
-    assert row is not None and row.credential is not None and SECRET not in json.dumps(row.credential)
-    location = SecretLocation(row.organization_id, "environment_providers", "credential", row.id)
-    assert json.loads(service.runtime.keys.reveal(Envelope.model_validate(row.credential), location)) == credential
-
     templates = f"{service.workspace}/environment-templates"
-    template = {"key": "box", "name": "Box", "provider_id": provider["id"]}
-    accepted = await service.client.post(templates, json={**template, "config": {"recipe": {}}})
-    assert accepted.status_code == 201, accepted.text
-    rejected = await service.client.post(templates, json={**template, "key": "bad", "config": {"recipe": broken}})
-    assert rejected.status_code == 400 and rejected.json()["error"]["details"]["field"] == "config.recipe"
+    for type_, (config, credential, broken) in ACCOUNTS.items():
+        body = {"workspace_id": None, "type": type_, "name": type_, "config": config}
+        missing = await service.client.post(collection, json=body)
+        assert missing.status_code == 400 and missing.json()["error"]["details"]["field"] == "credential", type_
+        created = await service.client.post(collection, json={**body, "credential": credential})
+        assert created.status_code == 201, created.text
+        provider = created.json()
+        assert provider["credential_configured"] and SECRET not in created.text
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get(EnvironmentProviderRow, provider["id"])
+        assert row is not None and row.credential is not None and SECRET not in json.dumps(row.credential)
+        location = SecretLocation(row.organization_id, "environment_providers", "credential", row.id)
+        assert json.loads(service.runtime.keys.reveal(Envelope.model_validate(row.credential), location)) == credential
+
+        template = {"key": f"box-{type_}", "name": "Box", "provider_id": provider["id"]}
+        accepted = await service.client.post(templates, json={**template, "config": {"recipe": {}}})
+        assert accepted.status_code == 201, accepted.text
+        rejected = await service.client.post(
+            templates, json={**template, "key": f"bad-{type_}", "config": {"recipe": broken}}
+        )
+        assert rejected.status_code == 400 and rejected.json()["error"]["details"]["field"] == "config.recipe", type_

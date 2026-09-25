@@ -174,9 +174,8 @@ async def test_skill_revisions_and_package_content(service) -> None:  # type: ig
     assert missing.value.code == "not_found"
 
 
-@pytest.mark.parametrize(
-    ("files", "links", "reason"),
-    [
+async def test_unsafe_or_invalid_packages_are_refused(service) -> None:  # type: ignore[no-untyped-def]
+    refused = [
         ({"SKILL.md": DOCUMENT, "../escape.txt": b"x"}, (), "stay inside the package"),
         ({"SKILL.md": DOCUMENT, "/etc/cron.d/x": b"x"}, (), "stay inside the package"),
         ({"SKILL.md": DOCUMENT, "a\\b.txt": b"x"}, (), "stay inside the package"),
@@ -186,15 +185,14 @@ async def test_skill_revisions_and_package_content(service) -> None:  # type: ig
         ({"SKILL.md": b"# no frontmatter\n"}, (), "must begin with YAML frontmatter"),
         ({"SKILL.md": b"---\nname: x\n---\n"}, (), "valid name and description"),
         ({"SKILL.md": DOCUMENT, "Doc.md": b"a", "doc.md": b"b"}, (), "collide"),
-    ],
-)
-async def test_unsafe_or_invalid_packages_are_refused(service, files, links, reason) -> None:  # type: ignore[no-untyped-def]
-    upload_id = await stage(service, archive(files, links=links), "bad")
-    response = await service.client.post(
-        f"{service.workspace}/skills", json={"source": {"kind": "upload", "upload_id": upload_id}}
-    )
-    assert response.status_code == 400, response.text
-    assert reason in response.json()["error"]["message"]
+    ]
+    for index, (files, links, reason) in enumerate(refused):
+        upload_id = await stage(service, archive(files, links=links), f"bad-{index}")
+        response = await service.client.post(
+            f"{service.workspace}/skills", json={"source": {"kind": "upload", "upload_id": upload_id}}
+        )
+        assert response.status_code == 400, response.text
+        assert reason in response.json()["error"]["message"], files
 
 
 async def test_package_limits_keys_and_authorization(service) -> None:  # type: ignore[no-untyped-def]
