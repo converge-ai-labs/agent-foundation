@@ -59,7 +59,8 @@ async def test_timeout_and_cancel_kill_descendants(tmp_path: Path, cancel: bool)
         )
     )
     async with asyncio.timeout(3):
-        while not pidfile.exists():
+        # The redirection creates the file before echo writes the PID line.
+        while not pidfile.exists() or not pidfile.read_text().endswith("\n"):
             await asyncio.sleep(0.01)
     child = int(pidfile.read_text())
     if cancel:
