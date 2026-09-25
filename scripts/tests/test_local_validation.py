@@ -38,15 +38,23 @@ def test_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[list
     return calls
 
 
-def test_selected_paths_share_one_process_per_package_in_selection_order(test_workspace) -> None:
+def test_selected_paths_share_one_process_per_package_with_a_worker_per_file(test_workspace) -> None:
     first = f"{SERVICE}/test_one.py::test_example"
     second = f"{SERVICE}/test_two.py"
-    ui = f"{UI}/test_one.py"
-    assert main([first, ui, second]) == 0
+    ui = f"{UI}/test_one.py::test_example"
+    assert main([first, ui, second, f"{UI}/test_one.py::test_other"]) == 0
     assert test_workspace == [
-        [sys.executable, "-m", "pytest", "-n", "7", "--dist", "loadgroup", first, second],
-        [sys.executable, "-m", "pytest", "-n", str(default_workers(Path(UI))), "--dist", "loadgroup", ui],
+        [sys.executable, "-m", "pytest", "-n", "2", "--dist", "loadgroup", first, second],
+        # A single file runs in one process anyway, so it skips xdist workers.
+        [sys.executable, "-m", "pytest", "-n", "0", "--dist", "loadgroup", ui, f"{UI}/test_one.py::test_other"],
     ]
+
+
+def test_directory_selection_keeps_the_suite_worker_count(test_workspace) -> None:
+    for index in range(10):
+        (Path(SERVICE) / f"test_more_{index}.py").touch()
+    assert main([SERVICE]) == 0
+    assert test_workspace[0][4] == str(default_workers(Path(SERVICE)))
 
 
 def test_default_selection_keeps_all_packages_and_accepts_zero_workers(test_workspace) -> None:

@@ -34,7 +34,14 @@ def test_value():
 def test_other():
     assert models.other() == 2
 """
+SETTINGS_SOURCE = """class Settings:
+    limit = 1
+
+    def current(self):
+        return self.limit
+"""
 MODELS = "packages/a13n-core/a13n_core/models.py"
+SETTINGS = "packages/a13n-core/a13n_core/settings.py"
 UNMEASURED = "packages/a13n-core/a13n_core/unmeasured.py"
 TEST_FILE = "packages/a13n-core/tests/test_models.py"
 PACKAGE = "a13n-core"
@@ -47,7 +54,12 @@ def _git(root: Path, *args: str) -> str:
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A committed miniature repository with a recorded map: two mapped tests, two unrelated ones."""
-    for relative, content in {MODELS: SOURCE, UNMEASURED: "X = 1\n", TEST_FILE: TESTS}.items():
+    for relative, content in {
+        MODELS: SOURCE,
+        SETTINGS: SETTINGS_SOURCE,
+        UNMEASURED: "X = 1\n",
+        TEST_FILE: TESTS,
+    }.items():
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
@@ -64,13 +76,14 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "tests": {
             f"{TEST_FILE}::test_value": {MODELS: ["value"], TEST_FILE: ["test_value"]},
             f"{TEST_FILE}::test_other": {MODELS: ["other"], TEST_FILE: ["test_other"]},
+            f"{TEST_FILE}::test_settings": {SETTINGS: ["Settings.current"]},
             f"{TEST_FILE}::test_unrelated_a": {},
             f"{TEST_FILE}::test_unrelated_b": {},
         },
         "reads": {},
         "funcmaps": {
             relative: {str(n): q for n, q in astmap.line_to_qualname_from_file(str(tmp_path / relative)).items()}
-            for relative in (MODELS, TEST_FILE)
+            for relative in (MODELS, SETTINGS, TEST_FILE)
         },
         "dynamic": {},
     }
@@ -90,7 +103,7 @@ def _select(root: Path, *files: str) -> impact.Selection:
 def test_find_map_walks_ancestors_and_reports_distance(repo: Path) -> None:
     assert impact.find_map("a13n-missing") is None
     found = impact.find_map(PACKAGE)
-    assert found is not None and found.distance == 0 and len(found.tests) == 4
+    assert found is not None and found.distance == 0 and len(found.tests) == 5
     (repo / "note.txt").write_text("later\n")
     _git(repo, "add", "note.txt")
     _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "later")
@@ -126,6 +139,12 @@ def test_module_level_edit_or_insertion_selects_every_test_touching_the_file(rep
     assert _select(repo).tests == {f"{TEST_FILE}::test_value", f"{TEST_FILE}::test_other"}
     (repo / MODELS).write_text(SOURCE.replace('"""Models."""\n', '"""Models."""\nimport os  # noqa: F401\n'))
     assert _select(repo).tests == {f"{TEST_FILE}::test_value", f"{TEST_FILE}::test_other"}
+
+
+def test_class_body_edit_selects_every_test_touching_the_file(repo: Path) -> None:
+    # Class bodies run at import, outside every test, so the map never records the class itself.
+    (repo / SETTINGS).write_text(SETTINGS_SOURCE.replace("limit = 1", "limit = 2"))
+    assert _select(repo, SETTINGS).tests == {f"{TEST_FILE}::test_settings"}
 
 
 def test_cosmetic_change_and_unmapped_file_are_reported(repo: Path) -> None:

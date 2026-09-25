@@ -9,6 +9,7 @@ a changed function; a module-level edit selects every test that executed anythin
 from __future__ import annotations
 
 import argparse
+import ast
 import gzip
 import json
 import os
@@ -128,8 +129,9 @@ def select(impact: ImpactMap, files: Iterable[str]) -> Selection:
         for p, k in diff.changed_lines(impact.commit, cwd=str(REPOSITORY_ROOT)).items()
         if p in mapped and p not in deleted
     }
+    recorded: dict[str, str | None] = {}
     for path in list(changed):
-        old = resolve._git_show(impact.commit, path, str(REPOSITORY_ROOT))
+        old = recorded[path] = resolve._git_show(impact.commit, path, str(REPOSITORY_ROOT))
         if old is not None and not semantic.is_semantic_change(old, (REPOSITORY_ROOT / path).read_text("utf-8")):
             result.cosmetic.add(path)
             del changed[path]
@@ -139,6 +141,10 @@ def select(impact: ImpactMap, files: Iterable[str]) -> Selection:
     for path, kinds in changed.items():
         # tia ignores module-level insertions; a new import or registration is a real change.
         if any(impact.funcmaps[path].get(line) is None for line in kinds["ins"]):
+            module_files.add(path)
+        # A class body runs at import, outside every test, so no test records the class itself:
+        # a changed field default or class attribute is a module-level change.
+        if func_changes.get(path, set()) & _class_names(recorded[path]):
             module_files.add(path)
     module_files, _ = tia_select.escalate_dynamic(func_changes, module_files, impact.dynamic)
     module_files.update(deleted)
@@ -153,6 +159,28 @@ def select(impact: ImpactMap, files: Iterable[str]) -> Selection:
     else:
         result.tests = set(selected)
     return result
+
+
+def _class_names(source: str | None) -> set[str]:
+    """Qualified names, as tia's line map spells them, of the classes the source defines."""
+    names: set[str] = set()
+    try:
+        tree = ast.parse(source or "")
+    except SyntaxError:
+        return names
+
+    def visit(node: ast.AST, prefix: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                name = f"{prefix}{child.name}"
+                if isinstance(child, ast.ClassDef):
+                    names.add(name)
+                visit(child, f"{name}.")
+            else:
+                visit(child, prefix)
+
+    visit(tree, "")
+    return names
 
 
 # --------------------------------------------------------------------------- recording plugin
