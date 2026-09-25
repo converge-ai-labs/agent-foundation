@@ -237,6 +237,8 @@ async def test_archive_withdraws_the_steers_a_completing_run_left_unused(service
         service, runtime=replace(service.runtime, settings=settings.model_copy(update={"worker": worker}))
     )
     await scripted_model.request()
+    # Request arrival does not await the checkpoint whose input consumption changes the thread's ETag.
+    await runs_kit.checkpointed(service, run_id)
     steer = (await runs_kit.submit(service, thread_id, runs_kit.message(agent, "x" * 2048))).json()["entry"]
     # Assigned at a safe boundary as a worker assigns it, but never offered to the run's last request.
     async with transaction(service.runtime.storage) as session:
