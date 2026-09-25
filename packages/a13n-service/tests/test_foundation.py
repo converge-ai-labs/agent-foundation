@@ -7,6 +7,12 @@ from a13n_service.settings import Settings
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture(scope="module")
+def contract() -> dict:
+    """The OpenAPI document, generated once for the contract checks."""
+    return build_app(settings=Settings()).openapi()
+
+
 async def test_control_process_is_ready_and_authenticates(service) -> None:  # type: ignore[no-untyped-def]
     assert (await service.client.get("/healthz")).json()["role"] == "control"
     ready = await service.client.get("/readyz")
@@ -32,29 +38,28 @@ async def test_page_limits_are_bounded(service) -> None:  # type: ignore[no-unty
     assert refused.status_code == 400 and refused.json()["error"]["details"]["fields"][0]["field"] == "query.limit"
 
 
-def test_contract_describes_failures_and_credentials_as_sent() -> None:
-    document = build_app(settings=Settings()).openapi()
+def test_contract_describes_failures_and_credentials_as_sent(contract: dict) -> None:
     error = {"$ref": "#/components/responses/Error"}
-    assert {"HTTPValidationError", "ValidationError"}.isdisjoint(document["components"]["schemas"])
-    assert document["components"]["responses"]["Error"]["content"]["application/json"]["schema"] == {
+    assert {"HTTPValidationError", "ValidationError"}.isdisjoint(contract["components"]["schemas"])
+    assert contract["components"]["responses"]["Error"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/ErrorEnvelope"
     }
-    for path, operations in document["paths"].items():
+    for path, operations in contract["paths"].items():
         for operation in operations.values():
             assert "422" not in operation["responses"]
             if path.startswith("/api/"):
                 assert operation["responses"]["default"] == error
-    login = document["paths"]["/api/v1/auth/login"]["post"]
+    login = contract["paths"]["/api/v1/auth/login"]["post"]
     assert login["responses"]["400"] == error and "security" not in login
-    profile = document["paths"]["/api/v1/users/me"]
+    profile = contract["paths"]["/api/v1/users/me"]
     assert profile["get"]["security"] == [{"apiKey": []}, {"loginSession": []}]
     assert profile["patch"]["security"] == [{"apiKey": []}, {"loginSession": [], "csrf": []}]
-    schemes = document["components"]["securitySchemes"]
+    schemes = contract["components"]["securitySchemes"]
     assert (schemes["loginSession"]["name"], schemes["csrf"]["name"]) == ("__Host-a13n_session", "X-CSRF-Token")
 
 
-def test_contract_describes_binary_downloads() -> None:
-    paths = build_app(settings=Settings()).openapi()["paths"]
+def test_contract_describes_binary_downloads(contract: dict) -> None:
+    paths = contract["paths"]
     downloads = {
         "/assets/{asset_id}/content": "*/*",
         "/skills/{skill_id}/revisions/{revision_id}/content": "application/zip",
@@ -66,8 +71,8 @@ def test_contract_describes_binary_downloads() -> None:
         assert responses["default"] == {"$ref": "#/components/responses/Error"}
 
 
-def test_contract_describes_idempotent_creation_and_replay() -> None:
-    paths = build_app(settings=Settings()).openapi()["paths"]
+def test_contract_describes_idempotent_creation_and_replay(contract: dict) -> None:
+    paths = contract["paths"]
     submissions = {
         "/threads": "Submitted",
         "/threads/{thread_id}/inbox": "Submitted",

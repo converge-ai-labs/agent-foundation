@@ -21,7 +21,14 @@ from a13n_service.runs.environments.adapters import close, construct
 from .environments_support import EXTERNAL_TOKEN as TOKEN
 from .environments_support import change, details, register, revealed, stored, target
 
-pytestmark = pytest.mark.anyio
+BINARY = os.environ.get("A13N_ENVD_TEST_BINARY")
+# Skip before any fixture builds the service.
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.skipif(
+        BINARY is None, reason="set A13N_ENVD_TEST_BINARY to an a13n-envd build to run external targets"
+    ),
+]
 
 
 @dataclass
@@ -91,10 +98,8 @@ class Daemons:
 
 @pytest.fixture
 async def daemons(tmp_path: Path) -> AsyncIterator[Daemons]:
-    binary = os.environ.get("A13N_ENVD_TEST_BINARY")
-    if binary is None:
-        pytest.skip("set A13N_ENVD_TEST_BINARY to an a13n-envd build to run external targets against a daemon")
-    started = Daemons(Path(binary), tmp_path / "daemons")
+    assert BINARY is not None
+    started = Daemons(Path(BINARY), tmp_path / "daemons")
     try:
         yield started
     finally:
