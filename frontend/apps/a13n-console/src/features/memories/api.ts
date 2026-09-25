@@ -41,16 +41,13 @@ export function memoryQueries(client: Client, workspaceId: string) {
   const keys = memoryKeys(workspaceId);
   const path = { workspace_id: workspaceId };
   return {
-    page: (labels: string[], cursor?: string) =>
+    page: (cursor?: string) =>
       queryOptions({
-        queryKey: [...keys.list(), labels, cursor],
+        queryKey: [...keys.list(), cursor],
         queryFn: ({ signal }) =>
           client.http
             .GET("/api/v1/workspaces/{workspace_id}/memories", {
-              params: {
-                path,
-                query: { label: labels.length ? labels : undefined, cursor },
-              },
+              params: { path, query: { cursor } },
               signal,
             })
             .then(data),

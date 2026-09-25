@@ -57,12 +57,7 @@ function setup(memories = [handbook], allowed = ["read", "run", "write"]) {
         { ...handbook, ...(body as object), id: "mem_new" },
         { status: 201 },
       );
-    return Response.json({
-      items: url.searchParams.getAll("label").includes("team:ops")
-        ? []
-        : memories,
-      next_cursor: null,
-    });
+    return Response.json({ items: memories, next_cursor: null });
   };
   client = createClient({
     baseUrl: "http://localhost",
@@ -92,25 +87,11 @@ function setup(memories = [handbook], allowed = ["read", "run", "write"]) {
   return { user: userEvent.setup(), requests };
 }
 
-it("lists memories with their size and filters them by label", async () => {
-  const { user, requests } = setup();
+it("lists memories with their size", async () => {
+  setup();
   const row = (await screen.findByText("Team handbook")).closest("tr")!;
   expect(within(row).getByText("4 files")).toBeTruthy();
   expect(within(row).getByText("3 KB")).toBeTruthy();
-  expect(within(row).getByText("team: docs")).toBeTruthy();
-  const filter = screen.getByRole("searchbox", { name: "Filter by label" });
-  const read = requests.length;
-  await user.type(filter, "team");
-  expect((await screen.findByRole("alert")).textContent).toBe(
-    "Write each label as key:value.",
-  );
-  // A malformed filter sends nothing.
-  expect(requests).toHaveLength(read);
-  await user.type(filter, ":ops");
-  expect(await screen.findByText("No matching memories")).toBeTruthy();
-  expect(requests.at(-1)?.url.searchParams.getAll("label")).toEqual([
-    "team:ops",
-  ]);
 });
 
 it("offers creation from the empty state only to people who may configure memories", async () => {
@@ -134,10 +115,6 @@ it("creates a memory with a key suggested from its name", async () => {
     (within(dialog).getByRole("textbox", { name: "Key" }) as HTMLInputElement)
       .value,
   ).toBe("team-handbook");
-  await user.type(
-    within(dialog).getByRole("textbox", { name: "Labels" }),
-    "team:docs",
-  );
   await user.click(within(dialog).getByRole("button", { name: "Custom" }));
   await user.type(
     within(dialog).getByRole("textbox", { name: "Guide" }),
@@ -156,7 +133,6 @@ it("creates a memory with a key suggested from its name", async () => {
     type: "postgres",
     name: "Team Handbook",
     description: null,
-    labels: { team: "docs" },
     guide: "One topic per file.",
     always_load: ["README.md"],
   });

@@ -22,40 +22,10 @@ export function guideValue(draft: GuideDraft): string | null {
   return draft.mode === "custom" ? draft.text : "";
 }
 
-/** Labels as `key:value` pairs separated by commas or lines, the way label filters name them. */
-export function parseLabels(text: string): Record<string, string> {
-  const labels: Record<string, string> = {};
-  for (const entry of text.split(/[,\n]/)) {
-    const pair = entry.trim();
-    if (!pair) continue;
-    const colon = pair.indexOf(":");
-    if (colon <= 0) throw new Error("Write each label as key:value.");
-    labels[pair.slice(0, colon).trim()] = pair.slice(colon + 1).trim();
-  }
-  return labels;
-}
-
-/** Why the labels cannot be read, if they cannot. */
-export function labelsError(text: string): string | undefined {
-  try {
-    parseLabels(text);
-    return undefined;
-  } catch (error) {
-    return (error as Error).message;
-  }
-}
-
-export function formatLabels(labels: Record<string, string>): string {
-  return Object.entries(labels)
-    .map(([key, value]) => `${key}:${value}`)
-    .join(", ");
-}
-
 /** What the create form and the Configuration tab edit. */
 export interface MemoryDraft {
   name: string;
   description: string;
-  labels: string;
   guide: GuideDraft;
   alwaysLoad: string[];
 }
@@ -64,7 +34,6 @@ export function memoryDraft(memory?: Memory): MemoryDraft {
   return {
     name: memory?.name ?? "",
     description: memory?.description ?? "",
-    labels: formatLabels(memory?.labels ?? {}),
     guide: guideDraft(memory ? memory.guide : null),
     alwaysLoad: memory?.always_load ?? [],
   };
@@ -95,7 +64,6 @@ export function rebaseDraft(
     description: changed("description")
       ? draft.description
       : current.description,
-    labels: changed("labels") ? draft.labels : current.labels,
     guide: changed("guide") ? draft.guide : current.guide,
     alwaysLoad: changed("alwaysLoad") ? draft.alwaysLoad : current.alwaysLoad,
   };
@@ -105,7 +73,6 @@ function fields(draft: MemoryDraft) {
   return {
     name: draft.name.trim(),
     description: draft.description.trim() || null,
-    labels: parseLabels(draft.labels),
     guide: guideValue(draft.guide),
     always_load: draft.alwaysLoad,
   };
@@ -131,16 +98,9 @@ export function memoryUpdate(
     ...(next.description !== saved.description && {
       description: next.description,
     }),
-    ...(!same(sortedEntries(next.labels), sortedEntries(saved.labels)) && {
-      labels: next.labels,
-    }),
     ...(next.guide !== saved.guide && { guide: next.guide }),
     ...(!same(next.always_load, saved.always_load) && {
       always_load: next.always_load,
     }),
   };
-}
-
-function sortedEntries(labels: Record<string, string>) {
-  return Object.entries(labels).sort(([a], [b]) => a.localeCompare(b));
 }

@@ -16,8 +16,8 @@ import { readableKey } from "../../shared/keys";
 import { resourceKeyPattern } from "../../shared/paths";
 import shared from "../../shared/shared.module.css";
 import { invalidateMemories } from "./api";
-import { AlwaysLoadField, GuideField, LabelsField } from "./fields";
-import { labelsError, memoryCreate, memoryDraft } from "./form";
+import { AlwaysLoadField, GuideField } from "./fields";
+import { memoryCreate, memoryDraft } from "./form";
 
 export function CreateMemory({
   onCreated,
@@ -121,10 +121,6 @@ function CreateForm({
         value={draft.description}
         onChange={(description) => setDraft({ ...draft, description })}
       />
-      <LabelsField
-        value={draft.labels}
-        onChange={(labels) => setDraft({ ...draft, labels })}
-      />
       <GuideField
         value={draft.guide}
         onChange={(guide) => setDraft({ ...draft, guide })}
@@ -142,7 +138,6 @@ function CreateForm({
       <FormActions
         onCancel={onCancel}
         pending={create.isPending}
-        disabled={!!labelsError(draft.labels)}
         label={t("Create memory")}
       />
     </form>

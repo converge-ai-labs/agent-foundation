@@ -1,24 +1,8 @@
 /*
  * Memories: layout only. The file browser is the shared one; these rules
- * cover labels, the guide and always-loaded paths, the file editor and the
- * history list.
+ * cover the guide and always-loaded paths, the file editor and the history
+ * list.
  */
-
-/* Labels ------------------------------------------------------------------ */
-.labels {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.label {
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--a13n-surface);
-  color: var(--a13n-secondary);
-  font-size: 11.5px;
-  line-height: 16px;
-  white-space: nowrap;
-}
 
 /* Guide ------------------------------------------------------------------- */
 .guide {

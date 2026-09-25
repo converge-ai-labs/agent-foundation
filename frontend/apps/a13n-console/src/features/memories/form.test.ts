@@ -3,11 +3,9 @@ import type { Schema } from "../../shared/api";
 import {
   guideDraft,
   guideValue,
-  labelsError,
   memoryCreate,
   memoryDraft,
   memoryUpdate,
-  parseLabels,
   rebaseDraft,
   sameDraft,
 } from "./form";
@@ -30,24 +28,11 @@ it("keeps the three guide states apart", () => {
   expect(guideValue({ mode: "custom", text: "Mine" })).toBe("Mine");
 });
 
-it("reads labels as key:value pairs", () => {
-  expect(parseLabels("team:docs, tier: gold\nurl:a:b")).toEqual({
-    team: "docs",
-    tier: "gold",
-    url: "a:b",
-  });
-  expect(parseLabels(" ")).toEqual({});
-  expect(labelsError("team")).toBe("Write each label as key:value.");
-  expect(labelsError(":docs")).toBe("Write each label as key:value.");
-  expect(labelsError("team:docs")).toBeUndefined();
-});
-
 it("creates a PostgreSQL file memory from the draft", () => {
   expect(
     memoryCreate("handbook", {
       ...memoryDraft(),
       name: " Handbook ",
-      labels: "team:docs",
       guide: { mode: "none", text: "" },
       alwaysLoad: ["README.md"],
     }),
@@ -56,7 +41,6 @@ it("creates a PostgreSQL file memory from the draft", () => {
     type: "postgres",
     name: "Handbook",
     description: null,
-    labels: { team: "docs" },
     guide: "",
     always_load: ["README.md"],
   });
@@ -65,9 +49,6 @@ it("creates a PostgreSQL file memory from the draft", () => {
 it("updates only the fields the draft changed", () => {
   const draft = memoryDraft(saved);
   expect(memoryUpdate(saved, draft)).toEqual({});
-  expect(
-    memoryUpdate(saved, { ...draft, labels: "tier:gold, team:docs" }),
-  ).toEqual({});
   expect(
     memoryUpdate(saved, {
       ...draft,

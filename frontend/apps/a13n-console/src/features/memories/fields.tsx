@@ -4,52 +4,11 @@ import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ListRow, ListRows, ListRowsEmpty } from "../../shared/collection";
 import { TextAreaField } from "../../shared/forms";
-import { labelsError, type GuideDraft, type GuideMode } from "./form";
+import type { GuideDraft, GuideMode } from "./form";
 import styles from "./memories.module.css";
 
 /** At most this many paths lead a memory's context. */
 const MAX_ALWAYS_LOAD = 64;
-
-export function LabelChips({ labels }: { labels: Record<string, string> }) {
-  const entries = Object.entries(labels);
-  if (!entries.length) return <span>—</span>;
-  return (
-    <span className={styles.labels}>
-      {entries.map(([key, value]) => (
-        <span key={key} className={styles.label}>
-          {key}: {value}
-        </span>
-      ))}
-    </span>
-  );
-}
-
-export function LabelsField({
-  value,
-  onChange,
-  readOnly = false,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  readOnly?: boolean;
-}) {
-  const { t } = useTranslation();
-  const error = labelsError(value);
-  return (
-    <FormField
-      readOnly={readOnly}
-      label={t("Labels")}
-      description={t("Pairs such as team:docs, separated by commas.")}
-      error={error && t(error)}
-    >
-      <Input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        autoComplete="off"
-      />
-    </FormField>
-  );
-}
 
 /**
  * The guide tells agents what belongs in the memory and how it is organized.

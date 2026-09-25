@@ -11,9 +11,8 @@ import { ErrorNotice } from "../../../shared/feedback";
 import { TextAreaField } from "../../../shared/forms";
 import { SaveBar, Section } from "../../../shared/page";
 import { invalidateMemories, isStale, memoryKeys, memoryQueries } from "../api";
-import { AlwaysLoadField, GuideField, LabelsField } from "../fields";
+import { AlwaysLoadField, GuideField } from "../fields";
 import {
-  labelsError,
   memoryDraft,
   memoryUpdate,
   rebaseDraft,
@@ -78,7 +77,6 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
     },
   });
   const dirty = !!edit && !sameDraft(draft, memoryDraft(memory));
-  const labels = labelsError(draft.labels);
   return (
     <form
       className="grid gap-9"
@@ -104,11 +102,6 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
               readOnly={readOnly}
               value={draft.description}
               onChange={(description) => change({ description })}
-            />
-            <LabelsField
-              readOnly={readOnly}
-              value={draft.labels}
-              onChange={(value) => change({ labels: value })}
             />
           </div>
         </Section>
@@ -208,7 +201,7 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
           }}
           saveLabel={t("Save changes")}
           pending={save.isPending}
-          disabled={!draft.name.trim() || !!labels || isStale(save.error)}
+          disabled={!draft.name.trim() || isStale(save.error)}
         />
       )}
     </form>
