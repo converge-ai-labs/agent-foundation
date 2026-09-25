@@ -7,7 +7,7 @@ This guide deploys the Service, creates the first administrator, connects a mode
 The Service is published as the `a13n-service` Python package, the `ghcr.io/converge-ai-labs/a13n-service` image for `linux/amd64` and `linux/arm64`, and the Helm Chart `oci://ghcr.io/converge-ai-labs/charts/a13n-service`, each at the Service's version. Every deployment needs PostgreSQL, Redis and an encryption key; see [Configure Service](configuration.md#required-infrastructure). Two ready-made deployments are maintained in the repository:
 
 - [Single host with Docker Compose](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose): the Service, PostgreSQL, Redis and Console on one machine, with Docker environments on the host's Docker Engine.
-- [Kubernetes with Helm](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes): separate control and worker Deployments and a migration Job, with values for a local kind cluster, EKS and GKE.
+- [Kubernetes with Helm](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes): separate control and worker Deployments and a migration Job on any cluster, with values for a local kind cluster.
 
 Follow either guide until the Service reports ready at `/readyz`.
 

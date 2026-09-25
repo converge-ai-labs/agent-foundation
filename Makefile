@@ -96,7 +96,8 @@ k8s-up: ## Build and start local kind Kubernetes, preserving credentials and cre
 
 k8s-check: ## Test the chart and local Kubernetes launcher without building images or changing a cluster
 	@uv run --locked python -m pytest scripts/tests/test_k8s_local.py
-	@for values in local aws gcp; do helm lint deploy/kubernetes/helm/a13n-service -f deploy/kubernetes/helm/values-$$values.yaml --strict || exit $$?; done
+	@helm lint deploy/kubernetes/helm/a13n-service --strict
+	@helm lint deploy/kubernetes/helm/a13n-service -f deploy/kubernetes/helm/values-local.yaml --strict
 
 k8s-smoke: ## Check the running local kind deployment: Console, administrator sign-in and credential storage
 	@python3 scripts/deploy_smoke.py kind

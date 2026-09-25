@@ -20,12 +20,17 @@ def fresh():
     return k8s.credentials({}, {}, retained=False)
 
 
-def render(values: str, *arguments: str) -> list[dict]:
+LOCAL = ("-f", str(k8s.ROOT / "deploy/kubernetes/helm/values-local.yaml"))
+# A cluster outside kind: an S3 bucket behind an HTTPS origin.
+EXTERNAL = (
+    *("--set", "objects.backend=s3", "--set", "objects.bucket=agents"),
+    *("--set", "publicUrl=https://agents.example.com"),
+)
+
+
+def render(*arguments: str) -> list[dict]:
     output = subprocess.run(
-        [
-            *("helm", "template", "a13n", str(CHART)),
-            *("-f", str(k8s.ROOT / f"deploy/kubernetes/helm/values-{values}.yaml"), *arguments),
-        ],
+        ["helm", "template", "a13n", str(CHART), *arguments],
         capture_output=True,
         text=True,
         check=True,
@@ -34,12 +39,17 @@ def render(values: str, *arguments: str) -> list[dict]:
 
 
 @helm
-@pytest.mark.parametrize("values", ["local", "aws", "gcp"])
-def test_rendered_configuration_and_generated_secret_are_valid_settings(values, tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "arguments,backend,public_url",
+    [(LOCAL, "local", "http://127.0.0.1:8080"), (EXTERNAL, "s3", "https://agents.example.com")],
+)
+def test_rendered_configuration_and_generated_secret_are_valid_settings(
+    arguments, backend, public_url, tmp_path, monkeypatch
+):
     # Tooling CI installs only the root workspace; the full workspace validates against the real settings model.
     settings_module = pytest.importorskip("a13n_service.settings")
     crypto = pytest.importorskip("a13n_service.infra.crypto")
-    config = next(d for d in render(values) if d["kind"] == "ConfigMap")["data"]["service.toml"]
+    config = next(d for d in render(*arguments) if d["kind"] == "ConfigMap")["data"]["service.toml"]
     path = tmp_path / "service.toml"
     path.write_text(config)
     for name in [name for name in os.environ if name.startswith("A13N_")]:
@@ -49,15 +59,13 @@ def test_rendered_configuration_and_generated_secret_are_valid_settings(values, 
     settings = settings_module.load_settings(path)
     crypto.KeyRing(active_key_id=settings.encryption.active_key_id, keys=settings.encryption.keys)
     assert settings.database.auto_migrate is False
-    assert settings.objects.backend == ("local" if values == "local" else "s3")
-    assert settings.server.public_url == (
-        "http://127.0.0.1:8080" if values == "local" else "https://agents.example.com"
-    )
+    assert settings.objects.backend == backend
+    assert settings.server.public_url == public_url
 
 
 @helm
 def test_roles_share_one_image_and_start_after_the_migration_job():
-    documents = render("local")
+    documents = render(*LOCAL)
     deployments = {d["metadata"]["name"]: d for d in documents if d["kind"] == "Deployment"}
     job = next(d for d in documents if d["kind"] == "Job")
     service = [deployments["a13n-a13n-control"], deployments["a13n-a13n-worker"], job]
@@ -78,7 +86,7 @@ def test_roles_share_one_image_and_start_after_the_migration_job():
 
 @helm
 def test_every_service_pod_serves_metrics_on_its_own_port():
-    documents = render("local")
+    documents = render(*LOCAL)
     deployments = {d["metadata"]["name"]: d for d in documents if d["kind"] == "Deployment"}
     for role in ("control", "worker"):
         template = deployments[f"a13n-a13n-{role}"]["spec"]["template"]
@@ -94,7 +102,7 @@ def test_every_service_pod_serves_metrics_on_its_own_port():
 
 @helm
 def test_service_containers_write_only_temporary_files_and_local_objects():
-    for document in render("local"):
+    for document in render(*LOCAL):
         if document["kind"] not in {"Deployment", "Job"}:
             continue
         pod = document["spec"]["template"]["spec"]
@@ -108,7 +116,7 @@ def test_service_containers_write_only_temporary_files_and_local_objects():
 @helm
 def test_each_role_tolerates_one_disruption_and_autoscales_only_when_enabled():
     def objects(*arguments: str) -> dict[tuple[str, str], dict]:
-        return {(d["kind"], d["metadata"]["name"]): d for d in render("aws", *arguments)}
+        return {(d["kind"], d["metadata"]["name"]): d for d in render(*EXTERNAL, *arguments)}
 
     fixed = objects()
     autoscaled = objects("--set", "roles.worker.autoscaling.enabled=true")
@@ -123,7 +131,7 @@ def test_each_role_tolerates_one_disruption_and_autoscales_only_when_enabled():
     assert target == {"apiVersion": "apps/v1", "kind": "Deployment", "name": "a13n-a13n-worker"}
     # The autoscaler owns the worker count; a fixed count would reset it on every upgrade.
     assert "replicas" not in autoscaled["Deployment", "a13n-a13n-worker"]["spec"]
-    assert autoscaled["Deployment", "a13n-a13n-control"]["spec"]["replicas"] == 2
+    assert autoscaled["Deployment", "a13n-a13n-control"]["spec"]["replicas"] == 1
 
 
 @helm

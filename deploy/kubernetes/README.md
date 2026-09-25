@@ -1,20 +1,20 @@
 # Kubernetes deployment
 
-`helm/` holds the Helm Chart for a13n Service, `helm/a13n-service/`, and its values for a local kind cluster, AWS EKS and Google GKE; `kind-local.yaml` configures the local kind cluster, and `examples/` holds Secret templates and supporting manifests. The same Service image runs a `control` Deployment (API, Console, maintenance and delivery), a `worker` Deployment (run execution) and a schema migration Job. The Chart does not create cloud infrastructure, seed users or models, or provision agent environments. Cloud examples contain placeholders and are not production-ready until the dependencies below are configured and tested.
+`helm/` holds the Helm Chart for a13n Service, `helm/a13n-service/`, and its values for a local kind cluster, `helm/values-local.yaml`; `kind-local.yaml` configures that cluster, and `examples/` holds Secret templates and a shared objects claim. The same Service image runs a `control` Deployment (API, Console, maintenance and delivery), a `worker` Deployment (run execution) and a schema migration Job. The Chart does not provision external infrastructure, seed users or models, or provision agent environments.
 
 Helm is the installation/upgrade tool; `helm/a13n-service/` is the Chart (deployment package); an installation such as `a13n` is a Helm release. Each Service release also publishes this Chart at the Service's version as `oci://ghcr.io/converge-ai-labs/charts/a13n-service`, and that Chart deploys the release's image by default. The Chart in a checkout deploys the development image `ghcr.io/converge-ai-labs/a13n-service:dev` unless values select another. `make dev` does not use this Chart.
 
 ## Topology
 
-| Input              | Local                                  | AWS                                | GCP                                   |
-| ------------------ | -------------------------------------- | ---------------------------------- | ------------------------------------- |
-| Values             | `helm/values-local.yaml`               | `helm/values-aws.yaml`             | `helm/values-gcp.yaml`                |
-| Service replicas   | One control, one worker                | Two control, two worker            | Two control, two worker               |
-| Kubernetes         | kind                                   | EKS                                | GKE                                   |
-| PostgreSQL         | Bundled PostgreSQL 17 for development  | External RDS PostgreSQL            | External Cloud SQL PostgreSQL         |
-| Redis              | Bundled Redis 7 with AOF and PVC       | External Redis-compatible endpoint | External Memorystore for Redis        |
-| Objects            | Local claim shared by all Service Pods | S3 general-purpose bucket          | Verified S3-compatible endpoint       |
-| Image distribution | Loaded into the kind node              | ECR or another accessible registry | Artifact Registry or another registry |
+| Input              | Local kind cluster                     | Other clusters                                      |
+| ------------------ | -------------------------------------- | --------------------------------------------------- |
+| Values             | `helm/values-local.yaml`               | Your own values file                                |
+| Service replicas   | One control, one worker                | `roles.<role>.replicaCount` or `autoscaling`        |
+| PostgreSQL         | Bundled PostgreSQL 17 for development  | External PostgreSQL                                 |
+| Redis              | Bundled Redis 7 with AOF and PVC       | External Redis                                      |
+| Objects            | Local claim shared by all Service Pods | S3-compatible bucket or a ReadWriteMany claim       |
+| Image distribution | Loaded into the kind node              | The published image or a registry the nodes can use |
+| Exposure           | Node port 30080 on `127.0.0.1:8080`    | Ingress with TLS                                    |
 
 `roles.control` and `roles.worker` each configure `replicaCount` and optional `resources` (otherwise inherited from top-level `resources`). These are starting values, not a measured capacity recommendation. With `autoscaling.enabled`, a role's HorizontalPodAutoscaler replaces `replicaCount`: it keeps the role between `minReplicas` and `maxReplicas` near `targetCPUUtilizationPercentage` of its CPU request, which needs the cluster's metrics server and a CPU request on the role. Worker CPU follows run processing but not runs waiting on model responses, and each worker runs at most `worker.slots` runs at once, so set the worker `minReplicas` from the expected concurrent runs. Each role's PodDisruptionBudget lets voluntary disruptions, such as node drains, evict one of its Pods at a time. The shared Deployments, Services, configuration and probes are portable; cluster provisioning, IAM, image access, CSI drivers, storage classes and ingress controllers remain platform-specific. Use an image built for the node architecture.
 
@@ -43,7 +43,7 @@ Run commands from the repository root. Helm and kubectl must point to the intend
 1. Copy `examples/service.env.example` and, for bundled PostgreSQL, `examples/postgres.env.example` to protected files outside the checkout. Set permissions to `600`.
 2. Replace all placeholders. Generate the encryption key using `openssl rand -base64 32`. Preserve the key ring across restarts and upgrades; losing it makes stored provider and connection credentials unreadable.
 3. Match the PostgreSQL password in both files. URL-encode it in the Service URL. Changing the PostgreSQL Secret does not change the password of an already initialized database.
-4. For AWS/GCP, replace the database URL, add `A13N_REDIS__URL`, and configure object-store credentials unless the ServiceAccount's cloud identity provides them. Use a non-cluster Redis endpoint and the database/Redis provider's required TLS settings.
+4. For external stores, replace the database URL, add `A13N_REDIS__URL`, and add object-store credentials unless the Pods' identity provides them. Use the TLS settings the database and Redis require.
 5. Create the namespace and Secrets. These commands change the selected cluster:
 
 ```sh
@@ -78,7 +78,7 @@ The launcher creates or reuses the `a13n-local` kind cluster, checks its loopbac
 
 On a fresh installation it generates a random PostgreSQL password and encryption key, saves `service.env` and `postgres.env` under `~/.config/a13n-service-kind` with mode `600`, and creates the corresponding Secrets. It also generates the administrator password into `admin.env` in the same directory and bootstraps `admin@example.com`; set `K8S_ADMIN_EMAIL=you@example.com make k8s-up` to choose another email. `K8S_STATE_DIR` may select another protected directory outside the checkout. Existing local files and cluster Secrets are reused and must agree; the launcher refuses invalid keys, conflicting credentials, or new credential generation when PVCs already exist. Existing cluster Secrets can restore missing local files. Later runs keep the initialized administrator and its password.
 
-The terminal then prints the Console URL, <http://127.0.0.1:8080>, and where the administrator password is stored; it never prints the password. If existing data has no local administrator record, the launcher prints the manual bootstrap command instead. The launcher does not delete clusters, PVCs or existing Secrets. Node port 30080 must be free: uninstall any other release that holds it before `make k8s-up`. `make k8s-smoke` then checks the running deployment the way its administrator uses it: Console loads, the administrator signs in and a credential can be stored. `make k8s-check` runs the offline launcher and Chart tests and lints every values file without building images or changing a cluster. Deployment CI runs both on a fresh kind cluster, then repeats `make k8s-up` to upgrade the release through a new migration Job.
+The terminal then prints the Console URL, <http://127.0.0.1:8080>, and where the administrator password is stored; it never prints the password. If existing data has no local administrator record, the launcher prints the manual bootstrap command instead. The launcher does not delete clusters, PVCs or existing Secrets. Node port 30080 must be free: uninstall any other release that holds it before `make k8s-up`. `make k8s-smoke` then checks the running deployment the way its administrator uses it: Console loads, the administrator signs in and a credential can be stored. `make k8s-check` runs the offline launcher and Chart tests and lints the Chart with its default and local values without building images or changing a cluster. Deployment CI runs both on a fresh kind cluster, then repeats `make k8s-up` to upgrade the release through a new migration Job.
 
 ### Manual startup
 
@@ -115,30 +115,24 @@ Create the administrator with the bootstrap command above (add `--context kind-a
 
 The local values enable single-replica Redis 7 and PostgreSQL 17 StatefulSets for trusted development only; Redis is unauthenticated, uses AOF with `appendfsync everysec`, and has no host port or Ingress. Closing the terminal does not stop the Pods or the port mapping. Claims survive Pod replacement and uninstallation, not deletion of the kind cluster.
 
-## AWS and GCP
+## Other clusters
 
-Copy the relevant values file outside the repository and replace image, bucket, endpoint, network, domain and certificate placeholders. Prepare:
+Write a values file outside the repository, starting from `helm/a13n-service/values.yaml`, and prepare:
 
-- A cluster with sufficient capacity, network access to its dependencies and image-pull permissions. Validate cluster-specific admission and resource policies.
-- PostgreSQL and a reachable Redis endpoint. This Chart does not create RDS, Cloud SQL, ElastiCache or Memorystore. The GCP example assumes a reachable private database endpoint; Cloud SQL Auth Proxy is not included.
-- A compatible bucket with permissions for reading, listing and conditional create-only writes. AWS should use EKS Pod Identity or IRSA for the generated ServiceAccount (`a13n-a13n` for release `a13n`); set `serviceAccount.annotations` for IRSA and configure the trust relationship. Default service-account token automount is disabled.
-- An ingress controller, DNS and TLS configuration matching `publicUrl`, and `trustedProxies` covering the load balancer addresses. Ingress is disabled until these are prepared. The AWS values target AWS Load Balancer Controller with an ACM certificate. The GCP values target GKE Ingress with a TLS Secret; apply `examples/gcp-backendconfig.yaml` in the release namespace first. It selects the `/readyz` health check and a one-hour backend timeout; validate it with long-lived server-sent event streams.
+- A cluster with sufficient capacity, network access to its dependencies and image-pull access. Validate the cluster's admission and resource policies.
+- PostgreSQL and a reachable Redis endpoint. The bundled ones (`postgresql.enabled`, `redis.enabled`) are for development only.
+- Objects: an S3-compatible bucket with permissions for reading, listing and conditional create-only writes, or a ReadWriteMany claim through `persistence.existingClaim`. `serviceAccount.annotations` can attach a workload identity to the generated ServiceAccount (`a13n-a13n` for release `a13n`); default service-account token automount is disabled.
+- An ingress controller, DNS and TLS matching `publicUrl`, and `trustedProxies` covering the proxy addresses. Health-check `/readyz`, and allow long-lived server-sent event streams through the proxy's idle timeout.
 
-GCS is not a supported drop-in substitution for the S3 endpoint. Supply a verified S3-compatible service, or implement and validate a native GCS adapter separately. See the [configuration guide](../../docs/a13n-service/configuration.md).
-
-```sh
-helm upgrade --install a13n deploy/kubernetes/helm/a13n-service \
-  --kube-context YOUR_CLOUD_CONTEXT --namespace YOUR_NAMESPACE \
-  -f /absolute/private/path/values-cloud.yaml --wait --timeout 20m
-```
-
-This installs the Chart of this checkout: build and push the image first, then set its repository and tag in the values. To install a Service release instead, use its published Chart and remove the `image` block from the copied values, so the release's image is used:
+Install a Service release with its published Chart, which deploys that release's image:
 
 ```sh
 helm upgrade --install a13n oci://ghcr.io/converge-ai-labs/charts/a13n-service --version VERSION \
-  --kube-context YOUR_CLOUD_CONTEXT --namespace YOUR_NAMESPACE \
-  -f /absolute/private/path/values-cloud.yaml --wait --timeout 20m
+  --kube-context YOUR_CONTEXT --namespace YOUR_NAMESPACE \
+  -f /absolute/private/path/values.yaml --wait --timeout 20m
 ```
+
+To install the Chart of this checkout instead, build and push the image, set `image.repository` and `image.tag`, and pass `deploy/kubernetes/helm/a13n-service` in place of the OCI reference.
 
 ## Agent execution environments
 
@@ -150,8 +144,8 @@ Back up before upgrading. Upgrade the release to another published Chart version
 
 ```sh
 helm upgrade a13n oci://ghcr.io/converge-ai-labs/charts/a13n-service --version NEW_VERSION \
-  --kube-context YOUR_CLOUD_CONTEXT --namespace YOUR_NAMESPACE \
-  -f /absolute/private/path/values-cloud.yaml --wait --timeout 20m
+  --kube-context YOUR_CONTEXT --namespace YOUR_NAMESPACE \
+  -f /absolute/private/path/values.yaml --wait --timeout 20m
 ```
 
 The upgrade runs its migration Job while the previous Pods keep serving, then rolls the Deployments ([schema migration](#schema-migration)). If the Job fails, the new Pods never become ready, Helm reports the upgrade as failed at its timeout and the previous Pods keep serving; read the logs of `job/a13n-a13n-migrate-<revision>`. `helm rollback` restores Kubernetes resources only. A migrated schema stops the previous image at startup, so returning to it means restoring the database backup taken before the upgrade.
