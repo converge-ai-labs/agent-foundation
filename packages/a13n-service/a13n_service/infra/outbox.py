@@ -5,7 +5,8 @@ The outbox owns persistence, claiming, settlement and the retry policy. Owners r
 internal delivery can settle in the same transaction that applies it. A handler that raises instead leaves
 the retry to the outbox: backoff, then dead once the row has used its attempts. Every claim uses an attempt,
 so a handler that keeps being cancelled, or whose process dies, also ends dead; a handler that settles its claim
-`deferred` (not deliverable yet, through no fault of the delivery) gives its attempt back.
+`deferred` (not deliverable yet, through no fault of the delivery) gives its attempt back. Each settled outcome is
+counted and logged once its transaction commits.
 """
 
 import secrets
@@ -15,7 +16,7 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 import anyio
-from a13n_logging import get_logger
+from a13n_logging import get_logger, log_context
 from pydantic import JsonValue
 from sqlalchemy import (
     CheckConstraint,
@@ -36,12 +37,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.crypto import SecretLocation, secret_hash
-from a13n_service.infra.db import Base, Storage, now, transaction
+from a13n_service.infra.db import Base, Storage, after_commit, now, transaction
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.telemetry import meter
 
 logger = get_logger(__name__)
 
 type OutboxKind = Literal["webhook", "child_result", "email", "memory_purge"]
+type Outcome = Literal["delivered", "retry", "deferred", "dead"]
+
+DELIVERIES = meter.create_counter(
+    "a13n.outbox.deliveries", unit="{delivery}", description="Settled outbox delivery attempts by kind and result"
+)
 
 
 class OutboxRow(Base):
@@ -188,9 +195,7 @@ async def claim(
             if row.attempts >= max_attempts:
                 row.status, row.last_error = "dead", "unsettled"
                 row.lease_owner = row.lease_token_hash = row.lease_expires_at = None
-                logger.warning(
-                    "Outbox delivery dead", extra={"outbox_id": row.id, "kind": row.kind, "reason": "unsettled"}
-                )
+                _settled(session, row.id, row.kind, "dead", reason="unsettled")
                 continue
             token = secrets.token_urlsafe(32)
             row.attempts += 1
@@ -213,12 +218,7 @@ async def claim(
 
 
 async def settle(
-    session: AsyncSession,
-    claimed: Claim,
-    outcome: Literal["delivered", "retry", "deferred", "dead"],
-    *,
-    error: str | None = None,
-    retry_after: float = 0,
+    session: AsyncSession, claimed: Claim, outcome: Outcome, *, error: str | None = None, retry_after: float = 0
 ) -> bool:
     """Apply an outcome only while this claim still holds the lease; a stale sender changes nothing.
 
@@ -239,7 +239,24 @@ async def settle(
         row.available_at = current + timedelta(seconds=retry_after)
         if outcome == "deferred":
             row.attempts -= 1
+    _settled(session, claimed.id, claimed.kind, outcome, reason=error)
     return True
+
+
+def _settled(session: AsyncSession, outbox_id: str, kind: str, outcome: Outcome, *, reason: str | None) -> None:
+    """Count and log a settled outcome once `session` commits it."""
+
+    async def record() -> None:
+        DELIVERIES.add(1, {"kind": kind, "result": outcome})
+        fields = {"outbox_id": outbox_id, "kind": kind, "reason": reason}
+        if outcome == "delivered":
+            logger.info("Outbox delivered", extra=fields)
+        elif outcome == "retry":
+            logger.warning("Outbox delivery failed", extra=fields)
+        elif outcome == "dead":
+            logger.warning("Outbox delivery dead", extra=fields)
+
+    after_commit(session, record)
 
 
 def backoff(attempts: int, *, base: float = 2, cap: float = 3600) -> float:
@@ -291,17 +308,14 @@ class Delivery:
 
     async def _handle(self, handler: Handler, claimed: Claim) -> None:
         """Never raises, so one delivery cannot cancel the others; an unsettled claim retries when its lease ends."""
-        try:
-            await handler(claimed)
-        except Exception as error:
-            await self._fail(claimed, str(error) if isinstance(error, Undelivered) else type(error).__name__)
+        with log_context(outbox_id=claimed.id, kind=claimed.kind):
+            try:
+                await handler(claimed)
+            except Exception as error:
+                await self._fail(claimed, str(error) if isinstance(error, Undelivered) else type(error).__name__)
 
     async def _fail(self, claimed: Claim, reason: str) -> None:
         dead = claimed.attempts >= self.max_attempts
-        logger.warning(
-            "Outbox delivery dead" if dead else "Outbox delivery failed",
-            extra={"outbox_id": claimed.id, "kind": claimed.kind, "reason": reason},
-        )
         try:
             async with transaction(self.storage) as session:
                 outcome = "dead" if dead else "retry"

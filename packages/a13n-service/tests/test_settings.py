@@ -83,6 +83,9 @@ def test_a_distribution_section_cannot_shadow_a_core_section() -> None:
         ({"memory": {"record_chars": 8001}}, "record_chars"),
         ({"providers": {"operation_seconds": 30}}, "providers.operation_seconds"),
         ({"memory": {"mounts_per_thread": 33}}, "mounts_per_thread"),
+        ({"telemetry": {"log_stdout": False}}, "telemetry.log_file"),
+        ({"telemetry": {"log_file": "service.log", "log_file_backups": 0}}, "log_file_backups"),
+        ({"server": {"port": 9464}, "telemetry": {"metrics_port": 9464}}, "telemetry.metrics_port"),
     ],
 )
 def test_bounds_must_nest(values: dict, refused: str) -> None:

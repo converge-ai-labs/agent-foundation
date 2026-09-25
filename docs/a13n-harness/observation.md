@@ -292,7 +292,7 @@ Public key: lf_pk_agent_foundation_local
 Secret key: lf_sk_agent_foundation_local
 ```
 
-`make langfuse-up` uses the machine-shared stack and public test configuration in `dev/observability/langfuse.py`. It does not read Service settings or the root `.env`. Harness and Harness UI explicitly load their own development `.env` files. The Service exports and queries traces through its own `telemetry` settings; see [Service logging and traces](../a13n-service/configuration.md#logging-and-traces).
+`make langfuse-up` uses the machine-shared stack and public test configuration in `dev/observability/langfuse.py`. It does not read Service settings or the root `.env`. Harness and Harness UI explicitly load their own development `.env` files. The Service exports and queries traces through its own `telemetry` settings; see [Service logs, metrics and traces](../a13n-service/configuration.md#logs-metrics-and-traces).
 
 For an **embedded Harness Host**, explicitly export the following trace-only profile instead. You may keep Host-specific values in a private `.env` and load it explicitly with `uv run --env-file .env ...`; `.env.harness.example` documents optional debugging settings. Harness UI uses its normal YAML configuration plus the process environment and does not implicitly load this file.
 

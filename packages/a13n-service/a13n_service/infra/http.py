@@ -1,10 +1,11 @@
-"""Request IDs, the HTTP error envelope, strong resource preconditions, request idempotency keys and the headers
-stored content is served with."""
+"""Request IDs and the request log, the HTTP error envelope, strong resource preconditions, request idempotency keys
+and the headers stored content is served with."""
 
+import time
 from typing import Annotated, Any, Protocol
 from urllib.parse import quote
 
-from a13n_logging import get_logger
+from a13n_logging import get_logger, log_context
 from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -18,10 +19,20 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from a13n_service.infra.errors import RETRY_AFTER, ErrorCode, ServiceError, invalid, not_found
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.telemetry import meter
 
 logger = get_logger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-Id"
+
+REQUEST_DURATION = meter.create_histogram(
+    "http.server.request.duration",
+    unit="s",
+    description="Time from receiving an HTTP request until its response ends, streams included",
+    explicit_bucket_boundaries_advisory=(0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10),
+)
+# Probes answer every few seconds and say nothing about a request; they are measured but not logged.
+_UNLOGGED_ROUTES = frozenset({"/healthz", "/readyz"})
 
 _STATUS: dict[ErrorCode, int] = {
     "invalid_argument": 400,
@@ -46,8 +57,12 @@ class RequestIds:
     """Give every HTTP request an ID, returned as `X-Request-Id` and in error bodies to match reports to logs, and
     add the headers its handling asked every answer to carry (`answer_headers`).
 
+    Every record logged while the request is handled carries its ID, and its end is logged and measured by route
+    template, never by URL: paths and query strings can carry identifiers and authorization codes.
+
     The ID grants nothing and is never taken from the caller. A defect's response is sent outside this middleware
-    (Starlette's `ServerErrorMiddleware`), so `error_response` sets the ID too; either way it appears once.
+    (Starlette's `ServerErrorMiddleware`), so `error_response` sets the ID too; either way it appears once, and
+    a request whose response never started here ends as that 500.
     """
 
     def __init__(self, app: ASGIApp):
@@ -60,9 +75,12 @@ class RequestIds:
         request_id = new_object_id("req")
         state = scope.setdefault("state", {})
         state["request_id"] = request_id
+        started, status = time.perf_counter(), 500
 
         async def send_with_id(message: Message) -> None:
+            nonlocal status
             if message["type"] == "http.response.start":
+                status = message["status"]
                 headers = MutableHeaders(scope=message)
                 headers[REQUEST_ID_HEADER] = request_id
                 answer: Response | None = state.get(_ANSWER)
@@ -75,7 +93,30 @@ class RequestIds:
                     ]
             await send(message)
 
-        await self.app(scope, receive, send_with_id)
+        with log_context(request_id=request_id):
+            try:
+                await self.app(scope, receive, send_with_id)
+            finally:
+                _finished(scope, status, time.perf_counter() - started)
+
+
+def _finished(scope: Scope, status: int, seconds: float) -> None:
+    route = scope.get("route")
+    template = route.path if route is not None else "unmatched"
+    REQUEST_DURATION.record(
+        seconds,
+        {"http.request.method": scope["method"], "http.route": template, "http.response.status_code": status},
+    )
+    if template not in _UNLOGGED_ROUTES:
+        logger.info(
+            "Request finished",
+            extra={
+                "method": scope["method"],
+                "route": template,
+                "status": status,
+                "duration_ms": round(seconds * 1000),
+            },
+        )
 
 
 def request_id(scope: Scope) -> str | None:
@@ -163,17 +204,14 @@ DEPENDENCY_ERRORS: dict[type[Exception], str] = {
 
 async def dependency_error_response(request: Request, error: Exception) -> JSONResponse:
     dependency = next(name for kind, name in DEPENDENCY_ERRORS.items() if isinstance(error, kind))
-    identity = request_id(request.scope)
-    logger.warning(
-        "Dependency unavailable",
-        extra={"dependency": dependency, "error_type": type(error).__name__, "request_id": identity},
-    )
+    logger.warning("Dependency unavailable", extra={"dependency": dependency, "error_type": type(error).__name__})
     failure = ServiceError("unavailable", f"The {dependency} is unavailable", {"dependency": dependency})
-    return error_response(failure, identity)
+    return error_response(failure, request_id(request.scope))
 
 
 async def internal_error_response(request: Request, error: Exception) -> JSONResponse:
-    """The envelope for a defect, whose traceback is logged with the request's ID."""
+    """The envelope for a defect, whose traceback is logged with the request's ID. It answers outside `RequestIds`,
+    whose log context has ended, so the ID is passed explicitly."""
     identity = request_id(request.scope)
     logger.error("Unhandled error", exc_info=error, extra={"error_type": type(error).__name__, "request_id": identity})
     return error_response(ServiceError("internal", "Internal error"), identity)

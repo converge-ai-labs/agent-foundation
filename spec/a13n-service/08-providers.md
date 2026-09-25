@@ -121,7 +121,7 @@ Environment definitions are reached only through the registry; business packages
 
 ## Trace backends
 
-The trace backend is operator configuration, not a provider resource or registry kind. The `telemetry` settings select one backend (`trace_backend`: `none`, `langfuse` or `logfire`) with its `trace_url` and keys, and that one backend is both the export target of Harness spans ([09](09-runtime.md#observability)) and the source of trace queries ([07](07-facts-and-delivery.md#trace-query)).
+The trace backend is operator configuration, not a provider resource or registry kind. The `telemetry` settings select one backend (`trace_backend`: `none`, `langfuse` or `logfire`) with its `trace_url` and keys, and that one backend is both the export target of Harness spans ([12](12-observability.md#traces)) and the source of trace queries ([07](07-facts-and-delivery.md#trace-query)).
 
 ```python
 @dataclass(frozen=True)

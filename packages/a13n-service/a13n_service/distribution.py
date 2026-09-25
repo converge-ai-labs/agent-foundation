@@ -65,6 +65,7 @@ from a13n_service.resources.subscriptions.tables import SubscriptionRow
 from a13n_service.resources.uploads.routes import router as uploads_router
 from a13n_service.runs.accept import ThreadAdvancer
 from a13n_service.runs.admission import AdmissionPolicy
+from a13n_service.runs.backlog import REPORT_SECONDS, report_backlog
 from a13n_service.runs.children import child_results
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
 from a13n_service.runs.environments.routes import router as environments_router
@@ -229,6 +230,10 @@ def _deliver_outbox(runtime: Runtime) -> Sweep:
     )
 
 
+def _report_backlog(runtime: Runtime) -> Sweep:
+    return Sweep(name="report_backlog", every=REPORT_SECONDS, run=partial(report_backlog, runtime.storage), timeout=10)
+
+
 def _purge_outbox(runtime: Runtime) -> Sweep:
     control = runtime.settings.control
     return Sweep(
@@ -318,6 +323,7 @@ OSS = Distribution(
         _recover_connection_operations,
         _deliver_outbox,
         _purge_outbox,
+        _report_backlog,
     ),
     providers=(
         *BUILT_IN_MODEL_PROVIDERS,

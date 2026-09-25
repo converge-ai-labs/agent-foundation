@@ -1034,11 +1034,68 @@
     },
     "Telemetry": {
       "additionalProperties": false,
-      "description": "Logging, and the one trace backend Harness spans are exported to and trace queries read.",
+      "description": "Logs, metrics, and the one trace backend Harness spans are exported to and trace queries read.",
       "properties": {
+        "log_level": {
+          "default": "INFO",
+          "enum": [
+            "DEBUG",
+            "INFO",
+            "WARNING",
+            "ERROR"
+          ],
+          "title": "Log Level",
+          "type": "string"
+        },
         "log_format": {
           "$ref": "#/$defs/LogFormat",
           "default": "json"
+        },
+        "log_stdout": {
+          "default": true,
+          "title": "Log Stdout",
+          "type": "boolean"
+        },
+        "log_file": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Log File"
+        },
+        "log_file_max_mb": {
+          "default": 100,
+          "maximum": 10240,
+          "minimum": 1,
+          "title": "Log File Max Mb",
+          "type": "integer"
+        },
+        "log_file_backups": {
+          "default": 5,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Log File Backups",
+          "type": "integer"
+        },
+        "metrics_port": {
+          "anyOf": [
+            {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metrics Port"
         },
         "trace_backend": {
           "default": "none",

@@ -1,11 +1,14 @@
-"""Trace export: one OTLP pipeline per executable to the deployment's trace backend, and attempt correlation.
+"""Metrics and trace export: the process's meter, its Prometheus endpoint, one OTLP trace pipeline per executable
+to the deployment's trace backend, and attempt correlation.
 
-The Service owns the OpenTelemetry SDK and hands the Harness an explicit tracer provider. Every Harness span of
-an attempt carries the attempt's correlation as Harness observation metadata; trace queries match the same
-attributes, so `correlation_attributes` is the one owner of their names.
+The Service owns the OpenTelemetry SDK. Metrics are process-wide: the executable serves them once
+(`serve_metrics`), Service modules record through `meter`, and the Harness receives the same provider. Traces
+leave through a provider of their own that only the Harness uses. Every Harness span of an attempt carries the
+attempt's correlation as Harness observation metadata; trace queries match the same attributes, so
+`correlation_attributes` is the one owner of their names.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from importlib.metadata import version
 from typing import Protocol
@@ -13,10 +16,15 @@ from typing import Protocol
 from a13n_harness import HarnessInstrumentation, HarnessObservationContext, HarnessTraceContent
 from a13n_logging import get_logger
 from anyio import CancelScope, move_on_after, to_thread
+from opentelemetry import metrics
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.metrics import CallbackOptions, Observation
+from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from prometheus_client import start_http_server
 
 logger = get_logger(__name__)
 
@@ -25,6 +33,44 @@ SHUTDOWN_SECONDS = 10
 
 _METADATA = "a13n.observation.metadata."
 _SESSION = "a13n.observation.session.id"
+
+# Service instruments are created from this meter where they are recorded; they record nothing until
+# `serve_metrics` installs the process's provider.
+meter = metrics.get_meter("a13n_service")
+
+
+class Gauge:
+    """A current value per attribute set, reported at every collection until it is replaced.
+
+    The SDK's synchronous gauge reports a value only at the first collection after it was set, so a scrape between
+    two updates would find no series.
+    """
+
+    def __init__(self, name: str, *, unit: str, description: str) -> None:
+        self._values: dict[frozenset[tuple[str, str]], float] = {}
+        meter.create_observable_gauge(name, callbacks=[self._observe], unit=unit, description=description)
+
+    def set(self, value: float, attributes: Mapping[str, str]) -> None:
+        self._values[frozenset(attributes.items())] = value
+
+    def _observe(self, options: CallbackOptions) -> list[Observation]:
+        # Scrapes call this from the exporter's thread; copying the items is atomic.
+        return [Observation(value, dict(attributes)) for attributes, value in list(self._values.items())]
+
+
+def _resource() -> Resource:
+    return Resource.create({"service.name": "a13n-service", "service.version": version("a13n-service")})
+
+
+def serve_metrics(host: str, port: int) -> None:
+    """Serve this process's metrics, the Service's and the Harness's, in the Prometheus text format at
+    `http://{host}:{port}/metrics`, from a daemon thread for the process's lifetime.
+
+    Call once, at the executable boundary, like logging configuration: the meter provider is process-wide.
+    """
+    reader = PrometheusMetricReader(scope_info_enabled=False)
+    metrics.set_meter_provider(MeterProvider(metric_readers=[reader], resource=_resource()))
+    start_http_server(port, addr=host)
 
 
 class ExportTarget(Protocol):
@@ -76,28 +122,31 @@ def attempt_observation(
 
 
 @asynccontextmanager
-async def open_tracing(
-    target: ExportTarget | None, *, content: HarnessTraceContent
+async def open_instrumentation(
+    target: ExportTarget | None, *, metered: bool, content: HarnessTraceContent
 ) -> AsyncIterator[HarnessInstrumentation | None]:
-    """The executable's Harness instrumentation, exporting to `target`; None when tracing is disabled.
+    """The process's Harness instrumentation: spans exported to `target`, and the process's meter provider when
+    `metered`; None when both are off.
 
     Spans leave in background batches, so a slow or failing backend never delays execution; exit flushes
     what is queued within a bounded time.
     """
+    meter_provider = metrics.get_meter_provider() if metered else None
     if target is None:
-        yield None
+        yield (
+            None
+            if meter_provider is None
+            else HarnessInstrumentation(meter_provider=meter_provider, trace_content=content)
+        )
         return
-    provider = TracerProvider(
-        resource=Resource.create({"service.name": "a13n-service", "service.version": version("a13n-service")}),
-        shutdown_on_exit=False,
-    )
+    provider = TracerProvider(resource=_resource(), shutdown_on_exit=False)
     provider.add_span_processor(
         BatchSpanProcessor(
             OTLPSpanExporter(endpoint=target.otlp_endpoint, headers=target.otlp_headers, timeout=EXPORT_SECONDS)
         )
     )
     try:
-        yield HarnessInstrumentation(tracer_provider=provider, trace_content=content)
+        yield HarnessInstrumentation(tracer_provider=provider, meter_provider=meter_provider, trace_content=content)
     finally:
         with CancelScope(shield=True), move_on_after(SHUTDOWN_SECONDS) as scope:
             try:

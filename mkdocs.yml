@@ -116,6 +116,7 @@ nav:
       - Operate:
           - Configure Service: a13n-service/configuration.md
           - Run and maintain: a13n-service/operations.md
+          - Monitor and troubleshoot: a13n-service/monitoring.md
           - Settings reference: a13n-service/configuration-reference.md
 
   - Stream Protocol:

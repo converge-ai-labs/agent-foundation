@@ -186,7 +186,7 @@ The endpoint policy ([08](08-providers.md#outbound-endpoint-policy)) is checked 
 
 ## Trace query
 
-The deployment's one trace backend ([08](08-providers.md#trace-backends)) receives every attempt's Harness spans and answers trace queries. Queries select spans by the correlation attributes every exported span carries ([09](09-runtime.md#observability)).
+The deployment's one trace backend ([08](08-providers.md#trace-backends)) receives every attempt's Harness spans and answers trace queries. Queries select spans by the correlation attributes every exported span carries ([12](12-observability.md#traces)).
 
 | Route (`read`)                              | Returns                                                            |
 | ------------------------------------------- | ------------------------------------------------------------------ |

@@ -30,7 +30,7 @@ from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.infra.objects.local import LocalObjects
 from a13n_service.infra.objects.s3 import open_s3
 from a13n_service.infra.sweeps import require_unique, run_sweeps
-from a13n_service.infra.telemetry import open_tracing
+from a13n_service.infra.telemetry import open_instrumentation
 from a13n_service.migrations.runner import heads, upgrade
 from a13n_service.providers.environments import offered
 from a13n_service.providers.registry import Registry
@@ -148,8 +148,10 @@ async def open_runtime(
     stack.push_async_callback(redis.aclose)
     telemetry = config.telemetry
     instrumentation = await stack.enter_async_context(
-        open_tracing(
-            telemetry.trace_config() if executes else None, content=HarnessTraceContent(telemetry.trace_content)
+        open_instrumentation(
+            telemetry.trace_config() if executes else None,
+            metered=telemetry.metrics_port is not None,
+            content=HarnessTraceContent(telemetry.trace_content),
         )
     )
     return Runtime(

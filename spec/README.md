@@ -255,7 +255,7 @@ Installed plugins and native objects are trusted in-process code. Harness Plugin
 
 ## Observability and Cost
 
-Pydantic AI instrumentation owns Agent/model/tool spans. Harness features add spans only for Harness-owned context, plugins, recovery, state, Environment, and delegation work. Service adds no spans of its own: it exports Harness spans to the operator's trace backend with tenant and attempt correlation attributes ([runtime](a13n-service/09-runtime.md#observability)).
+Pydantic AI instrumentation owns Agent/model/tool spans. Harness features add spans only for Harness-owned context, plugins, recovery, state, Environment, and delegation work. Service adds no spans of its own: it exports Harness spans to the operator's trace backend with tenant and attempt correlation attributes ([observability](a13n-service/12-observability.md#traces)).
 
 `RunUsage` is a process-local accumulator. The Harness captures one current or explicitly pinned build-time pricing policy and records its revision under the [cost calculation contract](a13n-harness/12-events-observability-and-usage.md#cost-calculation); Hosts own durable deduplication, cross-run aggregation, negotiated adjustments, budgets, billing, and payment.
 

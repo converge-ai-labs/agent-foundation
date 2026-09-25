@@ -192,14 +192,20 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `telemetry`
 
-| Setting                         | Environment variable                  | Type / choices                | Constraints and default                                         |
-| ------------------------------- | ------------------------------------- | ----------------------------- | --------------------------------------------------------------- |
-| `telemetry.log_format`          | `A13N_TELEMETRY__LOG_FORMAT`          | LogFormat                     | default="json"                                                  |
-| `telemetry.trace_backend`       | `A13N_TELEMETRY__TRACE_BACKEND`       | "none", "langfuse", "logfire" | default="none"                                                  |
-| `telemetry.trace_url`           | `A13N_TELEMETRY__TRACE_URL`           | string or null                | maxLength=2048; `pattern="^https?://[^\\s?#@]+$"`; default=null |
-| `telemetry.langfuse_public_key` | `A13N_TELEMETRY__LANGFUSE_PUBLIC_KEY` | string or null                | maxLength=256; default=null                                     |
-| `telemetry.langfuse_secret_key` | `A13N_TELEMETRY__LANGFUSE_SECRET_KEY` | string or null                | format="password"; default=null                                 |
-| `telemetry.logfire_write_token` | `A13N_TELEMETRY__LOGFIRE_WRITE_TOKEN` | string or null                | format="password"; default=null                                 |
-| `telemetry.logfire_read_token`  | `A13N_TELEMETRY__LOGFIRE_READ_TOKEN`  | string or null                | format="password"; default=null                                 |
-| `telemetry.trace_content`       | `A13N_TELEMETRY__TRACE_CONTENT`       | "none", "standard", "full"    | default="standard"                                              |
-| `telemetry.trace_query_timeout` | `A13N_TELEMETRY__TRACE_QUERY_TIMEOUT` | number                        | maximum=60; exclusiveMinimum=0; default=10                      |
+| Setting                         | Environment variable                  | Type / choices                      | Constraints and default                                         |
+| ------------------------------- | ------------------------------------- | ----------------------------------- | --------------------------------------------------------------- |
+| `telemetry.log_level`           | `A13N_TELEMETRY__LOG_LEVEL`           | "DEBUG", "INFO", "WARNING", "ERROR" | default="INFO"                                                  |
+| `telemetry.log_format`          | `A13N_TELEMETRY__LOG_FORMAT`          | LogFormat                           | default="json"                                                  |
+| `telemetry.log_stdout`          | `A13N_TELEMETRY__LOG_STDOUT`          | boolean                             | default=true                                                    |
+| `telemetry.log_file`            | `A13N_TELEMETRY__LOG_FILE`            | string or null                      | format="path"; default=null                                     |
+| `telemetry.log_file_max_mb`     | `A13N_TELEMETRY__LOG_FILE_MAX_MB`     | integer                             | minimum=1; maximum=10240; default=100                           |
+| `telemetry.log_file_backups`    | `A13N_TELEMETRY__LOG_FILE_BACKUPS`    | integer                             | minimum=1; maximum=100; default=5                               |
+| `telemetry.metrics_port`        | `A13N_TELEMETRY__METRICS_PORT`        | integer or null                     | minimum=1; maximum=65535; default=null                          |
+| `telemetry.trace_backend`       | `A13N_TELEMETRY__TRACE_BACKEND`       | "none", "langfuse", "logfire"       | default="none"                                                  |
+| `telemetry.trace_url`           | `A13N_TELEMETRY__TRACE_URL`           | string or null                      | maxLength=2048; `pattern="^https?://[^\\s?#@]+$"`; default=null |
+| `telemetry.langfuse_public_key` | `A13N_TELEMETRY__LANGFUSE_PUBLIC_KEY` | string or null                      | maxLength=256; default=null                                     |
+| `telemetry.langfuse_secret_key` | `A13N_TELEMETRY__LANGFUSE_SECRET_KEY` | string or null                      | format="password"; default=null                                 |
+| `telemetry.logfire_write_token` | `A13N_TELEMETRY__LOGFIRE_WRITE_TOKEN` | string or null                      | format="password"; default=null                                 |
+| `telemetry.logfire_read_token`  | `A13N_TELEMETRY__LOGFIRE_READ_TOKEN`  | string or null                      | format="password"; default=null                                 |
+| `telemetry.trace_content`       | `A13N_TELEMETRY__TRACE_CONTENT`       | "none", "standard", "full"          | default="standard"                                              |
+| `telemetry.trace_query_timeout` | `A13N_TELEMETRY__TRACE_QUERY_TIMEOUT` | number                              | maximum=60; exclusiveMinimum=0; default=10                      |

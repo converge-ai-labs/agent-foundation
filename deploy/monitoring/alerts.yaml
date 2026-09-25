@@ -1,0 +1,75 @@
+# Prometheus alerting rules for a13n Service; vmalert reads the same file. The rules expect the Service's scrape
+# job to be named a13n-service, which the Helm chart's PodMonitor sets. See README.md.
+groups:
+  - name: a13n-service
+    rules:
+      - alert: A13nServiceDown
+        expr: up{job="a13n-service"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "a13n Service target {{ $labels.instance }} is down"
+          description: "Prometheus has not scraped {{ $labels.instance }} for 5 minutes. Check the Pod and its /readyz."
+
+      - alert: A13nServiceErrors
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{job="a13n-service", http_response_status_code=~"5.."}[5m]))
+            / sum(rate(http_server_request_duration_seconds_count{job="a13n-service"}[5m]))
+            > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of a13n Service requests fail with 5xx"
+          description: "Search the logs for Request finished records with status 5xx; 503 names the unavailable dependency."
+
+      - alert: A13nBacklogStuck
+        expr: max by (queue) (a13n_backlog_oldest_age_seconds{job="a13n-service"}) > 600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Due work in the {{ $labels.queue }} queue has waited {{ $value | humanizeDuration }}"
+          description: "Nothing claims it: for runs, check that workers are ready and have free slots; for an outbox kind, check the control role and the delivery target."
+
+      - alert: A13nWorkersSaturated
+        expr: |
+          sum(a13n_worker_slots{job="a13n-service", state="free"}) == 0
+            and max(a13n_backlog_oldest_age_seconds{job="a13n-service", queue="runs"}) > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Every a13n worker slot is busy while runs wait"
+          description: "Add worker replicas or worker.slots, or find the attempts that hold slots for long."
+
+      - alert: A13nRunFailures
+        expr: |
+          sum(rate(a13n_runs_sealed_total{job="a13n-service", status="failed"}[15m]))
+            / sum(rate(a13n_runs_sealed_total{job="a13n-service"}[15m]))
+            > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of sealed a13n runs failed"
+          description: "The operations dashboard breaks failures down by reason; Run sealed log records name the runs."
+
+      - alert: A13nOutboxDead
+        expr: sum by (kind) (increase(a13n_outbox_deliveries_total{job="a13n-service", result="dead"}[15m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.kind }} deliveries were given up"
+          description: "Outbox delivery dead log records name each delivery and its reason."
+
+      - alert: A13nSweepFailing
+        expr: |
+          sum by (sweep) (increase(a13n_sweep_passes_total{job="a13n-service", result="failed"}[15m])) > 0
+            unless sum by (sweep) (increase(a13n_sweep_passes_total{job="a13n-service", result="succeeded"}[15m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Every {{ $labels.sweep }} pass failed for 15 minutes"
+          description: "Sweep failed log records carry the error type."

@@ -48,7 +48,7 @@ a13n_service/
     submit.py  accept.py  admission.py  resume.py  claim.py  worker.py  attempts.py  execute.py  seal.py
     agent.py  host.py  calls.py  boundaries.py  checkpoints.py  display.py  deferred.py  children.py  subagents.py
     configuration.py  assets.py  skills.py  secrets.py  web.py
-    stream.py  webhooks.py  usage.py  traces.py  runs.py  runtime.py
+    stream.py  webhooks.py  usage.py  traces.py  backlog.py  runs.py  runtime.py
     schemas.py  routes.py  trace_routes.py
     environments/     tables  schemas  service  routes  lifecycle  maintenance  mounts  execution  adapters
                       external
@@ -127,7 +127,7 @@ A package uses another's service functions, schemas and focused queries, and may
 | `redis.py`     | best-effort rate limits, the claim wakeup marker and capped stream append and reads ([09](09-runtime.md#redis))                                                                                                                                                                                                                                                                                                                           |
 | `outbound.py`  | host-owned HTTP clients under the endpoint policy and response bounds ([08](08-providers.md#outbound-endpoint-policy))                                                                                                                                                                                                                                                                                                                    |
 | `images.py`    | owner images: signature-checked PNG, JPEG and WebP stored create-only at their digest and served inert ([03](03-tenancy.md#images))                                                                                                                                                                                                                                                                                                       |
-| `telemetry.py` | the OTLP trace export pipeline and attempt correlation attributes ([09](09-runtime.md#observability))                                                                                                                                                                                                                                                                                                                                     |
+| `telemetry.py` | the process's meter and its Prometheus endpoint, gauges that keep their value between scrapes, the OTLP trace export pipeline and attempt correlation attributes ([12](12-observability.md))                                                                                                                                                                                                                                              |
 | `objects/`     | the object-store contract (`ObjectRef`, create-only writes, verified reads, prefix listing and deletion) with local and S3 implementations ([07](07-facts-and-delivery.md#objects))                                                                                                                                                                                                                                                       |
 
 ## A resource package

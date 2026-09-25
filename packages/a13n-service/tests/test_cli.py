@@ -1,4 +1,4 @@
-"""The installed CLI against a real database: bootstrap once, and the operator's user enable/disable switch."""
+"""The installed CLI against a real database: bootstrap once, the operator's user enable/disable switch, and where\noperator commands log."""
 
 import json
 from pathlib import Path
@@ -55,3 +55,18 @@ def test_bootstrap_then_operator_disables_and_enables_a_user(
         ("user.disable", None, {"authority": "operator"}),
         ("user.enable", None, {"authority": "operator"}),
     ]
+
+
+def test_operator_commands_log_to_stdout_never_to_the_server_log_file(
+    settings: Settings, tmp_path: Path, clean_environment: None
+) -> None:
+    log_file = tmp_path / "service.log"
+    config = tmp_path / "service.toml"
+    config.write_text(
+        f'[database]\nurl = "{settings.database.url.get_secret_value()}"\nauto_migrate = false\n'
+        f'[telemetry]\nlog_stdout = false\nlog_file = "{log_file}"\n'
+    )
+    result = CliRunner().invoke(main, ["--config", str(config), "user", "enable", "--email", "nobody@example.com"])
+    assert result.exit_code != 0 and "not found" in result.output
+    # The file belongs to the server process; a command beside it would rotate it under the server.
+    assert not log_file.exists()

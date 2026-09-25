@@ -33,7 +33,7 @@ class Runtime:
     # Who may call and what their grants mean: the distribution's authenticator, roles and grant sources.
     access: Access
     admission: AdmissionPolicy | None = None
-    # Exports Harness spans of worker attempts; None when tracing is off.
+    # Records Harness spans and metrics of worker attempts; None when tracing and metrics are both off.
     instrumentation: HarnessInstrumentation | None = None
     # The Harness plugin factories the deployment installed; agent configurations select instances of them.
     plugins: HarnessPluginFactoryCatalog = field(default_factory=lambda: HarnessPluginFactoryCatalog(()))

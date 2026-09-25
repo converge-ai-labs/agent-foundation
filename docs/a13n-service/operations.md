@@ -71,9 +71,9 @@ Deliveries are at least once. A sender claims a batch of `control.outbox_batch` 
 
 Pass `--config` before the command name. `bootstrap`, `user` and `run` refuse a database whose schema does not match the build.
 
-## Logs
+## Logs and metrics
 
-Processes log through `a13n-logging` in the format chosen by `telemetry.log_format`. HTTP access logging is off, so request URLs, including authorization callback parameters, are not logged by the Service; configure proxies in front of it to redact query strings as well. Every response carries an `X-Request-Id` that also appears in error bodies.
+Every process logs each request, run and delivery with the IDs that lead from one to the other, and can serve Prometheus metrics for dashboards and alerts. Request URLs and query strings are never logged. Every response carries an `X-Request-Id` that also appears in error bodies and in the request's log records. See [Monitor and troubleshoot](monitoring.md).
 
 ## Backups
 

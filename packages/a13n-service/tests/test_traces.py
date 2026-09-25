@@ -19,7 +19,7 @@ from a13n_service.infra import cursors
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
-from a13n_service.infra.telemetry import correlation_attributes, open_tracing
+from a13n_service.infra.telemetry import correlation_attributes, open_instrumentation
 from a13n_service.providers.traces import MAX_RESPONSE_BYTES, TraceProvider
 from a13n_service.providers.traces.langfuse import Langfuse
 from a13n_service.providers.traces.logfire import Logfire
@@ -249,7 +249,9 @@ async def test_every_span_an_attempt_exports_carries_its_correlation(service, sc
 async def test_tracing_exports_to_the_configured_backend(
     backend: Backend, configure: Callable[[Backend], TraceProvider], path: str, authorization: str
 ) -> None:
-    async with open_tracing(configure(backend), content=HarnessTraceContent.NONE) as instrumentation:
+    async with open_instrumentation(
+        configure(backend), metered=False, content=HarnessTraceContent.NONE
+    ) as instrumentation:
         assert instrumentation is not None and instrumentation.trace_content is HarnessTraceContent.NONE
         with instrumentation.get_tracer("test").start_as_current_span("probe"):
             pass
@@ -258,7 +260,7 @@ async def test_tracing_exports_to_the_configured_backend(
         (path, authorization)
     ]
 
-    async with open_tracing(None, content=HarnessTraceContent.STANDARD) as disabled:
+    async with open_instrumentation(None, metered=False, content=HarnessTraceContent.STANDARD) as disabled:
         assert disabled is None
 
 

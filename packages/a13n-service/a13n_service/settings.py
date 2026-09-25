@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, Literal, get_args, get_origin
 from urllib.parse import urlsplit
 
-from a13n_logging import LogFormat
+from a13n_logging import LogFile, LogFormat
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from a13n_service.providers.tools.mcp_catalog import McpServers
@@ -332,9 +332,19 @@ class Providers(Section):
 
 
 class Telemetry(Section):
-    """Logging, and the one trace backend Harness spans are exported to and trace queries read."""
+    """Logs, metrics, and the one trace backend Harness spans are exported to and trace queries read."""
 
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # The format of stdout; the log file is always JSON.
     log_format: LogFormat = LogFormat.json
+    log_stdout: bool = True
+    # A size-rotated log file owned by this process; processes must not share one path.
+    log_file: Path | None = None
+    log_file_max_mb: int = Field(default=100, ge=1, le=10240)
+    # Rotated files kept besides the active one; rotation needs at least one.
+    log_file_backups: int = Field(default=5, ge=1, le=100)
+    # Serves Prometheus metrics at /metrics on `server.host` and this port; unset turns metrics off.
+    metrics_port: int | None = Field(default=None, ge=1, le=65535)
     trace_backend: Literal["none", "langfuse", "logfire"] = "none"
     # The backend's API origin, such as https://cloud.langfuse.com or https://logfire-us.pydantic.dev.
     trace_url: str | None = Field(default=None, max_length=2048, pattern=r"^https?://[^\s?#@]+$")
@@ -348,8 +358,16 @@ class Telemetry(Section):
 
     @model_validator(mode="after")
     def complete(self) -> "Telemetry":
+        if not self.log_stdout and self.log_file is None:
+            raise ValueError("telemetry.log_stdout = false requires telemetry.log_file")
         self.trace_config()
         return self
+
+    def log_output(self) -> LogFile | None:
+        """The rotating log file, when configured."""
+        if self.log_file is None:
+            return None
+        return LogFile(path=self.log_file, max_bytes=self.log_file_max_mb * 1024 * 1024, backups=self.log_file_backups)
 
     def trace_config(self) -> TraceProvider | None:
         """The selected backend, for export and query; None when disabled. Each backend checks its own keys."""
@@ -381,6 +399,12 @@ class Settings(Section):
     telemetry: Telemetry = Field(default_factory=Telemetry)
     # Sections a distribution declares, validated by their own types.
     extensions: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def metrics_port_is_free(self) -> "Settings":
+        if self.telemetry.metrics_port == self.server.port:
+            raise ValueError("telemetry.metrics_port must differ from server.port")
+        return self
 
     @model_validator(mode="after")
     def mail_is_encrypted(self) -> "Settings":

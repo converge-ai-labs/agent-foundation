@@ -1,0 +1,222 @@
+{
+  "uid": "a13n-service-usage",
+  "title": "a13n Service usage",
+  "description": "Runs and model usage per tenant, read from the Service's PostgreSQL facts. Use a read-only database role.",
+  "tags": [
+    "a13n"
+  ],
+  "editable": true,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "PostgreSQL",
+        "type": "datasource",
+        "query": "grafana-postgresql-datasource"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Over time",
+      "id": 1,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "type": "timeseries",
+      "title": "Runs per day by status",
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT date_trunc('day', r.created_at) AS time, r.status AS metric, count(*) AS value\nFROM runs r\nWHERE $__timeFilter(r.created_at)\nGROUP BY 1, 2\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "type": "timeseries",
+      "title": "Model tokens per day",
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT date_trunc('day', u.ingested_at) AS time,\n  sum((u.record->'request_usage'->>'input_tokens')::bigint) AS input_tokens,\n  sum((u.record->'request_usage'->>'output_tokens')::bigint) AS output_tokens\nFROM usage_records u\nWHERE u.record->>'kind' = 'model' AND $__timeFilter(u.ingested_at)\nGROUP BY 1\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "type": "timeseries",
+      "title": "Active workspaces per day",
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT date_trunc('day', r.created_at) AS time, count(DISTINCT r.workspace_id) AS workspaces\nFROM runs r\nWHERE $__timeFilter(r.created_at)\nGROUP BY 1\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "By tenant",
+      "id": 5,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "type": "table",
+      "title": "Runs by workspace",
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT o.name AS organization, w.name AS workspace, count(*) AS runs,\n  count(*) FILTER (WHERE r.status = 'completed') AS completed,\n  count(*) FILTER (WHERE r.status = 'failed') AS failed,\n  count(*) FILTER (WHERE r.status = 'cancelled') AS cancelled\nFROM runs r\nJOIN workspaces w ON w.id = r.workspace_id\nJOIN organizations o ON o.id = r.organization_id\nWHERE $__timeFilter(r.created_at)\nGROUP BY o.name, w.name\nORDER BY runs DESC\nLIMIT 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "type": "table",
+      "title": "Model usage by workspace and model",
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT o.name AS organization, w.name AS workspace, coalesce(m.key, 'unattributed') AS model,\n  count(*) AS requests,\n  sum((u.record->'request_usage'->>'input_tokens')::bigint) AS input_tokens,\n  sum((u.record->'request_usage'->>'output_tokens')::bigint) AS output_tokens,\n  sum((u.record->'request_usage'->>'cost')::numeric) AS cost\nFROM usage_records u\nJOIN workspaces w ON w.id = u.workspace_id\nJOIN organizations o ON o.id = u.organization_id\nLEFT JOIN models m ON m.id = u.model_id\nWHERE u.record->>'kind' = 'model' AND $__timeFilter(u.ingested_at)\nGROUP BY o.name, w.name, m.key\nORDER BY requests DESC\nLIMIT 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "description": "Cost sums each record's priced cost; records without a price count tokens only."
+    },
+    {
+      "id": 8,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "type": "table",
+      "title": "Failed runs by reason",
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT r.failure->>'code' AS reason, count(*) AS runs, count(DISTINCT r.workspace_id) AS workspaces\nFROM runs r\nWHERE r.status = 'failed' AND $__timeFilter(r.created_at)\nGROUP BY 1\nORDER BY runs DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    }
+  ]
+}

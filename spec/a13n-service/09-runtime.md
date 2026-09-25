@@ -17,19 +17,20 @@ One non-root image carries one executable, `a13n-service`:
 | `bootstrap --email EMAIL [--password-stdin]`              | creates the first organization and administrator ([03](03-tenancy.md#bootstrap)); exits with status 3 when already initialized |
 | `user disable --email EMAIL`, `user enable --email EMAIL` | the operator's switch for a user account ([03](03-tenancy.md#disabling))                                                       |
 
-The executable takes an optional `--config PATH` settings file before the command, as in `a13n-service --config PATH run`. `bootstrap` and `user` first require the schema at this build's head. An invalid configuration fails before anything runs and reports only the error type, because validation messages can contain secrets. The executable configures logging once, for the `a13n_service` and `a13n_harness` loggers, in the `telemetry.log_format` format (`json` or `pretty`); libraries only use namespaced `a13n-logging` loggers, and the HTTP access log is off. The server listens on `server.host` and `server.port`, with TLS when `server.tls_certificate` and `server.tls_key` are set, and trusts forwarded client addresses and schemes only from `server.trusted_proxies`.
+The executable takes an optional `--config PATH` settings file before the command, as in `a13n-service --config PATH run`. `bootstrap` and `user` first require the schema at this build's head. An invalid configuration fails before anything runs and reports only the error type, because validation messages can contain secrets. The executable configures logging once and, for `run` when `telemetry.metrics_port` is set, serves metrics ([12](12-observability.md)); libraries only use namespaced `a13n-logging` loggers. The server listens on `server.host` and `server.port`, with TLS when `server.tls_certificate` and `server.tls_key` are set, and trusts forwarded client addresses and schemes only from `server.trusted_proxies`.
 
 What each role runs:
 
-| Component                                                            | `all` | `control` | `worker` |
-| -------------------------------------------------------------------- | ----- | --------- | -------- |
-| API routes, `/api/v1/openapi.json`, API docs                         | yes   | yes       | no       |
-| Thread stream hub ([07](07-facts-and-delivery.md#the-thread-stream)) | yes   | yes       | no       |
-| Control [sweeps](#sweeps)                                            | yes   | yes       | no       |
-| [Worker](#worker)                                                    | yes   | no        | yes      |
-| Automatic migration when `database.auto_migrate`                     | yes   | yes       | never    |
-| Harness trace export                                                 | yes   | no        | yes      |
-| `/healthz`, `/readyz`                                                | yes   | yes       | yes      |
+| Component                                                                  | `all` | `control` | `worker` |
+| -------------------------------------------------------------------------- | ----- | --------- | -------- |
+| API routes, `/api/v1/openapi.json`, API docs                               | yes   | yes       | no       |
+| Thread stream hub ([07](07-facts-and-delivery.md#the-thread-stream))       | yes   | yes       | no       |
+| Control [sweeps](#sweeps)                                                  | yes   | yes       | no       |
+| [Worker](#worker)                                                          | yes   | no        | yes      |
+| Automatic migration when `database.auto_migrate`                           | yes   | yes       | never    |
+| Harness trace export                                                       | yes   | no        | yes      |
+| `/healthz`, `/readyz`                                                      | yes   | yes       | yes      |
+| `/metrics` on `telemetry.metrics_port` ([12](12-observability.md#metrics)) | yes   | yes       | yes      |
 
 Every replica of a role runs the same components; replicas coordinate only through PostgreSQL rows. The `a13n-service` executable assembles the built-in distribution. Another distribution provides its own entry point that loads settings with its sections, builds its application with `build_app(distribution, role=...)` and runs the migration runner with its composed graph ([Assembly](#assembly)).
 
@@ -81,6 +82,7 @@ The generated [configuration reference](../../docs/a13n-service/configuration-re
 - the `s3` object backend without `objects.bucket`;
 - incomplete SMTP settings (a sender is required with `auth.mail.smtp_host`; username and password come together; neither without a host), or SMTP without `encryption.active_key_id`, because queued mail carries encrypted links;
 - a trace backend without its URL and keys;
+- `telemetry.log_stdout = false` without `telemetry.log_file`, or a `telemetry.metrics_port` equal to `server.port`;
 - an `environments.docker_mount_roots` entry that is not an absolute path or contains `..`;
 - bounds that do not nest:
 
@@ -175,6 +177,7 @@ Sweeps run on every `all` and `control` replica at once. Coordination belongs to
 | `recover_connection_operations` | [04](04-resources.md#connections)                           | `providers.operation_scan_seconds` | `control.sweep_batch` operations past their deadline, failed as `outcome_unknown` | 60 s                                        |
 | `deliver_outbox`                | [07](07-facts-and-delivery.md#outbox)                       | `control.scan_seconds`             | up to `control.outbox_batch` claims per kind                                      | 2 × `control.outbox_lease_seconds`          |
 | `purge_outbox`                  | [07](07-facts-and-delivery.md#outbox)                       | one hour                           | `control.sweep_batch` settled rows older than `control.outbox_retention_days`     | 60 s                                        |
+| `report_backlog`                | [12](12-observability.md#metrics)                           | 15 s                               | one count, bounded at 10,000, per queue                                           | 10 s                                        |
 
 A `deliver_outbox` pass delivers its kinds side by side, so a slow kind never delays another. Within a kind it claims and handles at most 8 rows at a time, each under its own claim of `control.outbox_lease_seconds`, and starts no new batch once one claim lease has passed since the pass began, so a pass ends within two leases. Retries, backoff and dead-lettering belong to the outbox ([07](07-facts-and-delivery.md#outbox)). There is no generic jobs table.
 
@@ -284,23 +287,6 @@ Both methods run in a short transaction the Service owns and refuse by raising a
 - `call_id` is established before dispatch, and the usage records of that call carry the same identity ([07](07-facts-and-delivery.md#usage-records)), so a policy can correlate what it allowed with what was charged, including concurrent calls and late reports. A child run carries its root run's identity; creating a new run never yields a fresh allowance.
 
 The built-in distribution installs no admission policy. Its built-in limits are the per-run request limit and the structural capacity limits; it keeps no monetary ledger.
-
-## Observability
-
-Logs never carry credentials; background failures are logged with their operation's name and the error type. Executing roles export Harness spans over OTLP/HTTP to the configured trace backend in background batches, with the resource attributes `service.name = a13n-service` and the package version, so a slow or failing backend never delays execution; each export call and the final flush are bounded by 10 seconds. `telemetry.trace_content` decides whether prompts, outputs and tool payloads leave the deployment.
-
-Every exported span of an attempt, its inline child runs included, carries the attempt's correlation as Harness observation metadata:
-
-| Attribute                                   | Value                  |
-| ------------------------------------------- | ---------------------- |
-| `a13n.observation.metadata.organization_id` | the run's organization |
-| `a13n.observation.metadata.workspace_id`    | the run's workspace    |
-| `a13n.observation.metadata.session_id`      | the run's session      |
-| `a13n.observation.metadata.service_run_id`  | the Service run        |
-| `a13n.observation.metadata.run_attempt_id`  | the attempt            |
-| `a13n.observation.session.id`               | the thread             |
-
-The thread is the observation session, by which a backend such as Langfuse groups a conversation; the Harness keeps its own `run_id` and `thread_id` metadata keys, hence `service_run_id`. One function owns these names, and trace queries select by the same attributes ([07](07-facts-and-delivery.md#trace-query)). The backend is both the export target and the query source ([08](08-providers.md#trace-backends)).
 
 ## Trade-offs
 

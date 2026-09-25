@@ -13,10 +13,11 @@ from dataclasses import dataclass
 from importlib.metadata import version
 from typing import Any
 
-from a13n_logging import get_logger
+from a13n_logging import get_logger, log_context
 
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.redis import wait_for_wake
+from a13n_service.infra.telemetry import Gauge
 from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost, renew
 from a13n_service.runs.claim import claim
 from a13n_service.runs.runtime import Runtime
@@ -24,6 +25,8 @@ from a13n_service.runs.runtime import Runtime
 logger = get_logger(__name__)
 
 type Execute = Callable[[Runtime, Lease, AttemptControl], Coroutine[Any, Any, None]]
+
+SLOTS = Gauge("a13n.worker.slots", unit="{slot}", description="This worker's attempt slots by state")
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,8 +48,13 @@ class Worker:
         self.stopping = False
 
     async def run(self) -> None:
+        with log_context(worker_id=self.id):
+            await self._run()
+
+    async def _run(self) -> None:
         settings = self.runtime.settings.worker
-        logger.info("Worker started", extra={"worker_id": self.id, "host": socket.gethostname(), "build": self.build})
+        logger.info("Worker started", extra={"host": socket.gethostname(), "build": self.build})
+        self._report_slots()
         async with asyncio.TaskGroup() as group:
             group.create_task(self._supervise(), name="lease-supervisor")
             try:
@@ -71,6 +79,7 @@ class Worker:
                         )
                         task = group.create_task(self._attempt(lease, control), name=f"attempt-{lease.attempt_id}")
                         self.running[lease.attempt_id] = _Running(lease, control, task)
+                    self._report_slots()
                     if len(leases) < requested:
                         await wait_for_wake(self.runtime.redis, timeout=settings.scan_seconds)
             except asyncio.CancelledError:
@@ -86,20 +95,28 @@ class Worker:
             await asyncio.wait(tasks, timeout=self.runtime.settings.worker.drain_seconds)
 
     async def _attempt(self, lease: Lease, control: AttemptControl) -> None:
-        try:
-            await self.execute(self.runtime, lease, control)
-        except LeaseLost:
-            logger.info("Attempt lost its lease", extra={"run_id": lease.run_id, "attempt_id": lease.attempt_id})
-        except asyncio.CancelledError:
-            logger.info("Attempt stopped", extra={"run_id": lease.run_id, "attempt_id": lease.attempt_id})
-            raise  # The TaskGroup ignores a cancelled attempt, so cancelling one never stops the worker.
-        except Exception as error:
-            # Execution seals its own failures; anything escaping is left to lease expiry and recovery.
-            logger.exception("Attempt crashed", extra={"run_id": lease.run_id, "error_type": type(error).__name__})
-        finally:
-            self.running.pop(lease.attempt_id, None)
-            self.free += 1
-            self.slot_released.set()
+        # Every record of the attempt, the Harness's included, names its run and attempt.
+        with log_context(run_id=lease.run_id, attempt_id=lease.attempt_id):
+            try:
+                await self.execute(self.runtime, lease, control)
+            except LeaseLost:
+                logger.info("Attempt lost its lease")
+            except asyncio.CancelledError:
+                logger.info("Attempt stopped")
+                raise  # The TaskGroup ignores a cancelled attempt, so cancelling one never stops the worker.
+            except Exception as error:
+                # Execution seals its own failures; anything escaping is left to lease expiry and recovery.
+                logger.exception("Attempt crashed", extra={"error_type": type(error).__name__})
+            finally:
+                self.running.pop(lease.attempt_id, None)
+                self.free += 1
+                self._report_slots()
+                self.slot_released.set()
+
+    def _report_slots(self) -> None:
+        slots = self.runtime.settings.worker.slots
+        SLOTS.set(self.free, {"state": "free"})
+        SLOTS.set(slots - self.free, {"state": "busy"})
 
     async def _supervise(self) -> None:
         """Every authority interval, one heartbeat polls cancellation and each principal's authority for all running
@@ -132,7 +149,7 @@ class Worker:
                         seconds=settings.lease_seconds,
                     )
             except Exception as error:
-                logger.warning("Lease renewal failed", extra={"worker_id": self.id, "error_type": type(error).__name__})
+                logger.warning("Lease renewal failed", extra={"error_type": type(error).__name__})
                 stops, extended = {}, set()
             for running in attempts:
                 attempt_id, control = running.lease.attempt_id, running.control

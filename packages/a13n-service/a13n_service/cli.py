@@ -1,4 +1,4 @@
-"""Installed entry point; configure logging once and select explicit operations."""
+"""Installed entry point; configure logging and metrics once and select explicit operations."""
 
 import asyncio
 import json
@@ -18,6 +18,7 @@ from a13n_service.app import build_app, check_schema, open_storage
 from a13n_service.distribution import OSS
 from a13n_service.infra.db import Storage
 from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.telemetry import serve_metrics
 from a13n_service.migrations.runner import check, generate, heads, upgrade
 from a13n_service.settings import ProcessRole, Settings, load_settings
 from a13n_service.tenancy.bootstrap import AlreadyBootstrapped, BootstrapInput, bootstrap
@@ -34,13 +35,28 @@ def main(ctx: click.Context, config: Path | None) -> None:
     except (ValueError, OSError) as error:
         # Validation errors can contain input values, including deployment secrets.
         raise click.ClickException(f"Invalid Service configuration ({type(error).__name__})") from None
-    configure_logging(logger_names=("a13n_service", "a13n_harness"), log_format=ctx.obj.telemetry.log_format)
+    telemetry = ctx.obj.telemetry
+    # Only the server writes the log file; operator commands log to stdout, so they never share its file.
+    serving = ctx.invoked_subcommand == "run"
+    try:
+        configure_logging(
+            level=telemetry.log_level,
+            log_format=telemetry.log_format,
+            logger_names=("a13n_service", "a13n_harness"),
+            stdout=telemetry.log_stdout or not serving,
+            file=telemetry.log_output() if serving else None,
+        )
+    except ValueError as error:
+        # An unwritable telemetry.log_file; the message names the path, never a secret.
+        raise click.ClickException(f"Logging could not be configured: {error}") from None
 
 
 @main.command()
 @click.option("--role", type=click.Choice(get_args(ProcessRole)), default="all")
 @click.pass_obj
 def run(settings: Settings, role: ProcessRole) -> None:
+    if settings.telemetry.metrics_port is not None:
+        serve_metrics(settings.server.host, settings.telemetry.metrics_port)
     uvicorn.run(
         build_app(role=role, settings=settings),
         host=settings.server.host,

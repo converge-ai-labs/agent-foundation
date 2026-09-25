@@ -304,7 +304,7 @@ Filter by `run_id`, `thread_id`, `session_id`, and `ingested_after`/`ingested_be
 
 ## Traces
 
-With a trace backend configured (`telemetry.trace_backend`, see [logging and traces](configuration.md#logging-and-traces)), each attempt exports its Harness spans, and the workspace can query them. Console shows them under **Traces**.
+With a trace backend configured (`telemetry.trace_backend`, see [logs, metrics and traces](configuration.md#logs-metrics-and-traces)), each attempt exports its Harness spans, and the workspace can query them. Console shows them under **Traces**.
 
 - `GET …/runs/{run_id}/attempts/{attempt_id}/trace` lists an attempt's spans, including its inline subagents.
 - `GET …/traces` lists root spans, one per attempt, filtered by `session_id`, `thread_id`, `run_id`, up to 8 `attribute=key:value` filters, and `started_after`/`started_before` (the last day by default, at most 31 days). A cursor is bound to these filters as given, including the window: changing `started_after` or `started_before` on the next page is `invalid_cursor`, and later pages keep the window the first page resolved.

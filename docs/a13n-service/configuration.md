@@ -141,9 +141,9 @@ Other `providers` settings bound provider work: `model_timeout` (each read of on
 
 `plugins.keys` lists installed Harness plugin factories, by entry-point key, that agents may select. `assistant.models` lists preferred upstream model names for the [configuration assistant](configuration-assistant.md).
 
-## Logging and traces
+## Logs, metrics and traces
 
-`telemetry.log_format` is `json` (the default) or `pretty`. The CLI configures logging once for every command.
+`telemetry.log_level` and `telemetry.log_format` (`json`, the default, or `pretty`) apply to every command. `a13n-service run` can also write a rotating JSON file (`log_file`, `log_file_max_mb`, `log_file_backups`), and with `log_stdout = false` only the file. `telemetry.metrics_port` serves Prometheus metrics on a port of its own. [Monitor and troubleshoot](monitoring.md) describes what each signal records.
 
 The Service exports the Harness spans of every attempt to one trace backend and reads the same backend for [trace queries](agents-and-runs.md#traces). Choose it with `telemetry.trace_backend`:
 

@@ -2,7 +2,8 @@
 
 Three callers hold different authority (worker lease, interrupt of an accepted run, the expiry sweep) but
 share one transition, so thread pointers, input disposition, child notification and webhooks are decided
-in one place. Successor acceptance and object cleanup run after commit; sweeps recover a lost callback.
+in one place. Successor acceptance, object cleanup, and the attempt's and run's end logs and metrics run after
+commit; sweeps recover a lost callback.
 """
 
 from datetime import datetime, timedelta
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import after_commit, lock, now, transaction
 from a13n_service.infra.outbox import enqueue_once
+from a13n_service.infra.telemetry import meter
 from a13n_service.runs import checkpoints, inbox
 from a13n_service.runs.accept import advance
 from a13n_service.runs.attempts import Lease, lock_thread_lease
@@ -25,6 +27,16 @@ from a13n_service.runs.usage import totals
 from a13n_service.runs.webhooks import LifecycleKind, notify_subscribers
 
 logger = get_logger(__name__)
+
+ATTEMPT_DURATION = meter.create_histogram(
+    "a13n.attempt.duration",
+    unit="s",
+    description="Time from claim to the end of an attempt, by how it ended",
+    explicit_bucket_boundaries_advisory=(1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600),
+)
+RUNS_SEALED = meter.create_counter(
+    "a13n.runs.sealed", unit="{run}", description="Sealed runs by status, and by failure code when they failed"
+)
 
 _ATTEMPT_STATUS: dict[Sealed, str] = {
     "completed": "succeeded",
@@ -56,10 +68,38 @@ def recovery_delay(attempts: int) -> timedelta:
     return timedelta(seconds=min(60, 2 ** max(0, attempts - 1)))
 
 
-def _finish_attempt(attempt: AttemptRow, status: str, *, at: datetime, failure: Failure | None = None) -> None:
+def _finish_attempt(
+    session: AsyncSession, attempt: AttemptRow, status: str, *, at: datetime, failure: Failure | None = None
+) -> None:
     attempt.status, attempt.finished_at = status, at
     if failure is not None:
         attempt.failure = failure.model_dump()
+    seconds = (at - attempt.created_at).total_seconds()
+    fields = {
+        "run_id": attempt.run_id,
+        "attempt_id": attempt.id,
+        "status": status,
+        "reason": failure.code if failure is not None else attempt.yield_reason,
+        "duration_ms": round(seconds * 1000),
+    }
+
+    async def ended() -> None:
+        ATTEMPT_DURATION.record(seconds, {"status": status})
+        logger.info("Attempt ended", extra=fields)
+
+    after_commit(session, ended)
+
+
+def _sealed(session: AsyncSession, run: RunRow, outcome: Outcome) -> None:
+    reason = outcome.failure.code if outcome.failure is not None else None
+    labels = {"status": outcome.status} | ({"reason": reason} if reason is not None else {})
+    fields = {"run_id": run.id, "status": outcome.status, "reason": reason}
+
+    async def sealed() -> None:
+        RUNS_SEALED.add(1, labels)
+        logger.info("Run sealed", extra=fields)
+
+    after_commit(session, sealed)
 
 
 async def seal(
@@ -76,7 +116,8 @@ async def seal(
     # Read before the run changes: the query would flush a sealed status, and sealed facts are immutable.
     usage = await totals(session, run.id)
     if attempt is not None:
-        _finish_attempt(attempt, _ATTEMPT_STATUS[outcome.status], at=at, failure=outcome.failure)
+        _finish_attempt(session, attempt, _ATTEMPT_STATUS[outcome.status], at=at, failure=outcome.failure)
+    _sealed(session, run, outcome)
     kinds = _kinds(outcome.status, attempt.status if attempt is not None else None)
     run.status, run.sealed_at, run.current_attempt_id = outcome.status, at, None
     run.output = outcome.output
@@ -130,8 +171,8 @@ async def recover(
     if status == "failed" and run.attempts >= run.max_attempts:
         await seal(session, runtime, thread, run, attempt, Outcome(status="failed", failure=failure), at=at)
         return
-    _finish_attempt(attempt, status, at=at, failure=failure)
     attempt.yield_reason = yield_reason
+    _finish_attempt(session, attempt, status, at=at, failure=failure)
     run.status, run.current_attempt_id = "accepted", None
     run.available_at = at if status == "yielded" else at + recovery_delay(run.attempts)
     await session.flush()

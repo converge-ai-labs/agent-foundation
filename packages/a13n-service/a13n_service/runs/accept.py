@@ -7,15 +7,17 @@ the revision and the options it runs with. Both are SQL-only and run under the c
 
 from dataclasses import dataclass
 from enum import Enum
+from functools import partial
 from typing import Literal
 
 from a13n_logging import get_logger
 from sqlalchemy import exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.infra.db import now, transaction
+from a13n_service.infra.db import after_commit, now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.telemetry import meter
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride
 from a13n_service.resources.agents.service import SelectedRevision, select_revision, validate_override
 from a13n_service.runs import inbox
@@ -31,6 +33,8 @@ from a13n_service.tenancy.access import principal_for, require_active_workspace
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize
 
 logger = get_logger(__name__)
+
+RUNS_ACCEPTED = meter.create_counter("a13n.runs.accepted", unit="{run}", description="Accepted runs by trigger")
 
 # Entries examined per acceptance; rejected ones are failed, so a later call makes progress.
 SCAN = 16
@@ -322,7 +326,14 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     await session.flush()
     await notify_subscribers(session, runtime, run, ["run.accepted"], at=current)
     runtime.wake_workers(session)
+    after_commit(session, partial(_accepted, run.id, thread.id, source.trigger))
     return run
+
+
+async def _accepted(run_id: str, thread_id: str, trigger: Trigger) -> None:
+    # Within a request, the record also carries its request ID: the link from a request to the run it started.
+    RUNS_ACCEPTED.add(1, {"trigger": trigger})
+    logger.info("Run accepted", extra={"run_id": run_id, "thread_id": thread_id, "trigger": trigger})
 
 
 async def _source(

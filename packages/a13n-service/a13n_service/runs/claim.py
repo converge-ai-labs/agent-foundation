@@ -8,21 +8,33 @@ planned handoff is not a failure, and each one needs its worker to drain, which 
 import secrets
 from datetime import timedelta
 
+from a13n_logging import get_logger
 from sqlalchemy import select
 
 from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import now, transaction
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.telemetry import meter
 from a13n_service.runs import checkpoints
 from a13n_service.runs.attempts import Lease, lock_lease
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import AttemptRow, RunRow
 from a13n_service.runs.webhooks import notify_subscribers
 
+logger = get_logger(__name__)
+
+QUEUE_WAIT = meter.create_histogram(
+    "a13n.attempt.queue_wait",
+    unit="s",
+    description="Time a due run waited before a worker claimed it",
+    explicit_bucket_boundaries_advisory=(0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600),
+)
+
 
 async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: int) -> list[Lease]:
     """Lease up to `limit` due accepted runs, skipping rows other workers hold."""
     leases: list[Lease] = []
+    waits: list[float] = []
     async with transaction(runtime.storage) as session:
         current = await now(session)
         runs = (
@@ -58,6 +70,7 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
             session.add(attempt)
             if not handoff:
                 run.attempts += 1
+            waits.append((current - run.available_at).total_seconds())
             run.status, run.current_attempt_id = "running", attempt.id
             run.started_at = run.started_at or current
             await session.flush()
@@ -76,6 +89,12 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
                     token=token,
                 )
             )
+    for lease, wait in zip(leases, waits, strict=True):
+        QUEUE_WAIT.record(wait)
+        logger.info(
+            "Attempt claimed",
+            extra={"run_id": lease.run_id, "attempt_id": lease.attempt_id, "queue_wait_ms": round(wait * 1000)},
+        )
     return leases
 
 
