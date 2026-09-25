@@ -48,8 +48,14 @@ a13n-service = "a13n_service.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+artifacts = ["a13n_service/static/**"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["a13n_service"]
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
 
 # SQLAlchemy loads psycopg through its configured driver; FastAPI loads
 # python-multipart to parse the upload endpoints' multipart forms.

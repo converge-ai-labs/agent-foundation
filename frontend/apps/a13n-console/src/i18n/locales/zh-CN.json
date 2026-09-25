@@ -1721,5 +1721,7 @@
   "The memory's provider is unavailable, so its records cannot be read or changed now. Try again later.": "记忆的供应商暂不可用，现在无法读取或更改其记录。请稍后重试。",
   "The memory's provider did not confirm this change, so it may or may not have happened. Reload to check before trying again.": "记忆的供应商未确认此变更，它可能已生效，也可能没有。请先重新加载确认，再决定是否重试。",
   "The records of this namespace are still being deleted with a deleted memory. Try again once that finishes.": "此命名空间的记录仍在随已删除的记忆一起删除。请在完成后重试。",
-  "No matching memories": "没有匹配的记忆"
+  "No matching memories": "没有匹配的记忆",
+  "Create administrator": "创建管理员",
+  "The first account administers this Service.": "第一个账号将管理此服务。"
 }

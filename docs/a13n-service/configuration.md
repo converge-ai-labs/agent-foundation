@@ -39,13 +39,13 @@ Supply credentials such as the database password, the encryption key ring and ob
 
 ## Required infrastructure
 
-| Setting             | What to provide                                                                                                                                                                                                    |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `server.public_url` | The origin browsers and API clients use, such as the Console origin that proxies `/api`. The Service accepts browser state changes only from this origin, and uses it in mailed links and authorization callbacks. |
-| `database.url`      | A PostgreSQL URL using the `postgresql+psycopg://` driver. Use a database dedicated to this Service.                                                                                                               |
-| `redis.url`         | A Redis endpoint shared by every process.                                                                                                                                                                          |
-| `objects.*`         | Shared object storage for run checkpoints and displays, uploads, assets, skill packages and images.                                                                                                                |
-| `encryption.*`      | The key ring that encrypts stored credentials.                                                                                                                                                                     |
+| Setting             | What to provide                                                                                                                                                                                                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server.public_url` | The origin browsers and API clients use to reach the Service, which serves Console and the API there. The Service accepts browser state changes only from this origin, and uses it in mailed links and authorization callbacks. Its scheme decides whether cookies are `Secure`. |
+| `database.url`      | A PostgreSQL URL using the `postgresql+psycopg://` driver. Use a database dedicated to this Service.                                                                                                                                                                             |
+| `redis.url`         | A Redis endpoint shared by every process.                                                                                                                                                                                                                                        |
+| `objects.*`         | Shared object storage for run checkpoints and displays, uploads, assets, skill packages and images.                                                                                                                                                                              |
+| `encryption.*`      | The key ring that encrypts stored credentials, or on a single host a key file.                                                                                                                                                                                                   |
 
 ### PostgreSQL
 
@@ -70,11 +70,13 @@ export A13N_ENCRYPTION__ACTIVE_KEY_ID=primary
 export A13N_ENCRYPTION__KEYS="{\"primary\": \"$(openssl rand -base64 32)\"}"
 ```
 
-Without an active key the Service starts, but storing any credential fails with `unavailable`. To rotate, add a new key to `encryption.keys` and make it active; keep the old keys in the ring, because values written under them are still read with their original key. Losing a key makes the values encrypted under it unreadable, so back up the key ring with the database.
+On a single host, `encryption.key_file` can replace `active_key_id` and `keys`: the Service reads one key from that file and, when the file is missing, generates it there on first start with mode `600`. Put the file on persistent storage every Service process shares, such as the [single-host stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)'s data volume. The key's ID is `key_file`; to move to a key ring later, for example to rotate, add the file's content to `encryption.keys` under that ID.
+
+Without any key the Service starts, but storing any credential fails with `unavailable`. To rotate, add a new key to `encryption.keys` and make it active; keep the old keys in the ring, because values written under them are still read with their original key. Losing a key makes the values encrypted under it unreadable, so back up the key ring with the database.
 
 ## HTTP server
 
-The Service serves HTTP on `server.host` and `server.port`. Serve HTTPS directly with `server.tls_certificate` and `server.tls_key`, or terminate TLS at a trusted proxy. Browser login sessions use cookies marked `Secure`, so browser access needs HTTPS except on a loopback address.
+The Service serves HTTP on `server.host` and `server.port`. Serve HTTPS directly with `server.tls_certificate` and `server.tls_key`, or terminate TLS at a trusted proxy. When `server.public_url` is HTTPS, browser login sessions use a `__Host-` cookie marked `Secure`; over plain HTTP the cookie is neither, so serve anything reachable beyond a trusted network over HTTPS.
 
 Behind a proxy, list the proxy addresses or CIDRs in `server.trusted_proxies`. The Service then takes the client address and scheme from the `X-Forwarded-For` and `X-Forwarded-Proto` headers of those proxies only; rate limits key on that client address.
 
@@ -169,7 +171,7 @@ Some settings must fit inside others, or valid-looking values would break every 
 
 ## Container deployments
 
-The `a13n-service` image runs every role through the same `a13n-service` entry point. Mount the configuration file (the provided deployments use `/app/service.toml`) and supply credentials as environment variables. The Console image serves the browser application and proxies `/api` and `/readyz` to the Service, so browsers and API clients share one origin; set `server.public_url` to it.
+The `a13n-service` image runs every role through the same `a13n-service` entry point. Mount the configuration file (the provided deployments use `/app/service.toml`) and supply credentials as environment variables. The `all` and `control` roles also serve Console, so browsers and API clients share one origin; set `server.public_url` to it.
 
-- The [single-host Compose stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/compose) runs `run --role all` with PostgreSQL, Redis, the Console and Docker environments through the host Engine.
+- The [single-host Compose stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) runs `run --role all` with PostgreSQL, Redis, the Console and Docker environments through the host Engine.
 - The [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes) runs control and worker Deployments after a migration Job per release revision, with values for kind, AWS and GCP.

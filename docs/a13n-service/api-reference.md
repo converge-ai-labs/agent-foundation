@@ -416,6 +416,22 @@ Responses:
 
 ## auth
 
+### `POST /api/v1/auth/bootstrap`
+
+Bootstrap Administrator.
+
+Public only until initialized: creates the first administrator, as the `bootstrap` command does, signed in.
+
+Request body: required.
+
+- `application/json`: `BootstrapInput`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: LoginOutput`).
+- **400** — .
+- **default** — .
+
 ### `GET /api/v1/auth/configuration`
 
 Auth Configuration.

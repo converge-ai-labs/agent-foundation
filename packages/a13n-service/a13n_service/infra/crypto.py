@@ -3,15 +3,40 @@
 import base64
 import hashlib
 import json
+import os
 import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from a13n_service.infra.errors import ServiceError
+
+# The key ID of the one key an `encryption.key_file` holds.
+FILE_KEY_ID = "key_file"
+
+
+def file_key(path: Path) -> SecretStr:
+    """The base64 key kept at `path`, generated there first when missing. A complete private draft is linked into
+    place, so concurrent first starts all read the one key that won and none replaces it."""
+    if not path.exists():
+        draft = path.with_name(f".{path.name}.{secrets.token_hex(8)}")
+        descriptor = os.open(draft, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(descriptor, base64.b64encode(secrets.token_bytes(32)))
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        try:
+            os.link(draft, path)
+        except FileExistsError:
+            pass
+        finally:
+            draft.unlink()
+    return SecretStr(path.read_text().strip())
 
 
 def secret_hash(secret: str) -> str:

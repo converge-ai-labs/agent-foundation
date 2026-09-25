@@ -144,9 +144,24 @@ jobs:
           path: test-results/
           retention-days: 7
 
+      - name: Set up pnpm
+        if: matrix.name == 'checks'
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Set up Node.js
+        if: matrix.name == 'checks'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
       - name: Build a13n Service Python distributions
         if: matrix.name == 'checks'
         run: |
+          make a13n-service-assets
           uv build --package a13n-logging --out-dir dist/a13n-service
           uv build --package a13n-service --out-dir dist/a13n-service
 

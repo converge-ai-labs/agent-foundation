@@ -65,6 +65,7 @@ a13n_service/
     traces/           the trace backend contract; langfuse.py  logfire.py
 
   migrations/         env.py  runner.py  script.py.mako  versions/
+  static/             the Console production build, placed before packaging; not in source control
 ```
 
 Four business packages answer four questions. `tenancy`: who is asking and what may they do ([03](03-tenancy.md)). `resources`: what has the tenant configured ([04](04-resources.md), [11](11-memory.md)). `runs`: how does one input become one sealed run ([05](05-runs.md), [06](06-environments.md), [07](07-facts-and-delivery.md)). `providers`: what does the Service call ([08](08-providers.md)). Shared mechanisms live under `infra/`; configuration and assembly stay at the root ([09](09-runtime.md)).

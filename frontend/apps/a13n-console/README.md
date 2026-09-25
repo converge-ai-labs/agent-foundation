@@ -46,6 +46,6 @@ pnpm --dir frontend --filter a13n-console build
 make frontend-check-all
 ```
 
-The production build is emitted to `dist/`. Hosting must serve the application shell for browser routes and route `/api` to the Service on the same origin, without buffering event streams. Service deployment and static hosting configuration are managed separately. The design system showcase remains in `frontend/packages/a13n-ui/dev`.
+The production build is emitted to `dist/`. The Service serves it with the API on one origin: `make a13n-service-assets` places it in the `a13n-service` package, and the Service image builds it in its own stage. The design system showcase remains in `frontend/packages/a13n-ui/dev`.
 
 Console tests use Node.js for `*.test.ts` and jsdom for browser/React `*.test.tsx` files. Only the latter load the DOM setup. Both run under `test`; use `--project=unit` or `--project=dom` for an explicit subset. Keep real keyboard interactions where they are under test; paste complete fixture URLs when only the resulting value matters. Timer behavior uses Vitest fake timers rather than waiting for wall-clock delays.

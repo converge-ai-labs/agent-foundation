@@ -37,7 +37,7 @@ function classify(path) {
 function component(path) {
   const match = path.match(/^(?:packages|crates|spec|proto)\/(a13n-[^/]+)\//)
     || path.match(/^frontend\/(?:apps|packages)\/(a13n-[^/]+)\//)
-    || path.match(/^deploy\/[^/]+\/(a13n-[^/]+)(?:[/.]|$)/);
+    || path.match(/^deploy\/(?:[^/]+\/)+(a13n-[^/.]+)(?:[/.]|$)/);
   return match?.[1] || 'Repository';
 }
 

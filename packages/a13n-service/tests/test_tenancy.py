@@ -422,7 +422,7 @@ async def test_invitations_with_manual_links(service) -> None:  # type: ignore[n
         assert (await accept(invitee, receipt["invitation_url"], MEMBER_PASSWORD)).status_code == 404
         assert (await accept(invitee, resent.json()["invitation_url"], "short")).status_code == 400
         accepted = await accept(invitee, resent.json()["invitation_url"], MEMBER_PASSWORD)
-        assert accepted.status_code == 200 and "__Host-a13n_session" in accepted.headers["set-cookie"]
+        assert accepted.status_code == 200 and "a13n_session=" in accepted.headers["set-cookie"]
         me = (await invitee.get("/api/v1/users/me")).json()
         assert (me["email"], me["name"]) == ("new@example.com", "new")
         assert (await invitee.get(service.workspace)).json()["permissions"] == ["read", "run", "write"]
@@ -492,7 +492,7 @@ async def test_only_a_login_session_sends_invitations(service) -> None:  # type:
 
 async def test_identity_mail_is_queued_encrypted(mailing) -> None:  # type: ignore[no-untyped-def]
     client = mailing.client
-    assert (await client.get("/api/v1/auth/configuration")).json() == {"email_delivery": True}
+    assert (await client.get("/api/v1/auth/configuration")).json() == {"email_delivery": True, "initialized": True}
     receipt = await client.post(
         f"{mailing.workspace}/invitations", json={"email": "mail@example.com", "role": "runner"}
     )
@@ -553,10 +553,10 @@ async def test_identity_mail_is_queued_encrypted(mailing) -> None:  # type: igno
 
 def test_mail_requires_an_encryption_key() -> None:
     mail = {"smtp_host": "127.0.0.1", "sender": "a13n@example.com"}
-    with pytest.raises(ValidationError, match="requires encryption"):
+    with pytest.raises(ValidationError, match="requires an encryption key"):
         Settings.model_validate({"auth": {"mail": mail}})
-    encryption = {"active_key_id": "k", "keys": {"k": "a" * 44}}
-    assert Settings.model_validate({"auth": {"mail": mail}, "encryption": encryption}).auth.mail.smtp_host
+    for encryption in ({"active_key_id": "k", "keys": {"k": "a" * 44}}, {"key_file": "/app/var/encryption.key"}):
+        assert Settings.model_validate({"auth": {"mail": mail}, "encryption": encryption}).auth.mail.smtp_host
 
 
 async def test_mail_delivery_settles_and_dead_letters(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
@@ -728,7 +728,7 @@ async def test_profile_password_and_login_sessions(service) -> None:  # type: ig
         json={"email": "x@example.com", "current_password": PASSWORD},
     )
     assert unavailable.status_code == 503
-    assert (await client.get("/api/v1/auth/configuration")).json() == {"email_delivery": False}
+    assert (await client.get("/api/v1/auth/configuration")).json() == {"email_delivery": False, "initialized": True}
     async with new_client(service) as anonymous:
         assert (await anonymous.post("/api/v1/auth/password-reset", json={"email": ADMIN})).status_code == 204
     async with new_client(service) as other:

@@ -8,10 +8,14 @@ on:
       - ".github/workflows/ci-containers.yml"
       - "Cargo.lock"
       - "Cargo.toml"
-      - "deploy/containers/a13n-service/Dockerfile"
-      - "deploy/containers/a13n-service/service.toml"
-      - "deploy/containers/sandbox/Dockerfile"
-      - "deploy/containers/docker-environment/Dockerfile"
+      - "deploy/docker/images/a13n-service/Dockerfile"
+      - "deploy/docker/images/a13n-service/entrypoint.sh"
+      - "deploy/docker/images/a13n-service/service.toml"
+      - "deploy/docker/compose/**"
+      - "scripts/deploy_smoke.py"
+      - "scripts/k8s_local.py"
+      - "deploy/docker/images/sandbox/Dockerfile"
+      - "deploy/docker/images/docker-environment/Dockerfile"
       - "LICENSE"
       - "Makefile"
       - "crates/a13n-envd/**"
@@ -25,6 +29,12 @@ on:
       - "packages/a13n-logging/a13n_logging/**"
       - "pyproject.toml"
       - "uv.lock"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
+      - "frontend/pnpm-workspace.yaml"
+      - "frontend/tsconfig.base.json"
+      - "frontend/apps/a13n-console/package.json"
+      - "frontend/packages/a13n-ui/package.json"
   workflow_dispatch:
 
 env:
@@ -61,8 +71,12 @@ jobs:
               - '.dockerignore'
               - 'Makefile'
               - '.github/workflows/ci-containers.yml'
-              - 'deploy/containers/a13n-service/Dockerfile'
-              - 'deploy/containers/a13n-service/service.toml'
+              - 'deploy/docker/images/a13n-service/Dockerfile'
+              - 'deploy/docker/images/a13n-service/entrypoint.sh'
+              - 'deploy/docker/images/a13n-service/service.toml'
+              - 'deploy/docker/compose/**'
+              - 'scripts/deploy_smoke.py'
+              - 'scripts/k8s_local.py'
               - 'packages/a13n-envd-client/pyproject.toml'
               - 'packages/a13n-harness/pyproject.toml'
               - 'packages/a13n-stream-protocol/pyproject.toml'
@@ -73,9 +87,15 @@ jobs:
               - 'packages/a13n-logging/a13n_logging/**'
               - 'pyproject.toml'
               - 'uv.lock'
+              - 'frontend/package.json'
+              - 'frontend/pnpm-lock.yaml'
+              - 'frontend/pnpm-workspace.yaml'
+              - 'frontend/tsconfig.base.json'
+              - 'frontend/apps/a13n-console/package.json'
+              - 'frontend/packages/a13n-ui/package.json'
             docker_environment:
               - ".github/workflows/ci-containers.yml"
-              - "deploy/containers/docker-environment/Dockerfile"
+              - "deploy/docker/images/docker-environment/Dockerfile"
               - "Makefile"
             sandbox:
               - '.dockerignore'
@@ -84,7 +104,7 @@ jobs:
               - 'Cargo.lock'
               - 'Cargo.toml'
               - 'crates/a13n-envd/**'
-              - 'deploy/containers/sandbox/Dockerfile'
+              - 'deploy/docker/images/sandbox/Dockerfile'
               - 'LICENSE'
 
       - name: Build image matrix
@@ -105,6 +125,8 @@ jobs:
                   "runner": "ubuntu-latest",
                   "build_target": "image-a13n-service",
                   "check_target": "image-check-a13n-service",
+                  # The single-host stack's first run: Console, first administrator, sign-in and its generated key.
+                  "smoke_target": "compose-smoke",
               })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
               images.append({
@@ -142,4 +164,4 @@ jobs:
           persist-credentials: false
 
       - name: Build and smoke-check image
-        run: make ${{ matrix.build_target }} ${{ matrix.check_target }}
+        run: make ${{ matrix.build_target }} ${{ matrix.check_target }} ${{ matrix.smoke_target }}

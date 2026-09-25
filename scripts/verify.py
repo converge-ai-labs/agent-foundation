@@ -460,7 +460,12 @@ def steps_for(result: Plan) -> list[Step]:
     if python_files:
         steps.append(Step("ruff check", ["uv", "run", "--locked", "ruff", "check", "--no-fix", *python_files]))
         steps.append(Step("ruff format", ["uv", "run", "--locked", "ruff", "format", "--check", *python_files]))
-        typed = [f for f in python_files if not f.startswith("packages/") or "/tests/" not in f]
+        # Like the full gate, skip package tests and build hooks, which run in the build backend's environment.
+        typed = [
+            f
+            for f in python_files
+            if not f.startswith("packages/") or ("/tests/" not in f and not f.endswith("/hatch_build.py"))
+        ]
         if typed:
             steps.append(Step("pyright", ["uv", "run", "--locked", "pyright", *typed]))
     if result.markdown_files:

@@ -13,6 +13,7 @@ build
 target
 **/node_modules
 frontend/**/dist
+packages/a13n-service/a13n_service/static
 **/*.tsbuildinfo
 .wrangler
 local-reference

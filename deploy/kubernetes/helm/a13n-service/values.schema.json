@@ -22,8 +22,7 @@
           "minLength": 1
         },
         "tag": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         },
         "pullPolicy": {
           "enum": [
@@ -48,6 +47,34 @@
         },
         "resources": {
           "type": "object"
+        },
+        "autoscaling": {
+          "type": "object",
+          "required": [
+            "enabled",
+            "minReplicas",
+            "maxReplicas",
+            "targetCPUUtilizationPercentage"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "targetCPUUtilizationPercentage": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
         }
       }
     }
@@ -157,40 +184,23 @@
         }
       }
     },
-    "console": {
+    "service": {
       "type": "object",
-      "required": [
-        "enabled",
-        "replicaCount",
-        "image",
-        "service"
-      ],
+      "additionalProperties": false,
       "properties": {
-        "enabled": {
-          "type": "boolean"
+        "type": {
+          "enum": [
+            "ClusterIP",
+            "NodePort"
+          ]
         },
-        "replicaCount": {
+        "nodePort": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 30000,
+          "maximum": 32767
         },
-        "image": {
-          "$ref": "#/definitions/image"
-        },
-        "service": {
-          "type": "object",
-          "properties": {
-            "type": {
-              "enum": [
-                "ClusterIP",
-                "NodePort"
-              ]
-            },
-            "nodePort": {
-              "type": "integer",
-              "minimum": 30000,
-              "maximum": 32767
-            }
-          }
+        "annotations": {
+          "type": "object"
         }
       }
     }

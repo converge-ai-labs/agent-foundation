@@ -63,6 +63,7 @@ node_modules/
 *.tsbuildinfo
 /frontend/apps/*/dist/
 /packages/a13n-harness-ui/a13n_harness_ui/static/
+/packages/a13n-service/a13n_service/static/
 /packages/a13n-harness-ui/a13n_harness_ui/assets/builtin_skills/
 
 # Editors and operating systems

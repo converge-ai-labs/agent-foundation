@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from a13n_service.infra.audit import record
-from a13n_service.infra.db import Storage, advisory_lock, transaction
+from a13n_service.infra.db import Storage, advisory_lock, short_session, transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.tenancy.authorize import Scope
 from a13n_service.tenancy.credentials import hash_password
@@ -21,6 +21,11 @@ class BootstrapInput(BaseModel):
 
 class AlreadyBootstrapped(Exception):
     """The Service already has an organization; bootstrap changes nothing."""
+
+
+async def initialized(storage: Storage) -> bool:
+    async with short_session(storage) as session:
+        return await session.scalar(select(OrganizationRow.id).limit(1)) is not None
 
 
 @dataclass(frozen=True)

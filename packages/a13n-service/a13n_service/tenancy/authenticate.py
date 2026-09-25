@@ -27,7 +27,10 @@ from a13n_service.tenancy.requests import current_runtime
 from a13n_service.tenancy.tables import ApiKeyRow, PasswordRow, PrincipalRow, TokenRow
 from a13n_service.tenancy.users import revoke_login_session
 
+# Over HTTPS the `__Host-` prefix binds the session cookie to this exact host; plain HTTP cannot carry the prefix,
+# which requires a Secure cookie.
 COOKIE_NAME = "__Host-a13n_session"
+HTTP_COOKIE_NAME = "a13n_session"
 # Every unsafe request authenticated by the login-session cookie also sends the session's CSRF token.
 CSRF_HEADER = "X-CSRF-Token"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -43,18 +46,22 @@ def session_csrf(secret: str) -> str:
 
 
 def check_origin(request: Request, settings: Settings) -> None:
-    """A browser may change state only from the service's own public origin."""
+    """A browser may change state only from the service's own public origins."""
     origin = request.headers.get("origin")
-    if origin is not None and origin != settings.server.public_origin:
+    if origin is not None and origin not in settings.server.public_origins:
         raise ServiceError("forbidden", "Request origin is not allowed")
+
+
+def session_cookie(settings: Settings) -> str:
+    return COOKIE_NAME if settings.server.https else HTTP_COOKIE_NAME
 
 
 def set_session_cookie(response: Response, secret: str, settings: Settings) -> None:
     response.set_cookie(
-        COOKIE_NAME,
+        session_cookie(settings),
         secret,
         max_age=settings.auth.session_seconds,
-        secure=True,
+        secure=settings.server.https,
         httponly=True,
         samesite="strict",
         path="/",
@@ -124,7 +131,7 @@ class LocalAuthenticator:
             return await authenticate_secret(
                 runtime.storage, runtime.access, secret.strip(), "key", session_seconds=seconds
             )
-        secret = request.cookies.get(COOKIE_NAME)
+        secret = request.cookies.get(session_cookie(runtime.settings))
         if secret is None:
             return None
         if request.method not in SAFE_METHODS:
@@ -147,7 +154,13 @@ class LocalAuthenticator:
             raise login_session_required()
         runtime = await current_runtime(request)
         await revoke_login_session(runtime.storage, credential.principal, credential.credential_id)
-        response.delete_cookie(COOKIE_NAME, secure=True, httponly=True, samesite="strict", path="/")
+        response.delete_cookie(
+            session_cookie(runtime.settings),
+            secure=runtime.settings.server.https,
+            httponly=True,
+            samesite="strict",
+            path="/",
+        )
 
 
 @dataclass(frozen=True, slots=True)

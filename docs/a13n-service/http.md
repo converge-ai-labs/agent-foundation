@@ -17,7 +17,7 @@ When an `Authorization` header is present, cookies are ignored. An API key acts 
 Browsers use the login session cookie set by `POST /api/v1/auth/login`. For cookie-authenticated requests other than `GET`, `HEAD` and `OPTIONS`:
 
 - send the session's CSRF token in `X-CSRF-Token`; login returns it, and `GET /api/v1/auth/session` returns it again for an existing session;
-- an `Origin` header, if sent, must equal the origin of `server.public_url`.
+- an `Origin` header, if sent, must equal the origin of `server.public_url`; for a loopback public URL, `localhost` and `127.0.0.1` are interchangeable.
 
 Account operations (changing your profile, password or email, disabling your account, listing login sessions and your own audit trail), `GET /api/v1/auth/session` and `POST /api/v1/auth/logout` require a login session, as do creating an API key, sending or resending an invitation, and starting a browser authorization (an OAuth authorization code or a connector account setup). An API key gets `403 forbidden` from all of them, one status everywhere: it never mints something that can outlive it, and never hands a third party a link to complete on your behalf. A request without valid credentials receives `401 unauthenticated`; a disabled principal's credentials are treated as invalid.
 

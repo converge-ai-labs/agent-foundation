@@ -393,11 +393,14 @@ def _commit(root: Path, path: str, subject: str) -> str:
         ("a13n-service", "proto/a13n-service/openapi.json"),
         ("a13n-envd", "proto/a13n-envd/eip/v1/eip.proto"),
         ("a13n-service", "frontend/apps/a13n-console/app.tsx"),
-        ("a13n-service", "deploy/containers/a13n-service/Dockerfile"),
+        ("a13n-service", "deploy/docker/images/a13n-service/Dockerfile"),
+        ("a13n-service", "deploy/docker/compose/a13n-service.yaml"),
+        ("a13n-service", "deploy/kubernetes/helm/a13n-service/values.yaml"),
+        ("a13n-service", "deploy/monitoring/alerts.yaml"),
         ("a13n-envd", "crates/a13n-envd/src/lib.rs"),
         ("a13n-envd", "packages/a13n-envd-client/api.py"),
         ("a13n-envd", "scripts/install-a13n-envd.ps1"),
-        ("a13n-envd", "deploy/containers/sandbox/Dockerfile"),
+        ("a13n-envd", "deploy/docker/images/sandbox/Dockerfile"),
     ],
 )
 def test_collects_actual_component_paths_not_title_scopes(git_repository, component, path):

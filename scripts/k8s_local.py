@@ -27,6 +27,11 @@ ADMIN_FILE = "admin.env"
 ALREADY_BOOTSTRAPPED = 3  # `a13n-service bootstrap` exit status when an organization already exists
 
 
+def state_directory() -> Path:
+    """Where the launcher keeps this machine's credentials and administrator record."""
+    return Path(os.environ.get("K8S_STATE_DIR", "~/.config/a13n-service-kind")).expanduser().resolve()
+
+
 def run(*args: str, capture: bool = False, input_text: str | None = None) -> str:
     result = subprocess.run(args, cwd=ROOT, text=True, input=input_text, capture_output=capture, check=False)
     if result.returncode:
@@ -199,11 +204,10 @@ def start(state: Path) -> None:
         kubectl("create", "namespace", NAMESPACE)
     admin = prepare(state)
     tag = "local-" + secrets.token_hex(6)
-    images = [f"{name}:{tag}" for name in ("a13n-service", "a13n-console")]
-    for name, image in zip(("a13n-service", "a13n-console"), images, strict=True):
-        print(f"Building {image}...", flush=True)
-        run("docker", "build", "--progress=plain", "-f", f"deploy/containers/{name}/Dockerfile", "-t", image, ".")
-    run("kind", "load", "docker-image", *images, "--name", CLUSTER)
+    image = f"a13n-service:{tag}"
+    print(f"Building {image}...", flush=True)
+    run("docker", "build", "--progress=plain", "-f", "deploy/docker/images/a13n-service/Dockerfile", "-t", image, ".")
+    run("kind", "load", "docker-image", image, "--name", CLUSTER)
     print("Deploying; Helm waits for migration and readiness (up to 20 minutes)...", flush=True)
     try:
         run(
@@ -211,17 +215,15 @@ def start(state: Path) -> None:
             "upgrade",
             "--install",
             "a13n",
-            "deploy/kubernetes/a13n-service",
+            "deploy/kubernetes/helm/a13n-service",
             "--kube-context",
             CONTEXT,
             "--namespace",
             NAMESPACE,
             "-f",
-            "deploy/kubernetes/values-local.yaml",
+            "deploy/kubernetes/helm/values-local.yaml",
             "--set-string",
             f"image.tag={tag}",
-            "--set-string",
-            f"console.image.tag={tag}",
             "--wait",
             "--timeout",
             "20m",
@@ -250,7 +252,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("up",))
     parser.parse_args()
-    state = Path(os.environ.get("K8S_STATE_DIR", "~/.config/a13n-service-kind")).expanduser().resolve()
+    state = state_directory()
     if state == ROOT or ROOT in state.parents:
         parser.error("K8S_STATE_DIR must be outside the checkout")
     state.mkdir(parents=True, exist_ok=True, mode=0o700)

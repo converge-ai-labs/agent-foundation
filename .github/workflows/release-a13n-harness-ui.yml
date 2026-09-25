@@ -160,7 +160,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: dist/a13n-harness-ui-image
-          file: deploy/containers/a13n-harness-ui/Dockerfile
+          file: deploy/docker/images/a13n-harness-ui/Dockerfile
           platforms: linux/amd64
           push: true
           tags: ${{ steps.image-tags.outputs.tags }}

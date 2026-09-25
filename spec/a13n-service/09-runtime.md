@@ -24,6 +24,7 @@ What each role runs:
 | Component                                                                  | `all` | `control` | `worker` |
 | -------------------------------------------------------------------------- | ----- | --------- | -------- |
 | API routes, `/api/v1/openapi.json`, API docs                               | yes   | yes       | no       |
+| [Console](#console)                                                        | yes   | yes       | no       |
 | Thread stream hub ([07](07-facts-and-delivery.md#the-thread-stream))       | yes   | yes       | no       |
 | Control [sweeps](#sweeps)                                                  | yes   | yes       | no       |
 | [Worker](#worker)                                                          | yes   | no        | yes      |
@@ -40,7 +41,7 @@ A process starts in this order and serves nothing until it finishes:
 
 1. Assembly checks ([Assembly](#assembly)): an invalid distribution fails here.
 2. `all` and `control` upgrade the schema when `database.auto_migrate` is true.
-3. The process opens its runtime: the database pool (`database.pool_size` connections and no overflow; `database.connect_timeout` also bounds the wait for a pooled connection; `database.statement_timeout` bounds each statement), the Redis client (`redis.timeout` for connecting and every call), the object store, the encryption key ring ([03](03-tenancy.md#credential-encryption)), the provider registry, the access configuration, the installed Harness plugin factories (`plugins.keys`), the admission policy, the trace backend that queries read (none when tracing is off) and, on executing roles, trace export. The registry offers environment types by `environments.allow_local`, `environments.docker_host` and `environments.docker_mount_roots` ([08](08-providers.md#registry)) and derives each calling API's settings schema as it is assembled. An invalid key ring or plugin key fails startup.
+3. The process opens its runtime: the database pool (`database.pool_size` connections and no overflow; `database.connect_timeout` also bounds the wait for a pooled connection; `database.statement_timeout` bounds each statement), the Redis client (`redis.timeout` for connecting and every call), the object store, the encryption key ring ([03](03-tenancy.md#credential-encryption)), the provider registry, the access configuration, the installed Harness plugin factories (`plugins.keys`), the admission policy, the trace backend that queries read (none when tracing is off) and, on executing roles, trace export. The registry offers environment types by `environments.allow_local`, `environments.docker_host` and `environments.docker_mount_roots` ([08](08-providers.md#registry)) and derives each calling API's settings schema as it is assembled. An invalid key ring, an `encryption.key_file` that cannot be read or created, or an invalid plugin key fails startup.
 4. Within `server.readiness_timeout` the process checks that the database is exactly at its build's migration head; otherwise startup fails with an instruction to run `a13n-service migrate`.
 5. The role's background tasks start: thread stream hub and sweeps, worker. API-serving roles also create the empty [model catalog](08-providers.md#model-catalog), which the first read fills.
 
@@ -80,7 +81,8 @@ The generated [configuration reference](../../docs/a13n-service/configuration-re
 
 - a `database.url` that does not use `postgresql+psycopg`;
 - the `s3` object backend without `objects.bucket`;
-- incomplete SMTP settings (a sender is required with `auth.mail.smtp_host`; username and password come together; neither without a host), or SMTP without `encryption.active_key_id`, because queued mail carries encrypted links;
+- incomplete SMTP settings (a sender is required with `auth.mail.smtp_host`; username and password come together; neither without a host), or SMTP without `encryption.active_key_id` or `encryption.key_file`, because queued mail carries encrypted links;
+- `encryption.key_file` together with `encryption.active_key_id` or `encryption.keys`;
 - a trace backend without its URL and keys;
 - `telemetry.log_stdout = false` without `telemetry.log_file`, or a `telemetry.metrics_port` equal to `server.port`;
 - an `environments.docker_mount_roots` entry that is not an absolute path or contains `..`;
@@ -131,6 +133,10 @@ Every limit is finite and visible: a setting or a fixed bound in code. Reaching 
 | one whole SMTP send                                                                                                  | `auth.mail.timeout`                                                                                                                                                      | [07](07-facts-and-delivery.md#outbox)                                    |
 
 A provider call, a credential refresh, an environment operation and an object write have separate deadlines; no single timeout makes them all recoverable.
+
+## Console
+
+The package carries the Console production build under `a13n_service/static/`, placed there before packaging (`make a13n-service-assets`); a wheel or sdist without it fails to build, and the image builds it in a Node.js stage. API-serving roles answer what no route matched from it: `GET` and `HEAD` of `/assets/...` return the content-hashed file with `Cache-Control: public, max-age=31536000, immutable`, and any other browser path returns `index.html` with `Cache-Control: no-store`, since the Console routes in the browser. Paths under `/api`, other methods and missing assets keep the router's own answers ([HTTP ingress](#http-ingress-and-escaping-failures)), so the API behaves identically with or without a build. A source checkout has no build and serves the API only; the Console development server proxies `/api` to it.
 
 ## HTTP ingress and escaping failures
 

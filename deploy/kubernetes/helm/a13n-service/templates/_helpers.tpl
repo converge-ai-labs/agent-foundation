@@ -46,10 +46,11 @@ affinity:
 
 {{/* Container fields shared by every Service process: image, hardening, credentials and configuration. */}}
 {{- define "a13n.container" -}}
-image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+image: {{ printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) | quote }}
 imagePullPolicy: {{ .Values.image.pullPolicy }}
 securityContext:
   allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
   capabilities:
     drop: [ALL]
 envFrom:
@@ -60,6 +61,9 @@ volumeMounts:
     mountPath: /app/service.toml
     subPath: service.toml
     readOnly: true
+  # The only writable paths: temporary files and, for local objects, the objects claim.
+  - name: tmp
+    mountPath: /tmp
   {{- if eq .Values.objects.backend "local" }}
   - name: objects
     mountPath: /app/var/objects
@@ -70,6 +74,8 @@ volumeMounts:
 - name: config
   configMap:
     name: {{ include "a13n.name" . }}-config
+- name: tmp
+  emptyDir: {}
 {{- if eq .Values.objects.backend "local" }}
 - name: objects
   persistentVolumeClaim:

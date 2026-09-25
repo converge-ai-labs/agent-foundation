@@ -2,11 +2,13 @@
 
 ## Product Boundary
 
-Console is the browser application for Service, consuming the public API through a private client generated from `proto/a13n-service/`. Service remains API-only. Production ingress serves assets and proxies `/api` on one origin; development uses a Vite proxy. The [design system](design-system.md) owns reusable UI components.
+Console is the browser application for Service, consuming the public API through a private client generated from `proto/a13n-service/`. The Service's API-serving roles serve the production build and the API on one origin ([09](../a13n-service/09-runtime.md#console)); development uses a Vite proxy. The [design system](design-system.md) owns reusable UI components.
 
 Service owns permissions, resource versions, execution, durable state and storage. Console owns navigation, forms, resource cache, localized presentation and interaction rendering. Closing a page or stream does not interrupt a run. Independent SDKs have no build or runtime role in Console.
 
 ## Navigation and Scope
+
+A signed-out visitor sees sign-in. While the Service reports that it is not initialized, sign-in instead creates the first administrator through the public bootstrap route and signs them in ([bootstrap](../a13n-service/03-tenancy.md#bootstrap)).
 
 Workspace pages use `/workspace/{workspaceKey}/…`. The Console lists the workspaces the user can read in the Organization and selects the one with that key, which is unique within its Organization ([tenancy](../a13n-service/03-tenancy.md)); a key that matches none shows not found with workspace choices. Navigation and selector links use the workspace key. Agent and Skill detail keys resolve within the selected workspace; Memory details use the memory ID, since its key never changes. Settings use `/settings/{section}` for personal settings, `/workspace/{workspaceKey}/settings/{section}` and `/organization/settings/{section}`. OSS has one Organization and no Organization switcher. Deep links resolve their requested scope without silently selecting another Workspace. The root page can select the remembered accessible Workspace or the first accessible Workspace. Names and URL keys are independent; key edits explain broken old links and update the canonical location. IDs remain cache identity, and key-dependent lookups are invalidated after edits.
 

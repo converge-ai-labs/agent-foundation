@@ -8,16 +8,17 @@ image:
   repository: us-central1-docker.pkg.dev/REPLACE_PROJECT/REPLACE_REPOSITORY/a13n-service
   tag: REPLACE_IMMUTABLE_TAG
 publicUrl: https://agents.example.com
-# The Console Pods and Google's load-balancer proxy ranges forward client addresses.
-trustedProxies: [REPLACE_POD_CIDR, 35.191.0.0/16, 130.211.0.0/22]
+# Google's load-balancer proxy ranges forward client addresses.
+trustedProxies: [35.191.0.0/16, 130.211.0.0/22]
 objects:
   backend: s3
   bucket: REPLACE_S3_COMPATIBLE_BUCKET
   region: us-east-1
   endpointUrl: https://REPLACE_S3_ENDPOINT.example.com
-serviceAnnotations:
-  cloud.google.com/neg: '{"ingress":true}'
-  cloud.google.com/backend-config: '{"default":"a13n-backend"}'
+service:
+  annotations:
+    cloud.google.com/neg: '{"ingress":true}'
+    cloud.google.com/backend-config: '{"default":"a13n-backend"}'
 ingress:
   enabled: false # Enable after configuring a TLS Secret and GKE Ingress.
   annotations:
@@ -33,13 +34,3 @@ resources:
   limits:
     cpu: "2"
     memory: 4Gi
-
-console:
-  replicaCount: 2
-  image:
-    repository: us-central1-docker.pkg.dev/REPLACE_PROJECT/REPLACE_REPOSITORY/a13n-console
-    tag: REPLACE_IMMUTABLE_TAG
-  service:
-    annotations:
-      cloud.google.com/neg: '{"ingress":true}'
-      cloud.google.com/backend-config: '{"default":"a13n-console-backend"}'

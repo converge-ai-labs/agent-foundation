@@ -1,5 +1,0 @@
-apiVersion: v2
-name: a13n-service
-description: Agent Foundation Service control and worker roles, schema migration and Console, with optional development stores
-type: application
-version: 0.0.0

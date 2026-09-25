@@ -151,11 +151,11 @@ async def authorize_connection(
     )
     if result.redirect_url is not None:
         response.set_cookie(
-            flow_cookie(connection_id),
+            flow_cookie(connection_id, runtime.settings),
             browser,
             max_age=runtime.settings.providers.flow_seconds,
             path=CALLBACK_PATH,
-            secure=True,
+            secure=runtime.settings.server.https,
             httponly=True,
             samesite="lax",
         )
@@ -243,6 +243,10 @@ async def complete_authorization(
         separator = "&" if "?" in result.return_url else "?"
         answer = RedirectResponse(f"{result.return_url}{separator}{query}", status_code=303, headers=headers)
     answer.delete_cookie(
-        flow_cookie(outcome.connection_id), path=CALLBACK_PATH, secure=True, httponly=True, samesite="lax"
+        flow_cookie(outcome.connection_id, runtime.settings),
+        path=CALLBACK_PATH,
+        secure=runtime.settings.server.https,
+        httponly=True,
+        samesite="lax",
     )
     return answer

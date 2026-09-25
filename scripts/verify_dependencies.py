@@ -33,8 +33,10 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         ".github/workflows/images.yml",
         ".github/workflows/release-*.yml",
         ".github/workflows/ci-containers.yml",
-        "deploy/containers/*",
+        "deploy/docker/images/*",
+        "deploy/docker/compose/*",
     ),
+    "test_k8s_local.py": ("deploy/kubernetes/*",),
     "test_service_contract_notification.py": (".github/workflows/notify-service-contract.yml",),
     "test_local_validation.py": (
         ".github/workflows/ci-automation.yml",

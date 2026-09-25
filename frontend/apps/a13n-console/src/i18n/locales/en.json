@@ -1721,5 +1721,7 @@
   "The memory's provider is unavailable, so its records cannot be read or changed now. Try again later.": "The memory's provider is unavailable, so its records cannot be read or changed now. Try again later.",
   "The memory's provider did not confirm this change, so it may or may not have happened. Reload to check before trying again.": "The memory's provider did not confirm this change, so it may or may not have happened. Reload to check before trying again.",
   "The records of this namespace are still being deleted with a deleted memory. Try again once that finishes.": "The records of this namespace are still being deleted with a deleted memory. Try again once that finishes.",
-  "No matching memories": "No matching memories"
+  "No matching memories": "No matching memories",
+  "Create administrator": "Create administrator",
+  "The first account administers this Service.": "The first account administers this Service."
 }

@@ -12,7 +12,7 @@ on:
       - "conftest.py"
       - "scripts/tests/test_envd_ci_workflow.py"
       - "crates/a13n-envd/**"
-      - "deploy/containers/sandbox/Dockerfile"
+      - "deploy/docker/images/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
@@ -46,7 +46,7 @@ on:
       - "conftest.py"
       - "scripts/tests/test_envd_ci_workflow.py"
       - "crates/a13n-envd/**"
-      - "deploy/containers/sandbox/Dockerfile"
+      - "deploy/docker/images/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
       - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
@@ -110,7 +110,7 @@ jobs:
               - 'scripts/tests/test_envd_ci_workflow.py'
               - '.github/workflows/release-a13n-envd.yml'
               - 'crates/a13n-envd/**'
-              - 'deploy/containers/sandbox/Dockerfile'
+              - 'deploy/docker/images/sandbox/Dockerfile'
               - 'spec/a13n-envd/01-daemon-lifecycle-and-configuration.md'
               - 'spec/a13n-envd/05-command-and-process-execution.md'
               - 'spec/a13n-envd/07-execution-isolation.md'

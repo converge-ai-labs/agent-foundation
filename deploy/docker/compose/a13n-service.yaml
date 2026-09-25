@@ -1,0 +1,53 @@
+# Single-host Service: every role and the Console in one process, with PostgreSQL and Redis.
+# The Service shares the host Docker Engine and its authority. It starts as root only to join the socket's group,
+# then runs as the image's `app` user; its encryption key is generated into the data volume on first start.
+name: a13n-service
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: a13n_service
+      POSTGRES_USER: a13n_service
+      POSTGRES_PASSWORD: a13n_service
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U a13n_service -d a13n_service"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  service:
+    image: ${A13N_SERVICE_IMAGE:-a13n-service:local}
+    user: root
+    # Settings as A13N_<SECTION>__<FIELD> variables over the image's defaults; add others the same way.
+    environment:
+      A13N_SERVER__PUBLIC_URL: http://127.0.0.1:${A13N_PORT:-8080}
+      A13N_DATABASE__URL: postgresql+psycopg://a13n_service:a13n_service@postgres:5432/a13n_service
+      A13N_REDIS__URL: redis://redis:6379/0
+      # Generated on first start in the service-data volume; back it up with the database.
+      A13N_ENCRYPTION__KEY_FILE: /app/var/encryption.key
+    volumes:
+      - service-data:/app/var
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "127.0.0.1:${A13N_PORT:-8080}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    stop_grace_period: 30s
+volumes:
+  postgres:
+  redis:
+  service-data:

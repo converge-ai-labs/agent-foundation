@@ -44,7 +44,7 @@ These manifests organize source development. They do not define independently pu
 | `a13n-harness-ui-webui` | `frontend/apps/a13n-harness-ui` | Browser authentication/runtime-status foundation bundled in the Python UI distribution; [browser guide](a13n-harness-ui/webui.md) owns current capabilities, [app README](https://github.com/converge-ai-labs/agent-foundation/blob/main/frontend/apps/a13n-harness-ui/README.md) owns Vite development       |
 | `a13n-ui`               | `frontend/packages/a13n-ui`     | Shared React components, tokens, brand assets, and private showcase; [shared UI README](https://github.com/converge-ai-labs/agent-foundation/blob/main/frontend/packages/a13n-ui/README.md) owns source usage                                                                                                 |
 
-Console is not the Harness UI browser. Service does not itself serve Console assets. The Harness UI browser is not a complete chat or management workbench; its Python App and HTTP API expose more functionality than the current browser interface. Its compiled assets ship inside the Python wheel and sdist, without requiring Node.js for installed runtime use.
+Console is not the Harness UI browser. Its production build ships inside the `a13n-service` wheel, sdist and image, and the Service serves it; Console has no release of its own. The Harness UI browser is not a complete chat or management workbench; its Python App and HTTP API expose more functionality than the current browser interface. Its compiled assets ship inside the Python wheel and sdist, without requiring Node.js for installed runtime use.
 
 ## Runnable example projects
 

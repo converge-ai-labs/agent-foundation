@@ -5,15 +5,17 @@ from datetime import UTC, datetime, timedelta
 
 import httpx2
 import pytest
+from a13n_service.app import build_app
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import etag
 from a13n_service.infra.ids import new_object_id
-from a13n_service.settings import Settings
+from a13n_service.resources.connections.authorization import flow_cookie, return_url_allowed
+from a13n_service.settings import Server, Settings
 from a13n_service.tenancy.access import Authenticated, principal_for, reauthenticate, unauthenticated
-from a13n_service.tenancy.authenticate import COOKIE_NAME, authenticate_secret, login
+from a13n_service.tenancy.authenticate import HTTP_COOKIE_NAME, authenticate_secret, login
 from a13n_service.tenancy.authorize import WorkspaceScope
 from a13n_service.tenancy.requests import current_runtime
 from a13n_service.tenancy.tables import ApiKeyRow, GrantRow, OrganizationRow, TokenRow, WorkspaceRow
@@ -47,7 +49,7 @@ async def test_login_session_cookie_csrf_origin_and_logout(service) -> None:  # 
         response = await client.post("/api/v1/auth/login", json={"email": EMAIL.upper(), "password": PASSWORD})
         assert response.status_code == 200, response.text
         cookie = response.headers["set-cookie"]
-        assert "Secure" in cookie and "HttpOnly" in cookie and "SameSite=strict" in cookie
+        assert "HttpOnly" in cookie and "SameSite=strict" in cookie
         csrf = response.json()["csrf_token"]
         # A reload holds only the HttpOnly cookie; the token is recovered from it.
         restored = await client.get("/api/v1/auth/session")
@@ -66,7 +68,7 @@ async def test_login_session_cookie_csrf_origin_and_logout(service) -> None:  # 
         logout = await client.post("/api/v1/auth/logout", headers={"x-csrf-token": csrf})
         assert logout.status_code == 204
         # The request's own session renewal comes first, so the logout's expiry of the cookie is what stays.
-        sessions = [cookie for cookie in logout.headers.get_list("set-cookie") if cookie.startswith(COOKIE_NAME)]
+        sessions = [cookie for cookie in logout.headers.get_list("set-cookie") if cookie.startswith(HTTP_COOKIE_NAME)]
         assert len(sessions) == 2 and "Max-Age=0" in sessions[-1]
         assert (await client.get("/api/v1/users/me")).status_code == 401
         assert (await client.get("/api/v1/auth/session")).status_code == 401
@@ -104,7 +106,9 @@ async def test_every_authenticated_answer_is_uncached_and_renews_the_session(ser
     for response, status in ((created, 201), (deleted, 204), (missing, 404)):
         assert response.status_code == status, response.text
         assert response.headers["cache-control"] == "no-store"
-        [renewed] = [cookie for cookie in response.headers.get_list("set-cookie") if cookie.startswith(COOKIE_NAME)]
+        [renewed] = [
+            cookie for cookie in response.headers.get_list("set-cookie") if cookie.startswith(HTTP_COOKIE_NAME)
+        ]
         assert "Max-Age=" in renewed and "Max-Age=0" not in renewed
 
 
@@ -303,3 +307,62 @@ async def test_origin_is_checked_against_the_public_url(serve, settings: Setting
         credentials = {"email": EMAIL, "password": PASSWORD}
         assert (await client.post("/api/v1/auth/login", json=credentials, headers=own_host)).status_code == 403
         assert (await client.post("/api/v1/auth/login", json=credentials, headers=public)).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("public_url", "session_cookie", "flow"),
+    [
+        ("https://a13n.example.com", "__Host-a13n_session", "__Secure-a13n_flow_conn_1"),
+        ("http://10.0.0.5:8080", "a13n_session", "a13n_flow_conn_1"),
+    ],
+)
+async def test_cookies_follow_the_public_url_scheme(  # type: ignore[no-untyped-def]
+    serve, settings: Settings, public_url: str, session_cookie: str, flow: str
+) -> None:
+    """HTTPS gets host-bound Secure cookies; plain HTTP, over which browsers refuse those, gets plain ones."""
+    config = settings.model_copy(update={"server": settings.server.model_copy(update={"public_url": public_url})})
+    assert flow_cookie("conn_1", config) == flow
+    async with serve(settings=config) as service, new_client(service) as client:
+        login = await client.post("/api/v1/auth/login", json={"email": EMAIL, "password": PASSWORD})
+        cookie = login.headers["set-cookie"]
+        assert cookie.startswith(f"{session_cookie}=") and ("Secure" in cookie) == public_url.startswith("https:")
+        assert (await client.get("/api/v1/auth/session")).status_code == 200
+
+
+async def test_a_loopback_public_url_accepts_either_loopback_name(service, settings: Settings) -> None:  # type: ignore[no-untyped-def]
+    assert settings.server.public_origins == {"http://127.0.0.1:8000", "http://localhost:8000"}
+    assert Server(public_url="https://a13n.example.com/").public_origins == {"https://a13n.example.com"}
+    assert return_url_allowed("http://localhost:8000/connections", settings)
+    body = {"workspace_id": service.tenant.workspace_id, "name": "cli"}
+    for origin, status in (
+        ("http://localhost:8000", 201),
+        ("http://127.0.0.1:8000", 201),
+        ("http://localhost:8001", 403),
+        ("https://localhost:8000", 403),
+    ):
+        response = await service.client.post("/api/v1/users/me/keys", json=body, headers={"origin": origin})
+        assert response.status_code == status, origin
+
+
+async def test_the_first_visitor_creates_the_administrator_once(settings: Settings) -> None:
+    app = build_app(role="control", settings=settings)
+    async with (
+        app.router.lifespan_context(app),
+        httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="https://service.test") as client,
+    ):
+        await app.state.runtime.redis.flushdb()
+        assert (await client.get("/api/v1/auth/configuration")).json()["initialized"] is False
+        credentials = {"email": EMAIL, "password": PASSWORD}
+        short = await client.post("/api/v1/auth/bootstrap", json={"email": EMAIL, "password": "too-short"})
+        foreign = await client.post("/api/v1/auth/bootstrap", json=credentials, headers={"origin": "https://x.test"})
+        assert (short.status_code, foreign.status_code) == (400, 403)
+        created = await client.post("/api/v1/auth/bootstrap", json=credentials)
+        assert created.status_code == 200, created.text
+        assert created.headers["cache-control"] == "no-store"
+        restored = await client.get("/api/v1/auth/session")
+        assert restored.json()["csrf_token"] == created.json()["csrf_token"]
+        [organization] = (await client.get("/api/v1/organizations")).json()["items"]
+        assert organization["key"] == "default"
+        assert (await client.get("/api/v1/auth/configuration")).json()["initialized"] is True
+        again = await client.post("/api/v1/auth/bootstrap", json={"email": "other@example.com", "password": PASSWORD})
+        assert again.status_code == 409 and again.json()["error"]["code"] == "already_exists"

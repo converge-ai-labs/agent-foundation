@@ -43,7 +43,7 @@ def node(script, data):
         ("proto/a13n-envd/eip/v1/common.proto", "Protocols & migrations"),
         ("proto/a13n-service/README.md", "Documentation"),
         ("spec/a13n-harness/01-design.md", "Specifications"),
-        ("deploy/containers/a13n-service/Dockerfile", "Build, CI & deployment"),
+        ("deploy/docker/images/a13n-service/Dockerfile", "Build, CI & deployment"),
         ("scripts/tests/test_verify.py", "Tests & fixtures"),
         ("dev/live_tests/scripted.py", "Tests & fixtures"),
         ("scripts/verify.py", "Developer tools & examples"),
@@ -70,6 +70,25 @@ def test_classification_precedence(path, category):
             {"module": str(RULES), "path": path},
         )
         == category
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "name"),
+    [
+        ("deploy/docker/images/a13n-service/Dockerfile", "a13n-service"),
+        ("deploy/docker/compose/a13n-harness-ui.yaml", "a13n-harness-ui"),
+        ("deploy/kubernetes/helm/a13n-service/values.yaml", "a13n-service"),
+        ("deploy/kubernetes/README.md", "Repository"),
+    ],
+)
+def test_deploy_paths_belong_to_their_component(path, name):
+    assert (
+        node(
+            "console.log(JSON.stringify(require(input.module).component(input.path)))",
+            {"module": str(RULES), "path": path},
+        )
+        == name
     )
 
 

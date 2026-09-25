@@ -1885,10 +1885,15 @@
           "email_delivery": {
             "title": "Email Delivery",
             "type": "boolean"
+          },
+          "initialized": {
+            "title": "Initialized",
+            "type": "boolean"
           }
         },
         "required": [
-          "email_delivery"
+          "email_delivery",
+          "initialized"
         ],
         "title": "AuthConfiguration",
         "type": "object"
@@ -2019,6 +2024,29 @@
           "token"
         ],
         "title": "BearerCredential",
+        "type": "object"
+      },
+      "BootstrapInput": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 1024,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "BootstrapInput",
         "type": "object"
       },
       "CallbackOutcome": {
@@ -13002,7 +13030,7 @@
         "type": "apiKey"
       },
       "loginSession": {
-        "description": "A browser login session",
+        "description": "A browser login session; `a13n_session` when the public URL is plain HTTP",
         "in": "cookie",
         "name": "__Host-a13n_session",
         "type": "apiKey"
@@ -13015,6 +13043,44 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/bootstrap": {
+      "post": {
+        "description": "Public only until initialized: creates the first administrator, as the `bootstrap` command does, signed in.",
+        "operationId": "bootstrap_administrator_api_v1_auth_bootstrap_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BootstrapInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginOutput"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Bootstrap Administrator",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/configuration": {
       "get": {
         "operationId": "auth_configuration_api_v1_auth_configuration_get",

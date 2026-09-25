@@ -85,14 +85,17 @@ def callback_url(settings: Settings) -> str:
     return settings.server.public_url.rstrip("/") + CALLBACK_PATH
 
 
-def flow_cookie(connection_id: str) -> str:
-    """The cookie binding a connection's browser flow to the browser that started it."""
-    return f"__Secure-a13n_flow_{connection_id}"
+def flow_cookie(connection_id: str, settings: Settings) -> str:
+    """The cookie binding a connection's browser flow to the browser that started it; `Secure` over HTTPS."""
+    return f"{'__Secure-' if settings.server.https else ''}a13n_flow_{connection_id}"
 
 
 def return_url_allowed(url: str, settings: Settings) -> bool:
-    """A page on the Service's own public origin, such as the Console behind its proxy, or a configured exact URL."""
-    return url.startswith(settings.server.public_origin + "/") or url in settings.providers.return_urls
+    """A page on one of the Service's public origins, such as the Console, or a configured exact URL."""
+    return (
+        any(url.startswith(origin + "/") for origin in settings.server.public_origins)
+        or url in settings.providers.return_urls
+    )
 
 
 async def authorize_connection(
@@ -198,7 +201,7 @@ async def complete_authorization(
             row,
             flow,
             callback,
-            browser=browsers.get(flow_cookie(row.id)),
+            browser=browsers.get(flow_cookie(row.id, settings)),
             expires_at=row.authorization_expires_at,
             storage=storage,
             redirect_uri=callback_url(settings),

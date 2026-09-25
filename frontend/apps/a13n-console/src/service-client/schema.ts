@@ -1,4 +1,24 @@
 export interface paths {
+  "/api/v1/auth/bootstrap": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Bootstrap Administrator
+     * @description Public only until initialized: creates the first administrator, as the `bootstrap` command does, signed in.
+     */
+    post: operations["bootstrap_administrator_api_v1_auth_bootstrap_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/auth/configuration": {
     parameters: {
       query?: never;
@@ -3474,6 +3494,8 @@ export interface components {
     AuthConfiguration: {
       /** Email Delivery */
       email_delivery: boolean;
+      /** Initialized */
+      initialized: boolean;
     };
     /** Authentication */
     Authentication: {
@@ -3518,6 +3540,19 @@ export interface components {
        * Format: password
        */
       token: string;
+    };
+    /** BootstrapInput */
+    BootstrapInput: {
+      /**
+       * Email
+       * Format: email
+       */
+      email: string;
+      /**
+       * Password
+       * Format: password
+       */
+      password: string;
     };
     /** CallbackOutcome */
     CallbackOutcome: {
@@ -7137,6 +7172,32 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  bootstrap_administrator_api_v1_auth_bootstrap_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BootstrapInput"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LoginOutput"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   auth_configuration_api_v1_auth_configuration_get: {
     parameters: {
       query?: never;

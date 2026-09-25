@@ -9,11 +9,11 @@ a13n-service --config service.toml run --role control
 a13n-service --config service.toml run --role worker
 ```
 
-| Role            | Serves                                                                                               | Background work                                          |
-| --------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `control`       | The HTTP API, thread streams, `/api/v1/openapi.json` and the interactive API page at `/api/v1/docs`. | All maintenance sweeps and deliveries.                   |
-| `worker`        | Only `/healthz` and `/readyz`.                                                                       | Claims accepted runs and executes them with the Harness. |
-| `all` (default) | Everything `control` serves.                                                                         | Everything `control` and `worker` do.                    |
+| Role            | Serves                                                                                                        | Background work                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `control`       | Console, the HTTP API, thread streams, `/api/v1/openapi.json` and the interactive API page at `/api/v1/docs`. | All maintenance sweeps and deliveries.                   |
+| `worker`        | Only `/healthz` and `/readyz`.                                                                                | Claims accepted runs and executes them with the Harness. |
+| `all` (default) | Everything `control` serves.                                                                                  | Everything `control` and `worker` do.                    |
 
 Run `all` for a single process. For larger deployments, run any number of `control` replicas behind a load balancer and any number of `worker` replicas; workers accept no API traffic. Sweeps coordinate through database row claims, so every control replica runs them safely.
 
@@ -77,4 +77,4 @@ Every process logs each request, run and delivery with the IDs that lead from on
 
 ## Backups
 
-Back up PostgreSQL, the object store and the encryption key ring together. Stored credentials cannot be decrypted without the key that wrote them, and run checkpoints, displays, assets and skill packages live in the object store.
+Back up PostgreSQL, the object store and the encryption key ring (or `encryption.key_file`) together. Stored credentials cannot be decrypted without the key that wrote them, and run checkpoints, displays, assets and skill packages live in the object store. The [single-host Compose stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades) and the [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#upgrades-and-backups) describe backing up, restoring and upgrading each deployment.

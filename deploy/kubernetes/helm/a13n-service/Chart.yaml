@@ -1,0 +1,7 @@
+apiVersion: v2
+name: a13n-service
+description: Agent Foundation Service control and worker roles and schema migration, with optional development stores
+type: application
+version: 0.0.0
+# The Service release a published chart deploys; a source checkout's chart deploys the development image.
+appVersion: dev

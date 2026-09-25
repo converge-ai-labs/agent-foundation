@@ -306,6 +306,8 @@ class SessionProfile(BaseModel):
 
 class AuthConfiguration(BaseModel):
     email_delivery: bool
+    # False until the first administrator is created, which the public bootstrap route then allows.
+    initialized: bool
 
 
 class AuditEvent(_View):

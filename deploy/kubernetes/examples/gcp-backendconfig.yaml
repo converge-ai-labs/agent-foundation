@@ -1,5 +1,5 @@
 # Requires GKE's BackendConfig CRD. Apply in the release namespace before enabling
-# Ingress; values-gcp.yaml references this object from its Service annotations.
+# Ingress; helm/values-gcp.yaml references this object from its Service annotations.
 apiVersion: cloud.google.com/v1
 kind: BackendConfig
 metadata:

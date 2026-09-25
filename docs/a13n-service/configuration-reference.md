@@ -85,6 +85,7 @@ The complete machine-readable validation schema, including named enum/union defi
 | -------------------------- | -------------------------------- | -------------- | ---------------------------------------- |
 | `encryption.active_key_id` | `A13N_ENCRYPTION__ACTIVE_KEY_ID` | string or null | minLength=1; maxLength=128; default=null |
 | `encryption.keys`          | `A13N_ENCRYPTION__KEYS`          | object         | —                                        |
+| `encryption.key_file`      | `A13N_ENCRYPTION__KEY_FILE`      | string or null | format="path"; default=null              |
 
 ## `control`
 

@@ -1085,9 +1085,9 @@ async def test_browser_flows_need_a_login_session_and_are_bound_to_its_browser(s
         (cookie,) = [
             cookie
             for cookie in response.headers.get_list("set-cookie")
-            if cookie.startswith(f"__Secure-a13n_flow_{created['id']}=")
+            if cookie.startswith(f"a13n_flow_{created['id']}=")
         ]
-        assert all(part in cookie for part in ("HttpOnly", "Secure", f"Path={CALLBACK_PATH}", "SameSite=lax"))
+        assert all(part in cookie for part in ("HttpOnly", f"Path={CALLBACK_PATH}", "SameSite=lax"))
 
         # Another browser holding the link cannot complete the flow; it is refused and dropped.
         state, code = server.grant(response.json()["redirect_url"])

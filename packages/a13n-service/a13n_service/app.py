@@ -1,7 +1,7 @@
 """Assembly: one application per process role, built from one distribution.
 
-`all` serves the API, runs control sweeps and executes runs; `control` omits execution; `worker` executes
-runs only and never migrates.
+`all` serves the API and the bundled Console, runs control sweeps and executes runs; `control` omits execution;
+`worker` executes runs only and never migrates.
 """
 
 import asyncio
@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from functools import partial
 from importlib.metadata import version
+from pathlib import Path
 from typing import Any, get_args
 
 from a13n_harness import HarnessTraceContent
@@ -16,13 +17,14 @@ from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
 from anyio.to_thread import run_sync
 from fastapi import FastAPI
 from fastapi.dependencies.models import Dependant
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.routing import APIRoute, APIRouter
 from redis.asyncio import Redis
 from sqlalchemy import text
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from a13n_service.distribution import OSS, Distribution
-from a13n_service.infra.crypto import KeyRing
+from a13n_service.infra.crypto import FILE_KEY_ID, KeyRing, file_key
 from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.http import document_errors, install_error_envelope
 from a13n_service.infra.ingress import BodyLimit
@@ -39,9 +41,13 @@ from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import ThreadHub
 from a13n_service.runs.worker import Worker
-from a13n_service.settings import Database, Objects, ProcessRole, Settings, load_settings
-from a13n_service.tenancy.authenticate import COOKIE_NAME, CSRF_HEADER, SAFE_METHODS
+from a13n_service.settings import Database, Encryption, Objects, ProcessRole, Settings, load_settings
+from a13n_service.tenancy.authenticate import COOKIE_NAME, CSRF_HEADER, HTTP_COOKIE_NAME, SAFE_METHODS
 from a13n_service.tenancy.requests import current_credential
+
+# The Console's production build, placed here for packaging; absent in a source checkout, where the Console
+# development server serves it instead.
+CONSOLE = Path(__file__).parent / "static"
 
 EXEMPT_ROUTES = frozenset(
     {
@@ -57,7 +63,12 @@ EXEMPT_ROUTES = frozenset(
 # How the local authenticator's credentials appear in the HTTP contract.
 SECURITY_SCHEMES = {
     "apiKey": {"type": "http", "scheme": "bearer", "description": "A workspace API key (`a13n_...`)"},
-    "loginSession": {"type": "apiKey", "in": "cookie", "name": COOKIE_NAME, "description": "A browser login session"},
+    "loginSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": COOKIE_NAME,
+        "description": f"A browser login session; `{HTTP_COOKIE_NAME}` when the public URL is plain HTTP",
+    },
     "csrf": {
         "type": "apiKey",
         "in": "header",
@@ -158,7 +169,7 @@ async def open_runtime(
         storage=storage,
         objects=await open_objects(stack, config.objects),
         redis=redis,
-        keys=KeyRing(active_key_id=config.encryption.active_key_id, keys=config.encryption.keys),
+        keys=_key_ring(config.encryption),
         settings=config,
         registry=_registry(distribution, config),
         access=distribution.access(),
@@ -168,6 +179,12 @@ async def open_runtime(
         # Backends hold no connection between queries, so the query side needs no lifecycle.
         traces=telemetry.trace_config(),
     )
+
+
+def _key_ring(encryption: Encryption) -> KeyRing:
+    if encryption.key_file is None:
+        return KeyRing(active_key_id=encryption.active_key_id, keys=encryption.keys)
+    return KeyRing(active_key_id=FILE_KEY_ID, keys={FILE_KEY_ID: file_key(encryption.key_file)})
 
 
 def _registry(distribution: Distribution, config: Settings) -> Registry:
@@ -182,8 +199,33 @@ def _registry(distribution: Distribution, config: Settings) -> Registry:
     )
 
 
+def console_fallback(root: Path, otherwise: ASGIApp) -> ASGIApp:
+    """Answers what no route matched from the Console build at `root`: content-hashed assets cached for good, and
+    any other browser path the uncached index, since the Console routes in the browser. API paths and other methods
+    get `otherwise`, the router's own not-found answer, so the API behaves the same with or without a Console."""
+    assets = (root / "assets").resolve()
+
+    async def fallback(scope: Scope, receive: Receive, send: Send) -> None:
+        path: str = scope["path"]
+        answer = otherwise
+        if scope["type"] == "http" and scope["method"] in {"GET", "HEAD"}:
+            if path.startswith("/assets/"):
+                asset = (root / path.removeprefix("/")).resolve()
+                if asset.is_relative_to(assets) and asset.is_file():
+                    answer = FileResponse(asset, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+            elif path != "/api" and not path.startswith("/api/"):
+                answer = FileResponse(root / "index.html", headers={"Cache-Control": "no-store"})
+        await answer(scope, receive, send)
+
+    return fallback
+
+
 def build_app(
-    distribution: Distribution = OSS, *, role: ProcessRole = "all", settings: Settings | None = None
+    distribution: Distribution = OSS,
+    *,
+    role: ProcessRole = "all",
+    settings: Settings | None = None,
+    console: Path = CONSOLE,
 ) -> FastAPI:
     config = settings or load_settings(extensions=distribution.settings)
     if role not in get_args(ProcessRole):
@@ -280,4 +322,6 @@ def build_app(
                 seen.add((method, route.path))
         if serves_api:
             app.include_router(router)
+    if serves_api and (console / "index.html").is_file():
+        app.router.default = console_fallback(console, app.router.default)
     return app

@@ -8,10 +8,11 @@ on:
       - ".github/workflows/images.yml"
       - "Cargo.lock"
       - "Cargo.toml"
-      - "deploy/containers/a13n-service/Dockerfile"
-      - "deploy/containers/a13n-service/service.toml"
-      - "deploy/containers/sandbox/Dockerfile"
-      - "deploy/containers/docker-environment/Dockerfile"
+      - "deploy/docker/images/a13n-service/Dockerfile"
+      - "deploy/docker/images/a13n-service/entrypoint.sh"
+      - "deploy/docker/images/a13n-service/service.toml"
+      - "deploy/docker/images/sandbox/Dockerfile"
+      - "deploy/docker/images/docker-environment/Dockerfile"
       - "LICENSE"
       - "crates/a13n-envd/**"
       - "packages/a13n-envd-client/*"
@@ -25,12 +26,14 @@ on:
       - "docs/a13n-harness-ui/**"
       - "mkdocs.yml"
       - "frontend/apps/a13n-harness-ui/**"
+      - "frontend/apps/a13n-console/**"
+      - "proto/a13n-service/openapi.json"
       - "frontend/packages/a13n-ui/**"
       - "frontend/package.json"
       - "frontend/pnpm-lock.yaml"
       - "frontend/pnpm-workspace.yaml"
       - "frontend/tsconfig.base.json"
-      - "deploy/containers/a13n-harness-ui/**"
+      - "deploy/docker/images/a13n-harness-ui/**"
       - "scripts/prepare_harness_ui_image.py"
       - "scripts/prepare-a13n-harness-ui-assets.py"
       - "scripts/prepare_a13n_harness_ui_assets.py"
@@ -79,8 +82,9 @@ jobs:
             service:
               - '.dockerignore'
               - '.github/workflows/images.yml'
-              - 'deploy/containers/a13n-service/Dockerfile'
-              - 'deploy/containers/a13n-service/service.toml'
+              - 'deploy/docker/images/a13n-service/Dockerfile'
+              - 'deploy/docker/images/a13n-service/entrypoint.sh'
+              - 'deploy/docker/images/a13n-service/service.toml'
               - 'packages/a13n-envd-client/*'
               - 'packages/a13n-envd-client/a13n_envd_client/**'
               - 'packages/a13n-harness/*'
@@ -94,9 +98,16 @@ jobs:
               - 'packages/a13n-logging/a13n_logging/**'
               - 'pyproject.toml'
               - 'uv.lock'
+              - 'frontend/apps/a13n-console/**'
+              - 'frontend/packages/a13n-ui/**'
+              - 'frontend/package.json'
+              - 'frontend/pnpm-lock.yaml'
+              - 'frontend/pnpm-workspace.yaml'
+              - 'frontend/tsconfig.base.json'
+              - 'proto/a13n-service/openapi.json'
             harness_ui:
               - '.github/workflows/images.yml'
-              - 'deploy/containers/a13n-harness-ui/**'
+              - 'deploy/docker/images/a13n-harness-ui/**'
               - 'packages/a13n-envd-client/*'
               - 'packages/a13n-envd-client/a13n_envd_client/**'
               - 'packages/a13n-harness/*'
@@ -123,7 +134,7 @@ jobs:
               - 'Makefile'
             docker_environment:
               - ".github/workflows/images.yml"
-              - "deploy/containers/docker-environment/Dockerfile"
+              - "deploy/docker/images/docker-environment/Dockerfile"
               - "Makefile"
             sandbox:
               - '.dockerignore'
@@ -131,7 +142,7 @@ jobs:
               - 'Cargo.lock'
               - 'Cargo.toml'
               - 'crates/a13n-envd/**'
-              - 'deploy/containers/sandbox/Dockerfile'
+              - 'deploy/docker/images/sandbox/Dockerfile'
               - 'LICENSE'
 
       - name: Build image matrix
@@ -151,33 +162,37 @@ jobs:
               images.append({
                   "name": "a13n-service",
                   "runner": "ubuntu-latest",
-                  "file": "deploy/containers/a13n-service/Dockerfile",
+                  "file": "deploy/docker/images/a13n-service/Dockerfile",
                   "image": "ghcr.io/converge-ai-labs/a13n-service",
                   "context": ".",
+                  "platforms": "linux/amd64,linux/arm64",
               })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
               images.append({
                   "name": "a13n-sandbox",
                   "runner": "ubuntu-24.04-8core",
-                  "file": "deploy/containers/sandbox/Dockerfile",
+                  "file": "deploy/docker/images/sandbox/Dockerfile",
                   "image": "ghcr.io/converge-ai-labs/a13n-sandbox",
                   "context": ".",
+                  "platforms": "linux/amd64",
               })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["HARNESS_UI_CHANGED"] == "true":
               images.append({
                   "name": "a13n-harness-ui",
                   "runner": "ubuntu-latest",
-                  "file": "deploy/containers/a13n-harness-ui/Dockerfile",
+                  "file": "deploy/docker/images/a13n-harness-ui/Dockerfile",
                   "image": "ghcr.io/converge-ai-labs/a13n-harness-ui",
                   "context": "dist/a13n-harness-ui-image",
+                  "platforms": "linux/amd64",
               })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["DOCKER_ENVIRONMENT_CHANGED"] == "true":
               images.append({
                   "name": "a13n-docker-environment",
                   "runner": "ubuntu-latest",
-                  "file": "deploy/containers/docker-environment/Dockerfile",
+                  "file": "deploy/docker/images/docker-environment/Dockerfile",
                   "image": "ghcr.io/converge-ai-labs/a13n-docker-environment",
-                  "context": "deploy/containers/docker-environment",
+                  "context": "deploy/docker/images/docker-environment",
+                  "platforms": "linux/amd64,linux/arm64",
               })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")
@@ -228,6 +243,10 @@ jobs:
         if: matrix.name == 'a13n-harness-ui'
         run: make a13n-harness-ui-image-context
 
+      - name: Set up QEMU for arm64
+        if: contains(matrix.platforms, 'arm64')
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -251,8 +270,9 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
-          # Development publishing is intentionally native amd64 only; other architectures build locally.
-          platforms: linux/amd64
+          # The Service and its Docker environment run on amd64 and arm64 hosts; the sandbox and Harness UI
+          # images publish native amd64 only, and other architectures build locally.
+          platforms: ${{ matrix.platforms }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

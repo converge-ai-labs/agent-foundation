@@ -10,7 +10,7 @@ make dev
 
 `make dev` synchronizes locked Python and frontend dependencies, starts this checkout's PostgreSQL and Redis, applies migrations, creates the administrator `admin@example.com` / `local-public-password-123` in an empty database, and starts three applications in the background: the local scripted model (`dev/fixtures/model.py`), the Service (`--role all`) and the Console dev server. It returns once all three accept connections and prints the Console URL. The applications run in their own OS session with no terminal input, so closing the terminal or ending an agent turn does not stop them. Their output goes to `var/dev/logs/`.
 
-Sign in through the printed Console URL, `http://<instance>.localhost:<port>`. Every checkout gets its own host name, because browsers keep one cookie jar per host whatever the port: two checkouts' Consoles hold separate sessions in one browser. Browsers resolve every `*.localhost` name to loopback and treat it as a secure context, which the Service's `Secure` session cookie requires. The Service accepts browser changes only from that origin, so signing in through `http://127.0.0.1:<port>` fails.
+Sign in through the printed Console URL, `http://<instance>.localhost:<port>`. Every checkout gets its own host name, because browsers keep one cookie jar per host whatever the port: two checkouts' Consoles hold separate sessions in one browser. Browsers resolve every `*.localhost` name to loopback. The Service accepts browser changes only from that origin, so signing in through `http://127.0.0.1:<port>` fails.
 
 A fresh database is empty apart from the administrator. For representative content, run `make dev-reset STATE=seeded` once.
 

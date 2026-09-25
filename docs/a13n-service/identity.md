@@ -6,7 +6,7 @@ Every request acts as a **principal**: a user, who signs in with an email addres
 
 An **organization** is the administration boundary. It holds its members and the resources it shares with all of its workspaces, such as organization-wide model providers and models. A **workspace** is the boundary for work: agents, sessions, connections, environments and most other resources belong to exactly one workspace.
 
-[Bootstrap](get-started.md#create-the-first-administrator) creates the first organization (key `default`), its first workspace (key `default`) and an administrator. There is no API to create further organizations. Organization administrators create workspaces in Console under **Organization settings → Workspaces**, or with `POST /api/v1/organizations/{organization_id}/workspaces` and a `{key, name}` body.
+[Bootstrap](get-started.md#create-the-first-administrator), in Console on a new Service or with the `bootstrap` command, creates the first organization (key `default`), its first workspace (key `default`) and an administrator. There is no API to create further organizations. Organization administrators create workspaces in Console under **Organization settings → Workspaces**, or with `POST /api/v1/organizations/{organization_id}/workspaces` and a `{key, name}` body.
 
 Administrators can rename an organization or workspace, change its key and set an icon (PNG, JPEG or WebP). Workspace keys are unique within their organization and organization keys are unique across the deployment; links that use an old key stop resolving. API paths accept a workspace ID or, among the workspaces you can read, its key.
 
@@ -54,9 +54,9 @@ There is no self-service sign-up: accounts are created only by bootstrap and by 
 
 ## Sign in and login sessions
 
-Console signs in with `POST /api/v1/auth/login` and `{email, password}`. The Service sets a `__Host-a13n_session` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`) and returns a CSRF token. A session lasts `auth.session_seconds` (12 hours by default) from its last use. Login attempts are rate limited per client address and email.
+Console signs in with `POST /api/v1/auth/login` and `{email, password}`. The Service sets a `__Host-a13n_session` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`) and returns a CSRF token; when the public URL is plain HTTP, the cookie is `a13n_session` and not `Secure`. A session lasts `auth.session_seconds` (12 hours by default) from its last use. Login attempts are rate limited per client address and email.
 
-Requests authenticated by the cookie that change state must send the CSRF token in `X-CSRF-Token`, and a browser `Origin` must equal the Service's public URL. See [HTTP conventions](http.md#authentication).
+Requests authenticated by the cookie that change state must send the CSRF token in `X-CSRF-Token`, and a browser `Origin` must equal the Service's public origin (for a loopback public URL, under either `localhost` or `127.0.0.1`). See [HTTP conventions](http.md#authentication).
 
 Under **Personal settings → Login sessions**, or `GET /api/v1/users/me/login-sessions`, you see your live sessions and can revoke any of them. `POST /api/v1/auth/logout` ends the current one, and `GET /api/v1/auth/session` re-reads it and its CSRF token; both need the session cookie itself and refuse an API key with `403 forbidden`.
 

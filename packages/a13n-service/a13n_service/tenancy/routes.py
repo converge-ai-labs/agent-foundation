@@ -3,11 +3,21 @@
 from fastapi import APIRouter, Request, Response
 
 from a13n_service.infra import images
+from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
+from a13n_service.settings import Settings
 from a13n_service.tenancy import api_keys, users
 from a13n_service.tenancy.access import Authenticated, login_session_required
 from a13n_service.tenancy.audit import list_account_events
-from a13n_service.tenancy.authenticate import COOKIE_NAME, check_origin, login, session_csrf, set_session_cookie
+from a13n_service.tenancy.authenticate import (
+    Login,
+    check_origin,
+    login,
+    session_cookie,
+    session_csrf,
+    set_session_cookie,
+)
+from a13n_service.tenancy.bootstrap import AlreadyBootstrapped, BootstrapInput, bootstrap, initialized
 from a13n_service.tenancy.invitations import accept_invitation
 from a13n_service.tenancy.requests import Actor, Credential, CurrentRuntime, ImageBody, limit_guessing
 from a13n_service.tenancy.schemas import (
@@ -43,6 +53,12 @@ def _session_id(credential: Authenticated) -> str | None:
     return credential.credential_id if credential.kind == "session" else None
 
 
+def _signed_in(response: Response, result: Login, settings: Settings) -> LoginOutput:
+    set_session_cookie(response, result.secret, settings)
+    response.headers["Cache-Control"] = "no-store"
+    return LoginOutput(principal_id=result.principal.id, csrf_token=result.csrf_token)
+
+
 @router.post("/auth/login", response_model=LoginOutput)
 async def password_login(
     request: Request, response: Response, body: LoginInput, runtime: CurrentRuntime
@@ -56,9 +72,32 @@ async def password_login(
         password=body.password.get_secret_value(),
         session_seconds=runtime.settings.auth.session_seconds,
     )
-    set_session_cookie(response, result.secret, runtime.settings)
-    response.headers["Cache-Control"] = "no-store"
-    return LoginOutput(principal_id=result.principal.id, csrf_token=result.csrf_token)
+    return _signed_in(response, result, runtime.settings)
+
+
+@router.post("/auth/bootstrap", response_model=LoginOutput)
+async def bootstrap_administrator(
+    request: Request, response: Response, body: BootstrapInput, runtime: CurrentRuntime
+) -> LoginOutput:
+    """Public only until initialized: creates the first administrator, as the `bootstrap` command does, signed in."""
+    check_origin(request, runtime.settings)
+    await limit_guessing(request, "bootstrap")
+    already = ServiceError("already_exists", "The Service is already initialized", {"kind": "organization"})
+    # Checked before hashing, so an initialized Service spends nothing on the attempt.
+    if await initialized(runtime.storage):
+        raise already
+    try:
+        await bootstrap(runtime.storage, body)
+    except AlreadyBootstrapped:
+        raise already from None
+    result = await login(
+        runtime.storage,
+        runtime.access,
+        email=body.email,
+        password=body.password.get_secret_value(),
+        session_seconds=runtime.settings.auth.session_seconds,
+    )
+    return _signed_in(response, result, runtime.settings)
 
 
 @router.post("/auth/logout", status_code=204)
@@ -69,7 +108,7 @@ async def logout(request: Request, response: Response, credential: Credential, r
 @router.get("/auth/session", response_model=SessionProfile)
 async def session_profile(request: Request, credential: Credential, runtime: CurrentRuntime) -> SessionProfile:
     """Restores a browser session; the CSRF token is stable for the session's lifetime."""
-    secret = request.cookies.get(COOKIE_NAME)
+    secret = request.cookies.get(session_cookie(runtime.settings))
     if credential.kind != "session" or secret is None:
         raise login_session_required()
     user = await users.get_profile(runtime.storage, credential.principal)
@@ -78,7 +117,10 @@ async def session_profile(request: Request, credential: Credential, runtime: Cur
 
 @router.get("/auth/configuration", response_model=AuthConfiguration)
 async def auth_configuration(runtime: CurrentRuntime) -> AuthConfiguration:
-    return AuthConfiguration(email_delivery=runtime.settings.auth.mail.smtp_host is not None)
+    return AuthConfiguration(
+        email_delivery=runtime.settings.auth.mail.smtp_host is not None,
+        initialized=await initialized(runtime.storage),
+    )
 
 
 @router.post("/auth/password-reset", status_code=204)
@@ -110,9 +152,7 @@ async def accept(
     check_origin(request, runtime.settings)
     await limit_guessing(request, "invitation_accept", f"invitation:{invitation_id}")
     result = await accept_invitation(runtime.storage, runtime.access, runtime.settings, invitation_id, body)
-    set_session_cookie(response, result.secret, runtime.settings)
-    response.headers["Cache-Control"] = "no-store"
-    return LoginOutput(principal_id=result.principal.id, csrf_token=result.csrf_token)
+    return _signed_in(response, result, runtime.settings)
 
 
 @router.get("/users/me", response_model=Profile, tags=["tenancy"])

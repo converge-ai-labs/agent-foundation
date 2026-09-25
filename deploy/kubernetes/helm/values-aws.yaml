@@ -8,7 +8,7 @@ image:
   repository: REPLACE_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/a13n-service
   tag: REPLACE_IMMUTABLE_TAG
 publicUrl: https://agents.example.com
-# The load balancer and the Console Pods forward client addresses from inside the VPC.
+# The load balancer forwards client addresses from inside the VPC.
 trustedProxies: [REPLACE_VPC_CIDR]
 objects:
   backend: s3
@@ -33,9 +33,3 @@ resources:
   limits:
     cpu: "2"
     memory: 4Gi
-
-console:
-  replicaCount: 2
-  image:
-    repository: REPLACE_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/a13n-console
-    tag: REPLACE_IMMUTABLE_TAG

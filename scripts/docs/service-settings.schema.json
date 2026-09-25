@@ -289,6 +289,19 @@
           },
           "title": "Keys",
           "type": "object"
+        },
+        "key_file": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key File"
         }
       },
       "title": "Encryption",

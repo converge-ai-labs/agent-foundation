@@ -1,7 +1,6 @@
 .DEFAULT_GOAL := help
 
 A13N_SERVICE_IMAGE ?= a13n-service:local
-A13N_CONSOLE_IMAGE ?= a13n-console:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
 A13N_HARNESS_UI_IMAGE ?= a13n-harness-ui:local
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins examples/provider-plugin
@@ -91,13 +90,20 @@ examples-check-all: examples-check examples-test examples-smoke examples-build #
 setup: ## Prepare this checkout's stores, schema and local administrator without starting applications
 	@$(SERVICE_DEV) setup
 
-.PHONY: k8s-up k8s-check
+.PHONY: k8s-up k8s-check k8s-smoke
 k8s-up: ## Build and start local kind Kubernetes, preserving credentials and creating the first administrator
 	@python3 scripts/k8s_local.py up
 
 k8s-check: ## Test the chart and local Kubernetes launcher without building images or changing a cluster
 	@uv run --locked python -m pytest scripts/tests/test_k8s_local.py
-	@helm lint deploy/kubernetes/a13n-service -f deploy/kubernetes/values-local.yaml --strict
+	@for values in local aws gcp; do helm lint deploy/kubernetes/helm/a13n-service -f deploy/kubernetes/helm/values-$$values.yaml --strict || exit $$?; done
+
+k8s-smoke: ## Check the running local kind deployment: Console, administrator sign-in and credential storage
+	@python3 scripts/deploy_smoke.py kind
+
+.PHONY: compose-smoke
+compose-smoke: ## Start a disposable single-host Compose stack from the local images, exercise its first run, then remove it
+	@python3 scripts/deploy_smoke.py compose
 
 .PHONY: dev
 dev: ## Prepare and start this checkout's scripted model, Service and Console in the background (TRACES=auto|langfuse|none)
@@ -302,7 +308,7 @@ docker-provider-test: sync ## Run Docker Provider tests
 eip-check: eip-verify eip-test ## Run the complete EIP protocol gate
 
 .PHONY: python-build
-python-build: sync a13n-harness-ui-assets ## Build all Python workspace distributions
+python-build: sync a13n-harness-ui-assets a13n-service-assets ## Build all Python workspace distributions
 	@rm -rf dist
 	@uv build --all-packages
 
@@ -337,7 +343,7 @@ a13n-logging-python-build: ## Build only the logging Python distributions
 	@uv build --package a13n-logging --out-dir dist
 
 .PHONY: a13n-service-python-build
-a13n-service-python-build: sync ## Build only the Service Python distributions
+a13n-service-python-build: sync a13n-service-assets ## Build only the Service Python distributions
 	@rm -rf dist
 	@uv build --package a13n-service --out-dir dist
 
@@ -412,6 +418,11 @@ a13n-console-build: frontend-sync ## Build Console production assets
 a13n-harness-ui-webui-build: frontend-sync ## Build Harness UI WebUI production assets
 	@pnpm --dir frontend --filter a13n-harness-ui-webui run build
 
+.PHONY: a13n-service-assets
+a13n-service-assets: a13n-console-build ## Place the Console production build in the a13n-service package it serves from
+	@rm -rf packages/a13n-service/a13n_service/static
+	@cp -R frontend/apps/a13n-console/dist packages/a13n-service/a13n_service/static
+
 .PHONY: a13n-harness-ui-assets
 a13n-harness-ui-assets: a13n-harness-ui-skills a13n-harness-ui-webui-build ## Prepare generated Harness UI WebUI files for Python packaging
 	@uv run --locked python scripts/prepare-a13n-harness-ui-assets.py
@@ -438,16 +449,12 @@ release-check: ## Validate a component version (component=a13n-harness|a13n-harn
 	@uv run --locked python scripts/check-release-version.py "$(component)" "$(version)"
 
 .PHONY: image-a13n-service
-image-a13n-service: ## Build the local a13n-service container image
-	@docker build -f deploy/containers/a13n-service/Dockerfile -t "$(A13N_SERVICE_IMAGE)" .
-
-.PHONY: image-a13n-console
-image-a13n-console: ## Build the local Console image (static app and Service proxy)
-	@docker build -f deploy/containers/a13n-console/Dockerfile -t "$(A13N_CONSOLE_IMAGE)" .
+image-a13n-service: ## Build the local a13n-service container image, which serves the Console
+	@docker build -f deploy/docker/images/a13n-service/Dockerfile -t "$(A13N_SERVICE_IMAGE)" .
 
 .PHONY: image-sandbox
 image-sandbox: ## Build the local sandbox image with a13n-envd
-	@docker build -f deploy/containers/sandbox/Dockerfile -t "$(SANDBOX_IMAGE)" .
+	@docker build -f deploy/docker/images/sandbox/Dockerfile -t "$(SANDBOX_IMAGE)" .
 
 .PHONY: a13n-harness-ui-image-context
 a13n-harness-ui-image-context: a13n-harness-ui-assets ## Stage source wheels and locked constraints for the UI image
@@ -455,10 +462,10 @@ a13n-harness-ui-image-context: a13n-harness-ui-assets ## Stage source wheels and
 
 .PHONY: image-a13n-harness-ui
 image-a13n-harness-ui: a13n-harness-ui-image-context ## Build the local packaged Harness UI image
-	@docker build -f deploy/containers/a13n-harness-ui/Dockerfile -t "$(A13N_HARNESS_UI_IMAGE)" dist/a13n-harness-ui-image
+	@docker build -f deploy/docker/images/a13n-harness-ui/Dockerfile -t "$(A13N_HARNESS_UI_IMAGE)" dist/a13n-harness-ui-image
 
 .PHONY: images
-images: image-a13n-service image-a13n-console image-sandbox image-docker-environment image-a13n-harness-ui ## Build all local container images
+images: image-a13n-service image-sandbox image-docker-environment image-a13n-harness-ui ## Build all local container images
 
 .PHONY: image-check-a13n-harness-ui
 image-check-a13n-harness-ui: ## Check an existing UI image locally; not a CI or release prerequisite
@@ -469,11 +476,8 @@ image-check-a13n-service: ## Smoke-check the existing a13n-service container ima
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(A13N_SERVICE_IMAGE)")" = "app"
 	@docker run --rm --entrypoint sh "$(A13N_SERVICE_IMAGE)" -c '! command -v node'
 	@docker run --rm "$(A13N_SERVICE_IMAGE)" a13n-service --config /app/service.toml run --help >/dev/null
-
-.PHONY: image-check-a13n-console
-image-check-a13n-console: ## Smoke-check the existing Console image and its proxy configuration
-	@test "$$(docker image inspect --format '{{.Config.User}}' "$(A13N_CONSOLE_IMAGE)")" = "101:101"
-	@docker run --rm "$(A13N_CONSOLE_IMAGE)" "envsubst '\$${A13N_SERVICE_UPSTREAM}' < /etc/a13n/nginx.conf.template > /tmp/nginx.conf; nginx -t -q -c /tmp/nginx.conf"
+	@docker run --rm --entrypoint python "$(A13N_SERVICE_IMAGE)" -c 'from a13n_service.app import CONSOLE; assert (CONSOLE / "index.html").is_file()'
+	@test "$$(docker run --rm --user root "$(A13N_SERVICE_IMAGE)" sh -c 'id -u; grep ^CapEff /proc/self/status')" = "$$(printf '10001\nCapEff:\t0000000000000000')"
 
 .PHONY: image-check-sandbox
 image-check-sandbox: ## Smoke-check sandbox defaults, development account, sudo and daemon startup
@@ -489,7 +493,7 @@ image-check-sandbox: ## Smoke-check sandbox defaults, development account, sudo 
 
 .PHONY: image-check
 image-check: images ## Build and smoke-check all container images
-	@$(MAKE) --no-print-directory image-check-a13n-service image-check-a13n-console image-check-sandbox image-check-a13n-harness-ui image-check-docker-environment
+	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox image-check-a13n-harness-ui image-check-docker-environment
 
 .PHONY: python-check
 python-check: lint typecheck ## Run Python workspace lint and type checks
@@ -548,7 +552,7 @@ dev-state-check: sync ## Check the local development tools, including seeding a 
 DOCKER_ENVIRONMENT_IMAGE ?= a13n-docker-environment:local
 .PHONY: image-docker-environment image-check-docker-environment
 image-docker-environment: ## Build the native Docker execution image without Envd
-	@docker build -f deploy/containers/docker-environment/Dockerfile -t "$(DOCKER_ENVIRONMENT_IMAGE)" deploy/containers/docker-environment
+	@docker build -f deploy/docker/images/docker-environment/Dockerfile -t "$(DOCKER_ENVIRONMENT_IMAGE)" deploy/docker/images/docker-environment
 
 image-check-docker-environment: ## Validate native Docker image prerequisites
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(DOCKER_ENVIRONMENT_IMAGE)")" = "sandbox"

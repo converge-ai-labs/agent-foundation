@@ -345,7 +345,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: deploy/containers/sandbox/Dockerfile
+          file: deploy/docker/images/sandbox/Dockerfile
           # Release publishing is intentionally native amd64 only; other architectures build locally.
           platforms: linux/amd64
           push: true

@@ -20,6 +20,7 @@ from a13n_service.providers.traces.langfuse import Langfuse
 from a13n_service.providers.traces.logfire import Logfire
 
 ProcessRole = Literal["all", "control", "worker"]
+LOOPBACK_NAMES = ("localhost", "127.0.0.1")
 
 
 def _structured(annotation: Any) -> bool:
@@ -54,8 +55,8 @@ class Section(BaseModel):
 class Server(Section):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
-    # The externally reachable URL: links, browser redirects such as OAuth callbacks, and the only origin
-    # browser requests may change state from.
+    # The externally reachable URL: links, browser redirects such as OAuth callbacks, and the origin browser
+    # requests may change state from. Its scheme decides whether cookies are `Secure`.
     public_url: str = Field(default="http://127.0.0.1:8000", max_length=2048)
     # Proxy addresses (IPs or CIDRs) whose X-Forwarded-For and X-Forwarded-Proto headers are trusted, so client
     # addresses, which rate limits key on, are the real clients' behind a reverse proxy.
@@ -73,6 +74,21 @@ class Server(Section):
         parts = urlsplit(self.public_url)
         default_port = {"http": ":80", "https": ":443"}.get(parts.scheme, "")
         return f"{parts.scheme}://{parts.netloc.lower().removesuffix(default_port)}"
+
+    @property
+    def public_origins(self) -> frozenset[str]:
+        """The origins browsers reach the Service from: the public origin, and for a loopback `public_url` the same
+        origin under the other loopback name, since `localhost` and `127.0.0.1` reach the same server."""
+        parts = urlsplit(self.public_origin)
+        if parts.hostname not in LOOPBACK_NAMES:
+            return frozenset({self.public_origin})
+        port = "" if parts.port is None else f":{parts.port}"
+        return frozenset(f"{parts.scheme}://{name}{port}" for name in LOOPBACK_NAMES)
+
+    @property
+    def https(self) -> bool:
+        """Whether browsers reach the Service over HTTPS, the only way its cookies can be `Secure`."""
+        return urlsplit(self.public_url).scheme == "https"
 
 
 class Database(Section):
@@ -161,6 +177,19 @@ class Authentication(Section):
 class Encryption(Section):
     active_key_id: str | None = Field(default=None, min_length=1, max_length=128)
     keys: dict[str, SecretStr] = Field(default_factory=dict)
+    # Instead of the two above: one key read from this file, which the first start generates when it is missing.
+    # Suits a single host whose data volume persists the file; back it up with the database.
+    key_file: Path | None = None
+
+    @model_validator(mode="after")
+    def one_source(self) -> "Encryption":
+        if self.key_file is not None and (self.active_key_id is not None or self.keys):
+            raise ValueError("encryption.key_file excludes encryption.active_key_id and encryption.keys")
+        return self
+
+    @property
+    def configured(self) -> bool:
+        return self.active_key_id is not None or self.key_file is not None
 
 
 class Control(Section):
@@ -408,8 +437,8 @@ class Settings(Section):
 
     @model_validator(mode="after")
     def mail_is_encrypted(self) -> "Settings":
-        if self.auth.mail.smtp_host is not None and self.encryption.active_key_id is None:
-            raise ValueError("auth.mail requires encryption.active_key_id: queued mail carries encrypted links")
+        if self.auth.mail.smtp_host is not None and not self.encryption.configured:
+            raise ValueError("auth.mail requires an encryption key: queued mail carries encrypted links")
         return self
 
     @model_validator(mode="after")

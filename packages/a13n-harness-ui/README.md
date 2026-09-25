@@ -162,14 +162,14 @@ The initial non-root image packages the application, Python, Bash, Git, curl, an
 
 ```bash
 # Published image, loopback port, and named persistent config/data/work volumes:
-docker compose -f deploy/compose/a13n-harness-ui.yaml up -d
-docker compose -f deploy/compose/a13n-harness-ui.yaml logs harness-ui
+docker compose -f deploy/docker/compose/a13n-harness-ui.yaml up -d
+docker compose -f deploy/docker/compose/a13n-harness-ui.yaml logs harness-ui
 
 # On-demand source build and local run:
 make image-a13n-harness-ui
 make image-check-a13n-harness-ui
 A13N_HARNESS_UI_IMAGE=a13n-harness-ui:local \
-  docker compose -f deploy/compose/a13n-harness-ui.yaml up -d
+  docker compose -f deploy/docker/compose/a13n-harness-ui.yaml up -d
 ```
 
 Use `A13N_HARNESS_UI_IMAGE=ghcr.io/converge-ai-labs/a13n-harness-ui:X.Y.Z` for a release rather than the mutable `dev` default. Development images show source package version `0.0.0` and their Git revision separately; RC package metadata displays `X.Y.ZrcN`. The private npm version is never used as the running application version. Main builds publish only `dev`; release builds publish the canonical version, plus `latest` for stable releases only. Overwriting `dev` does not delete old registry digests; automatic cleanup is not configured.

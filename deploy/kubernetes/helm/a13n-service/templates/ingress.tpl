@@ -24,7 +24,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "a13n.name" $ }}-{{ ternary "console" "control" $.Values.console.enabled }}
+                name: {{ include "a13n.name" $ }}-control
                 port:
                   number: 8000
           {{- end }}

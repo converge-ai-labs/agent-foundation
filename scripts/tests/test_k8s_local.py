@@ -12,7 +12,7 @@ import yaml
 
 from scripts import k8s_local as k8s
 
-CHART = k8s.ROOT / "deploy/kubernetes/a13n-service"
+CHART = k8s.ROOT / "deploy/kubernetes/helm/a13n-service"
 helm = pytest.mark.skipif(shutil.which("helm") is None, reason="helm is not installed")
 
 
@@ -20,9 +20,12 @@ def fresh():
     return k8s.credentials({}, {}, retained=False)
 
 
-def render(values: str) -> list[dict]:
+def render(values: str, *arguments: str) -> list[dict]:
     output = subprocess.run(
-        ["helm", "template", "a13n", str(CHART), "-f", str(k8s.ROOT / f"deploy/kubernetes/values-{values}.yaml")],
+        [
+            *("helm", "template", "a13n", str(CHART)),
+            *("-f", str(k8s.ROOT / f"deploy/kubernetes/helm/values-{values}.yaml"), *arguments),
+        ],
         capture_output=True,
         text=True,
         check=True,
@@ -68,8 +71,9 @@ def test_roles_share_one_image_and_start_after_the_migration_job():
         pod = deployments[f"a13n-a13n-{role}"]["spec"]["template"]["spec"]
         assert pod["containers"][0]["args"][-2:] == ["--role", role]
         assert "migrate --check" in pod["initContainers"][0]["args"][0]
-    console = deployments["a13n-a13n-console"]["spec"]["template"]["spec"]["containers"][0]
-    assert console["env"] == [{"name": "A13N_SERVICE_UPSTREAM", "value": "http://a13n-a13n-control:8000"}]
+    assert set(deployments) == {"a13n-a13n-control", "a13n-a13n-worker"}
+    control = next(d for d in documents if d["kind"] == "Service" and d["metadata"]["name"] == "a13n-a13n-control")
+    assert control["spec"]["type"] == "NodePort" and control["spec"]["ports"][0]["nodePort"] == 30080
 
 
 @helm
@@ -86,6 +90,40 @@ def test_every_service_pod_serves_metrics_on_its_own_port():
     service = next(d for d in documents if d["kind"] == "Service" and d["metadata"]["name"] == "a13n-a13n-control")
     assert [port["name"] for port in service["spec"]["ports"]] == ["http"]
     assert not any(d["kind"] == "PodMonitor" for d in documents)
+
+
+@helm
+def test_service_containers_write_only_temporary_files_and_local_objects():
+    for document in render("local"):
+        if document["kind"] not in {"Deployment", "Job"}:
+            continue
+        pod = document["spec"]["template"]["spec"]
+        assert {"name": "tmp", "emptyDir": {}} in pod["volumes"]
+        for container in pod["containers"] + pod.get("initContainers", []):
+            assert container["securityContext"]["readOnlyRootFilesystem"] is True
+            writable = {m["mountPath"] for m in container["volumeMounts"] if not m.get("readOnly")}
+            assert writable == {"/tmp", "/app/var/objects"}
+
+
+@helm
+def test_each_role_tolerates_one_disruption_and_autoscales_only_when_enabled():
+    def objects(*arguments: str) -> dict[tuple[str, str], dict]:
+        return {(d["kind"], d["metadata"]["name"]): d for d in render("aws", *arguments)}
+
+    fixed = objects()
+    autoscaled = objects("--set", "roles.worker.autoscaling.enabled=true")
+    for role in ("control", "worker"):
+        name = f"a13n-a13n-{role}"
+        budget = fixed["PodDisruptionBudget", name]["spec"]
+        assert budget["maxUnavailable"] == 1
+        assert budget["selector"] == fixed["Deployment", name]["spec"]["selector"]
+    assert [name for kind, name in fixed if kind == "HorizontalPodAutoscaler"] == []
+    assert [name for kind, name in autoscaled if kind == "HorizontalPodAutoscaler"] == ["a13n-a13n-worker"]
+    target = autoscaled["HorizontalPodAutoscaler", "a13n-a13n-worker"]["spec"]["scaleTargetRef"]
+    assert target == {"apiVersion": "apps/v1", "kind": "Deployment", "name": "a13n-a13n-worker"}
+    # The autoscaler owns the worker count; a fixed count would reset it on every upgrade.
+    assert "replicas" not in autoscaled["Deployment", "a13n-a13n-worker"]["spec"]
+    assert autoscaled["Deployment", "a13n-a13n-control"]["spec"]["replicas"] == 2
 
 
 @helm
@@ -266,12 +304,11 @@ def test_startup_builds_loads_and_waits_before_bootstrapping(tmp_path, monkeypat
     builds = [c for c in commands if c[:2] == ("docker", "build")]
     load = next(c for c in commands if c[:3] == ("kind", "load", "docker-image"))
     helm = next(c for c in commands if c[0] == "helm")
-    assert len(builds) == 2
-    images = [c[c.index("-t") + 1] for c in builds]
-    assert all(image in load for image in images)
+    assert len(builds) == 1
+    image = builds[0][builds[0].index("-t") + 1]
+    assert image in load
     assert "--wait" in helm and "--kube-context" in helm and k8s.NAMESPACE in helm
-    assert f"image.tag={images[0].split(':')[1]}" in helm
-    assert f"console.image.tag={images[1].split(':')[1]}" in helm
+    assert f"image.tag={image.split(':')[1]}" in helm
     order = [commands.index(c) for c in (("prepare",), builds[0], load, helm, ("bootstrap", "owner@example.com"))]
     assert order == sorted(order)
     assert any(c[:3] == ("kind", "create", "cluster") for c in commands) != existing
@@ -298,3 +335,26 @@ def test_wrong_port_mapping_stops_before_mutation(tmp_path, monkeypatch):
         k8s.start(tmp_path)
     assert all(c[0] in {"docker", "kind"} for c in commands)
     assert not any("create" in c or "delete" in c or "build" in c for c in commands)
+
+
+@helm
+def test_a_packaged_chart_deploys_its_service_release(tmp_path):
+    """A source chart deploys the development image; a release packages the chart at its Service version."""
+
+    def images(chart: str) -> set[str]:
+        output = subprocess.run(["helm", "template", "a13n", chart], capture_output=True, text=True, check=True).stdout
+        pods = [
+            d["spec"]["template"]["spec"]
+            for d in yaml.safe_load_all(output)
+            if d and d["kind"] in {"Deployment", "Job"}
+        ]
+        return {c["image"] for pod in pods for c in pod["containers"] if c["name"] not in {"redis", "postgresql"}}
+
+    assert images(str(CHART)) == {"ghcr.io/converge-ai-labs/a13n-service:dev"}
+    version = "1.2.3-rc.1"
+    subprocess.run(
+        ["helm", "package", str(CHART), "--version", version, "--app-version", version, "--destination", str(tmp_path)],
+        capture_output=True,
+        check=True,
+    )
+    assert images(str(tmp_path / f"a13n-service-{version}.tgz")) == {f"ghcr.io/converge-ai-labs/a13n-service:{version}"}

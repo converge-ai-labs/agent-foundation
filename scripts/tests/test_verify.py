@@ -104,6 +104,14 @@ def test_python_steps_lint_changed_files_and_run_the_selection(workspace: Path) 
     assert "-q --tb=short" in steps[-1].env["PYTEST_ADDOPTS"]
 
 
+def test_build_hooks_are_linted_but_not_type_checked(workspace: Path) -> None:
+    hook = workspace / "packages/a13n-core/hatch_build.py"
+    hook.write_text("")
+    result = verify.plan(["packages/a13n-core/hatch_build.py"], graph=verify.PythonGraph(workspace))
+    names = [step.name for step in verify.steps_for(result)]
+    assert names[:2] == ["ruff check", "ruff format"] and "pyright" not in names
+
+
 def test_deleted_source_without_maps_runs_own_suite(workspace: Path) -> None:
     path = "packages/a13n-core/a13n_core/models.py"
     (workspace / path).unlink()

@@ -1,0 +1,45 @@
+"""The deployment smoke run always removes its disposable stack and never passes credentials as arguments."""
+
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import deploy_smoke
+
+
+@pytest.mark.parametrize("failing", [None, "restarted"])
+def test_compose_smoke_checks_both_starts_and_always_removes_the_stack(monkeypatch, failing) -> None:
+    commands: list[tuple[str, ...]] = []
+    checks: list[tuple[str, bool]] = []
+
+    def compose(*args: str, capture: bool = False) -> str:
+        commands.append(args)
+        return "digest  /app/var/encryption.key\n" if capture else ""
+
+    def check(base_url: str, email: str, password: str, *, first_run: bool) -> None:
+        checks.append((base_url, first_run))
+        if failing == "restarted" and not first_run:
+            raise RuntimeError("sign-in failed")
+
+    monkeypatch.setattr(deploy_smoke, "compose", compose)
+    monkeypatch.setattr(deploy_smoke, "check", check)
+    if failing:
+        with pytest.raises(RuntimeError, match="sign-in failed"):
+            deploy_smoke.compose_smoke("18123")
+        assert ("logs", "--no-color", "--tail", "200", "service") in commands
+    else:
+        deploy_smoke.compose_smoke("18123")
+    assert checks == [("http://localhost:18123", True), ("http://127.0.0.1:18123", False)]
+    assert commands[0] == ("up", "--detach", "--wait") and commands[-1] == ("down", "--volumes")
+    assert ("restart", "service") in commands
+
+
+def test_failed_expectations_report_the_error_but_not_the_request() -> None:
+    browser = deploy_smoke.Browser("http://127.0.0.1:1")
+    browser.request = lambda *_: (401, "application/json", {"error": {"code": "unauthenticated"}})  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError) as failure:
+        browser.expect(200, "POST", "/api/v1/auth/login", {"email": "a@example.com", "password": "not-in-errors"})
+    assert "unauthenticated" in str(failure.value) and "not-in-errors" not in str(failure.value)

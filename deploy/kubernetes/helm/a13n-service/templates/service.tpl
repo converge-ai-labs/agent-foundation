@@ -1,14 +1,14 @@
-# Control serves the API; workers accept no traffic.
+# Control serves the API and Console; workers accept no traffic.
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "a13n.name" . }}-control
-  {{- with .Values.serviceAnnotations }}
+  {{- with .Values.service.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  type: ClusterIP
+  type: {{ .Values.service.type }}
   selector:
     {{- include "a13n.selector" . | nindent 4 }}
     app.kubernetes.io/component: control
@@ -16,6 +16,9 @@ spec:
     - name: http
       port: 8000
       targetPort: http
+      {{- if eq .Values.service.type "NodePort" }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount

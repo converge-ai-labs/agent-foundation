@@ -37,7 +37,7 @@ import { Loading } from "../shared/feedback";
 import { useAuth, useClient } from "./context";
 import styles from "./pages.module.css";
 
-type Mode = "login" | "invite" | "forgot" | "reset" | "email";
+type Mode = "login" | "setup" | "invite" | "forgot" | "reset" | "email";
 type Translate = (value: string) => string;
 /** A failure the reader can act on: beside the fields, or above the button. */
 type Failure = { field?: boolean; message: string };
@@ -128,7 +128,12 @@ export function AuthPage() {
     navigate = useNavigate();
   const { invitationId } = useParams();
   const { t } = useTranslation();
-  const mode: Mode = invitationId
+  const configuration = useQuery({
+    queryKey: ["auth-configuration"],
+    queryFn: ({ signal }) =>
+      client.http.GET("/api/v1/auth/configuration", { signal }).then(data),
+  });
+  const routeMode: Mode = invitationId
     ? "invite"
     : location.pathname === "/forgot-password"
       ? "forgot"
@@ -137,17 +142,17 @@ export function AuthPage() {
         : location.pathname === "/confirm-email"
           ? "email"
           : "login";
+  /** Until the first administrator exists, whoever signs in first creates it. */
+  const mode: Mode =
+    routeMode === "login" && configuration.data?.initialized === false
+      ? "setup"
+      : routeMode;
   const [token] = useState(
     () => new URLSearchParams(window.location.hash.slice(1)).get("token") ?? "",
   );
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [name, setName] = useState("");
-  const configuration = useQuery({
-    queryKey: ["auth-configuration"],
-    queryFn: ({ signal }) =>
-      client.http.GET("/api/v1/auth/configuration", { signal }).then(data),
-  });
   const mutation = useMutation({
     mutationFn: async () => {
       if (mode === "forgot") {
@@ -180,13 +185,23 @@ export function AuthPage() {
                 },
               ),
             )
-          : data(
-              await client.http.POST("/api/v1/auth/login", {
-                body: { email, password },
-              }),
-            );
+          : mode === "setup"
+            ? data(
+                await client.http.POST("/api/v1/auth/bootstrap", {
+                  body: { email, password },
+                }),
+              )
+            : data(
+                await client.http.POST("/api/v1/auth/login", {
+                  body: { email, password },
+                }),
+              );
       auth.authenticated(result.csrf_token);
       navigate("/", { replace: true });
+    },
+    // Another visitor may have created the administrator first; sign in instead.
+    onError: () => {
+      if (mode === "setup") void configuration.refetch();
     },
   });
   useEffect(() => {
@@ -197,8 +212,8 @@ export function AuthPage() {
         window.location.pathname + window.location.search,
       );
   }, [mutation.isSuccess]);
-  const asksEmail = mode === "login" || mode === "forgot";
-  const asksPassword = ["login", "invite", "reset"].includes(mode);
+  const asksEmail = ["login", "setup", "forgot"].includes(mode);
+  const asksPassword = ["login", "setup", "invite", "reset"].includes(mode);
   const missingToken = ["reset", "invite", "email"].includes(mode) && !token;
   const withoutDelivery =
     mode === "forgot" && configuration.data?.email_delivery === false;
@@ -215,6 +230,7 @@ export function AuthPage() {
   }, [fieldError]);
   const titles: Record<Mode, string> = {
     login: t("Sign in"),
+    setup: t("Create administrator"),
     invite: t("Join your team"),
     forgot: t("Reset your password"),
     reset: t("Choose a new password"),
@@ -222,6 +238,7 @@ export function AuthPage() {
   };
   const descriptions: Record<Mode, string> = {
     login: t("Build, run, and observe your agents."),
+    setup: t("The first account administers this Service."),
     invite: t("Create your account to accept this invitation."),
     forgot: t("We'll send a recovery link if your email is eligible."),
     reset: t("Use at least 12 characters for your new password."),
@@ -229,6 +246,7 @@ export function AuthPage() {
   };
   const submitLabels: Record<Mode, string> = {
     login: t("Sign in"),
+    setup: t("Create administrator"),
     invite: t("Accept invitation"),
     forgot: t("Send recovery link"),
     reset: t("Reset password"),
@@ -236,6 +254,7 @@ export function AuthPage() {
   };
   if (mode === "login" && auth.data && !auth.anonymous)
     return <Navigate to="/" replace />;
+  if (routeMode === "login" && configuration.isPending) return <Loading />;
   function submit(event: FormEvent) {
     event.preventDefault();
     mutation.mutate();
@@ -335,7 +354,9 @@ export function AuthPage() {
               <FormField
                 label={t("Password")}
                 description={
-                  mode === "invite" ? t("At least 12 characters.") : undefined
+                  mode === "invite" || mode === "setup"
+                    ? t("At least 12 characters.")
+                    : undefined
                 }
                 error={fieldError}
               >

@@ -1,3 +1,4 @@
+{{- /* Each role: its Deployment, disruption budget and optional autoscaler. */ -}}
 {{- range $role := list "control" "worker" }}
 {{- with $ }}
 {{- $settings := index .Values.roles $role }}
@@ -7,7 +8,9 @@ kind: Deployment
 metadata:
   name: {{ include "a13n.name" . }}-{{ $role }}
 spec:
+  {{- if not $settings.autoscaling.enabled }}
   replicas: {{ $settings.replicaCount }}
+  {{- end }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -85,5 +88,40 @@ spec:
             {{- toYaml (default .Values.resources $settings.resources) | nindent 12 }}
       volumes:
         {{- include "a13n.volumes" . | nindent 8 }}
+---
+# Voluntary disruptions such as node drains evict one Pod of a role at a time; a single replica stays evictable.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "a13n.name" . }}-{{ $role }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "a13n.selector" . | nindent 6 }}
+      app.kubernetes.io/component: {{ $role }}
+{{- with $settings.autoscaling }}
+{{- if .enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "a13n.name" $ }}-{{ $role }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "a13n.name" $ }}-{{ $role }}
+  minReplicas: {{ .minReplicas }}
+  maxReplicas: {{ .maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
