@@ -54,7 +54,13 @@ def _admin(base: str) -> Engine:
 
 @pytest.fixture(scope="session")
 def postgres_url() -> Iterator[str]:
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as postgres:
+    container = (
+        PostgresContainer("postgres:17-alpine", driver="psycopg")
+        # `DROP DATABASE` waits until every backend acknowledges a barrier, and a backend left in password
+        # authentication by a cancelled connect acknowledges it only at `authentication_timeout` (60 s).
+        .with_env("POSTGRES_HOST_AUTH_METHOD", "trust")
+    )
+    with container as postgres:
         yield postgres.get_connection_url()
 
 
