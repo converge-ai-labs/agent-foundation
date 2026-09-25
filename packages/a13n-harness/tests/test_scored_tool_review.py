@@ -154,7 +154,7 @@ async def test_jev_provider_failures_are_bounded_review_errors(reviewer_context,
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("reason", ["  ", "bad\x00text"])
+@pytest.mark.parametrize("reason", ["  ", "bad\x00text", "x" * 2001])
 def test_present_review_reason_still_validated(reason):
     with pytest.raises(ValidationError):
         ToolReviewAssessment(risk="low", reason=reason)

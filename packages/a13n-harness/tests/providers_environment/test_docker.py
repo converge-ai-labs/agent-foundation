@@ -297,6 +297,12 @@ def test_mount_beside_private_storage_is_accepted():
     assert str(DockerMountConfiguration(source="/data", target="/tmp/a13n-cache").target) == "/tmp/a13n-cache"
 
 
+def test_configuration_rejects_unknown_keys():
+    # A misspelled limit must fail instead of being silently ignored.
+    with pytest.raises(ValueError):
+        DockerEnvironmentConfiguration.model_validate({"memory_mib": 256})
+
+
 async def test_missing_external_target_never_adopts_same_name_replacement(native):
     env, engine, _ = native
     await env.prepare()

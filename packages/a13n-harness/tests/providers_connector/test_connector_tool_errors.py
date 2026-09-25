@@ -56,11 +56,14 @@ def test_unknown_and_binding_failures_are_not_known_refusals(error):
 
 @pytest.mark.parametrize(
     ("status", "code"),
-    # The per-status mapping is covered above; keep a carried status, 429, and a non-integer status.
+    # Every carried status, plus a string and a bool, which `type(status) is int` must refuse.
     [
+        (401, "authentication_required"),
         (403, "permission_denied"),
+        (404, "not_found"),
         (429, "rate_limited"),
         ("404", "tool_rejected"),
+        (True, "tool_rejected"),
     ],
 )
 @pytest.mark.anyio

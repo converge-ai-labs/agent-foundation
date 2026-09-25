@@ -237,6 +237,8 @@ def test_local_configuration_contains_only_session_selection(tmp_path):
     assert LocalEnvdEnvironmentConfiguration(working_directory="/C:/work").working_directory == "/C:/work"
     with pytest.raises(ValidationError):
         LocalEnvdEnvironmentConfiguration(working_directory="relative")
+    with pytest.raises(ValidationError):
+        LocalEnvdEnvironmentConfiguration.model_validate({"execution_network": "deny"})
     with pytest.raises(EnvironmentProviderError) as failure:
         LOCAL_ENVD.construct(
             operation_id="op-test",

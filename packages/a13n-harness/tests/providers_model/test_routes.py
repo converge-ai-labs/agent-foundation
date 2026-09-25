@@ -29,13 +29,16 @@ def test_credentials_reject_blank_keys_and_invalid_service_account_pem():
         GoogleServiceAccount(project_id="fixture", client_email="fixture@example.com", private_key="invalid-pem")
 
 
-# Routes with a default endpoint are built and checked in the next test.
+# The default endpoints are where API keys are sent, so they are pinned here literally.
 @pytest.mark.parametrize(
     ("name", "provider_type", "model_api", "default_base_url"),
     [
         ("openai", "openai", "openai.responses", None),
         ("openai-chat", "openai", "openai.chat_completions", None),
         ("anthropic", "anthropic", "anthropic.messages", None),
+        ("zai", "zhipu", "openai.chat_completions", "https://api.z.ai/api/paas/v4"),
+        ("moonshotai", "moonshot", "openai.chat_completions", "https://api.moonshot.ai/v1"),
+        ("grok", "openai", "openai.chat_completions", "https://api.x.ai/v1"),
     ],
 )
 def test_declared_routes_own_their_provider_api_and_endpoint(name, provider_type, model_api, default_base_url):

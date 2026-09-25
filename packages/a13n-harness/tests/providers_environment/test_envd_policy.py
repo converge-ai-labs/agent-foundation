@@ -32,6 +32,12 @@ def test_execution_uid_and_gid_are_configured_together():
         LocalEnvdLaunchConfiguration.model_validate({"execution": {"uid": 1000}})
 
 
+def test_egress_must_be_explicit_and_rejects_unknown_keys():
+    for value in ({}, {"allow_hosts": []}, {"destinations": {"mode": "public"}, "unrestricted": True}):
+        with pytest.raises(ValidationError):
+            EnvdEgressConfiguration.model_validate(value)
+
+
 async def test_credential_references_are_resolved_afresh_and_never_in_launch(tmp_path, monkeypatch):
     configuration = EnvdEgressConfiguration.model_validate(
         {

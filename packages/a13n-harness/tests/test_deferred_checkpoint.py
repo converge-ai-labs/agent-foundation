@@ -90,7 +90,8 @@ def executable(capture, effects, *, interrupt_after=False, safe=False):
 
 
 # Every cut, recovery mode, and retry-safety combination decides replay; the checkpoint kind and the
-# client result form each meet every value of the other dimensions at least once.
+# client result form each meet every value of the other dimensions at least once, and a returned
+# ToolReturn meets both checkpoint kinds under both cuts because each holds a different prefix.
 @pytest.mark.parametrize(
     ("cut", "mode", "safe", "checkpoint_kind", "supplied"),
     [
@@ -102,6 +103,8 @@ def executable(capture, effects, *, interrupt_after=False, safe=False):
         ("after", "declared", True, "boundary", "return"),
         ("after", "never", False, "boundary", "failed"),
         ("after", "never", True, "terminal", "json"),
+        ("before", "declared", True, "boundary", "return"),
+        ("after", "never", False, "terminal", "return"),
     ],
 )
 async def test_mixed_checkpoint_preserves_client_fact_without_replaying_unsafe_approval(
