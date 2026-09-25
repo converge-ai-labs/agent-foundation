@@ -30,7 +30,9 @@ from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
 from a13n_service.settings import Database, ProcessRole, Settings
+from a13n_service.tenancy import credentials
 from a13n_service.tenancy.bootstrap import BootstrapInput, Bootstrapped, bootstrap
+from argon2 import PasswordHasher
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from pydantic import SecretStr
@@ -125,6 +127,14 @@ def redis_url() -> Iterator[str]:
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cheap_password_hashing() -> Iterator[None]:
+    """Minimal Argon2 cost: a default-cost hash takes tens of milliseconds of CPU, and most tests log in."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(credentials, "_HASHER", PasswordHasher(time_cost=1, memory_cost=8, parallelism=1))
+        yield
 
 
 @pytest.fixture
