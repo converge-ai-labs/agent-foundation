@@ -424,7 +424,8 @@ async def test_a_heartbeat_extends_only_leases_it_proves_and_never_waits(service
         await session.execute(
             update(AttemptRow).where(AttemptRow.id == expired.attempt_id).values(lease_expires_at=AttemptRow.created_at)
         )
-    leases = [healthy, expired, locked, replace(forged, token="forged")]
+    forged = replace(forged, token="forged")
+    leases = [healthy, expired, locked, forged]
     before = await _expiries(runtime)
     async with transaction(runtime.storage) as blocker:
         # An execution's own write holds its run, or an attempt row, until it commits.
@@ -434,7 +435,12 @@ async def test_a_heartbeat_extends_only_leases_it_proves_and_never_waits(service
             _, extended = await renew(
                 runtime.storage, runtime.access, leases, extend={lease.attempt_id for lease in leases}, seconds=30
             )
-    assert extended == {healthy.attempt_id}
+            # With every due lease held elsewhere or unproven, nothing is extended.
+            unproven = [locked, forged]
+            _, blocked = await renew(
+                runtime.storage, runtime.access, unproven, extend={lease.attempt_id for lease in unproven}, seconds=30
+            )
+    assert extended == {healthy.attempt_id} and blocked == set()
     after = await _expiries(runtime)
     assert {key for key in before if after[key] != before[key]} == {healthy.attempt_id}
     # The skipped lease is still due, and the next heartbeat extends it once its row is free.
