@@ -36,12 +36,17 @@ from fastapi.responses import StreamingResponse
 from pydantic import SecretStr
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
+from testcontainers.core.config import testcontainers_config
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
 
 TEMPLATE = "a13n_template"
 EMAIL = "admin@example.com"
 PASSWORD = "test-password-1234"
+
+# Check container readiness every 0.1 s instead of every second, within the same two-minute budget.
+testcontainers_config.sleep_time = 0.1
+testcontainers_config.max_tries = 1200
 
 
 def database_url(base: str, name: str) -> str:
@@ -59,6 +64,9 @@ def postgres_url() -> Iterator[str]:
         # `DROP DATABASE` waits until every backend acknowledges a barrier, and a backend left in password
         # authentication by a cancelled connect acknowledges it only at `authentication_timeout` (60 s).
         .with_env("POSTGRES_HOST_AUTH_METHOD", "trust")
+        # A disposable cluster needs no crash safety; skipping fsync starts it seconds sooner.
+        .with_env("POSTGRES_INITDB_ARGS", "--no-sync")
+        .with_command("postgres -c fsync=off")
     )
     with container as postgres:
         yield postgres.get_connection_url()
