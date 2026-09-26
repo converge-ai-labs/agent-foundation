@@ -67,13 +67,17 @@ class S3Objects:
         except BotoCoreError as error:
             raise _unavailable(error) from None
 
-    async def keys(self, prefix: str, *, limit: int) -> list[str]:
+    async def keys(self, prefix: str, *, limit: int, after: str | None = None) -> list[str]:
         found: list[str] = []
         token: str | None = None
         try:
             with fail_after(self.timeout):
                 while len(found) < limit:
-                    continuation: dict[str, Any] = {"ContinuationToken": token} if token else {}
+                    continuation: dict[str, Any] = (
+                        {"ContinuationToken": token}
+                        if token
+                        else ({"StartAfter": self._key(after)} if after is not None else {})
+                    )
                     page = await self.client.list_objects_v2(
                         Bucket=self.bucket,
                         Prefix=self._key(prefix) + "/",

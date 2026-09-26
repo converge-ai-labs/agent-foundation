@@ -9,6 +9,7 @@ so a handler that keeps being cancelled, or whose process dies, also ends dead; 
 counted and logged once its transaction commits.
 """
 
+import random
 import secrets
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -16,8 +17,8 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 import anyio
-from a13n_logging import get_logger, log_context
-from pydantic import JsonValue
+from a13n_logging import exception_details, get_logger, log_context
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -43,8 +44,24 @@ from a13n_service.infra.telemetry import meter
 
 logger = get_logger(__name__)
 
-type OutboxKind = Literal["webhook", "child_result", "email", "memory_purge"]
+type OutboxKind = Literal["webhook", "child_result", "email", "memory_purge", "checkpoint_cleanup"]
 type Outcome = Literal["delivered", "retry", "deferred", "dead"]
+
+
+class Policy(BaseModel):
+    """One kind's resolved delivery and retention limits; startup merges partial overrides."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    delivered_retention_seconds: int = Field(default=86400, ge=1, le=31536000)
+    dead_retention_seconds: int = Field(default=1209600, ge=1, le=31536000)
+    max_attempts: int = Field(default=12, ge=1, le=100)
+    batch: int = Field(default=32, ge=1, le=1000)
+    parallel: int = Field(default=8, ge=1, le=128)
+    lease_seconds: float = Field(default=60, ge=10, le=600)
+    backlog_count: int = Field(default=10000, ge=1, le=1000000)
+    backlog_age_seconds: float = Field(default=300, gt=0, le=86400)
+    backlog_alert_seconds: float = Field(default=300, gt=0, le=86400)
+
 
 DELIVERIES = meter.create_counter(
     "a13n.outbox.deliveries", unit="{delivery}", description="Settled outbox delivery attempts by kind and result"
@@ -55,14 +72,17 @@ class OutboxRow(Base):
     __tablename__ = "outbox"
     __table_args__ = (
         UniqueConstraint("kind", "dedupe_key"),
-        CheckConstraint("kind IN ('webhook', 'child_result', 'email', 'memory_purge')", name="kind"),
+        CheckConstraint(
+            "kind IN ('webhook', 'child_result', 'email', 'memory_purge', 'checkpoint_cleanup')", name="kind"
+        ),
         # Account mail (password reset, email change) belongs to no organization; every other delivery does.
         CheckConstraint("organization_id IS NOT NULL OR kind = 'email'", name="tenant"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         CheckConstraint("status IN ('pending', 'delivered', 'dead')", name="status"),
         CheckConstraint("(status = 'delivered') = (delivered_at IS NOT NULL)", name="delivered"),
+        CheckConstraint("(status <> 'pending') = (settled_at IS NOT NULL)", name="settled"),
         Index("ix_outbox_due", "kind", "available_at", postgresql_where=text("status = 'pending'")),
-        Index("ix_outbox_settled", "created_at", postgresql_where=text("status <> 'pending'")),
+        Index("ix_outbox_settled", "kind", "status", "settled_at", "id", postgresql_where=text("status <> 'pending'")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str | None] = mapped_column(ForeignKey("organizations.id"))
@@ -82,6 +102,7 @@ class OutboxRow(Base):
     last_error: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +159,7 @@ def enqueue(
             subscription_id=subscription_id,
             status="pending" if dead is None else "dead",
             last_error=dead,
+            settled_at=func.now() if dead is not None else None,
         )
     )
     return identity
@@ -194,6 +216,7 @@ async def claim(
         for row in rows:
             if row.attempts >= max_attempts:
                 row.status, row.last_error = "dead", "unsettled"
+                row.settled_at = current
                 row.lease_owner = row.lease_token_hash = row.lease_expires_at = None
                 _settled(session, row.id, row.kind, "dead", reason="unsettled")
                 continue
@@ -233,8 +256,10 @@ async def settle(
     row.last_error = error[:1024] if error else None
     if outcome == "delivered":
         row.status, row.delivered_at = "delivered", current
+        row.settled_at = current
     elif outcome == "dead":
         row.status = "dead"
+        row.settled_at = current
     else:
         row.available_at = current + timedelta(seconds=retry_after)
         if outcome == "deferred":
@@ -260,7 +285,7 @@ def _settled(session: AsyncSession, outbox_id: str, kind: str, outcome: Outcome,
 
 
 def backoff(attempts: int, *, base: float = 2, cap: float = 3600) -> float:
-    return min(cap, base ** min(attempts, 16))
+    return min(cap, base ** min(attempts, 16)) * random.uniform(0.8, 1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,10 +300,7 @@ class Delivery:
     storage: Storage
     handlers: Mapping[OutboxKind, Handler]
     owner: str
-    limit: int
-    lease_seconds: float
-    max_attempts: int
-    parallel: int = 8
+    policies: Mapping[OutboxKind, Policy]
 
     async def __call__(self) -> None:
         async with anyio.create_task_group() as group:
@@ -287,17 +309,18 @@ class Delivery:
 
     async def _deliver_kind(self, kind: OutboxKind, handler: Handler) -> None:
         # No batch starts after one lease has passed, so a pass ends within two leases, whatever the limit.
-        deadline = anyio.current_time() + self.lease_seconds
-        limit = self.limit
+        policy = self.policies[kind]
+        deadline = anyio.current_time() + policy.lease_seconds
+        limit = policy.batch
         while limit > 0 and anyio.current_time() < deadline:
-            batch = min(self.parallel, limit)
+            batch = min(policy.parallel, limit)
             claims = await claim(
                 self.storage,
                 kind,
                 owner=self.owner,
                 limit=batch,
-                lease_seconds=self.lease_seconds,
-                max_attempts=self.max_attempts,
+                lease_seconds=policy.lease_seconds,
+                max_attempts=policy.max_attempts,
             )
             async with anyio.create_task_group() as group:
                 for claimed in claims:
@@ -310,12 +333,14 @@ class Delivery:
         """Never raises, so one delivery cannot cancel the others; an unsettled claim retries when its lease ends."""
         with log_context(outbox_id=claimed.id, kind=claimed.kind):
             try:
-                await handler(claimed)
+                with anyio.fail_after(self.policies[claimed.kind].lease_seconds / 2):
+                    await handler(claimed)
             except Exception as error:
+                logger.warning("Outbox handler failed", extra={"exception_details": exception_details(error)})
                 await self._fail(claimed, str(error) if isinstance(error, Undelivered) else type(error).__name__)
 
     async def _fail(self, claimed: Claim, reason: str) -> None:
-        dead = claimed.attempts >= self.max_attempts
+        dead = claimed.attempts >= self.policies[claimed.kind].max_attempts
         try:
             async with transaction(self.storage) as session:
                 outcome = "dead" if dead else "retry"
@@ -326,14 +351,41 @@ class Delivery:
             )
 
 
-async def purge_settled(storage: Storage, *, older_than: timedelta, limit: int) -> int:
-    """Bounded retention for delivered and dead rows; pending rows are never removed."""
+async def purge_settled(
+    storage: Storage, *, policies: Mapping[OutboxKind, Policy], limit: int, budget_seconds: float
+) -> int:
+    """Repeat short, bounded delete transactions within one shared wall-clock budget."""
+    total = 0
+    with anyio.move_on_after(budget_seconds):
+        while True:
+            count = 0
+            for kind, policy in policies.items():
+                for status, seconds in (
+                    ("delivered", policy.delivered_retention_seconds),
+                    ("dead", policy.dead_retention_seconds),
+                ):
+                    deleted = await _purge_batch(storage, kind, status, seconds, limit)
+                    count += deleted
+                    total += deleted
+            if count == 0:
+                break
+    return total
+
+
+async def _purge_batch(storage: Storage, kind: OutboxKind, status: str, retention_seconds: int, limit: int) -> int:
+    """An index-ordered page for one kind and outcome; pending rows never enter retention."""
     async with transaction(storage) as session:
-        cutoff = await now(session) - older_than
+        cutoff = await now(session) - timedelta(seconds=retention_seconds)
         ids = (
             await session.scalars(
                 select(OutboxRow.id)
-                .where(OutboxRow.status != "pending", OutboxRow.created_at < cutoff)
+                .where(
+                    OutboxRow.kind == kind,
+                    OutboxRow.status == status,
+                    OutboxRow.status != "pending",
+                    OutboxRow.settled_at < cutoff,
+                )
+                .order_by(OutboxRow.settled_at, OutboxRow.id)
                 .limit(limit)
                 .with_for_update(skip_locked=True)
             )

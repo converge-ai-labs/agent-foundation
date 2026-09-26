@@ -258,6 +258,7 @@ async def redeliver(
         if "signing_secret" not in row.target:
             raise conflict("webhook_delivery", row.id, SECRET_UNAVAILABLE)
         row.status, row.attempts, row.available_at = "pending", 0, await now(session)
+        row.settled_at = None
         record(
             session,
             scope,

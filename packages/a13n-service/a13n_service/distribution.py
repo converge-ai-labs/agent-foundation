@@ -7,7 +7,6 @@ work, the outbox deliveries included, is wired here from settings.
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import timedelta
 from functools import partial
 from pathlib import Path
 from types import MappingProxyType
@@ -66,7 +65,8 @@ from a13n_service.resources.subscriptions.tables import SubscriptionRow
 from a13n_service.resources.uploads.routes import router as uploads_router
 from a13n_service.runs.accept import ThreadAdvancer
 from a13n_service.runs.admission import AdmissionPolicy
-from a13n_service.runs.backlog import REPORT_SECONDS, report_backlog
+from a13n_service.runs.backlog import REPORT_SECONDS, BacklogReporter
+from a13n_service.runs.checkpoints import CLEANUP, clean
 from a13n_service.runs.children import child_results
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
 from a13n_service.runs.environments.routes import router as environments_router
@@ -221,30 +221,35 @@ def _deliver_outbox(runtime: Runtime) -> Sweep:
                 "child_result": child_results(runtime),
                 "email": mail,
                 MEMORY_PURGE: MemoryPurger(runtime),
+                CLEANUP: partial(clean, runtime),
             },
             owner=new_object_id("ctl"),
-            limit=control.outbox_batch,
-            lease_seconds=control.outbox_lease_seconds,
-            max_attempts=control.outbox_attempts,
+            policies=settings.outbox.policies,
         ),
-        timeout=2 * control.outbox_lease_seconds,
+        timeout=2 * max(policy.lease_seconds for policy in settings.outbox.policies.values()),
     )
 
 
 def _report_backlog(runtime: Runtime) -> Sweep:
-    return Sweep(name="report_backlog", every=REPORT_SECONDS, run=partial(report_backlog, runtime.storage), timeout=10)
+    return Sweep(
+        name="report_backlog",
+        every=REPORT_SECONDS,
+        run=BacklogReporter(runtime.storage, runtime.settings.outbox.policies),
+        timeout=10,
+    )
 
 
 def _purge_outbox(runtime: Runtime) -> Sweep:
-    control = runtime.settings.control
+    config = runtime.settings.outbox
     return Sweep(
         name="purge_outbox",
-        every=3600,
+        every=config.purge_interval_seconds,
         run=partial(
             purge_settled,
             runtime.storage,
-            older_than=timedelta(days=control.outbox_retention_days),
-            limit=control.sweep_batch,
+            policies=config.policies,
+            limit=config.purge_batch,
+            budget_seconds=config.purge_budget_seconds,
         ),
         timeout=60,
     )

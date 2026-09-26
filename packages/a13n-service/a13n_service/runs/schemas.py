@@ -306,27 +306,6 @@ class EnvironmentMount(_Frozen):
     working_directory: str | None = None
 
 
-class RunInput(_Frozen):
-    """Detached facts needed to restore and execute an attempt, never a writable persistence row."""
-
-    model_config = ConfigDict(from_attributes=True, frozen=True, extra="ignore")
-    id: str
-    organization_id: str
-    workspace_id: str
-    session_id: str
-    thread_id: str
-    principal_id: str
-    agent_revision_id: str
-    source_entry_id: str | None
-    lineage: Lineage
-    resume: dict | None
-    pending: dict | None
-    checkpoint: dict | None
-    display: dict | None
-    environment_mounts: tuple[dict, ...]
-    memory_cursors: dict[str, str | None]
-
-
 class SessionCreate(_Frozen):
     labels: Labels = Field(default_factory=dict)
 

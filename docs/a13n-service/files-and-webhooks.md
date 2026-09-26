@@ -80,6 +80,6 @@ def verify(secret: str, headers, body: bytes) -> bool:
 
 ### Delivery and retries
 
-Delivery is at least once and not ordered. Any `2xx` response within `control.webhook_timeout` (10 seconds by default) counts as delivered; redirects are not followed. Otherwise the delivery is retried with exponential backoff (2, 4, 8, … seconds, at most one hour apart) until it has used `control.outbox_attempts` attempts (12 by default), and is then marked `dead`.
+Delivery is at least once and not ordered. Any `2xx` response within `control.webhook_timeout` (10 seconds by default) counts as delivered; redirects are not followed. Otherwise the delivery is retried with exponential backoff (up to 2, 4, 8, … seconds with 20% jitter, capped at one hour) until it has used `outbox.defaults.max_attempts` attempts (12 by default), and is then marked `dead`.
 
-`GET …/subscriptions/{subscription_id}/deliveries` lists deliveries newest first with their status (`pending`, `delivered`, `dead`), attempts, last error and payload. `POST …/deliveries/{delivery_id}/redeliver` sends a dead delivery again with the same ID, URL, payload and signing secret it was queued with. Settled deliveries are purged after `control.outbox_retention_days`.
+`GET …/subscriptions/{subscription_id}/deliveries` lists deliveries newest first with their status (`pending`, `delivered`, `dead`), attempts, last error and payload. `POST …/deliveries/{delivery_id}/redeliver` sends a dead delivery again with the same ID, URL, payload and signing secret it was queued with. Settled deliveries are purged according to the kind’s settlement-based retention (success: one day; dead: fourteen days by default).

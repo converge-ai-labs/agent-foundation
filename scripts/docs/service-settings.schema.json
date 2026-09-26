@@ -110,34 +110,6 @@
           "title": "Subscriptions",
           "type": "integer"
         },
-        "outbox_batch": {
-          "default": 32,
-          "maximum": 1000,
-          "minimum": 1,
-          "title": "Outbox Batch",
-          "type": "integer"
-        },
-        "outbox_attempts": {
-          "default": 12,
-          "maximum": 100,
-          "minimum": 1,
-          "title": "Outbox Attempts",
-          "type": "integer"
-        },
-        "outbox_lease_seconds": {
-          "default": 60,
-          "maximum": 600,
-          "minimum": 10,
-          "title": "Outbox Lease Seconds",
-          "type": "integer"
-        },
-        "outbox_retention_days": {
-          "default": 14,
-          "maximum": 365,
-          "minimum": 1,
-          "title": "Outbox Retention Days",
-          "type": "integer"
-        },
         "webhook_timeout": {
           "default": 10,
           "exclusiveMinimum": 0,
@@ -824,6 +796,57 @@
       "title": "Objects",
       "type": "object"
     },
+    "Outbox": {
+      "additionalProperties": false,
+      "properties": {
+        "purge_interval_seconds": {
+          "default": 60,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Purge Interval Seconds",
+          "type": "number"
+        },
+        "purge_batch": {
+          "default": 1000,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Purge Batch",
+          "type": "integer"
+        },
+        "purge_budget_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Purge Budget Seconds",
+          "type": "number"
+        },
+        "defaults": {
+          "$ref": "#/$defs/Policy"
+        },
+        "by_kind": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Policy"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/OutboxKind"
+          },
+          "title": "By Kind",
+          "type": "object"
+        }
+      },
+      "title": "Outbox",
+      "type": "object"
+    },
+    "OutboxKind": {
+      "enum": [
+        "webhook",
+        "child_result",
+        "email",
+        "memory_purge",
+        "checkpoint_cleanup"
+      ],
+      "type": "string"
+    },
     "Plugins": {
       "additionalProperties": false,
       "properties": {
@@ -837,6 +860,77 @@
         }
       },
       "title": "Plugins",
+      "type": "object"
+    },
+    "Policy": {
+      "additionalProperties": false,
+      "description": "One kind's resolved delivery and retention limits; startup merges partial overrides.",
+      "properties": {
+        "delivered_retention_seconds": {
+          "default": 86400,
+          "maximum": 31536000,
+          "minimum": 1,
+          "title": "Delivered Retention Seconds",
+          "type": "integer"
+        },
+        "dead_retention_seconds": {
+          "default": 1209600,
+          "maximum": 31536000,
+          "minimum": 1,
+          "title": "Dead Retention Seconds",
+          "type": "integer"
+        },
+        "max_attempts": {
+          "default": 12,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "batch": {
+          "default": 32,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Batch",
+          "type": "integer"
+        },
+        "parallel": {
+          "default": 8,
+          "maximum": 128,
+          "minimum": 1,
+          "title": "Parallel",
+          "type": "integer"
+        },
+        "lease_seconds": {
+          "default": 60,
+          "maximum": 600,
+          "minimum": 10,
+          "title": "Lease Seconds",
+          "type": "number"
+        },
+        "backlog_count": {
+          "default": 10000,
+          "maximum": 1000000,
+          "minimum": 1,
+          "title": "Backlog Count",
+          "type": "integer"
+        },
+        "backlog_age_seconds": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Backlog Age Seconds",
+          "type": "number"
+        },
+        "backlog_alert_seconds": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Backlog Alert Seconds",
+          "type": "number"
+        }
+      },
+      "title": "Policy",
       "type": "object"
     },
     "Providers": {
@@ -1352,6 +1446,9 @@
     },
     "control": {
       "$ref": "#/$defs/Control"
+    },
+    "outbox": {
+      "$ref": "#/$defs/Outbox"
     },
     "worker": {
       "$ref": "#/$defs/Worker"

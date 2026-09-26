@@ -16,7 +16,7 @@ from a13n_service.infra.crypto import Envelope, SecretLocation
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
-from a13n_service.infra.outbox import Delivery, OutboxRow, enqueue
+from a13n_service.infra.outbox import Delivery, OutboxRow, Policy, enqueue
 from a13n_service.resources.subscriptions import service as subscriptions
 from a13n_service.resources.subscriptions.delivery import (
     RunFacts,
@@ -190,7 +190,10 @@ async def queue(runtime, subscription_id: str, sequence: int, *, url: str | None
 async def send(runtime, *, attempts: int, policy: EndpointPolicy | None = None) -> None:  # type: ignore[no-untyped-def]
     sender = WebhookSender(runtime.storage, runtime.keys, policy or runtime.endpoint_policy, timeout=5)
     delivery = Delivery(
-        runtime.storage, {"webhook": sender}, owner="test", limit=10, lease_seconds=30, max_attempts=attempts
+        runtime.storage,
+        {"webhook": sender},
+        owner="test",
+        policies={"webhook": Policy(batch=10, lease_seconds=30, max_attempts=attempts)},
     )
     await delivery()
 

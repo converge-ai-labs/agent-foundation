@@ -38,8 +38,8 @@ from a13n_service.resources.memories.service import inherited_guide
 from a13n_service.resources.memories.store import PostgresFileStore, file_format
 from a13n_service.resources.memories.tables import MemoryRow
 from a13n_service.resources.providers.tables import MemoryProviderRow
+from a13n_service.runs.attempts import Lease
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import RunInput
 from a13n_service.runs.tables import RunRow
 from a13n_service.settings import MemorySettings
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope, authorize
@@ -90,9 +90,9 @@ async def resolve_memories(session: AsyncSession, run: RunRow) -> tuple[PlannedM
     return tuple(planned)
 
 
-def _gate(run: RunInput, principal: Principal, authority: ExecutionAuthority) -> Gate:
+def _gate(lease: Lease, principal: Principal, authority: ExecutionAuthority) -> Gate:
     """The per-call check of the run principal under the run's frozen authority."""
-    scope = WorkspaceScope(run.organization_id, run.workspace_id)
+    scope = WorkspaceScope(lease.organization_id, lease.workspace_id)
 
     def gate(verb: Verb) -> None:
         try:
@@ -116,7 +116,7 @@ def file_memory(
     settings: MemorySettings,
     planned: tuple[PlannedMemory, ...],
     *,
-    run: RunInput,
+    lease: Lease,
     principal: Principal,
     authority: ExecutionAuthority,
     cursors: MemoryCursors,
@@ -126,7 +126,7 @@ def file_memory(
     files = [memory for memory in planned if memory.record is None]
     if not files:
         return None
-    gate = _gate(run, principal, authority)
+    gate = _gate(lease, principal, authority)
     mounts = [
         FileMount(
             name=memory.mount.name,
@@ -144,7 +144,7 @@ def file_memory(
         always_load_bytes=settings.always_load_bytes,
         write_retries=settings.write_retries,
     )
-    origin = Origin(run_id=run.id, principal_id=run.principal_id)
+    origin = Origin(run_id=lease.run_id, principal_id=principal.id)
     return FileMemoryCapability(mounts, limits=limits, cursors=cursors, origin=origin, tools=tools)
 
 
@@ -207,14 +207,14 @@ async def record_memory_capability(
     runtime: Runtime,
     planned: tuple[PlannedMemory, ...],
     *,
-    run: RunInput,
+    lease: Lease,
     principal: Principal,
     authority: ExecutionAuthority,
     tools: Collection[RecordToolKey],
 ) -> AsyncIterator[RecordMemoryCapability | None]:
     """The capability over the planned record memories whose stores open, which stay open until the context
     exits; None when there is none."""
-    gate = _gate(run, principal, authority)
+    gate = _gate(lease, principal, authority)
     settings = runtime.settings.memory
     async with AsyncExitStack() as stack:
         mounts: list[RecordMount] = []

@@ -109,8 +109,8 @@ class _MissingOnce:
             return None
         return await self.objects.get(key)
 
-    async def keys(self, prefix: str, *, limit: int) -> list[str]:
-        return await self.objects.keys(prefix, limit=limit)
+    async def keys(self, prefix: str, *, limit: int, after: str | None = None) -> list[str]:
+        return await self.objects.keys(prefix, limit=limit, after=after)
 
     async def delete(self, key: str) -> None:
         await self.objects.delete(key)

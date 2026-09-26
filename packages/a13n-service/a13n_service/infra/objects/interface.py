@@ -31,7 +31,9 @@ class ObjectStore(Protocol):
 
     async def get(self, key: str) -> bytes | None: ...
 
-    async def keys(self, prefix: str, *, limit: int) -> list[str]: ...
+    async def keys(self, prefix: str, *, limit: int, after: str | None = None) -> list[str]:
+        """At most `limit` keys below `prefix`, in lexical order, strictly after `after` when supplied."""
+        ...
 
     async def delete(self, key: str) -> None:
         """Remove `key`; a missing key is not an error."""

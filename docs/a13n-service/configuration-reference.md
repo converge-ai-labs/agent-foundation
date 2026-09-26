@@ -96,13 +96,27 @@ The complete machine-readable validation schema, including named enum/union defi
 | `control.inbox_count`            | `A13N_CONTROL__INBOX_COUNT`            | integer        | minimum=1; maximum=10000; default=128           |
 | `control.inbox_bytes`            | `A13N_CONTROL__INBOX_BYTES`            | integer        | minimum=1024; maximum=16777216; default=2097152 |
 | `control.subscriptions`          | `A13N_CONTROL__SUBSCRIPTIONS`          | integer        | minimum=1; maximum=1000; default=32             |
-| `control.outbox_batch`           | `A13N_CONTROL__OUTBOX_BATCH`           | integer        | minimum=1; maximum=1000; default=32             |
-| `control.outbox_attempts`        | `A13N_CONTROL__OUTBOX_ATTEMPTS`        | integer        | minimum=1; maximum=100; default=12              |
-| `control.outbox_lease_seconds`   | `A13N_CONTROL__OUTBOX_LEASE_SECONDS`   | integer        | minimum=10; maximum=600; default=60             |
-| `control.outbox_retention_days`  | `A13N_CONTROL__OUTBOX_RETENTION_DAYS`  | integer        | minimum=1; maximum=365; default=14              |
 | `control.webhook_timeout`        | `A13N_CONTROL__WEBHOOK_TIMEOUT`        | number         | maximum=30; exclusiveMinimum=0; default=10      |
 | `control.import_timeout`         | `A13N_CONTROL__IMPORT_TIMEOUT`         | number         | maximum=120; exclusiveMinimum=0; default=30     |
 | `control.stream_refresh_seconds` | `A13N_CONTROL__STREAM_REFRESH_SECONDS` | number         | maximum=60; exclusiveMinimum=0; default=2       |
+
+## `outbox`
+
+| Setting                                       | Environment variable                                               | Type / choices | Constraints and default                        |
+| --------------------------------------------- | ------------------------------------------------------------------ | -------------- | ---------------------------------------------- |
+| `outbox.purge_interval_seconds`               | `A13N_OUTBOX__PURGE_INTERVAL_SECONDS`                              | number         | maximum=3600; exclusiveMinimum=0; default=60   |
+| `outbox.purge_batch`                          | `A13N_OUTBOX__PURGE_BATCH`                                         | integer        | minimum=1; maximum=10000; default=1000         |
+| `outbox.purge_budget_seconds`                 | `A13N_OUTBOX__PURGE_BUDGET_SECONDS`                                | number         | maximum=60; exclusiveMinimum=0; default=5      |
+| `outbox.defaults.delivered_retention_seconds` | `A13N_OUTBOX__DEFAULTS` (JSON field `delivered_retention_seconds`) | integer        | minimum=1; maximum=31536000; default=86400     |
+| `outbox.defaults.dead_retention_seconds`      | `A13N_OUTBOX__DEFAULTS` (JSON field `dead_retention_seconds`)      | integer        | minimum=1; maximum=31536000; default=1209600   |
+| `outbox.defaults.max_attempts`                | `A13N_OUTBOX__DEFAULTS` (JSON field `max_attempts`)                | integer        | minimum=1; maximum=100; default=12             |
+| `outbox.defaults.batch`                       | `A13N_OUTBOX__DEFAULTS` (JSON field `batch`)                       | integer        | minimum=1; maximum=1000; default=32            |
+| `outbox.defaults.parallel`                    | `A13N_OUTBOX__DEFAULTS` (JSON field `parallel`)                    | integer        | minimum=1; maximum=128; default=8              |
+| `outbox.defaults.lease_seconds`               | `A13N_OUTBOX__DEFAULTS` (JSON field `lease_seconds`)               | number         | minimum=10; maximum=600; default=60            |
+| `outbox.defaults.backlog_count`               | `A13N_OUTBOX__DEFAULTS` (JSON field `backlog_count`)               | integer        | minimum=1; maximum=1000000; default=10000      |
+| `outbox.defaults.backlog_age_seconds`         | `A13N_OUTBOX__DEFAULTS` (JSON field `backlog_age_seconds`)         | number         | maximum=86400; exclusiveMinimum=0; default=300 |
+| `outbox.defaults.backlog_alert_seconds`       | `A13N_OUTBOX__DEFAULTS` (JSON field `backlog_alert_seconds`)       | number         | maximum=86400; exclusiveMinimum=0; default=300 |
+| `outbox.by_kind`                              | `A13N_OUTBOX__BY_KIND`                                             | object         | —                                              |
 
 ## `worker`
 

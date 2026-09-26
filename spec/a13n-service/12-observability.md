@@ -56,22 +56,24 @@ When `telemetry.metrics_port` is set, every process serves its metrics at `/metr
 
 One process-wide meter provider records the Service's instruments and, on executing roles, the Harness's and Pydantic AI's. Names follow OpenTelemetry and become Prometheus names on export: dots become underscores, a duration gains `_seconds` and a counter `_total`, so `a13n.runs.sealed` is scraped as `a13n_runs_sealed_total`. Durations are in seconds, the base unit of both. Every histogram declares its buckets, sized for what it measures.
 
-| Instrument                     | Kind      | Labels                                                           | Records                                                                   |
-| ------------------------------ | --------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `http.server.request.duration` | histogram | `http.request.method`, `http.route`, `http.response.status_code` | each HTTP request until its response ends, streams included, 5 ms to 10 s |
-| `a13n.runs.accepted`           | counter   | `trigger`                                                        | each accepted run                                                         |
-| `a13n.runs.sealed`             | counter   | `status`, and `reason` when the run failed or was cancelled      | each sealed run                                                           |
-| `a13n.attempt.queue_wait`      | histogram | —                                                                | how long a due run waited before its claim, 0.1 s to 10 min               |
-| `a13n.attempt.duration`        | histogram | `status`                                                         | each attempt from its claim to its end, 1 s to 1 h                        |
-| `a13n.worker.slots`            | gauge     | `state`: `free`, `busy`                                          | this worker's attempt slots                                               |
-| `a13n.backlog.size`            | gauge     | `queue`: `runs`, or an outbox kind                               | due work waiting to be claimed, up to 10,000                              |
-| `a13n.backlog.oldest_age`      | gauge     | `queue`                                                          | how long the oldest due item has waited; 0 when none waits                |
-| `a13n.outbox.deliveries`       | counter   | `kind`, `result`: `delivered`, `retry`, `deferred`, `dead`       | each settled delivery attempt                                             |
-| `a13n.sweep.passes`            | counter   | `sweep`, `result`: `succeeded`, `failed`                         | each sweep pass; a pass that exceeded its deadline failed                 |
+| Instrument                     | Kind      | Labels                                                           | Records                                                                                |
+| ------------------------------ | --------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `http.server.request.duration` | histogram | `http.request.method`, `http.route`, `http.response.status_code` | each HTTP request until its response ends, streams included, 5 ms to 10 s              |
+| `a13n.runs.accepted`           | counter   | `trigger`                                                        | each accepted run                                                                      |
+| `a13n.runs.sealed`             | counter   | `status`, and `reason` when the run failed or was cancelled      | each sealed run                                                                        |
+| `a13n.attempt.queue_wait`      | histogram | —                                                                | how long a due run waited before its claim, 0.1 s to 10 min                            |
+| `a13n.attempt.duration`        | histogram | `status`                                                         | each attempt from its claim to its end, 1 s to 1 h                                     |
+| `a13n.worker.slots`            | gauge     | `state`: `free`, `busy`                                          | this worker's attempt slots                                                            |
+| `a13n.backlog.size`            | gauge     | `queue`: `runs`, or an outbox kind                               | due work waiting to be claimed, up to max(10,000, the kind's configured backlog count) |
+| `a13n.backlog.oldest_age`      | gauge     | `queue`                                                          | how long the oldest due item has waited; 0 when none waits                             |
+| `a13n.outbox.deliveries`       | counter   | `kind`, `result`: `delivered`, `retry`, `deferred`, `dead`       | each settled delivery attempt                                                          |
+| `a13n.sweep.passes`            | counter   | `sweep`, `result`: `succeeded`, `failed`                         | each sweep pass; a pass that exceeded its deadline failed                              |
 
 Every label value comes from a set fixed in code: a failure `reason` is one of the codes the Service and the Harness define ([05](05-runs.md#execute)), and `http.route` is a route template, never a path.
 
 Due work is an accepted run whose `available_at` has passed, or an unleased pending outbox row whose `available_at` has passed; a waiting run or work scheduled for later is not backlog. The `report_backlog` sweep ([09](09-runtime.md#sweeps)) refreshes the backlog gauges every 15 seconds with one bounded query per queue, so a scrape never queries a database. Every `all` and `control` replica reports the same values; a query takes their maximum. A gauge keeps its last value until the next refresh replaces it.
+
+Outbox policies also set `backlog_count` (10,000), `backlog_age_seconds` (300) and `backlog_alert_seconds` (300). A count at the threshold or an oldest due age at the threshold starts a per-kind timer. Remaining above either threshold for the configured duration sets `a13n.outbox.backlog_alert` to 1 and logs `Outbox backlog sustained`; recovery clears it and logs `Outbox backlog recovered`. Timers reset on control process restart. `a13n.outbox.dead` is 1 while a kind has any retained dead rows; the transition logs `Outbox has dead deliveries`. Both gauges are labeled by `kind`; use the maximum across replicas. Logs contain identifiers and counts, never delivery payloads. Operators route these signals through their monitoring system; the Service does not send external notifications.
 
 ## Traces
 

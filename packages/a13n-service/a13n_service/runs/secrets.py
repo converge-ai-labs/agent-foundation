@@ -21,35 +21,38 @@ from a13n_harness.tools.metadata import HarnessToolMetadata
 from a13n_service.resources.secrets.schemas import SecretRequirement
 from a13n_service.resources.secrets.service import resolve_secrets
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import RunInput
 
 # Requirements by the definition ID of the agent node declaring them: the run's revision and inline children's.
 type Requirements = Mapping[str, Sequence[SecretRequirement]]
 
 
-async def require_secrets(runtime: Runtime, run: RunInput, requirements: Requirements) -> None:
+async def require_secrets(runtime: Runtime, workspace_id: str, principal_id: str, requirements: Requirements) -> None:
     """Fail before the run starts, with the missing key, when a declared secret is not set."""
     declared = {(item.key, item.scope): item for items in requirements.values() for item in items}
     await resolve_secrets(
         runtime.storage,
         runtime.keys,
-        workspace_id=run.workspace_id,
-        principal_id=run.principal_id,
+        workspace_id=workspace_id,
+        principal_id=principal_id,
         requirements=list(declared.values()),
     )
 
 
-def secrets_policy(runtime: Runtime, run: RunInput, requirements: Requirements) -> InvocationPolicyCapability:
+def secrets_policy(
+    runtime: Runtime, workspace_id: str, principal_id: str, root_revision_id: str, requirements: Requirements
+) -> InvocationPolicyCapability:
     """The run's invocation policy, for `RunBindings.capabilities`; inline children inherit it."""
-    broker = _Broker(runtime, run, requirements)
+    broker = _Broker(runtime, workspace_id, principal_id, root_revision_id, requirements)
     # No automatic redispatch, as without a policy: a repeated provider call could repeat its effect and cost.
     return InvocationPolicyCapability(evaluator=broker, credential_broker=broker, max_dispatch_retries=0)
 
 
 class _Broker:
-    def __init__(self, runtime: Runtime, run: RunInput, requirements: Requirements):
+    def __init__(
+        self, runtime: Runtime, workspace_id: str, principal_id: str, root_revision_id: str, requirements: Requirements
+    ):
         self.runtime = runtime
-        self.workspace_id, self.principal_id, self.root = run.workspace_id, run.principal_id, run.agent_revision_id
+        self.workspace_id, self.principal_id, self.root = workspace_id, principal_id, root_revision_id
         self.requirements = {node: {item.key: item for item in items} for node, items in requirements.items()}
 
     async def __call__(

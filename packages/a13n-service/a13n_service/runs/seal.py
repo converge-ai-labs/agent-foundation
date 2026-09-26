@@ -2,12 +2,11 @@
 
 Three callers hold different authority (worker lease, interrupt of an accepted run, the expiry sweep) but
 share one transition, so thread pointers, input disposition, child notification and webhooks are decided
-in one place. Successor acceptance, object cleanup, and the attempt's and run's end logs and metrics run after
-commit; sweeps recover a lost callback.
+in one place. Cleanup is staged durably with the transition. The transaction owner advances successors
+after commit; only telemetry uses callbacks. Failed or cancelled runs pause their thread.
 """
 
 from datetime import datetime, timedelta
-from functools import partial
 from typing import Literal
 
 from a13n_logging import get_logger
@@ -143,8 +142,7 @@ async def seal(
             payload={"child_run_id": run.id},
         )
     await notify_subscribers(session, runtime, run, kinds, at=at, attempt=attempt)
-    after_commit(session, partial(runtime.cleanup.sealed, runtime.objects, run))
-    after_commit(session, partial(advance, runtime, thread.id))
+    checkpoints.reclaim(session, run)
 
 
 async def recover(
@@ -206,6 +204,8 @@ async def seal_attempt(
         if display is not None:
             run.display = display.model_dump(mode="json")
         await seal(session, runtime, thread, run, attempt, outcome, at=current)
+    if outcome.status in {"completed", "waiting"}:
+        await advance(runtime, lease.thread_id)
 
 
 async def release_attempt(

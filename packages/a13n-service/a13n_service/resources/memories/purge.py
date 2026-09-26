@@ -3,7 +3,7 @@
 Deleting a record memory stages one `memory_purge` delivery naming the provider and the namespace. The sender
 reads the provider, enabled or not, since purging finishes a deletion rather than starting new use, and calls the
 backend outside any session within `providers.operation_seconds`. A failed purge retries with the outbox's
-backoff and ends dead after `control.outbox_attempts`; a provider type the deployment no longer registers ends it
+backoff and ends dead after `outbox.defaults.max_attempts`; a provider type the deployment no longer registers ends it
 dead at once. While a purge is pending, no new memory may claim its namespace.
 """
 

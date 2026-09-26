@@ -110,7 +110,7 @@ Every request the Service makes to a provider, a remote MCP server, an OAuth ser
 - Private, loopback and link-local destinations are refused unless the host matches `providers.private_domains` (subdomains included) or the resolved address is in `providers.private_cidrs`. Cloud metadata addresses are always refused.
 - Addresses are checked after DNS resolution on every new connection, redirects are not followed, compressed responses are refused, and response bodies are bounded by `providers.response_bytes`.
 
-API-serving processes also read the public model catalog from `https://models.dev/catalog.json`, at most hourly, for the Console's model picker. Without access to it, the catalog is unavailable and models are added by ID.
+API-serving processes also read the public model catalog from `https://models.dev/catalog.json`, at most every 60 seconds by default, for the Console's model picker. Without access to it, the catalog is unavailable and models are added by ID.
 
 For example, to use a model server on the Docker host:
 
@@ -163,7 +163,7 @@ Some settings must fit inside others, or valid-looking values would break every 
 
 - `worker.scan_seconds` and the thread stream's one-second block are below `redis.timeout`;
 - three times `worker.authority_seconds` and three times `objects.timeout` are below `worker.lease_seconds`;
-- twice `control.webhook_timeout` and twice `auth.mail.timeout` are below `control.outbox_lease_seconds`;
+- twice each delivery operation timeout is below its resolved kind’s `lease_seconds`: webhook, mail, memory purge and checkpoint reclamation use their respective kind overrides;
 - `worker.drain_seconds` is below `server.shutdown_timeout`;
 - `objects.upload_bytes` is below `server.request_bytes`;
 - `worker.output_bytes` plus 64 KiB is at most `control.inbox_bytes`, so a child result always fits its parent's empty inbox.

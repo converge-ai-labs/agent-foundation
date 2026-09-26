@@ -11,6 +11,7 @@ from a13n_harness.providers.memory import MemoryStoreError, Origin
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.resources.memories.schemas import MemoryMount
 from a13n_service.resources.memories.tables import MemoryFileRevisionRow
+from a13n_service.runs.attempts import Lease
 from a13n_service.runs.boundaries import Boundaries
 from a13n_service.runs.memories.execution import PlannedMemory, file_memory
 from a13n_service.runs.seal import expire_leases
@@ -272,7 +273,7 @@ async def test_store_calls_recheck_the_run_principal_under_its_authority(service
         service.runtime.storage,
         service.runtime.settings.memory,
         planned,
-        run=run,
+        lease=Lease(run.id, "rat_test", "thr_test", run.organization_id, run.workspace_id, 1, "worker", "token"),
         principal=viewer,
         authority=authority,
         cursors=MemoryCursors(),

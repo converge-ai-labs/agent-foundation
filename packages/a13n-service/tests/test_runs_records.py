@@ -10,6 +10,7 @@ import pytest
 from a13n_harness.providers.memory import MemoryStoreError
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError
+from a13n_service.runs.attempts import Lease
 from a13n_service.runs.memories.execution import record_memory_capability, resolve_memories
 from a13n_service.runs.tables import RunRow
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, ExecutionAuthority, Grant, Principal
@@ -166,7 +167,12 @@ async def test_record_store_calls_recheck_the_run_and_the_provider(service) -> N
     async with short_session(service.runtime.storage) as session:
         planned = await resolve_memories(session, run)
     async with record_memory_capability(
-        service.runtime, planned, run=run, principal=viewer, authority=authority, tools=("search", "add")
+        service.runtime,
+        planned,
+        lease=Lease(run.id, "rat_test", "thr_test", run.organization_id, run.workspace_id, 1, "worker", "token"),
+        principal=viewer,
+        authority=authority,
+        tools=("search", "add"),
     ) as capability:
         assert capability is not None
         [store] = [item.store for item in capability.mounts]

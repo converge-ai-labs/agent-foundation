@@ -395,11 +395,11 @@ async def test_a_tool_gets_only_the_secrets_its_node_declares(runtime, tenant) -
     row = run_row(tenant)
     requirements = {REVISION: [SecretRequirement(key="API_KEY")], CHILD: [SecretRequirement(key="OTHER")]}
     with pytest.raises(ServiceError) as missing:
-        await require_secrets(runtime, row, requirements)
+        await require_secrets(runtime, row.workspace_id, row.principal_id, requirements)
     assert missing.value.details == {"kind": "secret", "id": "OTHER"}
-    await require_secrets(runtime, row, {REVISION: requirements[REVISION]})
+    await require_secrets(runtime, row.workspace_id, row.principal_id, {REVISION: requirements[REVISION]})
 
-    policy = secrets_policy(runtime, row, requirements)
+    policy = secrets_policy(runtime, row.workspace_id, row.principal_id, row.agent_revision_id, requirements)
     tools = Toolset(FunctionToolset([secret_tool("use_key", "API_KEY"), secret_tool("use_other", "OTHER")]))
     script = Script([("use_other", {}, "call_other"), ("use_key", {}, "call_key"), "done"])
     result = await run(script, [tools], capabilities=(policy,))

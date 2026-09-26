@@ -19,7 +19,7 @@ import httpx2
 import pytest
 from a13n_logging.context import ContextFilter
 from a13n_service.infra.db import lock, short_session, transaction
-from a13n_service.infra.outbox import Claim, Delivery, Undelivered, enqueue, settle
+from a13n_service.infra.outbox import Claim, Delivery, Policy, Undelivered, enqueue, settle
 from a13n_service.infra.sweeps import Sweep, run_sweeps
 from a13n_service.runs.backlog import report_backlog
 from a13n_service.runs.runtime import Runtime
@@ -245,7 +245,9 @@ async def test_deliveries_are_counted_and_logged_by_outcome(
         async with transaction(runtime.storage) as session:
             await settle(session, claimed, "delivered")
 
-    await Delivery(runtime.storage, {"email": handle}, owner="test", limit=10, lease_seconds=60, max_attempts=1)()
+    await Delivery(
+        runtime.storage, {"email": handle}, owner="test", policies={"email": Policy(batch=10, max_attempts=1)}
+    )()
 
     for result, labels in outcome.items():
         assert measured(reader, "a13n.outbox.deliveries", labels) == before[result] + 1

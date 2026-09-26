@@ -39,7 +39,6 @@ from a13n_service.runs.memories.execution import (
     resolve_memories,
 )
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import RunInput
 from a13n_service.runs.secrets import Requirements, secrets_policy
 from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
 from a13n_service.runs.tables import RunRow
@@ -103,7 +102,7 @@ async def resolve_host(
 class Host:
     runtime: Runtime
     lease: Lease
-    run: RunInput
+    root_revision_id: str
     principal: Principal
     authority: ExecutionAuthority
     plan: HostPlan
@@ -121,7 +120,7 @@ class Host:
                 skills_capability(
                     skills,
                     runtime=self.runtime,
-                    workspace_id=self.run.workspace_id,
+                    workspace_id=self.lease.workspace_id,
                     prove_lease=partial(prove, self.runtime.storage, self.lease),
                 )
             )
@@ -143,7 +142,11 @@ class Host:
 
     def policies(self) -> tuple[AbstractCapability[AgentContext], ...]:
         """Run-wide policies; inline agents inherit them with their bindings."""
-        return (secrets_policy(self.runtime, self.run, self.plan.secrets),)
+        return (
+            secrets_policy(
+                self.runtime, self.lease.workspace_id, self.principal.id, self.root_revision_id, self.plan.secrets
+            ),
+        )
 
 
 @asynccontextmanager
@@ -154,7 +157,7 @@ async def open_host(
     plan: HostPlan,
     models: Mapping[str, Model],
     *,
-    run: RunInput,
+    root_revision_id: str,
     principal: Principal,
     authority: ExecutionAuthority,
     cursors: MemoryCursors,
@@ -183,7 +186,7 @@ async def open_host(
             runtime.storage,
             runtime.settings.memory,
             plan.memories,
-            run=run,
+            lease=lease,
             principal=principal,
             authority=authority,
             cursors=cursors,
@@ -191,8 +194,8 @@ async def open_host(
         )
         records = await stack.enter_async_context(
             record_memory_capability(
-                runtime, plan.memories, run=run, principal=principal, authority=authority, tools=plan.record_tools
+                runtime, plan.memories, lease=lease, principal=principal, authority=authority, tools=plan.record_tools
             )
         )
         memory = tuple(capability for capability in (files, records) if capability is not None)
-        yield Host(runtime, lease, run, principal, authority, plan, models, tools, webs, memory)
+        yield Host(runtime, lease, root_revision_id, principal, authority, plan, models, tools, webs, memory)

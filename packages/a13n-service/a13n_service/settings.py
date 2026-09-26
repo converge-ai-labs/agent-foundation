@@ -7,13 +7,16 @@ import json
 import os
 import tomllib
 from collections.abc import Mapping
+from functools import cached_property
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Annotated, Any, Literal, get_args, get_origin
 from urllib.parse import urlsplit
 
 from a13n_logging import LogFile, LogFormat
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
+from a13n_service.infra.outbox import OutboxKind, Policy
 from a13n_service.providers.tools.mcp_catalog import McpServers
 from a13n_service.providers.traces import TraceProvider
 from a13n_service.providers.traces.langfuse import Langfuse
@@ -199,17 +202,38 @@ class Control(Section):
     inbox_bytes: int = Field(default=2097152, ge=1024, le=16777216)
     # Per workspace; also bounds the subscriptions one transition stages deliveries for.
     subscriptions: int = Field(default=32, ge=1, le=1000)
-    outbox_batch: int = Field(default=32, ge=1, le=1000)
-    outbox_attempts: int = Field(default=12, ge=1, le=100)
-    # How long one claimed delivery is its sender's alone; a sender that outlives it loses the claim.
-    outbox_lease_seconds: int = Field(default=60, ge=10, le=600)
-    outbox_retention_days: int = Field(default=14, ge=1, le=365)
     # One whole webhook POST.
     webhook_timeout: float = Field(default=10, gt=0, le=30)
     # Each request of a GitHub skill import, including the repository archive download.
     import_timeout: float = Field(default=30, gt=0, le=120)
     # How stale a thread stream's authority and thread snapshot may become while it is idle.
     stream_refresh_seconds: float = Field(default=2, gt=0, le=60)
+
+
+class Outbox(Section):
+    purge_interval_seconds: float = Field(default=60, gt=0, le=3600)
+    purge_batch: int = Field(default=1000, ge=1, le=10000)
+    purge_budget_seconds: float = Field(default=5, gt=0, le=60)
+    defaults: Policy = Field(default_factory=Policy)
+    # Only explicitly supplied fields override defaults, including when their value equals a built-in default.
+    by_kind: dict[OutboxKind, Policy] = Field(default_factory=dict)
+
+    @cached_property
+    def policies(self) -> Mapping[OutboxKind, Policy]:
+        policies = {}
+        for kind in get_args(OutboxKind.__value__):
+            override = self.by_kind[kind].model_dump(exclude_unset=True) if kind in self.by_kind else {}
+            policies[kind] = Policy.model_validate(self.defaults.model_dump() | override)
+        return MappingProxyType(policies)
+
+    @model_validator(mode="after")
+    def consistent(self) -> "Outbox":
+        if self.purge_budget_seconds >= self.purge_interval_seconds:
+            raise ValueError("outbox.purge_budget_seconds must stay below outbox.purge_interval_seconds")
+        for kind, policy in self.policies.items():
+            if policy.parallel > policy.batch:
+                raise ValueError(f"outbox {kind}: parallel must not exceed batch")
+        return self
 
 
 class Worker(Section):
@@ -419,6 +443,7 @@ class Settings(Section):
     auth: Authentication = Field(default_factory=Authentication)
     encryption: Encryption = Field(default_factory=Encryption)
     control: Control = Field(default_factory=Control)
+    outbox: Outbox = Field(default_factory=Outbox)
     worker: Worker = Field(default_factory=Worker)
     environments: Environments = Field(default_factory=Environments)
     memory: MemorySettings = Field(default_factory=MemorySettings)
@@ -456,21 +481,27 @@ class Settings(Section):
             (
                 "control.webhook_timeout",
                 2 * control.webhook_timeout,
-                "control.outbox_lease_seconds",
-                control.outbox_lease_seconds,
+                "outbox webhook lease_seconds",
+                self.outbox.policies["webhook"].lease_seconds,
             ),
             (
                 "auth.mail.timeout",
                 2 * self.auth.mail.timeout,
-                "control.outbox_lease_seconds",
-                control.outbox_lease_seconds,
+                "outbox email lease_seconds",
+                self.outbox.policies["email"].lease_seconds,
             ),
             # A memory namespace purge is one bounded provider operation.
             (
                 "providers.operation_seconds",
                 2 * self.providers.operation_seconds,
-                "control.outbox_lease_seconds",
-                control.outbox_lease_seconds,
+                "outbox memory_purge lease_seconds",
+                self.outbox.policies["memory_purge"].lease_seconds,
+            ),
+            (
+                "objects.timeout",
+                2 * self.objects.timeout,
+                "outbox checkpoint_cleanup lease_seconds",
+                self.outbox.policies["checkpoint_cleanup"].lease_seconds,
             ),
             # Draining workers hand off before shutdown stops waiting for them.
             ("worker.drain_seconds", worker.drain_seconds, "server.shutdown_timeout", self.server.shutdown_timeout),

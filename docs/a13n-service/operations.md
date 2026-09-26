@@ -54,9 +54,9 @@ Control processes run these sweeps. Each pass handles a bounded batch (`control.
 | `renew_environments`            | `environments.scan_seconds`        | Renews ready hosted sandboxes that would otherwise end, each call bounded by `environments.renewal_seconds`.               |
 | `recover_connection_operations` | `providers.operation_scan_seconds` | Settles connection authorization operations whose owner disappeared past their deadline.                                   |
 | `deliver_outbox`                | `control.scan_seconds`             | Delivers webhooks, identity mail and subagent results.                                                                     |
-| `purge_outbox`                  | hourly                             | Removes settled deliveries older than `control.outbox_retention_days`.                                                     |
+| `purge_outbox`                  | every 60 seconds by default        | Removes settled deliveries past the kind’s settlement-based retention.                                                     |
 
-Deliveries are at least once. A sender claims a batch of `control.outbox_batch` rows for `control.outbox_lease_seconds`; a failed delivery is retried with exponential backoff (up to one hour between tries) until it has used `control.outbox_attempts` attempts, and is then marked dead. Webhook subscribers can inspect and redeliver deliveries through the API; see [webhooks](files-and-webhooks.md#webhooks).
+Deliveries are at least once. A sender claims a batch of `outbox.defaults.batch` rows for `outbox.defaults.lease_seconds`; a failed delivery is retried with exponential backoff (up to one hour between tries) until it has used `outbox.defaults.max_attempts` attempts, and is then marked dead. Webhook subscribers can inspect and redeliver deliveries through the API; see [webhooks](files-and-webhooks.md#webhooks).
 
 ## Operator commands
 
@@ -78,3 +78,40 @@ Every process logs each request, run and delivery with the IDs that lead from on
 ## Backups
 
 Back up PostgreSQL, the object store and the encryption key ring (or `encryption.key_file`) together. Stored credentials cannot be decrypted without the key that wrote them, and run checkpoints, displays, assets and skill packages live in the object store. The [single-host Compose stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades) and the [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#upgrades-and-backups) describe backing up, restoring and upgrading each deployment.
+
+### Outbox retention and capacity
+
+The same policy applies to webhooks, email, child results, memory purges and checkpoint reclamation. Defaults retain successful deliveries for one day after completion and dead deliveries for fourteen days after failure. Every minute, the purge sweep deletes up to 1000 expired rows per short transaction and repeats for at most five seconds. Pending work is never discarded to shrink the table.
+
+Configure shared defaults and override only the fields that differ for a kind:
+
+```toml
+[outbox]
+purge_interval_seconds = 60
+purge_batch = 1000
+purge_budget_seconds = 5
+
+[outbox.defaults]
+delivered_retention_seconds = 86400
+dead_retention_seconds = 1209600
+max_attempts = 12
+batch = 32
+parallel = 8
+lease_seconds = 60
+backlog_count = 10000
+backlog_age_seconds = 300
+backlog_alert_seconds = 300
+
+[outbox.by_kind.webhook]
+delivered_retention_seconds = 604800
+
+[outbox.by_kind.checkpoint_cleanup]
+delivered_retention_seconds = 3600
+parallel = 2
+```
+
+Environment overrides follow the existing section convention: `A13N_OUTBOX__DEFAULTS` and `A13N_OUTBOX__BY_KIND` carry JSON objects. The environment replaces the corresponding TOML field, then each kind inherits unspecified policy fields from defaults. Unknown fields and kinds fail startup. Configuration is resolved once per process; restart to apply a change.
+
+This replaces `control.outbox_batch`, `control.outbox_attempts`, `control.outbox_lease_seconds` and `control.outbox_retention_days`. Move batch, attempts and lease to `outbox.defaults.batch`, `max_attempts` and `lease_seconds`; replace retention days with separate success/dead retention seconds. Per-kind values override these shared defaults. The pre-public schema migration is validated from an empty database; it does not backfill obsolete development data.
+
+Alert on `a13n_outbox_backlog_alert == 1` and `a13n_outbox_dead == 1`, using the maximum across replicas. Defaults flag at least 10,000 due rows or an oldest due age of five minutes sustained for five minutes. Dead rows flag immediately at the next 15-second sample. Inspect the failing dependency, restore delivery capacity or reduce producers; retention cannot cap pending work during an indefinite outage. PostgreSQL autovacuum reuses deleted row space without a Service-managed table rewrite.

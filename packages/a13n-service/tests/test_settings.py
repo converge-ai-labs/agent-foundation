@@ -70,7 +70,7 @@ def test_a_distribution_section_cannot_shadow_a_core_section() -> None:
         ({"worker": {"scan_seconds": 2}}, "worker.scan_seconds"),
         ({"worker": {"lease_seconds": 3}}, "worker.authority_seconds"),
         ({"worker": {"lease_seconds": 12}}, "objects.timeout"),
-        ({"control": {"outbox_lease_seconds": 20}}, "control.webhook_timeout"),
+        ({"outbox": {"by_kind": {"webhook": {"lease_seconds": 20}}}}, "control.webhook_timeout"),
         ({"worker": {"drain_seconds": 20}}, "worker.drain_seconds"),
         ({"objects": {"upload_bytes": 4194304}}, "objects.upload_bytes"),
         ({"control": {"inbox_bytes": 1048576}}, "worker.output_bytes"),
@@ -100,3 +100,34 @@ def test_defaults_nest() -> None:
 def test_a_key_file_replaces_the_key_ring() -> None:
     with pytest.raises(ValueError, match=r"encryption\.key_file excludes"):
         Settings.model_validate({"encryption": {"key_file": "/app/var/encryption.key", "active_key_id": "k"}})
+
+
+def test_outbox_defaults_and_partial_kind_overrides(tmp_path: Path, monkeypatch, clean_environment: None) -> None:  # type: ignore[no-untyped-def]
+    config = tmp_path / "outbox.toml"
+    config.write_text(
+        "[outbox.defaults]\nmax_attempts = 4\nparallel = 3\n[ outbox.by_kind.webhook ]\ndelivered_retention_seconds = 604800\n"
+    )
+    monkeypatch.setenv("A13N_OUTBOX__BY_KIND", '{"checkpoint_cleanup": {"parallel": 2, "max_attempts": 12}}')
+    loaded = load_settings(config).outbox
+    # The environment replaces this map; an explicit built-in default still overrides the shared default.
+    assert loaded.policies["checkpoint_cleanup"].max_attempts == 12
+    assert loaded.policies["checkpoint_cleanup"].parallel == 2
+    assert loaded.policies["webhook"].parallel == 3
+    assert loaded.policies["webhook"].delivered_retention_seconds == 86400
+    assert loaded.policies["email"].max_attempts == 4
+    assert loaded.policies is loaded.policies
+
+
+@pytest.mark.parametrize(
+    "outbox",
+    [
+        {"by_kind": {"typo": {}}},
+        {"defaults": {"max_attempt": 1}},
+        {"by_kind": {"email": {"parallel": 33}}},
+        {"defaults": {"batch": 2}, "by_kind": {"email": {"parallel": 2}}},
+        {"purge_interval_seconds": 5},
+    ],
+)
+def test_outbox_invalid_policy_fails_at_startup(outbox: dict) -> None:
+    with pytest.raises(ValueError):
+        Settings.model_validate({"outbox": outbox})

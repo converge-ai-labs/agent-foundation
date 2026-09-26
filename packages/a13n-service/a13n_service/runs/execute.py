@@ -45,11 +45,11 @@ from pydantic_ai.messages import UserContent
 from pydantic_ai.usage import UsageLimits
 
 from a13n_service.infra.db import short_session, transaction
-from a13n_service.infra.errors import ServiceError, conflict
+from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
 from a13n_service.resources.agents.service import load_revision
 from a13n_service.runs import agent, checkpoints, claim, deferred, inbox, inputs
-from a13n_service.runs.accept import delegation
+from a13n_service.runs.accept import advance, delegation
 from a13n_service.runs.admission import CallContext
 from a13n_service.runs.agent import ResolvedAgent
 from a13n_service.runs.attachments import Recipient
@@ -67,7 +67,7 @@ from a13n_service.runs.checkpoints import Committed, RunState
 from a13n_service.runs.coalesce import Coalescer
 from a13n_service.runs.display import Display, DisplayFold
 from a13n_service.runs.environments.execution import PreparedMount, open_mounts, prepare_mounts
-from a13n_service.runs.environments.mounts import PRIMARY, has_primary
+from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.host import HostPlan, open_host, resolve_host
 from a13n_service.runs.inputs import Offered
 from a13n_service.runs.resume import normalize
@@ -79,7 +79,6 @@ from a13n_service.runs.schemas import (
     Pending,
     Resume,
     ResumeRequest,
-    RunInput,
     RunOptions,
     canonical_json,
 )
@@ -98,7 +97,10 @@ logger = get_logger(__name__)
 class _Plan:
     """What an attempt runs and where it continues from, read and restored before anything is delivered."""
 
-    run: RunInput
+    session_id: str
+    source_entry_id: str | None
+    mounts: tuple[EnvironmentMount, ...]
+    memory_cursors: dict[str, str | None]
     principal: Principal
     authority: ExecutionAuthority
     agent: ResolvedAgent
@@ -204,24 +206,33 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         assigned = [Offered.of(entry) for entry in await inbox.assigned_entries(session, run.id)]
         used = (await totals(session, run.id))["requests"]
         root = (await delegation(session, thread, run.id)).root_run_id
-        parent_row = await session.get(RunRow, run.parent_run_id) if run.parent_run_id is not None else None
-        parent = RunInput.model_validate(parent_row) if parent_row is not None else None
-        prepared_run = RunInput.model_validate(run)
-    await require_secrets(runtime, prepared_run, host.secrets)
-    # Unreferenced bytes from earlier attempts are never read; reclaim them within one I/O budget.
-    with anyio.move_on_after(runtime.settings.objects.timeout):
-        await checkpoints.clean(runtime.objects, prepared_run)
-    if (own := await checkpoints.load_state(runtime.objects, prepared_run)) is not None:
-        state, seq = own.harness, own.seq
-        # Answers remain Host-owned input until incorporated, even when a pre-effect
-        # checkpoint supersedes the waiting parent's continuation. Never replay its grant.
-        _, accepted = await _initial(runtime, prepared_run, parent)
-        resume = replace(accepted, recovery=True).remaining(state.message_history) if accepted is not None else None
-        display = await checkpoints.load_display(runtime.objects, prepared_run) or Display()
-    else:
-        (state, resume), seq, display = await _initial(runtime, prepared_run, parent), 0, Display()
+        parent = await session.get(RunRow, run.parent_run_id) if run.parent_run_id is not None else None
+        checkpoint = checkpoints.StatePointer.model_validate(run.checkpoint) if run.checkpoint else None
+        display_pointer = checkpoints.DisplayPointer.model_validate(run.display) if run.display else None
+        committed = Committed.of(run)
+        parent_id = parent.id if parent is not None else None
+        parent_checkpoint = checkpoints.require_compatible(parent.id, parent.checkpoint) if parent is not None else None
+        pending = Pending.model_validate(parent.pending) if parent is not None and parent.pending is not None else None
+        answers = Resume.model_validate(run.resume) if run.resume is not None else None
+        fork = run.lineage != "continue"
+        session_id, source_entry_id = run.session_id, run.source_entry_id
+        mounts = tuple(EnvironmentMount.model_validate(mount) for mount in run.environment_mounts)
+        memory_cursors = dict(run.memory_cursors)
+    await require_secrets(runtime, lease.workspace_id, principal.id, host.secrets)
+    own, base, display = await asyncio.gather(
+        checkpoints.load_state(runtime.objects, lease.organization_id, lease.run_id, checkpoint),
+        checkpoints.load_state(runtime.objects, lease.organization_id, parent_id or lease.run_id, parent_checkpoint),
+        checkpoints.load_display(runtime.objects, lease.organization_id, lease.run_id, display_pointer),
+    )
+    state, resume = _initial(lease.thread_id, base, fork=fork, pending=pending, answers=answers)
+    if own is not None:
+        state = own.harness
+        resume = replace(resume, recovery=True).remaining(state.message_history) if resume is not None else None
     return _Plan(
-        run=prepared_run,
+        session_id=session_id,
+        source_entry_id=source_entry_id,
+        mounts=mounts,
+        memory_cursors=memory_cursors,
         principal=principal,
         authority=authority,
         agent=resolved,
@@ -232,34 +243,22 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         assigned=assigned,
         state=state,
         resume=resume,
-        display=display,
-        committed=Committed.of(prepared_run),
-        seq=seq,
+        display=display or Display(),
+        committed=committed,
+        seq=own.seq if own is not None else 0,
     )
 
 
-async def _initial(
-    runtime: Runtime, run: RunInput, parent: RunInput | None
+def _initial(
+    thread_id: str, base: RunState | None, *, fork: bool, pending: Pending | None, answers: Resume | None
 ) -> tuple[HarnessState, DeferredToolResume | None]:
-    """A run's first state: its parent's, forked into this thread for fork lineage, or a new history.
-
-    A waiting parent leaves pending calls in that history. A resume answers them; any other successor, a
-    message after a question-only wait or a fork, closes them with the default answers, so no call of the new
-    history stays unresolved.
-    """
-    if parent is None:
-        return HarnessState.new(thread_id=run.thread_id), None
-    base = await checkpoints.load_state(runtime.objects, parent)
+    """Continue or fork the parent's history, resolving its wait before the successor consumes input."""
     if base is None:
-        raise conflict("run", parent.id, "checkpoint_missing")
-    state = base.harness if run.lineage == "continue" else base.harness.fork(thread_id=run.thread_id)
-    if parent.pending is None:
+        return HarnessState.new(thread_id=thread_id), None
+    state = base.harness.fork(thread_id=thread_id) if fork else base.harness
+    if pending is None:
         return state, None
-    if run.resume is not None:
-        answers = Resume.model_validate(run.resume)
-    else:
-        answers = normalize(Pending.model_validate(parent.pending), ResumeRequest())
-    return state, deferred.resume(deferred.load(base.deferred), answers)
+    return state, deferred.resume(deferred.load(base.deferred), answers or normalize(pending, ResumeRequest()))
 
 
 class _Offers:
@@ -296,10 +295,11 @@ class _Attempt:
         self.fold.interrupt()
         self.offers = _Offers(plan.assigned)
         self.recipient = Recipient(
-            plan.agent.model.config.characteristics.capabilities, primary=has_primary(plan.run.environment_mounts)
+            plan.agent.model.config.characteristics.capabilities,
+            primary=any(mount.name == PRIMARY for mount in plan.mounts),
         )
         # The memory cursors the run's history holds context as of; recovery starts from the committed ones.
-        self.cursors = MemoryCursors(plan.run.memory_cursors)
+        self.cursors = MemoryCursors(plan.memory_cursors)
         self.boundaries = Boundaries(self.cursors.snapshot)
         models = {model.id: model for model in plan.agent.models()}
         self.check = CallCheck(runtime, control, self._call_context(), models=models, used=plan.used, limit=plan.limit)
@@ -331,7 +331,7 @@ class _Attempt:
 
     async def _stream(self) -> HarnessRunResult | None:
         """The Harness run's result, or None when the worker drained while the mounts were being prepared."""
-        runtime, run = self.runtime, self.plan.run
+        runtime, lease = self.runtime, self.lease
         prepared = await self._prepare_mounts()
         if prepared is None:
             return None
@@ -346,7 +346,7 @@ class _Attempt:
                     self.check,
                     self.plan.host,
                     models,
-                    run=run,
+                    root_revision_id=root.revision_id,
                     principal=self.plan.principal,
                     authority=self.plan.authority,
                     cursors=self.cursors,
@@ -366,7 +366,11 @@ class _Attempt:
             )
             live = await stack.enter_async_context(
                 ThreadStream(
-                    runtime.redis, runtime.settings, thread_id=run.thread_id, run_id=run.id, attempt=self.lease.number
+                    runtime.redis,
+                    runtime.settings,
+                    thread_id=lease.thread_id,
+                    run_id=lease.run_id,
+                    attempt=lease.number,
                 )
             )
             output = await stack.enter_async_context(
@@ -405,7 +409,7 @@ class _Attempt:
     async def _prepare_mounts(self) -> list[PreparedMount] | None:
         """Waiting for sandboxes to start can take minutes, so an interrupt or a handoff stops the wait; None
         means the worker is draining."""
-        mounts = [EnvironmentMount.model_validate(mount) for mount in self.plan.run.environment_mounts]
+        mounts = list(self.plan.mounts)
         if not mounts:
             return []
         preparing = self.runtime.tasks.start(
@@ -486,7 +490,6 @@ class _Attempt:
             thread, run, attempt, current = await lock_thread_lease(session, self.lease)
             await checkpoints.commit(
                 session,
-                self.runtime,
                 run,
                 attempt,
                 previous=self.committed,
@@ -496,6 +499,7 @@ class _Attempt:
                 usage=usage,
                 at=current,
             )
+            checkpoints.retire(session, run, self.committed, committed)
             if outcome is not None:
                 await seal(session, self.runtime, thread, run, attempt, outcome, at=current)
             else:
@@ -511,6 +515,8 @@ class _Attempt:
         self.committed, self.seq = committed, self.seq + 1
         self.offers.consumed(consumed)
         self.usage.ingested(usage)
+        if outcome is not None:
+            await advance(self.runtime, self.lease.thread_id)
         return steers
 
     async def _offer(self, stream: HarnessRunStream, steers: list[Offered]) -> None:
@@ -549,7 +555,7 @@ class _Attempt:
         try:
             return await inputs.content(self.runtime, self.plan.principal, self.recipient, environment, entry)
         except ServiceError as error:
-            if error.code == "unavailable" or entry.id == self.plan.run.source_entry_id:
+            if error.code == "unavailable" or entry.id == self.plan.source_entry_id:
                 raise
             failure = Failure.of(error)
         async with transaction(self.runtime.storage) as session:
@@ -636,13 +642,13 @@ class _Attempt:
 
     def _call_context(self) -> CallContext:
         """Each call fills in its own identity and what serves it."""
-        run = self.plan.run
+        lease = self.lease
         return CallContext(
-            organization_id=run.organization_id,
-            workspace_id=run.workspace_id,
-            session_id=run.session_id,
-            thread_id=run.thread_id,
-            run_id=run.id,
+            organization_id=lease.organization_id,
+            workspace_id=lease.workspace_id,
+            session_id=self.plan.session_id,
+            thread_id=lease.thread_id,
+            run_id=lease.run_id,
             run_attempt_id=self.lease.attempt_id,
             root_run_id=self.plan.root_run_id,
             call_id="",
@@ -657,22 +663,22 @@ class _Attempt:
     def _bindings(
         self, *, policies: tuple[AbstractCapability[AgentContext], ...], resolver: RunModelResolver
     ) -> RunBindings:
-        run, lease = self.plan.run, self.lease
+        lease = self.lease
         return RunBindings(
             instance=AgentInstanceContext(
-                identity=AgentIdentityRef(issuer="a13n-service", subject=run.principal_id),
-                agent_instance_id=run.id,
-                host_refs={"run_id": run.id, "thread_id": run.thread_id, "attempt_id": lease.attempt_id},
+                identity=AgentIdentityRef(issuer="a13n-service", subject=self.plan.principal.id),
+                agent_instance_id=lease.run_id,
+                host_refs={"run_id": lease.run_id, "thread_id": lease.thread_id, "attempt_id": lease.attempt_id},
             ),
             model_resolver=resolver,
             model_call_check=self.check,
             capabilities=policies,
             observation=attempt_observation(
-                organization_id=run.organization_id,
-                workspace_id=run.workspace_id,
-                session_id=run.session_id,
-                thread_id=run.thread_id,
-                run_id=run.id,
+                organization_id=lease.organization_id,
+                workspace_id=lease.workspace_id,
+                session_id=self.plan.session_id,
+                thread_id=lease.thread_id,
+                run_id=lease.run_id,
                 run_attempt_id=lease.attempt_id,
             ),
         )

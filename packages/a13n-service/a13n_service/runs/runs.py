@@ -94,35 +94,38 @@ async def lineage(storage: Storage, actor: Principal, workspace_id: str, run_id:
 
 async def items(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str) -> RunItems:
     """The committed display. A sealed run's unfinished items can no longer finish, so they read interrupted."""
-    run, view = await _read(runtime.storage, actor, workspace_id, run_id)
+    organization_id, pointer, view = await _read(runtime.storage, actor, workspace_id, run_id)
     try:
-        display = await checkpoints.load_display(runtime.objects, run)
+        display = await checkpoints.load_display(runtime.objects, organization_id, run_id, pointer)
     except ServiceError as error:
         if error.code != "unavailable":
             raise
         # A checkpoint committed after the pointer was read deletes the object it replaced; the pointer read
         # again names the display that replaced it.
-        run, view = await _read(runtime.storage, actor, workspace_id, run_id)
-        display = await checkpoints.load_display(runtime.objects, run)
+        organization_id, pointer, view = await _read(runtime.storage, actor, workspace_id, run_id)
+        display = await checkpoints.load_display(runtime.objects, organization_id, run_id, pointer)
     display = display or Display()
-    sealed = run.sealed_at is not None
+    sealed = view.sealed_at is not None
     return RunItems(
         run=view,
         items=[
             item.model_copy(update={"state": "interrupted"}) if sealed and item.state == "in_progress" else item
             for item in display.items
         ],
-        position=str(display.position) if run.display is not None else None,
+        position=str(display.position) if pointer is not None else None,
         dropped=display.dropped,
         complete=sealed,
     )
 
 
-async def _read(storage: Storage, actor: Principal, workspace_id: str, run_id: str) -> tuple[RunRow, RunView]:
+async def _read(
+    storage: Storage, actor: Principal, workspace_id: str, run_id: str
+) -> tuple[str, checkpoints.DisplayPointer | None, RunView]:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         run = await get_run(session, scope.workspace_id, run_id)
-        return run, await run_view(session, run)
+        pointer = checkpoints.DisplayPointer.model_validate(run.display) if run.display is not None else None
+        return run.organization_id, pointer, await run_view(session, run)
 
 
 async def update_labels(

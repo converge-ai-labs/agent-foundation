@@ -6,11 +6,9 @@ separate transaction after it. A result that does not fit the parent's inbox sta
 retried however long that takes, because a child's result is never dropped.
 """
 
-from functools import partial
-
 from a13n_logging import get_logger
 
-from a13n_service.infra.db import after_commit, lock, transaction
+from a13n_service.infra.db import lock, transaction
 from a13n_service.infra.outbox import Claim, Handler, settle
 from a13n_service.runs import inbox
 from a13n_service.runs.accept import advance
@@ -45,6 +43,7 @@ def child_results(runtime: Runtime) -> Handler:
             if not await settle(session, claimed, "delivered"):
                 return
             await inbox.append_child_result(session, parent, child, origin, result)
-            after_commit(session, partial(advance, runtime, parent.id))
+            parent_id = parent.id
+        await advance(runtime, parent_id)
 
     return deliver

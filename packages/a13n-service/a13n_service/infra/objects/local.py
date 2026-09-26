@@ -1,5 +1,6 @@
 """Filesystem object store for development and single-host deployments."""
 
+import heapq
 import os
 from functools import partial
 from pathlib import Path
@@ -57,19 +58,18 @@ class LocalObjects:
             raise ServiceError("unavailable", "Stored object exceeds its byte limit", {"dependency": "objects"})
         return data
 
-    def _keys(self, prefix: str, limit: int) -> list[str]:
+    def _keys(self, prefix: str, limit: int, after: str | None) -> list[str]:
         base = self._path(prefix)
         if not base.is_dir():
             return []
-        found: list[str] = []
-        for directory, _, files in os.walk(base):
-            for name in sorted(files):
-                if name.startswith("."):
-                    continue
-                found.append(str(Path(directory, name).relative_to(self.root)))
-                if len(found) >= limit:
-                    return found
-        return found
+        # Keep only one page in memory, in the same lexicographic order as S3 StartAfter.
+        keys = (
+            str(Path(directory, name).relative_to(self.root))
+            for directory, _, files in os.walk(base)
+            for name in files
+            if not name.startswith(".")
+        )
+        return heapq.nsmallest(limit, (key for key in keys if after is None or key > after))
 
     def _delete(self, key: str) -> None:
         self._path(key).unlink(missing_ok=True)
@@ -85,9 +85,9 @@ class LocalObjects:
         with fail_after(self.timeout):
             return await run_sync(partial(self._get, key))
 
-    async def keys(self, prefix: str, *, limit: int) -> list[str]:
+    async def keys(self, prefix: str, *, limit: int, after: str | None = None) -> list[str]:
         with fail_after(self.timeout):
-            return await run_sync(partial(self._keys, prefix, limit))
+            return await run_sync(partial(self._keys, prefix, limit, after))
 
     async def delete(self, key: str) -> None:
         with fail_after(self.timeout):

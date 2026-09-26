@@ -69,7 +69,7 @@ curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/memories" \
 - `type` is the provider's type, and the provider must be enabled and usable in the workspace. `always_load` does not apply.
 - Each record memory owns a **namespace** in the backend, which is mem0's `user_id`. By default it is `a13n-` and 32 hex characters derived from the memory's ID. Set `namespace` to adopt records that already exist under a `user_id`, such as ones your application wrote; it is 1 to 256 printable characters with no whitespace and no `*`. One namespace belongs to one memory: another memory using it is `409 already_exists`.
 - `type`, `provider_id` and `namespace` never change.
-- Deleting a record memory deletes the records in its namespace too, in the background. Until that finishes, a new memory cannot take the namespace (`409 conflict` with reason `namespace_purging`). If the backend keeps refusing, the purge stops after `control.outbox_attempts` tries and the records stay in the backend. The mem0 Platform finishes a purge on its own after accepting it, so its records can linger briefly.
+- Deleting a record memory deletes the records in its namespace too, in the background. Until that finishes, a new memory cannot take the namespace (`409 conflict` with reason `namespace_purging`). If the backend keeps refusing, the purge stops after `outbox.defaults.max_attempts` tries and the records stay in the backend. The mem0 Platform finishes a purge on its own after accepting it, so its records can linger briefly.
 
 ### Read and edit records
 

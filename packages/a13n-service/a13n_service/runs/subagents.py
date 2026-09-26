@@ -16,7 +16,6 @@ attempt.
 import asyncio
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
-from functools import partial
 
 from a13n_harness import RunInputValue
 from a13n_harness.capabilities import (
@@ -42,10 +41,10 @@ from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from a13n_service.infra.db import after_commit, lock, short_session, transaction
+from a13n_service.infra.db import lock, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.runs import inbox
-from a13n_service.runs.accept import Source, accept, advance, delegation, start_run
+from a13n_service.runs.accept import Source, accept, delegation, start_run
 from a13n_service.runs.agent import ResolvedSubagent
 from a13n_service.runs.attempts import AttemptControl, Lease, lock_lease, lock_thread_lease
 from a13n_service.runs.environments.mounts import adopt_mounts, reserve_primary
@@ -325,7 +324,6 @@ class ChildRuns(SubagentOperator):
             request=None,
             control=self.runtime.settings.control,
         )
-        after_commit(session, partial(advance, self.runtime, thread.id))
         return entry
 
     async def _page(self, execution_id: str | None, offset: int, limit: int) -> tuple[list[_Execution], int]:

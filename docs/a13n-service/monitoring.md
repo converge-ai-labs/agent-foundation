@@ -98,3 +98,5 @@ Start from the `X-Request-Id` of the response, which error bodies repeat as `req
 ## Usage
 
 Per-tenant usage is recorded as facts in PostgreSQL, never in metrics. A workspace reads its own through the [usage API](agents-and-runs.md#usage). Operators can import the usage dashboard from the monitoring bundle, which reads runs and model usage per organization, workspace and model through a read-only database role.
+
+The outbox also exposes `a13n_outbox_backlog_alert{kind}` for a sustained threshold breach and `a13n_outbox_dead{kind}` for retained dead deliveries. Use the maximum across control replicas. Both are 0/1 gauges updated every 15 seconds; the backlog timer resets when the process restarts. See [outbox retention and capacity](operations.md#outbox-retention-and-capacity) for policy defaults, overrides and response guidance.

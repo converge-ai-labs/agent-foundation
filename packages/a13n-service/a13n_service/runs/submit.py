@@ -192,7 +192,7 @@ async def fork(
         # Failed and cancelled runs never became history; fork their parent and resubmit instead.
         if origin.status not in {"completed", "waiting"}:
             raise conflict("run", origin.id, f"run_{origin.status}")
-        checkpoints.require_compatible(origin)
+        checkpoints.require_compatible(origin.id, origin.checkpoint)
         owner = await session.get(SessionRow, origin.session_id)
         assert owner is not None
         thread = new_thread(

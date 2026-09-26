@@ -24,7 +24,7 @@ from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import etag
 from a13n_service.infra.ids import new_object_id
-from a13n_service.infra.outbox import Claim, Delivery, Handler, OutboxKind, OutboxRow, settle
+from a13n_service.infra.outbox import Claim, Delivery, Handler, OutboxKind, OutboxRow, Policy, settle
 from a13n_service.settings import Mail as MailSettings
 from a13n_service.settings import Settings
 from a13n_service.tenancy import grants as grant_changes
@@ -584,7 +584,9 @@ async def test_mail_delivery_settles_and_dead_letters(runtime, tenant) -> None: 
 
     recorder = Recorder()
     handlers: dict[OutboxKind, Handler] = {"email": partial(deliver_mail, runtime.storage, runtime.keys, recorder)}
-    await Delivery(runtime.storage, handlers, owner="test", limit=10, lease_seconds=60, max_attempts=1)()
+    await Delivery(
+        runtime.storage, handlers, owner="test", policies={kind: Policy(batch=10, max_attempts=1) for kind in handlers}
+    )()
     assert [mail.text for mail in recorder.sent] == ["body of sent"]
     async with short_session(runtime.storage) as session:
         rows = (await session.scalars(select(OutboxRow))).all()
@@ -1078,7 +1080,9 @@ async def test_outbox_ends_claims_that_never_settle_and_keeps_deferred_ones(runt
             return
         await asyncio.sleep(3600)  # cancelled with the pass, as a sweep deadline or a shutdown would
 
-    delivery = Delivery(runtime.storage, {"email": handle}, owner="test", limit=10, lease_seconds=60, max_attempts=2)
+    delivery = Delivery(
+        runtime.storage, {"email": handle}, owner="test", policies={"email": Policy(batch=10, max_attempts=2)}
+    )
     for _ in range(3):
         with anyio.move_on_after(0.5):
             await delivery()

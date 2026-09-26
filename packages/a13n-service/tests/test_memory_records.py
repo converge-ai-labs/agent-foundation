@@ -10,7 +10,7 @@ from a13n_service.distribution import OSS
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
-from a13n_service.infra.outbox import Delivery, OutboxRow
+from a13n_service.infra.outbox import Delivery, OutboxRow, Policy
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.memories import records
 from a13n_service.resources.memories import service as memories
@@ -55,9 +55,7 @@ async def deliver_purges(service: SimpleNamespace, *, max_attempts: int = 3, reg
         runtime.storage,
         {"memory_purge": MemoryPurger(runtime)},
         owner="test",
-        limit=10,
-        lease_seconds=60,
-        max_attempts=max_attempts,
+        policies={"memory_purge": Policy(batch=10, max_attempts=max_attempts)},
     )()
 
 

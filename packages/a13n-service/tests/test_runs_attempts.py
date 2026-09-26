@@ -538,8 +538,8 @@ class _UndeletableObjects:
     async def get(self, key: str) -> bytes | None:
         return await self.objects.get(key)
 
-    async def keys(self, prefix: str, *, limit: int) -> list[str]:
-        return await self.objects.keys(prefix, limit=limit)
+    async def keys(self, prefix: str, *, limit: int, after: str | None = None) -> list[str]:
+        return await self.objects.keys(prefix, limit=limit, after=after)
 
     async def delete(self, key: str) -> None:
         raise ServiceError("unavailable", "Object store unavailable")
@@ -637,7 +637,12 @@ async def test_an_outcome_commits_only_with_its_seal(service, scripted_model, ru
     assert [(item["status"], item["failure"]["code"]) for item in attempts] == [("failed", "attempt_failed")]
     async with transaction(service.runtime.storage) as session:
         run = await session.get_one(RunRow, run_id)
-        state = await checkpoints.load_state(service.runtime.objects, run)
+        state = await checkpoints.load_state(
+            service.runtime.objects,
+            run.organization_id,
+            run.id,
+            checkpoints.StatePointer.model_validate(run.checkpoint),
+        )
         assert state is not None and state.seq == 1
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
 
@@ -766,7 +771,30 @@ async def test_slow_object_deletion_does_not_block_tool_boundaries_or_successor_
         await original_delete(key)
 
     monkeypatch.setattr(service.runtime.objects, "delete", slow_delete)
+    from functools import partial
+
+    from a13n_service.infra.db import short_session
+    from a13n_service.infra.outbox import Delivery, OutboxRow
+    from a13n_service.runs.checkpoints import CLEANUP, clean
+
     running = await runs_kit.attempt(service)
+
+    async def reclaim() -> None:
+        # The first boundary must be committed before its reclamation intent is visible.
+        async with asyncio.timeout(4):
+            while True:
+                async with short_session(service.runtime.storage) as session:
+                    if await session.scalar(select(OutboxRow.id).where(OutboxRow.kind == CLEANUP)):
+                        break
+                await asyncio.sleep(0.01)
+        await Delivery(
+            service.runtime.storage,
+            {CLEANUP: partial(clean, service.runtime)},
+            owner="test",
+            policies=service.runtime.settings.outbox.policies,
+        )()
+
+    cleanup = asyncio.create_task(reclaim())
     try:
         await scripted_model.request()
         next_entry = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "next", delivery="next_run"))
@@ -783,22 +811,21 @@ async def test_slow_object_deletion_does_not_block_tool_boundaries_or_successor_
         gate.set()
         finish_delete.set()
         await asyncio.gather(running, return_exceptions=True)
-        await service.runtime.cleanup.queue.join()
+        await cleanup
 
 
 async def test_mount_handoff_returns_while_process_keeps_the_cancelled_child_owned(
     service, scripted_model, runs_kit, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
-    from a13n_service.runs.schemas import RunInput
+    from a13n_service.runs.schemas import EnvironmentMount
 
     agent = await runs_kit.create_agent(service, scripted_model)
     await runs_kit.start_thread(service, agent, "hi")
     (lease,) = await claim(service.runtime, worker_id="worker-test", worker_build="test", limit=1)
     plan = await execute_module._plan(service.runtime, lease)
-    assert isinstance(plan.run, RunInput)
     plan = replace(
         plan,
-        run=plan.run.model_copy(update={"environment_mounts": ({"name": "workspace", "environment_id": "env_test"},)}),
+        mounts=(EnvironmentMount(name="workspace", environment_id="env_test"),),
     )
     control = AttemptControl(deadline=asyncio.get_running_loop().time() + 60, renewal_margin=10)
     started, cleaning, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()

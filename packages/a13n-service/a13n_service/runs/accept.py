@@ -10,7 +10,7 @@ from enum import Enum
 from functools import partial
 from typing import Literal
 
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from sqlalchemy import exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -383,15 +383,22 @@ async def accept(
     return None
 
 
-async def advance(runtime: Runtime, thread_id: str, *, skip_locked: bool = False) -> RunRow | None:
+async def advance(runtime: Runtime, thread_id: str, *, skip_locked: bool = False) -> None:
     """Successor acceptance in its own transaction after a seal or delivery; the sweep covers a lost call."""
-    async with transaction(runtime.storage) as session:
-        thread = await session.scalar(
-            select(ThreadRow).where(ThreadRow.id == thread_id).with_for_update(skip_locked=skip_locked)
+    try:
+        async with transaction(runtime.storage) as session:
+            thread = await session.scalar(
+                select(ThreadRow).where(ThreadRow.id == thread_id).with_for_update(skip_locked=skip_locked)
+            )
+            if thread is None:
+                return
+            await accept(session, runtime, thread)
+    except Exception as error:
+        # The preceding operation is already committed. The sweep retries this independent transaction.
+        logger.warning(
+            "Thread advance failed", extra={"thread_id": thread_id, "exception_details": exception_details(error)}
         )
-        if thread is None:
-            return None
-        return await accept(session, runtime, thread)
+        return
 
 
 class ThreadAdvancer:
@@ -423,9 +430,4 @@ class ThreadAdvancer:
             ).all()
         self.after = ids[-1] if len(ids) == self.batch else ""
         for thread_id in ids:
-            try:
-                await advance(self.runtime, thread_id, skip_locked=True)
-            except Exception as error:
-                logger.warning(
-                    "Thread advance failed", extra={"thread_id": thread_id, "error_type": type(error).__name__}
-                )
+            await advance(self.runtime, thread_id, skip_locked=True)
