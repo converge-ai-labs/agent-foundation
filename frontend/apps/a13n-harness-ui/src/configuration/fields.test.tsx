@@ -364,10 +364,32 @@ it("shows default-on memory without rewriting YAML and preserves organizer choic
   ).toBeNull();
 });
 
-it("does not silently use the conversation model when organization has no selection", async () => {
-  renderFields('schema_version: "1"\n');
+it("defaults organization to the global Agent model without rewriting YAML", async () => {
+  const initial = 'schema_version: "1"\n';
+  renderFields(initial);
   expect(
     (await screen.findByRole("combobox", { name: "Organization model" }))
       .textContent,
-  ).toContain("Not configured");
+  ).toContain("Use global default Agent's model");
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+});
+
+it("can clear an organization override to follow the global Agent model", async () => {
+  renderFields(
+    'schema_version: "1"\nmemory:\n  auto_organize:\n    model: model-saved\n    instructions: Keep decisions concise.\n',
+  );
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("combobox", { name: "Organization model" }),
+  );
+  await user.click(
+    await screen.findByRole("option", {
+      name: "Use global default Agent's model",
+    }),
+  );
+  expect(
+    parse(screen.getByTestId("source").textContent!).memory.auto_organize,
+  ).toEqual({
+    instructions: "Keep decisions concise.",
+  });
 });

@@ -7,6 +7,7 @@ from a13n_harness_ui.configuration import load_harness_ui_configuration
 from a13n_harness_ui.configuration.setup import SetupSelection, preview_setup, publish_setup
 from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
+from a13n_harness_ui.memory_organization import MemoryOrganizer
 from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
 
 
@@ -47,6 +48,18 @@ async def test_setup_previews_without_publication_and_seeds_selected_connection(
     assert result.published_paths[-1] == path.name
     source = await load_harness_ui_configuration(path)
     assert source.document.defaults.agent == "agent-codex"
+    assert source.document.memory.auto_organize.model is None
+    assert source.memory_organization_model_id == "model-codex"
+
+    async def current():
+        return source
+
+    async def forbidden_run(request):
+        raise AssertionError("Setup must not make an organization request")
+
+    organizer = MemoryOrganizer(configuration_root=path.parent, current=current, run=forbidden_run, webui=True)
+    assert organizer.status(source).availability == "ready"
+    assert organizer.status(source).attempts == 0
     assert yaml.safe_load(path.read_text())["tools"] == root["tools"]
     assert source.document.tools.enable_codeact is True
     assert yaml.safe_load(path.read_text())["webui"] == {"sidekick": {}}
@@ -1011,7 +1024,12 @@ async def test_add_agent_initializes_absent_root_shortcut_without_mutating_exist
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "authored", [{}, {"enabled": False, "auto_organize": {"enabled": False, "instructions": "Keep custom guidance."}}]
+    "authored",
+    [
+        {},
+        {"auto_organize": {"model": "model-codex"}},
+        {"enabled": False, "auto_organize": {"enabled": False, "instructions": "Keep custom guidance."}},
+    ],
 )
 async def test_setup_seeds_memory_and_preserves_explicit_choices(tmp_path: Path, authored: dict) -> None:
     path = tmp_path / "config.yaml"
@@ -1020,7 +1038,7 @@ async def test_setup_seeds_memory_and_preserves_explicit_choices(tmp_path: Path,
     memory = yaml.safe_load(preview.files[path.name])["memory"]
     assert memory["enabled"] is authored.get("enabled", True)
     assert memory["auto_organize"]["enabled"] is authored.get("auto_organize", {}).get("enabled", True)
-    assert memory["auto_organize"]["model"] == "model-codex"
+    assert memory["auto_organize"]["model"] == authored.get("auto_organize", {}).get("model")
     assert memory["auto_organize"]["instructions"] == authored.get("auto_organize", {}).get("instructions", "")
     assert (await publish_setup(path, _selection(tmp_path), validate_candidate=_validate())).completed
     before = yaml.safe_load(path.read_text())["memory"]

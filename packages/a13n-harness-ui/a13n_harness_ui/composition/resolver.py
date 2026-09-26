@@ -454,7 +454,8 @@ class AgentCompositionResolver:
 
     def resolve_memory(self, source: LoadedHarnessUiConfiguration, thread: Thread) -> ResolvedRunComposition:
         settings = source.document.memory.auto_organize
-        assert settings.model is not None and thread.memory_scope is not None
+        model_id = source.memory_organization_model_id
+        assert model_id is not None and thread.memory_scope is not None
         return ResolvedRunComposition(
             package_prompt_revision=PACKAGE_PROMPT_REVISION,
             generation_digest=source.source_digest,
@@ -468,7 +469,7 @@ class AgentCompositionResolver:
                 roster_name="memory",
                 system_prompt=(ORGANIZATION_PROMPT,),
                 instructions=(settings.instructions,) if settings.instructions else (),
-                model=self.model_recipe(source.models[settings.model]),
+                model=self.model_recipe(source.models[model_id]),
             ),
             # Retained for the shared composition schema; memory execution never
             # enters this profile or grants Environment capabilities.

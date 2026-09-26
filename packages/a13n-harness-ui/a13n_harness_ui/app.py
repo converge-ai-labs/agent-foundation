@@ -1151,7 +1151,7 @@ class HarnessUiApp:
                 ),
                 next_generation_digest=None if source is None else source.source_digest,
                 next_model_id=(
-                    source.document.memory.auto_organize.model
+                    source.memory_organization_model_id
                     if thread.memory_scope is not None and source is not None
                     else selected.default_model_id or (None if agent is None else agent.model)
                 ),
@@ -2829,7 +2829,7 @@ async def open_harness_ui_app(
                 web_push = WebPush(store, push_client)
 
             async def run_memory(organization: MemoryOrganizationRun) -> RunUsage:
-                model_id = organization.source.document.memory.auto_organize.model
+                model_id = organization.source.memory_organization_model_id
                 assert model_id is not None
                 scope = organization.scope
                 thread = await threads.memory_thread(

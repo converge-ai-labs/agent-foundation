@@ -515,7 +515,8 @@ async def run_setup(
                 preview = await app.preview_setup(selection)
                 if not (add_agent or add_model):
                     emit(
-                        "File memory and automatic organization are enabled by default. WebUI may make additional "
+                        "File memory and automatic organization are enabled by default. Organization automatically "
+                        "uses the global default Agent's model; no separate model selection is needed. WebUI may make additional "
                         "background model requests that consume quota or incur costs. Existing choices are preserved; "
                         "configure memory in General settings or the root YAML. CLI does not organize automatically."
                     )

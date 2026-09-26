@@ -184,7 +184,7 @@ class MemoryOrganizer:
             availability = "configuration_unavailable"
         elif not source.document.memory.enabled or not source.document.memory.auto_organize.enabled:
             availability = "disabled"
-        elif source.document.memory.auto_organize.model is None:
+        elif source.memory_organization_model_id is None:
             availability = "model_not_configured"
         else:
             availability = "ready"

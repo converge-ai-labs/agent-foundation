@@ -229,7 +229,7 @@ class MediaUnderstandingConfiguration(ConfigurationModel):
 
 
 class MemoryOrganizationConfiguration(ConfigurationModel):
-    """WebUI-only background maintenance using a separately selected Model."""
+    """WebUI-only maintenance with an optional Model override."""
 
     enabled: bool = True
     model: ResourceId | None = None
@@ -894,6 +894,15 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
 
     def markdown(self, resource_id: str) -> CanonicalSubagent:
         return self.subagents[resource_id]
+
+    @property
+    def memory_organization_model_id(self) -> ResourceId | None:
+        """Resolve organization against this generation's global Agent, never a Thread or Project."""
+        override = self.document.memory.auto_organize.model
+        if override is not None:
+            return override
+        agent_id = self.document.defaults.agent
+        return None if agent_id is None else self.agents[agent_id].model
 
     def selected_plugins(self, agent: AgentResource) -> tuple[str, ...]:
         return self.document.defaults.harness_plugins if agent.harness_plugins is None else agent.harness_plugins

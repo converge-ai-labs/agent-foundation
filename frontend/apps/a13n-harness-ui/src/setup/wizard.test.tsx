@@ -245,6 +245,14 @@ async function reviewConfiguration() {
 it("uses server model choices, saves, reconciles and creates exactly one conversation without sending input", async () => {
   mount();
   await reviewConfiguration();
+  expect(
+    screen.getByText(
+      /Organization automatically uses the global default Agent's model/,
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(/no separate model selection is needed/),
+  ).toBeTruthy();
   const identity = readWizardDraft(status.draft_scope!)!.threadId;
   expect(identity).toMatch(/^thread_[0-9a-f]{32}$/);
   fireEvent.click(

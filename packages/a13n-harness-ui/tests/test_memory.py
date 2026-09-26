@@ -65,6 +65,90 @@ async def _settle(organizer):
             await sleep(0.01)
 
 
+@pytest.mark.parametrize("selection", ["omitted", "null", "override", "no_agent", "no_agent_model"])
+async def test_organization_model_uses_only_explicit_override_or_global_agent(tmp_path, selection):
+    root = _write_configuration(tmp_path)
+    value = yaml.safe_load(root.read_text())
+    if selection != "omitted":
+        value["memory"] = {"auto_organize": {"model": "model-primary" if selection == "override" else None}}
+    if selection in {"override", "no_agent"}:
+        value["defaults"].pop("agent")
+    if selection == "no_agent_model":
+        agent_path = tmp_path / "agents/assistant.yaml"
+        agent = yaml.safe_load(agent_path.read_text())
+        agent.pop("model")
+        agent_path.write_text(yaml.safe_dump(agent))
+    root.write_text(yaml.safe_dump(value))
+    before = root.read_bytes()
+    source = await load_harness_ui_configuration(root)
+    expected = None if selection in {"no_agent", "no_agent_model"} else "model-primary"
+    assert source.memory_organization_model_id == expected
+    assert _organizer(tmp_path, source).status(source).availability == (
+        "model_not_configured" if expected is None else "ready"
+    )
+    assert root.read_bytes() == before
+
+
+@pytest.mark.parametrize("override", [False, True])
+async def test_organization_resolves_global_model_and_refreshes_after_reload(tmp_path, monkeypatch, override):
+    root, _, scope, store = await _seed(tmp_path)
+    value = yaml.safe_load(root.read_text())
+    value["memory"]["auto_organize"]["model"] = "model-primary" if override else None
+    root.write_text(yaml.safe_dump(value))
+    alternate = tmp_path / "models/alternate.yaml"
+    alternate.write_text((tmp_path / "models/primary.yaml").read_text().replace("model-primary", "model-alternate"))
+    # Project defaults must not select the organizer, including for Project memory.
+    project_path = tmp_path / "projects/main.yaml"
+    project = yaml.safe_load(project_path.read_text())
+    project_agent = tmp_path / "agents/project.yaml"
+    project_agent.write_text(
+        (tmp_path / "agents/assistant.yaml")
+        .read_text()
+        .replace("agent-assistant", "agent-project")
+        .replace("model-primary", "model-alternate")
+    )
+    project["defaults"] = {"agent": "agent-project"}
+    project_path.write_text(yaml.safe_dump(project))
+    (scope.root / "MEMORY.md").unlink()
+    scope = memory_scopes(tmp_path, "project-main")[-1]
+    store = DirectoryFileStore(scope.root)
+    await store.write("MEMORY.md", "A Project preference.\n", expected=None, origin=Origin())
+    calls = []
+
+    async def model(messages, info):
+        assert all(tool.name.startswith("memory_") for tool in info.function_tools)
+        yield "No changes needed."
+
+    async def resolve(self, context, model_id):
+        calls.append(self._recipes[model_id].model_id)
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        app._memory_organizer.offer("project-main")
+        await _settle(app._memory_organizer)
+        thread = (await app.list_threads(memory=True)).threads[0]
+        assert calls == ["model-primary"]
+        assert (await app.inspect_thread_configuration(thread.thread_id)).next_model_id == "model-primary"
+
+        agent_path = tmp_path / "agents/assistant.yaml"
+        agent_path.write_text(agent_path.read_text().replace("model-primary", "model-alternate"))
+        await app.reload_configuration()
+        expected = "model-primary" if override else "model-alternate"
+        assert (await app.inspect_thread_configuration(thread.thread_id)).next_model_id == expected
+        version = (await store.read("MEMORY.md")).version
+        await store.write("MEMORY.md", "A changed preference.\n", expected=version, origin=Origin())
+        state_path = scope.root / ".a13n-memory/organization.json"
+        state = _read_state(state_path)
+        state.next_attempt_at = 0
+        _write_state(state_path, state)
+        app._memory_organizer.offer("project-main")
+        await _settle(app._memory_organizer)
+        assert calls == ["model-primary", expected]
+        assert (await app.list_threads(memory=True)).threads[0].thread_id == thread.thread_id
+        assert (await app.status()).memory_organization.last_outcome == "completed"
+
+
 async def test_scopes_and_fresh_cursors_are_configuration_owned(tmp_path: Path) -> None:
     scopes = memory_scopes(tmp_path, "project-main")
     assert [item.root for item in scopes] == [tmp_path / "memory/global", tmp_path / "memory/projects/project-main"]
@@ -230,6 +314,13 @@ async def test_no_inference_for_ineligible_opportunities(tmp_path, monkeypatch, 
         source = _memory_settings(source, enabled=False)
     if reason == "missing_model":
         source = _memory_settings(source, auto_organize={"enabled": True, "model": None})
+        source = source.model_copy(
+            update={
+                "document": source.document.model_copy(
+                    update={"defaults": source.document.defaults.model_copy(update={"agent": None})}
+                )
+            }
+        )
     if reason == "empty":
         (scope.root / "MEMORY.md").unlink()
     if reason == "backoff":

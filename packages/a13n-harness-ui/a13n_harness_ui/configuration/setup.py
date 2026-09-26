@@ -336,8 +336,7 @@ async def preview_setup(
             if isinstance(organize, dict):
                 organize.setdefault("enabled", True)
                 organize.setdefault("instructions", "")
-                if connection_model is not None:
-                    organize.setdefault("model", connection_model)
+                organize.setdefault("model", None)
         webui = root.setdefault("webui", {})
         if isinstance(webui, dict):
             webui.setdefault("sidekick", {})

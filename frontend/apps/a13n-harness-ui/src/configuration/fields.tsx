@@ -366,7 +366,7 @@ export function ResourceFields({
                     "Organization model",
                     ["memory", "auto_organize", "model"],
                     models,
-                    "Not configured — no automatic requests",
+                    "Use global default Agent's model",
                   )}
                   <div className={styles.fieldGroup}>
                     <FormField
