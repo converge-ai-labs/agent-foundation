@@ -95,7 +95,7 @@ def fail_environment_finalization(monkeypatch, mode):
 
 
 @pytest.mark.parametrize("finalization_failure", [None, "state", "cleanup"])
-@pytest.mark.parametrize("mode", ["normal", "goal"])
+@pytest.mark.parametrize("mode", ["normal", "goal", "legacy"])
 async def test_planned_restart_continues_without_repeating_input_or_tool(
     tmp_path, monkeypatch, finalization_failure, mode
 ):
@@ -126,7 +126,9 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
         open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app,
     ):
         thread = await app.create_thread()
-        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Read and report", mode=mode)
+        receipt = await app.submit_thread(
+            thread_id=thread.thread_id, prompt="Read and report", mode="normal" if mode == "legacy" else mode
+        )
         with fail_after(10):
             await started.wait()
         assert (
@@ -150,6 +152,35 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
         assert batch is not None and batch.state == "ready", batch
         assert len(batch.items) == 1
         saved = await store.objects.read_model(batch.items[0].checkpoint, StoredContinuation)
+        from a13n_harness.usage import UsageSnapshot
+
+        original_usage = UsageSnapshot.from_state(saved.harness_state)
+        assert original_usage is not None and original_usage.summary.requests == 1
+        if mode == "legacy":
+            from a13n_harness.state import AgentContextStateSnapshot
+            from a13n_harness.usage import USAGE_CAPABILITY_ID
+            from a13n_harness_ui.storage.objects import ObjectKind
+
+            entries = saved.harness_state.agent_context_state.entries
+            entries.pop(USAGE_CAPABILITY_ID)
+            legacy_state = saved.harness_state.model_copy(
+                update={"agent_context_state": AgentContextStateSnapshot(entries=entries)}
+            )
+            legacy = await store.objects.publish_model(
+                object_kind=ObjectKind.continuation, value=saved.model_copy(update={"harness_state": legacy_state})
+            )
+            current = await store.threads.get(thread.thread_id)
+            assert current is not None
+            await store.threads.select_continuation(
+                thread_id=thread.thread_id,
+                expected=current.continuation,
+                replacement=legacy.ref,
+                read_model=current.read_model,
+            )
+            await store.restarts.replace(
+                batch,
+                batch.model_copy(update={"items": (batch.items[0].model_copy(update={"checkpoint": legacy.ref}),)}),
+            )
         if mode == "goal":
             from a13n_harness_ui.goal import saved_goal
 
@@ -198,6 +229,23 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
             )
             == 1
         )
+    async with open_local_store(settings.storage) as store:
+        current = await store.threads.get(thread.thread_id)
+        assert current is not None and current.continuation is not None
+        continuation = await store.objects.read_model(current.continuation, StoredContinuation)
+        resumed_usage = UsageSnapshot.from_state(continuation.harness_state)
+        assert resumed_usage is not None
+        if mode == "legacy":
+            assert resumed_usage.usage_id != original_usage.usage_id
+            assert resumed_usage.summary.requests == 1
+        else:
+            assert resumed_usage.usage_id == original_usage.usage_id
+            assert resumed_usage.run_id == original_usage.run_id
+            assert resumed_usage.summary.requests == 2 and resumed_usage.tool_calls == 1
+        assert (await store.usage.snapshot(thread_id=thread.thread_id)).combined.model_requests == 2
+        if mode == "goal":
+            assert goal.input_tokens == resumed_usage.summary.input_tokens
+            assert goal.output_tokens == resumed_usage.summary.output_tokens
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui"):
         await sleep(0.05)
     assert len(requests) == 2

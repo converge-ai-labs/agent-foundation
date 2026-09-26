@@ -156,12 +156,21 @@ def model_usage(event: LiveEvent) -> tuple[ModelUsageRecord, ...]:
 
 
 def root_model_usage(event: LiveEvent) -> tuple[ModelUsageRecord, ...]:
-    """Read only primary root responses, never auxiliary or child model usage."""
+    """Read primary root responses, retaining their original attribution after accounting resume."""
+    value = event.payload.get("value") if event.payload is not None else None
+    source = value.get("event") if isinstance(value, dict) else None
+    payload = source.get("payload") if isinstance(source, dict) else None
+    resumed_scope = (
+        isinstance(value, dict)
+        and value.get("run_id") == event.run_id
+        and isinstance(payload, dict)
+        and isinstance(payload.get("usage_id"), str)
+    )
     return tuple(
         model
         for model in model_usage(event)
         if event.run_kind == "root"
-        and model.run_id == event.run_id
+        and (model.run_id == event.run_id or resumed_scope)
         and model.parent_agent_instance_id is None
         and model.delegation_id is None
         and model.source == "agent"
@@ -172,7 +181,7 @@ def root_context_samples(event: LiveEvent) -> tuple[RequestContextSample, ...]:
     """Project request-local root usage, not cumulative Run usage."""
     return tuple(
         RequestContextSample(
-            run_id=model.run_id,
+            run_id=event.run_id,
             response_ordinal=model.response_ordinal,
             tokens=model.request_usage.input_tokens + model.request_usage.output_tokens,
         )

@@ -592,9 +592,10 @@ class HarnessBuilder:
                 "AgentDefinition capabilities must contain at most one model-cost Capability.",
                 code="capability_scope_invalid",
             )
-        default_model_costs: tuple[AbstractModelCostCapability, ...] = (
-            () if selected_model_costs else (CatalogModelCostCapability(catalog=pricing_catalog),)
+        model_cost = (
+            selected_model_costs[0] if selected_model_costs else CatalogModelCostCapability(catalog=pricing_catalog)
         )
+        default_model_costs = () if selected_model_costs else (model_cost,)
         definition_reserved_ids = _validate_capability_source(authored_capabilities, source="definition")
 
         async def resolve_model(
@@ -689,6 +690,7 @@ class HarnessBuilder:
             definition_reserved_capability_ids=definition_reserved_ids,
             model_inference=resolve_model,
             observation=self._observation,
+            model_cost=model_cost,
         )
 
     def _create_configured_plugins(self) -> tuple[AbstractHarnessPlugin, ...]:

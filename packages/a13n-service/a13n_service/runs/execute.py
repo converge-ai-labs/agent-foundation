@@ -87,7 +87,7 @@ from a13n_service.runs.secrets import require_secrets
 from a13n_service.runs.stream import ThreadStream
 from a13n_service.runs.subagents import ChildRuns
 from a13n_service.runs.tables import RunRow, ThreadRow
-from a13n_service.runs.usage import UsageBuffer, ingest_late, totals
+from a13n_service.runs.usage import SnapshotReporter, UsageBuffer, ingest_late, totals
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
 logger = get_logger(__name__)
@@ -312,6 +312,7 @@ class _Attempt:
         models = {model.id: model for model in plan.agent.models()}
         self.check = CallCheck(runtime, control, self._call_context(), models=models, used=plan.used, limit=plan.limit)
         self.usage = UsageBuffer(self.check.calls)
+        self.usage_reporter = SnapshotReporter(runtime.storage, lease.run_id, lease.attempt_id, self.usage)
         self.yielding = False
 
     async def run(self) -> None:
@@ -388,6 +389,8 @@ class _Attempt:
                 executable.stream,
                 input_factory=self._assigned_input if self.plan.assigned else None,
                 previous_state=self.plan.state,
+                # Recovery creates a new writer/attempt, not a serialized same-writer accounting resume.
+                resume_usage=False,
                 deferred_resume=self.plan.resume,
                 tool_recovery="declared",
                 bindings=host.bindings(
@@ -633,9 +636,10 @@ class _Attempt:
     async def _record_usage(self) -> None:
         """Usage not committed with a checkpoint is a past charge: recorded even when the lease is gone or the
         attempt is being cancelled, within one bounded database operation."""
-        reports = self.usage.pending()
         with anyio.CancelScope(shield=True), anyio.move_on_after(self.runtime.settings.database.statement_timeout):
             try:
+                await self.usage_reporter.flush()
+                reports = self.usage.pending()
                 await ingest_late(self.runtime.storage, self.lease.run_id, self.lease.attempt_id, reports)
             except Exception as error:
                 logger.error(
@@ -683,6 +687,7 @@ class _Attempt:
             ),
             model_resolver=resolver,
             model_call_check=self.check,
+            usage_reporter=self.usage_reporter,
             capabilities=policies,
             observation=attempt_observation(
                 organization_id=lease.organization_id,

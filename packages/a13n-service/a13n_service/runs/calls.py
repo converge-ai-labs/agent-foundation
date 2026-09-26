@@ -10,6 +10,8 @@ from dataclasses import replace
 from typing import NoReturn
 
 from a13n_harness.model_calls import ModelCall
+from a13n_harness.request_budget import RequestBudget
+from pydantic_ai.exceptions import UsageLimitExceeded
 
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
@@ -43,30 +45,42 @@ class CallCheck:
     ):
         self.runtime, self.control, self.context, self.models = runtime, control, context, models
         self.calls: dict[str, ResolvedModel] = {}
-        self.used, self.limit = used, limit
+        self.budget = RequestBudget(used=used, limit=limit)
+        self.limit = limit
         self.refusal: Outcome | None = None
         self.lease_missed = False
 
-    async def check(self, call: ModelCall) -> None:
+    @property
+    def used(self) -> int:
+        return self.budget.used
+
+    async def check(self, call: ModelCall) -> RequestBudget:
         self._continuing()
-        if self.limit is not None and self.used >= self.limit:
+        try:
+            self.budget.reserve(call.call_id, continuation=call.continuation_of is not None)
+        except UsageLimitExceeded:
             self.refuse(Outcome.failed("usage_limit_exceeded", f"The run used its {self.limit} model requests"))
-        self.used += 1
         # Every model of the graph is selected by its ID; a call that names none of them cannot be admitted.
         model = self.models.get(call.model_id or "")
         if model is None:
+            self.budget.cancel(call.call_id)
             self.refuse(Outcome.failed("model_call_unknown", "A model call named no model of the agent"))
         self.calls[call.call_id] = model
-        await self._admit(
-            replace(
-                self.context,
-                call_id=call.call_id,
-                source=call.source,
-                provider_id=model.provider.id,
-                model_id=model.id,
-                price_snapshot=price_snapshot(model),
+        try:
+            await self._admit(
+                replace(
+                    self.context,
+                    call_id=call.call_id,
+                    source=call.source,
+                    provider_id=model.provider.id,
+                    model_id=model.id,
+                    price_snapshot=price_snapshot(model),
+                )
             )
-        )
+        except BaseException:
+            self.budget.cancel(call.call_id)
+            raise
+        return self.budget
 
     async def tool_call(
         self,

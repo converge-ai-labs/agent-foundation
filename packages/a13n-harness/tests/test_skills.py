@@ -1214,7 +1214,7 @@ async def test_skill_media_views_mark_only_successful_results(tmp_path: Path, na
     understanding_calls = []
 
     class UnderstandingProvider:
-        async def understand(self, request):
+        async def understand(self, request, *, usage=None):
             understanding_calls.append(request)
             return MediaUnderstandingResult(text="Image description. " * 200)
 

@@ -8,7 +8,15 @@ from pathlib import Path
 import pytest
 from a13n_harness import HarnessRunResult, HarnessRunResultEvent
 from a13n_harness.events import HarnessEvent, HarnessExtensionEvent, UsageReportPayload
-from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord, ProviderUsage, ProviderUsageRecord, UsageMeasure
+from a13n_harness.usage import (
+    BoundedRequestUsage,
+    ModelUsageRecord,
+    ProviderUsage,
+    ProviderUsageRecord,
+    RunUsageSummary,
+    UsageMeasure,
+    UsageSnapshot,
+)
 from a13n_harness_ui.errors import StoreIntegrityError
 from a13n_harness_ui.interactive.usage import thread_usage_text
 from a13n_harness_ui.settings import StorageSettings
@@ -17,7 +25,6 @@ from a13n_harness_ui.storage.migration import DatabaseMigrator
 from a13n_harness_ui.storage.models import ThreadRecord
 from a13n_harness_ui.storage.usage import ThreadUsageRepository
 from alembic import command
-from pydantic_ai.usage import RunUsage
 from sqlalchemy import MetaData, Table, create_engine, select
 
 pytestmark = pytest.mark.anyio
@@ -124,7 +131,7 @@ async def test_reports_terminal_and_receipts_deduplicate_across_root_inline_and_
             status="cancelled",
             state=None,
             output=None,
-            usage=RunUsage(input_tokens=999999),
+            usage=RunUsageSummary(input_tokens=999999),
             usage_records=(record, _receipt()),
         )
         await repository.observe(
@@ -248,37 +255,22 @@ async def test_startup_automatically_upgrades_populated_previous_revision_and_is
     migrator.verify_current()
 
 
-async def test_usage_cache_reads_only_new_committed_suffix_and_survives_other_writers(tmp_path, monkeypatch):
-    from a13n_harness_ui.storage.usage import _Aggregation
-
+async def test_usage_projection_survives_other_writers(tmp_path):
     settings = StorageSettings(data_root=tmp_path)
     async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
         async with transaction(database.sessions) as session:
             session.add(_thread("thread-root"))
         reader = ThreadUsageRepository(database.sessions)
         writer = ThreadUsageRepository(database.sessions)
-        decoded = []
-        add = _Aggregation.add
-
-        def observed(self, sequence, descendant, payload, timestamp):
-            decoded.append(sequence)
-            add(self, sequence, descendant, payload, timestamp)
-
-        monkeypatch.setattr(_Aggregation, "add", observed)
         await writer.append(thread_id="thread-root", records=(_model(0),))
         first = await reader.snapshot(thread_id="thread-root")
-        assert len(decoded) == 1
         assert await reader.snapshot(thread_id="thread-root") == first
-        assert len(decoded) == 1
         await writer.append(thread_id="thread-root", records=(_model(1),))
         assert (await reader.snapshot(thread_id="thread-root")).combined.model_requests == 2
-        assert len(decoded) == 2
-        # Group changes rebuild rather than subtracting capped currency buckets.
         await writer.append(thread_id="thread-root", records=(_model(0, run="run-new"),))
-        cached = await reader.snapshot(thread_id="thread-root")
-        assert cached.combined.model_requests == 3
-        assert len(decoded) == 5
-        assert cached == await ThreadUsageRepository(database.sessions).snapshot(thread_id="thread-root")
+        current = await reader.snapshot(thread_id="thread-root")
+        assert current.combined.model_requests == 3
+        assert current == await ThreadUsageRepository(database.sessions).snapshot(thread_id="thread-root")
 
 
 async def test_legacy_and_auxiliary_records_reaggregate_without_repricing_or_context_pollution(tmp_path: Path) -> None:
@@ -456,3 +448,206 @@ async def test_usage_without_call_id_survives_transport_live_and_storage(tmp_pat
         await repository.observe(thread_id="thread-root", item=report)
         assert await repository.latest_root_request(thread_id="thread-root") == record
         assert (await repository.snapshot(thread_id="thread-root")).combined.model_requests == 1
+
+
+def _snapshot(*records, sequence=1, usage_id="usage-scope", thread_id="thr_root"):
+    first = records[0]
+    return UsageSnapshot(
+        usage_id=usage_id,
+        thread_id=thread_id,
+        run_id=first.run_id,
+        agent_instance_id=first.agent_instance_id,
+        parent_agent_instance_id=first.parent_agent_instance_id,
+        delegation_id=first.delegation_id,
+        sequence=sequence,
+        records=records,
+    )
+
+
+async def test_latest_snapshots_replace_in_place_and_are_visible_to_another_engine(tmp_path):
+    from a13n_harness import StateError
+    from a13n_harness_ui.storage.models import ThreadUsageRecord
+    from sqlalchemy import func
+
+    path = tmp_path / "metadata.sqlite3"
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(path, settings) as first_db, open_database(path, settings) as second_db:
+        async with transaction(first_db.sessions) as session:
+            session.add(_thread("thr_root"))
+        writer, reader = ThreadUsageRepository(first_db.sessions), ThreadUsageRepository(second_db.sessions)
+        first = _snapshot(_model(0, cost=Decimal("0.1")), _receipt())
+        await writer.save(thread_id="thr_root", snapshot=first)
+        first_view = await reader.snapshot(thread_id="thr_root")
+        assert first_view.combined.model_requests == 1
+        updated_record = first.records[0].model_copy(
+            update={
+                "request_usage": BoundedRequestUsage(input_tokens=300, cost=Decimal("0.3")),
+            }
+        )
+        latest = first.model_copy(update={"sequence": 2, "records": (updated_record, first.records[1])})
+        await writer.save(thread_id="thr_root", snapshot=latest)
+        await writer.save(thread_id="thr_root", snapshot=first)
+        await reader.save(thread_id="thr_root", snapshot=latest)
+        latest_view = await reader.snapshot(thread_id="thr_root")
+        assert latest_view.first_observed_at == first_view.first_observed_at
+        assert latest_view.observed_through > first_view.observed_through
+        totals = latest_view.combined
+        assert totals.model_requests == 1 and dict(totals.tokens)["input_tokens"] == 300
+        assert totals.model_cost_usd == Decimal("0.3")
+        assert totals.provider_costs == (("EUR", Decimal("0.2")),)
+        assert await reader.latest_root_request(thread_id="thr_root") == updated_record
+        with pytest.raises(StateError, match="conflicting"):
+            await writer.save(thread_id="thr_root", snapshot=latest.model_copy(update={"tool_calls": 1}))
+        async with transaction(first_db.sessions) as session:
+            assert await session.scalar(select(func.count()).select_from(ThreadUsageRecord)) == 1
+
+
+async def test_snapshots_and_legacy_receipts_share_one_attribution_without_losing_child_usage(tmp_path):
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+            await session.flush()
+            session.add(_thread("thr_child", "thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        await repository.append(thread_id="thr_root", records=(_model(0, run="legacy"), _receipt()))
+        await repository.save(thread_id="thr_root", snapshot=_snapshot(_model(0), _receipt()))
+        child = _snapshot(_model(0, run="child"), _receipt(run="child"), usage_id="usage-child", thread_id="thr_child")
+        await repository.save(thread_id="thr_child", snapshot=child)
+        view = await repository.snapshot(thread_id="thr_root")
+        assert view.combined.model_requests == 3
+        assert view.root.model_requests == 2 and view.descendants.model_requests == 1
+        assert view.combined.provider_receipts == 1 and view.root.provider_receipts == 1
+        assert view.descendants.provider_receipts == 0
+        changed = child.model_copy(
+            update={
+                "sequence": 2,
+                "records": (
+                    child.records[0],
+                    _receipt(run="child", cost=Decimal("99")),
+                ),
+            }
+        )
+        with pytest.raises(Exception, match=r"attribution|receipt"):
+            await repository.save(thread_id="thr_child", snapshot=changed)
+
+
+async def test_restore_uses_latest_accounting_without_changing_execution_history(tmp_path):
+    from a13n_harness import HarnessState
+    from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
+    from a13n_harness.usage import USAGE_CAPABILITY_ID
+
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        first = _snapshot(_model(0))
+        latest = _snapshot(_model(0), _model(1), sequence=2)
+        state = HarnessState.new(
+            thread_id="thr_root",
+            agent_context_state=AgentContextStateSnapshot(
+                entries={
+                    USAGE_CAPABILITY_ID: CapabilityState(version="1", data=first.model_dump(mode="json")),
+                }
+            ),
+        )
+        await repository.save(thread_id="thr_root", snapshot=latest)
+        restored = await repository.restore(thread_id="thr_root", state=state)
+        assert UsageSnapshot.from_state(restored) == latest
+        assert restored.message_history == state.message_history
+        assert UsageSnapshot.from_state(state) == first
+
+
+async def test_shipped_usage_payload_survives_upgrade_and_current_snapshot_updates(tmp_path):
+    from a13n_harness_ui.storage.models import ThreadUsageRecord
+
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(lambda config: command.upgrade(config, "11422c5bac45"), write=True)
+    # Literal pre-snapshot payload: never normalize it through today's models before storage.
+    raw = (
+        '{"kind":"model","record_id":"old-fact","run_id":"old-run",'
+        '"response_ordinal":0,"agent_instance_id":"old-agent","response_state":"complete",'
+        '"response_timestamp":"2026-09-07T00:00:00Z",'
+        '"request_usage":{"input_tokens":7,"output_tokens":2,"cost":"0.125"}}'
+    )
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                Table("thread", MetaData(), autoload_with=connection)
+                .insert()
+                .values(
+                    thread_id="thr_root",
+                    title="Retain me",
+                    archived=False,
+                    metadata_version=1,
+                    created_at=_NOW,
+                    updated_at=_NOW,
+                    initial_state_schema_version="1",
+                    initial_state_digest="a" * 64,
+                )
+            )
+            connection.execute(
+                Table("thread_usage", MetaData(), autoload_with=connection)
+                .insert()
+                .values(
+                    root_thread_id="thr_root",
+                    origin_thread_id="thr_root",
+                    record_id="old-fact",
+                    run_id="old-run",
+                    descendant=False,
+                    payload_json=raw,
+                    observed_at=_NOW,
+                )
+            )
+    finally:
+        engine.dispose()
+    for _ in range(2):
+        async with open_database(path, StorageSettings(data_root=tmp_path)) as database:
+            repository = ThreadUsageRepository(database.sessions)
+            await repository.save(thread_id="thr_root", snapshot=_snapshot(_model(0, cost=Decimal("0.2"))))
+            view = await repository.snapshot(thread_id="thr_root")
+            assert view.combined.model_requests == 2
+            assert view.combined.model_cost_usd == Decimal("0.325")
+            async with transaction(database.sessions) as session:
+                assert (
+                    await session.scalar(
+                        select(ThreadUsageRecord.payload_json).where(
+                            ThreadUsageRecord.record_id == "old-fact",
+                        )
+                    )
+                    == raw
+                )
+                assert await session.scalar(select(ThreadRecord.title)) == "Retain me"
+
+
+async def test_projection_pins_one_read_snapshot_during_concurrent_replacement(tmp_path, monkeypatch):
+    import asyncio
+
+    path = tmp_path / "metadata.sqlite3"
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(path, settings) as first_db, open_database(path, settings) as second_db:
+        async with transaction(first_db.sessions) as session:
+            session.add(_thread("thr_root"))
+        writer, reader = ThreadUsageRepository(first_db.sessions), ThreadUsageRepository(second_db.sessions)
+        await writer.save(thread_id="thr_root", snapshot=_snapshot(_model(0)))
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = reader._root_id
+
+        async def pause_after_first_read(session, thread_id):
+            result = await original(session, thread_id)
+            entered.set()
+            await release.wait()
+            return result
+
+        monkeypatch.setattr(reader, "_root_id", pause_after_first_read)
+        pending = asyncio.create_task(reader.snapshot(thread_id="thr_root"))
+        await entered.wait()
+        try:
+            await writer.save(thread_id="thr_root", snapshot=_snapshot(_model(0), _model(1), sequence=2))
+        finally:
+            release.set()
+        assert (await pending).combined.model_requests == 1
+        assert (await reader.snapshot(thread_id="thr_root")).combined.model_requests == 2

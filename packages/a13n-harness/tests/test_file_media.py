@@ -160,8 +160,12 @@ async def test_default_agent_preserves_usage_when_output_validation_exhausts() -
         )
 
     assert exc_info.value.code == "media_understanding_response_invalid"
-    assert len(exc_info.value.usage) == 1
-    assert {measure.unit: measure.quantity for measure in exc_info.value.usage[0].measures} == {
+    assert len(exc_info.value.usage) == 3
+    totals = {}
+    for receipt in exc_info.value.usage:
+        for measure in receipt.measures:
+            totals[measure.unit] = totals.get(measure.unit, 0) + measure.quantity
+    assert totals == {
         "requests": 3,
         "input_tokens": 6,
         "output_tokens": 3,
@@ -206,7 +210,9 @@ async def test_default_agent_maps_timeout_without_fabricating_usage(
 
     assert started.is_set()
     assert exc_info.value.code == "media_understanding_timeout"
-    assert exc_info.value.usage == ()
+    assert len(exc_info.value.usage) == 1
+    assert exc_info.value.usage[0].cost is None
+    assert dict((m.unit, m.quantity) for m in exc_info.value.usage[0].measures) == {"requests": 1}
     assert exited == 1
 
 
@@ -320,7 +326,9 @@ async def test_default_agent_maps_provider_failure_with_known_usage() -> None:
         )
 
     assert exc_info.value.code == "media_understanding_failed"
-    assert exc_info.value.usage == ()
+    assert len(exc_info.value.usage) == 1
+    assert exc_info.value.usage[0].cost is None
+    assert dict((m.unit, m.quantity) for m in exc_info.value.usage[0].measures) == {"requests": 1}
 
 
 async def test_default_agent_preserves_external_cancellation_and_closes_model() -> None:
@@ -486,10 +494,13 @@ def _binary_content(messages: list[ModelMessage]) -> BinaryContent:
 async def test_standalone_media_receipt_retains_provider_cost_including_cost_only() -> None:
     from decimal import Decimal
 
-    from pydantic_ai.usage import RunUsage
-
-    model = FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("analysis")]))
-    (receipt,) = file_media_module._provider_usage_receipts(model, RunUsage(cost=Decimal("0.123")))
-    assert receipt.measures == ()
+    model = FunctionModel(
+        lambda messages, info: ModelResponse(parts=[TextPart("analysis")], usage=RequestUsage(cost=Decimal("0.123")))
+    )
+    result = await AgentMediaUnderstandingProvider(models={"image": model}).understand(
+        MediaUnderstandingRequest(kind="image", media_type="image/png", source_name="sample.png", source_bytes=b"media")
+    )
+    (receipt,) = result.usage
+    assert {m.unit: m.quantity for m in receipt.measures} == {"requests": 1}
     assert receipt.cost == Decimal("0.123")
     assert receipt.currency == "USD"

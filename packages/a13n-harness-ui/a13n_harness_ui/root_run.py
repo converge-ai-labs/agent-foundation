@@ -15,11 +15,11 @@ from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
 from a13n_harness.input import RunInputValue
+from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
@@ -55,7 +55,7 @@ _MAX_WAIT_SECONDS = 60.0
 _MAX_VALUE_BYTES = 64 * 1024
 _JSON_ADAPTER = TypeAdapter(JsonValue)
 _JSON_MAPPING_ADAPTER = TypeAdapter(dict[str, JsonValue])
-_RUN_USAGE_ADAPTER = TypeAdapter(RunUsage)
+_RUN_USAGE_ADAPTER = TypeAdapter(RunUsageSummary)
 _TERMINAL = frozenset(
     {
         RootOperationStatus.completed,

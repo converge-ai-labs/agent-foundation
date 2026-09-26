@@ -46,6 +46,7 @@ from a13n_harness.environment.providers import (
     FileScopeSelection,
 )
 from a13n_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
+from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.model_context import user_prompt_content
 from a13n_harness.plugins import (
     AbstractHarnessPlugin,
@@ -1139,7 +1140,7 @@ async def test_view_uses_run_scoped_understanding_when_active_model_lacks_native
     tool_returns: list[ToolReturnPart] = []
 
     class UnderstandingProvider:
-        async def understand(self, request: MediaUnderstandingRequest) -> MediaUnderstandingResult:
+        async def understand(self, request: MediaUnderstandingRequest, *, usage=None) -> MediaUnderstandingResult:
             requests.append(request)
             return MediaUnderstandingResult(text="Detected text: hello")
 
@@ -1300,7 +1301,7 @@ async def test_view_uses_environment_configured_default_understanding_agent(
     assert media[0].model_name == understanding_model.model_name
     assert media[0].request_usage.input_tokens == 5
     assert media[0].request_usage.output_tokens == 3
-    assert result.usage.requests == 2
+    assert result.usage.requests == 3
     assert not any(isinstance(record, ProviderUsageRecord) for record in result.usage_records)
 
 
@@ -1375,7 +1376,7 @@ async def test_view_records_nested_usage_when_understanding_output_retries_exhau
     assert all(record.tool_call_id == "view-image-invalid-output" for record in media)
     assert sum(record.request_usage.input_tokens for record in media) == 6
     assert sum(record.request_usage.output_tokens for record in media) == 3
-    assert result.usage.requests == 2
+    assert result.usage.requests == 5
     assert not any(isinstance(record, ProviderUsageRecord) for record in result.usage_records)
 
 
@@ -1484,7 +1485,7 @@ async def test_media_understanding_releases_mount_scope_before_model_execution()
                 scope_released.set()
 
     class BlockingProvider:
-        async def understand(self, request: MediaUnderstandingRequest) -> MediaUnderstandingResult:
+        async def understand(self, request: MediaUnderstandingRequest, *, usage=None) -> MediaUnderstandingResult:
             assert request.source == EnvironmentPath(
                 mount_id="mount-1",
                 path="/image.png",
@@ -1502,6 +1503,7 @@ async def test_media_understanding_releases_mount_scope_before_model_execution()
         SimpleNamespace(
             deps=SimpleNamespace(
                 model_characteristics=None,
+                usage_attribution=ModelUsageBinding.standalone(source="test").ledger,
                 record_provider_usage=record_provider_usage,
                 _run_capability=lambda capability_id: None,
             ),

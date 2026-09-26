@@ -557,6 +557,8 @@ async def test_self_healing_capability_wraps_a_concrete_model() -> None:
 
     assert result.output_or_raise() == "recovered"
     assert calls == [1, 2]
+    assert result.usage.requests == 2
+    assert len(result.usage_records) == 2
 
 
 async def test_self_healing_capability_wraps_a_run_resolved_model() -> None:

@@ -92,6 +92,7 @@ from a13n_harness.plugins import (
     PluginRunResponse,
     bind_run_plugins,
 )
+from a13n_harness.pricing import AbstractModelCostCapability
 from a13n_harness.providers.environment.models import EnvironmentChange, EnvironmentError
 from a13n_harness.recovery import (
     InterruptedResponseTracker,
@@ -108,7 +109,7 @@ from a13n_harness.tools.deferred import (
     DeferredToolResume,
     preflight_deferred_resume,
 )
-from a13n_harness.usage import RunUsageLedger
+from a13n_harness.usage import RunUsageLedger, RunUsageSummary, UsageRecord, UsageSnapshot
 
 if TYPE_CHECKING:
     from a13n_harness.builder import AgentDefinition
@@ -297,10 +298,12 @@ class ExecutableAgent[OutputT]:
         definition_reserved_capability_ids: frozenset[str],
         model_inference: RunModelResolver,
         observation: _ObservationRuntime,
+        model_cost: AbstractModelCostCapability,
     ) -> None:
         self.definition = definition
         self.subagents = subagents
         self._agent = agent
+        self._model_cost = model_cost
         self._system_prompt = system_prompt
         self._output_adapter = output_adapter
         self._plugins = plugins
@@ -323,6 +326,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -340,6 +344,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -357,6 +362,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -373,6 +379,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -387,6 +394,7 @@ class ExecutableAgent[OutputT]:
             default_environment=default_environment,
             bindings=bindings,
             previous_state=previous_state,
+            resume_usage=resume_usage,
             tool_recovery=tool_recovery,
             deferred_resume=deferred_resume,
             usage=usage,
@@ -408,6 +416,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -425,6 +434,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -442,6 +452,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -458,6 +469,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -472,6 +484,7 @@ class ExecutableAgent[OutputT]:
             default_environment=default_environment,
             bindings=bindings,
             previous_state=previous_state,
+            resume_usage=resume_usage,
             tool_recovery=tool_recovery,
             deferred_resume=deferred_resume,
             usage=usage,
@@ -488,6 +501,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -523,6 +537,7 @@ class ExecutableAgent[OutputT]:
             bindings=resolved_bindings,
             environment_binding=environment_binding,
             previous_state=previous_state,
+            resume_usage=resume_usage,
             tool_recovery=tool_recovery,
             deferred_resume=normalized_resume,
             run_reserved_capability_ids=run_reserved_ids,
@@ -543,6 +558,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         bindings: RunBindings,
         environment_binding: EnvironmentRuntime,
         previous_state: HarnessState | None,
+        resume_usage: bool,
         tool_recovery: ToolRecoveryMode,
         deferred_resume: DeferredToolResume | None,
         run_reserved_capability_ids: frozenset[str],
@@ -558,6 +574,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             previous_state.model_copy(deep=True) if previous_state is not None else HarnessState.new()
         )
         self.thread_id = self._previous_state.thread_id
+        self._usage_snapshot = UsageSnapshot.from_state(self._previous_state) if resume_usage else None
+        if resume_usage and self._usage_snapshot is None:
+            raise StateError("Accounting resume requires usage state.", code="usage_state_missing")
         self.run_id = f"run-{uuid4().hex}"
         self._tool_recovery = (
             prepare_tool_recovery(
@@ -648,9 +667,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         return self._diagnostic_error
 
     @property
-    def usage(self) -> RunUsage:
-        """Return the live Pydantic AI usage accumulator."""
-        return self._usage
+    def usage(self) -> RunUsageSummary:
+        """Return a detached run-local usage summary."""
+        return self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls)
+
+    @property
+    def usage_records(self) -> tuple[UsageRecord, ...]:
+        return self.context.usage_records
 
     def _bind_parent_event_forwarder(self, parent: HarnessEventEmitter) -> _ChildEventForwarder:
         """Bind this exact stream as a validated child of one active parent emitter."""
@@ -714,7 +737,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         kind="deferred_response" if self._deferred_resume is not None else "prompt",
                     )
                 phase.set_attribute("a13n.phase.step", "context")
-                context = self._create_context(environment)
+                context = await self._create_context(environment)
                 self._context = context
                 phase.set_attribute("a13n.phase.step", "plugins")
                 run_plugins = await bind_run_plugins(self._executable._plugins, context)
@@ -746,16 +769,28 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         finally:
             _LogicalRunObservation.deactivate(activation)
 
-    def _create_context(self, environment: BoundEnvironment) -> AgentContext:
+    async def _create_context(self, environment: BoundEnvironment) -> AgentContext:
         bindings = self._bindings
         agent_spec = self._executable.definition.agent
         plugin_context = BoundPluginContext()
+        context_state = AgentContextState(self._previous_state.agent_context_state)
         usage_attribution = RunUsageLedger(
             run_id=self.run_id,
             instance=bindings.instance,
             events=self._emitter,
+            reporter=bindings.usage_reporter,
+            limits=self._usage_limits,
+            baseline=self._usage,
+            thread_id=self.thread_id,
+            state=context_state,
+            snapshot=self._usage_snapshot,
         )
-        context_state = AgentContextState(self._previous_state.agent_context_state)
+        # Native tool admission must include restored calls, while the explicit
+        # Host baseline remains disjoint from the Context-owned accounting scope.
+        if self._usage_snapshot is not None:
+            self._usage.tool_calls += self._usage_snapshot.tool_calls
+        usage_attribution.cost_capability = bindings._inherited_model_cost or self._executable._model_cost
+        await usage_attribution.save()
         return AgentContext(
             run_id=self.run_id,
             thread_id=self._previous_state.thread_id,
@@ -775,6 +810,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             _toolset_instructions_override=bindings.toolset_instructions,
             model_context=bindings.model_context,
             model_call_check=bindings.model_call_check,
+            usage_reporter=bindings.usage_reporter,
             _inherited_model_cost=bindings._inherited_model_cost,
             plugins=plugin_context,
             subagents=self._executable.subagents,
@@ -1115,15 +1151,19 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             task.cancel()
         pending_cancellation: asyncio.CancelledError | None = None
         current_task = asyncio.current_task()
-        while not task.done():
-            try:
-                await asyncio.shield(task)
-            except asyncio.CancelledError as exc:
-                if current_task is not None and current_task.cancelling():
-                    pending_cancellation = pending_cancellation or exc
-                    if not task.done():
-                        task.cancel()
-                continue
+        # Do not translate AnyIO's repeated scope cancellation into repeated
+        # Task.cancel() calls that pierce the producer's shielded cleanup.
+        # A new explicit caller cancellation still reaches plugin cleanup.
+        with CancelScope(shield=True):
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError as exc:
+                    if current_task is not None and current_task.cancelling():
+                        pending_cancellation = pending_cancellation or exc
+                        if not task.done():
+                            task.cancel()
+                    continue
         if not task.cancelled():
             error = task.exception()
             if error is not None:
@@ -1318,7 +1358,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             if terminal:
                 self._install_terminal_fence()
                 await self.context.usage_attribution._flush(reason="terminal")
-                item = self._validate_result_candidate(item.replace(usage_records=self.context.usage_records))
+                item = self._validate_result_candidate(
+                    item.replace(
+                        usage_records=self.context.usage_records,
+                        usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
+                    )
+                )
             target_sequence = self.context.environment._change_sequence
             async for event in self._drain_emitter_through(target_sequence, terminal=terminal):
                 yield event
@@ -1624,7 +1669,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 status="cancelled",
                                 output=None,
                                 state=state,
-                                usage=self._usage if exc.run_id is None else exc.usage,
+                                usage=self.usage,
                                 _messages=messages,
                                 _new_message_index=max(0, len(messages) - raw_new_message_count),
                             )
@@ -1660,7 +1705,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                     status="cancelled",
                                     output=None,
                                     state=state,
-                                    usage=self._usage,
+                                    usage=self.usage,
                                     _messages=messages,
                                     _new_message_index=min(self._new_message_index, len(messages)),
                                 )
@@ -1756,7 +1801,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         status="cancelled",
                         output=None,
                         state=state,
-                        usage=self._usage,
+                        usage=self.usage,
                         _messages=self._latest_messages,
                         _new_message_index=min(self._new_message_index, len(self._latest_messages)),
                     )
@@ -1793,7 +1838,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 status="completed",
                 output=result.output,
                 state=state,
-                usage=result.usage,
+                usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
                 _messages=messages,
                 _new_message_index=new_message_index,
             )
@@ -1808,7 +1853,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     message="This Host does not support deferred tool requests for this Run.",
                 ),
                 state=state,
-                usage=result.usage,
+                usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
                 _messages=messages,
                 _new_message_index=new_message_index,
             )
@@ -1821,7 +1866,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             deferred=deferred,
             suspend_reason="deferred",
             state=state,
-            usage=result.usage,
+            usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
             _messages=messages,
             _new_message_index=new_message_index,
         )
@@ -1842,7 +1887,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 status="failed",
                 output=None,
                 state=state,
-                usage=self._usage,
+                usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
                 failure=SafeFailure.model_validate(
                     {
                         "code": code,
@@ -1860,7 +1905,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self,
         candidate: HarnessRunResult[OutputT],
     ) -> HarnessRunResult[OutputT]:
-        attributed = candidate.replace(usage_records=self.context.usage_records)
+        attributed = candidate.replace(
+            usage_records=self.context.usage_records,
+            usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
+        )
         validated = self._validate_result_candidate(attributed)
         self._validated_outcome = validated
         return validated

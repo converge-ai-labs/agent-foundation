@@ -368,9 +368,13 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
         DeferredToolResults(calls={call.tool_call_id: ToolFailed("external input unavailable")}),
         recovery=recovery,
     )
+    from unittest.mock import AsyncMock, Mock
+
     unavailable = cast(Any, object())
+    reporter = SimpleNamespace(report=AsyncMock())
+    usage = SimpleNamespace(reporter=Mock(return_value=reporter))
     operator = HarnessUiSubagentOperator(
-        store=unavailable,
+        store=cast(Any, SimpleNamespace(usage=usage)),
         configurations=unavailable,
         compositions=unavailable,
         agent_reconstructor=unavailable,

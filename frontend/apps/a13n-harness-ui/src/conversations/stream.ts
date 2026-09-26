@@ -540,12 +540,14 @@ export class FocusDisplay {
       return;
     }
     if (payload.type === "usage_report" && Array.isArray(payload.records)) {
+      const resumedScope =
+        typeof payload.usage_id === "string" && value.run_id === this.runId;
       for (const record of payload.records) {
         if (
           !object(record) ||
           record.kind !== "model" ||
           (record.source ?? "agent") !== "agent" ||
-          record.run_id !== this.runId ||
+          (record.run_id !== this.runId && !resumedScope) ||
           record.parent_agent_instance_id != null ||
           record.delegation_id != null ||
           typeof record.response_ordinal !== "number" ||
@@ -556,7 +558,7 @@ export class FocusDisplay {
         if (
           typeof input_tokens === "number" &&
           typeof output_tokens === "number" &&
-          record.response_ordinal > (this.contextUsage?.ordinal ?? -1)
+          record.response_ordinal >= (this.contextUsage?.ordinal ?? -1)
         ) {
           this.contextUsage = {
             tokens: input_tokens + output_tokens,

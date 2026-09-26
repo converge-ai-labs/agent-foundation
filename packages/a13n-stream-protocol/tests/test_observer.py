@@ -18,6 +18,7 @@ from a13n_harness import (
     RunBindings,
     SafeFailure,
 )
+from a13n_harness.usage import RunUsageSummary
 from a13n_stream_protocol import AguiObservationError, HarnessAguiObserver
 from ag_ui.core import Event
 from ag_ui.core.events import (
@@ -61,7 +62,6 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.tools import DeferredToolRequests
-from pydantic_ai.usage import RunUsage
 from pydantic_core import PydanticSerializationError
 
 _OCCURRED_AT = datetime(2026, 1, 2, 3, 4, 5, 678000, tzinfo=UTC)
@@ -848,7 +848,7 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
         status="suspended",
         output=None,
         state=completed.state,
-        usage=RunUsage(),
+        usage=RunUsageSummary(),
         suspend_reason="deferred",
         deferred=DeferredToolRequests(
             calls=[ToolCallPart(tool_name="external", args={"x": 1}, tool_call_id="call-external")],
@@ -861,7 +861,7 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
         status="failed",
         output=None,
         state=None,
-        usage=RunUsage(input_tokens=2, output_tokens=3),
+        usage=RunUsageSummary(input_tokens=2, output_tokens=3),
         failure=SafeFailure(code="model_failed", message="The model failed."),
     )
     cancelled = HarnessRunResult(
@@ -870,7 +870,7 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
         status="cancelled",
         output=None,
         state=None,
-        usage=RunUsage(),
+        usage=RunUsageSummary(),
     )
 
     suspended_event = HarnessAguiObserver().observe(_result_event(0, suspended))[0]
@@ -886,7 +886,7 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
         status="completed",
         output=OpaqueOutput(),
         state=completed.state,
-        usage=RunUsage(),
+        usage=RunUsageSummary(),
     )
     opaque_event = HarnessAguiObserver().observe(_result_event(0, opaque))[0]
 

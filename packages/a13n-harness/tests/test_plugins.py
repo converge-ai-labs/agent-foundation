@@ -36,13 +36,13 @@ from a13n_harness.plugins import (
     PluginRunNext,
     PluginRunResponse,
 )
+from a13n_harness.usage import RunUsageSummary
 from pydantic import ValidationError
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.tools import RunContext
-from pydantic_ai.usage import RunUsage
 
 pytestmark = pytest.mark.anyio
 
@@ -179,7 +179,7 @@ class ShortCircuitPlugin(AbstractHarnessPlugin):
                 status="completed",
                 output="cached",
                 state=await exchange.export_current_state(),
-                usage=RunUsage(),
+                usage=RunUsageSummary(),
             )
 
         return PluginRunResponse(iterate())

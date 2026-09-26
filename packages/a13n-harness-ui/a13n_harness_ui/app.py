@@ -24,13 +24,13 @@ from a13n_harness.providers.environment.definition import EnvironmentProviderDef
 from a13n_harness.providers.environment.remote_envd.pairing import PairingChallenge, PairingRequest, PairingResponse
 from a13n_harness.providers.memory import DirectoryFileStore, MemoryStoreError
 from a13n_harness.providers.model.oauth import GrokCredentials
+from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic_ai import BinaryContent, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
-from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.composition import (
     AgentCompositionResolver,
@@ -2829,7 +2829,7 @@ async def open_harness_ui_app(
                 )
                 web_push = WebPush(store, push_client)
 
-            async def run_memory(organization: MemoryOrganizationRun) -> RunUsage:
+            async def run_memory(organization: MemoryOrganizationRun) -> RunUsageSummary:
                 model_id = organization.source.memory_organization_model_id
                 assert model_id is not None
                 scope = organization.scope
@@ -2850,7 +2850,7 @@ async def open_harness_ui_app(
                     raise
                 if operation.status is not RootOperationStatus.completed or operation.outcome is None:
                     raise ThreadError("Memory organization did not complete.", code="memory_organization_failed")
-                return TypeAdapter(RunUsage).validate_python(operation.outcome.execution.usage or {})
+                return TypeAdapter(RunUsageSummary).validate_python(operation.outcome.execution.usage or {})
 
             memory_organizer = MemoryOrganizer(
                 configuration_root=configuration_path.expanduser().resolve().parent if configuration_path else None,

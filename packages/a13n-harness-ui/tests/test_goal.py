@@ -270,11 +270,11 @@ async def test_app_captures_authored_objective_before_surface_transform_and_clea
 
 
 async def test_resumed_goal_token_totals_do_not_double_count_a_segment():
-    from pydantic_ai.usage import RunUsage
+    from a13n_harness.usage import RunUsageSummary
 
     previous = GoalView(objective="task", input_tokens=10, output_tokens=5, status="suspended")
     capability = GoalCapability(previous)
-    usage = RunUsage(input_tokens=20, output_tokens=7)
+    usage = RunUsageSummary(input_tokens=20, output_tokens=7)
     first = await capability.finish(HarnessState.new(), status="suspended", usage=usage)
     repeated = await capability.finish(first, status="suspended", usage=usage)
     assert saved_goal(repeated).input_tokens == 30

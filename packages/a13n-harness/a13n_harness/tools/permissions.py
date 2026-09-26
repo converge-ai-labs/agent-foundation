@@ -27,6 +27,7 @@ from a13n_harness.capabilities.tool_review import (
 )
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.tools.identity import ToolIdentity, ToolPermissionMode
 from a13n_harness.tools.policy import InvocationDecisionKind
 
@@ -146,7 +147,15 @@ class ToolPermissionsCapability(AbstractCapability[AgentContext]):
         if reviewer is None:
             return None
         if isinstance(reviewer, AgentToolReviewer):
-            return ToolReviewResult.model_validate(await reviewer.review(request, context=context))
+            return ToolReviewResult.model_validate(
+                await reviewer.review(
+                    request,
+                    context=context,
+                    usage=ModelUsageBinding.for_context(
+                        context, source="tool.review", tool_id=request.tool_id, tool_call_id=request.tool_call_id
+                    ),
+                )
+            )
         try:
             async with asyncio.timeout(self.config.timeout_seconds if self.config is not None else 120):
                 return ToolReviewResult.model_validate(await reviewer.review(request, context=context))

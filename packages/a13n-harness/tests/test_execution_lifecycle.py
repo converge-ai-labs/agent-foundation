@@ -20,6 +20,7 @@ from a13n_harness import (
     SemanticRunInput,
 )
 from a13n_harness.plugins import PluginRunExchange, PluginRunNext, PluginRunResponse
+from a13n_harness.usage import UsageSnapshot
 from pydantic import BaseModel
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability
@@ -190,7 +191,13 @@ async def test_live_checkpoints_remain_detached_from_plugin_result_and_cleanup(c
     items: list[HarnessEvent | HarnessRunResultEvent[str]] = []
     with pytest.raises(RunCleanupError) if cleanup_fails else nullcontext():
         async with stream:
-            assert await stream.export_state() == initial
+            entered = await stream.export_state()
+            snapshot = UsageSnapshot.from_state(entered)
+            assert snapshot is not None and snapshot.records == ()
+            assert entered.thread_id == initial.thread_id
+            assert entered.message_history == initial.message_history
+            assert set(entered.agent_context_state.entries) == {"a13n.usage"}
+            assert initial.agent_context_state.entries == {}
             async for item in stream:
                 items.append(item)
 

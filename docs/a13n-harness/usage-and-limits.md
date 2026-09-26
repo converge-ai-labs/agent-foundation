@@ -18,11 +18,35 @@ A Run may replace the complete `UsageLimits` value; it does not merge individual
 
 ## Usage
 
-`result.usage` and `stream.usage` use Pydantic AI's native `RunUsage`. `result.usage_records` additionally contains detached Harness attribution records for committed model requests and provider-reported usage.
+`result.usage` and `stream.usage` return detached `RunUsageSummary` values: current model requests, token/audio counters, tool calls, provider receipts, Decimal USD cost, and explicit unknown-cost/incomplete coverage. They are not Pydantic AI's mutable `RunUsage`. `result.usage_records` contains current attributed contributions. Repeated observations of a provider-suspended generation refine one contribution, rather than adding another request or summing cumulative tokens.
 
-Model records have an optional `call_id` correlating the committed response with its native model-handler invocation, including the Host's optional [pre-dispatch check](hosting.md#check-model-calls-before-dispatch). Usage reports remain at schema version `1`; older records without the field load with `call_id=None`. That value means unknown dispatch correlation, not proof that no provider call occurred. The ID is not an HTTP request ID or an exactly-once billing key, and it does not change existing record deduplication. Interrupted calls retain only actually observed usage; a check or allocated ID alone does not establish a charge.
+Model records have an optional `call_id` correlating the contribution with its original Model invocation, including the Host's optional [pre-dispatch check](hosting.md#check-model-calls-before-dispatch). Usage reports remain at schema version `1`; older records without the field load with `call_id=None`. That value means unknown dispatch correlation, not proof that no provider call occurred. The ID is not an HTTP request ID or an exactly-once billing key, and it does not change existing record deduplication. Interrupted calls retain only actually observed usage; a check or allocated ID alone does not establish a charge.
 
 Provider integrations can record stable non-model receipts through `AgentContext.record_provider_usage()`.
+
+### Save and resume accounting
+
+Usage is part of Context State under `a13n.usage`, exported with `HarnessState`. Normal runs, forks, and HITL-answer successors reset accounting by default. Steering within a running stream does not reset it. Previously persisted consumption is never deleted by reset.
+
+To continue the same accounting scope explicitly:
+
+```python
+from a13n_harness.usage import UsageSnapshot
+
+first = await executable.run("Start work")
+assert first.state is not None
+saved = UsageSnapshot.from_state(first.state)
+assert saved is not None
+continued = await executable.run(
+    "Continue work", previous_state=first.state, resume_usage=True
+)
+```
+
+The runtime Run ID changes, but the snapshot's `usage_id`, original contribution attribution and sequence continue. Missing or mismatched usage state fails explicitly. A provider-suspended generation requires this mode; resetting while continuing that generation is rejected before dispatch.
+
+A Host can bind an async `UsageReporter.report(snapshot: UsageSnapshot)` through `RunBindings.usage_reporter`. Store only the latest snapshot per `usage_id`, using `select_usage_snapshot` to validate replacement, and commit each scope atomically. Do not sum cumulative snapshots or use display chunks as another ingestion path. Display reports carry bounded changed-record chunks; direct delivery carries the complete detached state. Inline children inherit the reporter with independent scopes. A failed report stops execution and must be retried as delivery, not as model work.
+
+When durable accounting is newer than the selected execution checkpoint, use `latest_snapshot.restore(checkpoint)` before explicit accounting resume. This overlays accounting only; it does not move message history or restore execution authority. Serialize each scope's writer. Independent worker attempts need distinct scopes so a late older worker cannot overwrite newer accounting. Snapshots are bounded to 10,000 records and 16 MiB; reaching capacity fails instead of silently dropping observations.
 
 Model-cost valuation is enabled by default. `HarnessBuilder` inserts `CatalogModelCostCapability`, which freezes the current valid pricing catalog for the built Agent. Without Host-enabled updates this is bundled `genai-prices` data plus Harness supplements. `get_default_pricing_catalog()` always reads that bundled baseline; `get_current_pricing_catalog()` additionally adopts successful upstream updates. Both return immutable catalogs without downloading anything. Read or export the current snapshot:
 

@@ -27,6 +27,7 @@ from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
 from a13n_harness.input import RunInputFactory, RunInputValue, RunPreparationContext
 from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
+from a13n_harness.usage import UsageSnapshot
 from a13n_logging import get_logger
 from a13n_stream_protocol import HarnessAguiObserver
 from anyio import CancelScope, get_cancelled_exc_class, to_thread
@@ -121,6 +122,7 @@ class RootRunAdmission:
     response: ThreadDeferredResponse | None
     memory_positions: dict[str, str | None] = field(default_factory=dict)
     organization: MemoryOrganizationRun | None = None
+    resume_usage: bool = False
 
 
 class RootRunExecutor:
@@ -290,7 +292,19 @@ class RootRunExecutor:
             )
             envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
             published = PublishedRunComposition(value=captured, reference=envelope.ref)
-        return RootRunAdmission(thread, source, published, previous_state, deferred_resume, prompt, response, positions)
+        if restart is not None:
+            previous_state = await self._store.usage.restore(thread_id=thread_id, state=previous_state)
+        return RootRunAdmission(
+            thread,
+            source,
+            published,
+            previous_state,
+            deferred_resume,
+            prompt,
+            response,
+            positions,
+            resume_usage=restart is not None and UsageSnapshot.from_state(previous_state) is not None,
+        )
 
     async def execute(
         self,
@@ -407,6 +421,7 @@ class RootRunExecutor:
                 environment=None if environment is None else environment.runtime,
                 tool_result_directory=None if environment is None else environment.tool_result_directory,
                 model_resolver=reconstructed.model_resolver,
+                usage_reporter=self._store.usage.reporter(thread_id),
                 file_media_understanding=reconstructed.file_media_understanding(previous_state.thread_id),
                 working_state_observer=(
                     partial(self._work.observe, thread_id, base_continuation_id=base_continuation_id)
@@ -433,6 +448,7 @@ class RootRunExecutor:
                 input_factory=input_factory,
                 bindings=bindings,
                 previous_state=previous_state,
+                resume_usage=admission.resume_usage,
                 deferred_resume=deferred_resume,
             )
             excerpts = ExcerptCollector(thread.excerpt, run_id=stream.run_id)

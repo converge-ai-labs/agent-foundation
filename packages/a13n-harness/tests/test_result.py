@@ -7,10 +7,10 @@ import pytest
 from a13n_harness import AgentDefinition, HarnessBuilder, HarnessRunResult, HarnessState
 from a13n_harness import result as result_module
 from a13n_harness.plugins import AbstractHarnessPlugin
+from a13n_harness.usage import RunUsageSummary
 from pydantic_ai import AgentSpec
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
-from pydantic_ai.usage import RunUsage
 
 pytestmark = pytest.mark.anyio
 
@@ -23,7 +23,7 @@ def test_replacements_share_only_immutable_history_and_keep_public_views_detache
         status="completed",
         output={"items": [1]},
         state=HarnessState.new(thread_id="thread_test", message_history=messages),
-        usage=RunUsage(details={"custom": 1}),
+        usage=RunUsageSummary(details={"custom": 1}),
         _messages=messages,
     )
     with (

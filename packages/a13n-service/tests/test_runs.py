@@ -374,7 +374,11 @@ async def test_an_inline_subagent_runs_inside_its_parents_run(executing, scripte
         threads = (await session.scalars(select(ThreadRow).where(ThreadRow.origin_run_id == run["id"]))).all()
     # The child's charges are the parent run's, attributed to the model serving them, under the child's own
     # Harness run; no child thread exists.
-    assert len(records) == 3 and all(record.model_id is not None for record in records)
+    scopes = [record for record in records if record.record["kind"] == "snapshot"]
+    contributions = [record for record in records if record.record["kind"] == "model"]
+    assert len(scopes) == 2 and len(contributions) == 3
+    assert all(record.model_id is not None for record in contributions)
+    assert {record.harness_run_id for record in scopes} == {record.harness_run_id for record in contributions}
     assert len({record.harness_run_id for record in records}) == 2 and not threads
 
 

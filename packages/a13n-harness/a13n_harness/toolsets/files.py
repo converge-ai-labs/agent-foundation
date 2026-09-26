@@ -12,6 +12,7 @@ from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 from pydantic_ai import BinaryContent, RunContext, ToolReturn
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness._json import redact_json
@@ -22,6 +23,7 @@ from a13n_harness.environment.providers import BoundEnvironment, FileScopeProvid
 from a13n_harness.errors import HarnessError
 from a13n_harness.events import FileChangeProjection, FilesystemChangedValue, emit_tool_event
 from a13n_harness.filters.cold_start import COLD_START_RETENTION_METADATA_KEY
+from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.providers.environment.files import (
     FileMetadata,
     FileOperator,
@@ -39,7 +41,7 @@ from a13n_harness.tools.metadata import (
     ToolOutputPolicy,
     ToolResourceResolver,
 )
-from a13n_harness.usage import ProviderUsage, _auxiliary_usage_scope
+from a13n_harness.usage import ProviderUsage
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolError, ToolFailure, environment_failure, tool_failure
@@ -494,7 +496,7 @@ class FileToolset:
 
             try:
                 provider = self._resolve_media_understanding(ctx, kind)
-            except HarnessError:
+            except (HarnessError, UsageLimitExceeded):
                 raise
             except MediaUnderstandingError as exc:
                 await _record_media_understanding_usage(ctx, exc.usage)
@@ -513,9 +515,16 @@ class FileToolset:
                 instructions=instructions,
             )
             try:
-                with _auxiliary_usage_scope(ctx, source="files.media_understanding", tool_id="filesystem.view"):
-                    raw = await provider.understand(request)
-            except HarnessError:
+                raw = await provider.understand(
+                    request,
+                    usage=ModelUsageBinding.for_context(
+                        ctx.deps,
+                        source="files.media_understanding",
+                        tool_id="filesystem.view",
+                        tool_call_id=ctx.tool_call_id,
+                    ),
+                )
+            except (HarnessError, UsageLimitExceeded):
                 raise
             except MediaUnderstandingError as exc:
                 await _record_media_understanding_usage(ctx, exc.usage)

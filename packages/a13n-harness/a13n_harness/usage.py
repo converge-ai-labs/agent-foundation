@@ -1,44 +1,37 @@
-"""Run-local mixed-usage attribution without replacing Pydantic AI accounting."""
+"""Canonical run-local usage facts, summaries and optional Host delivery."""
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
+from collections.abc import Iterable
 from copy import deepcopy
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass, field, replace
+from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Literal
-from urllib.parse import urlsplit
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, runtime_checkable
 
+import anyio
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_ai import RunContext
-from pydantic_ai.agent import ModelRequestNode
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, WrapModelRequestHandler
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelResponse
 from pydantic_ai.models import ModelRequestContext
-from pydantic_ai.usage import RequestUsage, UsageLimits
+from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
 
 from a13n_harness._json import dump_json_bytes, is_sensitive_key
 from a13n_harness.context import AgentContext
-from a13n_harness.errors import DefinitionError, RunError
+from a13n_harness.errors import DefinitionError, RunError, StateError
 from a13n_harness.identity import AgentInstanceContext
-from a13n_harness.model_calls import _check_model_call
-from a13n_harness.pricing import (
-    MODEL_COST_CAPABILITY_ID,
-    AbstractModelCostCapability,
-    ModelCostInput,
-    ModelCostQuote,
-)
+from a13n_harness.money import sum_decimal
+from a13n_harness.pricing import MODEL_COST_CAPABILITY_ID, AbstractModelCostCapability
 from a13n_harness.providers.usage import ProviderUsage as ProviderUsage
 from a13n_harness.providers.usage import UsageMeasure as UsageMeasure
+from a13n_harness.request_budget import RequestBudget
+from a13n_harness.state import AgentContextState, AgentContextStateSnapshot, CapabilityState, HarnessState
 
 if TYPE_CHECKING:
-    from pydantic_ai.capabilities import AgentNode, NodeResult, WrapModelRequestHandler, WrapNodeRunHandler
-
     from a13n_harness.events import HarnessEventEmitter
 
 USAGE_CAPABILITY_ID = "a13n.usage"
@@ -61,7 +54,7 @@ type PricingStatus = Literal[
     "disabled",
     "not_reached",
 ]
-type UsageReportReason = Literal["model_request", "terminal"]
+type UsageReportReason = Literal["model_request", "provider", "terminal"]
 
 
 _LIMIT_FIELDS = (
@@ -88,7 +81,7 @@ def intersect_usage_limits(*values: UsageLimits | None) -> UsageLimits | None:
     return UsageLimits(**fields)
 
 
-class BoundedRequestUsage(BaseModel):
+class UsageCounters(BaseModel):
     """Safe fixed-shape projection of one Pydantic request usage value."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -100,8 +93,14 @@ class BoundedRequestUsage(BaseModel):
     input_audio_tokens: int = Field(default=0, ge=0, le=_MAX_COUNTER)
     cache_audio_read_tokens: int = Field(default=0, ge=0, le=_MAX_COUNTER)
     output_audio_tokens: int = Field(default=0, ge=0, le=_MAX_COUNTER)
+    audio_seconds: Decimal = Field(default=Decimal(0), ge=0, allow_inf_nan=False)
+    cost: Decimal | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
+class BoundedRequestUsage(UsageCounters):
+    """One request's counters and bounded provider detail, with USD cost."""
+
     details: dict[str, int] = Field(default_factory=dict)
-    cost: Decimal | None = None
 
     @model_validator(mode="after")
     def _validate_projection(self) -> BoundedRequestUsage:
@@ -137,25 +136,19 @@ class BoundedRequestUsage(BaseModel):
             input_audio_tokens=usage.input_audio_tokens,
             cache_audio_read_tokens=usage.cache_audio_read_tokens,
             output_audio_tokens=usage.output_audio_tokens,
+            audio_seconds=Decimal(str(usage.audio_seconds)),
             details=dict(tuple(details.items())[:_MAX_USAGE_DETAILS]),
             cost=usage.cost,
         )
 
 
-class ModelUsageRecord(BaseModel):
-    """One model response proven to have entered the native RunUsage accumulator."""
+class ModelUsageObservation(BaseModel):
+    """Fields a later observation of the same generation can refine."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["model"] = "model"
-    record_id: str = Field(min_length=1, max_length=128)
-    run_id: str = Field(min_length=1, max_length=256)
-    response_ordinal: int = Field(ge=0)
-    call_id: str | None = Field(default=None, min_length=1, max_length=128)
-    model_run_id: str | None = Field(default=None, max_length=256)
-    agent_instance_id: str = Field(min_length=1, max_length=512)
-    parent_agent_instance_id: str | None = Field(default=None, max_length=512)
-    delegation_id: str | None = Field(default=None, max_length=512)
+    usage_status: Literal["complete", "partial", "unavailable"] = "complete"
+    outcome: Literal["completed", "failed", "cancelled"] = "completed"
     response_state: str = Field(min_length=1, max_length=64)
     model_name: str | None = Field(default=None, max_length=1024)
     provider_name: str | None = Field(default=None, max_length=512)
@@ -165,6 +158,23 @@ class ModelUsageRecord(BaseModel):
     pricing_rule_id: str | None = Field(default=None, max_length=128)
     cost_source: CostSource = "unknown"
     pricing_status: PricingStatus = "not_reached"
+
+
+class ModelUsageRecord(ModelUsageObservation):
+    """One observed generation: immutable attribution plus a revisable observation."""
+
+    kind: Literal["model"] = "model"
+    record_id: str = Field(min_length=1, max_length=128)
+    run_id: str = Field(min_length=1, max_length=256)
+    response_ordinal: int = Field(ge=0)
+    model_id: str | None = Field(default=None, max_length=1024)
+    provider_response_id: str | None = Field(default=None, max_length=1024)
+    call_id: str | None = Field(default=None, min_length=1, max_length=128)
+    model_run_id: str | None = Field(default=None, max_length=256)
+    agent_instance_id: str = Field(min_length=1, max_length=512)
+    parent_agent_instance_id: str | None = Field(default=None, max_length=512)
+    delegation_id: str | None = Field(default=None, max_length=512)
+    request_started_at: datetime | None = None
     source: str = Field(default="agent", min_length=1, max_length=256)
     tool_id: str | None = Field(default=None, max_length=256)
     tool_call_id: str | None = Field(default=None, max_length=1024)
@@ -198,576 +208,519 @@ class ProviderUsageRecord(BaseModel):
 type UsageRecord = ModelUsageRecord | ProviderUsageRecord
 
 
-@dataclass(frozen=True, slots=True)
-class _PricingOutcome:
-    status: PricingStatus
-    revision: str | None
-    rule_id: str | None
-    quote_source: Literal["catalog", "custom"] | None
-    original_cost_present: bool
-    calculated_cost: Decimal | None
+def update_observation(previous: ModelUsageRecord, observation: ModelUsageObservation) -> ModelUsageRecord:
+    """Refine a cumulative generation without rolling back a newer accounting checkpoint."""
+    if any(
+        getattr(observation.request_usage, name) < getattr(previous.request_usage, name)
+        for name in (*TOKEN_COUNTERS, "audio_seconds")
+    ) or (previous.response_state == "complete" and observation.response_state != "complete"):
+        return previous.model_copy(deep=True)
+    if previous.pricing_revision is not None and observation.pricing_revision != previous.pricing_revision:
+        observation = observation.model_copy(
+            update={
+                "request_usage": observation.request_usage.model_copy(update={"cost": None}),
+                "pricing_revision": previous.pricing_revision,
+                "pricing_rule_id": previous.pricing_rule_id,
+                "pricing_status": "declined",
+                "cost_source": "unknown",
+            }
+        )
+    return previous.model_copy(
+        update={
+            **{name: getattr(observation, name) for name in ModelUsageObservation.model_fields},
+        },
+        deep=True,
+    )
+
+
+def validate_contribution(previous: UsageRecord, record: UsageRecord) -> None:
+    """Keep a contribution's identity and ownership fixed while observing its generation."""
+    mutable = set(ModelUsageObservation.model_fields) if isinstance(previous, ModelUsageRecord) else set()
+    if previous.model_dump(exclude=mutable) != record.model_dump(exclude=mutable):
+        raise RunError("Usage contribution changed its attribution.", code="usage_record_conflict")
+    if isinstance(previous, ModelUsageRecord) and isinstance(record, ModelUsageRecord):
+        if (
+            previous.pricing_revision is not None
+            and previous.pricing_revision != record.pricing_revision
+            and record.request_usage.cost is not None
+        ):
+            raise RunError("Usage contribution changed its price policy.", code="usage_record_conflict")
+
+
+class RunUsageSummary(BoundedRequestUsage):
+    """Known run-local totals. Unknown and partial records remain explicit."""
+
+    requests: int = Field(default=0, ge=0)
+    tool_calls: int = Field(default=0, ge=0)
+    provider_receipts: int = Field(default=0, ge=0)
+    unknown_cost_records: int = Field(default=0, ge=0)
+    incomplete_requests: int = Field(default=0, ge=0)
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    @property
+    def cache_hit_rate(self) -> float | None:
+        return self.cache_read_tokens / self.input_tokens if self.input_tokens else None
+
+
+TOKEN_COUNTERS = (
+    "input_tokens",
+    "cache_write_tokens",
+    "cache_read_tokens",
+    "output_tokens",
+    "input_audio_tokens",
+    "cache_audio_read_tokens",
+    "output_audio_tokens",
+)
+
+
+@dataclass
+class UsageAccumulator:
+    """Incremental totals over distinct latest records; callers own selection and grouping."""
+
+    requests: int = 0
+    receipts: int = 0
+    tokens: dict[str, int] = field(default_factory=lambda: dict.fromkeys(TOKEN_COUNTERS, 0))
+    details: dict[str, int] = field(default_factory=dict)
+    cost: Decimal = Decimal(0)
+    unknown: int = 0
+    provider_cost: Decimal = Decimal(0)
+    unknown_provider: int = 0
+    audio_seconds: Decimal = Decimal(0)
+    incomplete: int = 0
+
+    def add(self, record: UsageRecord) -> None:
+        if isinstance(record, ModelUsageRecord):
+            self.requests += 1
+            usage = record.request_usage
+            for name in TOKEN_COUNTERS:
+                self.tokens[name] += getattr(usage, name)
+            for name, count in usage.details.items():
+                self.details[name] = self.details.get(name, 0) + count
+                if len(self.details) > _MAX_USAGE_DETAILS:
+                    del self.details[max(self.details)]
+            self.audio_seconds = sum_decimal((self.audio_seconds, usage.audio_seconds))
+            self.incomplete += record.usage_status != "complete"
+            if usage.cost is None:
+                self.unknown += 1
+            else:
+                self.cost = sum_decimal((self.cost, usage.cost))
+        else:
+            self.receipts += 1
+            if record.usage.cost is None or record.usage.currency != "USD":
+                self.unknown_provider += 1
+            else:
+                self.provider_cost = sum_decimal((self.provider_cost, record.usage.cost))
+
+    @property
+    def model_cost(self) -> Decimal | None:
+        return self.cost if self.requests > self.unknown else None
+
+    @property
+    def receipt_cost(self) -> Decimal | None:
+        return self.provider_cost if self.receipts > self.unknown_provider else None
+
+    def summary(self, *, tool_calls: int = 0) -> RunUsageSummary:
+        known = self.requests + self.receipts > self.unknown + self.unknown_provider
+        return RunUsageSummary(
+            **self.tokens,
+            details=dict(sorted(self.details.items())),
+            audio_seconds=self.audio_seconds,
+            requests=self.requests,
+            tool_calls=tool_calls,
+            provider_receipts=self.receipts,
+            cost=sum_decimal((self.cost, self.provider_cost)) if known else None,
+            unknown_cost_records=self.unknown + self.unknown_provider,
+            incomplete_requests=self.incomplete,
+        )
+
+
+def summarize_usage(records: Iterable[UsageRecord], *, tool_calls: int = 0) -> RunUsageSummary:
+    """Sum distinct current contributions; repeated provider receipts retain their first owner."""
+    latest: dict[str, UsageRecord] = {}
+    for record in records:
+        previous = latest.get(record.record_id)
+        if previous is not None:
+            if isinstance(previous, ProviderUsageRecord) and isinstance(record, ProviderUsageRecord):
+                if previous.usage == record.usage:
+                    continue
+            if previous != record:
+                raise RunError("Conflicting current usage contributions.", code="usage_record_conflict")
+        latest[record.record_id] = record
+    totals = UsageAccumulator()
+    for record in latest.values():
+        totals.add(record)
+    return totals.summary(tool_calls=tool_calls)
+
+
+class UsageSnapshot(BaseModel):
+    """Current accounting state for one single-writer scope, independent of execution checkpoints."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["snapshot"] = "snapshot"
+    usage_id: str = Field(min_length=1, max_length=128)
+    thread_id: str | None = Field(default=None, max_length=256)
+    run_id: str = Field(min_length=1, max_length=256)
+    agent_instance_id: str = Field(min_length=1, max_length=512)
+    parent_agent_instance_id: str | None = Field(default=None, max_length=512)
+    delegation_id: str | None = Field(default=None, max_length=512)
+    sequence: int = Field(default=0, ge=0)
+    tool_calls: int = Field(default=0, ge=0)
+    records: tuple[Annotated[UsageRecord, Field(discriminator="kind")], ...] = Field(
+        default=(), max_length=_MAX_RECORDS
+    )
+
+    @model_validator(mode="after")
+    def _validate_scope(self) -> UsageSnapshot:
+        ids: set[str] = set()
+        for record in self.records:
+            if record.record_id in ids or (
+                record.run_id,
+                record.agent_instance_id,
+                record.parent_agent_instance_id,
+                record.delegation_id,
+            ) != (self.run_id, self.agent_instance_id, self.parent_agent_instance_id, self.delegation_id):
+                raise ValueError("Usage snapshot contributions must have unique identities and one owner")
+            ids.add(record.record_id)
+        if len(dump_json_bytes(self.model_dump(mode="json"))) > 16 * 1024 * 1024:
+            raise ValueError("Usage snapshot exceeds its 16 MiB bound")
+        return self
+
+    @property
+    def summary(self) -> RunUsageSummary:
+        return summarize_usage(self.records, tool_calls=self.tool_calls)
+
+    @classmethod
+    def from_state(cls, state: HarnessState) -> UsageSnapshot | None:
+        entry = state.agent_context_state.entries.get(USAGE_CAPABILITY_ID)
+        if entry is None:
+            return None
+        if entry.version != "1":
+            raise StateError("Unsupported usage state version.", code="usage_state_invalid")
+        snapshot = cls.model_validate(entry.data)
+        if snapshot.thread_id != state.thread_id:
+            raise StateError("Usage state belongs to another Thread.", code="usage_state_mismatch")
+        return snapshot
+
+    def restore(self, state: HarnessState) -> HarnessState:
+        """Overlay latest matching accounting without changing the selected execution history."""
+        previous = self.from_state(state)
+        if previous is None:
+            raise StateError("Accounting resume requires usage state.", code="usage_state_missing")
+        selected = select_usage_snapshot(previous, self)
+        entries = state.agent_context_state.entries
+        entries[USAGE_CAPABILITY_ID] = CapabilityState(version="1", data=selected.model_dump(mode="json"))
+        return state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
+
+
+def select_usage_snapshot(previous: UsageSnapshot, current: UsageSnapshot) -> UsageSnapshot:
+    """Choose current state from one owner; a sequence never merges independent writers."""
+    identity = {"usage_id", "thread_id", "run_id", "agent_instance_id", "parent_agent_instance_id", "delegation_id"}
+    if previous.model_dump(include=identity) != current.model_dump(include=identity):
+        raise StateError("Usage snapshot owner does not match.", code="usage_state_mismatch")
+    if previous.sequence == current.sequence:
+        if previous != current:
+            raise StateError("Usage snapshot sequence has conflicting facts.", code="usage_state_conflict")
+        return previous.model_copy(deep=True)
+    earlier, later = (previous, current) if previous.sequence < current.sequence else (current, previous)
+    records = {record.record_id: record for record in later.records}
+    if later.tool_calls < earlier.tool_calls:
+        raise StateError("Usage snapshot lost observed tool calls.", code="usage_state_conflict")
+    for record in earlier.records:
+        retained = records.get(record.record_id)
+        if retained is None:
+            raise StateError("Usage snapshot lost an observed contribution.", code="usage_state_conflict")
+        validate_contribution(record, retained)
+    return later.model_copy(deep=True)
+
+
+@runtime_checkable
+class UsageReporter(Protocol):
+    async def report(self, snapshot: UsageSnapshot) -> None:
+        """Persist the current scope atomically; retry the snapshot, never model execution."""
+        ...
+
+
+class UsageReportError(RunError):
+    def __init__(self) -> None:
+        super().__init__("Host usage delivery failed.", code="usage_report_failed")
 
 
 class RunUsageLedger:
-    """Append-only mixed-usage attribution ledger for one logical Harness run."""
+    """Latest run-local facts plus pending delivery; no pre-call durable registration."""
 
     def __init__(
         self,
         *,
         run_id: str,
         instance: AgentInstanceContext,
-        events: HarnessEventEmitter,
+        events: HarnessEventEmitter | None = None,
+        reporter: UsageReporter | None = None,
+        limits: UsageLimits | None = None,
+        baseline: RunUsage | None = None,
+        thread_id: str | None = None,
+        state: AgentContextState | None = None,
+        snapshot: UsageSnapshot | None = None,
     ) -> None:
-        self.run_id = run_id
-        self._instance = instance
+        self.run_id = snapshot.run_id if snapshot is not None else run_id
+        self.usage_id = snapshot.usage_id if snapshot is not None else _stable_id("scope", run_id)
+        self.thread_id = thread_id
+        self.instance = (
+            replace(
+                instance,
+                agent_instance_id=snapshot.agent_instance_id,
+                parent_agent_instance_id=snapshot.parent_agent_instance_id,
+                delegation_id=snapshot.delegation_id,
+            )
+            if snapshot is not None
+            else instance
+        )
+        self._state = state
+        self._sequence = snapshot.sequence if snapshot is not None else 0
+        self._tool_calls = snapshot.tool_calls if snapshot is not None else 0
         self._events = events
-        self._records: list[UsageRecord] = []
-        self._records_by_id: dict[str, UsageRecord] = {}
-        self._reported_index = 0
-        self._model_ordinal = 0
+        self.reporter = reporter
+        self.cost_capability: AbstractModelCostCapability | None = None
+        self._records = {r.record_id: r.model_copy(deep=True) for r in snapshot.records} if snapshot else {}
+        self._pending: dict[str, UsageRecord] = {}
+        self._reported_sequence = self._sequence
+        self._model_ordinal = 1 + max(
+            (r.response_ordinal for r in self._records.values() if isinstance(r, ModelUsageRecord)), default=-1
+        )
         self._flush_lock = asyncio.Lock()
+        self._limits = limits
+        self._baseline = deepcopy(baseline) if baseline is not None else RunUsage()
+        self.requests = RequestBudget(
+            used=self._baseline.requests + sum(isinstance(r, ModelUsageRecord) for r in self._records.values()),
+            limit=limits.request_limit if limits else None,
+        )
 
     @property
     def records(self) -> tuple[UsageRecord, ...]:
-        """Return a detached complete run-local attribution snapshot."""
-        return tuple(record.model_copy(deep=True) for record in self._records)
+        return tuple(record.model_copy(deep=True) for record in self._records.values())
+
+    @property
+    def snapshot(self) -> UsageSnapshot:
+        return UsageSnapshot(
+            usage_id=self.usage_id,
+            thread_id=self.thread_id,
+            run_id=self.run_id,
+            agent_instance_id=self.instance.agent_instance_id,
+            parent_agent_instance_id=self.instance.parent_agent_instance_id,
+            delegation_id=self.instance.delegation_id,
+            sequence=self._sequence,
+            tool_calls=self._tool_calls,
+            records=self.records,
+        )
+
+    async def save(self) -> None:
+        """Publish pure state even when Host delivery failed or no event can be emitted."""
+        async with self._flush_lock:
+            if self._state is not None:
+                await self._state.write(USAGE_CAPABILITY_ID, self.snapshot, version="1")
+
+    def summary(self, *, tool_calls: int | None = None) -> RunUsageSummary:
+        if tool_calls is not None:
+            observed = max(0, tool_calls - self._baseline.tool_calls)
+            if observed > self._tool_calls:
+                self._tool_calls = observed
+                self._sequence += 1
+        return summarize_usage(self._records.values(), tool_calls=self._tool_calls)
+
+    def generation(self, record_id: str) -> ModelUsageRecord:
+        record = self._records.get(record_id)
+        if not isinstance(record, ModelUsageRecord):
+            raise StateError("Provider continuation has no matching usage contribution.", code="usage_state_missing")
+        return record.model_copy(deep=True)
+
+    def next_model_ordinal(self) -> int:
+        ordinal = self._model_ordinal
+        self._model_ordinal += 1
+        return ordinal
+
+    def _budget(self) -> RunUsage:
+        summary = self.summary()
+        value = RunUsage(
+            **{name: getattr(summary, name) for name in TOKEN_COUNTERS},
+            requests=summary.requests,
+            cost=summary.cost,
+        )
+        value.incr(self._baseline)
+        return value
+
+    def reserve(self, call_id: str, *, continuation: bool = False) -> None:
+        # No await between checking capacity and reserving a request.
+        if not continuation and len(self._records) + self.requests.pending >= _MAX_RECORDS:
+            raise RunError("Run usage capacity was exceeded.", code="usage_capacity_exceeded")
+        if self._limits is not None:
+            replace(self._limits, request_limit=None).check_before_request(self._budget())
+        self.requests.limit = self._limits.request_limit if self._limits else None
+        self.requests.reserve(call_id, continuation=continuation)
+
+    def finish(
+        self, call_id: str, record: ModelUsageRecord, host_budget: RequestBudget | None = None
+    ) -> UsageLimitExceeded | None:
+        """Capture the fact and settle both scopes before any asynchronous delivery."""
+        self._append(record)
+        refusal = self.requests.finish(call_id, record)
+        if host_budget is not None:
+            host_refusal = host_budget.finish(call_id, record)
+            refusal = refusal or host_refusal
+        try:
+            self.check_limits()
+        except UsageLimitExceeded as error:
+            refusal = refusal or error
+        return refusal
+
+    def check_limits(self) -> None:
+        if self._limits is not None:
+            value = self._budget()
+            self._limits.check_tokens(value)
+            self._limits.check_cost(value, warn_if_cost_unavailable=False)
 
     async def _record_provider(
-        self,
-        usage: ProviderUsage,
-        *,
-        source: str,
-        tool_id: str | None = None,
-        tool_call_id: str | None = None,
+        self, usage: ProviderUsage, *, source: str, tool_id: str | None = None, tool_call_id: str | None = None
     ) -> ProviderUsageRecord:
-        """Deduplicate one source receipt and retain it for the next report boundary."""
-        detached = (
-            usage.model_copy(deep=True) if isinstance(usage, ProviderUsage) else ProviderUsage.model_validate(usage)
-        )
-        record_id = _stable_id("provider", detached.provider, detached.product, detached.usage_id)
+        receipt = ProviderUsage.model_validate(usage.model_dump())
+        record_id = _stable_id("provider", receipt.provider, receipt.product, receipt.usage_id)
+        previous = self._records.get(record_id)
         candidate = ProviderUsageRecord(
             record_id=record_id,
             run_id=self.run_id,
-            ordinal=len(self._records),
-            agent_instance_id=self._instance.agent_instance_id,
-            parent_agent_instance_id=self._instance.parent_agent_instance_id,
-            delegation_id=self._instance.delegation_id,
+            ordinal=previous.ordinal if isinstance(previous, ProviderUsageRecord) else len(self._records),
+            agent_instance_id=self.instance.agent_instance_id,
+            parent_agent_instance_id=self.instance.parent_agent_instance_id,
+            delegation_id=self.instance.delegation_id,
             source=source,
             tool_id=tool_id,
             tool_call_id=tool_call_id,
-            usage=detached,
+            usage=receipt,
         )
-        existing = self._records_by_id.get(record_id)
-        if existing is not None:
-            if not isinstance(existing, ProviderUsageRecord):
-                raise RunError("Usage record identity collision.", code="usage_record_conflict")
-            comparable = candidate.model_copy(update={"ordinal": existing.ordinal})
-            if existing != comparable:
-                raise RunError(
-                    "A provider usage ID was reused with different attribution.",
-                    code="usage_record_conflict",
-                )
-            return existing.model_copy(deep=True)
+        if isinstance(previous, ProviderUsageRecord):
+            if previous.usage != receipt:
+                raise RunError("A provider receipt changed its facts.", code="usage_record_conflict")
+            return previous.model_copy(deep=True)
         self._append(candidate)
+        await self._flush(reason="provider", trigger_record_id=record_id)
+        self.check_limits()
         return candidate.model_copy(deep=True)
 
-    async def _record_model(
-        self,
-        response: ModelResponse,
-        *,
-        call_id: str | None,
-        pricing: _PricingOutcome | None,
-        source: str = "agent",
-        tool_id: str | None = None,
-        tool_call_id: str | None = None,
-    ) -> ModelUsageRecord:
-        """Append and immediately report one proven native response commit."""
-        ordinal = self._model_ordinal
-        self._model_ordinal += 1
-        status: PricingStatus = pricing.status if pricing is not None else "not_reached"
-        revision = pricing.revision if pricing is not None else None
-        rule_id = pricing.rule_id if pricing is not None else None
-        cost_source = _cost_source(response, pricing)
-        record = ModelUsageRecord(
-            record_id=_stable_id("model", self.run_id, str(ordinal)),
-            run_id=self.run_id,
-            response_ordinal=ordinal,
-            call_id=call_id,
-            model_run_id=response.run_id,
-            agent_instance_id=self._instance.agent_instance_id,
-            parent_agent_instance_id=self._instance.parent_agent_instance_id,
-            delegation_id=self._instance.delegation_id,
-            response_state=response.state,
-            model_name=response.model_name,
-            provider_name=response.provider_name,
-            response_timestamp=response.timestamp,
-            request_usage=BoundedRequestUsage.from_request_usage(response.usage),
-            pricing_revision=revision,
-            pricing_rule_id=rule_id,
-            cost_source=cost_source,
-            pricing_status=status,
-            source=source,
-            tool_id=tool_id,
-            tool_call_id=tool_call_id,
-        )
-        self._append(record)
-        await self._flush(reason="model_request", trigger_record_id=record.record_id)
-        return record.model_copy(deep=True)
+    def _append(self, record: UsageRecord) -> None:
+        previous = self._records.get(record.record_id)
+        if previous is not None:
+            validate_contribution(previous, record)
+            if record == previous:
+                return
+        elif len(self._records) >= _MAX_RECORDS:
+            raise RunError("Run usage capacity was exceeded.", code="usage_capacity_exceeded")
+        self._records[record.record_id] = record.model_copy(deep=True)
+        self._pending[record.record_id] = record.model_copy(deep=True)
+        self._sequence += 1
 
-    async def _flush(
-        self,
-        *,
-        reason: UsageReportReason,
-        trigger_record_id: str | None = None,
-    ) -> None:
-        """Emit all records not included in an earlier report, split into stable bounded chunks."""
+    async def _flush(self, *, reason: UsageReportReason, trigger_record_id: str | None = None) -> None:
+        with anyio.move_on_after(5, shield=True) as cleanup:
+            await self._deliver(reason=reason, trigger_record_id=trigger_record_id)
+        if cleanup.cancel_called:
+            raise UsageReportError()
+
+    async def _deliver(self, *, reason: UsageReportReason, trigger_record_id: str | None) -> None:
         from a13n_harness.events import UsageReportPayload, emit_harness_event
 
         async with self._flush_lock:
-            checkpoint = len(self._records)
-            pending = self._records[self._reported_index : checkpoint]
-            if not pending:
+            snapshot = self.snapshot
+            if self._state is not None:
+                await self._state.write(USAGE_CAPABILITY_ID, snapshot, version="1")
+            pending = list(self._pending.values())
+            if snapshot.sequence == self._reported_sequence:
                 return
-            chunks = _report_chunks(pending)
-            report_id = _stable_id(
-                "report",
-                self.run_id,
-                reason,
-                trigger_record_id or "terminal",
-                str(_record_ordinal(pending[0])),
-            )
-            for chunk_index, chunk in enumerate(chunks):
-                await emit_harness_event(
-                    self._events,
-                    kind="usage",
-                    payload=UsageReportPayload(
-                        report_id=report_id,
-                        reason=reason,
-                        trigger_record_id=trigger_record_id,
-                        chunk_index=chunk_index,
-                        chunk_count=len(chunks),
-                        records=tuple(record.model_dump(mode="json") for record in chunk),
-                    ),
-                )
-            self._reported_index = checkpoint
-
-    def _append(self, record: UsageRecord) -> None:
-        if len(self._records) >= _MAX_RECORDS:
-            raise RunError("Run usage attribution capacity was exceeded.", code="usage_capacity_exceeded")
-        self._records.append(record)
-        self._records_by_id[record.record_id] = record
+            if self.reporter is not None:
+                try:
+                    await self.reporter.report(snapshot)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    raise UsageReportError() from exc
+            if self._events is not None:
+                chunks = _report_chunks(pending)
+                report_id = _stable_id("report", self.usage_id, str(snapshot.sequence))
+                for index, chunk in enumerate(chunks):
+                    await emit_harness_event(
+                        self._events,
+                        kind="usage",
+                        payload=UsageReportPayload(
+                            report_id=report_id,
+                            usage_id=self.usage_id,
+                            usage_sequence=snapshot.sequence,
+                            reason=reason,
+                            trigger_record_id=trigger_record_id,
+                            chunk_index=index,
+                            chunk_count=len(chunks),
+                            records=tuple(record.model_dump(mode="json") for record in chunk),
+                        ),
+                    )
+            for record in pending:
+                if self._pending.get(record.record_id) == record:
+                    del self._pending[record.record_id]
+            self._reported_sequence = snapshot.sequence
 
 
 @dataclass(init=False)
 class UsageCapability(AbstractCapability[AgentContext]):
-    """Core response-commit observer and mandatory model-cost integration."""
+    """Install one run-local meter around the public Model boundary."""
 
     id = USAGE_CAPABILITY_ID
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(USAGE_CAPABILITY_ID)
         if existing is not None:
-            if not isinstance(existing, _UsageActiveCapability):
-                raise DefinitionError("Usage has an incompatible run replacement.", code="capability_type_mismatch")
             return existing
-        replacement = _UsageActiveCapability(context=ctx.deps)
+        replacement = _RunUsageCapability(ctx.deps)
         ctx.deps._record_run_capability(USAGE_CAPABILITY_ID, replacement)
         return replacement
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="innermost")
+        from a13n_harness.models.capability import SelfHealingModelCapability
+
+        return CapabilityOrdering(position="innermost", wraps=[SelfHealingModelCapability])
 
 
-@dataclass
-class _DispatchFrame:
-    responses: list[tuple[ModelResponse, str, _PricingOutcome]] = field(default_factory=list)
-    calls: int = 0
-    streaming_call_id: str | None = None
+class _RunUsageCapability(UsageCapability):
+    def __init__(self, context: AgentContext) -> None:
+        self.context = context
 
-    def committed(self, response: ModelResponse) -> tuple[str | None, _PricingOutcome | None]:
-        exact = [(call_id, pricing) for dispatched, call_id, pricing in self.responses if dispatched is response]
-        if exact:
-            return exact[0] if len(exact) == 1 else (None, None)
-        # Native partial/copy operations retain the actual usage object. Do not
-        # infer provenance from equal timestamps, content or numeric usage.
-        matching = [
-            (call_id, pricing) for dispatched, call_id, pricing in self.responses if dispatched.usage is response.usage
-        ]
-        return matching[0] if len(matching) == 1 else (None, None)
-
-
-_dispatch_frame: ContextVar[_DispatchFrame | None] = ContextVar("model_dispatch_frame", default=None)
-
-
-@dataclass(init=False)
-class _UsageActiveCapability(UsageCapability):
-    def __init__(
-        self,
-        *,
-        context: AgentContext,
-        source: str = "agent",
-        tool_id: str | None = None,
-        tool_call_id: str | None = None,
-    ) -> None:
-        self._context = context
-        self._source = source
-        self._tool_id = tool_id
-        self._tool_call_id = tool_call_id
-        self._cost_capability: AbstractModelCostCapability | None = None
-        self._request_started_at: dict[str, datetime] = {}
+    async def wrap_node_run(self, ctx, *, node, handler):
+        try:
+            return await handler(node)
+        finally:
+            self.context.usage_attribution.summary(tool_calls=ctx.usage.tool_calls)
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        if ctx.deps is not self._context:
-            raise DefinitionError("Usage run replacement cannot cross logical runs.", code="capability_scope_invalid")
+        if ctx.deps is not self.context:
+            raise DefinitionError("Usage owner cannot cross runs.", code="capability_scope_invalid")
         return self
-
-    async def before_model_request(
-        self,
-        ctx: RunContext[AgentContext],
-        request_context: ModelRequestContext,
-    ) -> ModelRequestContext:
-        self._require_context(ctx)
-        if ctx.run_id is not None:
-            self._request_started_at[ctx.run_id] = datetime.now(UTC)
-        return request_context
 
     async def wrap_model_request(
-        self,
-        ctx: RunContext[AgentContext],
-        *,
-        request_context: ModelRequestContext,
-        handler: WrapModelRequestHandler,
+        self, ctx: RunContext[AgentContext], *, request_context: ModelRequestContext, handler: WrapModelRequestHandler
     ) -> ModelResponse:
-        self._require_context(ctx)
-        frame = _dispatch_frame.get()
-        if frame is None:
-            raise DefinitionError("Model dispatch has no native node frame.", code="capability_scope_invalid")
-        if frame.calls >= _MAX_RECORDS:
-            raise RunError("Model invocation capacity was exceeded.", code="usage_capacity_exceeded")
-        frame.calls += 1
-        call = await _check_model_call(
-            self._context,
-            request_context,
-            model_run_id=ctx.run_id,
-            source=self._source,
-            tool_id=self._tool_id,
-            tool_call_id=self._tool_call_id,
+        from a13n_harness.metering import ModelUsageBinding, meter_request
+
+        if ctx.deps is not self.context:
+            raise DefinitionError("Usage owner cannot cross runs.", code="capability_scope_invalid")
+        cost = ctx.deps._inherited_model_cost or ctx.capabilities.get(MODEL_COST_CAPABILITY_ID)
+        if not isinstance(cost, AbstractModelCostCapability):
+            raise DefinitionError("Missing model-cost capability.", code="capability_type_mismatch")
+        ctx.deps.usage_attribution.cost_capability = cost
+        return await meter_request(
+            ModelUsageBinding(ctx.deps.usage_attribution, cost, owner=ctx.deps), ctx, request_context, handler
         )
-        if request_context.streaming and frame.streaming_call_id is None:
-            frame.streaming_call_id = call.call_id
-        response = await handler(request_context)
-        capability = self._resolve_cost_capability(ctx)
-        original_cost_present = response.usage.cost is not None
-        request_started_at = (
-            self._request_started_at.pop(ctx.run_id, None) if ctx.run_id is not None else None
-        ) or response.timestamp
-        revision: str | None = None
-        status: PricingStatus = "failed"
-        priced = response
-        calculated_cost: Decimal | None = None
-        quote: ModelCostQuote | None = None
-        try:
-            enabled = capability.enabled
-            revision = capability.revision
-            if not isinstance(enabled, bool):
-                raise TypeError("model-cost Capability enabled flag must be a boolean")
-            if not isinstance(revision, str) or not revision:
-                raise TypeError("model-cost Capability revision must be a non-empty string")
-            status = "disabled" if not enabled else "declined"
-            if enabled:
-                usage = deepcopy(response.usage)
-                usage.cost = None
-                value = ModelCostInput(
-                    selected_model_id=request_context.model_id,
-                    model_name=response.model_name,
-                    provider_name=response.provider_name,
-                    provider_url=_safe_provider_url(response.provider_url),
-                    request_started_at=request_started_at,
-                    response_timestamp=response.timestamp,
-                    usage=usage,
-                    service_tier=_response_service_tier(response),
-                )
-                quote = capability.quote(value)
-                if quote is not None:
-                    if not isinstance(quote, ModelCostQuote):
-                        raise TypeError("model-cost Capability returned an incompatible quote")
-                    status = "applied"
-                    calculated_cost = quote.cost_usd
-                    response.usage.cost = quote.cost_usd
-        except Exception:
-            status = "failed"
-            quote = None
-            calculated_cost = None
-            try:
-                await _pricing_diagnostic(self._context, response, revision)
-            except Exception:
-                pass
-        outcome = _PricingOutcome(
-            status=status,
-            revision=quote.pricing_revision if quote is not None else revision,
-            rule_id=quote.rule_id if quote is not None else None,
-            quote_source=quote.source if quote is not None else None,
-            original_cost_present=original_cost_present,
-            calculated_cost=calculated_cost,
-        )
-        _enrich_current_model_span(priced, outcome)
-        frame.responses.append((priced, call.call_id, outcome))
-        return priced
-
-    async def wrap_node_run(
-        self,
-        ctx: RunContext[AgentContext],
-        *,
-        node: AgentNode[AgentContext],
-        handler: WrapNodeRunHandler[AgentContext],
-    ) -> NodeResult[AgentContext]:
-        self._require_context(ctx)
-        if not isinstance(node, ModelRequestNode):
-            return await handler(node)
-        requests_before = ctx.usage.requests
-        frame = _DispatchFrame()
-        token = _dispatch_frame.set(frame)
-        try:
-            try:
-                result = await handler(node)
-            except BaseException:
-                await self._record_committed_boundary(
-                    ctx, requests_before=requests_before, frame=frame, interrupted=True
-                )
-                raise
-            await self._record_committed_boundary(ctx, requests_before=requests_before, frame=frame)
-            return result
-        finally:
-            _dispatch_frame.reset(token)
-
-    async def _record_committed_boundary(
-        self, ctx: RunContext[AgentContext], *, requests_before: int, frame: _DispatchFrame, interrupted: bool = False
-    ) -> None:
-        if ctx.usage.requests <= requests_before:
-            return
-        response: ModelResponse | None = None
-        if ctx.messages and isinstance(ctx.messages[-1], ModelResponse):
-            tail = ctx.messages[-1]
-            if ctx.run_id is None or tail.run_id == ctx.run_id:
-                response = tail
-        if response is None:
-            return
-        call_id, pricing = frame.committed(response)
-        if interrupted and response.state == "interrupted" and call_id is None:
-            # The native streaming runner consumes its first opened stream and
-            # commits that stream's partial response when consumption fails.
-            call_id = frame.streaming_call_id
-        await self._context.usage_attribution._record_model(
-            response,
-            call_id=call_id,
-            pricing=_pricing_for_committed_response(pricing, response),
-            source=self._source,
-            tool_id=self._tool_id,
-            tool_call_id=self._tool_call_id,
-        )
-
-    def _resolve_cost_capability(self, ctx: RunContext[AgentContext]) -> AbstractModelCostCapability:
-        if self._cost_capability is not None:
-            return self._cost_capability
-        inherited = ctx.deps._inherited_model_cost
-        if inherited is not None:
-            self._cost_capability = inherited
-            return inherited
-        capability = ctx.capabilities.get(MODEL_COST_CAPABILITY_ID)
-        if not isinstance(capability, AbstractModelCostCapability):
-            raise DefinitionError("Model-cost Capability has an incompatible type.", code="capability_type_mismatch")
-        if MODEL_COST_CAPABILITY_ID in ctx.deps._capability_provenance.run_ids:
-            raise DefinitionError(
-                "Model-cost Capability cannot originate from RunBindings.",
-                code="capability_scope_invalid",
-            )
-        self._cost_capability = capability
-        return capability
-
-    def _require_context(self, ctx: RunContext[AgentContext]) -> None:
-        if ctx.deps is not self._context:
-            raise DefinitionError("Usage Capability cannot cross logical runs.", code="capability_scope_invalid")
-        owner = ctx.capabilities.get(USAGE_CAPABILITY_ID)
-        if type(owner) is not _UsageActiveCapability or owner is not self:
-            raise DefinitionError(
-                "The finalized Usage owner has an incompatible identity.",
-                code="capability_scope_invalid",
-            )
-
-
-@dataclass(frozen=True)
-class _AuxiliaryUsageBinding:
-    context: AgentContext
-    cost: AbstractModelCostCapability
-    source: str
-    tool_id: str | None
-    tool_call_id: str | None
-
-
-_auxiliary_usage: ContextVar[_AuxiliaryUsageBinding | None] = ContextVar("auxiliary_usage", default=None)
-
-
-@contextmanager
-def _auxiliary_usage_scope(
-    ctx: RunContext[AgentContext],
-    *,
-    source: str,
-    tool_id: str | None = None,
-) -> Iterator[None]:
-    """Bind auxiliary model attribution to the calling agent, not its native budget."""
-    owner = ctx.deps._run_capability(USAGE_CAPABILITY_ID)
-    if not isinstance(owner, _UsageActiveCapability):
-        # Embedded file-tool use without a Harness Run retains provider receipts.
-        yield
-        return
-    binding = _AuxiliaryUsageBinding(
-        ctx.deps,
-        owner._resolve_cost_capability(ctx),
-        source,
-        tool_id,
-        ctx.tool_call_id,
-    )
-    token = _auxiliary_usage.set(binding)
-    try:
-        yield
-    finally:
-        _auxiliary_usage.reset(token)
-
-
-class _AuxiliaryUsageCapability(_UsageActiveCapability):
-    """Reuse response pricing/commit observation with an independent native accumulator."""
-
-    def __init__(self, binding: _AuxiliaryUsageBinding) -> None:
-        super().__init__(
-            context=binding.context,
-            source=binding.source,
-            tool_id=binding.tool_id,
-            tool_call_id=binding.tool_call_id,
-        )
-        self._cost_capability = binding.cost
-
-    async def for_run(self, ctx: RunContext[Any]) -> AbstractCapability[Any]:
-        return self
-
-    def _require_context(self, ctx: RunContext[Any]) -> None:
-        # This invocation has non-Harness deps and deliberately does not register
-        # itself as the primary Run's Usage owner.
-        pass
-
-
-def _auxiliary_model_usage_capability() -> AbstractCapability[Any] | None:
-    binding = _auxiliary_usage.get()
-    return _AuxiliaryUsageCapability(binding) if binding is not None else None
-
-
-async def _pricing_diagnostic(
-    context: AgentContext,
-    response: ModelResponse,
-    revision: str | None,
-) -> None:
-    from a13n_harness.events import HarnessExtensionEvent
-
-    await context.events.emit(
-        HarnessExtensionEvent(
-            kind="diagnostic",
-            payload={
-                "type": "model_pricing_failed",
-                "model_name": response.model_name,
-                "provider_name": response.provider_name,
-                "pricing_revision": revision,
-            },
-        )
-    )
-
-
-def _pricing_for_committed_response(
-    pricing: _PricingOutcome | None,
-    response: ModelResponse,
-) -> _PricingOutcome | None:
-    if pricing is None:
-        return None
-    if pricing.status == "applied" and response.usage.cost != pricing.calculated_cost:
-        return None
-    return pricing
-
-
-def _response_service_tier(response: ModelResponse) -> str | None:
-    """Read only the bounded served tier, never the requested routing preference."""
-    details = response.provider_details or {}
-    value = details.get("service_tier")
-    if response.provider_name == "google-vertex" and details.get("traffic_type") is not None:
-        # Vertex exposes actual serving separately from the Developer API header.
-        traffic_type = details["traffic_type"]
-        if not isinstance(traffic_type, str):
-            raise ValueError("response service tier must be a bounded identifier")
-        value = traffic_type.lower()
-    if value is None:
-        return None
-    if (
-        not isinstance(value, str)
-        or not 1 <= len(value) <= 64
-        or not value.isascii()
-        or not value[0].islower()
-        or any(not (char.islower() or char.isdigit() or char in "_-") for char in value)
-    ):
-        raise ValueError("response service tier must be a bounded identifier")
-    return value
-
-
-def _safe_provider_url(value: str | None) -> str | None:
-    if value is None or len(value.encode("utf-8")) > 2048 or "\x00" in value:
-        return None
-    try:
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or parsed.hostname is None
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.query
-            or parsed.fragment
-        ):
-            return None
-        _ = parsed.port
-    except ValueError:
-        return None
-    return value
-
-
-def _cost_source(response: ModelResponse, pricing: _PricingOutcome | None) -> CostSource:
-    if response.usage.cost is None:
-        return "unknown"
-    if pricing is None:
-        return "provider_or_genai_prices"
-    if pricing.status == "applied" and pricing.quote_source is not None:
-        return pricing.quote_source
-    return "provider_or_genai_prices"
-
-
-def _enrich_current_model_span(response: ModelResponse, pricing: _PricingOutcome) -> None:
-    """Add bounded custom-pricing facts to the active Pydantic-owned model span."""
-    from a13n_harness.observation import _set_current_model_span_attributes
-
-    attributes: dict[str, str | float] = {
-        "a13n.usage.cost.source": _cost_source(response, pricing),
-        "a13n.usage.pricing.status": pricing.status,
-    }
-    if response.usage.cost is not None:
-        attributes["gen_ai.usage.cost"] = float(response.usage.cost)
-    if pricing.revision is not None:
-        attributes["a13n.usage.pricing.revision"] = pricing.revision
-    if pricing.rule_id is not None:
-        attributes["a13n.usage.pricing.rule.id"] = pricing.rule_id
-    _set_current_model_span_attributes(attributes)
 
 
 def _stable_id(kind: str, *values: str) -> str:
     digest = hashlib.sha256("\x00".join((kind, *values)).encode("utf-8")).hexdigest()[:24]
     return f"usage-{digest}"
-
-
-def _record_ordinal(record: UsageRecord) -> int:
-    return record.response_ordinal if isinstance(record, ModelUsageRecord) else record.ordinal
 
 
 def _report_chunks(records: list[UsageRecord]) -> list[list[UsageRecord]]:
@@ -789,14 +742,24 @@ def _report_chunks(records: list[UsageRecord]) -> list[list[UsageRecord]]:
 
 
 __all__ = [
+    "TOKEN_COUNTERS",
     "BoundedRequestUsage",
-    "CostSource",
+    "ModelUsageObservation",
     "ModelUsageRecord",
-    "PricingStatus",
     "ProviderUsage",
     "ProviderUsageRecord",
     "RunUsageLedger",
+    "RunUsageSummary",
+    "UsageAccumulator",
+    "UsageCounters",
     "UsageMeasure",
     "UsageRecord",
+    "UsageReportError",
+    "UsageReporter",
+    "UsageSnapshot",
     "intersect_usage_limits",
+    "select_usage_snapshot",
+    "summarize_usage",
+    "update_observation",
+    "validate_contribution",
 ]

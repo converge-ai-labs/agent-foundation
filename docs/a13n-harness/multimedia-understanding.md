@@ -131,7 +131,7 @@ Dedicated-Agent and custom-provider usage is recorded separately with:
 - the active tool-call ID;
 - provider, model product, request count, and available token counters.
 
-This nested model work does not change the active Agent's Pydantic AI `RunUsage` or native `UsageLimits`. If analysis fails or times out after model responses have already contributed counters, those proven counters are still recorded; a failure before any measured request does not invent usage.
+This nested model work retains independent Pydantic AI counters but contributes to the calling Agent's Context usage summary and model budget. Known observations survive analysis failure, timeout, or cancellation. Failure after Model dispatch but before a response records unavailable usage rather than inventing tokens or cost; rejection before dispatch records no request.
 
 `view` returns stable bounded failures instead of attaching unsupported media or exposing provider exceptions. Each failure is an ordinary tool result visible to the active Agent, not a Pydantic AI retry prompt, so it does not consume the main Agent's function-tool retry allowance. Common codes include:
 

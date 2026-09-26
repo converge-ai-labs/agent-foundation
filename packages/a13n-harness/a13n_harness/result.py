@@ -10,11 +10,10 @@ from typing import Any, Literal, cast
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, computed_field, field_validator
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.tools import DeferredToolRequests
-from pydantic_ai.usage import RunUsage
 
 from a13n_harness.errors import RetryHint, RunError
 from a13n_harness.state import HarnessState, decode_messages, encode_messages
-from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord, UsageRecord
+from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord, RunUsageSummary, UsageRecord
 
 RunStatus = Literal["completed", "suspended", "failed", "cancelled"]
 SuspendReason = Literal["deferred"]
@@ -85,7 +84,7 @@ class HarnessRunResult[OutputT]:
         status: RunStatus,
         output: OutputT | None,
         state: HarnessState | None,
-        usage: RunUsage,
+        usage: RunUsageSummary,
         usage_records: Sequence[UsageRecord] = (),
         failure: SafeFailure | None = None,
         suspend_reason: SuspendReason | None = None,
@@ -103,8 +102,8 @@ class HarnessRunResult[OutputT]:
             raise TypeError("state must be HarnessState or None")
         if state is not None and state.thread_id != thread_id:
             raise ValueError("state.thread_id must match thread_id")
-        if not isinstance(usage, RunUsage):
-            raise TypeError("usage must be RunUsage")
+        if not isinstance(usage, RunUsageSummary):
+            raise TypeError("usage must be RunUsageSummary")
         if not all(isinstance(record, ModelUsageRecord | ProviderUsageRecord) for record in usage_records):
             raise TypeError("usage_records must contain only UsageRecord values")
         if failure is not None and not isinstance(failure, SafeFailure):
@@ -173,7 +172,7 @@ class HarnessRunResult[OutputT]:
         return self._state.model_copy(deep=True) if self._state is not None else None
 
     @property
-    def usage(self) -> RunUsage:
+    def usage(self) -> RunUsageSummary:
         return _copy_usage(self._usage)
 
     @property
@@ -258,5 +257,5 @@ class HarnessRunResult[OutputT]:
         )
 
 
-def _copy_usage(usage: RunUsage) -> RunUsage:
+def _copy_usage(usage: RunUsageSummary) -> RunUsageSummary:
     return deepcopy(usage)

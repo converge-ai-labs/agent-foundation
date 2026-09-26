@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import pytest
 from a13n_harness import HarnessRunResult, HarnessState
+from a13n_harness.usage import RunUsageSummary
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization
 from a13n_harness_ui.errors import RunCoordinationError
 from a13n_harness_ui.interaction_timeout import QUESTION_TIMEOUT_MESSAGE
@@ -16,7 +17,6 @@ from a13n_harness_ui.surfaces import ExternalToolResult, RootOperationStatus, Th
 from anyio import Event, create_task_group, fail_after
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.messages import ToolCallPart
-from pydantic_ai.usage import RunUsage
 
 from .test_root_run import capture
 
@@ -40,7 +40,7 @@ def suspended_outcome(*, seconds=120, selected=True):
             status="suspended",
             output=None,
             state=HarnessState(schema_version="1", thread_id=THREAD),
-            usage=RunUsage(),
+            usage=RunUsageSummary(),
             suspend_reason="deferred",
             deferred=requests,
         ),
@@ -67,7 +67,7 @@ def completed_outcome():
             status="completed",
             output="continued",
             state=HarnessState(schema_version="1", thread_id=THREAD),
-            usage=RunUsage(),
+            usage=RunUsageSummary(),
         ),
         continuation=RootContinuationSelection(
             status="selected",

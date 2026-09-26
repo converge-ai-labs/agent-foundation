@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import pytest
 from a13n_harness import AgentDefinition, HarnessBuilder, RunBindings
 from a13n_harness.errors import RunError
+from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.model_calls import ModelCall
 from a13n_harness.usage import ModelUsageRecord
 from pydantic_ai import ModelRetry
@@ -148,7 +149,8 @@ async def test_dispatched_pre_yield_failure_preserves_native_interrupted_account
     assert len(result.usage_records) == 1
     record = result.usage_records[0]
     assert record.call_id == checks.calls[0].call_id
-    assert record.response_state == "interrupted"
+    assert record.response_state == "unavailable"
+    assert record.usage_status == "unavailable"
     assert record.request_usage.input_tokens == record.request_usage.output_tokens == 0
     assert record.request_usage.cost is None
     assert record.cost_source == "unknown" and record.pricing_status == "not_reached"
@@ -230,8 +232,8 @@ async def test_interrupted_committed_response_keeps_its_original_dispatch_identi
 
 async def test_interleaved_auxiliary_calls_keep_owner_and_dispatch_identity():
     from a13n_harness import AgentContext
+    from a13n_harness.metering import ModelUsageBinding
     from a13n_harness.toolsets.file_media import AgentMediaUnderstandingProvider, MediaUnderstandingRequest
-    from a13n_harness.usage import _auxiliary_usage_scope
     from pydantic_ai import RunContext
     from pydantic_ai.messages import ModelResponse, TextPart
     from pydantic_ai.usage import RequestUsage
@@ -259,17 +261,20 @@ async def test_interleaved_auxiliary_calls_keep_owner_and_dispatch_identity():
 
     async def inspect_media(ctx: RunContext[AgentContext]):
         before = ctx.usage.requests
-        with _auxiliary_usage_scope(ctx, source="files.media_understanding", tool_id="filesystem.view"):
-            await asyncio.gather(
-                *(
-                    provider.understand(
-                        MediaUnderstandingRequest(
-                            kind="image", media_type="image/png", source_name="fixture.png", source_bytes=b"fixture"
-                        )
-                    )
-                    for provider in providers
+        binding = ModelUsageBinding.for_context(
+            ctx.deps, source="files.media_understanding", tool_id="filesystem.view", tool_call_id=ctx.tool_call_id
+        )
+        await asyncio.gather(
+            *(
+                provider.understand(
+                    MediaUnderstandingRequest(
+                        kind="image", media_type="image/png", source_name="fixture.png", source_bytes=b"fixture"
+                    ),
+                    usage=binding,
                 )
+                for provider in providers
             )
+        )
         assert ctx.usage.requests == before
         return "inspected"
 
@@ -299,7 +304,7 @@ async def test_interleaved_auxiliary_calls_keep_owner_and_dispatch_identity():
         assert call.harness_run_id == record.run_id
         assert call.agent_instance_id == record.agent_instance_id
         assert call.tool_call_id == record.tool_call_id == "media-tool"
-    assert result.usage.requests == 2  # Auxiliary native accumulators remain independent.
+    assert result.usage.requests == 4  # Both auxiliary calls belong to this logical Run.
 
 
 async def test_concurrent_inline_children_inherit_check_without_crossing_ledgers():
@@ -397,6 +402,9 @@ async def test_builtin_reviewer_checks_before_dispatch_and_reuses_receipt_identi
                 tool_id="fixture.write", tool_call_id="effect-1", tool_name="write", parameters_schema={}, arguments={}
             ),
             context=ctx.deps,
+            usage=ModelUsageBinding.for_context(
+                ctx.deps, source="tool.review", tool_id="fixture.write", tool_call_id="effect-1"
+            ),
         )
         receipts.extend(result.usage)
         return "reviewed"
@@ -423,8 +431,10 @@ async def test_builtin_reviewer_checks_before_dispatch_and_reuses_receipt_identi
         result = await executable.run("go", bindings=RunBindings.embedded(model_call_check=Policy()))
         assert result.output_or_raise() == "done"
         review_checks = [call for call in checks if call.source == "tool.review"]
-        assert len(review_checks) == len(receipts) == len(reviewer_calls) == 1
-        assert receipts[0].usage_id == review_checks[0].call_id
+        records = [r for r in result.usage_records if r.source == "tool.review"]
+        assert len(review_checks) == len(records) == len(reviewer_calls) == 1
+        assert receipts == []
+        assert records[0].call_id == review_checks[0].call_id
         assert review_checks[0].tool_id == "fixture.write" and review_checks[0].tool_call_id == "effect-1"
         # The review call carries the model ID its configuration selects.
         assert review_checks[0].model_id == "test:review"
@@ -503,15 +513,15 @@ async def test_shared_reviewer_isolates_overlapping_executions(reviewer_context,
 async def test_reviewer_allocates_identity_only_after_request_preparation(reviewer_context, monkeypatch):
     from dataclasses import replace
 
-    from a13n_harness import model_calls
     from a13n_harness.capabilities import tool_review
+    from a13n_harness.metering import MeteredModel
 
     events = []
-    allocate = model_calls.uuid4
+    admit = MeteredModel._admit
 
-    def record_allocation():
-        events.append("allocate")
-        return allocate()
+    async def record_admission(self, messages):
+        events.append("admit")
+        return await admit(self, messages)
 
     class Preparation(AbstractCapability):
         async def before_model_request(self, ctx, request_context):
@@ -526,7 +536,7 @@ async def test_reviewer_allocates_identity_only_after_request_preparation(review
         events.append("provider")
         yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"risk":"low"}')}
 
-    monkeypatch.setattr(model_calls, "uuid4", record_allocation)
+    monkeypatch.setattr(MeteredModel, "_admit", record_admission)
     monkeypatch.setattr(tool_review, "_auxiliary_agent_capabilities", lambda: (Preparation(),))
     reviewer = tool_review.AgentToolReviewer(
         FunctionModel(stream_function=provider), tool_review.ToolReviewConfig(model="test:review")
@@ -632,18 +642,19 @@ async def test_outer_wrapper_commits_selected_response_instead_of_last_dispatch(
     )
     result = await asyncio.wait_for(executable.run("go", bindings=RunBindings.embedded(model_call_check=checks)), 5)
     assert result.output_or_raise() == ("first" if mode in {"earlier", "copied"} else "synthetic")
-    assert len(checks.calls) == (0 if mode == "short_circuit" else 2)
+    assert len(checks.calls) == (0 if mode == "short_circuit" else 1)
     # Native streaming consumes only the first stream; the second handler
     # invocation opens a lazy composite but never enters its provider segment.
     assert len(providers) == (0 if mode == "short_circuit" else 1)
-    assert len(result.usage_records) == 1
-    assert result.usage_records[0].call_id == (checks.calls[0].call_id if mode in {"earlier", "copied"} else None)
+    assert len(result.usage_records) == (0 if mode == "short_circuit" else 1)
+    if result.usage_records:
+        assert result.usage_records[0].call_id == checks.calls[0].call_id
 
 
 @pytest.mark.parametrize("retry_first", [False, True])
 async def test_nonstreaming_auxiliary_wrapper_returns_first_of_two_real_provider_responses(retry_first):
     from a13n_harness import AgentContext
-    from a13n_harness.usage import _auxiliary_model_usage_capability, _auxiliary_usage_scope
+    from a13n_harness.metering import ModelUsageBinding, ModelUsageCapability
     from pydantic_ai import Agent, RunContext
     from pydantic_ai.messages import ModelResponse, TextPart
 
@@ -666,13 +677,15 @@ async def test_nonstreaming_auxiliary_wrapper_returns_first_of_two_real_provider
         return ModelResponse(parts=[TextPart(str(providers[-1]))])
 
     async def analyze(ctx: RunContext[AgentContext]):
-        with _auxiliary_usage_scope(ctx, source="files.media_understanding", tool_id="filesystem.view"):
-            usage = _auxiliary_model_usage_capability()
-            assert usage is not None
-            agent = Agent(FunctionModel(auxiliary_provider), capabilities=[EarlierResponse(), usage])
-            result = await agent.run("analyze")
-            assert result.output == ("2" if retry_first else "1")
-            return result.output
+        binding = ModelUsageBinding.for_context(
+            ctx.deps, source="files.media_understanding", tool_id="filesystem.view", tool_call_id=ctx.tool_call_id
+        )
+        usage = ModelUsageCapability(binding)
+        assert usage is not None
+        agent = Agent(FunctionModel(auxiliary_provider), capabilities=[EarlierResponse(), usage])
+        result = await agent.run("analyze")
+        assert result.output == ("2" if retry_first else "1")
+        return result.output
 
     async def primary(messages, info):
         if any(isinstance(part, ToolReturnPart) for m in messages if isinstance(m, ModelRequest) for part in m.parts):
@@ -693,8 +706,9 @@ async def test_nonstreaming_auxiliary_wrapper_returns_first_of_two_real_provider
     auxiliary_checks = [call for call in checks.calls if call.source == "files.media_understanding"]
     auxiliary_records = [record for record in result.usage_records if record.source == "files.media_understanding"]
     assert providers == [1, 2] and len(auxiliary_checks) == 2
-    assert len(auxiliary_records) == 1
-    assert auxiliary_records[0].call_id == auxiliary_checks[1 if retry_first else 0].call_id
+    assert len(auxiliary_records) == 2
+    assert [r.call_id for r in auxiliary_records] == [c.call_id for c in auxiliary_checks]
+    assert auxiliary_records[0].usage_status == ("unavailable" if retry_first else "complete")
 
 
 async def test_current_usage_events_are_v2_and_result_keeps_same_call_identity():

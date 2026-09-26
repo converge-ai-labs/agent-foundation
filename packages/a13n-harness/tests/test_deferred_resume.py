@@ -137,6 +137,15 @@ async def test_native_approval_suspends_and_resumes_with_fresh_authority() -> No
     assert second.status == "completed"
     assert executed == [1]
     assert fresh_policy.seen_values == [1]
+    from a13n_harness.usage import UsageSnapshot
+
+    assert first.state is not None and second.state is not None
+    before = UsageSnapshot.from_state(first.state)
+    after = UsageSnapshot.from_state(second.state)
+    assert before is not None and after is not None
+    assert before.usage_id != after.usage_id
+    assert first.usage.requests == second.usage.requests == 1
+    assert second.usage.tool_calls == 1
 
 
 async def test_deferred_continuation_restores_the_retained_input_ledger() -> None:

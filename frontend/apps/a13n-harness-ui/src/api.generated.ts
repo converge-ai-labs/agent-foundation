@@ -3043,6 +3043,21 @@ export interface components {
              * @default 0
              */
             output_tokens?: number;
+            /**
+             * Usage Id
+             * @default null
+             */
+            usage_id?: string | null;
+            /**
+             * Usage Input Base
+             * @default 0
+             */
+            usage_input_base?: number;
+            /**
+             * Usage Output Base
+             * @default 0
+             */
+            usage_output_base?: number;
         };
         /**
          * GrantAccess

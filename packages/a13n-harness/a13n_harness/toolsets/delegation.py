@@ -576,6 +576,7 @@ def _create_inline_child_bindings(
         tool_result_directory=parent.tool_result_directory,
         model_resolver=parent.model_resolver,
         model_call_check=parent.model_call_check,
+        usage_reporter=parent.usage_reporter,
         toolset_instructions=parent._toolset_instructions_override,
         deferred_tools_supported=False,
         capabilities=(invocation_policy,) if invocation_policy is not None else (),
@@ -598,6 +599,8 @@ def _create_inline_child_bindings(
         )
     if resolved.model_call_check is not bindings.model_call_check:
         raise DefinitionError("Child bindings cannot replace the model call check.", code="subagent_binding_invalid")
+    if resolved.usage_reporter is not bindings.usage_reporter:
+        raise DefinitionError("Child bindings cannot replace the usage reporter.", code="subagent_binding_invalid")
     if invocation_policy is not None and not any(item is invocation_policy for item in resolved.capabilities):
         raise DefinitionError(
             "Child run bindings factory cannot remove or replace the inherited invocation policy.",

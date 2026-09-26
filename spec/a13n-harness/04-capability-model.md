@@ -180,7 +180,7 @@ One fresh context is created for every logical Harness run and reused by that ru
 - `model_resolver` is the optional fresh logical-model resolver;
 - `toolset_instructions` is the effective per-run switch for Toolset-owned model guidance;
 - `events` emits bounded Harness-owned observations into the one canonical run stream;
-- `usage_attribution` retains mixed-source immutable records and reports them at model-request boundaries;
+- `usage_attribution` maintains the latest mixed-source accounting snapshot in `a13n.usage` Context State, delivers detached snapshots to the Host reporter, and emits bounded changed-record observations;
 - `plugins` indexes the complete fresh run-bound plugin graph after binding;
 - `subagents` is the immutable collection owned by the executable;
 - `metadata` is immutable non-authoritative correlation;

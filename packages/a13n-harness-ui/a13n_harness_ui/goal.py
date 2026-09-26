@@ -14,12 +14,12 @@ from a13n_harness import HarnessState
 from a13n_harness.capabilities.context import ContextRestoredEvent
 from a13n_harness.context import AgentContext
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
+from a13n_harness.usage import RunUsageSummary, UsageSnapshot
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, ModelRequest, TextContent, UserPromptPart
 from pydantic_ai.models import ModelRequestContext
-from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.goal_prompts import goal_check_prompt, has_completion_marker, post_restore_audit_prompt
 
@@ -52,6 +52,9 @@ class GoalView(BaseModel):
     restore_source: str | None = None
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
+    usage_id: str | None = None
+    usage_input_base: int = Field(default=0, ge=0)
+    usage_output_base: int = Field(default=0, ge=0)
 
     @property
     def active(self) -> bool:
@@ -122,7 +125,7 @@ class GoalCapability(AbstractCapability[AgentContext]):
                 self._completion_candidate = False
                 self.goal = self.goal.model_copy(update={"status": "working"})
                 await self._publish(ctx)
-            self._usage(ctx.usage)
+            self._usage(ctx.deps.usage_snapshot.summary, ctx.deps.usage_snapshot.usage_id)
             await self._save(ctx)
         return request_context
 
@@ -176,7 +179,7 @@ class GoalCapability(AbstractCapability[AgentContext]):
                         "restore_source": None if audit else goal.restore_source,
                     }
                 )
-        self._usage(ctx.usage)
+        self._usage(ctx.deps.usage_snapshot.summary, ctx.deps.usage_snapshot.usage_id)
         await self._publish(ctx)
         return output
 
@@ -185,12 +188,15 @@ class GoalCapability(AbstractCapability[AgentContext]):
         state: HarnessState,
         *,
         status: Literal["completed", "suspended", "cancelled", "failed"],
-        usage: RunUsage | None = None,
+        usage: RunUsageSummary | None = None,
     ) -> HarnessState:
         """Finalize the portable candidate before the Host publishes its head."""
         if self.goal is None:
             return with_goal(state, None)
-        if usage is not None:
+        snapshot = UsageSnapshot.from_state(state)
+        if snapshot is not None:
+            self._usage(snapshot.summary, snapshot.usage_id)
+        elif usage is not None:
             self._usage(usage)
         if self.goal.active or (self.goal.status == "verified" and status in {"failed", "cancelled"}):
             terminal: dict[str, GoalStatus] = {
@@ -204,14 +210,24 @@ class GoalCapability(AbstractCapability[AgentContext]):
             await self._changed(self.goal)
         return with_goal(state, self.goal)
 
-    def _usage(self, usage: RunUsage) -> None:
-        if self.goal is not None:
-            self.goal = self.goal.model_copy(
-                update={
-                    "input_tokens": self._input_base + usage.input_tokens,
-                    "output_tokens": self._output_base + usage.output_tokens,
-                }
-            )
+    def _usage(self, usage: RunUsageSummary, usage_id: str | None = None) -> None:
+        if self.goal is None:
+            return
+        input_base, output_base = self._input_base, self._output_base
+        if usage_id is not None:
+            if self.goal.usage_id == usage_id:
+                input_base, output_base = self.goal.usage_input_base, self.goal.usage_output_base
+            else:
+                input_base, output_base = self.goal.input_tokens, self.goal.output_tokens
+        self.goal = self.goal.model_copy(
+            update={
+                "input_tokens": input_base + usage.input_tokens,
+                "output_tokens": output_base + usage.output_tokens,
+                "usage_id": usage_id,
+                "usage_input_base": input_base,
+                "usage_output_base": output_base,
+            }
+        )
 
     async def _save(self, ctx: RunContext[AgentContext]) -> None:
         if self.goal is not None:

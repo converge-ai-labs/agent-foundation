@@ -9,7 +9,9 @@
 - detached JSON state namespaced by stable Capability ID;
 - portable provider-owned Environment states under one direct mount-name mapping.
 
-It contains no executable definition, plugin object, model, Toolset, provider client, Environment mount definition, desired mount set, provider launch state, current authority, usage ledger, event log, Host execution record, lease, queue, or delivery state. A Host may persist the value or embed it in a larger durable record, but the Harness does not choose or commit a durable checkpoint.
+It contains no executable definition, plugin object, model, Toolset, provider client, Environment mount definition, desired mount set, provider launch state, current authority, usage history, event log, Host execution record, lease, queue, or delivery state. A Host may persist the value or embed it in a larger durable record, but the Harness does not choose or commit a durable checkpoint.
+
+The mandatory `a13n.usage` Capability namespace contains the latest detached [Context usage snapshot](12-events-observability-and-usage.md#context-usage-snapshot), not a native accumulator or historical ledger. Default resume starts fresh accounting; only explicit `resume_usage=True` continues matching single-writer accounting. A Host can overlay newer matching accounting without moving the selected execution history.
 
 Resume creates a new logical Harness Run with fresh `RunBindings`. State preserves Thread identity, messages, explicitly stored Capability data, and provider-defined portable data for already authorized mounts; it never restores authority, desired mounts, or a live Python resource.
 

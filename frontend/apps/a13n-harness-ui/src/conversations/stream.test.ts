@@ -876,6 +876,48 @@ it("updates context from the latest attributed root request, not cumulative or c
   expect(display.contextUsage).toBeUndefined();
 });
 
+it("updates a resumed root generation without accepting forwarded child usage", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(3));
+  const records = [
+    { sourceRun: "run-one", tokens: 100 },
+    { sourceRun: "run-one", tokens: 200 },
+    { sourceRun: "child-run", tokens: 999 },
+  ];
+  display.accept(
+    focusFrame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: records.map(({ sourceRun, tokens }, index) => ({
+        index,
+        event_type: "CUSTOM",
+        payload_omitted: false,
+        payload: {
+          name: "a13n.harness.usage",
+          value: {
+            run_id: sourceRun,
+            event: {
+              payload: {
+                type: "usage_report",
+                usage_id: "original-scope",
+                records: [
+                  {
+                    kind: "model",
+                    run_id: "original-run",
+                    response_ordinal: 2,
+                    request_usage: { input_tokens: tokens, output_tokens: 20 },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      })),
+    }),
+  );
+  expect(display.contextUsage).toEqual({ tokens: 220, ordinal: 2 });
+});
+
 it("publishes a replacement snapshot only after its complete replay, retaining the last good presentation", async () => {
   const display = new FocusDisplay();
   display.accept(snapshot(0));

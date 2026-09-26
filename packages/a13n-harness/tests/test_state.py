@@ -14,9 +14,9 @@ from a13n_harness.state import (
     AgentContextStateSnapshot,
     CapabilityState,
 )
+from a13n_harness.usage import RunUsageSummary
 from pydantic import BaseModel, ValidationError
 from pydantic_ai.messages import ModelRequest, UserPromptPart
-from pydantic_ai.usage import RunUsage
 
 pytestmark = pytest.mark.anyio
 
@@ -132,8 +132,7 @@ async def test_state_and_result_views_do_not_expose_mutable_aliases() -> None:
     assert len(state.message_history[0].parts) == 1
 
     source_output = {"items": [1]}
-    source_usage = RunUsage(requests=1, details={"cached": 2})
-    cast(Any, source_usage).extension = {"nested": [1]}
+    source_usage = RunUsageSummary(requests=1, details={"cached": 2})
     result = HarnessRunResult(
         thread_id=state.thread_id,
         run_id="run-1",
@@ -144,20 +143,16 @@ async def test_state_and_result_views_do_not_expose_mutable_aliases() -> None:
         _messages=(message,),
     )
     source_output["items"].append(2)
-    source_usage.requests = 9
     source_usage.details["cached"] = 9
-    cast(Any, source_usage).extension["nested"].append(2)
     returned_output = result.output
     assert returned_output is not None
     returned_output["items"].append(3)
     returned_usage = result.usage
     returned_usage.details["cached"] = 4
-    cast(Any, returned_usage).extension["nested"].append(3)
 
     assert result.output == {"items": [1]}
     assert result.usage.requests == 1
     assert result.usage.details == {"cached": 2}
-    assert cast(Any, result.usage).extension == {"nested": [1]}
     assert len(result.all_messages()[0].parts) == 2
     returned_result_messages = result.all_messages()
     returned_result_messages[0].parts.append(UserPromptPart(content="result view mutation"))
@@ -179,7 +174,7 @@ async def test_result_rejects_mismatched_thread_state() -> None:
             status="completed",
             output="done",
             state=HarnessState.new(),
-            usage=RunUsage(),
+            usage=RunUsageSummary(),
         )
 
 
@@ -192,7 +187,7 @@ async def test_result_rejects_inconsistent_terminal_fields() -> None:
             status="suspended",
             output=None,
             state=state,
-            usage=RunUsage(),
+            usage=RunUsageSummary(),
             suspend_reason="deferred",
         )
 

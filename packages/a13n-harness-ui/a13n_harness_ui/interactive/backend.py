@@ -805,7 +805,7 @@ class SessionBackend:
                     totals = await self.app.thread_usage(thread_id=thread_id)
                     self.status.restore_usage(totals.combined)
                 for sample in root_context_samples(event):
-                    if sample.response_ordinal > last_ordinal:
+                    if sample.response_ordinal >= last_ordinal:
                         self.status.context_tokens = sample.tokens
                         last_ordinal = sample.response_ordinal
                 return bool(records)

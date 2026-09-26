@@ -1,9 +1,11 @@
-"""Immutable usage facts: ingestion from known attempts, including late reports, and run totals.
+"""Current Context accounting and legacy facts from known attempts, including late reports.
 
 Ingestion is not fenced by the worker lease: it records a past charge, so an expired or finished attempt
 may still report. It is scoped instead to the run's attempt and tenant. Records keep the Harness run that
 made them: the attempt's own, or an inline subagent's whose events the attempt's stream forwards.
 """
+
+from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable, Mapping, Sequence
@@ -11,7 +13,14 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from a13n_harness.events import UsageReportPayload
-from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord, UsageRecord
+from a13n_harness.usage import (
+    ModelUsageRecord,
+    ProviderUsageRecord,
+    UsageRecord,
+    UsageSnapshot,
+    select_usage_snapshot,
+    validate_contribution,
+)
 from a13n_logging import get_logger
 from pydantic import Field, JsonValue, TypeAdapter
 from sqlalchemy import BigInteger, ColumnElement, Numeric, func, select
@@ -107,6 +116,115 @@ async def ingest_late(storage: Storage, run_id: str, attempt_id: str, reports: S
         await ingest(session, run, attempt, reports)
 
 
+async def ingest_snapshot(
+    storage: Storage,
+    run_id: str,
+    attempt_id: str,
+    snapshot: UsageSnapshot,
+    calls: Mapping[str, ResolvedModel],
+) -> None:
+    """Replace one producer's latest state and its query projection in a short transaction.
+
+    The attempt lock serializes reports, not execution authority. A sealed or fenced
+    attempt may still deliver charges, but cannot move any execution checkpoint here.
+    """
+    async with transaction(storage) as session:
+        # Match checkpoint lock order: inserts also acquire a Run foreign-key lock.
+        # Taking Attempt first can deadlock with a checkpoint holding Run then waiting for Attempt.
+        run = await session.get(RunRow, run_id, with_for_update=True)
+        attempt = await session.scalar(select(AttemptRow).where(AttemptRow.id == attempt_id).with_for_update())
+        if run is None or attempt is None or attempt.run_id != run.id:
+            raise ServiceError("not_found", "Usage report names no matching attempt")
+        scope = await session.get(UsageRecordRow, snapshot.usage_id)
+        if scope is not None:
+            if scope.run_id != run_id or scope.run_attempt_id != attempt_id:
+                raise ServiceError("conflict", "Usage scope changed its attempt")
+            previous = UsageSnapshot.model_validate(scope.record)
+            selected = select_usage_snapshot(previous, snapshot)
+            if selected.sequence == previous.sequence:
+                return
+        reports = []
+        for record in snapshot.records:
+            model = calls.get(record.call_id or "") if isinstance(record, ModelUsageRecord) else None
+            reports.append(UsageReport(record, model.id if model else None, price_snapshot(model) if model else None))
+        reports.sort(key=lambda report: report.record.record_id)
+        # Normalized current contributions preserve existing indexed SQL summaries
+        # and each contribution's first ingestion time. They are not revision history.
+        for start in range(0, len(reports), 128):
+            rows = {
+                report.record.record_id: _values(run, attempt, report, report.record.model_dump(mode="json"))
+                for report in reports[start : start + 128]
+            }
+            await session.execute(insert(UsageRecordRow).values(list(rows.values())).on_conflict_do_nothing())
+            stored = await session.scalars(select(UsageRecordRow).where(UsageRecordRow.id.in_(rows)))
+            for row in stored:
+                candidate = rows[row.id]
+                record = _RECORD.validate_python(candidate["record"])
+                prior = _RECORD.validate_python(row.record)
+                if isinstance(record, ProviderUsageRecord) and isinstance(prior, ProviderUsageRecord):
+                    # Stable receipts retain their first Service owner, across attempts and Runs.
+                    if row.workspace_id != run.workspace_id or prior.usage != record.usage:
+                        raise ServiceError("conflict", "Provider receipt changed its facts or workspace")
+                    continue
+                if (
+                    row.run_attempt_id != attempt_id
+                    or row.model_id != candidate["model_id"]
+                    or row.price_snapshot != candidate["price_snapshot"]
+                ):
+                    raise ServiceError("conflict", "Usage contribution changed its dispatch attribution")
+                validate_contribution(prior, record)
+                if row.record != candidate["record"]:
+                    row.record = candidate["record"]
+                    row.digest = candidate["digest"]
+        payload = snapshot.model_dump(mode="json")
+        digest = hashlib.sha256(canonical_json([payload, run.id, attempt.id, None, None])).hexdigest()
+        if scope is None:
+            session.add(
+                UsageRecordRow(
+                    id=snapshot.usage_id,
+                    organization_id=run.organization_id,
+                    workspace_id=run.workspace_id,
+                    run_id=run.id,
+                    run_attempt_id=attempt.id,
+                    harness_run_id=snapshot.run_id,
+                    call_id=None,
+                    record=payload,
+                    digest=digest,
+                    model_id=None,
+                    price_snapshot=None,
+                )
+            )
+        else:
+            scope.record = payload
+            scope.digest = digest
+
+
+class SnapshotReporter:
+    """Attempt-owned delivery, inherited by inline children without combining their scopes."""
+
+    def __init__(self, storage: Storage, run_id: str, attempt_id: str, buffer: UsageBuffer) -> None:
+        from anyio import Lock
+
+        self.storage, self.run_id, self.attempt_id, self.buffer = storage, run_id, attempt_id, buffer
+        self._pending: dict[str, UsageSnapshot] = {}
+        self._lock = Lock()
+
+    async def report(self, snapshot: UsageSnapshot) -> None:
+        previous = self._pending.get(snapshot.usage_id)
+        self._pending[snapshot.usage_id] = (
+            select_usage_snapshot(previous, snapshot) if previous is not None else snapshot.model_copy(deep=True)
+        )
+        await self.flush()
+
+    async def flush(self) -> None:
+        async with self._lock:
+            for snapshot in tuple(self._pending.values()):
+                await ingest_snapshot(self.storage, self.run_id, self.attempt_id, snapshot, self.buffer.calls)
+                self.buffer.ingested_snapshot(snapshot)
+                if self._pending.get(snapshot.usage_id) == snapshot:
+                    del self._pending[snapshot.usage_id]
+
+
 def price_snapshot(model: ResolvedModel) -> dict[str, JsonValue] | None:
     return model.pricing.model_dump(mode="json") if model.pricing is not None else None
 
@@ -125,7 +243,9 @@ class UsageBuffer:
 
     def report(self, payload: JsonValue) -> None:
         """The payload of a `usage` extension event."""
-        self.add(_RECORD.validate_python(record) for record in UsageReportPayload.model_validate(payload).records)
+        report = UsageReportPayload.model_validate(payload)
+        if report.usage_id is None:
+            self.add(_RECORD.validate_python(record) for record in report.records)
 
     def add(self, records: Iterable[UsageRecord]) -> None:
         for record in records:
@@ -146,7 +266,13 @@ class UsageBuffer:
 
     def ingested(self, reports: Sequence[UsageReport]) -> None:
         """Forget `reports`, which `pending` returned; reports added since then stay pending."""
-        del self._pending[: len(reports)]
+        delivered = {report.record.record_id for report in reports}
+        self._pending = [report for report in self._pending if report.record.record_id not in delivered]
+
+    def ingested_snapshot(self, snapshot: UsageSnapshot) -> None:
+        delivered = {record.record_id for record in snapshot.records}
+        self.seen.update(delivered)
+        self._pending = [report for report in self._pending if report.record.record_id not in delivered]
 
 
 def _token_sum(name: str) -> ColumnElement[int]:

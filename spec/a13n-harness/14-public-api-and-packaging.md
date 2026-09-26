@@ -158,6 +158,7 @@ class RunBindings:
     environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     model_call_check: ModelCallCheck | None = None
+    usage_reporter: UsageReporter | None = None
     toolset_instructions: bool | None = None
     deferred_tools_supported: bool = True
     capabilities: tuple[
@@ -183,6 +184,7 @@ class RunBindings:
         environment: EnvironmentRuntime | None = None,
         model_resolver: RunModelResolver | None = None,
         model_call_check: ModelCallCheck | None = None,
+        usage_reporter: UsageReporter | None = None,
         toolset_instructions: bool | None = None,
         deferred_tools_supported: bool = True,
         model_context: ModelContextMiddleware | None = None,
@@ -212,6 +214,7 @@ The specialized `a13n_harness.model_calls` module exposes:
 @dataclass(frozen=True, slots=True)
 class ModelCall:
     call_id: str
+    continuation_of: str | None
     harness_run_id: str
     model_run_id: str | None
     agent_instance_id: str
@@ -227,8 +230,10 @@ class ModelCall:
 
 @runtime_checkable
 class ModelCallCheck(Protocol):
-    async def check(self, call: ModelCall) -> None: ...
+    async def check(self, call: ModelCall) -> RequestBudget | None: ...
 ```
+
+`RunBindings.usage_reporter` is an optional borrowed `UsageReporter` whose async `report(snapshot: UsageSnapshot)` receives complete detached accounting state directly. `a13n_harness.usage` owns `UsageSnapshot`, `RunUsageSummary`, `UsageReporter`, and validated snapshot selection/restoration. `resume_usage=True` preserves a matching single-writer scope explicitly; default calls start fresh accounting. See [Context Usage Snapshot](12-events-observability-and-usage.md#context-usage-snapshot). Neither collaborator is serialized or grants execution authority.
 
 `ModelCallCheckError` is a `RunError` with code `model_call_check_failed` that preserves authoritative refusal across built-in optional auxiliary paths.
 
@@ -259,6 +264,7 @@ class ExecutableAgent[OutputT]:
         environments: Mapping[str, Environment | EnvironmentMount] | None = None,
         default_environment: str | None = None,
         previous_state: HarnessState | None = None,
+        resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -275,6 +281,7 @@ class ExecutableAgent[OutputT]:
         environments: Mapping[str, Environment | EnvironmentMount] | None = None,
         default_environment: str | None = None,
         previous_state: HarnessState | None = None,
+        resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -287,7 +294,7 @@ class ExecutableAgent[OutputT]:
 
 `a13n_harness.tools.recovery_retryable(function_or_tool)` returns a native `Tool` carrying the recovery-retryable declaration. It supports decorator and function-call syntax. Existing tools are copied with their settings and other metadata preserved; the helper does not mutate its argument or wrap the execution function. `RECOVERY_RETRY_SAFE_METADATA_KEY` remains available for native tool metadata integrations.
 
-An immediate input and `input_factory` are mutually exclusive. Omitting both passes no new user input, which permits continuation from imported messages. `deferred_resume` is a separate Harness correlation envelope around native Pydantic requests and results rather than user content. It requires a compatible prior state and current tool surface; after preflight, only its native results are consumed by the first `ModelAttempt`. A supplied `RunUsage` remains the one accumulator shared across all internal `ModelAttempt` values; otherwise the Harness creates a fresh value. Native `UsageLimits` are passed to every attempt and remain monotonic through the shared accumulator.
+An immediate input and `input_factory` are mutually exclusive. Omitting both passes no new user input, which permits continuation from imported messages. `deferred_resume` is a separate Harness correlation envelope around native Pydantic requests and results rather than user content. It requires a compatible prior state and current tool surface; after preflight, only its native results are consumed by the first `ModelAttempt`. A supplied `RunUsage` remains the one accumulator shared across all internal `ModelAttempt` values; otherwise the Harness creates a fresh value. Native `UsageLimits` retain their public configuration type. Harness enforces model limits against current attributed accounting at the public Model boundary, including restored scope usage; native tool-call enforcement retains the shared accumulator. Explicit Host baseline usage participates in enforcement but is not added again to the local public summary.
 
 `run()` consumes the canonical stream internally and returns its sole terminal result. `stream()` returns a lazy single-entry async context manager and single-consumer async iterator. `ExecutableAgent` is immutable reusable build output and has no independent async lifecycle: it owns no entered Model, plugin, Capability, client, or child resource. Every resource-bearing lifetime belongs to a `HarnessRunStream` or to the caller that supplied the resource.
 
@@ -313,7 +320,7 @@ class HarnessRunStream[OutputT](
     def diagnostic_error(self) -> BaseException | None: ...
 
     @property
-    def usage(self) -> RunUsage: ...
+    def usage(self) -> RunUsageSummary: ...
 
     def cancel(self) -> None: ...
 
@@ -349,7 +356,7 @@ class HarnessRunResult[OutputT]:
     @property
     def state(self) -> HarnessState | None: ...
     @property
-    def usage(self) -> RunUsage: ...
+    def usage(self) -> RunUsageSummary: ...
     @property
     def usage_records(self) -> tuple[UsageRecord, ...]: ...
     @property
@@ -368,7 +375,7 @@ class HarnessRunResult[OutputT]:
     def output_or_raise(self) -> OutputT: ...
 ```
 
-All mutable values are copied on construction and access, including the complete nested `RunUsage` and mixed-source usage records. `all_messages()` and `new_messages()` decode detached copies. `replace()` preserves Thread and Run correlation and message views while allowing trusted middleware to replace terminal fields.
+All mutable values are copied on construction and access, including the complete nested `RunUsageSummary` and mixed-source usage records. `all_messages()` and `new_messages()` decode detached copies. `replace()` preserves Thread and Run correlation and message views while allowing trusted middleware to replace terminal fields.
 
 Valid field combinations are:
 

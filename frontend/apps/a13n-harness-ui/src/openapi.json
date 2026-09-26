@@ -8988,6 +8988,30 @@
             "minimum": 0,
             "title": "Output Tokens",
             "type": "integer"
+          },
+          "usage_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Usage Id"
+          },
+          "usage_input_base": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Usage Input Base",
+            "type": "integer"
+          },
+          "usage_output_base": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Usage Output Base",
+            "type": "integer"
           }
         },
         "required": [

@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import pytest
 from a13n_harness import HarnessRunResult, HarnessState
+from a13n_harness.usage import RunUsageSummary
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice, SummaryCursor
 from a13n_harness_ui.notifications import reply_brief
@@ -15,7 +16,6 @@ from a13n_harness_ui.storage import ObjectRef
 from anyio import Event, fail_after
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.tools import DeferredToolRequests
-from pydantic_ai.usage import RunUsage
 
 
 def test_reply_brief_is_actual_prose_not_heading_code_or_markdown() -> None:
@@ -96,7 +96,7 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
                 else None,
                 suspend_reason="deferred" if deferred else None,
                 deferred=deferred,
-                usage=RunUsage(),
+                usage=RunUsageSummary(),
             ),
             environment=EnvironmentFinalization(state_publications=(), cleanup_errors=()),
             continuation=RootContinuationSelection(

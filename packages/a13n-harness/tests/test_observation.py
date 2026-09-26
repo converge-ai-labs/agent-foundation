@@ -34,6 +34,7 @@ from a13n_harness.pricing import (
     ModelCostInput,
     ModelCostQuote,
 )
+from a13n_harness.usage import RunUsageSummary
 from opentelemetry import metrics, trace
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
@@ -51,7 +52,6 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.instrumented import InstrumentationSettings, InstrumentedModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.settings import ModelSettings
-from pydantic_ai.usage import RunUsage
 
 pytestmark = pytest.mark.anyio
 
@@ -825,7 +825,7 @@ class _ShortCircuitPlugin(AbstractHarnessPlugin):
                 status="completed",
                 output="cached",
                 state=await exchange.export_current_state(),
-                usage=RunUsage(),
+                usage=RunUsageSummary(),
             )
 
         return PluginRunResponse(iterate())

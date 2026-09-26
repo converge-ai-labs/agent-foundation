@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, cast
 
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.toolsets.file_media import (
     AUDIO_UNDERSTANDING_MODEL_ENV,
     IMAGE_UNDERSTANDING_MODEL_ENV,
@@ -49,7 +50,9 @@ class FileMediaUnderstanding:
         self._resolver = resolver
         self._thread_id = thread_id
 
-    async def understand(self, request: MediaUnderstandingRequest) -> MediaUnderstandingResult:
+    async def understand(
+        self, request: MediaUnderstandingRequest, *, usage: ModelUsageBinding | None = None
+    ) -> MediaUnderstandingResult:
         recipe = self._models.get(request.kind)
         if recipe is None:
             provider = AgentMediaUnderstandingProvider.from_environment(kind=request.kind)
@@ -65,4 +68,4 @@ class FileMediaUnderstanding:
             except (ModelResolutionError, TypeError, ValueError) as exc:
                 # Do not substitute an ambient Model after a configured Model fails.
                 raise MediaUnderstandingError("media_understanding_configuration_invalid") from exc
-        return await provider.understand(request)
+        return await provider.understand(request, usage=usage)

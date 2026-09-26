@@ -51,7 +51,7 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
-from a13n_harness.usage import intersect_usage_limits
+from a13n_harness.usage import UsageSnapshot, intersect_usage_limits
 from a13n_logging import get_logger
 from a13n_stream_protocol import ContentMetadata, HarnessAguiObserver
 from ag_ui.core import Event as AguiEvent
@@ -970,6 +970,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         execution_id, agent_instance_id = _public_id("execution"), _public_id("agent")
         limits = None if item.usage_limits is None else TypeAdapter(UsageLimits).validate_python(item.usage_limits)
         accepted = checkpoint.accepted_input.recover() if checkpoint.accepted_input is not None else None
+        restored = await self._store.usage.restore(thread_id=item.thread_id, state=checkpoint.harness_state)
         try:
             stream = self._new_stream(
                 reconstructed=reconstructed,
@@ -977,7 +978,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 deferred_resume=accepted,
                 usage_limits=limits,
                 identity=identity,
-                state=checkpoint.harness_state,
+                state=restored,
+                resume_usage=UsageSnapshot.from_state(restored) is not None,
                 environment=environment,
                 execution_id=execution_id,
                 parent=scope,
@@ -1024,6 +1026,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         parent: ParentRunScope,
         agent_instance_id: str,
         deferred_resume: DeferredToolResume | None = None,
+        resume_usage: bool = False,
     ) -> HarnessRunStream[Any]:
         bindings = RunBindings(
             instance=AgentInstanceContext(
@@ -1038,6 +1041,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             deferred_tools_supported=False,
             tool_result_directory=environment.tool_result_directory,
             model_resolver=reconstructed.model_resolver.fresh(),
+            usage_reporter=self._store.usage.reporter(state.thread_id),
             file_media_understanding=reconstructed.file_media_understanding(state.thread_id),
         )
         bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)
@@ -1045,6 +1049,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             input if deferred_resume is None or deferred_resume.recovery else None,
             bindings=bindings,
             previous_state=state,
+            resume_usage=resume_usage,
             deferred_resume=deferred_resume,
             usage_limits=usage_limits,
         )

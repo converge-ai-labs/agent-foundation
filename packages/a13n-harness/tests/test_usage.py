@@ -144,8 +144,8 @@ async def test_each_model_request_reports_mixed_usage_once() -> None:
     ]
     result = items[-1].result
 
-    assert [report["reason"] for report in reports] == ["model_request", "model_request"]
-    assert [len(report["records"]) for report in reports] == [1, 2]
+    assert [report["reason"] for report in reports] == ["model_request", "provider", "model_request"]
+    assert [len(report["records"]) for report in reports] == [1, 1, 1]
     assert len(result.usage_records) == 3
     assert ledger_records == result.usage_records
     assert [record.kind for record in result.usage_records] == ["model", "provider", "model"]
@@ -262,7 +262,7 @@ async def test_provider_usage_after_final_model_request_is_reported_at_terminal(
     ]
     result = items[-1].result
 
-    assert [report["reason"] for report in reports] == ["model_request", "terminal"]
+    assert [report["reason"] for report in reports] == ["model_request", "provider"]
     assert [len(report["records"]) for report in reports] == [1, 1]
     assert isinstance(result.usage_records[-1], ProviderUsageRecord)
     assert result.usage_records[-1].record_id == reports[-1]["records"][0]["record_id"]
@@ -425,13 +425,13 @@ async def test_later_response_replacement_cannot_mislabel_custom_cost() -> None:
 
     record = result.usage_records[0]
     assert isinstance(record, ModelUsageRecord)
-    assert result.usage.cost == Decimal("0.5")
-    assert record.request_usage.cost == Decimal("0.5")
-    assert record.pricing_status == "not_reached"
-    assert record.cost_source == "provider_or_genai_prices"
+    assert result.usage.cost == Decimal("0.125")
+    assert record.request_usage.cost == Decimal("0.125")
+    assert record.pricing_status == "applied"
+    assert record.cost_source == "custom"
 
 
-async def test_post_response_failure_does_not_mint_uncommitted_usage_record() -> None:
+async def test_post_response_failure_retains_captured_usage() -> None:
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "done"
@@ -446,7 +446,7 @@ async def test_post_response_failure_does_not_mint_uncommitted_usage_record() ->
         items = [item async for item in run]
 
     assert items[-1].result.status == "failed"
-    assert not any(
+    assert any(
         isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "usage"
         for item in items
     )
@@ -490,12 +490,12 @@ async def test_imported_history_is_not_reattributed_on_resume() -> None:
 async def test_auxiliary_model_responses_share_pricing_and_ledger_not_native_budget(outcome: str, inline: bool) -> None:
     import asyncio
 
+    from a13n_harness.metering import ModelUsageBinding
     from a13n_harness.toolsets.file_media import (
         AgentMediaUnderstandingProvider,
         MediaUnderstandingError,
         MediaUnderstandingRequest,
     )
-    from a13n_harness.usage import _auxiliary_usage_scope
     from pydantic_ai.messages import TextPart
 
     inputs: list[ModelCostInput] = []
@@ -521,24 +521,27 @@ async def test_auxiliary_model_responses_share_pricing_and_ledger_not_native_bud
 
     async def metered_search(ctx: RunContext[AgentContext]) -> str:
         before = deepcopy(ctx.usage)
-        with _auxiliary_usage_scope(ctx, source="files.media_understanding", tool_id="filesystem.view"):
-            try:
-                result = await provider.understand(
-                    MediaUnderstandingRequest(
-                        kind="image",
-                        media_type="image/png",
-                        source_name="image.png",
-                        source_bytes=b"image",
-                    )
-                )
-            except asyncio.CancelledError:
-                assert outcome == "cancelled"
-            except MediaUnderstandingError as exc:
-                assert outcome == "failure"
-                assert exc.usage == ()
-            else:
-                assert outcome == "success"
-                assert result.usage == ()  # No second provider receipt for the same model response.
+        binding = ModelUsageBinding.for_context(
+            ctx.deps, source="files.media_understanding", tool_id="filesystem.view", tool_call_id=ctx.tool_call_id
+        )
+        try:
+            result = await provider.understand(
+                MediaUnderstandingRequest(
+                    kind="image",
+                    media_type="image/png",
+                    source_name="image.png",
+                    source_bytes=b"image",
+                ),
+                usage=binding,
+            )
+        except asyncio.CancelledError:
+            assert outcome == "cancelled"
+        except MediaUnderstandingError as exc:
+            assert outcome == "failure"
+            assert exc.usage == ()
+        else:
+            assert outcome == "success"
+            assert result.usage == ()  # No second provider receipt for the same model response.
         assert ctx.usage == before
         return "done"
 
@@ -580,16 +583,17 @@ async def test_auxiliary_model_responses_share_pricing_and_ledger_not_native_bud
         for record in item.event.payload["records"]
     ]
     media = [r for r in records if isinstance(r, ModelUsageRecord) and r.source == "files.media_understanding"]
-    expected = {"success": 2, "failure": 3, "cancelled": 1}[outcome]
+    expected = {"success": 2, "failure": 3, "cancelled": 2}[outcome]
+    known = [r for r in media if r.usage_status != "unavailable"]
     assert len(media) == expected
     assert all((r.parent_agent_instance_id is not None) == inline for r in media)
-    assert all(r.model_name == "media-actual" and r.provider_name == "media-provider" for r in media)
+    assert all(r.model_name == "media-actual" and r.provider_name == "media-provider" for r in known)
     assert all(r.tool_id == "filesystem.view" and r.tool_call_id == "call-1" for r in media)
-    assert all(r.request_usage.cost == Decimal("0.125") and r.pricing_revision == "catalog-7" for r in media)
-    assert all(r.request_usage.input_tokens == 7 for r in media)
+    assert all(r.request_usage.cost == Decimal("0.125") and r.pricing_revision == "catalog-7" for r in known)
+    assert all(r.request_usage.input_tokens == 7 for r in known)
     assert len({r.record_id for r in records}) == len(records)
     assert not any(isinstance(r, ProviderUsageRecord) for r in records)
-    assert len([value for value in inputs if value.model_name == "media-actual"]) == expected
+    assert len([value for value in inputs if value.model_name == "media-actual"]) == len(known)
     reports = [
         item.event.payload
         for item in items

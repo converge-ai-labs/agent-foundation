@@ -75,7 +75,7 @@ from a13n_harness.tools.invocation import TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
 from a13n_harness.tools.permissions import TOOL_PERMISSIONS_CAPABILITY_ID, ToolPermissionsCapability
 from a13n_harness.tools.policy import INVOCATION_POLICY_CAPABILITY_ID, InvocationPolicyCapability
 from a13n_harness.tools.surface import TOOL_SURFACE_CAPABILITY_ID, ToolSurfaceCapability
-from a13n_harness.usage import USAGE_CAPABILITY_ID, UsageCapability, _UsageActiveCapability
+from a13n_harness.usage import USAGE_CAPABILITY_ID, UsageCapability, _RunUsageCapability
 
 _DEFINITION_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], ...]] = {
     CLIENT_TOOLS_CAPABILITY_ID: (ClientToolsCapability,),
@@ -396,7 +396,7 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             provenance.run_ids,
         ),
         USAGE_CAPABILITY_ID: (
-            (_UsageActiveCapability,),
+            (_RunUsageCapability,),
             None,
         ),
         MODEL_COST_CAPABILITY_ID: (

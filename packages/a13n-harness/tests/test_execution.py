@@ -733,7 +733,7 @@ async def test_native_cancellation_becomes_a_cancelled_result() -> None:
         assert stream.result is terminal.result
 
 
-async def test_prestart_cancellation_never_calls_the_model_and_preserves_supplied_usage() -> None:
+async def test_prestart_cancellation_never_calls_the_model_or_counts_budget_baseline() -> None:
     calls: list[tuple[ModelMessage, ...]] = []
     executable = _build(_turn_model(calls))
     supplied_usage = RunUsage(requests=7, details={"cached": 2})
@@ -751,8 +751,8 @@ async def test_prestart_cancellation_never_calls_the_model_and_preserves_supplie
     assert terminal.result.state is not None
     assert terminal.result.state.message_history == ()
     assert await stream.export_state() == terminal.result.state
-    assert terminal.result.usage.requests == 7
-    assert terminal.result.usage.details == {"cached": 2}
+    assert terminal.result.usage.requests == 0
+    assert terminal.result.usage.details == {}
     assert calls == []
 
 
@@ -864,6 +864,7 @@ async def test_stream_steer_delivers_native_asap_input() -> None:
     async with executable.stream("initial", bindings=RunBindings.embedded()) as stream:
         consumer = asyncio.create_task(_consume_stream(stream))
         await started.wait()
+        usage_id = stream.context.usage_snapshot.usage_id
         enqueue_id = await stream.steer("additional user context")
         release.set()
         items = await asyncio.wait_for(consumer, timeout=2)
@@ -874,6 +875,8 @@ async def test_stream_steer_delivers_native_asap_input() -> None:
         terminal = items[-1]
         assert isinstance(terminal, HarnessRunResultEvent)
         assert terminal.result.output_or_raise() == "done"
+        assert stream.context.usage_snapshot.usage_id == usage_id
+        assert terminal.result.usage.requests == 2
         with pytest.raises(RunError) as terminal_error:
             await stream.steer("too late")
         assert terminal_error.value.code == "run_not_active"

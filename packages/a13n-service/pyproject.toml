@@ -67,5 +67,5 @@ known_first_party = ["a13n_service"]
 package_module_name_map = { "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "argon2-cffi" = "argon2", "pyyaml" = "yaml" }
 
 [tool.a13n.release-dependencies]
-a13n-harness = ">=0.1.0,<0.2.0"
-a13n-stream-protocol = ">=0.1.0,<0.2.0"
+a13n-harness = ">=0.3.0,<0.4.0"
+a13n-stream-protocol = ">=0.3.0,<0.4.0"

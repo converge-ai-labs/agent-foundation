@@ -9,7 +9,7 @@ from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, time
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal, localcontext
 from functools import lru_cache
 from importlib.metadata import version
 from importlib.resources import files
@@ -207,7 +207,10 @@ class ModelPricingEntry(BaseModel):
                 )
             else:
                 prices[component.price_key] = component.price
-        calculation = ModelPrice(**prices).calc_price(value.usage)
+        with localcontext() as context:
+            context.prec = 80
+            context.rounding = ROUND_HALF_EVEN
+            calculation = ModelPrice(**prices).calc_price(value.usage)
         return ModelCostQuote(
             cost_usd=calculation["total_price"],
             source=source,

@@ -11,12 +11,12 @@ from typing import Literal
 
 from a13n_harness.providers.memory import DirectoryFileStore
 from a13n_harness.providers.memory.contracts import FileText, MemoryStoreError, Origin
+from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
 from anyio import CancelScope, Lock, fail_after, to_thread
 from anyio.abc import TaskGroup
 from filelock import FileLock, Timeout
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.configuration.models import LoadedHarnessUiConfiguration
 from a13n_harness_ui.memory import MemoryOrganizationRun, MemoryScope, memory_scopes
@@ -148,7 +148,7 @@ class MemoryOrganizer:
         *,
         configuration_root: Path | None,
         current: Callable[[], Awaitable[LoadedHarnessUiConfiguration | None]],
-        run: Callable[[MemoryOrganizationRun], Awaitable[RunUsage]],
+        run: Callable[[MemoryOrganizationRun], Awaitable[RunUsageSummary]],
         webui: bool,
     ) -> None:
         self._root = configuration_root

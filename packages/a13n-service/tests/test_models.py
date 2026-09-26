@@ -309,7 +309,13 @@ async def test_calls_are_attributed_to_the_model_they_select_whatever_upstream_m
     # 12 input and 5 output tokens per call, at 5 (parent) or 10 (child) and 30 USD per million.
     assert used == {models["parent"]["id"]: (2, Decimal("0.00042")), models["child"]["id"]: (1, Decimal("0.00027"))}
     async with transaction(executing.runtime.storage) as session:
-        records = (await session.scalars(select(UsageRecordRow).where(UsageRecordRow.run_id == run["id"]))).all()
+        records = (
+            await session.scalars(
+                select(UsageRecordRow).where(
+                    UsageRecordRow.run_id == run["id"], UsageRecordRow.record["kind"].astext == "model"
+                )
+            )
+        ).all()
     assert {record.record["model_name"] for record in records} == {"scripted"}
 
 
@@ -344,7 +350,13 @@ async def test_a_tool_review_is_a_call_of_the_reviewer_model(executing, scripted
     # 12 input and 5 output tokens per call, at 5 (agent) or 10 (reviewer) and 30 USD per million.
     assert used == {models["agent"]["id"]: (2, Decimal("0.00042")), models["reviewer"]["id"]: (1, Decimal("0.00027"))}
     async with transaction(executing.runtime.storage) as session:
-        records = (await session.scalars(select(UsageRecordRow).where(UsageRecordRow.run_id == run["id"]))).all()
+        records = (
+            await session.scalars(
+                select(UsageRecordRow).where(
+                    UsageRecordRow.run_id == run["id"], UsageRecordRow.record["kind"].astext == "model"
+                )
+            )
+        ).all()
     [review] = [record for record in records if record.record["source"] == "tool.review"]
     assert (review.record["kind"], review.model_id) == ("model", models["reviewer"]["id"])
     assert review.record["tool_call_id"] == "call_find"

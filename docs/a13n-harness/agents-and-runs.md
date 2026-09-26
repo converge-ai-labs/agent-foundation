@@ -315,7 +315,7 @@ A stream entered and exited without iteration does not start model execution. It
 After stream entry:
 
 - `stream.context` exposes the fresh `AgentContext` to trusted embedding code;
-- `stream.usage` exposes the live native `RunUsage` accumulator;
+- `stream.usage` returns a detached `RunUsageSummary` of current local Context usage, not the mutable native accumulator;
 - `await stream.export_state()` returns the latest safe portable state boundary;
 - `await stream.steer(input, input_id=None)` delivers non-empty native user content through Pydantic AI's active-run `priority="asap"` queue and returns its enqueue ID; a host-chosen `input_id` is recorded on the delivered request, and `steering_input_ids(state.message_history)` from `a13n_harness.capabilities.steering` lists the IDs present in exported state;
 - `stream.cancel()` requests semantic cancellation;

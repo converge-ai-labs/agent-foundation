@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
-from a13n_harness import HarnessRunResultEvent
+from a13n_harness import HarnessRunResultEvent, HarnessState
 from a13n_harness.events import HarnessEvent, HarnessExtensionEvent, UsageReportPayload
-from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord, UsageRecord
-from anyio import Lock
-from pydantic import Field, TypeAdapter
-from sqlalchemy import func, select
+from a13n_harness.usage import (
+    ModelUsageRecord,
+    ProviderUsageRecord,
+    UsageRecord,
+    UsageSnapshot,
+    select_usage_snapshot,
+)
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from sqlalchemy import DateTime, func, literal, select, text, true, type_coerce, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_harness_ui.errors import StoreIntegrityError
@@ -33,6 +37,15 @@ _COUNTERS = (
     "output_audio_tokens",
     "cache_audio_read_tokens",
 )
+
+
+class _StoredSnapshot(BaseModel):
+    """Host observation time is not part of the portable accounting state."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["snapshot"] = "snapshot"
+    snapshot: UsageSnapshot
+    observed_through: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +149,7 @@ class _Totals:
 
 @dataclass
 class _Aggregation:
-    """Bounded process cache of a committed usage prefix, not an accounting authority."""
+    """Bounded display groups derived from one coherent database read."""
 
     recent_ids: tuple[str, ...]
     cursor: int = 0
@@ -154,10 +167,14 @@ class _Aggregation:
     groups: dict[tuple[str, str, bool, str], _Totals] = field(default_factory=dict)
     other_groups: _Totals = field(default_factory=_Totals)
 
-    def add(self, sequence: int, descendant: bool, payload: str, observed: datetime) -> None:
+    def add(
+        self, sequence: int, descendant: bool, payload: str, observed: datetime, observed_through: datetime
+    ) -> None:
         record = _RECORD.validate_json(payload)
+        observed = observed.replace(tzinfo=UTC)
+        observed_through = observed_through.replace(tzinfo=UTC)
         self.first = observed if self.first is None else min(self.first, observed)
-        self.last = observed if self.last is None else max(self.last, observed)
+        self.last = observed_through if self.last is None else max(self.last, observed_through)
         self.combined.add(record)
         if record.run_id in self.recent_ids:
             self.runs.setdefault(record.run_id, _Totals()).add(record)
@@ -222,11 +239,60 @@ class _Aggregation:
         )
 
 
+def _contributions(root_id: str):
+    """Flatten current scopes and legacy facts, retaining the first receipt attribution."""
+    table = ThreadUsageRecord
+    kind = func.json_extract(table.payload_json, "$.kind")
+    entries = func.json_each(table.payload_json, "$.snapshot.records").table_valued("key", "value")
+    legacy = select(
+        table.sequence,
+        literal(0).label("ordinal"),
+        table.descendant,
+        table.payload_json.label("payload"),
+        table.observed_at,
+        table.observed_at.label("observed_through"),
+    ).where(table.root_thread_id == root_id, kind != "snapshot")
+    current = (
+        select(
+            table.sequence,
+            entries.c.key.label("ordinal"),
+            table.descendant,
+            entries.c.value.label("payload"),
+            table.observed_at,
+            type_coerce(func.json_extract(table.payload_json, "$.observed_through"), DateTime(timezone=True)).label(
+                "observed_through"
+            ),
+        )
+        .select_from(table)
+        .join(entries, true())
+        .where(table.root_thread_id == root_id, kind == "snapshot")
+    )
+    facts = union_all(legacy, current).cte("usage_contributions")
+    ranked = select(
+        facts,
+        func.row_number()
+        .over(
+            partition_by=func.json_extract(facts.c.payload, "$.record_id"),
+            order_by=(facts.c.sequence, facts.c.ordinal),
+        )
+        .label("position"),
+    ).cte("distinct_usage")
+    return select(ranked).where(ranked.c.position == 1).subquery()
+
+
+@dataclass(frozen=True)
+class ThreadUsageReporter:
+    repository: ThreadUsageRepository
+    thread_id: str
+
+    async def report(self, snapshot: UsageSnapshot) -> None:
+        # Inline child scopes have their own Harness Thread, but belong to this Host root.
+        await self.repository.save(thread_id=self.thread_id, snapshot=snapshot)
+
+
 class ThreadUsageRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
-        self._cache: OrderedDict[str, _Aggregation] = OrderedDict()
-        self._snapshot_lock = Lock()
 
     async def observe(self, *, thread_id: str, item: object) -> None:
         """Consume canonical events, not lossy UI summaries or inclusive RunUsage."""
@@ -239,11 +305,90 @@ class ThreadUsageRepository:
                 and event.payload.get("type") == "usage_report"
             ):
                 report = UsageReportPayload.model_validate(event.payload)
+                if report.usage_id is not None:
+                    # Current snapshots arrive through the direct Reporter seam, not display chunks.
+                    return
                 records = tuple(_RECORD.validate_python(record) for record in report.records)
         elif isinstance(item, HarnessRunResultEvent):
+            state = item.result.state
+            snapshot = UsageSnapshot.from_state(state) if state is not None else None
+            if snapshot is not None:
+                await self.save(thread_id=thread_id, snapshot=snapshot)
+                return
             records = tuple(item.result.usage_records)
         for start in range(0, len(records), _BATCH):
             await self.append(thread_id=thread_id, records=records[start : start + _BATCH])
+
+    def reporter(self, thread_id: str) -> ThreadUsageReporter:
+        return ThreadUsageReporter(self, thread_id)
+
+    async def save(self, *, thread_id: str, snapshot: UsageSnapshot) -> None:
+        """Replace one current JSON payload under SQLite's cross-process writer lock."""
+        async with transaction(self._sessions) as session:
+            root_id = await self._root_id(session, thread_id)
+            row = await session.scalar(
+                select(ThreadUsageRecord).where(
+                    ThreadUsageRecord.root_thread_id == root_id,
+                    ThreadUsageRecord.record_id == snapshot.usage_id,
+                )
+            )
+            if row is not None:
+                if row.origin_thread_id != thread_id:
+                    raise StoreIntegrityError("Usage scope changed its Host owner.", code="usage_record_conflict")
+                previous = _StoredSnapshot.model_validate_json(row.payload_json).snapshot
+                selected = select_usage_snapshot(previous, snapshot)
+                if selected.sequence == previous.sequence:
+                    return
+            # A provider receipt may be returned by several independent scopes.
+            # Keep all Context state, but reject changed facts and charge its first owner only.
+            receipts = {r.record_id: r for r in snapshot.records if isinstance(r, ProviderUsageRecord)}
+            if receipts:
+                facts = _contributions(root_id)
+                for start in range(0, len(receipts), _BATCH):
+                    ids = tuple(receipts)[start : start + _BATCH]
+                    payloads = await session.scalars(
+                        select(facts.c.payload).where(
+                            func.json_extract(facts.c.payload, "$.record_id").in_(ids),
+                        )
+                    )
+                    for payload in payloads:
+                        prior = _RECORD.validate_json(payload)
+                        if not isinstance(prior, ProviderUsageRecord) or prior.usage != receipts[prior.record_id].usage:
+                            raise StoreIntegrityError("A receipt changed its facts.", code="usage_record_conflict")
+            now = datetime.now(UTC)
+            payload = _StoredSnapshot(snapshot=snapshot, observed_through=now).model_dump_json()
+            if row is None:
+                session.add(
+                    ThreadUsageRecord(
+                        root_thread_id=root_id,
+                        origin_thread_id=thread_id,
+                        record_id=snapshot.usage_id,
+                        run_id=snapshot.run_id,
+                        descendant=thread_id != root_id or snapshot.parent_agent_instance_id is not None,
+                        payload_json=payload,
+                        observed_at=now,
+                    )
+                )
+            else:
+                row.payload_json = payload
+
+    async def restore(self, *, thread_id: str, state: HarnessState) -> HarnessState:
+        """Overlay accounting ahead of the selected execution checkpoint before a true resume."""
+        previous = UsageSnapshot.from_state(state)
+        if previous is None:
+            # Shipped checkpoints predate accounting state. Preserve execution recovery,
+            # starting fresh accounting while leaving their legacy facts untouched.
+            return state
+        async with short_session(self._sessions) as session:
+            root_id = await self._root_id(session, thread_id)
+            payload = await session.scalar(
+                select(ThreadUsageRecord.payload_json).where(
+                    ThreadUsageRecord.root_thread_id == root_id,
+                    ThreadUsageRecord.origin_thread_id == thread_id,
+                    ThreadUsageRecord.record_id == previous.usage_id,
+                )
+            )
+        return state if payload is None else _StoredSnapshot.model_validate_json(payload).snapshot.restore(state)
 
     async def append(self, *, thread_id: str, records: tuple[UsageRecord, ...]) -> None:
         if not records:
@@ -259,8 +404,17 @@ class ThreadUsageRepository:
                         ThreadUsageRecord.record_id == record.record_id,
                     )
                 )
-                if existing is not None:
-                    prior = _RECORD.validate_json(existing.payload_json)
+                payload = existing.payload_json if existing is not None else None
+                if payload is None:
+                    # A no-state terminal may repeat a fact already delivered in a scope.
+                    facts = _contributions(root_id)
+                    payload = await session.scalar(
+                        select(facts.c.payload).where(
+                            func.json_extract(facts.c.payload, "$.record_id") == record.record_id,
+                        )
+                    )
+                if payload is not None:
+                    prior = _RECORD.validate_json(payload)
                     # Provider receipt identity is global to a family; attribution is first-observed.
                     same = prior == record
                     if isinstance(prior, ProviderUsageRecord) and isinstance(record, ProviderUsageRecord):
@@ -284,84 +438,50 @@ class ThreadUsageRepository:
                 await session.flush()
 
     async def latest_root_request(self, *, thread_id: str, run_id: str | None = None) -> ModelUsageRecord | None:
-        """Read request-local usage already committed during execution, not Run totals."""
-        query = select(ThreadUsageRecord.payload_json).where(
-            ThreadUsageRecord.root_thread_id == thread_id,
-            ThreadUsageRecord.descendant.is_(False),
-            func.json_extract(ThreadUsageRecord.payload_json, "$.kind") == "model",
-            func.coalesce(func.json_extract(ThreadUsageRecord.payload_json, "$.source"), "agent") == "agent",
+        """Read current primary-request occupancy, never cumulative Context usage."""
+        facts = _contributions(thread_id)
+        query = select(facts.c.payload).where(
+            facts.c.descendant.is_(False),
+            func.json_extract(facts.c.payload, "$.kind") == "model",
+            func.coalesce(func.json_extract(facts.c.payload, "$.source"), "agent") == "agent",
         )
         if run_id is not None:
-            query = query.where(ThreadUsageRecord.run_id == run_id)
+            query = query.where(func.json_extract(facts.c.payload, "$.run_id") == run_id)
         async with short_session(self._sessions) as session:
-            payload = await session.scalar(query.order_by(ThreadUsageRecord.sequence.desc()).limit(1))
+            payload = await session.scalar(query.order_by(facts.c.sequence.desc(), facts.c.ordinal.desc()).limit(1))
         return None if payload is None else ModelUsageRecord.model_validate_json(payload)
 
     async def snapshot(self, *, thread_id: str) -> ThreadUsageView:
-        """Aggregate only a committed suffix while the bounded group membership is stable."""
-        async with self._snapshot_lock:
-            return await self._snapshot(thread_id=thread_id)
-
-    async def _snapshot(self, *, thread_id: str) -> ThreadUsageView:
+        """Rebuild bounded groups in a pinned read transaction; no stale cross-process cache."""
         async with short_session(self._sessions) as session:
+            # aiosqlite's legacy transaction mode does not BEGIN for SELECT statements.
+            await session.execute(text("BEGIN"))
             root_id = await self._root_id(session, thread_id)
             if root_id != thread_id:
                 raise ValueError("Thread usage is available for root Threads.")
-            high_water = (
-                await session.scalar(
-                    select(func.max(ThreadUsageRecord.sequence)).where(
-                        ThreadUsageRecord.root_thread_id == root_id,
-                    )
-                )
-                or 0
-            )
+            facts = _contributions(root_id)
+            run_id = func.json_extract(facts.c.payload, "$.run_id")
             recent_ids = tuple(
                 (
                     await session.scalars(
-                        select(ThreadUsageRecord.run_id)
-                        .where(
-                            ThreadUsageRecord.root_thread_id == root_id,
-                            ThreadUsageRecord.sequence <= high_water,
-                        )
-                        .group_by(ThreadUsageRecord.run_id)
-                        .order_by(func.max(ThreadUsageRecord.sequence).desc())
-                        .limit(_GROUPS)
+                        select(run_id).group_by(run_id).order_by(func.max(facts.c.sequence).desc()).limit(_GROUPS)
                     )
                 ).all()
             )
-        aggregate = self._cache.pop(thread_id, None)
-        if aggregate is None or aggregate.cursor > high_water or set(aggregate.recent_ids) != set(recent_ids):
-            # A changed recent-Run window can change first-observed currency attribution
-            # in 'other'; rebuild instead of subtracting lossy capped groups.
             aggregate = _Aggregation(recent_ids=recent_ids)
-        aggregate.recent_ids = recent_ids
-        while aggregate.cursor < high_water:
-            async with short_session(self._sessions) as session:
-                rows = (
-                    await session.execute(
-                        select(
-                            ThreadUsageRecord.sequence,
-                            ThreadUsageRecord.descendant,
-                            ThreadUsageRecord.payload_json,
-                            ThreadUsageRecord.observed_at,
-                        )
-                        .where(
-                            ThreadUsageRecord.root_thread_id == root_id,
-                            ThreadUsageRecord.sequence > aggregate.cursor,
-                            ThreadUsageRecord.sequence <= high_water,
-                        )
-                        .order_by(ThreadUsageRecord.sequence)
-                        .limit(_BATCH)
-                    )
-                ).all()
-            if not rows:
-                break
-            for sequence, descendant, payload, observed in rows:
-                aggregate.add(sequence, descendant, payload, observed)
-        self._cache[thread_id] = aggregate
-        while len(self._cache) > 16:
-            self._cache.popitem(last=False)
-        return aggregate.view(thread_id)
+            rows = await session.stream(
+                select(
+                    facts.c.sequence,
+                    facts.c.descendant,
+                    facts.c.payload,
+                    facts.c.observed_at,
+                    facts.c.observed_through,
+                ).order_by(facts.c.sequence, facts.c.ordinal)
+            )
+            async for batch in rows.partitions(_BATCH):
+                for sequence, descendant, payload, observed, observed_through in batch:
+                    aggregate.add(sequence, descendant, payload, observed, observed_through)
+            return aggregate.view(thread_id)
 
     @staticmethod
     async def _root_id(session: AsyncSession, thread_id: str) -> str:

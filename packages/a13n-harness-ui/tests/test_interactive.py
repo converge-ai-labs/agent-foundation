@@ -500,6 +500,13 @@ def test_context_samples_replace_root_requests_without_double_counting_cache_or_
     assert samples[0].tokens == 120
     assert samples[0].response_ordinal == 2
     assert root_context_samples(event.model_copy(update={"run_kind": "child"})) == ()
+    resumed = event.model_copy(deep=True, update={"run_id": "run-resumed"})
+    resumed.payload["value"]["run_id"] = "run-resumed"
+    resumed.payload["value"]["event"]["payload"]["usage_id"] = "scope-original"
+    (sample,) = root_context_samples(resumed)
+    assert sample.run_id == "run-resumed" and sample.tokens == 120
+    resumed.payload["value"]["run_id"] = "inline-child-run"
+    assert root_context_samples(resumed) == ()
 
 
 def test_resume_with_explicit_permissions_is_rejected_before_any_app_start(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -9,6 +9,7 @@ from decimal import Decimal
 import httpx2
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness._usage_pricing import _response_service_tier
 from a13n_harness.pricing import (
     CatalogModelCostCapability,
     ModelCostInput,
@@ -16,7 +17,7 @@ from a13n_harness.pricing import (
     get_default_pricing_catalog,
 )
 from a13n_harness.token_pricing import TokenPricingCapability
-from a13n_harness.usage import ModelUsageRecord, _response_service_tier
+from a13n_harness.usage import ModelUsageRecord
 from pydantic import ValidationError
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models import CompletedStreamedResponse, ModelRequestParameters

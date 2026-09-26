@@ -7,28 +7,26 @@ import json
 import os
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
-from decimal import Decimal
 from functools import cache
 from importlib.resources import files
 from typing import Any, Literal, Protocol, cast, runtime_checkable
-from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_ai import Agent, BinaryContent, ModelRetry, UserContent
 from pydantic_ai.agent import AgentRunResult
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
 from a13n_harness.errors import HarnessError
+from a13n_harness.metering import ModelUsageBinding, ModelUsageCapability
 from a13n_harness.models.binding import selected_model
 from a13n_harness.models.inference import infer_model
 from a13n_harness.observation import _auxiliary_agent_capabilities
 from a13n_harness.providers.environment.models import EnvironmentPath
-from a13n_harness.usage import ProviderUsage, UsageMeasure, _auxiliary_model_usage_capability
+from a13n_harness.usage import ProviderUsage
 
 type NativeInputMediaKind = Literal["image", "video", "audio"]
 
@@ -116,7 +114,9 @@ class MediaUnderstandingError(Exception):
 class MediaUnderstandingProvider(Protocol):
     """Run collaborator that analyzes media unsupported by the active model."""
 
-    async def understand(self, request: MediaUnderstandingRequest) -> MediaUnderstandingResult: ...
+    async def understand(
+        self, request: MediaUnderstandingRequest, *, usage: ModelUsageBinding | None = None
+    ) -> MediaUnderstandingResult: ...
 
 
 class AgentMediaUnderstandingProvider:
@@ -196,42 +196,46 @@ class AgentMediaUnderstandingProvider:
         except Exception as exc:
             raise MediaUnderstandingError("media_understanding_configuration_invalid") from exc
 
-    async def understand(self, request: MediaUnderstandingRequest) -> MediaUnderstandingResult:
+    async def understand(
+        self, request: MediaUnderstandingRequest, *, usage: ModelUsageBinding | None = None
+    ) -> MediaUnderstandingResult:
         model = self._models.get(request.kind)
         agent = self._agents.get(request.kind)
         if model is None or agent is None:
             raise MediaUnderstandingError("media_understanding_unavailable")
         prompt = request.instructions or _default_instruction(request.kind)
-        usage = RunUsage()
-        accounting = _auxiliary_model_usage_capability()
+        attached = usage is not None
+        binding = usage or ModelUsageBinding.standalone(source="files.media_understanding")
+        accounting = ModelUsageCapability(binding)
+        native_usage = RunUsage()
         try:
             async with asyncio.timeout(_TIMEOUT_SECONDS_BY_KIND[request.kind]), _enter_agent(agent):
                 result = await _run_with_retry(
                     agent,
                     [prompt, BinaryContent(data=request.source_bytes, media_type=request.media_type)],
-                    usage=usage,
+                    usage=native_usage,
                     accounting=accounting,
                 )
         except TimeoutError as exc:
             raise MediaUnderstandingError(
                 "media_understanding_timeout",
-                usage=() if accounting is not None else _provider_usage_receipts(model, usage),
+                usage=() if attached else binding.receipts(),
             ) from exc
-        except HarnessError:
+        except (HarnessError, UsageLimitExceeded):
             raise
         except UnexpectedModelBehavior as exc:
             raise MediaUnderstandingError(
                 "media_understanding_response_invalid",
-                usage=() if accounting is not None else _provider_usage_receipts(model, usage),
+                usage=() if attached else binding.receipts(),
             ) from exc
         except Exception as exc:
             raise MediaUnderstandingError(
                 "media_understanding_failed",
-                usage=() if accounting is not None else _provider_usage_receipts(model, usage),
+                usage=() if attached else binding.receipts(),
             ) from exc
         return MediaUnderstandingResult(
             text=result.output,
-            usage=() if accounting is not None else _provider_usage_receipts(model, result.usage),
+            usage=() if attached else binding.receipts(),
         )
 
 
@@ -296,50 +300,17 @@ async def _run_with_retry(
     prompt: Sequence[UserContent],
     *,
     usage: RunUsage,
-    accounting: AbstractCapability[Any] | None = None,
+    accounting: AbstractCapability[Any],
 ) -> AgentRunResult[str]:
     for attempt in range(3):
         try:
-            capabilities = _auxiliary_agent_capabilities()
-            if accounting is not None:
-                capabilities = (*capabilities, accounting)
+            capabilities = (*_auxiliary_agent_capabilities(), accounting)
             return await agent.run(prompt, usage=usage, capabilities=capabilities)
         except ModelHTTPError as exc:
             if exc.status_code not in {429, 500, 502, 503, 504} or attempt == 2:
                 raise
             await asyncio.sleep(2**attempt)
     raise AssertionError("unreachable")
-
-
-def _provider_usage_receipts(model: Model, usage: RunUsage) -> tuple[ProviderUsage, ...]:
-    measures = tuple(
-        UsageMeasure(unit=unit, quantity=Decimal(value))
-        for unit, value in (
-            ("requests", usage.requests),
-            ("tool_calls", usage.tool_calls),
-            ("input_tokens", usage.input_tokens),
-            ("cache_write_tokens", usage.cache_write_tokens),
-            ("cache_read_tokens", usage.cache_read_tokens),
-            ("input_audio_tokens", usage.input_audio_tokens),
-            ("cache_audio_read_tokens", usage.cache_audio_read_tokens),
-            ("output_tokens", usage.output_tokens),
-            ("output_audio_tokens", usage.output_audio_tokens),
-        )
-        if value
-    )
-    if not measures and usage.cost is None:
-        return ()
-    return (
-        ProviderUsage(
-            usage_id=f"media-{uuid4()}",
-            provider=model.system,
-            product=model.model_name,
-            timestamp=datetime.now(UTC),
-            measures=measures,
-            cost=usage.cost,
-            currency="USD" if usage.cost is not None else None,
-        ),
-    )
 
 
 __all__ = [

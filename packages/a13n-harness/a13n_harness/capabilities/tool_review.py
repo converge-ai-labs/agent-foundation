@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterable
-from datetime import UTC, datetime
-from decimal import Decimal
+from dataclasses import replace
 from enum import IntEnum, StrEnum
 from functools import cache
 from html import escape
@@ -14,22 +13,22 @@ from typing import Literal, Protocol, cast, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 from pydantic_ai import Agent, RunContext, ToolOutput, UseEnumMemberDocstrings
-from pydantic_ai.capabilities import AbstractCapability, WrapModelRequestHandler
-from pydantic_ai.messages import AgentStreamEvent, ModelResponse
-from pydantic_ai.models import Model, ModelRequestContext
+from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.messages import AgentStreamEvent
+from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness._review_context import ReviewEvidence, render_review_input
 from a13n_harness._tool_selectors import match_selector, validate_selector
 from a13n_harness.context import AgentContext
-from a13n_harness.errors import RunError
-from a13n_harness.model_calls import ModelCallCheckError, _check_model_call
+from a13n_harness.metering import ModelUsageBinding, ModelUsageCapability
+from a13n_harness.model_calls import ModelCallCheckError
 from a13n_harness.models.binding import selected_model
 from a13n_harness.models.structured_output import StructuredOutputAutoToolChoiceModel
 from a13n_harness.observation import _auxiliary_agent_capabilities
 from a13n_harness.tools.policy import InvocationDecisionKind
-from a13n_harness.usage import ProviderUsage, UsageMeasure, _auxiliary_model_usage_capability
+from a13n_harness.usage import ProviderUsage, UsageReportError
 
 
 class ToolReviewRequest(BaseModel):
@@ -204,18 +203,21 @@ def _review_prompt() -> str:
     return files("a13n_harness.toolsets.prompts").joinpath("tool_review.md").read_text(encoding="utf-8")
 
 
-class _ReviewExecution(AbstractCapability[ToolReviewRequest]):
+class _ReviewExecution:
     """One review's dispatch identity, native execution and usage settlement; never reused.
 
     Within a run's review gate, the review request is the calling agent's model usage, checked, recorded and priced
     like its own requests; used on its own, the reviewer checks its request and returns receipts.
     """
 
-    def __init__(self, owner: AgentContext, model: Model) -> None:
-        self._owner = owner
-        self._model = model
-        self._accounting = _auxiliary_model_usage_capability()
-        self._call_id: str | None = None
+    def __init__(self, owner: AgentContext, request: ToolReviewRequest, usage: ModelUsageBinding | None) -> None:
+        self._attached = usage is not None
+        self._binding = usage or replace(
+            ModelUsageBinding.standalone(source="tool.review"),
+            owner=owner,
+            tool_id=request.tool_id,
+            tool_call_id=request.tool_call_id,
+        )
         self._usage = RunUsage()
 
     async def run(
@@ -234,13 +236,13 @@ class _ReviewExecution(AbstractCapability[ToolReviewRequest]):
                     usage_limits=UsageLimits(request_limit=1),
                     capabilities=(
                         *_auxiliary_agent_capabilities(),
-                        self if self._accounting is None else self._accounting,
+                        ModelUsageCapability(self._binding),
                     ),
                     event_stream_handler=_drain_review_events,
                 )
         except asyncio.CancelledError:
             raise
-        except (ToolReviewError, ModelCallCheckError):
+        except (ToolReviewError, ModelCallCheckError, UsageReportError, UsageLimitExceeded):
             raise
         except TimeoutError as exc:
             raise ToolReviewError("tool_review_timeout", usage=self._usage_receipts()) from exc
@@ -254,52 +256,8 @@ class _ReviewExecution(AbstractCapability[ToolReviewRequest]):
         )
         return ToolReviewResult(assessment=assessment, usage=self._usage_receipts())
 
-    async def wrap_model_request(
-        self,
-        ctx: RunContext[ToolReviewRequest],
-        *,
-        request_context: ModelRequestContext,
-        handler: WrapModelRequestHandler,
-    ) -> ModelResponse:
-        call = await _check_model_call(
-            self._owner,
-            request_context,
-            model_run_id=ctx.run_id,
-            source="tool.review",
-            tool_id=ctx.deps.tool_id,
-            tool_call_id=ctx.deps.tool_call_id,
-        )
-        self._call_id = call.call_id
-        return await handler(request_context)
-
     def _usage_receipts(self) -> tuple[ProviderUsage, ...]:
-        # Settle only after the native run exits: interrupted streaming usage is
-        # committed after the model-request wrapper has unwound.
-        measures = tuple(
-            UsageMeasure(unit=unit, quantity=Decimal(value))
-            for unit, value in (
-                ("requests", self._usage.requests),
-                ("tool_calls", self._usage.tool_calls),
-                ("input_tokens", self._usage.input_tokens),
-                ("cache_write_tokens", self._usage.cache_write_tokens),
-                ("cache_read_tokens", self._usage.cache_read_tokens),
-                ("output_tokens", self._usage.output_tokens),
-            )
-            if value
-        )
-        if not measures or self._accounting is not None:
-            return ()
-        if self._call_id is None:
-            raise RunError("Reviewer usage has no dispatch identity.", code="usage_identity_missing")
-        return (
-            ProviderUsage(
-                usage_id=self._call_id,
-                provider=self._model.system,
-                product=self._model.model_name,
-                timestamp=datetime.now(UTC),
-                measures=measures,
-            ),
-        )
+        return () if self._attached else self._binding.receipts()
 
 
 class AgentToolReviewer:
@@ -347,8 +305,10 @@ class AgentToolReviewer:
         # Non-generative models receive questions as instructions, not as material to judge.
         return "\n\n".join(filter(None, (_review_prompt(), custom))) if self._scored else custom
 
-    async def review(self, request: ToolReviewRequest, *, context: AgentContext) -> ToolReviewResult:
-        return await _ReviewExecution(context, self._model).run(
+    async def review(
+        self, request: ToolReviewRequest, *, context: AgentContext, usage: ModelUsageBinding | None = None
+    ) -> ToolReviewResult:
+        return await _ReviewExecution(context, request, usage).run(
             self._agent, request, timeout=self._config.timeout_seconds
         )
 

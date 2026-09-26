@@ -2,13 +2,13 @@
 
 import asyncio
 import json
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta
 
 import pytest
-from a13n_harness.usage import ModelUsageRecord, UsageRecord
+from a13n_harness.usage import ModelUsageRecord, UsageSnapshot
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.models import service as models_service
@@ -304,20 +304,18 @@ async def test_a_successor_waits_for_a_worker_that_reads_its_parents_checkpoint(
 
 
 async def test_a_cancelled_attempt_still_records_its_usage(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """An inline child's charges wait for its parent's next boundary; cancelling the attempt records them anyway,
-    as the supervisor and shutdown do."""
+    """Inline child charges persist before the parent's next checkpoint and survive cancellation."""
     charged: set[str] = set()
     both = asyncio.Event()
-    add = UsageBuffer.add
+    ingested = UsageBuffer.ingested_snapshot
 
-    def watched(buffer: UsageBuffer, records: Iterable[UsageRecord]) -> None:
-        records = list(records)
-        add(buffer, records)
-        charged.update(record.record_id for record in records if isinstance(record, ModelUsageRecord))
+    def watched(buffer: UsageBuffer, snapshot: UsageSnapshot) -> None:
+        ingested(buffer, snapshot)
+        charged.update(record.record_id for record in snapshot.records if isinstance(record, ModelUsageRecord))
         if len(charged) >= 2:
             both.set()
 
-    monkeypatch.setattr(UsageBuffer, "add", watched)
+    monkeypatch.setattr(UsageBuffer, "ingested_snapshot", watched)
     worker = {"toolsets": {"configuration": {"enabled": True}}}
     agent = await runs_kit.delegating(service, scripted_model, "inline", worker=worker)
     gate = asyncio.Event()
@@ -335,7 +333,13 @@ async def test_a_cancelled_attempt_still_records_its_usage(service, scripted_mod
         await running
     gate.set()
     async with transaction(service.runtime.storage) as session:
-        records = (await session.scalars(select(UsageRecordRow).where(UsageRecordRow.run_id == run_id))).all()
+        records = (
+            await session.scalars(
+                select(UsageRecordRow).where(
+                    UsageRecordRow.run_id == run_id, UsageRecordRow.record["kind"].astext == "model"
+                )
+            )
+        ).all()
     assert {record.record["record_id"] for record in records} == charged
 
 
@@ -569,14 +573,26 @@ async def test_a_usage_record_reported_again_with_other_content_is_skipped(servi
     scripted_model.say("Done")
     await (await runs_kit.attempt(service))
     async with transaction(service.runtime.storage) as session:
-        stored = (await session.scalars(select(UsageRecordRow).where(UsageRecordRow.run_id == run_id))).one()
+        stored = (
+            await session.scalars(
+                select(UsageRecordRow).where(
+                    UsageRecordRow.run_id == run_id, UsageRecordRow.record["kind"].astext == "model"
+                )
+            )
+        ).one()
         digest, model_id = stored.digest, stored.model_id
 
     # The same record ID now claims no model: the stored fact stays, and reporting it again does not fail.
     conflicting = UsageReport(ModelUsageRecord.model_validate(stored.record))
     await ingest_late(service.runtime.storage, run_id, stored.run_attempt_id, [conflicting])
     async with transaction(service.runtime.storage) as session:
-        kept = (await session.scalars(select(UsageRecordRow).where(UsageRecordRow.run_id == run_id))).one()
+        kept = (
+            await session.scalars(
+                select(UsageRecordRow).where(
+                    UsageRecordRow.run_id == run_id, UsageRecordRow.record["kind"].astext == "model"
+                )
+            )
+        ).one()
     assert (kept.digest, kept.model_id) == (digest, model_id) and model_id is not None
 
 

@@ -331,8 +331,8 @@ Reporting is scoped to the exact active native tool span selected by Harness ins
 `HarnessEvent`, Pydantic public events, usage records, and OTel spans are independent projections:
 
 - the event stream owns ordered process-local semantic observations;
-- Pydantic `RunUsage` remains the sole process-local model-usage accumulator;
-- the Harness usage ledger preserves mixed-source attribution without becoming another accumulator;
+- Pydantic `RunUsage` owns native execution counters;
+- Context-owned latest contributions derive public usage and model-budget checks independently of telemetry, as specified in [Events and Usage](12-events-observability-and-usage.md#run-usage);
 - Observation supplies timing, hierarchy, correlation, and low-cardinality operational aggregates only.
 
 Instrumentation cannot change event ordering, state, usage, recovery, cancellation, result, or cleanup. Events already delivered by an earlier model attempt remain visible even when a later attempt succeeds. A telemetry backend does not become a replay log, usage ledger, billing source, or completion authority.
