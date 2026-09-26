@@ -62,7 +62,7 @@ Product-facing HTTP APIs use the `/api` namespace. Keep OpenAPI schemas and inte
 
 Operational liveness and readiness probes use explicit paths such as `/healthz` and `/readyz` outside `/api`. They expose only bounded process and dependency state and are not product resources. Unknown product API paths return API errors rather than an HTML application response.
 
-a13n Service exposes APIs and operational probes without hosting browser assets. Worker-only roles do not expose product APIs. Browser clients follow the shared ingress Origin, cookie, and CSRF contract; local tooling does not justify permissive CORS.
+a13n Service exposes APIs and operational probes; API-serving roles also serve the bundled Console when its build is present ([Console serving](spec/a13n-service/09-runtime.md#console)). Worker-only roles expose neither product APIs nor the Console. Browser clients follow the shared ingress Origin, cookie, and CSRF contract; local tooling does not justify permissive CORS.
 
 ## Generated Code and Static Analysis
 
@@ -143,7 +143,7 @@ These values apply only to migration connections. Override them only for a revie
 
 Configure Python logging once in the executable before Uvicorn or a worker starts. Libraries only obtain namespaced loggers through `a13n-logging`. Use Rich-backed `pretty` output locally and structured `json` output in deployments, writing to stdout, to a size-rotated JSON file, or both.
 
-Prefer stable event names and structured fields. Bind the IDs of a unit of work, such as a request, run or attempt, with `log_context` at the boundary that owns it, instead of passing them to every call. Include service, role, build version, request or trace ID, and applicable session, thread, run, and attempt IDs. Log exceptions with stack traces at the boundary that handles them. Never log credentials, authorization headers, password-bearing URLs, cookies, raw prompts, model output, tool payloads, or uploaded content by default.
+Prefer stable event names and structured fields. Bind the IDs of a unit of work, such as a request, run or attempt, with `log_context` at the boundary that owns it, instead of passing them to every call. Include service, role, build version, request or trace ID, and applicable session, thread, run, and attempt IDs. At the boundary that handles a Service failure, use `a13n_logging.exception_details` to record exception types, stack locations and causes without exception messages, source lines or locals. Never log credentials, authorization headers, password-bearing URLs, cookies, raw prompts, model output, tool payloads, or uploaded content by default.
 
 ## Container Image
 

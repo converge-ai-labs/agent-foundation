@@ -145,15 +145,15 @@ Every HTTP request body is read completely before routing, JSON parsing or datab
 
 Failures that escape a route answer in the error envelope ([10](10-api.md#errors)), whose codes are listed in [02](02-layout.md#error-codes):
 
-| Escaping failure                                                                 | Response                                                                     |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| a `ServiceError`                                                                 | its own code and details                                                     |
-| request validation                                                               | `invalid_argument` with `details.fields` ([10](10-api.md#errors))            |
-| a body that cannot be parsed                                                     | `invalid_argument`, `field` `body`, `reason` `unparsable`                    |
-| no route for the path, or a method the path does not accept                      | 404 `not_found`, kind `route` ([10](10-api.md#errors))                       |
-| database unreachable or too slow (connection and interface errors, pool timeout) | 503 `unavailable`, `details.dependency = "database"`                         |
-| a Redis error                                                                    | 503 `unavailable`, `details.dependency = "redis"`                            |
-| anything else                                                                    | 500 `internal` with a fixed message; the traceback is logged, never returned |
+| Escaping failure                                                                 | Response                                                                                                                   |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| a `ServiceError`                                                                 | its own code and details                                                                                                   |
+| request validation                                                               | `invalid_argument` with `details.fields` ([10](10-api.md#errors))                                                          |
+| a body that cannot be parsed                                                     | `invalid_argument`, `field` `body`, `reason` `unparsable`                                                                  |
+| no route for the path, or a method the path does not accept                      | 404 `not_found`, kind `route` ([10](10-api.md#errors))                                                                     |
+| database unreachable or too slow (connection and interface errors, pool timeout) | 503 `unavailable`, `details.dependency = "database"`                                                                       |
+| a Redis error                                                                    | 503 `unavailable`, `details.dependency = "redis"`                                                                          |
+| anything else                                                                    | 500 `internal` with a fixed message; safe exception details are logged ([12](12-observability.md#signals)), never returned |
 
 Every HTTP response, a 500 or an ingress refusal included, carries exactly one Service-generated `X-Request-Id` (never taken from the caller), which error bodies repeat as `request_id` and logs of escaping failures record; it correlates diagnostics and grants nothing. Error responses carry the headers [10](10-api.md#errors) lists. Route dependencies return detached values and never yield a database session, so no session outlives its operation or stays open on a streaming response.
 

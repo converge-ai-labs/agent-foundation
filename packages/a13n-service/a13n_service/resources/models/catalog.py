@@ -13,7 +13,7 @@ from time import monotonic
 import anyio
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.definition import ModelProviderDefinition
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from anyio import to_thread
 
 from a13n_service.infra.outbound import open_http
@@ -80,7 +80,10 @@ class ModelsDevCatalog:
             items = await to_thread.run_sync(parse_catalog, response.content, self.channels)
         except Exception as error:
             # The refresh task outlives any one failure, whatever it is.
-            logger.warning("Model catalog refresh failed", extra={"error_type": type(error).__name__})
+            logger.warning(
+                "Model catalog refresh failed",
+                extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+            )
             status = "unavailable" if self.catalog.status == "unavailable" else "stale"
             self.catalog = self.catalog.model_copy(update={"status": status})
             self.refresh_after = self.clock() + RETRY_SECONDS

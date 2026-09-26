@@ -454,7 +454,7 @@ async def _prepare(env: SimpleNamespace, lease: Lease) -> list[PreparedMount]:
     return await prepare_mounts(env.runtime, lease, principal, authority, mounts)
 
 
-async def test_an_uncertain_operation_is_continued_never_replaced(env) -> None:  # type: ignore[no-untyped-def]
+async def test_an_uncertain_operation_is_continued_never_replaced(env, caplog) -> None:  # type: ignore[no-untyped-def]
     submitted = await start(env)
     environment_id = submitted["run"]["environment_mounts"][0]["environment_id"]
     await interrupt(env, submitted["run"]["id"])
@@ -467,6 +467,12 @@ async def test_an_uncertain_operation_is_continued_never_replaced(env) -> None: 
     lost = await environment(env, environment_id)
     assert lost["status"] == "creating" and lost["failure"]["certainty"] == "unknown"
     assert not lost["failure"]["permanent"] and BACKEND.instances == {environment_id: "running"}
+    [failure] = [record for record in caplog.records if record.getMessage() == "Environment operation failed"]
+    assert failure.environment_id == environment_id
+    assert failure.operation_id == lost["failure"]["operation_id"]
+    assert failure.phase == "creating"
+    assert failure.exception_details[0]["frames"]
+    assert failure.exc_info is None
     code, body = await act(env, "DELETE", environment_id)
     assert (code, reason(body)) == (409, "operation_unresolved")
 

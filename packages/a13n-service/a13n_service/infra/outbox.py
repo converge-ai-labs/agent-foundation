@@ -347,7 +347,12 @@ class Delivery:
                 await settle(session, claimed, outcome, error=reason, retry_after=backoff(claimed.attempts))
         except Exception as failure:
             logger.warning(
-                "Outbox settlement failed", extra={"outbox_id": claimed.id, "error_type": type(failure).__name__}
+                "Outbox settlement failed",
+                extra={
+                    "outbox_id": claimed.id,
+                    "error_type": type(failure).__name__,
+                    "exception_details": exception_details(failure),
+                },
             )
 
 

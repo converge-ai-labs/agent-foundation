@@ -15,7 +15,7 @@ Each signal answers one kind of question:
 
 PostgreSQL facts are authoritative for every per-tenant and per-object number. Metrics carry global rates and distributions only, so no metric is labelled with a tenant, principal, run or other object. Four boundaries record logs and metrics: an HTTP request, an attempt, a sweep pass and an outbox delivery. A fact such as an accepted or sealed run is logged and counted only after the transaction that records it commits, so a rollback leaves no record.
 
-Logs and metrics never carry credentials, request or response bodies, URLs or query strings; paths and query strings can carry identifiers and authorization codes. A failure is logged with its error type, and only a defect's traceback is logged in full ([09](09-runtime.md#http-ingress-and-escaping-failures)).
+Logs and metrics never carry credentials, request or response bodies, URLs or query strings; paths and query strings can carry identifiers and authorization codes. Service failure handlers record `exception_details`: bounded exception types, stack locations (file, line and function), cause and group relationships, and numeric HTTP status or OS error codes when available. Exception messages, notes, source lines and locals are excluded, including for defects ([09](09-runtime.md#http-ingress-and-escaping-failures)). Expected refusals can log their stable reason alone.
 
 ## Logs
 
@@ -46,7 +46,7 @@ A boundary binds fields that every record logged within it carries, including re
 | `Attempt ended`                                                                   | INFO                   | `run_id`, `attempt_id`, `status`, `reason` (the failure code or yield reason), `duration_ms` |
 | `Run sealed`                                                                      | INFO                   | `run_id`, `status`, `reason` (the failure code)                                              |
 | `Outbox delivered`, `Outbox delivery failed` (will retry), `Outbox delivery dead` | INFO, WARNING, WARNING | `outbox_id`, `kind`, `reason` (the delivery error)                                           |
-| `Sweep failed`                                                                    | WARNING                | `sweep`, `error_type`                                                                        |
+| `Sweep failed`                                                                    | WARNING                | `sweep`, `error_type`, `exception_details`                                                   |
 
 `/healthz` and `/readyz` are not logged. A run accepted while handling a request is logged within it, so its `Run accepted` record carries both the `request_id` and the `run_id`: logs lead from a request to the runs it started without a mapping table.
 

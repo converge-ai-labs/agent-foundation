@@ -34,6 +34,7 @@ from a13n_harness.providers.environment.errors import (
     EnvironmentProviderOutcomeCertainty,
     provider_error,
 )
+from a13n_logging import exception_details, get_logger
 
 from a13n_service.infra.audit import record
 from a13n_service.infra.db import lock, now, transaction
@@ -48,6 +49,8 @@ from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.settings import PUBLISH_SECONDS, RENEWAL_HORIZON_SECONDS
 from a13n_service.tenancy.authorize import WorkspaceScope
+
+logger = get_logger(__name__)
 
 _MAX_BACKOFF = timedelta(minutes=10)
 
@@ -154,6 +157,10 @@ async def publish(runtime: Runtime, renewal: Renewal, outcome: datetime | Except
         elif category == EnvironmentProviderErrorCategory.MISSING:
             _fail(environment, lost(renewal.credential_changed), current)
         else:
+            logger.warning(
+                "Environment renewal failed",
+                extra={"environment_id": renewal.environment_id, "exception_details": exception_details(outcome)},
+            )
             _fail(environment, fault_of(outcome, dispatched=True), current)
 
 

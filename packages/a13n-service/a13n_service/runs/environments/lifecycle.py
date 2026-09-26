@@ -28,6 +28,7 @@ from a13n_harness.providers.environment.errors import (
 from a13n_harness.providers.environment.management import Environment
 from a13n_harness.providers.environment.models import EnvironmentError as OperationError
 from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_logging import exception_details, get_logger
 from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +47,8 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
 from a13n_service.settings import PUBLISH_SECONDS
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
+
+logger = get_logger(__name__)
 
 type Phase = Literal["creating", "starting", "stopping", "deleting"]
 _PHASES: dict[str, Phase] = {
@@ -365,6 +368,15 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
     except _InstanceLost:
         return Outcome(adapter.dump_state() if adapter is not None else None, lost(operation.credential_changed))
     except Exception as error:
+        logger.warning(
+            "Environment operation failed",
+            extra={
+                "environment_id": operation.environment_id,
+                "operation_id": operation.operation_id,
+                "phase": operation.phase,
+                "exception_details": exception_details(error),
+            },
+        )
         # A known target stays recorded even when a later step failed, so the next dispatcher can recover it.
         return Outcome(adapter.dump_state() if adapter is not None else None, fault_of(error, dispatched=dispatched))
     finally:

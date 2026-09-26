@@ -17,7 +17,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from pydantic import BaseModel
 from pydantic.json_schema import JsonSchemaMode, models_json_schema
 from redis.asyncio import Redis
@@ -306,7 +306,10 @@ class ThreadHub:
             try:
                 await self._refresh_once()
             except Exception as error:
-                logger.warning("Thread stream refresh failed", extra={"error_type": type(error).__name__})
+                logger.warning(
+                    "Thread stream refresh failed",
+                    extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+                )
 
     async def _refresh_once(self) -> None:
         """One snapshot query for every watched thread, and one authority check per credential and workspace."""

@@ -2,6 +2,7 @@
 lets escape answers in the error envelope."""
 
 import asyncio
+import json
 
 import httpx2
 import pytest
@@ -59,11 +60,16 @@ async def test_escaping_failures_answer_in_the_error_envelope(caplog: pytest.Log
 
     @app.get("/database")
     async def database() -> None:
-        raise OperationalError("SELECT 1", {}, Exception("connection refused"))
+        raise OperationalError("SELECT secret_sql", {"credential": "secret_parameter"}, Exception("secret_connection"))
 
     @app.get("/defect")
     async def defect() -> None:
-        raise KeyError("secret")
+        try:
+            raise ValueError("secret_cause")
+        except ValueError as cause:
+            error = KeyError("secret_message")
+            error.add_note("secret_note")
+            raise error from cause
 
     transport = httpx2.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx2.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -92,10 +98,19 @@ async def test_escaping_failures_answer_in_the_error_envelope(caplog: pytest.Log
     error = internal.json()["error"]
     identity = error.pop("request_id")
     assert error == {"code": "internal", "message": "Internal error", "details": {}}
-    # The defect's traceback is logged with the request's ID.
+    # The defect names its cause and source locations without copying exception text into logs.
     [logged] = [record for record in caplog.records if record.getMessage() == "Unhandled error"]
     assert logged.request_id == identity  # type: ignore[attr-defined]
-    assert logged.exc_info is not None and logged.exc_info[0] is KeyError
+    assert logged.exc_info is None
+    details = logged.exception_details  # type: ignore[attr-defined]
+    assert [item["type"] for item in details] == ["builtins.KeyError", "builtins.ValueError"]
+    assert details[1]["parent"] == 0
+    assert all(item["frames"][-1]["function"] == "defect" for item in details)
+    [dependency] = [record for record in caplog.records if record.getMessage() == "Dependency unavailable"]
+    assert dependency.exception_details[0]["frames"][-1]["function"] == "database"  # type: ignore[attr-defined]
+    for record in (logged, dependency):
+        assert "secret_" not in json.dumps(vars(record))
+    assert "secret_" not in caplog.text
 
 
 async def test_rate_limits_are_not_enforced_while_redis_is_down() -> None:

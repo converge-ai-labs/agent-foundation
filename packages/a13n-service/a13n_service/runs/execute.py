@@ -3,8 +3,8 @@
 `execute` owns the orchestration. Adapters (the model, connections, environments) own their I/O and never
 run persistence, and no database session survives an external call.
 
-1. Plan: revalidate the run's principal, authority, revision and model in one short session, clean the run's
-   object prefix and restore its checkpoint, or start from its parent's state.
+1. Plan: revalidate the run's principal, authority, revision and model in one short session, then restore its
+   checkpoint or start from its parent's state.
 2. Stream: offer the entries assigned to the run as the input; at every boundary the `Boundaries` capability
    marks, commit a checkpoint and assign compatible pending steers in one transaction, then offer them.
 3. End: seal a completed or waiting outcome in the transaction that commits it as the final checkpoint; seal a
@@ -38,7 +38,7 @@ from a13n_harness.capabilities.steering import steering_input_ids
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import UserContent
@@ -155,7 +155,12 @@ def _failure(lease: Lease, error: Exception) -> Outcome | None:
     outcome = _deterministic(error)
     if outcome is not None:
         logger.warning(
-            "Attempt sealed a failure", exc_info=error, extra={"run_id": lease.run_id, "attempt_id": lease.attempt_id}
+            "Attempt sealed a failure",
+            extra={
+                "run_id": lease.run_id,
+                "attempt_id": lease.attempt_id,
+                "exception_details": exception_details(error),
+            },
         )
     return outcome
 
@@ -182,7 +187,10 @@ def _deterministic(error: Exception) -> Outcome | None:
 
 
 async def _release(runtime: Runtime, lease: Lease, error: Exception) -> None:
-    logger.exception("Attempt failed", extra={"run_id": lease.run_id, "attempt_id": lease.attempt_id})
+    logger.error(
+        "Attempt failed",
+        extra={"run_id": lease.run_id, "attempt_id": lease.attempt_id, "exception_details": exception_details(error)},
+    )
     failure = Failure(code="attempt_failed", message=f"The attempt failed with {type(error).__name__}")
     await release_attempt(runtime, lease, status="failed", failure=failure)
 
@@ -629,8 +637,11 @@ class _Attempt:
         with anyio.CancelScope(shield=True), anyio.move_on_after(self.runtime.settings.database.statement_timeout):
             try:
                 await ingest_late(self.runtime.storage, self.lease.run_id, self.lease.attempt_id, reports)
-            except Exception:
-                logger.exception("Usage could not be recorded", extra={"run_id": self.lease.run_id})
+            except Exception as error:
+                logger.error(
+                    "Usage could not be recorded",
+                    extra={"run_id": self.lease.run_id, "exception_details": exception_details(error)},
+                )
             else:
                 self.usage.ingested(reports)
 

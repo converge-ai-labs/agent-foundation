@@ -26,7 +26,7 @@ from a13n_harness.capabilities import (
     RecordToolKey,
 )
 from a13n_harness.providers.memory import MemoryRecord, MemoryStoreError, Origin, RecordPage, RecordStore
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -226,7 +226,12 @@ async def record_memory_capability(
             except (ServiceError, ValueError, MemoryStoreError) as error:
                 logger.warning(
                     "Record memory skipped",
-                    extra={"memory_id": record.id, "reason": "store_unavailable", "error_type": type(error).__name__},
+                    extra={
+                        "memory_id": record.id,
+                        "reason": "store_unavailable",
+                        "error_type": type(error).__name__,
+                        "exception_details": exception_details(error),
+                    },
                 )
                 continue
             mounts.append(

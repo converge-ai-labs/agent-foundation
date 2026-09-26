@@ -10,6 +10,7 @@ from typing import Literal
 
 import anyio
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_logging import exception_details, get_logger
 from pydantic import TypeAdapter
 from redis.asyncio import Redis
 
@@ -29,6 +30,8 @@ from a13n_service.resources.connector_providers.catalog import read_actions
 from a13n_service.settings import Providers
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
+
+logger = get_logger(__name__)
 
 _TOOLS = TypeAdapter(list[ToolInfo])
 
@@ -99,6 +102,10 @@ async def list_tools(
                 connection, storage=storage, keys=keys, registry=registry, policy=policy, settings=settings
             )
         except Exception as error:
+            logger.warning(
+                "Connection tool discovery failed",
+                extra={"connection_id": connection.id, "exception_details": exception_details(error)},
+            )
             raise unavailable(f"connection:{connection.type}", error) from None
         await cache_tools(redis, connection, tools, ttl=settings.discovery_ttl)
     return ToolPage(items=tools, next_cursor=None)
@@ -125,6 +132,10 @@ async def test_connection(
             connection, storage=storage, keys=keys, registry=registry, policy=policy, settings=settings
         )
     except Exception as error:
+        logger.warning(
+            "Connection test failed",
+            extra={"connection_id": connection.id, "exception_details": exception_details(error)},
+        )
         message = failure_message(error)
     else:
         await cache_tools(redis, connection, tools, ttl=settings.discovery_ttl)

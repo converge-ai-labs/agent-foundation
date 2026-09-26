@@ -14,7 +14,7 @@ from importlib.metadata import version
 from typing import Protocol
 
 from a13n_harness import HarnessInstrumentation, HarnessObservationContext, HarnessTraceContent
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from anyio import CancelScope, move_on_after, to_thread
 from opentelemetry import metrics
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -152,6 +152,9 @@ async def open_instrumentation(
             try:
                 await to_thread.run_sync(provider.shutdown, abandon_on_cancel=True)
             except Exception as error:
-                logger.warning("Trace export shutdown failed", extra={"error_type": type(error).__name__})
+                logger.warning(
+                    "Trace export shutdown failed",
+                    extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+                )
         if scope.cancel_called:
             logger.warning("Trace export did not flush before shutdown")

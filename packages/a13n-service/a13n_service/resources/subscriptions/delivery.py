@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import anyio
 import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -110,8 +110,11 @@ def _stage(session: AsyncSession, keys: KeyRing, subscription: SubscriptionRow, 
     dead = None
     try:
         target = webhook_target(keys, subscription, delivery_id)
-    except (ServiceError, ValueError):
-        logger.error("Subscription signing secret cannot be decrypted", extra={"subscription_id": subscription.id})
+    except (ServiceError, ValueError) as error:
+        logger.error(
+            "Subscription signing secret cannot be decrypted",
+            extra={"subscription_id": subscription.id, "exception_details": exception_details(error)},
+        )
         target, dead = {"url": subscription.url}, SECRET_UNAVAILABLE
     enqueue(
         session,

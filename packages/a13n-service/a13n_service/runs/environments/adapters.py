@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 import anyio
 from a13n_harness.providers.environment.management import Environment
 from a13n_harness.providers.environment.models import EnvironmentState
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 
 from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation
@@ -80,7 +80,10 @@ async def close(adapter: Environment) -> None:
         try:
             await adapter.close()
         except Exception as error:
-            logger.warning("Environment adapter close failed", extra={"error_type": type(error).__name__})
+            logger.warning(
+                "Environment adapter close failed",
+                extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+            )
 
 
 def credential_version(provider: ResolvedProvider) -> str | None:

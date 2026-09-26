@@ -13,7 +13,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, replace
 from typing import Protocol
 
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from sqlalchemy import ColumnElement, Select, and_, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
@@ -428,4 +428,7 @@ async def _record_denial(storage: Storage, actor: Principal, scope: Scoped, acti
                 },
             )
     except Exception as failure:
-        logger.error("Admin denial audit failed", extra={"error_type": type(failure).__name__})
+        logger.error(
+            "Admin denial audit failed",
+            extra={"error_type": type(failure).__name__, "exception_details": exception_details(failure)},
+        )

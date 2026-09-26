@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 import anyio
 import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from a13n_service.infra.errors import ServiceError
@@ -150,7 +150,10 @@ async def read_json(
             async with open_http(policy, timeout=timeout, max_bytes=MAX_RESPONSE_BYTES) as client:
                 response = await client.request(method, url, headers=headers, params=params, json=body)
     except (httpx2.HTTPError, ServiceError, TimeoutError, ValueError) as error:
-        logger.warning("Trace backend query failed", extra={"error_type": type(error).__name__})
+        logger.warning(
+            "Trace backend query failed",
+            extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+        )
         raise unavailable(provider) from error
     if response.status_code != 200:
         logger.warning("Trace backend refused a query", extra={"status": response.status_code})

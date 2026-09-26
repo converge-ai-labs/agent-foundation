@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 import anyio
 from a13n_harness import EnvironmentMount as HarnessMount
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, update
 
 from a13n_service.infra.db import lock, now, transaction
@@ -150,4 +150,7 @@ async def _mark_used(runtime: Runtime, environment_ids: list[str]) -> None:
                     .values(last_used_at=func.clock_timestamp())
                 )
         except Exception as error:
-            logger.warning("Marking environments used failed", extra={"error_type": type(error).__name__})
+            logger.warning(
+                "Marking environments used failed",
+                extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+            )

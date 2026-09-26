@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 
 import anyio
 from a13n_harness.providers.connector.contracts import ConnectorProviderError
+from a13n_logging import exception_details, get_logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +28,8 @@ from a13n_service.providers.tools.oauth import OAuthError
 from a13n_service.resources.connections.schemas import ConnectionFailure
 from a13n_service.resources.connections.tables import ConnectionRow, OperationKind
 from a13n_service.tenancy.authorize import WorkspaceScope
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +158,14 @@ async def perform[T](
             result = await send()
             published = await _settle(storage, operation, lambda session, row: publish(session, row, result))
     except Exception as error:
+        logger.warning(
+            "Connection operation failed",
+            extra={
+                "connection_id": operation.connection_id,
+                "operation_id": operation.id,
+                "exception_details": exception_details(error),
+            },
+        )
         with anyio.CancelScope(shield=True):
             await _fail(storage, operation, error)
         raise

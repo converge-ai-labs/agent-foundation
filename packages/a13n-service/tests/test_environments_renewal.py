@@ -1,5 +1,6 @@
 """Renewal: the ready sandboxes of a type that ends them unless renewed, kept alive by their own sweep."""
 
+import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -143,6 +144,24 @@ async def test_renewals_have_their_own_sweep_and_fall_due_halfway_to_the_expiry(
     await restart(env, expiring)
     await renew_environments(env.runtime)
     assert BACKEND.renewals == [expiring] * 3
+
+
+async def test_an_unclassified_renewal_error_is_locatable_without_leaking_its_payload(env, caplog) -> None:  # type: ignore[no-untyped-def]
+    sandbox = await ready_sandbox(env)
+    BACKEND.renewal_error = RuntimeError("secret_provider_body")
+    await due_now(env, sandbox)
+    await renew_environments(env.runtime)
+    failed = await environment(env, sandbox)
+    assert failed["status"] == "ready" and failed["failure"]["code"] == "environment_operation_failed"
+    [failure] = [record for record in caplog.records if record.getMessage() == "Environment renewal failed"]
+    assert failure.environment_id == sandbox
+    assert failure.exception_details[0]["type"] == "builtins.RuntimeError"
+    assert failure.exception_details[0]["frames"]
+    assert "secret_provider_body" not in json.dumps(vars(failure))
+    BACKEND.renewal_error = None
+    await due_now(env, sandbox)
+    await renew_environments(env.runtime)
+    assert (await environment(env, sandbox))["failure"] is None
 
 
 async def test_a_failed_renewal_backs_off_and_one_the_provider_cannot_grant_waits_for_the_expiry(env) -> None:  # type: ignore[no-untyped-def]

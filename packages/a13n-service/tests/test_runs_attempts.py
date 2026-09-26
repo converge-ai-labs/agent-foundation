@@ -1,6 +1,7 @@
 """Attempts: the worker loop, claims, lease renewal and takeover, checkpoint commits and usage ingestion."""
 
 import asyncio
+import json
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
@@ -55,7 +56,7 @@ async def _until(condition: Callable[[], bool]) -> None:
             await asyncio.sleep(0.01)
 
 
-async def test_a_claim_failure_keeps_the_worker_and_its_running_attempts(runtime, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+async def test_a_claim_failure_keeps_the_worker_and_its_running_attempts(runtime, monkeypatch, caplog) -> None:  # type: ignore[no-untyped-def]
     # Renewal is not due within the test, so only the claim loop is exercised.
     runtime = _with_worker(runtime, scan_seconds=0.01, authority_seconds=5)
     claims = 0
@@ -64,7 +65,7 @@ async def test_a_claim_failure_keeps_the_worker_and_its_running_attempts(runtime
         nonlocal claims
         claims += 1
         if claims == 2:
-            raise ConnectionError("database restarted")
+            raise ConnectionError("secret_database_address")
         return [LEASE] if claims == 1 else []
 
     started, finish = asyncio.Event(), asyncio.Event()
@@ -79,6 +80,9 @@ async def test_a_claim_failure_keeps_the_worker_and_its_running_attempts(runtime
     await started.wait()
     await _until(lambda: claims >= 4)
     assert not loop.done() and LEASE.attempt_id in worker.running
+    [failure] = [record for record in caplog.records if record.getMessage() == "Claim failed"]
+    assert failure.exception_details[0]["frames"][-1]["function"] == "flaky_claim"
+    assert "secret_database_address" not in json.dumps(vars(failure))
 
     finish.set()
     await _until(lambda: not worker.running)
@@ -499,7 +503,7 @@ async def test_a_heartbeat_stops_cancelled_and_revoked_runs_and_renews_nothing_w
 
 
 async def test_the_lease_expiry_sweep_passes_a_run_it_cannot_recover(
-    service, scripted_model, runs_kit, monkeypatch
+    service, scripted_model, runs_kit, monkeypatch, caplog
 ) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
@@ -524,6 +528,10 @@ async def test_the_lease_expiry_sweep_passes_a_run_it_cannot_recover(
     await expire_leases(service.runtime, batch=10)
     assert (await runs_kit.get_run(service, failing))["status"] == "running"
     assert (await runs_kit.get_run(service, recovered))["status"] == "accepted"
+    [failure] = [record for record in caplog.records if record.getMessage() == "Lease expiry failed"]
+    assert failure.run_id == failing
+    assert failure.exception_details[0]["frames"][-1]["function"] == "recover_all_but_one"
+    assert "cannot recover" not in json.dumps(vars(failure))
 
 
 class _UndeletableObjects:

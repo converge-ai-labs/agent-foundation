@@ -9,7 +9,7 @@ after commit; only telemetry uses callbacks. Failed or cancelled runs pause thei
 from datetime import datetime, timedelta
 from typing import Literal
 
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -249,7 +249,14 @@ async def expire_leases(runtime: Runtime, *, batch: int) -> None:
             await _expire(runtime, thread_id, run_id, attempt_id)
         except Exception as error:
             # One run that cannot be recovered now must not hold up the others; the next sweep retries it.
-            logger.warning("Lease expiry failed", extra={"run_id": run_id, "error_type": type(error).__name__})
+            logger.warning(
+                "Lease expiry failed",
+                extra={
+                    "run_id": run_id,
+                    "error_type": type(error).__name__,
+                    "exception_details": exception_details(error),
+                },
+            )
 
 
 async def _expire(runtime: Runtime, thread_id: str, run_id: str, attempt_id: str) -> None:

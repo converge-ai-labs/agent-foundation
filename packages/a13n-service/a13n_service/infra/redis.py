@@ -9,7 +9,7 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any
 
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
@@ -32,7 +32,10 @@ async def rate_limit(client: Redis, identity: str, *, limit: int, window_seconds
     try:
         count, remaining = await client.eval(_RATE_LIMIT, 1, key, window_seconds)
     except RedisError as error:
-        logger.warning("Rate limit not enforced: Redis unavailable", extra={"error_type": type(error).__name__})
+        logger.warning(
+            "Rate limit not enforced: Redis unavailable",
+            extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+        )
         return
     if count > limit:
         raise rate_limited("Too many requests", max(1, remaining))

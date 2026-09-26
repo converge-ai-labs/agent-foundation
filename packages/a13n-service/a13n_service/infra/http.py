@@ -5,7 +5,7 @@ import time
 from typing import Annotated, Any, Protocol
 from urllib.parse import quote
 
-from a13n_logging import get_logger, log_context
+from a13n_logging import exception_details, get_logger, log_context
 from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -204,16 +204,30 @@ DEPENDENCY_ERRORS: dict[type[Exception], str] = {
 
 async def dependency_error_response(request: Request, error: Exception) -> JSONResponse:
     dependency = next(name for kind, name in DEPENDENCY_ERRORS.items() if isinstance(error, kind))
-    logger.warning("Dependency unavailable", extra={"dependency": dependency, "error_type": type(error).__name__})
+    logger.warning(
+        "Dependency unavailable",
+        extra={
+            "dependency": dependency,
+            "error_type": type(error).__name__,
+            "exception_details": exception_details(error),
+        },
+    )
     failure = ServiceError("unavailable", f"The {dependency} is unavailable", {"dependency": dependency})
     return error_response(failure, request_id(request.scope))
 
 
 async def internal_error_response(request: Request, error: Exception) -> JSONResponse:
-    """The envelope for a defect, whose traceback is logged with the request's ID. It answers outside `RequestIds`,
-    whose log context has ended, so the ID is passed explicitly."""
+    """The envelope for a defect, logged with safe exception details and the request's ID. It answers outside
+    `RequestIds`, whose log context has ended, so the ID is passed explicitly."""
     identity = request_id(request.scope)
-    logger.error("Unhandled error", exc_info=error, extra={"error_type": type(error).__name__, "request_id": identity})
+    logger.error(
+        "Unhandled error",
+        extra={
+            "error_type": type(error).__name__,
+            "exception_details": exception_details(error),
+            "request_id": identity,
+        },
+    )
     return error_response(ServiceError("internal", "Internal error"), identity)
 
 

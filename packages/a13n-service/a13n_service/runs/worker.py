@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from importlib.metadata import version
 from typing import Any
 
-from a13n_logging import get_logger, log_context
+from a13n_logging import exception_details, get_logger, log_context
 
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.redis import wait_for_wake
@@ -69,7 +69,10 @@ class Worker:
                         leases = await claim(self.runtime, worker_id=self.id, worker_build=self.build, limit=requested)
                     except Exception as error:
                         # Running attempts keep their slots and leases; the next scan tries again.
-                        logger.warning("Claim failed", extra={"error_type": type(error).__name__})
+                        logger.warning(
+                            "Claim failed",
+                            extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+                        )
                         await asyncio.sleep(settings.scan_seconds)
                         continue
                     for lease in leases:
@@ -106,7 +109,10 @@ class Worker:
                 raise  # The TaskGroup ignores a cancelled attempt, so cancelling one never stops the worker.
             except Exception as error:
                 # Execution seals its own failures; anything escaping is left to lease expiry and recovery.
-                logger.exception("Attempt crashed", extra={"error_type": type(error).__name__})
+                logger.error(
+                    "Attempt crashed",
+                    extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+                )
             finally:
                 self.running.pop(lease.attempt_id, None)
                 self.free += 1
@@ -149,7 +155,10 @@ class Worker:
                         seconds=settings.lease_seconds,
                     )
             except Exception as error:
-                logger.warning("Lease renewal failed", extra={"error_type": type(error).__name__})
+                logger.warning(
+                    "Lease renewal failed",
+                    extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+                )
                 stops, extended = {}, set()
             for running in attempts:
                 attempt_id, control = running.lease.attempt_id, running.control

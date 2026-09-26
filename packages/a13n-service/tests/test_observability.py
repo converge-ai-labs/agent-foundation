@@ -18,10 +18,15 @@ from typing import Any
 import httpx2
 import pytest
 from a13n_logging.context import ContextFilter
+from a13n_service.infra import outbox
 from a13n_service.infra.db import lock, short_session, transaction
+from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbox import Claim, Delivery, Policy, Undelivered, enqueue, settle
 from a13n_service.infra.sweeps import Sweep, run_sweeps
+from a13n_service.runs import execute as execution
+from a13n_service.runs.attempts import AttemptControl
 from a13n_service.runs.backlog import report_backlog
+from a13n_service.runs.claim import claim
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.seal import stop
 from a13n_service.runs.tables import RunRow, ThreadRow
@@ -256,6 +261,83 @@ async def test_deliveries_are_counted_and_logged_by_outcome(
     assert (dead["kind"], dead["reason"]) == ("email", "smtp_down")
     # A handler's own records name the delivery it handles.
     assert {event["outbox_id"] for event in messages(logged, "Handling")} == {delivered["outbox_id"], dead["outbox_id"]}
+
+
+@pytest.mark.parametrize("deterministic", [False, True])
+async def test_execution_failures_keep_safe_diagnostics_and_their_recovery_policy(
+    service: SimpleNamespace,
+    scripted_model: Any,
+    runs_kit: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    logged: list[Event],
+    deterministic: bool,
+) -> None:
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    run = (await runs_kit.start_thread(service, agent, "hello"))["run"]
+    [lease] = await claim(service.runtime, worker_id="worker-test", worker_build="test", limit=1)
+
+    async def fail_plan(runtime: Runtime, lease: Any) -> None:
+        try:
+            raise RuntimeError("secret_provider_response")
+        except RuntimeError as cause:
+            if deterministic:
+                raise ServiceError("invalid_argument", "Invalid input") from cause
+            raise ConnectionError("secret_connection_string") from cause
+
+    monkeypatch.setattr(execution, "_plan", fail_plan)
+    await execution.execute(service.runtime, lease, AttemptControl())
+
+    result = await runs_kit.get_run(service, run["id"])
+    assert result["status"] == ("failed" if deterministic else "accepted")
+    [failure] = messages(logged, "Attempt sealed a failure" if deterministic else "Attempt failed")
+    assert (failure["run_id"], failure["attempt_id"]) == (run["id"], lease.attempt_id)
+    details = failure["exception_details"]
+    assert details[0]["frames"][-1]["function"] == "fail_plan"
+    assert details[1]["type"] == "builtins.RuntimeError"
+    assert details[1]["parent"] == 0
+    assert "secret_" not in json.dumps(failure)
+
+
+async def test_an_outbox_settlement_failure_is_diagnosable_and_retries_after_lease_expiry(
+    runtime: Runtime, monkeypatch: pytest.MonkeyPatch, logged: list[Event]
+) -> None:
+    async with transaction(runtime.storage) as session:
+        identity = enqueue(session, organization_id=None, workspace_id=None, kind="email", target={}, payload={})
+
+    async def fail_delivery(claimed: Claim) -> None:
+        raise RuntimeError("secret_delivery_payload")
+
+    async def fail_settlement(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("secret_sql_parameters")
+
+    policies = {"email": Policy(batch=1)}
+    with monkeypatch.context() as patch:
+        patch.setattr(outbox, "settle", fail_settlement)
+        await Delivery(runtime.storage, {"email": fail_delivery}, owner="test", policies=policies)()
+
+    [failure] = messages(logged, "Outbox settlement failed")
+    assert (failure["outbox_id"], failure["kind"], failure["error_type"]) == (identity, "email", "RuntimeError")
+    assert failure["exception_details"][0]["frames"][-1]["function"] == "fail_settlement"
+    assert "secret_" not in json.dumps(failure)
+    async with transaction(runtime.storage) as session:
+        row = await session.get_one(outbox.OutboxRow, identity)
+        assert (row.status, row.attempts, row.settled_at) == ("pending", 1, None)
+        assert row.lease_expires_at is not None
+        await session.execute(
+            update(outbox.OutboxRow)
+            .where(outbox.OutboxRow.id == identity)
+            .values(lease_expires_at=func.now() - timedelta(seconds=1))
+        )
+
+    async def deliver(claimed: Claim) -> None:
+        async with transaction(runtime.storage) as session:
+            await settle(session, claimed, "delivered")
+
+    await Delivery(runtime.storage, {"email": deliver}, owner="replacement", policies=policies)()
+    async with short_session(runtime.storage) as session:
+        row = await session.get_one(outbox.OutboxRow, identity)
+        assert (row.status, row.attempts) == ("delivered", 2)
 
 
 async def test_sweep_passes_are_counted_and_their_records_name_the_sweep(

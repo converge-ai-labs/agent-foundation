@@ -12,7 +12,7 @@ from functools import partial
 from typing import Literal
 
 import anyio
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from sqlalchemy import Select, func, or_, select, text
 
 from a13n_service.infra.audit import record
@@ -113,7 +113,11 @@ async def _logged(call: Callable[[str], Awaitable[None]], environment_id: str) -
     except Exception as error:
         logger.warning(
             "Environment maintenance call failed",
-            extra={"environment_id": environment_id, "error_type": type(error).__name__},
+            extra={
+                "environment_id": environment_id,
+                "error_type": type(error).__name__,
+                "exception_details": exception_details(error),
+            },
         )
 
 

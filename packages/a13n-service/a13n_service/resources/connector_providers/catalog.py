@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 import anyio
 from a13n_harness.providers.connector.contracts import ConnectorProviderRuntime, DiscoveredConnector
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_logging import exception_details, get_logger
 from pydantic import TypeAdapter
 from redis.asyncio import Redis
 
@@ -26,6 +27,8 @@ from a13n_service.resources.providers.tables import ConnectorProviderRow
 from a13n_service.settings import Providers
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
+
+logger = get_logger(__name__)
 
 _APPS = TypeAdapter(list[ConnectorApp])
 _ACTIONS = TypeAdapter(list[ToolInfo])
@@ -177,6 +180,10 @@ async def _read[T](
             ) as runtime:
                 return await read(runtime)
     except Exception as error:
+        logger.warning(
+            "Connector catalog read failed",
+            extra={"provider_id": provider.id, "exception_details": exception_details(error)},
+        )
         raise unavailable(f"connector:{provider.type}", error) from None
 
 
