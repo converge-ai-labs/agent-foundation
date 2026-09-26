@@ -27,7 +27,24 @@ from a13n_harness.providers.environment.computer import (
 from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 
+from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import environment_failure
+
+_ComputerAlias = Annotated[
+    str | None,
+    Field(
+        description=(
+            "Existing Environment mount name with the required computer action. Omit only to use the current "
+            "default mount; this does not inherit the mount of a previous screenshot or click."
+        )
+    ),
+]
+_ObservationReference = Annotated[
+    str,
+    Field(
+        description="obs- reference returned by computer_observe in this Run; selects its original mount and target."
+    ),
+]
 
 
 class ComputerToolset:
@@ -51,7 +68,7 @@ class ComputerToolset:
             (self.computer_type_text, EnvironmentAction.COMPUTER_TYPE_TEXT, False),
             (self.computer_press_keys, EnvironmentAction.COMPUTER_PRESS_KEYS, False),
         )
-        return FunctionToolset(
+        return InstructionFunctionToolset(
             tools=[
                 HarnessTool(
                     method,
@@ -71,21 +88,28 @@ class ComputerToolset:
                 if action in actions and (allowed_names is None or method.__name__ in allowed_names)
             ],
             id="a13n-computer-tools",
+            instructions=[tool_instruction("environment-computer")],
         )
 
-    async def computer_describe(self, *, alias: str | None = None) -> Any:
+    async def computer_describe(self, *, alias: _ComputerAlias = None) -> Any:
         """List desktop targets and current screen-recording/input readiness on a selected mount."""
         try:
-            result = await self._environment.computer.describe(alias=alias)
-            return {"ok": True, **result.model_dump(mode="json")}
+            selected_alias = alias if alias is not None else self._environment.snapshot.default_mount
+            result = await self._environment.computer.describe(alias=selected_alias)
+            return {"ok": True, **result.model_dump(mode="json"), "alias": selected_alias}
         except EnvironmentError as error:
             return environment_failure(error)
 
     async def computer_observe(
         self,
         *,
-        alias: str | None = None,
-        target_id: str | None = None,
+        alias: _ComputerAlias = None,
+        target_id: Annotated[
+            str | None,
+            Field(
+                description="Target ID from computer_describe on the same mount. Omit for the provider's default target."
+            ),
+        ] = None,
         max_dimension: Annotated[int, Field(ge=256, le=2048)] = 1280,
     ) -> Any:
         """Capture a desktop image. Use returned observation_id and image pixel coordinates for pointer input.
@@ -93,8 +117,9 @@ class ComputerToolset:
         A reference binds target geometry, not screen freshness. Other users and agents may change the shared GUI.
         """
         try:
+            selected_alias = alias if alias is not None else self._environment.snapshot.default_mount
             screenshot = await self._environment.computer.observe(
-                alias=alias, target_id=target_id, max_dimension=max_dimension
+                alias=selected_alias, target_id=target_id, max_dimension=max_dimension
             )
             reference = f"obs-{secrets.token_hex(4)}"
             self._observations[reference] = screenshot.observation
@@ -105,6 +130,7 @@ class ComputerToolset:
                     "ok": True,
                     **screenshot.observation.model_dump(mode="json", exclude={"mount_id", "observed_generation"}),
                     "observation_id": reference,
+                    "alias": selected_alias,
                 },
                 content=[
                     BinaryContent(
@@ -120,7 +146,7 @@ class ComputerToolset:
 
     async def computer_click(
         self,
-        observation_id: str,
+        observation_id: _ObservationReference,
         point: ComputerPoint,
         *,
         button: ComputerButton = "left",
@@ -134,7 +160,7 @@ class ComputerToolset:
         except EnvironmentError as error:
             return environment_failure(error)
 
-    async def computer_move(self, observation_id: str, point: ComputerPoint) -> Any:
+    async def computer_move(self, observation_id: _ObservationReference, point: ComputerPoint) -> Any:
         """Move the pointer to an image-pixel position on the observed target."""
         try:
             return await self._execute(ComputerMove(observation=self._observation(observation_id), point=point))
@@ -143,7 +169,7 @@ class ComputerToolset:
 
     async def computer_drag(
         self,
-        observation_id: str,
+        observation_id: _ObservationReference,
         start: ComputerPoint,
         end: ComputerPoint,
         *,
@@ -166,7 +192,7 @@ class ComputerToolset:
 
     async def computer_scroll(
         self,
-        observation_id: str,
+        observation_id: _ObservationReference,
         point: ComputerPoint,
         *,
         delta_x: Annotated[int, Field(ge=-10000, le=10000)] = 0,
@@ -183,18 +209,34 @@ class ComputerToolset:
             return environment_failure(error)
 
     async def computer_type_text(
-        self, text: Annotated[str, Field(min_length=1, max_length=16384)], *, alias: str | None = None
+        self,
+        text: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=16384,
+                description=(
+                    "Literal text, limited to 16384 UTF-8 bytes. Non-ASCII characters may use multiple bytes; "
+                    "the schema's maxLength is only a character ceiling, not the byte budget."
+                ),
+            ),
+        ],
+        *,
+        alias: _ComputerAlias = None,
     ) -> Any:
-        """Type 1-16384 UTF-8 bytes into current foreground focus; this does not select or focus a window."""
+        """Type 1-16384 UTF-8 bytes into the selected mount's foreground focus, without focusing a window.
+
+        Pass alias explicitly to keep typing on the intended desktop; a preceding click does not select this mount.
+        """
         return await self._execute(ComputerTypeText(text=text), alias=alias)
 
     async def computer_press_keys(
         self,
         keys: Annotated[tuple[str, ...], Field(min_length=1, max_length=8)],
         *,
-        alias: str | None = None,
+        alias: _ComputerAlias = None,
     ) -> Any:
-        """Press a key combination in current foreground focus, then release all keys.
+        """Press keys in the selected mount's foreground focus, then release them. Prefer an explicit alias.
 
         Keys include lowercase letters, digits, meta (Command), control, alt (Option), shift, enter,
         tab, escape, space, backspace, delete, left, right, up, down, home, end, page_up, page_down,
@@ -205,10 +247,22 @@ class ComputerToolset:
     def _observation(self, reference: str) -> ComputerObservation:
         observation = self._observations.get(reference)
         if observation is None:
-            raise EnvironmentError("Observation is unavailable; capture a new image.", code="environment_not_found")
+            raise EnvironmentError(
+                "Observation is unavailable; capture a new image.",
+                code="environment_not_found",
+                details={
+                    "field": "observation_id",
+                    "reason": "observation_unavailable",
+                    "hint": (
+                        "Use computer_observe with the intended alias to capture a new image, reassess the GUI, "
+                        "and use its returned observation_id. References from earlier Runs or evicted observations "
+                        "cannot be reused. No input was dispatched."
+                    ),
+                },
+            )
         return observation
 
-    async def _execute(self, request: ComputerInput, *, alias: str | None = None) -> Any:
+    async def _execute(self, request: ComputerInput, *, alias: _ComputerAlias = None) -> Any:
         try:
             result = await self._environment.computer.execute(request, alias=alias)
             return {
@@ -218,4 +272,23 @@ class ComputerToolset:
                 "receipt": result.receipt.model_dump(mode="json"),
             }
         except EnvironmentError as error:
+            if isinstance(request, ComputerClick | ComputerMove | ComputerDrag | ComputerScroll) and error.code in {
+                "environment_stale_mount",
+                "environment_selection_invalid",
+            }:
+                error = EnvironmentError(
+                    "The observed desktop is no longer selectable.",
+                    code=error.code,
+                    retry_hint=error.retry_hint,
+                    details={
+                        **error.details,
+                        "field": "observation_id",
+                        "reason": "observation_stale",
+                        "hint": (
+                            "Check the intended mount in the latest Environment context, then use computer_observe "
+                            "with its alias and reassess the GUI. Do not reuse this observation_id or blindly replay "
+                            "the input."
+                        ),
+                    },
+                )
             return environment_failure(error)

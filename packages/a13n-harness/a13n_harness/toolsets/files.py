@@ -426,7 +426,12 @@ class FileToolset:
     async def view(
         self,
         ctx: RunContext[AgentContext],
-        file_path: Annotated[str, Field(description="Logical path to the file to read")],
+        file_path: Annotated[
+            str,
+            Field(
+                description="Logical file path; use an advertised absolute mount root to select a non-default Environment."
+            ),
+        ],
         line_offset: Annotated[int | None, Field(default=None, ge=0)] = None,
         line_limit: Annotated[int, Field(default=300, gt=0, le=_MAX_MODEL_RESULTS)] = 300,
         max_line_length: Annotated[int, Field(default=2_000, gt=0, le=_MAX_MODEL_TEXT_BYTES)] = 2_000,
@@ -624,7 +629,10 @@ class FileToolset:
     async def write(
         self,
         ctx: RunContext[AgentContext],
-        file_path: Annotated[str, Field(description="Logical path to the file to write")],
+        file_path: Annotated[
+            str,
+            Field(description="Logical destination path; an advertised absolute mount root selects the Environment."),
+        ],
         content: Annotated[str, Field(description="Complete text to write or text to append")],
         mode: Annotated[Literal["w", "a"], Field(default="w")] = "w",
     ) -> FileWriteResult:
@@ -657,7 +665,9 @@ class FileToolset:
     async def edit(
         self,
         ctx: RunContext[AgentContext],
-        file_path: Annotated[str, Field(description="Logical path to the file to edit")],
+        file_path: Annotated[
+            str, Field(description="Logical file path; an advertised absolute mount root selects the Environment.")
+        ],
         old_string: Annotated[
             str,
             Field(description="Exact text to replace; an empty value creates a new file"),
@@ -676,7 +686,9 @@ class FileToolset:
     async def multi_edit(
         self,
         ctx: RunContext[AgentContext],
-        file_path: Annotated[str, Field(description="Logical path to the file to edit")],
+        file_path: Annotated[
+            str, Field(description="Logical file path; an advertised absolute mount root selects the Environment.")
+        ],
         edits: Annotated[
             Sequence[FileTextEdit],
             Field(description="Exact replacements applied in order", min_length=1, max_length=256),

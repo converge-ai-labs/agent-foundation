@@ -1,4 +1,4 @@
-Check the active Environment context before relying on shell syntax or paths. `alias` selects an existing mount name from that context, not a command or process label. Never invent an alias. Omit it to use the default mount; an absolute command `cwd` selects its matching mount.
+Check the current Environment context before relying on paths. Establish the shell dialect before using platform-specific syntax; a mount name or path spelling is not evidence of the operating system.
 
 Use `shell_exec` for shell commands. On a process-capable Environment it waits briefly, returns completed output directly when possible, and otherwise returns a Run-local `process_id` with explicit stdout and stderr offsets. Use a short `yield_time_seconds` for known servers and interactive commands. Do not look for a background mode.
 

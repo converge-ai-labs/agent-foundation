@@ -14,6 +14,7 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.model_context import AbstractModelContextCapability
 from a13n_harness.providers.environment.models import EnvironmentAction
+from a13n_harness.toolsets._instructions import InstructionFunctionToolset, tool_instruction
 from a13n_harness.toolsets.computer import ComputerToolset
 from a13n_harness.toolsets.file_media import (
     AgentMediaUnderstandingProvider,
@@ -97,7 +98,8 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         ctx: RunContext[AgentContext],
     ) -> AbstractToolset[AgentContext] | None:
         del ctx
-        mounts = self._environment.snapshot.mounts
+        snapshot = self._environment.snapshot
+        mounts = snapshot.mounts
         operations = frozenset(action for mount in mounts for action in mount.permission_ceiling.operations)
         file_names = (
             self._file_toolset.available_names([mount.permission_ceiling.operations for mount in mounts])
@@ -133,6 +135,14 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
                 toolsets.append(computer)
         if not toolsets:
             return None
+        if len(mounts) > 1 or snapshot.default_mount is None:
+            toolsets.insert(
+                0,
+                InstructionFunctionToolset(
+                    id="a13n-environment-routing",
+                    instructions=[tool_instruction("environment-routing")],
+                ),
+            )
         return CombinedToolset(toolsets)
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:

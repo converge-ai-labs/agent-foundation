@@ -25,8 +25,6 @@ from a13n_harness.providers.environment.models import (
     DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS,
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     ENVIRONMENT_ACTION_DISPATCH,
-    FILE_ACTIONS,
-    FILE_READ_ACTIONS,
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentChange,
@@ -83,6 +81,23 @@ from ._mount import (
 _MAX_ENVIRONMENT_EXTENSION_ID_LENGTH = 200
 _MAX_MODEL_CONTEXT_BINDINGS = 64
 _MAX_MODEL_CONTEXT_BYTES = 64 * 1024
+
+
+def _action_denied(entered: _EnteredMount, action: EnvironmentAction) -> EnvironmentError:
+    return EnvironmentError(
+        "Environment operation is denied by the mount permission ceiling.",
+        code="environment_denied",
+        details={
+            "action": action.value,
+            "mount_id": entered.mount_id,
+            "reason": "mount_action_denied",
+            "hint": (
+                f"Mount '{entered.public.name}' does not allow {action.value}. "
+                "Check its operations in the latest Environment context. Tool availability does not grant "
+                "access on every mount; do not change tools or mounts to bypass a denial."
+            ),
+        },
+    )
 
 
 def _bounded_snapshot_json(payload: dict[str, JsonValue], max_bytes: int) -> str:
@@ -192,20 +207,17 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 reason = observation.availability.reason_code
             except EnvironmentError:
                 pass
-            operations = sorted(
-                {
-                    ENVIRONMENT_ACTION_DISPATCH[action].family
-                    for action in mount.permission_ceiling.operations
-                    if ENVIRONMENT_ACTION_DISPATCH[action].family != "state"
-                }
-            )
+            operations: dict[str, list[str]] = {}
+            for action in sorted(mount.permission_ceiling.operations):
+                family = ENVIRONMENT_ACTION_DISPATCH[action].family
+                if family != "state":
+                    operations.setdefault(family, []).append(action.value.rsplit(".", 1)[-1])
             projected: dict[str, JsonValue] = {
                 "name": mount.name,
                 "root": _preferred_mount_path(mount, snapshot.default_mount),
                 "operations": cast(JsonValue, operations),
                 "availability": availability,
                 "ready": cast(JsonValue, ready),
-                "read_only": not mount.permission_ceiling.operations & (FILE_ACTIONS - FILE_READ_ACTIONS),
             }
             if reason is not None:
                 projected["reason"] = reason
@@ -652,6 +664,15 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 raise EnvironmentError(
                     "The mount name and absolute path select different mounts.",
                     code="environment_selection_invalid",
+                    details={
+                        "field": "alias",
+                        "reason": "alias_path_mismatch",
+                        "hint": (
+                            f"The absolute path selects mount '{selected.public.name}'. "
+                            "Use that alias or a path under the intended mount's root. "
+                            "An alias cannot reinterpret an absolute path as provider-local."
+                        ),
+                    },
                 )
             return _ResolvedPath(
                 entered=selected,
@@ -688,10 +709,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 code="environment_selection_invalid",
                 details={
                     "field": "alias",
-                    "reason": "mount_selection_unavailable",
+                    "reason": "default_mount_unavailable" if alias is None else "mount_selection_unavailable",
                     "hint": (
-                        "Select an existing mount name from the active Environment context, not a process label. "
-                        "Omit alias to use the default mount when one is available."
+                        "No default mount is configured. Select an existing alias explicitly, or use an absolute "
+                        "path under the intended mount's root for file/cwd routing."
+                        if alias is None
+                        else "Select an existing mount name from the latest Environment context, not a process label. "
+                        "Do not invent an alias. Omit it only when the default mount is the intended target."
                     ),
                 },
             )
@@ -790,11 +814,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if entered is None:
             raise EnvironmentError("Unknown Environment mount.", code="environment_selection_invalid")
         if action not in entered.public.permission_ceiling.operations:
-            raise EnvironmentError(
-                "Environment operation is denied by the mount permission ceiling.",
-                code="environment_denied",
-                details={"action": action.value, "mount_id": mount_id},
-            )
+            raise _action_denied(entered, action)
         return entered
 
     def _resolve_scoped_file_path(
@@ -1130,11 +1150,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             )
         )
         if action not in entered.public.permission_ceiling.operations:
-            raise EnvironmentError(
-                "Environment operation is denied by the mount permission ceiling.",
-                code="environment_denied",
-                details={"action": action.value, "mount_id": entered.mount_id},
-            )
+            raise _action_denied(entered, action)
         async with self._mount_slot(entered, allow_retired=allow_retired):
             try:
                 async with asyncio.timeout(timeout):

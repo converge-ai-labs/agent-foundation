@@ -50,6 +50,16 @@ _SHELL_INSTRUCTION = tool_instruction("environment-shell")
 _NonNegativeOffset = Annotated[int, Field(ge=0)]
 _PositiveTimeout = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 _NonNegativeTimeout = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+_CommandCwd = Annotated[
+    str | None,
+    Field(
+        description=(
+            "Working directory. An absolute path selects its Environment mount by advertised root and must "
+            "agree with alias; a relative path resolves within the selected/default mount. "
+            "Omit to use that mount's configured working directory."
+        )
+    ),
+]
 _MountAlias = Annotated[
     str | None,
     Field(
@@ -174,7 +184,7 @@ class ShellToolset:
         ctx: RunContext[AgentContext],
         command: str,
         *,
-        cwd: str | None = None,
+        cwd: _CommandCwd = None,
         environment: Mapping[str, str] | None = None,
         execution_timeout_seconds: _PositiveTimeout | None = None,
         alias: _MountAlias = None,
@@ -246,7 +256,7 @@ class ShellToolset:
         ctx: RunContext[AgentContext],
         command: str,
         *,
-        cwd: str | None = None,
+        cwd: _CommandCwd = None,
         environment: Mapping[str, str] | None = None,
         yield_time_seconds: _NonNegativeTimeout = 10,
         execution_timeout_seconds: _PositiveTimeout | None = None,
