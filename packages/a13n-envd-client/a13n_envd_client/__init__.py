@@ -13,7 +13,7 @@ from .errors import (
     EIPTransportClosedError,
     EIPTransportError,
 )
-from .file_transfer import EIPFileReader, EIPFileWriter
+from .file_transfer import EIPComputerObservationReader, EIPFileReader, EIPFileWriter
 from .http import HttpTransport, normalize_http_endpoint
 from .output import EIPOutputPage, EIPOutputReader
 from .requester import RequestCoordinator, SessionRequester
@@ -31,6 +31,7 @@ __all__ = [
     "AcceptedWebSocketTransport",
     "ControlFrame",
     "EIPClientError",
+    "EIPComputerObservationReader",
     "EIPConnectionError",
     "EIPDeviceConnection",
     "EIPFileReader",

@@ -1211,3 +1211,71 @@ it("backs off repeated snapshot races after one immediate retry while retaining 
     vi.useRealTimers();
   }
 });
+
+it("preserves screenshot attachments through native tool result folding and stream replay", () => {
+  const display = new FocusDisplay();
+  const image = {
+    thread_id: "thread-one",
+    attachment: {
+      attachment_id: "attachment-screen",
+      name: "desktop.png",
+      media_type: "image/png",
+      size: 128,
+    },
+  };
+  const events = [
+    {
+      event_type: "TOOL_CALL_START",
+      payload: { tool_call_id: "capture", tool_call_name: "computer_observe" },
+    },
+    {
+      event_type: "CUSTOM",
+      payload: {
+        name: "a13n.harness-ui.tool_images",
+        value: {
+          event: {
+            tool_call_id: "capture",
+            images: [image],
+            unavailable: false,
+          },
+        },
+      },
+    },
+    {
+      event_type: "CUSTOM",
+      payload: {
+        name: "a13n.pydantic_ai.function_tool_result",
+        value: {
+          event: {
+            part: {
+              part_kind: "tool-return",
+              tool_name: "computer_observe",
+              tool_call_id: "capture",
+              content: { ok: true, observation_id: "obs-one" },
+            },
+          },
+        },
+      },
+    },
+  ];
+  display.accept(snapshot(events.length));
+  display.accept(
+    focusFrame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: events.map((item, index) => ({
+        ...item,
+        index,
+        payload_omitted: false,
+      })),
+    }),
+  );
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  expect(display.blocks.size).toBe(1);
+  expect(display.blocks.get("run-one:capture")).toMatchObject({
+    images: [image],
+    imageUnavailable: false,
+    name: "computer_observe",
+  });
+  expect(display.blocks.get("run-one:capture")?.result).toContain("obs-one");
+});

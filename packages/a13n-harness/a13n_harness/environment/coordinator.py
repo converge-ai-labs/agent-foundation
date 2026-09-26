@@ -52,6 +52,7 @@ from ._mount_path import (
 from .changes import EnvironmentChangeJournal
 from .extensions import EnvironmentRunExtension, EnvironmentRunExtensionContext
 from .providers import (
+    BoundComputerOperations,
     BoundEnvironment,
     BoundEnvironmentProvider,
     BoundOutputOperations,
@@ -69,7 +70,7 @@ from .virtual_files import VirtualFileOperator, _PreparedFile
 if TYPE_CHECKING:
     from a13n_harness.model_context import ModelContextProjection, ModelContextProjectionRequest
 
-from ._facades import _OutputFacade, _PortFacade, _ProcessFacade, _ShellFacade
+from ._facades import _ComputerFacade, _OutputFacade, _PortFacade, _ProcessFacade, _ShellFacade
 from ._mount import (
     _EnteredMount,
     _MountKey,
@@ -150,6 +151,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             self.select_files,
             self._prepare_file,
         )
+        self._computer = _ComputerFacade(self)
         self._shell = _ShellFacade(self)
         self._processes = _ProcessFacade(self)
         self._ports = _PortFacade(self)
@@ -274,6 +276,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
     @property
     def shell(self) -> BoundShellOperations:
         return self._shell
+
+    @property
+    def computer(self) -> BoundComputerOperations:
+        return self._computer
 
     @property
     def processes(self) -> BoundProcessOperations:
@@ -1687,7 +1693,7 @@ def _validate_operation_facets(
         raise EnvironmentError("Provider returned invalid operations.", code="environment_provider_failure")
     facet_families = {
         family
-        for family in ("files", "shell", "processes", "ports", "outputs")
+        for family in ("files", "shell", "processes", "ports", "outputs", "computer")
         if getattr(operations, family) is not None
     }
     advertised_facets = set(descriptor.operation_families)

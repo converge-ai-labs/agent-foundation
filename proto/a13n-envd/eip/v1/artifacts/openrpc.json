@@ -5,6 +5,398 @@
   },
   "methods": [
     {
+      "name": "computer.click",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerClickParams/properties/context"
+          }
+        },
+        {
+          "name": "observation_id",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerClickParams/properties/observation_id"
+          }
+        },
+        {
+          "name": "point",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerClickParams/properties/point"
+          }
+        },
+        {
+          "name": "button",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerClickParams/properties/button"
+          }
+        },
+        {
+          "name": "count",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerClickParams/properties/count"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerActionResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.1",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerClickParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.close_observation",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileReaderCloseParams/properties/context"
+          }
+        },
+        {
+          "name": "reader",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileReaderCloseParams/properties/reader"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/FileReaderCloseResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.1",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/FileReaderCloseParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": "close",
+      "x-eip-transfer-direction": "server_to_client"
+    },
+    {
+      "name": "computer.describe",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerDescribeParams/properties/context"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerDescribeResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.1",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerDescribeParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.drag",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerDragParams/properties/context"
+          }
+        },
+        {
+          "name": "observation_id",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerDragParams/properties/observation_id"
+          }
+        },
+        {
+          "name": "start",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerDragParams/properties/start"
+          }
+        },
+        {
+          "name": "end",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerDragParams/properties/end"
+          }
+        },
+        {
+          "name": "button",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerDragParams/properties/button"
+          }
+        },
+        {
+          "name": "duration_ms",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerDragParams/properties/duration_ms"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerActionResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.1",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerDragParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.move",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerMoveParams/properties/context"
+          }
+        },
+        {
+          "name": "observation_id",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerMoveParams/properties/observation_id"
+          }
+        },
+        {
+          "name": "point",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerMoveParams/properties/point"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerActionResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.1",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerMoveParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.observe",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerObserveParams/properties/context"
+          }
+        },
+        {
+          "name": "target_id",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerObserveParams/properties/target_id"
+          }
+        },
+        {
+          "name": "max_dimension",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerObserveParams/properties/max_dimension"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerObserveResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.1",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerObserveParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": "open",
+      "x-eip-transfer-direction": "server_to_client"
+    },
+    {
+      "name": "computer.press_keys",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerPressKeysParams/properties/context"
+          }
+        },
+        {
+          "name": "keys",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerPressKeysParams/properties/keys"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerActionResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.1",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerPressKeysParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.scroll",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerScrollParams/properties/context"
+          }
+        },
+        {
+          "name": "observation_id",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerScrollParams/properties/observation_id"
+          }
+        },
+        {
+          "name": "point",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerScrollParams/properties/point"
+          }
+        },
+        {
+          "name": "delta_x",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerScrollParams/properties/delta_x"
+          }
+        },
+        {
+          "name": "delta_y",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerScrollParams/properties/delta_y"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerActionResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.1",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerScrollParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.type_text",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerTypeTextParams/properties/context"
+          }
+        },
+        {
+          "name": "text",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerTypeTextParams/properties/text"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerActionResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.1",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerTypeTextParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
       "name": "device.describe",
       "paramStructure": "by-name",
       "params": [],

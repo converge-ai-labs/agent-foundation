@@ -68,6 +68,7 @@ from a13n_harness_ui.surfaces import (
     TranscriptTurn,
 )
 from a13n_harness_ui.tool_evidence import applied_edit
+from a13n_harness_ui.tool_images import tool_image_unavailable, tool_images
 
 _MAX_CURSOR_BYTES = 3072
 _MAX_TEXT = 64 * 1024
@@ -985,6 +986,8 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
                 tool_call_id=part.tool_call_id,
                 outcome=part.outcome,
                 applied_edit=applied_edit(part),
+                tool_images=tool_images(part),
+                tool_image_unavailable=tool_image_unavailable(part),
                 value=value,
                 value_omitted=omitted,
             ),

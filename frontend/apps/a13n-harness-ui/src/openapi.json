@@ -8268,7 +8268,15 @@
           "environment.port.inspect",
           "environment.port.wait",
           "environment.state.export",
-          "environment.state.restore"
+          "environment.state.restore",
+          "environment.computer.describe",
+          "environment.computer.observe",
+          "environment.computer.click",
+          "environment.computer.move",
+          "environment.computer.drag",
+          "environment.computer.scroll",
+          "environment.computer.type_text",
+          "environment.computer.press_keys"
         ],
         "title": "EnvironmentAction",
         "type": "string"
@@ -14336,6 +14344,25 @@
         "title": "ThreadWork",
         "description": "Current work observations; sections are independently owned, not atomic."
       },
+      "ToolImageView": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "attachment": {
+            "$ref": "#/components/schemas/ThreadAttachment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "attachment"
+        ],
+        "title": "ToolImageView",
+        "description": "Host-retained tool image, served through authenticated Thread attachment access."
+      },
       "ToolProxyConfig": {
         "properties": {
           "search_name": {
@@ -14712,6 +14739,19 @@
                 "type": "null"
               }
             ]
+          },
+          "tool_images": {
+            "items": {
+              "$ref": "#/components/schemas/ToolImageView"
+            },
+            "type": "array",
+            "title": "Tool Images",
+            "default": []
+          },
+          "tool_image_unavailable": {
+            "type": "boolean",
+            "title": "Tool Image Unavailable",
+            "default": false
           },
           "value": {
             "anyOf": [

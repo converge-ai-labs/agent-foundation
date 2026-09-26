@@ -88,9 +88,9 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     assert readiness_result["properties"]["device_id"]["minLength"] == 1
 
     methods = json.loads(METHODS_PATH.read_text(encoding="utf-8"))
-    assert methods["method_count"] == 41
-    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 18
-    assert sum(method["replay_class"] == "terminal_evidence" for method in methods["methods"]) == 15
+    assert methods["method_count"] == 50
+    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 21
+    assert sum(method["replay_class"] == "terminal_evidence" for method in methods["methods"]) == 21
     assert sum(method["replay_class"] == "ledger_external" for method in methods["methods"]) == 8
     assert {method["jsonrpc_method"] for method in methods["methods"] if method["device_scoped"]} == {
         "initialize",
@@ -114,6 +114,8 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
         "file.open_writer",
         "file.commit_writer",
         "file.abort_writer",
+        "computer.observe",
+        "computer.close_observation",
     }
 
     profile = json.loads(DATA_FRAME_PROFILE_PATH.read_text(encoding="utf-8"))

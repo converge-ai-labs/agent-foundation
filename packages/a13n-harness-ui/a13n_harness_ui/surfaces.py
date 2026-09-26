@@ -23,6 +23,7 @@ from a13n_harness_ui.output_comment_models import SavedOutputTarget
 from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
 from a13n_harness_ui.storage.contracts import AgentSource, ThreadCompletion
+from a13n_harness_ui.thread_files import ThreadAttachment
 
 _MAX_FAILURE_MESSAGE = 32 * 1024
 _MAX_DEFERRED_RESPONSE_BYTES = 1024 * 1024
@@ -240,6 +241,13 @@ class AppliedEditView(SurfaceModel):
     omitted: bool = False
 
 
+class ToolImageView(SurfaceModel):
+    """Host-retained tool image, served through authenticated Thread attachment access."""
+
+    thread_id: str
+    attachment: ThreadAttachment
+
+
 class TranscriptPart(SurfaceModel):
     comment_target: SavedOutputTarget | None = None
     text_truncated: bool = False
@@ -262,6 +270,8 @@ class TranscriptPart(SurfaceModel):
     outcome: Literal["success", "failed", "denied", "interrupted"] | None = None
     provider: str | None = None
     applied_edit: AppliedEditView | None = None
+    tool_images: tuple[ToolImageView, ...] = ()
+    tool_image_unavailable: bool = False
     value: JsonValue | None = None
     value_omitted: bool = False
 

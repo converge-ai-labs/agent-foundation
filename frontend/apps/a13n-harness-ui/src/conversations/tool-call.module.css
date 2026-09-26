@@ -341,3 +341,21 @@
   color: var(--muted-foreground);
   white-space: pre-wrap;
 }
+
+.screenshot {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  text-align: left;
+  cursor: zoom-in;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.screenshot img {
+  width: min(100%, 36rem);
+  max-width: 100%;
+  max-height: 24rem;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+}

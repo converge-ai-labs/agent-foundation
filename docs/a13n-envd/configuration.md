@@ -22,7 +22,7 @@ export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits"
 a13n-envd
 ```
 
-Scalar shortcuts include `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS`, and `A13N_ENVD_DISCONNECT_GRACE_MS`. Booleans accept `true`, `false`, `1`, or `0`.
+Scalar shortcuts include `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS`, and `A13N_ENVD_DISCONNECT_GRACE_MS`. Booleans accept `true`, `false`, `1`, or `0`.
 
 Device connections negotiate the carrier and protocol. EIP Sessions select a fixed cwd and own operations, processes, output and transfers; they cannot change trusted startup identity or sudo policy.
 
@@ -193,22 +193,23 @@ Device initialization verifies identity and protocol. Session readiness checks t
 
 ## Standalone field reference
 
-| Root field                                   | Default or meaning                                                             |
-| -------------------------------------------- | ------------------------------------------------------------------------------ |
-| `device_id`                                  | Explicit stable identity, otherwise installation identity                      |
-| `installation_state_directory`               | Persistent identity storage when no explicit Device ID is supplied             |
-| `name`, `description`                        | Optional display metadata                                                      |
-| `default_working_directory`                  | Startup cwd if unset                                                           |
-| `directory_discovery`                        | `true`                                                                         |
-| `idle_timeout_ms`                            | Session idle lifetime                                                          |
-| `disconnect_grace_ms`                        | Detached Session attachment grace                                              |
-| `execution.uid`, `execution.gid`             | Optional paired Linux native IDs; omitted retains the launcher, including root |
-| `execution.allow_sudo`                       | `true`; native sudoers still controls authorization                            |
-| `sandbox`                                    | `{"mode":"disabled"}`; or `restricted` with directory `grants`                 |
-| `egress`                                     | `{"mode":"inherit"}`; or `deny` / `controlled`                                 |
-| `full_control`                               | `false`; automatic native shell and inherited command environment when enabled |
-| `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                 |
-| `limits`                                     | Device aggregates and per-Session limits                                       |
+| Root field                                   | Default or meaning                                                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `device_id`                                  | Explicit stable identity, otherwise installation identity                                                                      |
+| `installation_state_directory`               | Persistent identity storage when no explicit Device ID is supplied                                                             |
+| `name`, `description`                        | Optional display metadata                                                                                                      |
+| `default_working_directory`                  | Startup cwd if unset                                                                                                           |
+| `directory_discovery`                        | `true`                                                                                                                         |
+| `idle_timeout_ms`                            | Session idle lifetime                                                                                                          |
+| `disconnect_grace_ms`                        | Detached Session attachment grace                                                                                              |
+| `execution.uid`, `execution.gid`             | Optional paired Linux native IDs; omitted retains the launcher, including root                                                 |
+| `execution.allow_sudo`                       | `true`; native sudoers still controls authorization                                                                            |
+| `sandbox`                                    | `{"mode":"disabled"}`; or `restricted` with directory `grants`                                                                 |
+| `egress`                                     | `{"mode":"inherit"}`; or `deny` / `controlled`                                                                                 |
+| `full_control`                               | `false`; automatic native shell and inherited command environment when enabled                                                 |
+| `computer_use`                               | `false`; opt-in macOS screenshot/input methods with disabled Sandbox and inherited egress; see [computer use](computer-use.md) |
+| `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                                                                 |
+| `limits`                                     | Device aggregates and per-Session limits                                                                                       |
 
 Important default limits include 128 Sessions, 256 Device concurrent operations, 128 concurrent operations per Session, 4 GiB Device spool capacity, 1 GiB Session spool capacity, 256 MiB output per stream and 2 MiB previews. Configured Session capacities cannot exceed Device aggregates. Output preview cannot exceed stream capacity; spool must reserve both streams.
 

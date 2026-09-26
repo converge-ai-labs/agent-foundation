@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from a13n_harness.identity import AgentInstanceContext
 from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
+from a13n_harness.providers.environment.models import FILE_EXECUTION_ACTIONS, EnvironmentError, EnvironmentPermissionSet
 
 from ._mount_path import parse_mount_path, validate_working_directory
 from .providers import (
@@ -18,7 +18,7 @@ from .providers import (
     EnvironmentRuntimeMount,
 )
 
-_EVERY_ACTION = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
+_DEFAULT_ACTIONS = EnvironmentPermissionSet(operations=FILE_EXECUTION_ACTIONS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +34,7 @@ class EnvironmentMount:
     """One already constructed Environment plus Run-local permission and path policy."""
 
     environment: Environment
-    permission_ceiling: EnvironmentPermissionSet = _EVERY_ACTION
+    permission_ceiling: EnvironmentPermissionSet = _DEFAULT_ACTIONS
     working_directory: str | None = None
     mount_path: str | None = None
     provider_root: str = "/"

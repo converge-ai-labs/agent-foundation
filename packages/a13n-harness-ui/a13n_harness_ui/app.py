@@ -2788,6 +2788,7 @@ async def open_harness_ui_app(
 
             restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui")
             operator = HarnessUiSubagentOperator(
+                thread_files=thread_files,
                 restart_coordinator=restart_coordinator,
                 observation=observation,
                 store=store,

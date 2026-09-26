@@ -27,7 +27,7 @@ from ..errors import (
 )
 from ..management import Environment, EnvironmentProviderConfiguration
 from ..models import (
-    EnvironmentAction,
+    FILE_EXECUTION_ACTIONS,
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
@@ -65,7 +65,7 @@ def descriptor(generation: str, config: DockerEnvironmentConfiguration) -> Envir
         operation_families=frozenset({"files", "shell", "processes", "outputs", "ports"}),
         permissions=EnvironmentPermissionSet(
             operations=frozenset(
-                action for action in EnvironmentAction if not action.value.startswith("environment.state.")
+                action for action in FILE_EXECUTION_ACTIONS if not action.value.startswith("environment.state.")
             )
         ),
         mounts=(

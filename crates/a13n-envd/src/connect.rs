@@ -46,6 +46,7 @@ Options:
   --execution-gid GID           Native primary group (paired with UID)
   --allow-sudo BOOL             Permit native privilege gains (default: true)
   --egress-mode MODE            Network: inherit, deny, or controlled
+  --computer-use BOOL           Enable shared macOS desktop observation and input (default: false)
 
 Daemon settings also accept A13N_ENVD_CONFIG_JSON and scalar environment overrides.
 Set A13N_ENVD_ALLOW_SUDO=false to disable sudo/setuid privilege gains on Linux.
@@ -101,7 +102,8 @@ impl Arguments {
                         .daemon
                         .push(absolute(PathBuf::from(value))?.into_os_string());
                 }
-                "--allow-sudo" | "--execution-uid" | "--execution-gid" | "--egress-mode" => {
+                "--allow-sudo" | "--execution-uid" | "--execution-gid" | "--egress-mode"
+                | "--computer-use" => {
                     result.daemon.push(argument);
                     result.daemon.push(value);
                 }

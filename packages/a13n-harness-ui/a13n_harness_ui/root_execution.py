@@ -89,6 +89,7 @@ from a13n_harness_ui.thread_projection import build_thread_inspection
 from a13n_harness_ui.thread_service import ThreadService
 from a13n_harness_ui.thread_work import ThreadWorkService
 from a13n_harness_ui.tool_evidence import ToolEvidenceCollector
+from a13n_harness_ui.tool_images import ToolImageCollector
 
 
 @dataclass(frozen=True, slots=True)
@@ -436,6 +437,7 @@ class RootRunExecutor:
             )
             excerpts = ExcerptCollector(thread.excerpt, run_id=stream.run_id)
             tool_evidence = ToolEvidenceCollector(run_id=stream.run_id)
+            tool_images = ToolImageCollector(run_id=stream.run_id, thread_id=thread.thread_id, files=self._thread_files)
             if on_stream is not None:
                 await on_stream(stream, input_files)
             observer = HarnessAguiObserver()
@@ -450,12 +452,13 @@ class RootRunExecutor:
                         record_skill_event(item)
                         excerpts.observe(item)
                         tool_evidence.observe(item)
+                        image_events = await tool_images.observe(item)
                         await self._store.usage.observe(thread_id=thread.thread_id, item=item)
                         try:
                             await self._publish_live(
                                 thread_id=thread.thread_id,
                                 run_id=stream.run_id,
-                                events=observer.observe(item),
+                                events=(*observer.observe(item), *image_events),
                                 observer=observer,
                                 base_continuation_id=base_continuation_id,
                             )

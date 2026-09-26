@@ -112,6 +112,7 @@ impl Daemon {
             }
         }
         let worker = WorkerConfig {
+            computer_use: self.config.computer_use,
             managed: self.config.managed,
             sandbox: self.config.sandbox.clone(),
             grant_sources: self.config.grant_sources.clone(),

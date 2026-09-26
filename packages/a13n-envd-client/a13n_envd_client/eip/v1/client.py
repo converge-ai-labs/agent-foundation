@@ -4,6 +4,15 @@ from __future__ import annotations
 from typing import Protocol
 
 from .methods import (
+    COMPUTER_CLICK,
+    COMPUTER_CLOSE_OBSERVATION,
+    COMPUTER_DESCRIBE,
+    COMPUTER_DRAG,
+    COMPUTER_MOVE,
+    COMPUTER_OBSERVE,
+    COMPUTER_PRESS_KEYS,
+    COMPUTER_SCROLL,
+    COMPUTER_TYPE_TEXT,
     DEVICE_DESCRIBE,
     DIRECTORY_LIST,
     EGRESS_UPDATE,
@@ -48,6 +57,17 @@ from .methods import (
     MethodSpec,
 )
 from .models import (
+    ComputerActionResult,
+    ComputerClickParams,
+    ComputerDescribeParams,
+    ComputerDescribeResult,
+    ComputerDragParams,
+    ComputerMoveParams,
+    ComputerObserveParams,
+    ComputerObserveResult,
+    ComputerPressKeysParams,
+    ComputerScrollParams,
+    ComputerTypeTextParams,
     DeviceDescribeParams,
     DeviceDescribeResult,
     DirectoryListParams,
@@ -139,6 +159,33 @@ class EIPRequester(Protocol):
 class EIPClient:
     def __init__(self, requester: EIPRequester) -> None:
         self._requester = requester
+
+    async def computer_click(self, params: ComputerClickParams) -> ComputerActionResult:
+        return await self._requester.request(COMPUTER_CLICK, params)
+
+    async def computer_close_observation(self, params: FileReaderCloseParams) -> FileReaderCloseResult:
+        return await self._requester.request(COMPUTER_CLOSE_OBSERVATION, params)
+
+    async def computer_describe(self, params: ComputerDescribeParams) -> ComputerDescribeResult:
+        return await self._requester.request(COMPUTER_DESCRIBE, params)
+
+    async def computer_drag(self, params: ComputerDragParams) -> ComputerActionResult:
+        return await self._requester.request(COMPUTER_DRAG, params)
+
+    async def computer_move(self, params: ComputerMoveParams) -> ComputerActionResult:
+        return await self._requester.request(COMPUTER_MOVE, params)
+
+    async def computer_observe(self, params: ComputerObserveParams) -> ComputerObserveResult:
+        return await self._requester.request(COMPUTER_OBSERVE, params)
+
+    async def computer_press_keys(self, params: ComputerPressKeysParams) -> ComputerActionResult:
+        return await self._requester.request(COMPUTER_PRESS_KEYS, params)
+
+    async def computer_scroll(self, params: ComputerScrollParams) -> ComputerActionResult:
+        return await self._requester.request(COMPUTER_SCROLL, params)
+
+    async def computer_type_text(self, params: ComputerTypeTextParams) -> ComputerActionResult:
+        return await self._requester.request(COMPUTER_TYPE_TEXT, params)
 
     async def device_describe(self, params: DeviceDescribeParams) -> DeviceDescribeResult:
         return await self._requester.request(DEVICE_DESCRIBE, params)

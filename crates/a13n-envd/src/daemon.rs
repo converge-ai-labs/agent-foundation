@@ -40,6 +40,7 @@ use crate::{
 };
 
 const MAX_STRING_REQUEST_ID_BYTES: usize = 128;
+mod computer;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) mod execution;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -158,6 +159,8 @@ fn session_methods(config: &Config) -> Vec<String> {
                 || method.name == "shell.exec";
             (!execution || config.command.is_some())
                 && (method.name != "process.signal" || cfg!(unix))
+                && (!method.name.starts_with("computer.")
+                    || (config.computer_use && cfg!(target_os = "macos")))
         })
         .map(|method| method.name.to_owned())
         .collect()
@@ -970,6 +973,7 @@ impl Daemon {
 }
 
 pub(crate) struct Session {
+    computer: Arc<crate::computer::Computer>,
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     remote: Option<crate::execution::runtime::Runtime>,
     descriptor: SessionDescriptor,
@@ -1098,6 +1102,7 @@ impl Session {
         };
         let (closed, _) = watch::channel(false);
         Ok(Self {
+            computer: Arc::new(crate::computer::Computer::new(daemon.ids.clone())),
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             remote: None,
             closed,
@@ -1350,6 +1355,97 @@ impl Session {
 }
 
 impl EipSessionHandler for Session {
+    async fn computer_describe(
+        &self,
+        params: eip::ComputerDescribeParams,
+    ) -> Result<eip::ComputerDescribeResult, EIPError> {
+        self.describe_computer(params).await
+    }
+    async fn computer_observe(
+        &self,
+        params: eip::ComputerObserveParams,
+    ) -> Result<eip::ComputerObserveResult, EIPError> {
+        self.observe_computer(params).await
+    }
+    async fn computer_close_observation(
+        &self,
+        params: eip::FileReaderCloseParams,
+    ) -> Result<eip::FileReaderCloseResult, EIPError> {
+        self.close_computer_observation(params).await
+    }
+    async fn computer_click(
+        &self,
+        params: eip::ComputerClickParams,
+    ) -> Result<eip::ComputerActionResult, EIPError> {
+        self.execute_computer(
+            "computer.click",
+            &params.context,
+            &params,
+            crate::computer::Action::Click(params.clone()),
+        )
+        .await
+    }
+    async fn computer_move(
+        &self,
+        params: eip::ComputerMoveParams,
+    ) -> Result<eip::ComputerActionResult, EIPError> {
+        self.execute_computer(
+            "computer.move",
+            &params.context,
+            &params,
+            crate::computer::Action::Move(params.clone()),
+        )
+        .await
+    }
+    async fn computer_drag(
+        &self,
+        params: eip::ComputerDragParams,
+    ) -> Result<eip::ComputerActionResult, EIPError> {
+        self.execute_computer(
+            "computer.drag",
+            &params.context,
+            &params,
+            crate::computer::Action::Drag(params.clone()),
+        )
+        .await
+    }
+    async fn computer_scroll(
+        &self,
+        params: eip::ComputerScrollParams,
+    ) -> Result<eip::ComputerActionResult, EIPError> {
+        self.execute_computer(
+            "computer.scroll",
+            &params.context,
+            &params,
+            crate::computer::Action::Scroll(params.clone()),
+        )
+        .await
+    }
+    async fn computer_type_text(
+        &self,
+        params: eip::ComputerTypeTextParams,
+    ) -> Result<eip::ComputerActionResult, EIPError> {
+        self.execute_computer(
+            "computer.type_text",
+            &params.context,
+            &params,
+            crate::computer::Action::TypeText(params.clone()),
+        )
+        .await
+    }
+    async fn computer_press_keys(
+        &self,
+        params: eip::ComputerPressKeysParams,
+    ) -> Result<eip::ComputerActionResult, EIPError> {
+        self.execute_computer(
+            "computer.press_keys",
+            &params.context,
+            &params,
+            crate::computer::Action::PressKeys(params.clone()),
+        )
+        .await
+    }
+
     async fn environment_readiness(
         &self,
         params: EnvironmentReadinessParams,
@@ -3224,7 +3320,7 @@ fn map_transfer_error(error: TransferError) -> EIPError {
     mapped
 }
 
-fn protocol_error(error_type: ErrorType, message: impl Into<String>) -> EIPError {
+pub(crate) fn protocol_error(error_type: ErrorType, message: impl Into<String>) -> EIPError {
     EIPError {
         code: error_type.code(),
         message: message.into(),

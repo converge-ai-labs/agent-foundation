@@ -1,6 +1,7 @@
 use std::{error::Error, sync::Arc};
 
 mod capacity;
+mod computer;
 mod config;
 mod connect;
 mod daemon;

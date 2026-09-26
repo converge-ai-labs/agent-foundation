@@ -126,6 +126,8 @@ from a13n_harness_ui.surfaces import (
     FailureView,
     SurfaceModel,
 )
+from a13n_harness_ui.thread_files import ThreadFiles
+from a13n_harness_ui.tool_images import ToolImageCollector
 
 _JSON_ADAPTER = TypeAdapter(JsonValue)
 _MAX_WAIT_SECONDS = 180.0
@@ -241,7 +243,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         cleanup_timeout_seconds: float = 30.0,
         observation: UiObservation | None = None,
         restart_coordinator: GracefulRestart | None = None,
+        thread_files: ThreadFiles | None = None,
     ) -> None:
+        self._thread_files = thread_files
         self._observation = observation or UiObservation()
         self._restart = restart_coordinator
         self._store = store
@@ -1282,6 +1286,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         active: _ActiveSegment,
     ) -> tuple[HarnessRunResult[Any], CompactChildDisplay, tuple[AguiEvent, ...]]:
         observer = HarnessAguiObserver()
+        tool_images = ToolImageCollector(
+            run_id=prepared.stream.run_id, thread_id=prepared.state.thread_id, files=self._thread_files
+        )
         compactor = _DisplayCompactor(prepared.display)
         result: HarnessRunResult[Any] | None = None
         terminal_events: tuple[AguiEvent, ...] = ()
@@ -1305,7 +1312,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     async for item in stream:
                         record_skill_event(item)
                         await self._store.usage.observe(thread_id=prepared.state.thread_id, item=item)
-                        events = observer.observe(item)
+                        image_events = await tool_images.observe(item)
+                        events = (*observer.observe(item), *image_events)
                         compactor.observe(events)
                         async with self._lock:
                             active.display = compactor.snapshot()

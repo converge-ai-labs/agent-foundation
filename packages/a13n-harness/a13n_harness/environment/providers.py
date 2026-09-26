@@ -23,6 +23,12 @@ from a13n_harness.providers.environment.commands import (
     ProcessWriteStdinResult,
     ShellExecResult,
 )
+from a13n_harness.providers.environment.computer import (
+    ComputerActionResult,
+    ComputerDescription,
+    ComputerInput,
+    ComputerScreenshot,
+)
 from a13n_harness.providers.environment.files import FileOperator
 from a13n_harness.providers.environment.models import (
     EnvironmentAction,
@@ -73,6 +79,16 @@ class FileScopeProvider(Protocol):
     def select_files(self, path: str) -> FileScopeSelection: ...
 
     def open_files(self, selection: FileScopeSelection) -> AbstractAsyncContextManager[FileOperator]: ...
+
+
+class BoundComputerOperations(Protocol):
+    async def describe(self, *, alias: str | None = None) -> ComputerDescription: ...
+
+    async def observe(
+        self, *, alias: str | None = None, target_id: str | None = None, max_dimension: int = 1280
+    ) -> ComputerScreenshot: ...
+
+    async def execute(self, request: ComputerInput, *, alias: str | None = None) -> ComputerActionResult: ...
 
 
 class BoundShellOperations(Protocol):
@@ -307,6 +323,10 @@ class BoundEnvironment(ABC):
     @property
     @abstractmethod
     def shell(self) -> BoundShellOperations: ...
+
+    @property
+    @abstractmethod
+    def computer(self) -> BoundComputerOperations: ...
 
     @property
     @abstractmethod

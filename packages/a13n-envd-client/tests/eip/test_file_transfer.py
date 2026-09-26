@@ -756,3 +756,93 @@ def test_high_level_writer_frames_chunks_and_commits_local_digest() -> None:
         await device.close()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("size_delta", [0, 1])
+def test_computer_observation_uses_verified_raw_transfer(size_delta: int) -> None:
+    from a13n_envd_client.eip.v1 import ComputerObservation, ComputerObserveResult
+
+    async def scenario() -> None:
+        transport = FakeTypedTransport()
+        device = RequestCoordinator(transport, request_timeout=1)
+        connection = EIPDeviceConnection(
+            device,
+            DeviceDescriptor(
+                boundary=BOUNDARY,
+                device_id="device-transfer",
+                generation=1,
+                path_style="posix",
+                default_working_directory="/",
+                directory_discovery=True,
+                limits=descriptor().limits,
+                lifecycle=descriptor().lifecycle,
+            ),
+            max_in_flight=4,
+        )
+        description = descriptor().model_copy(
+            update={"available_methods": ("computer.observe", "computer.close_observation")}
+        )
+        session = connection._bind(description)
+        session._ready = True
+        content = b"immutable-image"
+
+        async def peer() -> None:
+            opened = await next_control(transport, "computer.observe")
+            await respond(
+                transport,
+                opened,
+                ComputerObserveResult(
+                    reader=FileReaderHandle("screen-one"),
+                    size_bytes=len(content) + size_delta,
+                    observation=ComputerObservation(
+                        observation_id="obs-one",
+                        target_id="display-1",
+                        width=800,
+                        height=600,
+                        mime_type="image/jpeg",
+                        captured_at="2026-08-21T00:00:00Z",
+                    ),
+                    expires_at="2026-08-21T01:00:00Z",
+                ),
+            )
+            attach = await transport.outbound.get()
+            assert isinstance(attach, DataFrame) and attach.kind is DataFrameKind.ATTACH
+            for kind, payload in ((DataFrameKind.ATTACHED, b""), (DataFrameKind.CHUNK, content)):
+                await transport.inbound.put(
+                    DataFrame(session_id="ses-transfer", kind=kind, handle="screen-one", payload=payload)
+                )
+            credit = await transport.outbound.get()
+            assert isinstance(credit, DataFrame) and credit.kind is DataFrameKind.CREDIT
+            assert credit.offset == len(content)
+            await transport.inbound.put(
+                DataFrame(session_id="ses-transfer", kind=DataFrameKind.END, handle="screen-one", offset=len(content))
+            )
+            closed = await next_control(transport, "computer.close_observation")
+            await respond(
+                transport,
+                closed,
+                FileReaderCloseResult(
+                    completion=FileReadCompletion(
+                        produced_bytes=len(content),
+                        digest=ContentDigest(algorithm="sha256", value=hashlib.sha256(content).hexdigest()),
+                    )
+                ),
+            )
+
+        peer_task = asyncio.create_task(peer())
+        try:
+            if size_delta:
+                with pytest.raises(EIPProtocolError, match="immutable size"):
+                    async with session.observe_computer() as reader:
+                        _ = [chunk async for chunk in reader]
+            else:
+                async with session.observe_computer() as reader:
+                    assert b"".join([chunk async for chunk in reader]) == content
+                    assert reader.opened.observation.observation_id == "obs-one"
+                    assert reader.completion.produced_bytes == len(content)
+            await peer_task
+        finally:
+            await session.abort()
+            await device.close()
+
+    asyncio.run(scenario())

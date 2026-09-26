@@ -31,6 +31,8 @@ import {
 } from "./tool-presentation";
 import styles from "./tool-call.module.css";
 import { SyntaxCode, codeLanguage } from "./syntax-code";
+import { AttachmentThumbnail } from "./attachment-thumbnail";
+import { RetainedImagePreview } from "./image-preview";
 
 // Human lookup on the WebUI Host, not an Environment-to-Host path mapping.
 export const OpenHostFile = createContext<((path: string) => void) | undefined>(
@@ -202,6 +204,43 @@ const EditDiff = memo(function EditDiff({
   );
 });
 
+function ToolImages({ tool }: { tool: ToolView }) {
+  const [preview, setPreview] =
+    useState<NonNullable<ToolView["images"]>[number]>();
+  return (
+    <>
+      {tool.images?.map((image) => (
+        <button
+          key={image.attachment.attachment_id}
+          type="button"
+          className={styles.screenshot}
+          onClick={() => setPreview(image)}
+          aria-label="Open captured desktop image"
+        >
+          <AttachmentThumbnail
+            threadId={image.thread_id}
+            attachment={image.attachment}
+          />
+          <span>Captured desktop · Open image</span>
+        </button>
+      ))}
+      {tool.imageUnavailable && (
+        <p role="status">
+          The screenshot reached the model, but its display copy could not be
+          retained.
+        </p>
+      )}
+      {preview && (
+        <RetainedImagePreview
+          threadId={preview.thread_id}
+          attachment={preview.attachment}
+          close={() => setPreview(undefined)}
+        />
+      )}
+    </>
+  );
+}
+
 function ToolDetails({ tool }: { tool: ToolView }) {
   const info = describeTool(tool);
   const [raw, setRaw] = useState(false);
@@ -218,6 +257,9 @@ function ToolDetails({ tool }: { tool: ToolView }) {
       )}
       {tool.provider && <small>Provider-run tool · {tool.provider}</small>}
       <CollaborationDetails tool={tool} />
+      {((tool.images?.length ?? 0) > 0 || tool.imageUnavailable) && (
+        <ToolImages tool={tool} />
+      )}
       {tool.editOmitted && (
         <p role="status">
           This older record did not retain the applied edit content. Current

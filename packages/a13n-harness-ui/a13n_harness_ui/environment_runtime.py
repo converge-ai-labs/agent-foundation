@@ -33,7 +33,7 @@ from a13n_harness.providers.environment.local_envd.runtime import (
     resolve_a13n_envd_executable,
 )
 from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.providers.environment.models import FILE_EXECUTION_ACTIONS, EnvironmentState
 from anyio import CancelScope, Lock, move_on_after, to_thread
 
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
@@ -448,7 +448,7 @@ class EnvironmentRunService:
                         expected_state_ref=expected,
                         supplied_state=state,
                         environment=environment,
-                        permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                        permission_ceiling=EnvironmentPermissionSet(operations=FILE_EXECUTION_ACTIONS),
                         mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
                         provider_root=root.as_posix()
                         if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
@@ -590,7 +590,7 @@ class EnvironmentRunService:
             environment = await self._reconstructor.bind(
                 reconstructed, root=root, state=None, local_runtime=local_runtime
             )
-            operations = frozenset(EnvironmentAction)
+            operations = FILE_EXECUTION_ACTIONS
         else:
             # Host files are not silently interpreted as a remote provider root.
             provider = DIRECT_LOCAL

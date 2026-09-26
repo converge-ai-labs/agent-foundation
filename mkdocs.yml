@@ -93,6 +93,7 @@ nav:
       - Configuration and transports: a13n-envd/configuration.md
       - Session egress: a13n-envd/egress.md
       - Sessions and output: a13n-envd/operations.md
+      - macOS computer use: a13n-envd/computer-use.md
       - Python EIP client: a13n-envd/python-client.md
       - Host security boundaries: a13n-envd/isolation.md
   - Service:

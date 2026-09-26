@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .commands import ProviderPortOperations, ProviderProcessOperations, ProviderShellOperations
+from .computer import ProviderComputerOperations
 from .files import FileOperator
 from .retention import ProviderOutputOperations
 
@@ -16,3 +17,4 @@ class EnvironmentOperations:
     processes: ProviderProcessOperations | None = None
     ports: ProviderPortOperations | None = None
     outputs: ProviderOutputOperations | None = None
+    computer: ProviderComputerOperations | None = None

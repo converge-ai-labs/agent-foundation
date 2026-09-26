@@ -15,6 +15,8 @@ export type ToolView = {
   retry?: boolean;
   stopped?: boolean;
   edit?: AppliedEdit;
+  images?: Schema<"ToolImageView">[];
+  imageUnavailable?: boolean;
   editOmitted?: boolean;
   editPath?: string;
   provider?: string;
@@ -85,6 +87,23 @@ export function describeTool(tool: ToolView) {
     "file" | "edit" | "shell" | "search" | "web" | "thread" | "code" | "tool" =
     "tool";
   switch (tool.name) {
+    case "computer_observe":
+      label = "Observe desktop";
+      summary = text(result.target_id) || text(args.alias);
+      break;
+    case "computer_describe":
+      label = "Inspect desktop";
+      summary = text(args.alias);
+      break;
+    case "computer_click":
+    case "computer_move":
+    case "computer_drag":
+    case "computer_scroll":
+    case "computer_type_text":
+    case "computer_press_keys":
+      label = `Desktop · ${tool.name.slice(9).replaceAll("_", " ")}`;
+      summary = text(args.observation_id) || text(args.alias);
+      break;
     case "view":
       label = "Read";
       kind = "file";
@@ -451,6 +470,8 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
                   after: part.applied_edit.after,
                 }
               : undefined,
+          images: part.tool_images,
+          imageUnavailable: part.tool_image_unavailable,
           editOmitted: part.applied_edit?.omitted,
           editPath: part.applied_edit?.file_path,
           retry: part.kind === "retry",

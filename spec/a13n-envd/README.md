@@ -2,7 +2,7 @@
 
 ## Overview
 
-`a13n-envd` is a client-neutral device daemon for files, shells, processes, output and transfers. One daemon normally serves a machine or outer sandbox. Its trusted Host connection carries multiple independent Sessions, each with a Host-selected working directory and Session-owned resources.
+`a13n-envd` is a client-neutral device daemon for files, shells, processes, output, transfers and optional native computer use. One daemon normally serves a machine or outer sandbox. Its trusted Host connection carries multiple independent Sessions, each with a Host-selected working directory and Session-owned resources.
 
 HTTP, reverse WebSocket and stdio share EIP 0.1 semantics. Device connection lifetime is independent of individual Sessions. The Host selects immutable Device identity, Sandbox grants and egress mode; Envd applies them to complete Session workers and directory discovery. The Host owns the outer deployment; cwd is not filesystem or shell isolation. Periodic and high-water collection reclaim abandoned Sessions and completed history under generous finite resource bounds.
 
@@ -23,11 +23,13 @@ Harness is one consumer through the provider-neutral [Environment integration](.
 | [08-protocol-source-client-and-generation.md](08-protocol-source-client-and-generation.md) | IDL, generated Rust/Python surfaces, client and release ownership              |
 | [09-resource-lifetime-and-reclamation.md](09-resource-lifetime-and-reclamation.md)         | Session inactivity, disconnect grace, history and pressure collection          |
 
+[10-computer-use.md](10-computer-use.md) owns optional native desktop targets, observations, input effects and cleanup.
+
 ## Reading Paths
 
 - Architecture: `00`, `01`, `02`, `09`.
 - Provider/client integration: `02`, `03`, `08` and the Environment contracts.
-- Native operations: `04`, `05`, `06`, `07`.
+- Native operations: `04`, `05`, `06`, `07`, `10`.
 - Lifetime and failure review: `03`, `05`, `06`, `09`.
 
 ## Ownership Rules

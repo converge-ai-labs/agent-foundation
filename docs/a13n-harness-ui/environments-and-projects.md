@@ -241,3 +241,9 @@ adapter_configuration:
 ```
 
 The adapter adds each captured Project root to the grant set with `project_access`. Additional grants belong to `launch.sandbox.grants`. Inherited networking is deliberately different from built-in Sandbox's denied networking. For controlled egress, select `launch.egress.mode: controlled` and provide `session.egress` with the destination/reference recipe above; this requires the privileged Linux backend and is not a rootless desktop default. Changing Session policy does not rebuild a compatible daemon; changing the launch boundary does.
+
+## Use a Mac desktop from WebUI
+
+Envd can connect outward from a Mac and expose screenshots and bounded mouse/keyboard actions. Run `a13n-envd connect <your-WebUI-origin> --computer-use true`, approve the Device, then explicitly select **Desktop observation and control** in the binding's **Allowed actions**. Ordinary **Files and execution**, Device approval and local Full Control do not enable desktop tools. Use a model with image input and an Agent with Dynamic Environment tools.
+
+See [macOS computer use](../a13n-envd/computer-use.md) for native permissions, setup, observation-only configuration, screenshot preview and shared-desktop limitations.

@@ -18,6 +18,7 @@ from ..errors import EnvironmentProviderErrorCategory as Category
 from ..management import Environment
 from ..models import (
     ENVIRONMENT_ACTION_DISPATCH,
+    FILE_EXECUTION_ACTIONS,
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,
@@ -291,7 +292,7 @@ class E2BEnvironment(Environment):
 def descriptor(
     configuration: E2BEnvironmentConfiguration, generation: str = "unprepared", identity: str | None = None
 ) -> EnvironmentDescriptor:
-    actions = {action for action in EnvironmentAction if not action.value.startswith("environment.state.")}
+    actions = {action for action in FILE_EXECUTION_ACTIONS if not action.value.startswith("environment.state.")}
     actions -= {EnvironmentAction.PROCESS_SIGNAL, EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE}
     return EnvironmentDescriptor(
         generation=generation,

@@ -261,3 +261,34 @@ fn configuration_hard_links_are_ordinary_account_accessible_files() {
     command.arg("--config").arg(alias);
     assert_eq!(fixture.initialize(command)["device_id"], "device-linked");
 }
+
+#[test]
+fn computer_use_is_explicit_and_cli_can_disable_environment_opt_in() {
+    let fixture = Fixture::new();
+    let mut command = fixture.command();
+    command
+        .env("A13N_ENVD_COMPUTER_USE", "true")
+        .args(["--computer-use", "false"]);
+    let descriptor = fixture.initialize(command);
+    assert!(
+        !descriptor["available_methods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|method| method.as_str().unwrap().starts_with("computer."))
+    );
+    let mut invalid = fixture.command();
+    invalid.args(["--computer-use", "yes"]);
+    let result = fixture.reject(invalid);
+    assert!(String::from_utf8_lossy(&result.stderr).contains("--computer-use"));
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn computer_use_fails_closed_outside_macos() {
+    let fixture = Fixture::new();
+    let mut command = fixture.command();
+    command.args(["--computer-use", "true"]);
+    let result = fixture.reject(command);
+    assert!(String::from_utf8_lossy(&result.stderr).contains("computer_use requires macOS"));
+}

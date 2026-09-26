@@ -6,6 +6,17 @@ from types import MappingProxyType
 from typing import Literal
 
 from .models import (
+    ComputerActionResult,
+    ComputerClickParams,
+    ComputerDescribeParams,
+    ComputerDescribeResult,
+    ComputerDragParams,
+    ComputerMoveParams,
+    ComputerObserveParams,
+    ComputerObserveResult,
+    ComputerPressKeysParams,
+    ComputerScrollParams,
+    ComputerTypeTextParams,
     DeviceDescribeParams,
     DeviceDescribeResult,
     DirectoryListParams,
@@ -103,6 +114,123 @@ class MethodSpec[P, R]:
     transfer_action: Literal["open", "close", "commit", "abort"] | None = None
     transfer_direction: Literal["server_to_client", "client_to_server"] | None = None
 
+
+COMPUTER_CLICK = MethodSpec(
+    name="computer.click",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.1",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerClickParams,
+    result_type=ComputerActionResult,
+    device_scoped=False,
+)
+
+COMPUTER_CLOSE_OBSERVATION = MethodSpec(
+    name="computer.close_observation",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.1",
+    error_family="resource",
+    transfer_action="close",
+    transfer_direction="server_to_client",
+    params_type=FileReaderCloseParams,
+    result_type=FileReaderCloseResult,
+    device_scoped=False,
+)
+
+COMPUTER_DESCRIBE = MethodSpec(
+    name="computer.describe",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.1",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerDescribeParams,
+    result_type=ComputerDescribeResult,
+    device_scoped=False,
+)
+
+COMPUTER_DRAG = MethodSpec(
+    name="computer.drag",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.1",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerDragParams,
+    result_type=ComputerActionResult,
+    device_scoped=False,
+)
+
+COMPUTER_MOVE = MethodSpec(
+    name="computer.move",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.1",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerMoveParams,
+    result_type=ComputerActionResult,
+    device_scoped=False,
+)
+
+COMPUTER_OBSERVE = MethodSpec(
+    name="computer.observe",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.1",
+    error_family="resource",
+    transfer_action="open",
+    transfer_direction="server_to_client",
+    params_type=ComputerObserveParams,
+    result_type=ComputerObserveResult,
+    device_scoped=False,
+)
+
+COMPUTER_PRESS_KEYS = MethodSpec(
+    name="computer.press_keys",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.1",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerPressKeysParams,
+    result_type=ComputerActionResult,
+    device_scoped=False,
+)
+
+COMPUTER_SCROLL = MethodSpec(
+    name="computer.scroll",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.1",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerScrollParams,
+    result_type=ComputerActionResult,
+    device_scoped=False,
+)
+
+COMPUTER_TYPE_TEXT = MethodSpec(
+    name="computer.type_text",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.1",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerTypeTextParams,
+    result_type=ComputerActionResult,
+    device_scoped=False,
+)
 
 DEVICE_DESCRIBE = MethodSpec(
     name="device.describe",
@@ -639,6 +767,15 @@ SHELL_EXEC = MethodSpec(
 
 METHODS = MappingProxyType(
     {
+        COMPUTER_CLICK.name: COMPUTER_CLICK,
+        COMPUTER_CLOSE_OBSERVATION.name: COMPUTER_CLOSE_OBSERVATION,
+        COMPUTER_DESCRIBE.name: COMPUTER_DESCRIBE,
+        COMPUTER_DRAG.name: COMPUTER_DRAG,
+        COMPUTER_MOVE.name: COMPUTER_MOVE,
+        COMPUTER_OBSERVE.name: COMPUTER_OBSERVE,
+        COMPUTER_PRESS_KEYS.name: COMPUTER_PRESS_KEYS,
+        COMPUTER_SCROLL.name: COMPUTER_SCROLL,
+        COMPUTER_TYPE_TEXT.name: COMPUTER_TYPE_TEXT,
         DEVICE_DESCRIBE.name: DEVICE_DESCRIBE,
         DIRECTORY_LIST.name: DIRECTORY_LIST,
         EGRESS_UPDATE.name: EGRESS_UPDATE,

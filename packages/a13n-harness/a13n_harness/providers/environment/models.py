@@ -16,7 +16,7 @@ from ..validation import PROVIDER_TYPE_PATTERN
 from ._json import JsonBoundaryError, detach_json
 from .errors import EnvironmentProviderErrorCategory, operation_error_projection, provider_error
 
-type EnvironmentOperationFamily = Literal["files", "shell", "processes", "ports", "outputs", "state"]
+type EnvironmentOperationFamily = Literal["files", "shell", "processes", "ports", "outputs", "state", "computer"]
 ENVIRONMENT_ACTION_CATALOG_VERSION = "environment-actions/1"
 DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS = 600.0
 DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS = 600.0
@@ -80,6 +80,22 @@ class EnvironmentAction(StrEnum):
     PORT_WAIT = "environment.port.wait"
     STATE_EXPORT = "environment.state.export"
     STATE_RESTORE = "environment.state.restore"
+    COMPUTER_DESCRIBE = "environment.computer.describe"
+    COMPUTER_OBSERVE = "environment.computer.observe"
+    COMPUTER_CLICK = "environment.computer.click"
+    COMPUTER_MOVE = "environment.computer.move"
+    COMPUTER_DRAG = "environment.computer.drag"
+    COMPUTER_SCROLL = "environment.computer.scroll"
+    COMPUTER_TYPE_TEXT = "environment.computer.type_text"
+    COMPUTER_PRESS_KEYS = "environment.computer.press_keys"
+
+
+COMPUTER_ACTIONS: frozenset[EnvironmentAction] = frozenset(
+    action for action in EnvironmentAction if action.value.startswith("environment.computer.")
+)
+"""Shared desktop permissions; never included in legacy file/execution defaults."""
+
+FILE_EXECUTION_ACTIONS: frozenset[EnvironmentAction] = frozenset(EnvironmentAction) - COMPUTER_ACTIONS
 
 
 FILE_ACTIONS: frozenset[EnvironmentAction] = frozenset(
@@ -141,6 +157,14 @@ ENVIRONMENT_ACTION_DISPATCH: Mapping[EnvironmentAction, EnvironmentActionDispatc
         EnvironmentAction.PORT_WAIT: EnvironmentActionDispatch("ports", "ports", "wait"),
         EnvironmentAction.STATE_EXPORT: EnvironmentActionDispatch("state", "state", "export_state"),
         EnvironmentAction.STATE_RESTORE: EnvironmentActionDispatch("state", "state", "restore_state"),
+        EnvironmentAction.COMPUTER_DESCRIBE: EnvironmentActionDispatch("computer", "computer", "describe"),
+        EnvironmentAction.COMPUTER_OBSERVE: EnvironmentActionDispatch("computer", "computer", "observe"),
+        EnvironmentAction.COMPUTER_CLICK: EnvironmentActionDispatch("computer", "computer", "execute"),
+        EnvironmentAction.COMPUTER_MOVE: EnvironmentActionDispatch("computer", "computer", "execute"),
+        EnvironmentAction.COMPUTER_DRAG: EnvironmentActionDispatch("computer", "computer", "execute"),
+        EnvironmentAction.COMPUTER_SCROLL: EnvironmentActionDispatch("computer", "computer", "execute"),
+        EnvironmentAction.COMPUTER_TYPE_TEXT: EnvironmentActionDispatch("computer", "computer", "execute"),
+        EnvironmentAction.COMPUTER_PRESS_KEYS: EnvironmentActionDispatch("computer", "computer", "execute"),
     }
 )
 

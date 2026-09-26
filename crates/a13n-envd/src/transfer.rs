@@ -83,11 +83,16 @@ enum TransferRecord {
     Writer(Arc<Mutex<WriterRecord>>),
 }
 
+enum ReaderSource {
+    File(std::fs::File),
+    Bytes(std::io::Cursor<Vec<u8>>),
+}
+
 struct ReaderRecord {
     capacity: Option<ResourcePermit>,
     producing: Arc<AtomicBool>,
     handle: String,
-    file: Option<std::fs::File>,
+    file: Option<ReaderSource>,
     start_offset: u64,
     max_bytes: u64,
     phase: ReaderPhase,
@@ -300,7 +305,7 @@ impl TransferRegistry {
             capacity: None,
             producing: Arc::new(AtomicBool::new(false)),
             handle: handle.clone(),
-            file: Some(opened.file),
+            file: Some(ReaderSource::File(opened.file)),
             start_offset,
             max_bytes,
             phase: ReaderPhase::Open,
@@ -319,6 +324,44 @@ impl TransferRegistry {
             info,
             expires_at,
         })
+    }
+
+    /// Publish bounded, immutable screenshot bytes through the existing data plane.
+    pub(crate) async fn open_image_reader(
+        &self,
+        bytes: Vec<u8>,
+    ) -> Result<(FileReaderHandle, chrono::DateTime<chrono::Utc>), TransferError> {
+        self.expire().await;
+        if bytes.is_empty() || bytes.len() as u64 > self.inner.max_transfer_bytes {
+            return Err(TransferError::Limit);
+        }
+        let reservation = self.reserve_record()?;
+        let expires_at = self.transfer_expiry(None)?;
+        let handle = self
+            .inner
+            .selector_ids
+            .next("screen")
+            .map_err(map_ledger_error)?;
+        let (cancellation, _) = watch::channel(false);
+        let record = Arc::new(Mutex::new(ReaderRecord {
+            capacity: None,
+            producing: Arc::new(AtomicBool::new(false)),
+            handle: handle.clone(),
+            max_bytes: bytes.len() as u64,
+            file: Some(ReaderSource::Bytes(std::io::Cursor::new(bytes))),
+            start_offset: 0,
+            phase: ReaderPhase::Open,
+            produced: 0,
+            outstanding: VecDeque::new(),
+            credit_changed: Arc::new(Notify::new()),
+            digest: None,
+            expires_at,
+            last_progress: Instant::now(),
+            cancellation,
+            close_result: None,
+        }));
+        reservation.insert(handle.clone(), TransferRecord::Reader(record))?;
+        Ok((FileReaderHandle(handle), expires_at))
     }
 
     pub(crate) async fn close_reader(
@@ -766,7 +809,7 @@ impl TransferRegistry {
     async fn produce_reader(
         &self,
         record: Arc<Mutex<ReaderRecord>>,
-        file: std::fs::File,
+        file: ReaderSource,
         handle: String,
         cancellation: &mut watch::Receiver<bool>,
     ) -> Result<(), DataResetStatus> {
@@ -774,10 +817,19 @@ impl TransferRegistry {
             let reader = record.lock().await;
             (reader.start_offset, reader.max_bytes)
         };
-        let mut file = tokio::fs::File::from_std(file);
-        if file.seek(SeekFrom::Start(start_offset)).await.is_err() {
-            return Err(DataResetStatus::Source);
-        }
+        let mut file: Box<dyn tokio::io::AsyncRead + Unpin + Send> = match file {
+            ReaderSource::File(file) => {
+                let mut file = tokio::fs::File::from_std(file);
+                file.seek(SeekFrom::Start(start_offset))
+                    .await
+                    .map_err(|_| DataResetStatus::Source)?;
+                Box::new(file)
+            }
+            ReaderSource::Bytes(mut bytes) => {
+                bytes.set_position(start_offset);
+                Box::new(bytes)
+            }
+        };
         let payload_limit = self
             .inner
             .max_frame_bytes
@@ -1897,6 +1949,66 @@ mod tests {
         let (sender, receiver) = mpsc::channel(16);
         transfers.attach(sender).expect("begins transfer session");
         (tree, config, filesystem, transfers, receiver)
+    }
+
+    #[tokio::test]
+    async fn image_reader_uses_shared_quota_integrity_and_cleanup() {
+        let (_tree, _config, _filesystem, transfers, mut outbound) = setup(60_000);
+        let bytes = b"immutable screen image".to_vec();
+        let (reader, _) = transfers.open_image_reader(bytes.clone()).await.unwrap();
+        assert!(reader.0.starts_with("screen-"));
+        assert!(matches!(
+            transfers.open_image_reader(vec![1]).await,
+            Err(TransferError::Busy)
+        ));
+        transfers
+            .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
+                kind: DataFrameKind::Attach,
+                handle: reader.0.clone(),
+                offset: 0,
+                payload: Vec::new(),
+                reset_status: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::Attached);
+        let mut received = Vec::new();
+        loop {
+            let frame = outbound.recv().await.unwrap();
+            match frame.kind {
+                DataFrameKind::Chunk => {
+                    assert_eq!(frame.offset, received.len() as u64);
+                    received.extend(frame.payload);
+                    transfers
+                        .handle_frame(DataFrame {
+                            session_id: "session-test".to_owned(),
+                            kind: DataFrameKind::Credit,
+                            handle: reader.0.clone(),
+                            offset: received.len() as u64,
+                            payload: Vec::new(),
+                            reset_status: None,
+                        })
+                        .await
+                        .unwrap();
+                }
+                DataFrameKind::End => {
+                    assert_eq!(frame.offset, bytes.len() as u64);
+                    break;
+                }
+                other => panic!("unexpected image frame: {other:?}"),
+            }
+        }
+        assert_eq!(received, bytes);
+        let completion = transfers.close_reader(&reader).await.unwrap().completion;
+        assert_eq!(completion.produced_bytes, bytes.len() as u64);
+        assert_eq!(
+            completion.digest.value,
+            format!("{:x}", Sha256::digest(&bytes))
+        );
+        let (next, _) = transfers.open_image_reader(vec![1]).await.unwrap();
+        transfers.close_session().await;
+        assert!(transfers.close_reader(&next).await.is_err());
     }
 
     #[tokio::test]

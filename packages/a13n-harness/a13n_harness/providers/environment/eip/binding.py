@@ -18,11 +18,20 @@ from ..models import (
 )
 from ..operations import EnvironmentOperations
 from ._common import invoke
+from .computer import EIPComputerOperations
 from .files import EIPFileOperator
 from .output import EIPOutputOperations, EIPOutputRegistry
 from .processes import EIPPortOperations, EIPProcessOperations, EIPShellOperations, _ProcessConversions
 
 _METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
+    "computer.describe": (EnvironmentAction.COMPUTER_DESCRIBE,),
+    "computer.observe": (EnvironmentAction.COMPUTER_OBSERVE,),
+    "computer.click": (EnvironmentAction.COMPUTER_CLICK,),
+    "computer.move": (EnvironmentAction.COMPUTER_MOVE,),
+    "computer.drag": (EnvironmentAction.COMPUTER_DRAG,),
+    "computer.scroll": (EnvironmentAction.COMPUTER_SCROLL,),
+    "computer.type_text": (EnvironmentAction.COMPUTER_TYPE_TEXT,),
+    "computer.press_keys": (EnvironmentAction.COMPUTER_PRESS_KEYS,),
     "file.stat": (EnvironmentAction.FILE_STAT,),
     "file.read_text": (EnvironmentAction.FILE_READ_TEXT,),
     "file.open_reader": (EnvironmentAction.FILE_READ_BYTES,),
@@ -143,6 +152,9 @@ class EIPEnvironmentSession:
             processes=EIPProcessOperations(conversions) if "process.start" in methods else None,
             ports=EIPPortOperations(conversions) if {"port.inspect", "port.wait"} & methods else None,
             outputs=EIPOutputOperations(outputs) if "output.read" in methods else None,
+            computer=EIPComputerOperations(session, mount_id=mount_id, generation=self._generation)
+            if any(method.startswith("computer.") for method in methods)
+            else None,
         )
         self._availability = EnvironmentAvailability(
             status="available",
@@ -204,7 +216,11 @@ def _convert_descriptor(descriptor: eip.SessionDescriptor) -> EnvironmentDescrip
     actions = {action for method in methods for action in _METHOD_ACTIONS.get(method, ())}
     if "process.inspect" in methods and "output.read" in methods:
         actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
+    if "computer.close_observation" not in methods:
+        actions.discard(EnvironmentAction.COMPUTER_OBSERVE)
     families: set[EnvironmentOperationFamily] = set()
+    if any(method.startswith("computer.") for method in methods):
+        families.add("computer")
     if any(method.startswith("file.") for method in methods):
         families.add("files")
     if "shell.exec" in methods:

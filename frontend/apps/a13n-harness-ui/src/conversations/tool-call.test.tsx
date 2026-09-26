@@ -497,3 +497,62 @@ it("keeps missing, omitted, malformed and unsuccessful question results visible 
     unmount();
   }
 });
+
+it("pairs screenshot attachments with saved results and renders the same image affordance live", () => {
+  const images = [
+    {
+      thread_id: "thread-one",
+      attachment: {
+        attachment_id: "attachment-screen",
+        name: "desktop.png",
+        media_type: "image/png",
+        size: 128,
+      },
+    },
+  ];
+  const entries = [
+    {
+      position: 0,
+      parts: [
+        {
+          kind: "tool_call",
+          tool_name: "computer_observe",
+          tool_call_id: "capture",
+        },
+      ],
+    },
+    {
+      position: 1,
+      parts: [
+        {
+          kind: "tool_result",
+          tool_name: "computer_observe",
+          tool_call_id: "capture",
+          value: { ok: true },
+          tool_images: images,
+        },
+      ],
+    },
+  ] as Schema<"TranscriptEntry">[];
+  const tools = savedTools(entries);
+  expect(tools.get(entries[0].parts[0])?.images).toEqual(images);
+  expect(tools.get(entries[1].parts[0])).toBeNull();
+});
+
+it("shows screenshot retention failure without marking a successful observation as failed", () => {
+  render(
+    <ToolCall
+      tool={{
+        id: "capture",
+        name: "computer_observe",
+        result: { ok: true },
+        imageUnavailable: true,
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Observe desktop/ }));
+  expect(screen.getByRole("status").textContent).toContain(
+    "display copy could not be retained",
+  );
+  expect(screen.queryByText("Failed")).toBeNull();
+});

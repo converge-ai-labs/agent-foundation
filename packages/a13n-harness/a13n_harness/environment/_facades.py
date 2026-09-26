@@ -21,6 +21,17 @@ from a13n_harness.providers.environment.commands import (
     ProcessWriteStdinResult,
     ShellExecResult,
 )
+from a13n_harness.providers.environment.computer import (
+    COMPUTER_INPUT_ACTIONS,
+    ComputerActionResult,
+    ComputerClick,
+    ComputerDescription,
+    ComputerDrag,
+    ComputerInput,
+    ComputerMove,
+    ComputerScreenshot,
+    ComputerScroll,
+)
 from a13n_harness.providers.environment.models import (
     EnvironmentAction,
     EnvironmentError,
@@ -41,6 +52,54 @@ from ._mount import (
 
 if TYPE_CHECKING:
     from .coordinator import CompositeBoundEnvironment
+
+
+class _ComputerFacade:
+    def __init__(self, environment: CompositeBoundEnvironment) -> None:
+        self._environment = environment
+
+    async def describe(self, *, alias: str | None = None) -> ComputerDescription:
+        entered = self._environment._select_entered(alias)
+        async with self._environment._operation_lease(
+            entered, EnvironmentAction.COMPUTER_DESCRIBE, "computer"
+        ) as entered:
+            computer = entered.operations.computer
+            if computer is None:
+                raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
+            return await computer.describe()
+
+    async def observe(
+        self, *, alias: str | None = None, target_id: str | None = None, max_dimension: int = 1280
+    ) -> ComputerScreenshot:
+        entered = self._environment._select_entered(alias)
+        async with self._environment._operation_lease(
+            entered, EnvironmentAction.COMPUTER_OBSERVE, "computer"
+        ) as entered:
+            computer = entered.operations.computer
+            if computer is None:
+                raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
+            result = await computer.observe(target_id=target_id, max_dimension=max_dimension)
+            _validate_provider_artifacts(entered, result.observation)
+            return result
+
+    async def execute(self, request: ComputerInput, *, alias: str | None = None) -> ComputerActionResult:
+        action = COMPUTER_INPUT_ACTIONS[request.kind]
+        if isinstance(request, ComputerClick | ComputerMove | ComputerDrag | ComputerScroll):
+            observation = request.observation
+            entered = self._environment.require_action(observation.mount_id, action)
+            if alias is not None and self._environment._select_entered(alias).mount_id != observation.mount_id:
+                raise EnvironmentError("Observation belongs to another mount.", code="environment_stale_mount")
+            if observation.observed_generation != entered.public.descriptor.generation:
+                raise EnvironmentError("Computer observation is stale.", code="environment_stale_mount")
+        else:
+            entered = self._environment._select_entered(alias)
+        async with self._environment._operation_lease(entered, action, "computer") as entered:
+            computer = entered.operations.computer
+            if computer is None:
+                raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
+            result = await computer.execute(request)
+            _validate_provider_artifacts(entered, result.receipt)
+            return result
 
 
 class _OutputFacade:

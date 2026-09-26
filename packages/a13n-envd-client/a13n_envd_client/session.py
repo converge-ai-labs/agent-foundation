@@ -35,7 +35,7 @@ from a13n_envd_client.eip.v1 import (
     SessionOpenParams,
 )
 from a13n_envd_client.errors import EIPClientError, EIPMethodError, EIPProtocolError, EIPSessionStateError
-from a13n_envd_client.file_transfer import EIPFileReader, EIPFileWriter
+from a13n_envd_client.file_transfer import EIPComputerObservationReader, EIPFileReader, EIPFileWriter
 from a13n_envd_client.output import EIPOutputReader
 from a13n_envd_client.requester import RequestCoordinator, SessionRequester
 from a13n_envd_client.transport import EIPTransport
@@ -337,6 +337,15 @@ class EIPSession:
         self._require_method("file.open_reader")
         return EIPFileReader(
             self._requester, self._client, path, byte_range=byte_range, transfer_timeout_ms=transfer_timeout_ms
+        )
+
+    def observe_computer(
+        self, *, target_id: str | None = None, max_dimension: int | None = None
+    ) -> EIPComputerObservationReader:
+        self._require_method("computer.observe")
+        self._require_method("computer.close_observation")
+        return EIPComputerObservationReader(
+            self._requester, self._client, target_id=target_id, max_dimension=max_dimension
         )
 
     def open_writer(

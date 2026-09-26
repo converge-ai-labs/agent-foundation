@@ -21,6 +21,8 @@ export type DisplayBlock = {
   retry?: boolean;
   stopped?: boolean;
   edit?: AppliedEdit;
+  images?: Schema<"ToolImageView">[];
+  imageUnavailable?: boolean;
   provider?: string;
   metadata?: Record<string, unknown>;
   value?: unknown;
@@ -608,6 +610,34 @@ export class FocusDisplay {
         });
         return;
       }
+    }
+    if (
+      name === "a13n.harness-ui.tool_images" &&
+      typeof source.tool_call_id === "string" &&
+      Array.isArray(source.images)
+    ) {
+      const key = `${this.runId}:${source.tool_call_id}`;
+      const block = this.blocks.get(key);
+      const images = source.images.filter(
+        (image): image is Schema<"ToolImageView"> =>
+          object(image) &&
+          typeof image.thread_id === "string" &&
+          object(image.attachment) &&
+          typeof image.attachment.attachment_id === "string" &&
+          typeof image.attachment.name === "string" &&
+          typeof image.attachment.media_type === "string" &&
+          typeof image.attachment.size === "number",
+      );
+      this.blocks.set(key, {
+        id: key,
+        kind: "tool",
+        text: "",
+        name: "computer_observe",
+        ...block,
+        images,
+        imageUnavailable: source.unavailable === true,
+      });
+      return;
     }
     if (
       name === "a13n.filesystem.edit_applied" &&

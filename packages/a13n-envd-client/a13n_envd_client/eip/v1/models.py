@@ -124,6 +124,19 @@ class CleanupOutcome(StrEnum):
     FAILED = "failed"
 
 
+class ComputerButton(StrEnum):
+    LEFT = "left"
+    RIGHT = "right"
+    MIDDLE = "middle"
+
+
+class ComputerEffect(StrEnum):
+    NOT_EXECUTED = "not_executed"
+    EXECUTED = "executed"
+    PARTIAL = "partial"
+    UNKNOWN = "unknown"
+
+
 class DesiredPortStatus(StrEnum):
     LISTENING = "listening"
     NOT_LISTENING = "not_listening"
@@ -340,6 +353,27 @@ class CommandLimits(EIPModel):
     process_count: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
     memory_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
     cpu_time_ms: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
+class ComputerObservation(EIPModel):
+    observation_id: Identifier
+    target_id: Identifier
+    width: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    height: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    mime_type: StrictStr
+    captured_at: EIPTimestamp
+
+
+class ComputerPoint(EIPModel):
+    x: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    y: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
+class ComputerTarget(EIPModel):
+    target_id: Identifier
+    name: StrictStr
+    width: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    height: Annotated[StrictInt, Field(ge=1, le=4294967295)]
 
 
 class ContentDigest(EIPModel):
@@ -865,6 +899,77 @@ type CommandSpec = Annotated[
     Field(discriminator="kind"),
 ]
 
+
+class ComputerActionResult(EIPModel):
+    receipt: OperationReceipt
+    effect: ComputerEffect
+    input_cleanup_complete: StrictBool
+
+
+class ComputerClickParams(EIPModel):
+    context: EIPCallContext
+    observation_id: Identifier
+    point: ComputerPoint
+    button: ComputerButton
+    count: Annotated[StrictInt, Field(ge=1, le=2)] = 1
+
+
+class ComputerDescribeParams(EIPModel):
+    context: EIPCallContext
+
+
+class ComputerDescribeResult(EIPModel):
+    targets: tuple[ComputerTarget, ...] = ()
+    observe_ready: StrictBool
+    input_ready: StrictBool
+
+
+class ComputerDragParams(EIPModel):
+    context: EIPCallContext
+    observation_id: Identifier
+    start: ComputerPoint
+    end: ComputerPoint
+    button: ComputerButton
+    duration_ms: Annotated[StrictInt, Field(ge=100, le=3000)] = 500
+
+
+class ComputerMoveParams(EIPModel):
+    context: EIPCallContext
+    observation_id: Identifier
+    point: ComputerPoint
+
+
+class ComputerObserveParams(EIPModel):
+    context: EIPCallContext
+    target_id: Identifier | None = None
+    max_dimension: Annotated[StrictInt, Field(ge=256, le=2048)] = 1280
+
+
+class ComputerObserveResult(EIPModel):
+    observation: ComputerObservation
+    reader: FileReaderHandle
+    size_bytes: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    expires_at: EIPTimestamp
+
+
+class ComputerPressKeysParams(EIPModel):
+    context: EIPCallContext
+    keys: tuple[StrictStr, ...] = ()
+
+
+class ComputerScrollParams(EIPModel):
+    context: EIPCallContext
+    observation_id: Identifier
+    point: ComputerPoint
+    delta_x: Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)]
+    delta_y: Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)]
+
+
+class ComputerTypeTextParams(EIPModel):
+    context: EIPCallContext
+    text: StrictStr
+
+
 type EgressDestinations = Annotated[
     PublicDestinations | AllowlistDestinations,
     Field(discriminator="mode"),
@@ -1188,6 +1293,9 @@ class EIPError(EIPModel):
 AllowlistDestinations.model_rebuild()
 CommandEnvironment.model_rebuild()
 CommandLimits.model_rebuild()
+ComputerObservation.model_rebuild()
+ComputerPoint.model_rebuild()
+ComputerTarget.model_rebuild()
 ContentDigest.model_rebuild()
 DeviceDescribeParams.model_rebuild()
 DirectoryEntry.model_rebuild()
@@ -1266,6 +1374,17 @@ SessionLifecyclePolicy.model_rebuild()
 ShellCommand.model_rebuild()
 ShellProfileDescriptor.model_rebuild()
 ArgvCommand.model_rebuild()
+ComputerActionResult.model_rebuild()
+ComputerClickParams.model_rebuild()
+ComputerDescribeParams.model_rebuild()
+ComputerDescribeResult.model_rebuild()
+ComputerDragParams.model_rebuild()
+ComputerMoveParams.model_rebuild()
+ComputerObserveParams.model_rebuild()
+ComputerObserveResult.model_rebuild()
+ComputerPressKeysParams.model_rebuild()
+ComputerScrollParams.model_rebuild()
+ComputerTypeTextParams.model_rebuild()
 EgressPolicy.model_rebuild()
 EgressStatus.model_rebuild()
 EgressUpdateParams.model_rebuild()
@@ -1321,6 +1440,22 @@ __all__ = [
     "CommandLimits",
     "CommandRequest",
     "CommandSpec",
+    "ComputerActionResult",
+    "ComputerButton",
+    "ComputerClickParams",
+    "ComputerDescribeParams",
+    "ComputerDescribeResult",
+    "ComputerDragParams",
+    "ComputerEffect",
+    "ComputerMoveParams",
+    "ComputerObservation",
+    "ComputerObserveParams",
+    "ComputerObserveResult",
+    "ComputerPoint",
+    "ComputerPressKeysParams",
+    "ComputerScrollParams",
+    "ComputerTarget",
+    "ComputerTypeTextParams",
     "ContentDigest",
     "DesiredPortStatus",
     "DeviceDescribeParams",

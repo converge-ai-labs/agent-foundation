@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import secrets
+from abc import ABC, abstractmethod
 from collections.abc import Coroutine
 from types import TracebackType
 from typing import Any, Self
@@ -11,6 +12,8 @@ from a13n_envd_client._transfer_window import TransferWindow
 from a13n_envd_client.eip.v1 import (
     EIP_DATA_FRAME_HEADER_BYTES,
     EIP_TRANSFER_WINDOW_CHUNKS,
+    ComputerObserveParams,
+    ComputerObserveResult,
     ContentDigest,
     DataFrame,
     DataFrameKind,
@@ -21,6 +24,8 @@ from a13n_envd_client.eip.v1 import (
     FileByteRange,
     FileReadCompletion,
     FileReaderCloseParams,
+    FileReaderCloseResult,
+    FileReaderHandle,
     FileReaderOpenParams,
     FileReaderOpenResult,
     FileWriteMode,
@@ -41,27 +46,19 @@ from a13n_envd_client.errors import (
 from a13n_envd_client.requester import SessionRequester, TransferChannel
 
 
-class EIPFileReader:
-    """High-level bounded reader that owns attachment, integrity, and typed close."""
+class _EIPReader[Opened: (FileReaderOpenResult, ComputerObserveResult)](ABC):
+    """Shared framed reader lifecycle for files and immutable observations."""
 
     def __init__(
         self,
         requester: SessionRequester,
         client: EIPClient,
-        path: EIPPath,
-        *,
-        byte_range: FileByteRange | None,
-        transfer_timeout_ms: int | None,
+        context: EIPCallContext,
     ) -> None:
         self._requester = requester
         self._client = client
-        self._params = FileReaderOpenParams(
-            context=_new_context(),
-            path=path,
-            byte_range=byte_range,
-            transfer_timeout_ms=transfer_timeout_ms,
-        )
-        self._opened: FileReaderOpenResult | None = None
+        self._context = context
+        self._opened: Opened | None = None
         self._channel: TransferChannel | None = None
         self._hasher = hashlib.sha256()
         self._received_bytes = 0
@@ -73,7 +70,7 @@ class EIPFileReader:
 
     @property
     def open_context(self) -> EIPCallContext:
-        return self._params.context
+        return self._context
 
     @property
     def completion(self) -> FileReadCompletion:
@@ -82,26 +79,23 @@ class EIPFileReader:
         return self._completion
 
     @property
-    def opened(self) -> FileReaderOpenResult:
+    def opened(self) -> Opened:
         if self._opened is None:
             raise EIPSessionStateError("reader has not been opened")
         return self._opened
+
+    @abstractmethod
+    async def _open(self) -> tuple[Opened, int]: ...
+
+    @abstractmethod
+    async def _close(self, reader: FileReaderHandle) -> FileReaderCloseResult: ...
 
     async def __aenter__(self) -> Self:
         if self._entered:
             raise EIPSessionStateError("reader context cannot be entered more than once")
         self._entered = True
         try:
-            self._opened = await self._client.file_open_reader(self._params)
-            byte_range = self._params.byte_range
-            if byte_range is not None and byte_range.length is not None:
-                self._max_bytes = byte_range.length
-            else:
-                size = self._opened.info.size_bytes
-                if size is None:
-                    raise EIPProtocolError("reader open result omitted the regular-file size")
-                offset = 0 if byte_range is None else byte_range.offset
-                self._max_bytes = max(size - offset, 0)
+            self._opened, self._max_bytes = await self._open()
             handle = self._opened.reader.root
             self._channel = self._requester.register_transfer(
                 handle,
@@ -158,12 +152,7 @@ class EIPFileReader:
             if frame.offset != self._received_bytes:
                 await self._reset_for_protocol(frame.offset)
                 raise EIPProtocolError("reader terminal offset does not match consumed bytes")
-            result = await self._client.file_close_reader(
-                FileReaderCloseParams(
-                    context=_new_context(),
-                    reader=self.opened.reader,
-                )
-            )
+            result = await self._close(self.opened.reader)
             try:
                 self._verify_completion(result.completion)
             except EIPProtocolError as error:
@@ -264,6 +253,71 @@ class EIPFileReader:
                 self._requester.unregister_transfer(channel)
             self._channel = None
         self._finalized = True
+
+
+class EIPFileReader(_EIPReader[FileReaderOpenResult]):
+    """High-level bounded file reader with integrity and typed close."""
+
+    def __init__(
+        self,
+        requester: SessionRequester,
+        client: EIPClient,
+        path: EIPPath,
+        *,
+        byte_range: FileByteRange | None,
+        transfer_timeout_ms: int | None,
+    ) -> None:
+        self._params = FileReaderOpenParams(
+            context=_new_context(), path=path, byte_range=byte_range, transfer_timeout_ms=transfer_timeout_ms
+        )
+        super().__init__(requester, client, self._params.context)
+
+    async def _open(self) -> tuple[FileReaderOpenResult, int]:
+        opened = await self._client.file_open_reader(self._params)
+        byte_range = self._params.byte_range
+        if byte_range is not None and byte_range.length is not None:
+            maximum = byte_range.length
+        else:
+            size = opened.info.size_bytes
+            if size is None:
+                raise EIPProtocolError("reader open result omitted the regular-file size")
+            offset = 0 if byte_range is None else byte_range.offset
+            maximum = max(size - offset, 0)
+        return opened, maximum
+
+    async def _close(self, reader: FileReaderHandle) -> FileReaderCloseResult:
+        return await self._client.file_close_reader(FileReaderCloseParams(context=_new_context(), reader=reader))
+
+
+class EIPComputerObservationReader(_EIPReader[ComputerObserveResult]):
+    """One immutable screenshot; context exit abandons an unfinished transfer."""
+
+    def __init__(
+        self,
+        requester: SessionRequester,
+        client: EIPClient,
+        *,
+        target_id: str | None = None,
+        max_dimension: int | None = None,
+    ) -> None:
+        self._params = ComputerObserveParams(
+            context=_new_context(), target_id=target_id, max_dimension=1280 if max_dimension is None else max_dimension
+        )
+        super().__init__(requester, client, self._params.context)
+
+    async def _open(self) -> tuple[ComputerObserveResult, int]:
+        opened = await self._client.computer_observe(self._params)
+        return opened, opened.size_bytes
+
+    async def _close(self, reader: FileReaderHandle) -> FileReaderCloseResult:
+        return await self._client.computer_close_observation(
+            FileReaderCloseParams(context=_new_context(), reader=reader)
+        )
+
+    def _verify_completion(self, completion: FileReadCompletion) -> None:
+        super()._verify_completion(completion)
+        if completion.produced_bytes != self.opened.size_bytes:
+            raise EIPProtocolError("observation byte count differs from its immutable size")
 
 
 class EIPFileWriter:

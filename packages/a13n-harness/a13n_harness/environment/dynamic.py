@@ -14,6 +14,7 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.model_context import AbstractModelContextCapability
 from a13n_harness.providers.environment.models import EnvironmentAction
+from a13n_harness.toolsets.computer import ComputerToolset
 from a13n_harness.toolsets.file_media import (
     AgentMediaUnderstandingProvider,
     MediaUnderstandingProvider,
@@ -77,6 +78,7 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         self._run_id = run_id
         self._environment = environment
         self._shell_toolset = ShellToolset(environment)
+        self._computer_toolset = ComputerToolset(environment)
         self._dynamic_context = _DynamicEnvironmentContext()
         self._file_toolset = FileToolset(
             environment.files,
@@ -125,6 +127,10 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
             shell = self._shell_toolset.get_toolset(allowed_names=self.configuration.shell_tools)
             if shell.tools:
                 toolsets.append(shell)
+        if self.configuration.computer_enabled:
+            computer = self._computer_toolset.get_toolset(allowed_names=self.configuration.computer_tools)
+            if computer.tools:
+                toolsets.append(computer)
         if not toolsets:
             return None
         return CombinedToolset(toolsets)

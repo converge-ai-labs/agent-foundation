@@ -223,6 +223,424 @@
         }
       ]
     },
+    "ComputerActionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "effect": {
+          "$ref": "#/$defs/ComputerEffect"
+        },
+        "input_cleanup_complete": {
+          "title": "Input Cleanup Complete",
+          "type": "boolean"
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "receipt",
+        "effect",
+        "input_cleanup_complete"
+      ],
+      "title": "ComputerActionResult",
+      "type": "object"
+    },
+    "ComputerButton": {
+      "enum": [
+        "left",
+        "right",
+        "middle"
+      ],
+      "title": "ComputerButton",
+      "type": "string"
+    },
+    "ComputerClickParams": {
+      "additionalProperties": false,
+      "properties": {
+        "button": {
+          "$ref": "#/$defs/ComputerButton"
+        },
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "count": {
+          "default": 1,
+          "maximum": 2,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "observation_id": {
+          "minLength": 1,
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "point": {
+          "$ref": "#/$defs/ComputerPoint"
+        }
+      },
+      "required": [
+        "context",
+        "observation_id",
+        "point",
+        "button"
+      ],
+      "title": "ComputerClickParams",
+      "type": "object"
+    },
+    "ComputerDescribeParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        }
+      },
+      "required": [
+        "context"
+      ],
+      "title": "ComputerDescribeParams",
+      "type": "object"
+    },
+    "ComputerDescribeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "input_ready": {
+          "title": "Input Ready",
+          "type": "boolean"
+        },
+        "observe_ready": {
+          "title": "Observe Ready",
+          "type": "boolean"
+        },
+        "targets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ComputerTarget"
+          },
+          "title": "Targets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "observe_ready",
+        "input_ready"
+      ],
+      "title": "ComputerDescribeResult",
+      "type": "object"
+    },
+    "ComputerDragParams": {
+      "additionalProperties": false,
+      "properties": {
+        "button": {
+          "$ref": "#/$defs/ComputerButton"
+        },
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "duration_ms": {
+          "default": 500,
+          "maximum": 3000,
+          "minimum": 100,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "end": {
+          "$ref": "#/$defs/ComputerPoint"
+        },
+        "observation_id": {
+          "minLength": 1,
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/ComputerPoint"
+        }
+      },
+      "required": [
+        "context",
+        "observation_id",
+        "start",
+        "end",
+        "button"
+      ],
+      "title": "ComputerDragParams",
+      "type": "object"
+    },
+    "ComputerEffect": {
+      "enum": [
+        "not_executed",
+        "executed",
+        "partial",
+        "unknown"
+      ],
+      "title": "ComputerEffect",
+      "type": "string"
+    },
+    "ComputerMoveParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "observation_id": {
+          "minLength": 1,
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "point": {
+          "$ref": "#/$defs/ComputerPoint"
+        }
+      },
+      "required": [
+        "context",
+        "observation_id",
+        "point"
+      ],
+      "title": "ComputerMoveParams",
+      "type": "object"
+    },
+    "ComputerObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "height": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Height",
+          "type": "integer"
+        },
+        "mime_type": {
+          "title": "Mime Type",
+          "type": "string"
+        },
+        "observation_id": {
+          "minLength": 1,
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "target_id": {
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "width": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "observation_id",
+        "target_id",
+        "width",
+        "height",
+        "mime_type",
+        "captured_at"
+      ],
+      "title": "ComputerObservation",
+      "type": "object"
+    },
+    "ComputerObserveParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "max_dimension": {
+          "default": 1280,
+          "maximum": 2048,
+          "minimum": 256,
+          "title": "Max Dimension",
+          "type": "integer"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        }
+      },
+      "required": [
+        "context"
+      ],
+      "title": "ComputerObserveParams",
+      "type": "object"
+    },
+    "ComputerObserveResult": {
+      "additionalProperties": false,
+      "properties": {
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "observation": {
+          "$ref": "#/$defs/ComputerObservation"
+        },
+        "reader": {
+          "$ref": "#/$defs/FileReaderHandle"
+        },
+        "size_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "observation",
+        "reader",
+        "size_bytes",
+        "expires_at"
+      ],
+      "title": "ComputerObserveResult",
+      "type": "object"
+    },
+    "ComputerPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "ComputerPoint",
+      "type": "object"
+    },
+    "ComputerPressKeysParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "keys": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Keys",
+          "type": "array"
+        }
+      },
+      "required": [
+        "context"
+      ],
+      "title": "ComputerPressKeysParams",
+      "type": "object"
+    },
+    "ComputerScrollParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "delta_x": {
+          "maximum": 2147483647,
+          "minimum": -2147483648,
+          "title": "Delta X",
+          "type": "integer"
+        },
+        "delta_y": {
+          "maximum": 2147483647,
+          "minimum": -2147483648,
+          "title": "Delta Y",
+          "type": "integer"
+        },
+        "observation_id": {
+          "minLength": 1,
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "point": {
+          "$ref": "#/$defs/ComputerPoint"
+        }
+      },
+      "required": [
+        "context",
+        "observation_id",
+        "point",
+        "delta_x",
+        "delta_y"
+      ],
+      "title": "ComputerScrollParams",
+      "type": "object"
+    },
+    "ComputerTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Height",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "target_id": {
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "width": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target_id",
+        "name",
+        "width",
+        "height"
+      ],
+      "title": "ComputerTarget",
+      "type": "object"
+    },
+    "ComputerTypeTextParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "text"
+      ],
+      "title": "ComputerTypeTextParams",
+      "type": "object"
+    },
     "ContentDigest": {
       "additionalProperties": false,
       "properties": {

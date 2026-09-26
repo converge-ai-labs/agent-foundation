@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from a13n_harness.providers.environment.commands import (
     BoundProcessHandle,
 )
+from a13n_harness.providers.environment.computer import ComputerObservation
 from a13n_harness.providers.environment.models import (
     EnvironmentError,
     EnvironmentMountInfo,
@@ -84,6 +85,7 @@ class _OwnedProviderScope:
 
 def _validate_provider_artifacts(entered: _EnteredMount, value: Any) -> None:
     bound_types = (
+        ComputerObservation,
         BoundProcessHandle,
         BoundOutputReference,
         BoundOutputCursor,

@@ -2767,7 +2767,7 @@ export interface components {
          * @description Exact authorization values in the locked first-party catalog.
          * @enum {string}
          */
-        EnvironmentAction: "environment.file.stat" | "environment.file.read_text" | "environment.file.read_bytes" | "environment.file.write_text" | "environment.file.patch_text" | "environment.file.list" | "environment.file.query" | "environment.file.search_text" | "environment.file.mkdir" | "environment.file.move" | "environment.file.remove" | "environment.file.write_bytes" | "environment.file.copy_source" | "environment.file.copy_destination" | "environment.shell.exec" | "environment.process.list" | "environment.process.start" | "environment.process.inspect" | "environment.process.read_output" | "environment.process.write_stdin" | "environment.process.close_stdin" | "environment.process.signal" | "environment.process.wait" | "environment.process.kill" | "environment.process.release" | "environment.output.read" | "environment.output.release" | "environment.port.inspect" | "environment.port.wait" | "environment.state.export" | "environment.state.restore";
+        EnvironmentAction: "environment.file.stat" | "environment.file.read_text" | "environment.file.read_bytes" | "environment.file.write_text" | "environment.file.patch_text" | "environment.file.list" | "environment.file.query" | "environment.file.search_text" | "environment.file.mkdir" | "environment.file.move" | "environment.file.remove" | "environment.file.write_bytes" | "environment.file.copy_source" | "environment.file.copy_destination" | "environment.shell.exec" | "environment.process.list" | "environment.process.start" | "environment.process.inspect" | "environment.process.read_output" | "environment.process.write_stdin" | "environment.process.close_stdin" | "environment.process.signal" | "environment.process.wait" | "environment.process.kill" | "environment.process.release" | "environment.output.read" | "environment.output.release" | "environment.port.inspect" | "environment.port.wait" | "environment.state.export" | "environment.state.restore" | "environment.computer.describe" | "environment.computer.observe" | "environment.computer.click" | "environment.computer.move" | "environment.computer.drag" | "environment.computer.scroll" | "environment.computer.type_text" | "environment.computer.press_keys";
         /** EnvironmentBindingSelection */
         EnvironmentBindingSelection: {
             /** Device Id */
@@ -5041,6 +5041,15 @@ export interface components {
             children: components["schemas"]["ChildStatusCounts"];
         };
         /**
+         * ToolImageView
+         * @description Host-retained tool image, served through authenticated Thread attachment access.
+         */
+        ToolImageView: {
+            /** Thread Id */
+            thread_id: string;
+            attachment: components["schemas"]["ThreadAttachment"];
+        };
+        /**
          * ToolProxyConfig
          * @description Names and bounded discovery settings for one Agent's proxy surface.
          */
@@ -5167,6 +5176,16 @@ export interface components {
             /** Provider */
             provider?: string | null;
             applied_edit?: components["schemas"]["AppliedEditView"] | null;
+            /**
+             * Tool Images
+             * @default []
+             */
+            tool_images?: components["schemas"]["ToolImageView"][];
+            /**
+             * Tool Image Unavailable
+             * @default false
+             */
+            tool_image_unavailable?: boolean;
             value?: components["schemas"]["JsonValue"] | null;
             /**
              * Value Omitted

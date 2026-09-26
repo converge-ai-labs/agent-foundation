@@ -19,6 +19,17 @@ const readOnly: Schema<"EnvironmentAction">[] = [
   "environment.file.copy_source",
 ];
 
+const computerActions: Schema<"EnvironmentAction">[] = [
+  "environment.computer.describe",
+  "environment.computer.observe",
+  "environment.computer.click",
+  "environment.computer.move",
+  "environment.computer.drag",
+  "environment.computer.scroll",
+  "environment.computer.type_text",
+  "environment.computer.press_keys",
+];
+
 export function BindingSummary({
   bindings,
   defaultEnvironment,
@@ -345,8 +356,16 @@ function BindingEditor({
             : []),
           { value: "full", label: "Files and execution" },
           { value: "read_only", label: "Read-only files" },
+          { value: "computer", label: "Desktop observation and control" },
         ]}
       />
+      {permission === "computer" && (
+        <p className="text-sm text-muted-foreground">
+          Allows screenshots and input on this Device’s shared desktop. It does
+          not reserve the desktop. Requires computer-use enabled in envd and
+          macOS Screen Recording and Accessibility permissions.
+        </p>
+      )}
       <TextField
         label="Environment alias"
         value={alias}
@@ -383,9 +402,11 @@ function BindingEditor({
               working_directory: path,
               ...(permission === "read_only"
                 ? { permission_ceiling: { operations: readOnly } }
-                : permission === "existing"
-                  ? { permission_ceiling: initial?.permission_ceiling }
-                  : {}),
+                : permission === "computer"
+                  ? { permission_ceiling: { operations: computerActions } }
+                  : permission === "existing"
+                    ? { permission_ceiling: initial?.permission_ceiling }
+                    : {}),
             });
           }}
         >

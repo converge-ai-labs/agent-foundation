@@ -41,7 +41,7 @@ mod tests {
     fn generated_registry_has_complete_v1_surface() {
         assert_eq!(EIP_PROTOCOL_VERSION, "0.1");
         assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");
-        assert_eq!(METHODS.len(), 41);
+        assert_eq!(METHODS.len(), 50);
         assert!(
             METHODS
                 .iter()
@@ -53,14 +53,14 @@ mod tests {
                 .iter()
                 .filter(|method| method.replay_class == "active_only")
                 .count(),
-            18
+            21
         );
         assert_eq!(
             METHODS
                 .iter()
                 .filter(|method| method.replay_class == "terminal_evidence")
                 .count(),
-            15
+            21
         );
         assert_eq!(
             METHODS
@@ -83,7 +83,7 @@ mod tests {
             .iter()
             .filter(|method| method.transfer_action.is_some())
             .collect::<Vec<_>>();
-        assert_eq!(transfer_methods.len(), 5);
+        assert_eq!(transfer_methods.len(), 7);
         assert!(
             transfer_methods
                 .iter()
