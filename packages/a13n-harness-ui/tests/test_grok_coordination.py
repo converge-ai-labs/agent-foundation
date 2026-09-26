@@ -180,9 +180,9 @@ async def test_uncertain_grant_blocks_new_models_runs_and_metadata_changes(
             await call(first)
     seed(path, replace(old, access_token="changed-access", expires_at=datetime.now(UTC) + timedelta(hours=2)))
     for resolved in (first.fresh(), resolver(path, refresh)):
-        with pytest.raises(ModelAPIError) as failure:
+        # The current OpenAI client propagates credential callback failures directly.
+        with pytest.raises(ModelAuthenticationError, match="previous credential refresh outcome is unknown"):
             await call(resolved)
-        assert isinstance(failure.value.__cause__.__cause__, ModelAuthenticationError)
     assert refreshes == ["refresh-old"]
     assert native_transport == []
     assert (await store(path).inspect()).required_action is RequiredAction.LOGIN

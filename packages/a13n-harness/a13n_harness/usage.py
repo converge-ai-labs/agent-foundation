@@ -485,6 +485,7 @@ class _UsageActiveCapability(UsageCapability):
                     request_started_at=request_started_at,
                     response_timestamp=response.timestamp,
                     usage=usage,
+                    service_tier=_response_service_tier(response),
                 )
                 quote = capability.quote(value)
                 if quote is not None:
@@ -688,6 +689,29 @@ def _pricing_for_committed_response(
     if pricing.status == "applied" and response.usage.cost != pricing.calculated_cost:
         return None
     return pricing
+
+
+def _response_service_tier(response: ModelResponse) -> str | None:
+    """Read only the bounded served tier, never the requested routing preference."""
+    details = response.provider_details or {}
+    value = details.get("service_tier")
+    if response.provider_name == "google-vertex" and details.get("traffic_type") is not None:
+        # Vertex exposes actual serving separately from the Developer API header.
+        traffic_type = details["traffic_type"]
+        if not isinstance(traffic_type, str):
+            raise ValueError("response service tier must be a bounded identifier")
+        value = traffic_type.lower()
+    if value is None:
+        return None
+    if (
+        not isinstance(value, str)
+        or not 1 <= len(value) <= 64
+        or not value.isascii()
+        or not value[0].islower()
+        or any(not (char.islower() or char.isdigit() or char in "_-") for char in value)
+    ):
+        raise ValueError("response service tier must be a bounded identifier")
+    return value
 
 
 def _safe_provider_url(value: str | None) -> str | None:

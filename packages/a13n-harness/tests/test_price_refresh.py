@@ -251,3 +251,22 @@ def test_matching_changes_are_part_of_the_snapshot_revision() -> None:
     assert first.resolve("preview-ref", provider="openai") == first["openai:gpt-5.5"]
     assert second.resolve("replacement-ref", provider="openai") == second["openai:gpt-5.5"]
     assert second.revision != first.revision
+
+
+def test_refresh_retains_packaged_tiers_but_explicit_replacement_can_remove_them() -> None:
+    from dataclasses import replace
+
+    bundled = pricing.get_default_pricing_catalog()
+    set_custom_snapshot(_snapshot("3"))
+    current = pricing.get_current_pricing_catalog()
+    entry = current["openai:gpt-5.5"]
+    policy = CatalogModelCostCapability(catalog=current)
+    assert policy.quote(_input()).cost_usd == Decimal(3)
+    flex = replace(_input(), service_tier="flex", usage=RequestUsage(input_tokens=1000))
+    assert policy.quote(flex).cost_usd == Decimal("0.0025")
+    assert ":tiers:" in entry.source_revision
+    assert bundled[entry.key].rules[0].prices[0].price == Decimal(5)
+    standard_only = entry.model_copy(update={"rules": (entry.rules[0],)})
+    explicit = CatalogModelCostCapability(catalog=current, pricing_updates={entry.key: standard_only})
+    assert explicit.quote(flex) is None
+    assert policy.quote(flex).cost_usd == Decimal("0.0025")

@@ -5103,10 +5103,14 @@ export interface components {
      */
     "ModelPriceRule-Input": {
       constraint?: components["schemas"]["PricingConstraint"];
+      /** Max Input Tokens */
+      max_input_tokens?: number | null;
       /** Prices */
       prices: components["schemas"]["PriceComponent-Input"][];
       /** Rule Id */
       rule_id: string;
+      /** Service Tier */
+      service_tier?: string | null;
     };
     /**
      * ModelPriceRule
@@ -5114,10 +5118,14 @@ export interface components {
      */
     "ModelPriceRule-Output": {
       constraint?: components["schemas"]["PricingConstraint"];
+      /** Max Input Tokens */
+      max_input_tokens?: number | null;
       /** Prices */
       prices: components["schemas"]["PriceComponent-Output"][];
       /** Rule Id */
       rule_id: string;
+      /** Service Tier */
+      service_tier?: string | null;
     };
     /**
      * ModelPricingEntry

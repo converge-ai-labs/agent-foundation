@@ -134,6 +134,26 @@ it("saves an edited table under the entry it was read from without dropping pric
   });
 });
 
+it("edits only base prices and preserves service-tier rules and their limits", () => {
+  const priority = {
+    rule_id: "priority",
+    service_tier: "priority",
+    max_input_tokens: 272000,
+    prices: [{ price_key: "input_mtok", price: "20" }],
+  };
+  const entry = { ...catalogPrice, rules: [...catalogPrice.rules, priority] };
+  const table = priceTable(entry)!;
+  expect(table).toEqual(priceTable(catalogPrice));
+  table.tiers[0].rates.input_mtok = "6";
+  const saved = priceEntry(table, entry, { provider: "openai", model: "test" });
+  expect(saved?.rules[1]).toEqual(priority);
+  expect(saved?.rules[0].prices).toContainEqual({
+    price_key: "input_mtok",
+    price: "6",
+    tiers: [{ start: 200000, price: "10" }],
+  });
+});
+
 it("names hand-entered prices after the model and clears an empty table", () => {
   const table: PriceTable = {
     tiers: [{ above: null, rates: { input_mtok: "1", output_mtok: null } }],

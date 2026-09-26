@@ -136,6 +136,8 @@ class ModelPriceRule(BaseModel):
 
     rule_id: str = Field(min_length=1, max_length=128)
     constraint: PricingConstraint = Field(default_factory=PricingConstraint)
+    service_tier: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
+    max_input_tokens: int | None = Field(default=None, ge=1)
     prices: tuple[PriceComponent, ...] = Field(min_length=1, max_length=128)
 
     @model_validator(mode="after")
@@ -167,8 +169,8 @@ class ModelPricingEntry(BaseModel):
             raise ValueError("pricing provider must be unqualified")
         if len({rule.rule_id for rule in self.rules}) != len(self.rules):
             raise ValueError("pricing rule IDs must be unique")
-        if not any(rule.constraint.kind == "always" for rule in self.rules):
-            raise ValueError("pricing entry requires an always rule")
+        if not any(rule.constraint.kind == "always" and rule.service_tier is None for rule in self.rules):
+            raise ValueError("pricing entry requires an untiered always rule")
         return self
 
     @property
@@ -176,16 +178,26 @@ class ModelPricingEntry(BaseModel):
         """Return the canonical provider-qualified catalog key."""
         return f"{self.provider}:{self.model}"
 
-    def select_rule(self, request_started_at: datetime) -> ModelPriceRule:
-        """Select the last active rule, matching genai-prices precedence."""
+    def select_rule(self, request_started_at: datetime, *, service_tier: str | None = None) -> ModelPriceRule | None:
+        """Select the last active rule for the served tier, never guess a premium or discount."""
+        if self.provider == "openai" and service_tier == "fast":
+            service_tier = "priority"
+        if service_tier is not None:
+            for rule in reversed(self.rules):
+                if rule.service_tier == service_tier and rule.constraint.active(request_started_at):
+                    return rule
+        if service_tier not in (None, "default", "standard", "on_demand"):
+            return None
         for rule in reversed(self.rules):
-            if rule.constraint.active(request_started_at):
+            if rule.service_tier is None and rule.constraint.active(request_started_at):
                 return rule
-        return self.rules[0]
+        return None
 
-    def quote(self, value: ModelCostInput, *, source: ModelCostQuoteSource, revision: str) -> ModelCostQuote:
-        """Price one request's usage under the rule active when it started."""
-        rule = self.select_rule(value.request_started_at)
+    def quote(self, value: ModelCostInput, *, source: ModelCostQuoteSource, revision: str) -> ModelCostQuote | None:
+        """Price one request using its served tier and request-start time."""
+        rule = self.select_rule(value.request_started_at, service_tier=value.service_tier)
+        if rule is None or (rule.max_input_tokens is not None and value.usage.input_tokens > rule.max_input_tokens):
+            return None
         prices: dict[str, Decimal | TieredPrices] = {}
         for component in rule.prices:
             if component.tiers:
@@ -215,6 +227,7 @@ class ModelCostInput:
     response_timestamp: datetime
     usage: RequestUsage
     selected_model_id: str | None = None
+    service_tier: str | None = None
 
 
 class ModelCostQuote(BaseModel):
@@ -386,6 +399,9 @@ class CatalogModelCostCapability(AbstractModelCostCapability):
         )
         if entry is None:
             return None
+        # Developer API tier tariffs are not Vertex endpoint/capacity tariffs.
+        if value.provider_name == "google-vertex" and value.service_tier is not None and entry.provider == "google":
+            return None
         return entry.quote(value, source="catalog", revision=self.catalog.revision)
 
 
@@ -445,6 +461,20 @@ def get_current_pricing_catalog() -> PricingCatalog:
             updates = _entries_from_snapshot(copied)
             if not updates:
                 raise ValueError("updated pricing snapshot contains no usable model prices")
+            # genai-prices snapshots have no service-tier dimension. Refresh their
+            # standard prices without discarding our independently sourced tier rules.
+            for key, entry in updates.items():
+                packaged = default.get(key)
+                supplements = (
+                    tuple(rule for rule in packaged.rules if rule.service_tier is not None) if packaged else ()
+                )
+                if supplements:
+                    updates[key] = entry.model_copy(
+                        update={
+                            "rules": (*entry.rules, *supplements),
+                            "source_revision": f"{entry.source_revision}:tiers:{default.revision[-24:]}",
+                        }
+                    )
             candidate = PricingCatalog(
                 {**default, **updates},
                 source_snapshot=copied,

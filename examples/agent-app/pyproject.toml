@@ -7,7 +7,7 @@ license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
     "a13n-harness",
-    "pydantic-ai-slim>=2.46.0,<3",
+    "pydantic-ai-slim>=2.51.0,<3",
 ]
 
 [project.scripts]

@@ -23,7 +23,8 @@ export type PriceTable = {
 /** What an ordinary request pays: the last rule without a date or time condition. */
 function standardRule(entry: Entry) {
   return entry.rules.findLast(
-    (rule) => (rule.constraint?.kind ?? "always") === "always",
+    (rule) =>
+      !rule.service_tier && (rule.constraint?.kind ?? "always") === "always",
   );
 }
 
@@ -88,6 +89,7 @@ export function priceEntry(
   ];
   if (!prices.length) return null;
   const standard = {
+    ...rule,
     rule_id: rule?.rule_id ?? "standard",
     constraint: rule?.constraint,
     prices,

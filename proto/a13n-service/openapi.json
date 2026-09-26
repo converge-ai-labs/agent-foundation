@@ -6712,6 +6712,18 @@
           "constraint": {
             "$ref": "#/components/schemas/PricingConstraint"
           },
+          "max_input_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Input Tokens"
+          },
           "prices": {
             "items": {
               "$ref": "#/components/schemas/PriceComponent-Input"
@@ -6726,6 +6738,20 @@
             "minLength": 1,
             "title": "Rule Id",
             "type": "string"
+          },
+          "service_tier": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Tier"
           }
         },
         "required": [
@@ -6742,6 +6768,18 @@
           "constraint": {
             "$ref": "#/components/schemas/PricingConstraint"
           },
+          "max_input_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Input Tokens"
+          },
           "prices": {
             "items": {
               "$ref": "#/components/schemas/PriceComponent-Output"
@@ -6756,6 +6794,20 @@
             "minLength": 1,
             "title": "Rule Id",
             "type": "string"
+          },
+          "service_tier": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Tier"
           }
         },
         "required": [

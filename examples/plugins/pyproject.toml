@@ -8,7 +8,7 @@ requires-python = ">=3.13"
 dependencies = [
     "a13n-harness",
     "pydantic>=2.12,<3",
-    "pydantic-ai-slim>=2.46.0,<3",
+    "pydantic-ai-slim>=2.51.0,<3",
 ]
 
 [project.entry-points."a13n_harness.providers.plugins"]

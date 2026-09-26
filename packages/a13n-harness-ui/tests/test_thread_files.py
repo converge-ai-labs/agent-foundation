@@ -299,7 +299,13 @@ async def test_native_generated_image_is_saved_in_thread_scratch_and_replayed_as
     image = BytesIO()
     Image.new("RGB", (2, 2), "green").save(image, format="PNG")
     encoded = base64.b64encode(image.getvalue()).decode()
-    item = {"id": "ig_1", "type": "image_generation_call", "status": "completed", "result": encoded}
+    item = {
+        "id": "ig_1",
+        "type": "image_generation_call",
+        "status": "completed",
+        "result": encoded,
+        "output_format": "png",
+    }
     response = {
         "id": "resp_1",
         "created_at": 1,
