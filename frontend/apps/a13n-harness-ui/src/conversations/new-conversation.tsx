@@ -6,13 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  Link,
-  useLocation,
-  useNavigate,
-  useParams,
-  useSearchParams,
-} from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Robot, Folder } from "@phosphor-icons/react";
 import { SearchPicker } from "a13n-ui";
@@ -125,16 +119,12 @@ export function NewConversationPage(props: {
   profile: Profile;
   unauthorized: () => void;
 }) {
-  const { draftId } = useParams();
   const drafts = useContext(NewConversationDrafts);
   const composers = useContext(ComposerDrafts);
   const { key } = useLocation();
   // A new navigation can leave a retired composer behind after a successful
   // Send whose saved-page read failed; ordinary rerenders must not replace it.
-  const draft = useMemo(
-    () => drafts.get(composers, draftId),
-    [drafts, composers, draftId, key],
-  );
+  const draft = useMemo(() => drafts.get(composers), [drafts, composers, key]);
   return <NewConversation key={draft.threadId} draft={draft} {...props} />;
 }
 

@@ -11,7 +11,6 @@ import { modelControlRequest } from "./model-controls";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import {
-  Paperclip,
   Plus,
   ArrowUp,
   Stop,
@@ -26,7 +25,6 @@ import {
   isReadyAttachment,
 } from "./inline-attachments";
 import { ImagePreview } from "../shell/image-preview";
-import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { useTransport } from "../transport/context";
 import {
   ApiError,
@@ -67,9 +65,9 @@ function beginInput(
   for (const selection of preset === undefined
     ? attachmentSelections(draft.doc)
     : []) {
-    const start = selection.from ?? text.length;
+    const start = selection.from;
     if (start > offset) parts.push(text.slice(offset, start));
-    offset = selection.to ?? text.length;
+    offset = selection.to;
     parts.push(
       isReadyAttachment(selection.id)
         ? { attachment_id: selection.id }
@@ -1029,53 +1027,6 @@ export function Composer({
             }}
           />
         </div>
-        {selections.some((selection) => selection.from === undefined) && (
-          <ul className={styles.attachments}>
-            {selections.map(({ key, id, from }, index) =>
-              from !== undefined ? null : (
-                <li key={key}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      id && void showAttachment(id, attachments[index].data)
-                    }
-                  >
-                    {attachments[index].data && (
-                      <AttachmentThumbnail
-                        threadId={threadId}
-                        attachment={attachments[index].data}
-                      />
-                    )}
-                    <Paperclip /> {attachments[index].data?.name ?? id}
-                    {attachments[index].data?.source && (
-                      <small>
-                        Captured{" "}
-                        {"comment_id" in attachments[index].data.source
-                          ? "comment reference"
-                          : "repository_path" in attachments[index].data.source
-                            ? "diff"
-                            : "file"}
-                      </small>
-                    )}
-                  </button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Remove ${attachments[index].data?.name ?? id}`}
-                    onClick={() => draft.removeAttachment(key)}
-                  >
-                    <X />
-                  </Button>
-                  {attachments[index].error && (
-                    <span role="alert">
-                      Attachment unavailable; remove it or refresh access.
-                    </span>
-                  )}
-                </li>
-              ),
-            )}
-          </ul>
-        )}
         {blockedReason && (
           <p role="status" className={styles.composerConnection}>
             {blockedReason}

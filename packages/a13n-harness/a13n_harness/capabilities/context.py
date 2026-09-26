@@ -545,8 +545,6 @@ class HandoffCapability(AbstractModelContextCapability):
             version=_HANDOFF_STATE_VERSION,
         )
         state = restored or _HandoffState()
-        if state.kind == "compaction":
-            state = _HandoffState()
         if restored is not None:
             await ctx.deps.state.write(
                 HANDOFF_CAPABILITY_ID,

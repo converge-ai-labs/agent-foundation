@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, ModelCapability, RunBindings
 from a13n_harness.tools import ToolIdentity, ToolPermissionsCapability
+from pydantic import ValidationError
 from pydantic_ai.capabilities import IncludeToolReturnSchemas, SetToolMetadata, Thinking
 from pydantic_ai.messages import ModelResponse, UserPromptPart
 
@@ -16,10 +17,22 @@ from .test_output_schema import output_model
 FIXTURE = Path(__file__).parent / "fixtures/compatibility/agent_spec_legacy_context_window.json"
 
 
-def test_fixed_agent_spec_preserves_declared_fields_and_legacy_context(tmp_path: Path) -> None:
+def _canonical_spec() -> AgentSpec:
+    raw = json.loads(FIXTURE.read_bytes())
+    characteristics = raw["model_characteristics"]
+    characteristics["context_window_tokens"] = characteristics.pop("context_window")
+    return AgentSpec.from_dict(raw)
+
+
+def test_fixed_legacy_spelling_requires_host_normalization() -> None:
+    with pytest.raises(ValidationError, match="context_window"):
+        AgentSpec.from_file(FIXTURE)
+
+
+def test_fixed_agent_spec_preserves_declared_fields_after_host_normalization(tmp_path: Path) -> None:
     original = FIXTURE.read_bytes()
     raw = json.loads(original)
-    spec = AgentSpec.from_file(FIXTURE)
+    spec = _canonical_spec()
     serialized = spec.model_dump(mode="json", by_alias=True)
     # Never synthesize this input from the current model or replace its old spelling.
     assert raw["model_characteristics"]["context_window"] == 128000
@@ -73,7 +86,7 @@ def test_fixed_agent_spec_preserves_declared_fields_and_legacy_context(tmp_path:
 
 @pytest.mark.anyio
 async def test_fixed_agent_spec_builds_capabilities_and_resumes_without_external_services() -> None:
-    spec = AgentSpec.from_file(FIXTURE)
+    spec = _canonical_spec()
     first_output = {"summary": "first", "score": 1}
     second_output = {"summary": "second", "score": 2}
     first_calls: list[int] = []
@@ -106,7 +119,7 @@ async def test_fixed_agent_spec_builds_capabilities_and_resumes_without_external
         assert model_id == "openai:gpt-5"
         return output_model([second_output], second_calls)
 
-    rebuilt = HarnessBuilder().build(AgentSpec.from_file(FIXTURE), output_type=None)
+    rebuilt = HarnessBuilder().build(_canonical_spec(), output_type=None)
     second = await rebuilt.run(
         "second", bindings=RunBindings.embedded(model_resolver=second_model), previous_state=restored
     )

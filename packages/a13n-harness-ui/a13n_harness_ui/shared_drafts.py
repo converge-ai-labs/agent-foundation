@@ -76,9 +76,7 @@ def composer_values(document: Doc) -> tuple[str, tuple[str, ...]]:
         raise ValueError("A composer supports up to eight Thread attachment references.")
     # Inline registry entries survive text deletion for native undo/redo. Only
     # live tokens select input; dormant entries remain under the full CRDT cap.
-    # Older clients' unpositioned selections retain their trailing order.
     keys = [match[1] for match in _INLINE_ATTACHMENT.finditer(prompt)]
-    keys.extend(key for key in sorted(values) if not key.startswith("inline-"))
     if len(keys) > 8:
         raise ValueError("A composer supports up to eight Thread attachment references.")
     return prompt, tuple(values[key] for key in keys if key in values and values[key] not in {"pending", "failed"})
@@ -168,11 +166,8 @@ class SharedDraft:
                 # selections cannot partially replace the shared text.
                 self.document = candidate
                 text = str(candidate.get("text", type=Text))
-                # Live inline tokens and legacy selections count even while an
-                # upload is incomplete. Dormant undo registry entries do not.
-                nonempty = bool(text.strip()) or any(
-                    not key.startswith("inline-") for key in candidate.get("attachments", type=Map[str]).keys()
-                )
+                # Live tokens count even during uploads; dormant entries do not.
+                nonempty = bool(text.strip())
                 if not nonempty:
                     self.unsent_since = None
                 elif self.unsent_since is None:

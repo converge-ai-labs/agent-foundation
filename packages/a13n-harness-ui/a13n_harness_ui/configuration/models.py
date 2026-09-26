@@ -324,6 +324,14 @@ def _native_model_characteristics(value: object) -> object:
     # Parent document normalizers turn JSON arrays into Python values before
     # nested validation. Preserve native JSON semantics for its frozenset field.
     if isinstance(value, dict):
+        value = value.copy()
+        if "context_window" in value:
+            legacy = value.pop("context_window")
+            if "context_window_tokens" in value and (
+                type(value["context_window_tokens"]) is not type(legacy) or value["context_window_tokens"] != legacy
+            ):
+                raise ValueError("context_window and context_window_tokens must agree")
+            value["context_window_tokens"] = legacy
         return HarnessModelCharacteristics.model_validate_json(json.dumps(value), strict=True)
     return value
 
@@ -879,12 +887,6 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
                 f"Global guidance from the Harness UI configuration directory (AGENTS.md):\n\n{source.content.strip()}",
             )
         return ()
-
-    @property
-    def yaml_digest(self) -> str:
-        """Compatibility alias for the root source digest."""
-
-        return self.root_digest
 
     def source(self, relative_path: str) -> SourceDocument:
         for item in self.sources:

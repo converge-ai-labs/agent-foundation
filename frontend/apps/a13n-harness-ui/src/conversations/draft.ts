@@ -174,11 +174,8 @@ export class ThreadDraft {
       captured.doc
         .getText("text")
         .delete(0, captured.doc.getText("text").length);
-      // Inline registry keys can also be used by uncaptured pasted occurrences,
-      // including peer inserts that have not arrived yet. Keep those identities.
-      const registry = captured.doc.getMap("attachments");
-      for (const key of registry.keys())
-        if (!key.startsWith("inline-")) registry.delete(key);
+      // Keep registry identities: uncaptured paste, undo and late peer inserts
+      // can still reference tokens outside this accepted capture.
     });
     this.undo.stopCapturing();
     Y.applyUpdate(this.doc, Y.encodeStateAsUpdate(captured.doc), captureClear);
@@ -248,11 +245,9 @@ export class ThreadDraft {
     );
     if (!selection) return;
     this.undo.stopCapturing();
-    if (selection.from !== undefined)
-      this.doc
-        .getText("text")
-        .delete(selection.from, selection.to! - selection.from);
-    else this.doc.getMap("attachments").delete(key);
+    this.doc
+      .getText("text")
+      .delete(selection.from, selection.to - selection.from);
     this.undo.stopCapturing();
   }
   connect(transport: Transport, threadId: string, unauthorized: () => void) {

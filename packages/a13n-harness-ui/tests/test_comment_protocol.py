@@ -62,7 +62,7 @@ async def test_saved_comments_concurrent_publish_reconciliation_original_output_
             thread_id = (await api.post("/api/threads", json={})).json()["thread_id"]
             prefix = f"/api/threads/{thread_id}"
             assert (await api.get(prefix + "/comments")).json() == {"comments": [], "next_cursor": None}
-            receipt = (await api.post(prefix + "/submit", json={"prompt": "First"})).json()["receipt_id"]
+            receipt = (await api.post(prefix + "/submit", json={"parts": ["First"]})).json()["receipt_id"]
             assert (await settled(api, receipt))["status"] == "completed"
             before = (await api.get(prefix)).json()
             history = (await api.get(prefix + "/transcript")).json()
@@ -80,7 +80,7 @@ async def test_saved_comments_concurrent_publish_reconciliation_original_output_
             conflict = await api.post(prefix + "/comments", json={**body, "body": "Different"})
             assert conflict.status_code == 409
             # Comments on the already-saved source do not contend with root admission.
-            second = (await api.post(prefix + "/submit", json={"prompt": "Second"})).json()["receipt_id"]
+            second = (await api.post(prefix + "/submit", json={"parts": ["Second"]})).json()["receipt_id"]
             with fail_after(10):
                 await started.wait()
             async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as other:
@@ -148,7 +148,7 @@ async def test_first_comment_checks_selection_at_commit_and_uncertain_outcome(tm
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             thread = (await api.post("/api/threads", json={})).json()["thread_id"]
             prefix = f"/api/threads/{thread}"
-            receipt = (await api.post(prefix + "/submit", json={"prompt": "First"})).json()["receipt_id"]
+            receipt = (await api.post(prefix + "/submit", json={"parts": ["First"]})).json()["receipt_id"]
             await settled(api, receipt)
             target = targets((await api.get(prefix + "/transcript")).json())[0]
             body = publication(target)
@@ -166,7 +166,7 @@ async def test_first_comment_checks_selection_at_commit_and_uncertain_outcome(tm
                 pending = asyncio.create_task(api.post(prefix + "/comments", json=body))
                 with fail_after(10):
                     await validated.wait()
-                receipt = (await api.post(prefix + "/submit", json={"prompt": "Second"})).json()["receipt_id"]
+                receipt = (await api.post(prefix + "/submit", json={"parts": ["Second"]})).json()["receipt_id"]
                 await settled(api, receipt)
                 release.set()
                 stale = await pending
@@ -213,7 +213,7 @@ async def test_comment_commit_failure_rolls_back_without_hint_and_unsaved_output
                 "location": {"kind": "root_text", "message": 0, "part": 0},
             }
             assert (await api.post(prefix + "/comments", json=publication(fake))).status_code == 409
-            receipt = (await api.post(prefix + "/submit", json={"prompt": "First"})).json()["receipt_id"]
+            receipt = (await api.post(prefix + "/submit", json={"parts": ["First"]})).json()["receipt_id"]
             await settled(api, receipt)
             history = (await api.get(prefix + "/transcript")).json()
             target = targets(history)[0]
@@ -272,7 +272,7 @@ async def test_comment_edit_delete_conflicts_captures_and_restart(tmp_path, monk
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             thread = (await api.post("/api/threads", json={})).json()["thread_id"]
             prefix = f"/api/threads/{thread}"
-            receipt = (await api.post(prefix + "/submit", json={"prompt": "First"})).json()["receipt_id"]
+            receipt = (await api.post(prefix + "/submit", json={"parts": ["First"]})).json()["receipt_id"]
             await settled(api, receipt)
             history = (await api.get(prefix + "/transcript")).json()
             request = publication(targets(history)[0], body="Original comment")
@@ -316,7 +316,7 @@ async def test_comment_edit_delete_conflicts_captures_and_restart(tmp_path, monk
             receipt = (
                 await api.post(
                     prefix + "/submit",
-                    json={"prompt": "Use the captured version", "attachment_ids": [captured["attachment_id"]]},
+                    json={"parts": ["Use the captured version", {"attachment_id": captured["attachment_id"]}]},
                 )
             ).json()["receipt_id"]
             assert (await settled(api, receipt))["status"] == "completed"

@@ -2082,7 +2082,7 @@ async def test_command_cwd_resource_prepares_shell_without_file_facet() -> None:
             context=SimpleNamespace(environment=env),
         )
         assert provider.bound.ready_calls == [frozenset({"shell"})]
-        assert resources[0].approval_revision == "/work"
+        assert resources[0].identifier.endswith(":/work")
         assert resources[0].kind == "file"
 
 

@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 import pytest
 import uvicorn
-from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.app import HarnessUiApp, open_harness_ui_app
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.webui import create_webui
 from anyio import fail_after, sleep
@@ -29,17 +29,31 @@ pytestmark = pytest.mark.anyio
 async def listener(
     tmp_path: Path, *, sharing: bool = True, configuration_path: Path | None = None
 ) -> AsyncIterator[tuple[str, str]]:
+    async with listener_with_app(tmp_path, sharing=sharing, configuration_path=configuration_path) as (http, ws, _):
+        yield http, ws
+
+
+@asynccontextmanager
+async def listener_with_app(
+    tmp_path: Path, *, sharing: bool = True, configuration_path: Path | None = None
+) -> AsyncIterator[tuple[str, str, HarnessUiApp]]:
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
-    server = create_webui(
-        lambda: open_harness_ui_app(
+    app: HarnessUiApp | None = None
+
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[HarnessUiApp]:
+        nonlocal app
+        async with open_harness_ui_app(
             settings,
             configuration_path=configuration_path,
             host_mode="webui",
             share_computer=sharing,
             instrumentation=None,
-        ),
-        api_key="test-only-key",
-    )
+        ) as opened:
+            app = opened
+            yield opened
+
+    server = create_webui(factory, api_key="test-only-key")
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
@@ -52,7 +66,8 @@ async def listener(
                     await task
                     raise AssertionError("Listener stopped before startup")
                 await sleep(0.01)
-        yield f"http://127.0.0.1:{port}", f"ws://127.0.0.1:{port}"
+        assert app is not None
+        yield f"http://127.0.0.1:{port}", f"ws://127.0.0.1:{port}", app
     finally:
         native.should_exit = True
         with fail_after(10):

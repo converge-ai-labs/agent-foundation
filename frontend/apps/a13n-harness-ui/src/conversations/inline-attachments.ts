@@ -9,26 +9,19 @@ export const isReadyAttachment = (id: string | undefined): id is string =>
 export type AttachmentSelection = {
   key: string;
   id: string | undefined;
-  from?: number;
-  to?: number;
+  from: number;
+  to: number;
 };
 export function attachmentSelections(doc: Y.Doc): AttachmentSelection[] {
   const registry = doc.getMap<string>("attachments");
-  const inline = [
-    ...doc.getText("text").toString().matchAll(inlinePattern),
-  ].map((match) => ({
-    key: match[1],
-    id: registry.get(match[1]),
-    from: match.index,
-    to: match.index + match[0].length,
-  }));
-  return [
-    ...inline,
-    ...[...registry.keys()]
-      .filter((key) => !key.startsWith("inline-"))
-      .sort()
-      .map((key) => ({ key, id: registry.get(key) })),
-  ];
+  return [...doc.getText("text").toString().matchAll(inlinePattern)].map(
+    (match) => ({
+      key: match[1],
+      id: registry.get(match[1]),
+      from: match.index,
+      to: match.index + match[0].length,
+    }),
+  );
 }
 export type OrderedInputPart = string | { attachment_id: string };
 export function orderedInput(doc: Y.Doc): OrderedInputPart[] {
@@ -40,14 +33,8 @@ export function orderedInput(doc: Y.Doc): OrderedInputPart[] {
       throw new Error(
         "Finish, retry, or remove incomplete attachments before sending.",
       );
-    if (selection.from !== undefined) {
-      if (selection.from > offset)
-        parts.push(text.slice(offset, selection.from));
-      offset = selection.to!;
-    } else if (offset < text.length) {
-      parts.push(text.slice(offset));
-      offset = text.length;
-    }
+    if (selection.from > offset) parts.push(text.slice(offset, selection.from));
+    offset = selection.to;
     parts.push({ attachment_id: selection.id });
   }
   if (offset < text.length) parts.push(text.slice(offset));

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -107,8 +108,10 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
                 assert draft_id == second_frame["draft_id"]
                 a, b = document(first_frame), document(second_frame)
                 a.get("text", type=Text).insert(0, "review ")
-                a.get("attachments", type=Map[str])["context"] = attachment
-                a.get("attachments", type=Map[str])["diff"] = patch_attachment
+                context_key, diff_key = "inline-" + "1" * 36, "inline-" + "2" * 36
+                a.get("attachments", type=Map[str])[context_key] = attachment
+                a.get("attachments", type=Map[str])[diff_key] = patch_attachment
+                a.get("text", type=Text).insert(7, f"\ufffc{context_key}\ufffc\ufffc{diff_key}\ufffc")
                 b.get("text", type=Text).insert(0, "please ")
                 await send(first, draft_id, a)
                 await send(second, draft_id, b)
@@ -120,7 +123,15 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
                 )
                 captured = document(merged)
                 prompt, ids = composer_values(captured)
-                response = await api.post(prefix + "/submit", json={"prompt": prompt, "attachment_ids": ids})
+                response = await api.post(
+                    prefix + "/submit",
+                    json={
+                        "parts": [
+                            re.sub(r"\ufffcinline-[0-9a-f-]{36}\ufffc", "", prompt),
+                            *({"attachment_id": id} for id in ids),
+                        ]
+                    },
+                )
                 assert response.status_code == 200, response.text
                 receipt = response.json()["receipt_id"]
                 with fail_after(10):
@@ -130,11 +141,12 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
                 next_input.get("text", type=Text).insert(0, "NEXT")
                 await send(second, draft_id, next_input)
                 await containing(first, "NEXT")
-                rejected = await api.post(prefix + "/submit", json={"prompt": "busy"})
+                rejected = await api.post(prefix + "/submit", json={"parts": ["busy"]})
                 assert rejected.status_code == 409, rejected.text
                 # Steering translates captured context, not current Host bytes.
                 steer = await api.post(
-                    f"/api/operations/{receipt}/steer", json={"prompt": "use captured", "attachment_ids": ids}
+                    f"/api/operations/{receipt}/steer",
+                    json={"parts": ["use captured", *({"attachment_id": id} for id in ids)]},
                 )
                 assert steer.status_code == 200, steer.text
                 upload = (
@@ -142,15 +154,13 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
                 ).json()
                 binary_steer = await api.post(
                     f"/api/operations/{receipt}/steer",
-                    json={"prompt": "keep", "attachment_ids": [upload["attachment_id"]]},
+                    json={"parts": ["keep", {"attachment_id": upload["attachment_id"]}]},
                 )
                 assert binary_steer.status_code == 200, binary_steer.text
                 assert binary_steer.json()["accepted"]
                 # Positive submit ack permits clearing only captured item identities.
                 with captured.transaction():
                     del captured.get("text", type=Text)[:]
-                    del captured.get("attachments", type=Map[str])["context"]
-                    del captured.get("attachments", type=Map[str])["diff"]
                 await send(first, draft_id, captured)
                 cleared = await frame_until(
                     first, lambda f: f.get("kind") == "draft" and composer_values(document(f)) == ("NEXT", ())
@@ -174,7 +184,9 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
                 ).json()
                 invalid = document(current)
                 invalid.get("text", type=Text).insert(0, "reject whole edit")
-                invalid.get("attachments", type=Map[str])["foreign"] = foreign["attachment_id"]
+                foreign_key = "inline-" + "f" * 36
+                invalid.get("attachments", type=Map[str])[foreign_key] = foreign["attachment_id"]
+                invalid.get("text", type=Text).insert(0, f"\ufffc{foreign_key}\ufffc")
                 await send(rejoined, draft_id, invalid)
                 assert (await frame_until(rejoined, lambda f: "error" in f))["error"]["code"] == "draft_invalid"
             async with connect(ws + f"/api/threads/{other}/draft/connect", proxy=None, origin=http) as isolated:

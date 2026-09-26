@@ -51,7 +51,7 @@ def test_default_description_does_not_invent_standard(value, state):
 
 
 def test_submit_shares_typed_controls_without_changing_flat_wire_shape():
-    request = SubmitRequest(prompt="hello", thinking="high", fast=False, reasoning_mode="standard")
+    request = SubmitRequest(parts=("hello",), thinking="high", fast=False, reasoning_mode="standard")
     assert request.controls() == ModelControlSelection(thinking="high", fast=False, reasoning_mode="standard")
     assert request.model_dump()["reasoning_mode"] == "standard"
 

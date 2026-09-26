@@ -385,10 +385,6 @@ class AgentContext:
     skill_paths: RunSkillPaths = field(default_factory=RunSkillPaths, compare=False)
     tool_metadata: ToolRuntimeMetadata = field(default_factory=ToolRuntimeMetadata, compare=False)
     _capability_provenance: _CapabilityProvenance = field(default_factory=_CapabilityProvenance, repr=False)
-    _managed_tool_ids: Mapping[str, str] = field(
-        default_factory=lambda: MappingProxyType({}),
-        repr=False,
-    )
     _run_capability_instances: dict[str, AbstractCapability[AgentContext]] = field(
         default_factory=dict,
         repr=False,
@@ -416,9 +412,6 @@ class AgentContext:
         from a13n_harness.tools.approval import current_tool_approval
 
         return current_tool_approval(self)
-
-    def _record_managed_tool_surface(self, tool_ids: Mapping[str, str]) -> None:
-        object.__setattr__(self, "_managed_tool_ids", MappingProxyType(dict(tool_ids)))
 
     def _run_capability(self, capability_id: str) -> AbstractCapability[AgentContext] | None:
         """Return a logical-run Capability replacement cached across inner Agent attempts."""

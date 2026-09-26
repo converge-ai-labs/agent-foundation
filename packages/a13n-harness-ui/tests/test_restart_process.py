@@ -122,7 +122,7 @@ def test_sigterm_restarts_task_once_in_the_next_process(tmp_path):
         response = api.post("/api/threads", json={})
         assert response.status_code == 200, response.text
         thread_id = response.json()["thread_id"]
-        response = api.post(f"/api/threads/{thread_id}/submit", json={"prompt": "Continue my work"})
+        response = api.post(f"/api/threads/{thread_id}/submit", json={"parts": ["Continue my work"]})
         assert response.status_code == 200, response.text
         wait_for_file(tmp_path / "root-started")
         # No prepare request, release file, or browser replay. The context sends

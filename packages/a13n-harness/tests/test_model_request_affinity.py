@@ -20,7 +20,6 @@ from a13n_harness import (
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models import (
     MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
-    MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
 )
 from openai import AsyncOpenAI
 from pydantic_ai.messages import ModelMessage
@@ -123,7 +122,7 @@ async def test_builder_overrides_environment_for_parent_and_child(
     monkeypatch: pytest.MonkeyPatch, session_enabled: bool, cache_enabled: bool
 ) -> None:
     # Explicit values must not even parse the corresponding ambient value.
-    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, "invalid")
+    monkeypatch.setenv("A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED", "invalid")
     monkeypatch.setenv(MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, "invalid")
     seen: list[ModelSettings | None] = []
 
@@ -132,8 +131,11 @@ async def test_builder_overrides_environment_for_parent_and_child(
         yield "ok"
 
     model = FunctionModel(stream_function=stream, model_name="gpt-5")
-    builder = HarnessBuilder(x_session_id_enabled=session_enabled, openai_prompt_cache_key_enabled=cache_enabled)
-    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, str(not session_enabled))
+    builder = HarnessBuilder(
+        session_affinity_header="x-session-id" if session_enabled else None,
+        openai_prompt_cache_key_enabled=cache_enabled,
+    )
+    monkeypatch.setenv("A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED", str(not session_enabled))
     monkeypatch.setenv(MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, str(not cache_enabled))
     executable = builder.build(
         AgentSpec(),
@@ -159,11 +161,11 @@ async def test_builder_overrides_environment_for_parent_and_child(
         assert seen[-1] == (expected or None)
 
 
-@pytest.mark.parametrize("override", ["x_session_id_enabled", "openai_prompt_cache_key_enabled"])
+@pytest.mark.parametrize("override", ["session_affinity_header", "openai_prompt_cache_key_enabled"])
 async def test_unspecified_builder_switch_still_follows_environment(
     monkeypatch: pytest.MonkeyPatch, override: str
 ) -> None:
-    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, "false")
+    monkeypatch.setenv("A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED", "false")
     monkeypatch.setenv(MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, "false")
     seen: list[ModelSettings | None] = []
 
@@ -171,23 +173,21 @@ async def test_unspecified_builder_switch_still_follows_environment(
         seen.append(info.model_settings)
         yield "ok"
 
-    executable = HarnessBuilder(**{override: True}).build(
+    executable = HarnessBuilder(**{override: "x-session-id" if override == "session_affinity_header" else True}).build(
         AgentSpec(), model=FunctionModel(stream_function=stream, model_name="gpt-5"), output_type=str
     )
     result = await executable.run("hello", bindings=RunBindings.embedded())
     assert result.output_or_raise() == "ok"
     assert result.state is not None
     expected = ModelSettings()
-    if override == "x_session_id_enabled":
+    if override == "session_affinity_header":
         expected["extra_headers"] = {"x-session-id": derive_model_affinity_id(result.state.thread_id)}
     else:
         expected["openai_prompt_cache_key"] = derive_model_affinity_id(result.state.thread_id)
     assert seen == [expected]
 
 
-@pytest.mark.parametrize(
-    ("parameter", "value"), [("x_session_id_enabled", 1), ("openai_prompt_cache_key_enabled", "false")]
-)
+@pytest.mark.parametrize(("parameter", "value"), [("openai_prompt_cache_key_enabled", "false")])
 def test_builder_rejects_non_boolean_patch_override(parameter: str, value: Any) -> None:
     with pytest.raises(DefinitionError) as exc_info:
         HarnessBuilder(**{parameter: value})
@@ -208,7 +208,9 @@ async def test_explicit_affinity_survives_name_filter_and_disabled_patches(model
         seen.append(info.model_settings)
         yield "ok"
 
-    executable = HarnessBuilder(x_session_id_enabled=enabled, openai_prompt_cache_key_enabled=enabled).build(
+    executable = HarnessBuilder(
+        session_affinity_header="x-session-id" if enabled else None, openai_prompt_cache_key_enabled=enabled
+    ).build(
         AgentSpec(model_settings=settings),
         model=FunctionModel(stream_function=stream, model_name=model_name),
         output_type=str,
@@ -347,17 +349,17 @@ def test_affinity_header_rejects_invalid_or_owned_names(header) -> None:
         HarnessBuilder(session_affinity_header=header)
 
 
-def test_custom_affinity_replaces_explicit_legacy_switch(monkeypatch) -> None:
+def test_affinity_ignores_removed_legacy_environment(monkeypatch) -> None:
     from a13n_harness.models.request_headers import ModelRequestPatchConfiguration
 
-    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, "true")
+    monkeypatch.setenv("A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED", "true")
     configuration = ModelRequestPatchConfiguration.from_environment(session_affinity_header="X-Custom")
     assert configuration.session_affinity_header == "x-custom"
-    assert ModelRequestPatchConfiguration.from_environment(x_session_id_enabled=False).session_affinity_header is None
+    assert ModelRequestPatchConfiguration.from_environment().session_affinity_header is None
 
 
 def test_custom_header_does_not_consult_legacy_environment_but_validates_host_arguments(monkeypatch):
-    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, "invalid")
+    monkeypatch.setenv("A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED", "invalid")
     HarnessBuilder(session_affinity_header="x-custom")
-    with pytest.raises(DefinitionError):
+    with pytest.raises(TypeError):
         HarnessBuilder(session_affinity_header="x-custom", x_session_id_enabled="yes")

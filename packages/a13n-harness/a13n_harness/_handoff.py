@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -19,9 +18,22 @@ class _HandoffState(BaseModel):
     operation_id: str | None = Field(default=None, min_length=1, max_length=128)
     summary: str | None = None
     files: tuple[str, ...] = Field(default=(), max_length=64)
-    kind: Literal["handoff", "compaction"] = Field(default="handoff", exclude=True)
-    preserve_recent_user_turns: int = Field(default=0, ge=0, le=32, exclude=True)
-    target_tokens: int | None = Field(default=None, gt=0, exclude=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _decode_legacy_state(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        if value.get("kind", "handoff") not in {"handoff", "compaction"}:
+            raise ValueError("handoff kind is invalid")
+        if value.get("kind") == "compaction":
+            # Old compaction state is not a pending semantic handoff.
+            return {}
+        return {
+            key: item
+            for key, item in value.items()
+            if key not in {"kind", "preserve_recent_user_turns", "target_tokens"}
+        }
 
     @field_validator("files")
     @classmethod
@@ -36,8 +48,7 @@ class _HandoffState(BaseModel):
     def _validate_operation_identity(self) -> _HandoffState:
         if self.operation_id is None:
             return self
-        expected_prefix = "compaction-" if self.kind == "compaction" else "handoff-"
-        if not self.operation_id.startswith(expected_prefix):
+        if not self.operation_id.startswith("handoff-"):
             raise ValueError("handoff operation identity is invalid")
         return self
 

@@ -34,7 +34,7 @@ async def test_approval_projection_preserves_omission_and_override_capabilities(
     assert isinstance(approval, ApprovalRequestView)
     assert approval.arguments_omitted is (oversized == "arguments")
     assert approval.metadata_omitted is (oversized == "metadata")
-    assert approval.override_allowed is (not bound and oversized != "arguments")
+    assert approval.override_allowed is (oversized != "arguments")
     if oversized == "metadata":
         assert approval.metadata is None
     else:

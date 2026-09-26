@@ -147,7 +147,7 @@ async def test_star_during_run_survives_completion_and_is_not_duplicated(tmp_pat
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             thread = (await api.post("/api/threads", json={})).json()
             thread_id = thread["thread_id"]
-            receipt = (await api.post(f"/api/threads/{thread_id}/submit", json={"prompt": "Work"})).json()
+            receipt = (await api.post(f"/api/threads/{thread_id}/submit", json={"parts": ["Work"]})).json()
             with fail_after(10):
                 await started.wait()
             updated = await api.patch(

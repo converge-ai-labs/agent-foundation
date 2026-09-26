@@ -20,7 +20,7 @@ type ModelProviderFactory = Callable[[str], Provider[Any]]
 type GatewayModelProviderFactory = Callable[[str, str], Provider[Any]]
 type ModelPatch = Callable[[Model], Model]
 
-_PROVIDER_PREFIX_ALIASES: dict[str, str] = {
+ROUTE_ALIASES: dict[str, str] = {
     "gemini": "google-cloud",
     "google-gla": "google-cloud",
     "google-vertex": "google-cloud",
@@ -40,7 +40,7 @@ def _normalize_model_string(model: str) -> str:
     if provider_separator:
         if not provider_name or not model_name:
             raise ValueError("Model strings with a provider must use format provider:model")
-        provider_name = _PROVIDER_PREFIX_ALIASES.get(provider_name, provider_name)
+        provider_name = ROUTE_ALIASES.get(provider_name, provider_name)
         route = f"{provider_name}:{model_name}"
 
     return f"{gateway}@{route}" if separator else route

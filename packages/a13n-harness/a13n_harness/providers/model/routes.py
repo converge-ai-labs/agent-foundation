@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 import httpx2
 from anyio import move_on_after
 
+from ...models.inference import ROUTE_ALIASES
 from ...models.transport import create_model_http_client
 from ..endpoint_policy import EndpointPolicy
 from .builtins import BUILT_IN_MODEL_PROVIDERS
@@ -39,7 +40,6 @@ class RouteSpec:
 
 # Native route names select a calling API, never a hosted account or Model identity.
 ROUTES = {
-    "openai": RouteSpec("openai", "openai.responses"),
     "openai-responses": RouteSpec("openai", "openai.responses"),
     "openai-chat": RouteSpec("openai", "openai.chat_completions"),
     "anthropic": RouteSpec("anthropic", "anthropic.messages"),
@@ -51,8 +51,6 @@ ROUTES = {
     "moonshotai": RouteSpec("moonshot", "openai.chat_completions", "https://api.moonshot.ai/v1"),
     "grok": RouteSpec("openai", "openai.chat_completions", "https://api.x.ai/v1"),
 }
-# Google's developer and cloud transports share one inferred provider class.
-ROUTE_ALIASES = {"gemini": "google-cloud", "google-gla": "google-cloud", "google-vertex": "google-cloud"}
 _OPENAI_CLIENT_ROUTES = frozenset({"together", "fireworks"})
 
 

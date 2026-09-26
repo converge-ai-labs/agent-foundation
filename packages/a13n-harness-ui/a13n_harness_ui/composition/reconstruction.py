@@ -256,7 +256,6 @@ class AgentReconstructor:
             executable = HarnessBuilder(
                 configured_plugins_enabled=False,
                 instrumentation=self._instrumentation,
-                x_session_id_enabled=False,  # Each immutable Model recipe owns gateway affinity.
             ).build(definition, pricing_catalog=pricing_catalog)
         except CompositionError:
             raise
@@ -302,7 +301,7 @@ class AgentReconstructor:
         definition = AgentDefinition(
             agent=AgentSpec(
                 model=recipe_id,
-                system_prompt=list(node.system_prompt) if node.system_prompt is not None else None,
+                system_prompt=list(node.system_prompt),
                 instructions=list(node.instructions),
                 model_settings=dict(node.model.settings),
                 model_characteristics=node.model.model_characteristics,
@@ -314,7 +313,6 @@ class AgentReconstructor:
         executable = HarnessBuilder(
             configured_plugins_enabled=False,
             instrumentation=self._instrumentation,
-            x_session_id_enabled=False,
         ).build(definition, pricing_catalog=pricing_catalog)
         return ReconstructedAgent(
             executable=cast(ExecutableAgent[str], executable),
@@ -449,8 +447,8 @@ class AgentReconstructor:
                 usage_limits=UsageLimits(request_limit=None),
                 model_settings=dict(node.model.settings),
                 model_characteristics=node.model.model_characteristics,
-                system_prompt=list(node.instructions if node.system_prompt is None else node.system_prompt),
-                instructions=list(node.instructions) if node.system_prompt is not None else None,
+                system_prompt=list(node.system_prompt),
+                instructions=list(node.instructions),
             ),
             output_type=str,
             definition_id=f"a13n-harness-ui:{node.source_kind}:{node.source_id}",

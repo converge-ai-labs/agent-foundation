@@ -1,6 +1,7 @@
 import * as Y from "yjs";
 import type { Schema } from "../transport/client";
 import { decode, encode, ThreadDraft } from "./draft";
+import { attachmentToken } from "./inline-attachments";
 
 const STORAGE_KEY = "a13n-harness-ui.new-draft";
 
@@ -22,7 +23,7 @@ function restore(): Omit<NewDraft, "save"> | undefined {
   if (
     saved?.version !== 1 ||
     typeof saved.threadId !== "string" ||
-    !/^thread_[0-9a-f]{32}$/.test(saved.threadId) ||
+    !/^thread[-_][0-9a-f]{32}$/.test(saved.threadId) ||
     typeof saved.update !== "string" ||
     typeof saved.created !== "boolean" ||
     typeof saved.attempted !== "boolean" ||
@@ -49,6 +50,21 @@ function restore(): Omit<NewDraft, "save"> | undefined {
   const composer = new ThreadDraft();
   try {
     Y.applyUpdate(composer.doc, decode(saved.update));
+    // Historical browser drafts stored trailing attachments without positions.
+    // Convert once at restoration; current editing and Send use inline tokens.
+    composer.doc.transact(() => {
+      const registry = composer.doc.getMap<string>("attachments");
+      const text = composer.doc.getText("text");
+      for (const oldKey of [...registry.keys()]
+        .filter((key) => !key.startsWith("inline-"))
+        .sort()) {
+        const key = `inline-${crypto.randomUUID()}`;
+        registry.set(key, registry.get(oldKey)!);
+        text.insert(text.length, attachmentToken(key));
+        registry.delete(oldKey);
+      }
+    });
+    composer.undo.clear();
   } catch (error) {
     composer.undo.destroy();
     composer.doc.destroy();
@@ -92,7 +108,7 @@ export class NewDraftStore {
   private unsubscribe: (() => void) | undefined;
   private restored = false;
 
-  get(composers: Map<string, ThreadDraft>, legacyId?: string): NewDraft {
+  get(composers: Map<string, ThreadDraft>): NewDraft {
     if (!this.current) {
       let retained: Omit<NewDraft, "save"> | undefined;
       if (!this.restored) {
@@ -105,10 +121,7 @@ export class NewDraftStore {
       }
       this.retain(
         retained ?? {
-          threadId:
-            legacyId && /^thread_[0-9a-f]{32}$/.test(legacyId)
-              ? legacyId
-              : `thread_${crypto.randomUUID().replaceAll("-", "")}`,
+          threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,
           defaults: { project_id: null },
           created: false,
           attempted: false,

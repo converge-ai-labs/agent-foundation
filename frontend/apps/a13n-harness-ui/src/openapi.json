@@ -2290,34 +2290,6 @@
         }
       }
     },
-    "/api/threads/preview": {
-      "post": {
-        "summary": "Preview Thread",
-        "operationId": "preview_thread_api_threads_preview_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewThreadDefaults"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ThreadConfiguration"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/threads/configuration-preview": {
       "post": {
         "summary": "Explain Creation",
@@ -2540,53 +2512,6 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ThreadConfigurationMutationInput"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/operations/{receipt_id}/configuration": {
-      "get": {
-        "summary": "Operation Configuration",
-        "operationId": "operation_configuration_api_operations__receipt_id__configuration_get",
-        "parameters": [
-          {
-            "name": "receipt_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Receipt Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/CapturedConfiguration"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "title": "Response Operation Configuration Api Operations  Receipt Id  Configuration Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
               }
             }
           }
@@ -3212,61 +3137,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ThreadUsageView"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/threads/{thread_id}/notes": {
-      "get": {
-        "summary": "Notes",
-        "operationId": "notes_api_threads__thread_id__notes_get",
-        "parameters": [
-          {
-            "name": "thread_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Thread Id"
-            }
-          },
-          {
-            "name": "expected_continuation_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Expected Continuation Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotePage"
                 }
               }
             }
@@ -3985,74 +3855,6 @@
         }
       }
     },
-    "/api/threads/{thread_id}/tasks": {
-      "get": {
-        "summary": "Tasks",
-        "operationId": "tasks_api_threads__thread_id__tasks_get",
-        "parameters": [
-          {
-            "name": "thread_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Thread Id"
-            }
-          },
-          {
-            "name": "expected_continuation_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 80
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Expected Continuation Id"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1,
-              "default": 100,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskPage"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/threads/{thread_id}/children": {
       "get": {
         "summary": "Children",
@@ -4121,151 +3923,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChildExecutionPage"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/threads/{thread_id}/children/wait": {
-      "get": {
-        "summary": "Wait Children",
-        "operationId": "wait_children_api_threads__thread_id__children_wait_get",
-        "parameters": [
-          {
-            "name": "thread_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Thread Id"
-            }
-          },
-          {
-            "name": "execution_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 80
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Execution Id"
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 2048
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1,
-              "default": 20,
-              "title": "Limit"
-            }
-          },
-          {
-            "name": "timeout_seconds",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "number",
-              "maximum": 60,
-              "minimum": 0,
-              "default": 10,
-              "title": "Timeout Seconds"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChildExecutionPage"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/threads/{thread_id}/children/{execution_id}/review": {
-      "get": {
-        "summary": "Child Review",
-        "operationId": "child_review_api_threads__thread_id__children__execution_id__review_get",
-        "parameters": [
-          {
-            "name": "thread_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Thread Id"
-            }
-          },
-          {
-            "name": "execution_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Execution Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReviewView"
                 }
               }
             }
@@ -4860,45 +4517,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TranscriptInputPage"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/threads/{thread_id}/touch": {
-      "post": {
-        "summary": "Touch Thread",
-        "operationId": "touch_thread_api_threads__thread_id__touch_post",
-        "parameters": [
-          {
-            "name": "thread_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Thread Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ThreadSummary"
                 }
               }
             }
@@ -11463,100 +11081,6 @@
         "title": "RestrictedSandbox",
         "type": "object"
       },
-      "ReviewView": {
-        "properties": {
-          "lifecycle": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "running",
-              "closed",
-              "unavailable"
-            ],
-            "title": "Lifecycle"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "json",
-              "shell",
-              "task",
-              "child",
-              "diff",
-              "generic"
-            ],
-            "title": "Kind"
-          },
-          "title": {
-            "type": "string",
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Title"
-          },
-          "summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Summary"
-          },
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
-          "value": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/JsonValue"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "truncated": {
-            "type": "boolean",
-            "title": "Truncated",
-            "default": false
-          },
-          "omitted": {
-            "type": "boolean",
-            "title": "Omitted",
-            "default": false
-          },
-          "unavailable_reason": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2048
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unavailable Reason"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "lifecycle",
-          "kind",
-          "title"
-        ],
-        "title": "ReviewView"
-      },
       "RootActivityState": {
         "enum": [
           "inactive",
@@ -17606,42 +17130,20 @@
               }
             ]
           },
-          "prompt": {
-            "default": "",
-            "maxLength": 262144,
-            "title": "Prompt",
-            "type": "string"
-          },
-          "attachment_ids": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 8,
-            "title": "Attachment Ids",
-            "type": "array"
-          },
           "parts": {
-            "anyOf": [
-              {
-                "items": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InputAttachmentReference"
-                    }
-                  ]
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
                 },
-                "maxItems": 1024,
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parts"
+                {
+                  "$ref": "#/components/schemas/InputAttachmentReference"
+                }
+              ]
+            },
+            "maxItems": 1024,
+            "title": "Parts",
+            "type": "array"
           },
           "skill_references": {
             "default": [],
@@ -17697,48 +17199,29 @@
             "title": "Model Id"
           }
         },
+        "required": [
+          "parts"
+        ],
         "title": "SubmitRequest",
         "type": "object"
       },
       "RootSteerRequest": {
         "additionalProperties": false,
         "properties": {
-          "prompt": {
-            "default": "",
-            "maxLength": 262144,
-            "title": "Prompt",
-            "type": "string"
-          },
-          "attachment_ids": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 8,
-            "title": "Attachment Ids",
-            "type": "array"
-          },
           "parts": {
-            "anyOf": [
-              {
-                "items": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InputAttachmentReference"
-                    }
-                  ]
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
                 },
-                "maxItems": 1024,
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parts"
+                {
+                  "$ref": "#/components/schemas/InputAttachmentReference"
+                }
+              ]
+            },
+            "maxItems": 1024,
+            "title": "Parts",
+            "type": "array"
           },
           "skill_references": {
             "default": [],
@@ -17762,6 +17245,9 @@
             "title": "Source Id"
           }
         },
+        "required": [
+          "parts"
+        ],
         "title": "RootSteerRequest",
         "type": "object"
       }

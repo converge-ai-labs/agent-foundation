@@ -7,6 +7,7 @@ from copy import deepcopy
 import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
+    AgentContext,
     DeferredToolResume,
     HarnessBuilder,
     HarnessRunResultEvent,
@@ -24,7 +25,7 @@ from a13n_harness.tools import (
     ToolOutputPolicy,
     recovery_retryable,
 )
-from pydantic_ai import Tool
+from pydantic_ai import RunContext, Tool
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability, Toolset
 from pydantic_ai.messages import ModelRequest, ModelResponse, RetryPromptPart, ToolCallPart, ToolReturnPart
@@ -190,7 +191,7 @@ async def test_recovery_approval_still_evaluates_current_managed_policy(decision
         return "changed"
 
     async def resolve(arguments, *, context):
-        return (CanonicalResource(namespace="test", kind="item", identifier="1", approval_revision="v1"),)
+        return (CanonicalResource(namespace="test", kind="item", identifier="1"),)
 
     async def policy(invocation, metadata, *, context):
         checked.append(invocation)
@@ -242,6 +243,67 @@ async def test_recovery_approval_still_evaluates_current_managed_policy(decision
         assert executed == ["changed"]
     else:
         assert first.output_or_raise() == "done"
+
+
+@pytest.mark.parametrize("mode", ["allow", "ask", "review"])
+async def test_recovery_dispatch_is_not_a_host_approval(mode) -> None:
+    from a13n_harness.capabilities import ToolReviewAssessment, ToolReviewResult
+    from a13n_harness.capabilities.tool_review import ToolReviewPolicy
+    from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
+
+    executed = []
+    validated = []
+    reviewed = []
+
+    class Reviewer:
+        async def review(self, request, *, context):
+            reviewed.append(request.approved)
+            return ToolReviewResult(assessment=ToolReviewAssessment(risk="extra_high", reason="Confirm retry"))
+
+    def validate(ctx: RunContext[AgentContext]) -> None:
+        validated.append(ctx.tool_call_approved)
+
+    def read(ctx: RunContext[AgentContext]) -> str:
+        executed.append(ctx.deps.tool_approval.approved)
+        return "read"
+
+    async def model(messages, info) -> AsyncIterator[str]:
+        yield "done"
+
+    executable = HarnessBuilder(instrumentation=None).build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=[
+            Capability(tools=[recovery_retryable(Tool(read, args_validator=validate))]),
+            ToolPermissionsCapability(
+                ToolPermissions(default=mode),
+                reviewer=Reviewer(),
+                policy=ToolReviewPolicy(on_flagged="approval_required"),
+            ),
+        ],
+    )
+    saved = HarnessState.new(
+        message_history=(ModelResponse(parts=[ToolCallPart("read", {}, tool_call_id="pending")], state="interrupted"),)
+    )
+    first = await executable.run(previous_state=saved)
+    if mode == "allow":
+        assert first.status == "completed"
+        assert executed == [False]
+        assert validated == [False]
+        assert reviewed == []
+        return
+    assert first.status == "suspended"
+    assert executed == validated == []
+    assert reviewed == ([False] if mode == "review" else [])
+    assert first.deferred is not None
+    second = await executable.run(
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(first.deferred, first.deferred.build_results(approve_all=True)),
+    )
+    assert second.status == "completed"
+    assert executed == validated == [True]
+    assert reviewed == ([False, True] if mode == "review" else [])
 
 
 def test_interrupted_recovery_preserves_results_across_multiple_requests() -> None:

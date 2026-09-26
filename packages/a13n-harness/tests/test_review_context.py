@@ -92,7 +92,7 @@ async def test_opted_in_review_only_denies_extra_high_by_default(risk):
     assert bool(executed) is (risk != ToolRiskLevel.EXTRA_HIGH)
     records = _history(result.state).records
     assert records[0].risk == risk
-    assert not records[0].approved_sources
+    assert not records[0].approved
     assert records[0].outcome == "not_executed"
     actions = [record for record in records if record.kind == "action"]
     assert len(actions) == (0 if risk == ToolRiskLevel.EXTRA_HIGH else 1)
@@ -171,17 +171,17 @@ async def test_review_history_survives_resume_but_never_grants_authority():
     )
     assert resumed.status == "completed" and executed == [True]
     request = reviewer.requests[1]
-    assert request.approved_sources == ("reviewer",)
+    assert request.approved is True
     assert request.previous_reviews[0].risk == "extra_high"
     assert request.previous_reviews[0].decision == "approval_required"
-    assert not request.previous_reviews[0].approved_sources
+    assert not request.previous_reviews[0].approved
     assert request.previous_reviews[0].outcome == "not_executed"
 
     # A new turn sees trajectory, not tool returns, and requests fresh approval.
     later = await agent.run("Now do it again", previous_state=resumed.state, bindings=RunBindings.embedded())
     assert later.status == "suspended" and len(executed) == 1
     request = reviewer.requests[-1]
-    assert request.approved_sources == ()
+    assert request.approved is False
     assert any(item.outcome == "tool_returned" for item in request.recent_actions)
     assert "large tool return" not in request.to_prompt()
     assert "Update the workspace" in request.task and "Now do it again" in request.task
@@ -207,7 +207,7 @@ async def test_new_deny_policy_wins_over_pending_human_approval():
         bindings=RunBindings.embedded(),
     )
     assert resumed.status == "completed" and not executed
-    assert reviewer.requests[-1].approved_sources == ("reviewer",)
+    assert reviewer.requests[-1].approved is True
     assert _history(resumed.state).records[-1].decision == "deny"
 
 
@@ -305,7 +305,7 @@ async def test_shell_model_receives_same_xml_task_schema_history_and_approval_co
         parameters_schema={"type": "object"},
         task="Run a focused check",
         context={"default_mount": "workspace"},
-        approved_sources=("reviewer",),
+        approved=True,
         previous_reviews=(
             ReviewEvidence(
                 run_id="before",
@@ -330,7 +330,7 @@ async def test_shell_model_receives_same_xml_task_schema_history_and_approval_co
     )
     assert result.assessment.risk == "low"
     assert prompts == [shared.to_prompt()]
-    for text in ("Run a focused check", "parameters-schema", "workspace", "verified-approval-sources", "Prior risk"):
+    for text in ("Run a focused check", "parameters-schema", "workspace", "approved", "Prior risk"):
         assert text in prompts[0]
 
 
@@ -378,8 +378,8 @@ async def test_approval_denial_is_observed_without_reviewer_replay_or_execution(
     assert len(reviewer.requests) == 1
     denials = [record for record in _history(result.state).records if record.kind == "approval"]
     assert len(denials) == 1
-    assert denials[0].denied_sources == (("tool",) if native else ("reviewer",))
-    assert not denials[0].approved_sources
+    assert denials[0].decision == "deny"
+    assert not denials[0].approved
     assert denials[0].outcome == "not_executed"
 
 
@@ -460,3 +460,20 @@ async def test_identity_wrapper_preserves_external_defaults_and_explicit_modes(m
         assert result.status == ("completed" if mode == "deny" else "suspended")
         if mode != "deny":
             assert len(result.deferred.calls) == 1
+
+
+def test_historical_review_sources_decode_as_advisory_observations():
+    record = ReviewEvidence.model_validate(
+        {
+            "run_id": "old-run",
+            "tool_call_id": "old-call",
+            "tool_id": "old-tool",
+            "binding": "old-binding",
+            "kind": "approval",
+            "approved_sources": ["permission", "reviewer"],
+            "denied_sources": [],
+        }
+    )
+    assert record.approved is True
+    assert "approved_sources" not in record.model_dump()
+    assert "denied_sources" not in record.model_dump()

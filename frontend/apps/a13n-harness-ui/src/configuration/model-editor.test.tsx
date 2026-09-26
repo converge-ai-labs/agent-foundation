@@ -188,20 +188,29 @@ function source() {
   return (screen.getByLabelText("Advanced source") as HTMLTextAreaElement)
     .value;
 }
-it("preserves YAML comments, empty capabilities and the authored context alias", async () => {
-  mount();
-  const input = await screen.findByLabelText("Working context budget");
-  expect((input as HTMLInputElement).value).toBe("128000");
-  expect(source()).toBe(original);
-  fireEvent.change(input, { target: { value: "64000" } });
-  expect(parse(source()).model_characteristics).toEqual({
-    context_window: 64000,
-    capabilities: [],
-  });
-  expect(source()).toContain("# Local budget");
-  expect(source()).toContain("# Keep custom setting");
-  expect(parse(source()).settings).toEqual(parse(original).settings);
-});
+it.each([false, true])(
+  "preserves comments and saves only the canonical context field (both fields: %s)",
+  async (both) => {
+    const initial = both
+      ? original.replace(
+          "context_window: 128000",
+          "context_window: 128000\n  context_window_tokens: 128000",
+        )
+      : original;
+    mount(initial);
+    const input = await screen.findByLabelText("Working context budget");
+    expect((input as HTMLInputElement).value).toBe("128000");
+    expect(source()).toBe(initial);
+    fireEvent.change(input, { target: { value: "64000" } });
+    expect(parse(source()).model_characteristics).toEqual({
+      context_window_tokens: 64000,
+      capabilities: [],
+    });
+    expect(source()).toContain("# Local budget");
+    expect(source()).toContain("# Keep custom setting");
+    expect(parse(source()).settings).toEqual(parse(original).settings);
+  },
+);
 it("provider defaults remove preset-owned fields without removing custom native settings", async () => {
   mount();
   const user = userEvent.setup();

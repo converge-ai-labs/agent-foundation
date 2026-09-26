@@ -731,7 +731,8 @@ export function ModelFields({
   const contextAlias =
     characteristics &&
     "context_window" in characteristics &&
-    !("context_window_tokens" in characteristics);
+    (!("context_window_tokens" in characteristics) ||
+      characteristics.context_window_tokens === characteristics.context_window);
   if (contextAlias) {
     characteristics.context_window_tokens = characteristics.context_window;
     delete characteristics.context_window;
@@ -755,14 +756,6 @@ export function ModelFields({
         if (!value && raw?.name === "Untitled" && suggestedName)
           next = updateDocument(next, ["name"], suggestedName);
         const fields = { ...recipe };
-        if (contextAlias && fields.model_characteristics) {
-          const policy: Record<string, unknown> = {
-            ...fields.model_characteristics,
-          };
-          policy.context_window = policy.context_window_tokens;
-          delete policy.context_window_tokens;
-          fields.model_characteristics = policy;
-        }
         const patch = (path: string[], previous: unknown, field: unknown) => {
           if (JSON.stringify(previous) === JSON.stringify(field)) return;
           if (

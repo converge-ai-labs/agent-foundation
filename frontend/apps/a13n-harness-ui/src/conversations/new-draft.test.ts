@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { ThreadDraft, values } from "./draft";
+import { encode, ThreadDraft, values } from "./draft";
 import { NewDraftStore } from "./new-draft";
 
 const stores: NewDraftStore[] = [];
@@ -153,4 +153,42 @@ it("does not treat archiving as acknowledgement of an unknown submission", () =>
   expect(owner.current).toBe(old);
   owner.detachArchived(old.threadId);
   expect(owner.current!.composer.submission.kind).toBe("unknown");
+});
+
+it("restores old Thread identities and trailing attachments without replaying an unknown send", () => {
+  const doc = new Y.Doc();
+  doc.getText("text").insert(0, "Saved text");
+  doc.getMap("attachments").set("old-selection", "attachment-saved");
+  const id = `thread-${"b".repeat(32)}`;
+  localStorage.setItem(
+    "a13n-harness-ui.new-draft",
+    JSON.stringify({
+      version: 1,
+      threadId: id,
+      defaults: { project_id: null },
+      created: true,
+      attempted: true,
+      submission: "pending",
+      update: encode(Y.encodeStateAsUpdate(doc)),
+    }),
+  );
+  const draft = store().get(composers);
+  expect(draft.threadId).toBe(id);
+  expect(draft.composer.submission.kind).toBe("unknown");
+  expect(values(draft.composer.doc)).toEqual({
+    prompt: "Saved text",
+    attachment_ids: ["attachment-saved"],
+  });
+  const keys = [...draft.composer.doc.getMap("attachments").keys()];
+  expect(keys).toHaveLength(1);
+  expect(keys[0]).toMatch(/^inline-/);
+  expect(draft.composer.doc.getText("text").toString()).toContain(
+    `\ufffc${keys[0]}\ufffc`,
+  );
+  draft.save();
+  const restored = store().get(composers);
+  expect(restored.threadId).toBe(id);
+  expect(restored.composer.submission.kind).toBe("unknown");
+  expect([...restored.composer.doc.getMap("attachments").keys()]).toEqual(keys);
+  doc.destroy();
 });

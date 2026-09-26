@@ -1039,14 +1039,13 @@ async def test_system_prompt_is_always_frozen_separately_from_additions(tmp_path
 async def test_legacy_capture_keeps_original_combined_prompt_without_new_defaults(tmp_path: Path) -> None:
     source = await load_harness_ui_configuration(_write_source(tmp_path))
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
-    legacy_root = composition.root.model_copy(
-        update={"system_prompt": None, "instructions": ("Original frozen identity", "Original additions")}
-    )
-    rebuilt = AgentReconstructor(_catalog()).reconstruct(
-        composition.model_copy(update={"root": legacy_root}), subagent_operator=_UnusedOperator()
-    )
+    payload = composition.model_dump(mode="json")
+    payload["root"].pop("system_prompt")
+    payload["root"]["instructions"] = ["Original frozen identity", "Original additions"]
+    restored = type(composition).model_validate(payload)
+    rebuilt = AgentReconstructor(_catalog()).reconstruct(restored, subagent_operator=_UnusedOperator())
     assert rebuilt.executable.definition.agent.system_prompt == ["Original frozen identity", "Original additions"]
-    assert rebuilt.executable.definition.agent.instructions is None
+    assert rebuilt.executable.definition.agent.instructions == []
 
 
 async def test_explicit_notes_opt_out_overrides_the_enabled_default(tmp_path: Path) -> None:

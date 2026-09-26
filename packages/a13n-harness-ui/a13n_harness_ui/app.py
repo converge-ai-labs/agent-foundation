@@ -1740,7 +1740,7 @@ class HarnessUiApp:
         if isinstance(prompt, ComposerInput):
             if not prompt.text.strip() and not uploads and not resolved and not attachments:
                 raise ValueError("A root message must not be blank.")
-            source_id = prompt.source_id or f"input-{uuid4().hex}"
+            source_id = prompt.source_id or f"input_{uuid4().hex}"
             selected = iter(resolved)
             for index, part in enumerate(prompt.parts):
                 if isinstance(part, str):

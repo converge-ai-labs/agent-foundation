@@ -322,7 +322,7 @@ Within `model_characteristics`:
 | `proactive_context_management_threshold` | `0.65`                              | Fraction 0–1, or `null` to disable the derived proactive threshold                                                                                           |
 | `compact_threshold`                      | `0.90`                              | Fraction greater than 0 and at most 1                                                                                                                        |
 
-The legacy name `context_window` is still accepted in configuration and saved snapshots. New serialization uses `context_window_tokens`; if both are supplied, the canonical name takes precedence. Existing files do not need to be rewritten for this rename.
+Harness UI accepts the legacy name `context_window` in configuration and saved snapshots. New serialization and editor saves use `context_window_tokens`; if both are supplied, their values must agree. Reading existing files or saved objects does not rewrite them. Core Harness Agent specs require the canonical spelling.
 
 These values guide Harness behavior; they do not give a model modalities or token entitlement it lacks. Agent-level explicit context-capability thresholds remain authoritative. Review the selected provider's supported settings before changing a generic example.
 

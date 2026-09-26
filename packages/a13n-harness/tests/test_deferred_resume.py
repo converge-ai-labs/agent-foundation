@@ -7,7 +7,6 @@ from dataclasses import dataclass
 import pytest
 from a13n_harness import (
     DeferredToolResume,
-    DefinitionError,
     HarnessBuilder,
     RunBindings,
     RunError,
@@ -166,15 +165,6 @@ async def test_deferred_continuation_restores_the_retained_input_ledger() -> Non
 
 async def test_policy_requested_approval_is_satisfied_on_native_resume() -> None:
     executed: list[int] = []
-    verified: list[dict[str, object]] = []
-
-    @dataclass
-    class Verifier:
-        async def verify(self, invocation, approval_metadata, *, context):
-            del invocation, context
-            verified.append(dict(approval_metadata))
-            return True
-
     executable = _build(executed, requires_approval=False)
     first = await _suspend(
         executable,
@@ -184,6 +174,7 @@ async def test_policy_requested_approval_is_satisfied_on_native_resume() -> None
     assert requests is not None
     call_id = requests.approvals[0].tool_call_id
     assert requests.metadata[call_id][APPROVAL_PRESENTATION_KEY] == {
+        "tool_id": "change",
         "target": "",
         "reason": "Tool policy requires approval.",
     }
@@ -193,7 +184,6 @@ async def test_policy_requested_approval_is_satisfied_on_native_resume() -> None
             capabilities=(
                 InvocationPolicyCapability(
                     evaluator=_Policy(InvocationPolicyDecision.require_approval("confirm write"), []),
-                    approval_verifier=Verifier(),
                 ),
             )
         ),
@@ -209,7 +199,6 @@ async def test_policy_requested_approval_is_satisfied_on_native_resume() -> None
 
     assert second.status == "completed"
     assert executed == [1]
-    assert verified == [{"approved_by": "user-1"}]
 
 
 async def test_approved_override_is_schema_validated_and_resources_are_resolved_again() -> None:
@@ -276,7 +265,7 @@ async def test_unmanaged_native_approval_remains_unmarked_and_uses_native_resume
     assert executed == [1]
 
 
-async def test_managed_approval_cannot_remount_to_a_same_named_unmanaged_tool() -> None:
+async def test_host_may_replace_approved_tool_without_historical_identity_attestation() -> None:
     managed_executed: list[int] = []
     first_executable = _build(managed_executed)
     first = await _suspend(
@@ -286,7 +275,7 @@ async def test_managed_approval_cannot_remount_to_a_same_named_unmanaged_tool() 
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
     call_id = requests.approvals[0].tool_call_id
-    assert requests.metadata[call_id]["a13n.harness.managed-tool-id"] == "change"
+    requests.metadata[call_id] = {"a13n.harness.managed-tool-id": "obsolete-tool"}
 
     unmanaged_executed: list[int] = []
 
@@ -300,21 +289,14 @@ async def test_managed_approval_cannot_remount_to_a_same_named_unmanaged_tool() 
         model=_model(),
         capabilities=(Capability(tools=[change], id="test-tools"),),
     )
-    denied = _Policy(InvocationPolicyDecision.deny("revoked"), [])
-    with pytest.raises(DefinitionError) as exc_info:
-        await replacement.run(
-            bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=denied),)),
-            previous_state=first.state,
-            deferred_resume=DeferredToolResume(
-                requests,
-                requests.build_results(approve_all=True),
-            ),
-        )
-
-    assert exc_info.value.code == "deferred_surface_mismatch"
+    result = await replacement.run(
+        bindings=RunBindings.embedded(),
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(requests, requests.build_results(approve_all=True)),
+    )
+    assert result.status == "completed"
     assert managed_executed == []
-    assert unmanaged_executed == []
-    assert denied.seen_values == []
+    assert unmanaged_executed == [1]
 
 
 async def test_live_deny_after_approval_never_dispatches() -> None:
@@ -399,7 +381,7 @@ async def test_resume_rejects_non_native_approval_values_and_non_finite_override
 
 
 @pytest.mark.parametrize("replacement", [False, True])
-async def test_custom_resource_revision_can_bind_backing_across_run_connections(replacement):
+async def test_current_resources_are_resolved_without_historical_attestation(replacement):
     from a13n_harness.tools import CanonicalResource
 
     executed = []
@@ -411,8 +393,7 @@ async def test_custom_resource_revision_can_bind_backing_across_run_connections(
             CanonicalResource(
                 namespace="environment",
                 kind="file",
-                identifier=f"{connection}:/work",
-                approval_revision=f"{backing}:/work",
+                identifier=f"{connection}:{backing}:/work",
             ),
         )
 
@@ -422,7 +403,7 @@ async def test_custom_resource_revision_can_bind_backing_across_run_connections(
     connection = "mount-resumed"
     if replacement:
         backing = "env-shared:2"
-    # Even a newly permissive policy cannot revive an approval for another target.
+    # Current policy evaluates newly resolved resources; saved metadata is advisory.
     result = await executable.run(
         previous_state=suspended.state,
         deferred_resume=DeferredToolResume(suspended.deferred, suspended.deferred.build_results(approve_all=True)),
@@ -431,12 +412,10 @@ async def test_custom_resource_revision_can_bind_backing_across_run_connections(
         ),
     )
     assert result.status == "completed"
-    assert executed == ([] if replacement else [1]), (result.output, suspended.deferred)
-    if replacement:
-        assert "Approved resources changed" in result.output
+    assert executed == [1]
 
 
-# The resource kind changes the outcome only for a path change; argument changes and live denials apply to both.
+# Current deny wins; resource changes and native overrides are not historical proof failures.
 @pytest.mark.parametrize(
     ("kind", "change"),
     [
@@ -486,9 +465,7 @@ async def test_environment_approval_ignores_connection_identity(kind, change):
         bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=fresh_policy),)),
     )
     assert result.status == "completed"
-    # Mount resources do not bind a cwd. File resources still bind the selected path.
-    allowed = change == "connection" or (kind == "mount" and change == "path")
-    assert executed == ([1] if allowed else [])
+    assert executed == ([] if change == "deny" else [2 if change == "arguments" else 1])
 
 
 async def test_consumed_approval_does_not_freeze_later_tool_surfaces() -> None:
@@ -581,3 +558,56 @@ async def test_deferred_resume_still_rejects_results_integrated_after_the_pendin
             deferred_resume=DeferredToolResume(suspended.deferred, suspended.deferred.build_results(approve_all=True)),
         )
     assert error.value.code == "deferred_request_completed"
+
+
+@pytest.mark.parametrize("decision", [True, False, ToolApproved(override_args={"value": 7})])
+@pytest.mark.parametrize("historical_metadata", [False, True])
+async def test_host_constructed_history_accepts_native_decisions(decision, historical_metadata):
+    from a13n_harness import HarnessState
+    from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
+    from pydantic_ai.messages import ModelResponse, ToolCallPart, UserPromptPart
+    from pydantic_ai.tools import DeferredToolRequests
+
+    executed = []
+    call = ToolCallPart("change", {"value": 5}, "host-call")
+    state = HarnessState.new(
+        message_history=[
+            ModelRequest(parts=[UserPromptPart("Please change the value")]),
+            ModelResponse(parts=[call]),
+        ]
+    )
+    metadata = (
+        {
+            "host-call": {
+                "a13n.harness.tool-approval": {"tool_id": "old", "binding": "old", "requested_sources": []},
+                "a13n.resource-approval": {"resources": ["obsolete"]},
+                "a13n.harness.managed-tool-id": "old",
+            }
+        }
+        if historical_metadata
+        else {}
+    )
+    requests = DeferredToolRequests(approvals=[call], metadata=metadata)
+
+    def change(value: int) -> int:
+        executed.append(value)
+        return value
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_model(),
+        capabilities=(
+            Capability(tools=[HarnessTool(change, harness_metadata=_metadata())], id="host-tools"),
+            ToolPermissionsCapability(ToolPermissions(default="ask")),
+        ),
+    )
+    policy = _Policy(InvocationPolicyDecision.require_approval(), [])
+    result = await executable.run(
+        previous_state=state,
+        deferred_resume=DeferredToolResume(requests, DeferredToolResults(approvals={"host-call": decision})),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
+    )
+    assert result.status == "completed"
+    assert executed == ([] if decision is False else [7 if isinstance(decision, ToolApproved) else 5])
+    assert policy.seen_values == executed

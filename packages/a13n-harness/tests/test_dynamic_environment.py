@@ -3182,7 +3182,7 @@ async def test_file_toolset_owns_resource_metadata_without_dynamic_capability(
         tool = FileToolset(env.files, file_scopes=env).get_toolset().tools[name]
         resolver = tool.metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
         resources = await resolver(arguments, context=cast(Any, None))
-        assert tuple(resource.approval_revision for resource in resources) == paths
+        assert tuple(resource.identifier.rsplit(":", 1)[-1] for resource in resources) == paths
         assert all(resource.namespace == "environment" and resource.kind == "file" for resource in resources)
 
 
@@ -3236,7 +3236,7 @@ async def test_file_batch_resources_are_observations_without_execution_authority
             )
             assert resources[0] == current[0]
             assert resources[1].identifier != current[1].identifier
-            assert resources[1].approval_revision == current[1].approval_revision
+            assert resources[1].identifier.rsplit(":", 1)[-1] == current[1].identifier.rsplit(":", 1)[-1]
 
         async def authorize_unaffected_read() -> None:
             await authorized.wait()

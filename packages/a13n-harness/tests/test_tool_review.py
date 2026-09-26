@@ -630,12 +630,12 @@ async def test_skip_on_error_does_not_change_flagged_default() -> None:
 
     assert result.status == "suspended"
     assert result.deferred is not None
-    metadata = result.deferred.metadata["shell-call-1"]["a13n.harness.tool-approval"]
-    assert metadata["requested_sources"] == ["reviewer"]
+    metadata = result.deferred.metadata["shell-call-1"]["a13n.harness.approval-presentation"]
+    assert metadata["tool_id"] == "environment.shell_exec"
     assert executed == []
 
 
-async def test_flagged_review_and_policy_require_separate_approvals() -> None:
+async def test_native_approval_satisfies_review_and_current_policy() -> None:
     reviewer = _Reviewer([_result(ToolRiskLevel.HIGH) for _ in range(3)])
     executed: list[dict[str, Any]] = []
     executable = _build(reviewer, executed)
@@ -655,16 +655,7 @@ async def test_flagged_review_and_policy_require_separate_approvals() -> None:
     call_id = first.deferred.approvals[0].tool_call_id
     metadata = first.deferred.metadata[call_id]
     assert first_policy.calls == 0
-    assert metadata["a13n.harness.tool-approval"]["requested_sources"] == ["reviewer"]
-
-    verified: list[dict[str, Any]] = []
-
-    @dataclass
-    class _Verifier:
-        async def verify(self, invocation, approval_metadata, *, context):
-            del invocation, context
-            verified.append(dict(approval_metadata))
-            return True
+    assert metadata["a13n.harness.approval-presentation"]["reason"] == "Tool reviewer requires approval."
 
     second_policy = _Policy(
         InvocationPolicyDecision.require_approval(
@@ -677,7 +668,6 @@ async def test_flagged_review_and_policy_require_separate_approvals() -> None:
             capabilities=(
                 InvocationPolicyCapability(
                     evaluator=second_policy,
-                    approval_verifier=_Verifier(),
                 ),
             )
         ),
@@ -691,26 +681,9 @@ async def test_flagged_review_and_policy_require_separate_approvals() -> None:
         ),
     )
 
-    assert second.status == "suspended"
-    assert second.deferred is not None
-    assert verified == [] and executed == []
-    assert second.deferred.metadata[call_id]["a13n.harness.tool-approval"]["requested_sources"] == ["permission"]
-    third = await executable.run(
-        bindings=RunBindings.embedded(
-            capabilities=(InvocationPolicyCapability(evaluator=second_policy, approval_verifier=_Verifier()),)
-        ),
-        previous_state=second.state,
-        deferred_resume=DeferredToolResume(
-            second.deferred,
-            second.deferred.build_results(
-                approvals={call_id: ToolApproved()},
-                metadata=second.deferred.metadata,
-            ),
-        ),
-    )
-    assert third.status == "completed"
-    assert len(reviewer.requests) == 3
-    assert verified == [{"policy_token": "p-2"}]
+    assert second.status == "completed"
+    assert second_policy.calls == 1
+    assert len(reviewer.requests) == 2
     assert len(executed) == 1
 
 
@@ -876,7 +849,10 @@ async def test_other_review_failure_still_requests_approval_without_assessment()
     assert result.status == "suspended"
     assert result.deferred is not None
     call_id = result.deferred.approvals[0].tool_call_id
-    assert result.deferred.metadata[call_id]["a13n.harness.tool-approval"]["requested_sources"] == ["reviewer"]
+    assert (
+        result.deferred.metadata[call_id]["a13n.harness.approval-presentation"]["reason"]
+        == "Tool review could not complete."
+    )
     assert executed == []
 
 

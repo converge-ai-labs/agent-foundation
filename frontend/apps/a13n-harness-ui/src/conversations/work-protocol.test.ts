@@ -49,7 +49,7 @@ it("reads complete current work through HTTP after scoped summary hints and rest
     result(
       transport.client.POST("/api/threads/{thread_id}/submit", {
         params: { path },
-        body: { prompt: "Observe work" },
+        body: { parts: ["Observe work"] },
       }),
     );
   try {

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from a13n_harness.providers.model import routes
 from a13n_harness.providers.model.credentials import ApiKeyCredential, GoogleServiceAccount
-from a13n_harness.providers.model.routes import ROUTES, build_api_key_model
+from a13n_harness.providers.model.routes import ROUTE_ALIASES, ROUTES, build_api_key_model
 from pydantic import ValidationError
 from pydantic_ai.models.google import GoogleModel
 
@@ -20,6 +20,20 @@ async def test_google_routes_preserve_developer_and_cloud_transports(provider):
         assert model.client.vertexai is (provider != "google")
         # The SDK deadline follows the shared model transport, not httpx's five-second default.
         assert model.client._api_client.get_read_only_http_options()["timeout"] == 600_000
+
+
+def test_routes_share_inference_aliases_without_conflating_calling_apis():
+    from a13n_harness.models.inference import ROUTE_ALIASES as inference_aliases
+
+    assert ROUTE_ALIASES is inference_aliases
+    assert ROUTE_ALIASES == {
+        "openai": "openai-responses",
+        "gemini": "google-cloud",
+        "google-gla": "google-cloud",
+        "google-vertex": "google-cloud",
+    }
+    assert "google" not in ROUTE_ALIASES
+    assert "openai-chat" not in ROUTE_ALIASES
 
 
 def test_credentials_reject_blank_keys_and_invalid_service_account_pem():
@@ -42,7 +56,7 @@ def test_credentials_reject_blank_keys_and_invalid_service_account_pem():
     ],
 )
 def test_declared_routes_own_their_provider_api_and_endpoint(name, provider_type, model_api, default_base_url):
-    route = ROUTES[name]
+    route = ROUTES[ROUTE_ALIASES.get(name, name)]
     assert (route.provider_type, route.model_api, route.default_base_url) == (
         provider_type,
         model_api,

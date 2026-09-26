@@ -115,8 +115,7 @@ class ResolvedAgentNode(CompositionModel):
     source_kind: Literal["agent", "markdown", "memory"]
     source_id: str = Field(min_length=1, max_length=128)
     roster_name: str = Field(min_length=1, max_length=128)
-    # None identifies legacy captures whose instructions held the combined system prompt.
-    system_prompt: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=16)
+    system_prompt: tuple[str, ...] = Field(default=(), max_length=16)
     instructions: tuple[str, ...] = Field(default=(), max_length=16)
     # None preserves legacy captures; an empty tuple explicitly clears global guidance.
     global_guidance: tuple[str, ...] | None = Field(default=None, max_length=1)
@@ -127,6 +126,15 @@ class ResolvedAgentNode(CompositionModel):
     tools: tuple[str, ...] | None = Field(default=None, max_length=256)
     tool_proxy: AgentToolProxy | None = Field(default=None, exclude_if=lambda value: value is None)
     children: tuple[ResolvedSubagent, ...] = Field(default=(), max_length=256)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _decode_combined_prompt(cls, value: object) -> object:
+        if isinstance(value, dict) and value.get("system_prompt") is None:
+            # Historical captures froze the entire system prompt in instructions.
+            # Decode it once without consulting today's release-owned prompt.
+            return {**value, "system_prompt": value.get("instructions", ()), "instructions": ()}
+        return value
 
     @model_validator(mode="after")
     def _unique_members(self) -> Self:

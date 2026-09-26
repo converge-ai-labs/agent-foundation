@@ -32,7 +32,6 @@ from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.observation import observe_operation, observe_output
 from a13n_harness.tools.approval import (
     APPROVAL_PRESENTATION_KEY,
-    NATIVE_TOOL_APPROVAL_KEY,
     ToolApprovalContext,
     approval_presentation,
     approval_required,
@@ -96,11 +95,11 @@ async def check_permission(
     arguments = _arguments(args)
     binding = _binding(tool_def, arguments)
     identity = tool_identity(tool_def)
-    approval = resolve_tool_approval(ctx, tool_id=identity.tool_id, binding=binding)
+    approval = resolve_tool_approval(ctx, tool_id=identity.tool_id)
     cached = ctx.deps._tool_permission_checks.get(ctx.tool_call_id or "")
     if cached is not None and cached.binding == binding and cached.approval == approval and cached.mode == mode:
         return cached
-    if approval.approved_sources:
+    if approval.approved:
         await append_review_evidence(
             ctx.deps,
             ReviewEvidence(
@@ -109,19 +108,18 @@ async def check_permission(
                 tool_id=identity.tool_id,
                 binding=binding,
                 kind="approval",
-                approved_sources=tuple(sorted(approval.approved_sources)),
+                approved=approval.approved,
                 target=compact_target(arguments),
             ),
         )
-    if mode == "ask" and "permission" not in approval.approved_sources:
+    if mode == "ask" and not approval.approved:
         raise approval_required(
             ctx,
             approval,
-            binding=binding,
-            sources=frozenset({"permission"}),
             metadata={
                 APPROVAL_PRESENTATION_KEY: approval_presentation(
                     arguments,
+                    tool_id=approval.tool_id,
                     reason="permission",
                 ),
                 "reason": "Tool permission configuration requires approval.",
@@ -181,7 +179,7 @@ async def _review(
                 kind="review",
                 decision=cast(InvocationDecisionKind, decision),
                 reason=reason,
-                approved_sources=tuple(sorted(approval.approved_sources)),
+                approved=approval.approved,
                 target=compact_target(arguments),
             ),
         )
@@ -235,7 +233,7 @@ async def _review(
                 decision=decision,
                 reason=reason[:400] if reason is not None else None,
                 risk=result.assessment.risk.value,
-                approved_sources=tuple(sorted(approval.approved_sources)),
+                approved=approval.approved,
                 target=compact_target(arguments),
             ),
         )
@@ -244,15 +242,14 @@ async def _review(
         if reason is not None:
             message = f"Tool review denied the invocation: {reason}"
         raise ToolFailed(message)
-    if decision == "approval_required" and "reviewer" not in approval.approved_sources:
+    if decision == "approval_required" and not approval.approved:
         raise approval_required(
             ctx,
             approval,
-            binding=binding,
-            sources=frozenset({"reviewer"}),
             metadata={
                 APPROVAL_PRESENTATION_KEY: approval_presentation(
                     arguments,
+                    tool_id=approval.tool_id,
                     reason="review" if result is not None else "review_error",
                     risk=result.assessment.risk.value if result is not None else None,
                 ),
@@ -327,7 +324,7 @@ async def _review_request(
     return ToolReviewRequest(
         previous_reviews=previous_reviews,
         recent_actions=recent_actions,
-        approved_sources=tuple(sorted(approval.approved_sources)),
+        approved=approval.approved,
         context=environment_context,
         tool_id=tool_identity(tool_def).tool_id,
         tool_call_id=ctx.tool_call_id or "",
@@ -347,6 +344,7 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
 
     async def validate(ctx: RunContext[AgentContext], **args: Any) -> None:
         check = await check_permission(ctx, tool.tool_def, args)
+        ctx = replace(ctx, tool_call_approved=check.approval.approved)
         with tool_approval_scope(ctx.deps, check.approval):
             if original_validator is not None:
                 try:
@@ -357,26 +355,14 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
                     raise approval_required(
                         ctx,
                         check.approval,
-                        binding=check.binding,
-                        sources=frozenset({"tool"}),
                         metadata={
                             **(exc.metadata or {}),
-                            APPROVAL_PRESENTATION_KEY: approval_presentation(args),
+                            APPROVAL_PRESENTATION_KEY: approval_presentation(args, tool_id=check.approval.tool_id),
                         },
                     ) from exc
             if tool.tool_def.kind == "unapproved" and not ctx.tool_call_approved:
-                # Native declarative approval owns its override_args semantics.
-                # Capture advisory provenance without introducing a new grant or
-                # changing native approval into an argument-bound Harness grant.
-                ctx.deps._tool_pending_approvals.setdefault(check.approval.tool_call_id, {})[
-                    NATIVE_TOOL_APPROVAL_KEY
-                ] = {
-                    "tool_id": check.approval.tool_id,
-                    "binding": check.binding,
-                    "requested_sources": ["tool"],
+                ctx.deps._tool_pending_approvals[check.approval.tool_call_id] = {
+                    APPROVAL_PRESENTATION_KEY: approval_presentation(args, tool_id=check.approval.tool_id),
                 }
-                ctx.deps._tool_pending_approvals[check.approval.tool_call_id][APPROVAL_PRESENTATION_KEY] = (
-                    approval_presentation(args)
-                )
 
     return replace(tool, args_validator_func=validate)

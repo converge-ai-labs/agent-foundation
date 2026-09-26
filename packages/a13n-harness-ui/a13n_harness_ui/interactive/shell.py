@@ -1565,7 +1565,7 @@ class CliShell:
                 self._recoverable = draft
             self.emit("The active operation changed. Draft restored or available through /recover; send explicitly.")
             return
-        source_id = f"input-{uuid4().hex}"
+        source_id = f"input_{uuid4().hex}"
         try:
             prompt = self.inline.compile(text, source_id)
         except ValueError as exc:

@@ -824,11 +824,7 @@ it("does not offer tool-to-host lookup when sharing is disabled", async () => {
   expect(screen.queryByRole("button", { name: "Open on host" })).toBeNull();
 });
 
-it.each([
-  "/?project=project-one",
-  "/new?project=project-one",
-  "/new/thread_local?project=project-one",
-])(
+it.each(["/?project=project-one", "/new?project=project-one"])(
   "uses the selected local Project for Files, Changes and Terminal on %s",
   async (path) => {
     setup(path);

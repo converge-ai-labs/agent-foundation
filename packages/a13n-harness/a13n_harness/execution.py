@@ -106,7 +106,6 @@ from a13n_harness.spec import _default_usage_limits
 from a13n_harness.state import AgentContextState, HarnessState
 from a13n_harness.tools.deferred import (
     DeferredToolResume,
-    bind_managed_approval_identities,
     preflight_deferred_resume,
 )
 from a13n_harness.usage import RunUsageLedger
@@ -1813,7 +1812,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 _messages=messages,
                 _new_message_index=new_message_index,
             )
-        deferred = bind_managed_approval_identities(result.output, self.context._managed_tool_ids)
+        deferred = result.output
         return HarnessRunResult(
             thread_id=self.thread_id,
             run_id=self.run_id,

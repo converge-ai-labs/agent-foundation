@@ -163,7 +163,6 @@ it("keeps root metadata links valid on deep links and keeps hashed assets immuta
     "/",
     "/new",
     "/new?project=project-one",
-    "/new/thread_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "/settings",
     "/settings/models",
     "/settings/notifications",
@@ -190,6 +189,7 @@ it("keeps root metadata links valid on deep links and keeps hashed assets immuta
 it("does not expose arbitrary root files or turn missing installation assets into HTML", async () => {
   await writeFile(join(root, "private.txt"), "not a public asset");
   for (const path of [
+    "/new/thread_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "/icons/unknown.png",
     "/private.txt",
     "/api/unknown",

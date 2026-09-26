@@ -47,7 +47,7 @@ class ToolReviewRequest(BaseModel):
     context: dict[str, JsonValue] = Field(default_factory=dict)
     omitted: tuple[str, ...] = ()
     profile: Literal["shell", "general"] = "general"
-    approved_sources: tuple[Literal["permission", "reviewer", "tool"], ...] = ()
+    approved: bool = False
     previous_reviews: tuple[ReviewEvidence, ...] = ()
     recent_actions: tuple[ReviewEvidence, ...] = ()
 
@@ -61,7 +61,7 @@ class ToolReviewRequest(BaseModel):
             task=self.task,
             description=self.description,
             context=self.context,
-            approved_sources=self.approved_sources,
+            approved=self.approved,
             previous_reviews=self.previous_reviews,
             recent_actions=self.recent_actions,
             omitted=self.omitted,

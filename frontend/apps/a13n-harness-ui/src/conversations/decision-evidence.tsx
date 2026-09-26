@@ -25,10 +25,10 @@ const text = (value: unknown) =>
 export function decisionEvidence(request: Request) {
   const metadata = request.metadata ?? {};
   const approval = record(metadata["a13n.harness.tool-approval"]);
+  const presentation = record(metadata["a13n.harness.approval-presentation"]);
   const shell =
     request.kind === "approval" &&
-    approval?.tool_id === "environment.shell_exec";
-  const presentation = record(metadata["a13n.harness.approval-presentation"]);
+    (presentation?.tool_id ?? approval?.tool_id) === "environment.shell_exec";
   const review = shell
     ? record(metadata["a13n.harness.tool-review"])
     : undefined;

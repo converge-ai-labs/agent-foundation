@@ -31,7 +31,6 @@ async def test_workbench_deep_links_and_api_not_found_remain_distinct(tmp_path: 
             "/settings/connections",
             "/archived",
             "/new",
-            "/new/draft-demo",
             "/projects",
             "/projects/project-demo",
             "/threads/thread-demo",
@@ -42,7 +41,13 @@ async def test_workbench_deep_links_and_api_not_found_remain_distinct(tmp_path: 
             assert response.headers["cache-control"] == "no-cache"
             assert "script-src 'self'" in response.headers["content-security-policy"]
             assert "img-src 'self' data: blob:;" in response.headers["content-security-policy"]
-        for path in ("/unknown", "/settings/unknown", "/projects/project-demo/unknown", "/assets/missing.js"):
+        for path in (
+            "/new/draft-demo",
+            "/unknown",
+            "/settings/unknown",
+            "/projects/project-demo/unknown",
+            "/assets/missing.js",
+        ):
             response = await client.get(path)
             assert response.status_code == 404
             assert response.json()["error"]["code"] == "not_found"
@@ -50,3 +55,19 @@ async def test_workbench_deep_links_and_api_not_found_remain_distinct(tmp_path: 
         response = await client.get("/api/unknown", headers={"Authorization": "Bearer test-only-key"})
         assert response.status_code == 404
         assert response.json()["error"]["code"] == "not_found"
+
+
+def test_obsolete_http_wrappers_are_not_part_of_bundled_frontend_contract(tmp_path: Path):
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    server = create_webui(lambda: open_harness_ui_app(settings), api_key="test-only-key")
+    paths = server.openapi()["paths"]
+    for path in (
+        "/api/threads/preview",
+        "/api/operations/{receipt_id}/configuration",
+        "/api/threads/{thread_id}/notes",
+        "/api/threads/{thread_id}/tasks",
+        "/api/threads/{thread_id}/children/wait",
+        "/api/threads/{thread_id}/children/{execution_id}/review",
+        "/api/threads/{thread_id}/touch",
+    ):
+        assert path not in paths

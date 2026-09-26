@@ -11,7 +11,6 @@ from a13n_harness.models.inference import (
 )
 from a13n_harness.models.request_headers import (
     MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
-    MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
 )
 from a13n_harness.models.self_healing import ModelRecoveryRule, SelfHealingModel
 from a13n_harness.models.settings import (
@@ -37,7 +36,6 @@ __all__ = [
     "DEFAULT_MODEL_HTTP_RETRY_CONFIG",
     "DEFAULT_MODEL_HTTP_RETRY_STATUS_CODES",
     "MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV",
-    "MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV",
     "GatewayModelProviderFactory",
     "ModelCharacteristicsAlias",
     "ModelCharacteristicsAliasCatalog",

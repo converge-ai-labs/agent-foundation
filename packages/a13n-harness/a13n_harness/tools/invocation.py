@@ -10,7 +10,7 @@ from contextlib import AsyncExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 from uuid import uuid4
 
 from a13n_logging import exception_details, get_logger
@@ -38,18 +38,11 @@ from a13n_harness.tools._output import (
 )
 from a13n_harness.tools.approval import (
     APPROVAL_PRESENTATION_KEY,
-    RESOURCE_APPROVAL_KEY,
-    TOOL_APPROVAL_KEY,
-    ApprovalSource,
-    approval_facts,
     approval_presentation,
     approval_required,
     compact_target,
-    pending_approval_metadata,
     tool_approval_scope,
-    verify_approval_facts,
 )
-from a13n_harness.tools.deferred import managed_approval_tool_id
 from a13n_harness.tools.identity import identify_tool, tool_identity
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
@@ -328,7 +321,6 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                     "External tools do not support local approval/review modes.", code="tool_permission_unsupported"
                 )
             normalized[name] = gate_tool(tool)
-        ctx.deps._record_managed_tool_surface({tool_name: tool_id for tool_id, tool_name in managed_ids.items()})
         _validate_resume_surface(ctx, normalized)
         if (recovery := ctx.deps._tool_recovery) is not None:
             recovery.resolve(
@@ -348,24 +340,20 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
     ) -> Any:
         tool = identify_tool(tool)
         check = await check_permission(ctx, tool.tool_def, tool_args)
+        ctx = replace(ctx, tool_call_approved=check.approval.approved)
         with tool_approval_scope(ctx.deps, check.approval):
             try:
                 return await self._call_tool(name, tool_args, ctx, tool)
             except ApprovalRequired as exc:
-                if TOOL_APPROVAL_KEY in (exc.metadata or {}):
-                    raise
-                sources: frozenset[ApprovalSource] = frozenset({"tool"})
-                if _POLICY_APPROVAL_METADATA_KEY in (exc.metadata or {}):
-                    sources = frozenset({"permission"})
                 raise approval_required(
                     ctx,
                     check.approval,
-                    binding=check.binding,
-                    sources=sources,
                     metadata={
                         **(exc.metadata or {}),
                         APPROVAL_PRESENTATION_KEY: approval_presentation(
-                            tool_args, reason="policy" if sources == frozenset({"permission"}) else None
+                            tool_args,
+                            tool_id=check.approval.tool_id,
+                            reason="policy" if _POLICY_APPROVAL_METADATA_KEY in (exc.metadata or {}) else None,
                         ),
                     },
                 ) from exc
@@ -379,11 +367,6 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
     ) -> Any:
         if _TOOL_EXECUTION_DISABLED.get():
             raise ToolFailed("Tool execution is disabled during context compaction.")
-        recovery = ctx.deps._tool_recovery
-        if recovery is not None and ctx.tool_call_id in recovery.pending:
-            # Native ToolApproved authorizes replay. Current managed policy still
-            # evaluates a fresh invocation, without borrowed approval evidence.
-            ctx = replace(ctx, tool_call_approved=False)
         tool_def = tool.tool_def
         if tool_def.kind == "external":
             return await self.wrapped.call_tool(name, tool_args, ctx, tool)
@@ -419,34 +402,11 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             raise
         invocation = prepared.context
         await _emit(ctx, managed, "prepared", invocation_id=invocation.invocation_id)
-        requested_metadata = pending_approval_metadata(ctx)
-        legacy_approval = TOOL_APPROVAL_KEY not in requested_metadata
-        policy_evidence = requested_metadata.get(_POLICY_APPROVAL_METADATA_KEY)
-        policy_approved = ctx.tool_call_approved and (
-            legacy_approval
-            or (isinstance(policy_evidence, Mapping) and policy_evidence.get("decision") == "approval_required")
-        )
-        if ctx.tool_call_approved and (legacy_approval or _POLICY_APPROVAL_METADATA_KEY in requested_metadata):
-            verify_approval_facts(invocation, requested_metadata)
         policy_decision = await _evaluate_policy(ctx, policy, invocation, managed)
         if policy_decision.decision == "deny":
             await _emit(ctx, managed, "denied", invocation_id=invocation.invocation_id)
             raise ToolFailed("Managed tool invocation was denied.")
-        if policy_approved and policy_decision.decision == "approval_required" and policy.approval_verifier is not None:
-            approval_metadata = _policy_approval_metadata(ctx.tool_call_metadata)
-            try:
-                verified = await policy.approval_verifier.verify(
-                    invocation,
-                    approval_metadata,
-                    context=ctx.deps,
-                )
-            except Exception as exc:
-                raise ToolFailed("Managed tool approval could not be verified.") from exc
-            if verified is not True:
-                await _emit(ctx, managed, "denied", invocation_id=invocation.invocation_id)
-                raise ToolFailed("Managed tool approval is no longer valid.")
-
-        requires_approval = policy_decision.decision == "approval_required" and not policy_approved
+        requires_approval = policy_decision.decision == "approval_required" and not ctx.tool_call_approved
         if requires_approval:
             await _emit(ctx, managed, "approval_required", invocation_id=invocation.invocation_id)
             metadata: dict[str, JsonValue] = {
@@ -456,8 +416,6 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                     "metadata": dict(policy_decision.approval_metadata),
                 },
             }
-            if (facts := approval_facts(invocation)) is not None:
-                metadata[RESOURCE_APPROVAL_KEY] = facts
             raise ApprovalRequired(metadata=metadata)
         await _emit(ctx, managed, "authorized", invocation_id=invocation.invocation_id)
         leases: list[CredentialLease] = []
@@ -550,7 +508,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             binding=check.binding if check is not None else "",
             kind="action",
             target=compact_target(tool_args),
-            approved_sources=tuple(sorted(check.approval.approved_sources)) if check is not None else (),
+            approved=check.approval.approved if check is not None else False,
             outcome="unknown",
         )
         # A started dispatch may have side effects even if it raises or is cancelled.
@@ -628,22 +586,6 @@ async def _evaluate_policy(
     if not isinstance(decision, InvocationPolicyDecision):
         raise DefinitionError("Invocation policy returned an invalid decision.", code="invocation_policy_invalid")
     return decision
-
-
-def _policy_approval_metadata(value: object) -> Mapping[str, JsonValue]:
-    if value is None:
-        return {}
-    if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
-        raise ToolFailed("Managed tool approval metadata is invalid.")
-    policy_value = value.get(_POLICY_APPROVAL_METADATA_KEY)
-    if policy_value is None:
-        return {key: item for key, item in cast(Mapping[str, JsonValue], value).items() if key != RESOURCE_APPROVAL_KEY}
-    if not isinstance(policy_value, Mapping):
-        raise ToolFailed("Managed tool approval metadata is invalid.")
-    metadata = policy_value.get("metadata")
-    if not isinstance(metadata, Mapping) or not all(isinstance(key, str) for key in metadata):
-        raise ToolFailed("Managed tool approval metadata is invalid.")
-    return cast(Mapping[str, JsonValue], metadata)
 
 
 def _resolve_policy(ctx: RunContext[AgentContext]) -> InvocationPolicyCapability | None:
@@ -859,25 +801,10 @@ def _validate_resume_surface(
             )
 
     for request in requests.approvals:
-        expected_tool_id = managed_approval_tool_id(requests, request.tool_call_id)
-        if expected_tool_id is None:
-            continue
         tool = tools.get(request.tool_name)
-        raw_metadata = (
-            (tool.tool_def.metadata or {}).get(HARNESS_TOOL_METADATA_KEY)
-            if tool is not None and tool.tool_def.kind in {"function", "unapproved"}
-            else None
-        )
-        if raw_metadata is None:
+        if tool is None or tool.tool_def.kind not in {"function", "unapproved"}:
             raise DefinitionError(
-                "The current tool surface does not match the pending managed approval.",
-                code="deferred_surface_mismatch",
-                details={"tool_name": request.tool_name},
-            )
-        current = normalize_harness_tool_metadata(raw_metadata)
-        if current.tool_id != expected_tool_id:
-            raise DefinitionError(
-                "The current managed tool identity does not match the pending approval.",
+                "The current tool surface does not match the pending approval.",
                 code="deferred_surface_mismatch",
                 details={"tool_name": request.tool_name},
             )

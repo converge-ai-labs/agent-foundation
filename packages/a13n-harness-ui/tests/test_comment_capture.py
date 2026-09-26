@@ -40,7 +40,7 @@ async def test_comment_capture_is_explicit_complete_scoped_and_retained_through_
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             thread = (await api.post("/api/threads", json={})).json()["thread_id"]
             prefix = f"/api/threads/{thread}"
-            receipt = (await api.post(prefix + "/submit", json={"prompt": "First"})).json()["receipt_id"]
+            receipt = (await api.post(prefix + "/submit", json={"parts": ["First"]})).json()["receipt_id"]
             await settled(api, receipt)
             history = (await api.get(prefix + "/transcript")).json()
             target = targets(history)[0]
@@ -75,12 +75,13 @@ async def test_comment_capture_is_explicit_complete_scoped_and_retained_through_
             assert (
                 await api.post(f"/api/threads/{foreign}/comments/{comment['comment_id']}/capture")
             ).status_code == 400
-            body = {"prompt": "Review captured feedback", "attachment_ids": [attachment["attachment_id"]]}
+            body = {"parts": ["Review captured feedback", {"attachment_id": attachment["attachment_id"]}]}
             receipt = (await api.post(prefix + "/submit", json=body)).json()["receipt_id"]
             with fail_after(10):
                 await started.wait()
             steer = await api.post(
-                f"/api/operations/{receipt}/steer", json={**body, "prompt": "Also use this feedback"}
+                f"/api/operations/{receipt}/steer",
+                json={"parts": ["Also use this feedback", {"attachment_id": attachment["attachment_id"]}]},
             )
             assert steer.status_code == 200 and steer.json()["accepted"], steer.text
             release.set()
@@ -125,7 +126,7 @@ async def test_comment_capture_rejects_incomplete_or_oversized_utf8_without_trun
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             thread = (await api.post("/api/threads", json={})).json()["thread_id"]
             prefix = f"/api/threads/{thread}"
-            receipt = (await api.post(prefix + "/submit", json={"prompt": "First"})).json()["receipt_id"]
+            receipt = (await api.post(prefix + "/submit", json={"parts": ["First"]})).json()["receipt_id"]
             await settled(api, receipt)
             history = (await api.get(prefix + "/transcript")).json()
             assistant = next(

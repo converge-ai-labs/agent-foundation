@@ -65,7 +65,7 @@ async with open_harness_ui_app(settings, instrumentation=instrumentation) as app
     thread = await app.create_thread()
 ```
 
-Explicit instrumentation takes precedence over environment selection. Explicit `None` disables UI/Harness observation. Preconfigured global providers can also be selected through the Harness environment policy. The App never replaces, adds exporters to, or shuts down an external provider; its owning Host handles export and lifecycle. Selected UI/Harness spans receive the same automatic metadata regardless of exporter; no enrichment processor is required. The legacy optional `HarnessUiSpanProcessor` only serves independently instrumented SDK spans that need its limited local-parent propagation. Do not also call `logfire.instrument_pydantic_ai()` for Harness-owned Agents.
+Explicit instrumentation takes precedence over environment selection. Explicit `None` disables UI/Harness observation. Preconfigured global providers can also be selected through the Harness environment policy. The App never replaces, adds exporters to, or shuts down an external provider; its owning Host handles export and lifecycle. Selected UI/Harness spans receive the same automatic metadata regardless of exporter; no enrichment processor is required. The former optional `HarnessUiSpanProcessor` is no longer provided. Independently instrumented SDK spans do not receive its local-parent attribute propagation or Langfuse agent/tool type enrichment; Hosts needing that behavior own their SDK instrumentation. Do not also call `logfire.instrument_pydantic_ai()` for Harness-owned Agents.
 
 ## Repository development
 

@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from a13n_harness_ui.errors import StoreIntegrityError
+from a13n_harness_ui.errors import StoreIntegrityError, ThreadError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import ObjectKind, ObjectRef, open_local_store
@@ -14,7 +14,7 @@ from pydantic_ai.models.function import FunctionModel
 
 from .test_app import _write_configuration
 from .test_configuration_protocol import HEADERS, settled
-from .test_interactive_protocol import listener
+from .test_interactive_protocol import listener_with_app
 from .test_thread_repository import _configuration, _initial
 
 pytestmark = pytest.mark.anyio
@@ -81,7 +81,7 @@ async def test_http_shows_six_active_roots_plus_five_recent_without_progress_reo
         return FunctionModel(stream_function=stream)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
-    async with listener(tmp_path, configuration_path=configuration) as (http, _):
+    async with listener_with_app(tmp_path, configuration_path=configuration) as (http, _, app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             idle = [(await api.post("/api/threads", json={})).json()["thread_id"] for _ in range(7)]
             running = []
@@ -89,7 +89,7 @@ async def test_http_shows_six_active_roots_plus_five_recent_without_progress_reo
             for i in range(6):
                 thread_id = (await api.post("/api/threads", json={})).json()["thread_id"]
                 running.append(thread_id)
-                receipt = (await api.post(f"/api/threads/{thread_id}/submit", json={"prompt": f"Work {i}"})).json()
+                receipt = (await api.post(f"/api/threads/{thread_id}/submit", json={"parts": [f"Work {i}"]})).json()
                 receipts.append(receipt["receipt_id"])
                 with fail_after(10):
                     await started[i].wait()
@@ -119,21 +119,21 @@ async def test_http_shows_six_active_roots_plus_five_recent_without_progress_reo
             assert after["rows"][0]["thread"]["thread_id"] == running[0]
             assert after["rows"][0]["thread"]["touched_at"] > saved_touch
             # Explicit touch is persistent but does not submit work or mutate history.
-            touched = await api.post(f"/api/threads/{idle[0]}/touch")
-            assert touched.status_code == 200
-            assert touched.json()["continuation_state"] == "initial"
-            assert touched.json()["metadata_version"] == 1
+            touched = await app.touch_thread(idle[0])
+            assert touched.continuation_state == "initial"
+            assert touched.metadata_version == 1
             refreshed = (await api.get("/api/threads/activity", params=params)).json()
             assert refreshed["rows"][0]["thread"]["thread_id"] == idle[0]
             assert [r["thread"]["thread_id"] for r in refreshed["active_rows"]] == running[:0:-1]
-            assert (await api.post("/api/threads/missing/touch")).status_code >= 400
+            with pytest.raises(ThreadError):
+                await app.touch_thread("missing")
             for index in range(1, len(receipts)):
                 release[index].set()
                 assert (await settled(api, receipts[index]))["status"] == "completed"
             finished = (await api.get("/api/threads/activity", params={"include_active": "true", "limit": 20})).json()
             expected = [*running[:0:-1], idle[0], running[0]]
             assert [r["thread"]["thread_id"] for r in finished["rows"]][:7] == expected
-    async with listener(tmp_path, configuration_path=configuration) as (http, _):
+    async with listener_with_app(tmp_path, configuration_path=configuration) as (http, _, app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             refreshed = (await api.get("/api/threads/activity", params={"include_active": "true", "limit": 20})).json()
             assert refreshed["active_rows"] == []

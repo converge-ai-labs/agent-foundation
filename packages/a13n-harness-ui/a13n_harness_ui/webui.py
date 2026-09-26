@@ -46,7 +46,7 @@ from a13n_harness_ui.configuration.views import (
     ConfigurationSourceView,
     ConfigurationValidation,
 )
-from a13n_harness_ui.configuration_inspection import CapturedConfiguration, ThreadConfigurationInspection
+from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
 from a13n_harness_ui.device_transport import DeviceWebSocket
 from a13n_harness_ui.devices import DeviceInfo, DeviceSummary
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
@@ -113,7 +113,6 @@ from a13n_harness_ui.page_presence import (
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
 from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame, DraftSummary
-from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage.usage import ThreadUsageView
 from a13n_harness_ui.surfaces import (
     ChildControlResult,
@@ -124,11 +123,9 @@ from a13n_harness_ui.surfaces import (
     MemoryFileEntry,
     MemoryFileText,
     NewThreadDefaults,
-    NotePage,
     ProjectDefaultsApply,
     ProjectDefaultsPreview,
     ProjectSummary,
-    ReviewView,
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
@@ -136,7 +133,6 @@ from a13n_harness_ui.surfaces import (
     SkillCatalogView,
     SkillReference,
     SurfaceModel,
-    TaskPage,
     ThreadActivityPage,
     ThreadActivityView,
     ThreadConfigurationMutationInput,
@@ -206,27 +202,18 @@ class InputAttachmentReference(SurfaceModel):
 
 
 class PromptRequest(SurfaceModel):
-    prompt: str = Field(default="", max_length=256 * 1024)
-    attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
-    parts: tuple[str | InputAttachmentReference, ...] | None = Field(default=None, max_length=1024)
+    parts: tuple[str | InputAttachmentReference, ...] = Field(max_length=1024)
     skill_references: tuple[SkillReference, ...] = Field(default=(), max_length=512)
     # Presentation correlation only; never an admission idempotency key.
     source_id: str | None = Field(default=None, pattern=r"^input[-_][0-9a-f]{32}$")
 
     @model_validator(mode="after")
     def validate_ordered_input(self) -> PromptRequest:
-        if self.source_id is not None and self.parts is None:
-            raise ValueError("source_id requires ordered parts.")
-        if self.parts is not None:
-            if self.prompt or self.attachment_ids:
-                raise ValueError("Use ordered parts or prompt/attachment_ids, not both.")
-            if sum(len(part) for part in self.parts if isinstance(part, str)) > 256 * 1024:
-                raise ValueError("Authored input exceeds 256 Ki characters.")
+        if sum(len(part) for part in self.parts if isinstance(part, str)) > 256 * 1024:
+            raise ValueError("Authored input exceeds 256 Ki characters.")
         return self
 
-    def input(self) -> str | ComposerInput:
-        if self.parts is None:
-            return self.prompt
+    def input(self) -> ComposerInput:
         return ComposerInput(
             parts=tuple(
                 part if isinstance(part, str) else ComposerAttachmentReference(part.attachment_id)
@@ -249,7 +236,7 @@ class SubmitRequest(PromptRequest, ModelControlSelection):
 class RootSteerRequest(PromptRequest):
     @model_validator(mode="after")
     def validate_instruction(self) -> RootSteerRequest:
-        if self.parts is None and not self.prompt and not self.attachment_ids:
+        if not self.parts:
             raise ValueError("An instruction must not be empty.")
         return self
 
@@ -1148,10 +1135,6 @@ def create_webui(
     async def delete_source(relative_path: str) -> ConfigurationPublication:
         return ConfigurationPublication.from_result(await app().delete_configuration(relative_path=relative_path))
 
-    @server.post("/api/threads/preview", response_model=ThreadConfiguration, openapi_extra=_body(NewThreadDefaults))
-    async def preview_thread(request: Request) -> ThreadConfiguration:
-        return await app().preview_thread_configuration(defaults=await _document(request, NewThreadDefaults))
-
     @server.post(
         "/api/threads/configuration-preview",
         response_model=ThreadConfigurationResolution,
@@ -1181,10 +1164,6 @@ def create_webui(
     @server.get("/api/threads/{thread_id}/configuration", response_model=ThreadConfigurationInspection)
     async def inspect_configuration(thread_id: str) -> ThreadConfigurationInspection:
         return await app().inspect_thread_configuration(thread_id)
-
-    @server.get("/api/operations/{receipt_id}/configuration", response_model=CapturedConfiguration | None)
-    async def operation_configuration(receipt_id: str) -> CapturedConfiguration | None:
-        return await app().inspect_operation_configuration(receipt_id)
 
     @server.post(
         "/api/threads/{thread_id}/comments", response_model=OutputComment, openapi_extra=_body(CommentPublication)
@@ -1271,10 +1250,6 @@ def create_webui(
     @server.get("/api/threads/{thread_id}/usage", response_model=ThreadUsageView)
     async def usage(thread_id: str) -> ThreadUsageView:
         return await app().thread_usage(thread_id=thread_id)
-
-    @server.get("/api/threads/{thread_id}/notes", response_model=NotePage)
-    async def notes(thread_id: str, expected_continuation_id: str | None = None) -> NotePage:
-        return await app().thread_notes(thread_id=thread_id, expected_continuation_id=expected_continuation_id)
 
     @server.patch(
         "/api/threads/{thread_id}/configuration",
@@ -1391,16 +1366,6 @@ def create_webui(
     ) -> ThreadWork:
         return await app().thread_work(thread_id=thread_id, include=tuple(include))
 
-    @server.get("/api/threads/{thread_id}/tasks", response_model=TaskPage)
-    async def tasks(
-        thread_id: str,
-        expected_continuation_id: Annotated[str | None, Query(max_length=80)] = None,
-        limit: Annotated[int, Query(ge=1, le=100)] = 100,
-    ) -> TaskPage:
-        return await app().thread_tasks(
-            thread_id=thread_id, expected_continuation_id=expected_continuation_id, limit=limit
-        )
-
     @server.get("/api/threads/{thread_id}/children", response_model=ChildExecutionPage)
     async def children(
         thread_id: str,
@@ -1411,26 +1376,6 @@ def create_webui(
         return await app().query_child_executions(
             parent_thread_id=thread_id, execution_id=execution_id, cursor=cursor, limit=limit
         )
-
-    @server.get("/api/threads/{thread_id}/children/wait", response_model=ChildExecutionPage)
-    async def wait_children(
-        thread_id: str,
-        execution_id: Annotated[str | None, Query(max_length=80)] = None,
-        cursor: Annotated[str | None, Query(max_length=2048)] = None,
-        limit: Annotated[int, Query(ge=1, le=100)] = 20,
-        timeout_seconds: Annotated[float, Query(ge=0, le=60)] = 10,
-    ) -> ChildExecutionPage:
-        return await app().wait_child_executions(
-            parent_thread_id=thread_id,
-            execution_id=execution_id,
-            cursor=cursor,
-            limit=limit,
-            timeout_seconds=timeout_seconds,
-        )
-
-    @server.get("/api/threads/{thread_id}/children/{execution_id}/review", response_model=ReviewView)
-    async def child_review(thread_id: str, execution_id: str) -> ReviewView:
-        return await app().child_review(parent_thread_id=thread_id, execution_id=execution_id)
 
     @server.post(
         "/api/threads/{thread_id}/children/{execution_id}/steer",
@@ -1522,10 +1467,6 @@ def create_webui(
             limit=limit,
         )
 
-    @server.post("/api/threads/{thread_id}/touch", response_model=ThreadSummary)
-    async def touch_thread(thread_id: str) -> ThreadSummary:
-        return await app().touch_thread(thread_id)
-
     @server.patch(
         "/api/threads/{thread_id}/metadata", response_model=ThreadSummary, openapi_extra=_body(ThreadMetadataMutation)
     )
@@ -1595,7 +1536,6 @@ def create_webui(
                 thread_id=thread_id,
                 prompt=document.input(),
                 mode=document.mode,
-                attachment_ids=document.attachment_ids,
                 environment=document.environment,
                 model_overrides=RunModelOverrides(model_id=document.model_id, **document.controls().model_dump()),
                 skill_references=document.skill_references,
@@ -1625,7 +1565,6 @@ def create_webui(
             return await app().steer_root_operation(
                 receipt_id=receipt_id,
                 message=document.input(),
-                attachment_ids=document.attachment_ids,
                 skill_references=document.skill_references,
             )
         except ValueError as exc:
@@ -1840,7 +1779,7 @@ def create_webui(
             "settings/connections",
             "archived",
             "memory",
-        } or (len(segments) == 2 and segments[0] in {"threads", "projects", "new"} and bool(segments[1]))
+        } or (len(segments) == 2 and segments[0] in {"threads", "projects"} and bool(segments[1]))
         if not recognized:
             return _error("not_found", "Route not found.", 404)
         index = static_root / "index.html"

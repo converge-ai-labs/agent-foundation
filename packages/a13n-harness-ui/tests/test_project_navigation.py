@@ -6,8 +6,8 @@ import httpx
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
-from a13n_harness_ui.webui import create_webui
 
+from .test_interactive_protocol import listener_with_app
 from .test_terminal_surfaces import _write_configuration
 
 pytestmark = pytest.mark.anyio
@@ -18,19 +18,12 @@ async def test_project_pages_are_independent_and_cursors_bind_scope(tmp_path: Pa
         tmp_path,
         projects=(("project-first", "First", tmp_path), ("project-second", "Second", tmp_path)),
     )
-    server = create_webui(
-        lambda: open_harness_ui_app(
-            HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False),
-            configuration_path=configuration,
-        ),
-        api_key="test-navigation",
-    )
     async with (
-        server.router.lifespan_context(server),
+        listener_with_app(tmp_path, configuration_path=configuration) as (http, _, app),
         httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=server),
-            base_url="http://localhost",
-            headers={"Authorization": "Bearer test-navigation"},
+            base_url=http,
+            headers={"Authorization": "Bearer test-only-key"},
+            trust_env=False,
         ) as client,
     ):
         groups: dict[str | None, list[dict]] = {"project-first": [], "project-second": [], None: []}
@@ -79,7 +72,7 @@ async def test_project_pages_are_independent_and_cursors_bind_scope(tmp_path: Pa
         assert renamed.status_code == 200, renamed.text
         recent = (await client.get("/api/threads/activity", params={"project_id": "project-first"})).json()
         assert recent["rows"][0]["thread"]["thread_id"] == groups["project-first"][-1]["thread_id"]
-        assert (await client.post(f"/api/threads/{oldest['thread_id']}/touch")).status_code == 200
+        await app.touch_thread(oldest["thread_id"])
         recent = (await client.get("/api/threads/activity", params={"project_id": "project-first"})).json()
         assert recent["rows"][0]["thread"]["thread_id"] == oldest["thread_id"]
         assert recent["rows"][0]["thread"]["configuration"] == oldest["configuration"]

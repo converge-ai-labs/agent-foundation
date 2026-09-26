@@ -876,23 +876,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/threads/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Preview Thread */
-        post: operations["preview_thread_api_threads_preview_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/threads/configuration-preview": {
         parameters: {
             query?: never;
@@ -961,23 +944,6 @@ export interface paths {
         head?: never;
         /** Patch Configuration */
         patch: operations["patch_configuration_api_threads__thread_id__configuration_patch"];
-        trace?: never;
-    };
-    "/api/operations/{receipt_id}/configuration": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Operation Configuration */
-        get: operations["operation_configuration_api_operations__receipt_id__configuration_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/threads/{thread_id}/comments": {
@@ -1111,23 +1077,6 @@ export interface paths {
         };
         /** Usage */
         get: operations["usage_api_threads__thread_id__usage_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/threads/{thread_id}/notes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Notes */
-        get: operations["notes_api_threads__thread_id__notes_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1310,23 +1259,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/threads/{thread_id}/tasks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Tasks */
-        get: operations["tasks_api_threads__thread_id__tasks_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/threads/{thread_id}/children": {
         parameters: {
             query?: never;
@@ -1336,40 +1268,6 @@ export interface paths {
         };
         /** Children */
         get: operations["children_api_threads__thread_id__children_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/threads/{thread_id}/children/wait": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Wait Children */
-        get: operations["wait_children_api_threads__thread_id__children_wait_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/threads/{thread_id}/children/{execution_id}/review": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Child Review */
-        get: operations["child_review_api_threads__thread_id__children__execution_id__review_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1509,23 +1407,6 @@ export interface paths {
         get: operations["transcript_inputs_api_threads__thread_id__inputs_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/threads/{thread_id}/touch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Touch Thread */
-        post: operations["touch_thread_api_threads__thread_id__touch_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3966,38 +3847,6 @@ export interface components {
              */
             grants?: components["schemas"]["SandboxGrant"][];
         };
-        /** ReviewView */
-        ReviewView: {
-            /**
-             * Lifecycle
-             * @enum {string}
-             */
-            lifecycle: "pending" | "running" | "closed" | "unavailable";
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "json" | "shell" | "task" | "child" | "diff" | "generic";
-            /** Title */
-            title: string;
-            /** Summary */
-            summary?: string | null;
-            /** Content */
-            content?: string | null;
-            value?: components["schemas"]["JsonValue"] | null;
-            /**
-             * Truncated
-             * @default false
-             */
-            truncated?: boolean;
-            /**
-             * Omitted
-             * @default false
-             */
-            omitted?: boolean;
-            /** Unavailable Reason */
-            unavailable_reason?: string | null;
-        };
         /**
          * RootActivityState
          * @enum {string}
@@ -6166,18 +6015,8 @@ export interface components {
             /** Fast */
             fast?: boolean | null;
             reasoning_mode?: components["schemas"]["ReasoningMode"] | null;
-            /**
-             * Prompt
-             * @default
-             */
-            prompt?: string;
-            /**
-             * Attachment Ids
-             * @default []
-             */
-            attachment_ids?: string[];
             /** Parts */
-            parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
+            parts: (string | components["schemas"]["InputAttachmentReference"])[];
             /**
              * Skill References
              * @default []
@@ -6197,18 +6036,8 @@ export interface components {
         };
         /** RootSteerRequest */
         RootSteerRequest: {
-            /**
-             * Prompt
-             * @default
-             */
-            prompt?: string;
-            /**
-             * Attachment Ids
-             * @default []
-             */
-            attachment_ids?: string[];
             /** Parts */
-            parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
+            parts: (string | components["schemas"]["InputAttachmentReference"])[];
             /**
              * Skill References
              * @default []
@@ -7922,30 +7751,6 @@ export interface operations {
             };
         };
     };
-    preview_thread_api_threads_preview_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NewThreadDefaults"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThreadConfiguration"];
-                };
-            };
-        };
-    };
     explain_creation_api_threads_configuration_preview_post: {
         parameters: {
             query?: never;
@@ -8113,37 +7918,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadSummary"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    operation_configuration_api_operations__receipt_id__configuration_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                receipt_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CapturedConfiguration"] | null;
                 };
             };
             /** @description Validation Error */
@@ -8519,39 +8293,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadUsageView"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    notes_api_threads__thread_id__notes_get: {
-        parameters: {
-            query?: {
-                expected_continuation_id?: string | null;
-            };
-            header?: never;
-            path: {
-                thread_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotePage"];
                 };
             };
             /** @description Validation Error */
@@ -8993,40 +8734,6 @@ export interface operations {
             };
         };
     };
-    tasks_api_threads__thread_id__tasks_get: {
-        parameters: {
-            query?: {
-                expected_continuation_id?: string | null;
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                thread_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskPage"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     children_api_threads__thread_id__children_get: {
         parameters: {
             query?: {
@@ -9049,74 +8756,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChildExecutionPage"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    wait_children_api_threads__thread_id__children_wait_get: {
-        parameters: {
-            query?: {
-                execution_id?: string | null;
-                cursor?: string | null;
-                limit?: number;
-                timeout_seconds?: number;
-            };
-            header?: never;
-            path: {
-                thread_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChildExecutionPage"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    child_review_api_threads__thread_id__children__execution_id__review_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                thread_id: string;
-                execution_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReviewView"];
                 };
             };
             /** @description Validation Error */
@@ -9412,37 +9051,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TranscriptInputPage"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    touch_thread_api_threads__thread_id__touch_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                thread_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThreadSummary"];
                 };
             };
             /** @description Validation Error */

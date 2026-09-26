@@ -166,19 +166,6 @@ class InvocationGrantBroker(Protocol):
     ) -> InvocationGrantRef | None: ...
 
 
-@runtime_checkable
-class ApprovalVerifier(Protocol):
-    """Validate optional Host approval metadata against current authority."""
-
-    async def verify(
-        self,
-        invocation: ToolInvocationContext,
-        approval_metadata: Mapping[str, JsonValue],
-        *,
-        context: AgentContext,
-    ) -> bool: ...
-
-
 @dataclass(kw_only=True)
 class InvocationPolicyCapability(AbstractCapability[AgentContext]):
     """Fresh typed authority attachment selected from RunBindings.capabilities."""
@@ -188,7 +175,6 @@ class InvocationPolicyCapability(AbstractCapability[AgentContext]):
     strict_managed_tools: bool = False
     credential_broker: CredentialBroker | None = None
     grant_broker: InvocationGrantBroker | None = None
-    approval_verifier: ApprovalVerifier | None = None
     max_dispatch_retries: int = 1
 
     def __post_init__(self) -> None:
@@ -202,8 +188,6 @@ class InvocationPolicyCapability(AbstractCapability[AgentContext]):
             raise TypeError("credential_broker must implement CredentialBroker")
         if self.grant_broker is not None and not isinstance(self.grant_broker, InvocationGrantBroker):
             raise TypeError("grant_broker must implement InvocationGrantBroker")
-        if self.approval_verifier is not None and not isinstance(self.approval_verifier, ApprovalVerifier):
-            raise TypeError("approval_verifier must implement ApprovalVerifier")
         if not isinstance(self.max_dispatch_retries, int) or not 0 <= self.max_dispatch_retries <= 3:
             raise ValueError("max_dispatch_retries must be between zero and three")
 

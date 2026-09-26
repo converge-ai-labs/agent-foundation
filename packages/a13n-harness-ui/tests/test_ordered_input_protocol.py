@@ -44,6 +44,7 @@ async def test_ordered_submit_steer_and_restart_keep_identity_and_native_content
     async with listener(tmp_path, configuration_path=root) as (http, _):
         async with httpx.AsyncClient(base_url=http, headers=headers, trust_env=False) as api:
             thread = (await api.post("/api/threads", json={})).json()["thread_id"]
+            assert thread.startswith("thread_")
             prefix = f"/api/threads/{thread}"
             upload = await api.post(prefix + "/attachments?name=red.png", content=image.getvalue())
             assert upload.status_code == 200, upload.text
@@ -65,7 +66,8 @@ async def test_ordered_submit_steer_and_restart_keep_identity_and_native_content
             assert foreign.status_code == 400
             for body in (
                 {},
-                {"prompt": "  "},
+                {"prompt": "old HTTP text form"},
+                {"prompt": "old attachments", "attachment_ids": [identity]},
                 {"parts": []},
                 {"parts": ["  "]},
                 {"prompt": "ambiguous", "parts": ["ordered"]},

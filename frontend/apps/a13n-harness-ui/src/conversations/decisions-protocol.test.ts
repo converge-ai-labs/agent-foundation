@@ -64,7 +64,7 @@ it("denies a reviewed shell without executing, then approves another exact reque
     const request = batch.requests[0];
     expect(request.kind).toBe("approval");
     if (request.kind !== "approval") throw new Error("Expected approval");
-    expect(request.override_allowed).toBe(false);
+    expect(request.override_allowed).toBe(true);
     expect(request.metadata?.["a13n.harness.tool-review"]).toEqual({
       risk: "high",
       reason: "Writes a fixture marker",

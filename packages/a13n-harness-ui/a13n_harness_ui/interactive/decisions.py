@@ -297,10 +297,10 @@ def _approval_content(request: ApprovalRequestView, index: int, total: int) -> d
     if isinstance(reason, str) and reason:
         content["reason"] = preview(reason, 2000)
     shared_review = metadata.pop("a13n.harness.tool-review", None)
-    review = (
-        shared_review if isinstance(approval, dict) and approval.get("tool_id") == "environment.shell_exec" else None
-    )
-    if isinstance(approval, dict) and approval.get("tool_id") == "environment.shell_exec":
+    identity = presentation if isinstance(presentation, dict) and presentation.get("tool_id") else approval
+    shell = isinstance(identity, dict) and identity.get("tool_id") == "environment.shell_exec"
+    review = shared_review if shell else None
+    if shell:
         content["review_kind"] = "shell"
     if isinstance(review, dict):
         risk, reason = review.get("risk"), review.get("reason")

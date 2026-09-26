@@ -9,7 +9,6 @@ if TYPE_CHECKING:
     from a13n_harness.tools.approval import (
         APPROVAL_PRESENTATION_KEY,
         ApprovalPresentation,
-        ApprovalSource,
         ToolApprovalContext,
     )
     from a13n_harness.tools.client import (
@@ -41,7 +40,6 @@ if TYPE_CHECKING:
     )
     from a13n_harness.tools.permissions import ToolPermissions, ToolPermissionsCapability, ToolPermissionSetting
     from a13n_harness.tools.policy import (
-        ApprovalVerifier,
         CredentialBroker,
         CredentialLease,
         InvocationGrantBroker,
@@ -57,7 +55,6 @@ _EXPORTS = {
     "a13n_harness.tools.approval": (
         "APPROVAL_PRESENTATION_KEY",
         "ApprovalPresentation",
-        "ApprovalSource",
         "ToolApprovalContext",
     ),
     "a13n_harness.tools.client": (
@@ -96,7 +93,6 @@ _EXPORTS = {
         "ToolPermissionsCapability",
     ),
     "a13n_harness.tools.policy": (
-        "ApprovalVerifier",
         "CredentialBroker",
         "CredentialLease",
         "InvocationGrantBroker",

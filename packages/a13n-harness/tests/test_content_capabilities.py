@@ -649,7 +649,7 @@ async def test_documents_retains_operation_scope_through_conversion_and_publicat
     tool_result = next(item for item in _tool_contents(seen) if isinstance(item, dict))
     assert tool_result["ok"] is True
     assert len(resources) == 2
-    assert all(resource.approval_revision for resource in resources)
+    assert all(resource.identifier for resource in resources)
     assert resources[0].kind == "file"
     assert [path.read_text() for path in root_a.glob("export_*/report.md")] == ["# Revision A"]
     assert not list(root_b.glob("export_*"))
@@ -1019,7 +1019,6 @@ async def test_content_tool_approval_is_independent_of_backing_identity(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from a13n_harness import DeferredToolResume
-    from a13n_harness.tools.approval import RESOURCE_APPROVAL_KEY
 
     if not has_backing_identity:
         # Exercise real file scopes across fresh bindings without continuity evidence,
@@ -1099,10 +1098,10 @@ async def test_content_tool_approval_is_independent_of_backing_identity(
     assert requests is not None
     assert not converter.requests and not client.requests
     assert len(captured[0]) == (1 if is_download else 2)
-    assert all(resource.approval_revision for resource in captured[0])
+    assert all(resource.identifier for resource in captured[0])
     if change == "legacy":
         for metadata in requests.metadata.values():
-            metadata.pop(RESOURCE_APPROVAL_KEY, None)
+            metadata.clear()
     resumed = await executable.run(
         previous_state=first.state,
         deferred_resume=DeferredToolResume(requests, requests.build_results(approve_all=True)),
@@ -1114,11 +1113,10 @@ async def test_content_tool_approval_is_independent_of_backing_identity(
         ),
     )
     assert resumed.output_or_raise() == "done"
-    allowed = change in {"same", "backing"}
+    allowed = change in {"same", "backing", "legacy"}
     assert bool(client.requests if is_download else converter.requests) == allowed
     if allowed:
         assert captured[0][0].identifier != captured[-1][0].identifier
-        assert captured[0][0].approval_revision == captured[-1][0].approval_revision
         # User-published output is not a run-private spill and survives cleanup.
         target = replacement if change == "backing" else original
         if is_download:

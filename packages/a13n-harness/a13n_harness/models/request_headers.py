@@ -21,7 +21,6 @@ from a13n_harness.model_affinity import derive_model_affinity_id, validate_sessi
 from a13n_harness.models.inference import _merge_headers
 
 MODEL_REQUEST_HEADERS_CAPABILITY_ID = "a13n.model.request-headers"
-MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV = "A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED"
 MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV = "A13N_HARNESS_MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED"
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
@@ -41,29 +40,15 @@ class ModelRequestPatchConfiguration:
         *,
         environ: Mapping[str, str] | None = None,
         session_affinity_header: str | None = None,
-        x_session_id_enabled: bool | None = None,
         openai_prompt_cache_key_enabled: bool | None = None,
     ) -> ModelRequestPatchConfiguration:
-        """Snapshot explicit affinity and independent cache policy.
-
-        The legacy boolean/environment switch remains an explicit opt-in alias for
-        x-session-id. A custom name replaces it; omission no longer enables it.
-        """
+        """Snapshot explicit affinity and independent cache policy."""
 
         source = os.environ if environ is None else environ
-        legacy_enabled = _resolve_enabled(
-            x_session_id_enabled,
-            source=source if session_affinity_header is None else {},
-            parameter="x_session_id_enabled",
-            environment_name=MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
-            default=False,
-        )
         try:
             header = (
                 validate_session_affinity_header(session_affinity_header)
                 if session_affinity_header is not None
-                else "x-session-id"
-                if legacy_enabled
                 else None
             )
         except ValueError as exc:
@@ -168,7 +153,6 @@ class ModelRequestHeadersCapability(AbstractCapability[AgentContext]):
 __all__ = [
     "MODEL_REQUEST_HEADERS_CAPABILITY_ID",
     "MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV",
-    "MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV",
     "ModelRequestHeadersCapability",
     "ModelRequestPatchConfiguration",
 ]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
 
@@ -23,7 +23,6 @@ from a13n_harness.state import HarnessState
 
 MAX_DEFERRED_ITEMS = 128
 MAX_DEFERRED_METADATA_BYTES = 64 * 1024
-_MANAGED_APPROVAL_TOOL_ID_KEY = "a13n.harness.managed-tool-id"
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,41 +213,7 @@ def validate_deferred_requests(requests: DeferredToolRequests) -> tuple[set[str]
         raise RunError("Deferred resume has too many pending requests.", code="deferred_requests_too_large")
 
     _validate_metadata(requests.metadata, call_ids | approval_ids)
-    for request in requests.approvals:
-        managed_approval_tool_id(requests, request.tool_call_id)
     return call_ids, approval_ids
-
-
-def bind_managed_approval_identities(
-    requests: DeferredToolRequests,
-    managed_tool_ids: Mapping[str, str],
-) -> DeferredToolRequests:
-    """Bind pending managed approvals to the stable identity of the assembled tool."""
-    metadata = deepcopy(requests.metadata)
-    for request in requests.approvals:
-        tool_id = managed_tool_ids.get(request.tool_name)
-        if tool_id is not None:
-            metadata.setdefault(request.tool_call_id, {})[_MANAGED_APPROVAL_TOOL_ID_KEY] = tool_id
-    pending_ids = {request.tool_call_id for request in (*requests.calls, *requests.approvals)}
-    _validate_metadata(metadata, pending_ids)
-    return DeferredToolRequests(
-        calls=deepcopy(requests.calls),
-        approvals=deepcopy(requests.approvals),
-        metadata=metadata,
-    )
-
-
-def managed_approval_tool_id(requests: DeferredToolRequests, tool_call_id: str) -> str | None:
-    """Read the trusted managed identity bound to one pending approval, if present."""
-    value = requests.metadata.get(tool_call_id, {}).get(_MANAGED_APPROVAL_TOOL_ID_KEY)
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value:
-        raise RunError(
-            "Deferred managed approval identity is invalid.",
-            code="deferred_metadata_invalid",
-        )
-    return value
 
 
 def _request_ids(requests: list[ToolCallPart], *, category: str) -> set[str]:

@@ -290,7 +290,7 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path
             created = api.post("/api/threads", json={})
             assert created.status_code == 200, created.text
             thread = created.json()["thread_id"]
-            submitted = api.post(f"/api/threads/{thread}/submit", json={"prompt": "Keep working until shutdown"})
+            submitted = api.post(f"/api/threads/{thread}/submit", json={"parts": ["Keep working until shutdown"]})
             assert submitted.status_code == 200, submitted.text
             terminal = api.post("/api/host/terminals", json={"cwd": str(tmp_path)}).json()
             assert "terminal_id" in terminal, terminal
@@ -402,7 +402,7 @@ async def test_projection_errors_log_safe_reasons_and_thread_identity(
             thread_id = thread["thread_id"]
             for endpoint, status, code, reason in (
                 ("transcript", 400, "thread_history_continuation_changed", "Saved history changed"),
-                ("tasks", 409, "thread_continuation_conflict", "selected continuation changed"),
+                ("decisions", 409, "thread_continuation_conflict", "selected continuation changed"),
             ):
                 caplog.clear()
                 with caplog.at_level(logging.WARNING, logger="a13n_harness_ui.webui"):
@@ -461,7 +461,10 @@ def test_ordered_prompt_preserves_presentation_source_identity(separator: str) -
     captured = request.input()
     assert isinstance(captured, ComposerInput)
     assert captured.source_id == source_id
-    assert PromptRequest(prompt="legacy").input() == "legacy"
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        PromptRequest.model_validate({"prompt": "legacy"})
 
 
 @pytest.mark.parametrize(

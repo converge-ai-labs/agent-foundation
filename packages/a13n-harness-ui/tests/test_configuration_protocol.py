@@ -8,12 +8,13 @@ import httpx
 import pytest
 import yaml
 from a13n_harness_ui.composition.service import RunCompositionService
+from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from anyio import Event, fail_after, sleep
 from pydantic_ai.models.function import FunctionModel
 
 from .test_app import _write_configuration
-from .test_interactive_protocol import listener
+from .test_interactive_protocol import listener_with_app
 
 pytestmark = pytest.mark.anyio
 HEADERS = {"Authorization": "Bearer test-only-key"}
@@ -74,7 +75,7 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     monkeypatch.setattr(RunCompositionService, "publish", publish)
-    async with listener(tmp_path, configuration_path=root) as (http, _):
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, _, app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             preview = await api.post("/api/threads/configuration-preview", json={})
             assert preview.status_code == 200, preview.text
@@ -103,10 +104,10 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             assert static.status_code == 200, static.text
             assert static.json()["sources"][0]["presentation"] == "dormant"
             assert (await api.get("/api/catalog")).json()
-            first = (await api.post(prefix + "/submit", json={"prompt": "first"})).json()["receipt_id"]
+            first = (await api.post(prefix + "/submit", json={"parts": ["first"]})).json()["receipt_id"]
             with fail_after(10):
                 await started.wait()
-            captured = (await api.get(f"/api/operations/{first}/configuration")).json()
+            captured = (await api.get(prefix + "/configuration")).json()["captured"]
             assert captured["agent"]["model_id"] == "model-primary"
             assert captured["mcp_server_ids"] == [] and captured["tool_proxy"]["groups"] == {}
             assert "private-" not in json.dumps(captured) and "authentication" in captured["omitted_fields"]
@@ -136,7 +137,7 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             assert saved_first["capture_source"] == "selected_continuation" and saved_first["captured"] == captured
             import asyncio
 
-            submitting = asyncio.create_task(api.post(prefix + "/submit", json={"prompt": "second"}))
+            submitting = asyncio.create_task(api.post(prefix + "/submit", json={"parts": ["second"]}))
             try:
                 with fail_after(10):
                     await publishing.wait()
@@ -144,16 +145,18 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             finally:
                 publish_release.set()
             second = (await submitting).json()["receipt_id"]
-            preparing = (await api.get(f"/api/operations/{second}/configuration")).json()
+            preparing = (await api.get(prefix + "/configuration")).json()["captured"]
             assert preparing["agent"]["model_id"] == "model-second"
             assert (await settled(api, second))["status"] == "completed"
             final = (await api.get(prefix + "/configuration")).json()
             assert final["captured"]["agent"]["model_id"] == "model-second"
             assert final["captured"]["thread_configuration_version"] == 2
             assert final["captured"]["composition_id"] != captured["composition_id"]
-            # Both exact current-process receipts remain inspectable independently.
-            assert (await api.get(f"/api/operations/{first}/configuration")).json() == captured
-    async with listener(tmp_path, configuration_path=root) as (http, _):
+            # Historical receipts remain independently inspectable through the Python App API.
+            first_capture = await app.inspect_operation_configuration(first)
+            assert first_capture is not None
+            assert first_capture.model_dump(mode="json") == captured
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, _, app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             restored = (await api.get(prefix + "/configuration")).json()
             assert restored["captured"] == final["captured"]
@@ -183,7 +186,7 @@ async def test_inspection_accounts_and_notes_use_existing_owners(
         )
     )
     monkeypatch.setenv("GROK_AUTH_PATH", str(auth))
-    async with listener(tmp_path, configuration_path=root) as (http, _):
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, _, app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             account = await api.get("/api/auth/accounts/grok")
             assert account.status_code == 200, account.text
@@ -195,11 +198,16 @@ async def test_inspection_accounts_and_notes_use_existing_owners(
             thread_id = (await api.post("/api/threads", json={})).json()["thread_id"]
             prefix = f"/api/threads/{thread_id}"
             detail = (await api.get(prefix)).json()
-            notes = await api.get(prefix + "/notes")
-            assert notes.status_code == 200, notes.text
-            assert notes.json()["continuation_id"] == detail["continuation_id"]
-            stale = await api.get(prefix + "/notes", params={"expected_continuation_id": "wrong"})
-            assert stale.status_code == 409, stale.text
+            work = await api.get(prefix + "/work", params={"include": "notes"})
+            assert work.status_code == 200, work.text
+            notes = await app.thread_notes(thread_id=thread_id)
+            assert notes.continuation_id == detail["continuation_id"]
+            assert work.json()["continuation_id"] == notes.continuation_id
+            assert work.json()["notes"]["available"] is False
+            assert notes.notes == ()
+            with pytest.raises(ThreadError) as stale:
+                await app.thread_notes(thread_id=thread_id, expected_continuation_id="wrong")
+            assert stale.value.code == "thread_continuation_conflict"
             context = await api.get(prefix + "/context-usage")
             assert context.status_code == 200 and context.json()["latest_request_tokens"] is None
             usage = await api.get(prefix + "/usage")
@@ -230,15 +238,15 @@ async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_
         return FunctionModel(stream_function=model)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
-    async with listener(tmp_path, configuration_path=root) as (http, _):
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, _, _app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             created = (await api.post("/api/threads", json={})).json()
             prefix = f"/api/threads/{created['thread_id']}"
-            first = (await api.post(prefix + "/submit", json={"prompt": "Inspect settings"})).json()["receipt_id"]
+            first = (await api.post(prefix + "/submit", json={"parts": ["Inspect settings"]})).json()["receipt_id"]
             with fail_after(10):
                 await started.wait()
             assert "Sidekick is enabled" in seen[0] and "Agent 'agent-assistant'" in seen[0]
-            captured = (await api.get(f"/api/operations/{first}/configuration")).json()
+            captured = (await api.get(prefix + "/configuration")).json()["captured"]
             assert captured["webui_sidekick"] == {"agent": None, "model": None}
             invalid = {**document, "webui": {"sidekick": {"agent": "agent-missing"}}}
             assert (
@@ -251,21 +259,21 @@ async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_
                 "/api/configuration/sources/a13n-harness-ui.yaml", json={"content": yaml.safe_dump(document)}
             )
             assert saved.status_code == 200, saved.text
-            assert (await api.get(f"/api/operations/{first}/configuration")).json() == captured
+            assert (await api.get(prefix + "/configuration")).json()["captured"] == captured
             release.set()
             assert (await settled(api, first))["status"] == "completed"
             assert "Sidekick is enabled" in seen[1]  # Later requests in the same Run retain captured instructions.
-            second = (await api.post(prefix + "/submit", json={"prompt": "Inspect again"})).json()["receipt_id"]
+            second = (await api.post(prefix + "/submit", json={"parts": ["Inspect again"]})).json()["receipt_id"]
             assert (await settled(api, second))["status"] == "completed"
             assert "Sidekick is enabled" not in seen[2]
-            assert (await api.get(f"/api/operations/{second}/configuration")).json()["webui_sidekick"] is None
+            assert (await api.get(prefix + "/configuration")).json()["captured"]["webui_sidekick"] is None
             assert (await api.get("/api/threads")).json()["total"] == 1  # Settings never create work.
-    async with listener(tmp_path, configuration_path=root) as (http, _):
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, _, _app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             saved = (await api.get("/api/configuration/sources/a13n-harness-ui.yaml")).json()
             assert yaml.safe_load(saved["content"])["webui"]["sidekick"] is None
             assert (await api.get("/api/threads")).json()["total"] == 1
-            third = (await api.post(prefix + "/submit", json={"prompt": "Still disabled"})).json()["receipt_id"]
+            third = (await api.post(prefix + "/submit", json={"parts": ["Still disabled"]})).json()["receipt_id"]
             assert (await settled(api, third))["status"] == "completed"
-            assert (await api.get(f"/api/operations/{third}/configuration")).json()["webui_sidekick"] is None
+            assert (await api.get(prefix + "/configuration")).json()["captured"]["webui_sidekick"] is None
             assert "Sidekick is enabled" not in seen[-1]

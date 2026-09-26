@@ -122,6 +122,29 @@ async def test_legacy_run_composition_reads_context_window_without_rewriting_obj
     assert await store.read(envelope.ref) == envelope
 
 
+@pytest.mark.parametrize("canonical", [256000, True, "128000"])
+async def test_context_window_alias_conflicts_are_rejected_without_mutation(canonical):
+    from a13n_harness_ui.configuration.models import ModelCharacteristics
+    from pydantic import TypeAdapter
+
+    value = {"context_window": 128000, "context_window_tokens": canonical}
+    original = value.copy()
+    with pytest.raises(ValidationError, match="must agree"):
+        TypeAdapter(ModelCharacteristics).validate_python(value)
+    assert value == original
+
+
+async def test_context_window_alias_equal_values_normalize_without_mutation():
+    from a13n_harness_ui.configuration.models import ModelCharacteristics
+    from pydantic import TypeAdapter
+
+    value = {"context_window": 128000, "context_window_tokens": 128000}
+    normalized = TypeAdapter(ModelCharacteristics).validate_python(value)
+    assert normalized.context_window_tokens == 128000
+    assert "context_window" not in normalized.model_dump()
+    assert value == {"context_window": 128000, "context_window_tokens": 128000}
+
+
 async def test_additive_configuration_fields_survive_nested_snapshot_round_trip(tmp_path, caplog):
     root = _write_configuration(tmp_path)
     extra = {"items": [1, True, None, "  private-future-value  "]}

@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { covers, encode, replica, ThreadDraft, values } from "./draft";
+import { attachmentToken } from "./inline-attachments";
 
 function frame(doc: Y.Doc, draft_id = "draft-one") {
   return {
@@ -28,13 +29,17 @@ for (const incomingFirst of [true, false])
   it(`clears captured identities, preserving concurrent text and replacement selections (${incomingFirst})`, () => {
     const draft = new ThreadDraft();
     draft.doc.getText("text").insert(0, "submitted");
-    draft.doc.getMap("attachments").set("selection", "file-old");
+    const selected = draft.addAttachment("file-old");
     draft.receive(frame(draft.doc));
     const capture = draft.capture();
     const peer = replica(Y.encodeStateAsUpdate(draft.doc));
     peer.getText("text").insert(0, "NEXT");
-    peer.getMap("attachments").set("selection", "file-new");
-    peer.getMap("attachments").set("extra", "file-extra");
+    peer.getMap("attachments").set(selected, "file-new");
+    const extra = `inline-${crypto.randomUUID()}`;
+    peer.getMap("attachments").set(extra, "file-extra");
+    peer
+      .getText("text")
+      .insert(0, attachmentToken(extra) + attachmentToken(selected));
     if (incomingFirst) draft.receive(frame(peer));
     draft.clear(capture);
     if (!incomingFirst) draft.receive(frame(peer));

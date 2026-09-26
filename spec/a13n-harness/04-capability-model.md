@@ -190,7 +190,7 @@ One fresh context is created for every logical Harness run and reused by that ru
 
 `project_model_context()` is the terminal dynamic-context projection. It combines `BoundEnvironment.project_model_context()` with bounded Agent run and conversation context according to the classified input or tool-results request. It returns typed blocks only and does not edit messages, expose opaque Capability namespaces, persist rendered text, or replace Capability-owned projections such as current time, request usage, selected Host metadata, working tasks, and notes.
 
-`tool_approval` exposes only verified, immutable human approval provenance for the active tool call; it is `None` outside that call and is isolated across concurrent calls. [Tool Execution](07-tool-execution.md#approval-and-deferred-calls) owns its sources, binding, and resume semantics.
+`tool_approval` exposes the immutable native approval decision for the active tool call; it is `None` outside that call and is isolated across concurrent calls. [Tool Execution](07-tool-execution.md#approval-and-deferred-calls) owns its trust boundary and resume semantics.
 
 `identity` is derived from `instance`; no second value can diverge. The context is not a generic service locator and cannot be supplied by plugins or model content. Skill paths and tool metadata contain no callable service, lifecycle hook, ordering edge, dispatch route, authority, or durable state. They are created once with the logical-run context and reused across its internal `ModelAttempt` values.
 

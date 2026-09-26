@@ -49,7 +49,7 @@ async def test_memory_http_reads_without_host_sharing_and_rejects_known_id_write
             assert memory_calls == 0
             # Only foreground input offers an automatic organization opportunity.
             ordinary = (await api.post("/api/threads", json={})).json()["thread_id"]
-            submitted = await api.post(f"/api/threads/{ordinary}/submit", json={"prompt": "Hello"})
+            submitted = await api.post(f"/api/threads/{ordinary}/submit", json={"parts": ["Hello"]})
             assert submitted.status_code == 200, submitted.text
             with fail_after(10):
                 await started.wait()
@@ -63,7 +63,7 @@ async def test_memory_http_reads_without_host_sharing_and_rejects_known_id_write
             assert captured["agent"]["source_kind"] == "memory"
             assert captured["environment_profile_id"] is None
             writes = [
-                await api.post(prefix + "/submit", json={"prompt": "Manual"}),
+                await api.post(prefix + "/submit", json={"parts": ["Manual"]}),
                 await api.patch(
                     prefix + "/metadata",
                     json={"expected_version": memory["metadata_version"], "patch": {"title": "Changed"}},

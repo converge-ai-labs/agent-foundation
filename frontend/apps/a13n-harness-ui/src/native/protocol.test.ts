@@ -198,12 +198,7 @@ it("precisely reviewed Files and Git captures replicate through the existing dra
     await vi.waitFor(() => expect(a.synchronized && b.synchronized).toBe(true));
     a.doc.getText("text").insert(0, "Review these captured observations.");
     for (const capture of [fileCapture, gitCapture])
-      a.doc
-        .getMap("attachments")
-        .set(
-          capture.attachment.attachment_id,
-          capture.attachment.attachment_id,
-        );
+      a.addAttachment(capture.attachment.attachment_id);
     await vi.waitFor(() =>
       expect(
         a.synchronized &&

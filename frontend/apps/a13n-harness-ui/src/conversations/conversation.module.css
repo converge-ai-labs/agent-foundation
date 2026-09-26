@@ -850,33 +850,6 @@
     min-width: 44px;
   }
 }
-.attachments {
-  list-style: none;
-  padding: 0;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.attachments li {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 6px;
-  max-width: 100%;
-}
-.attachments li > button:first-child {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-  cursor: pointer;
-}
-.attachments small {
-  color: var(--a13n-secondary);
-}
 .composerStatus {
   display: flex;
   flex-wrap: wrap;

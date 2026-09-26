@@ -32,23 +32,27 @@ async def test_client_capture_clear_merges_only_seen_items(clear_first: bool) ->
     participant = draft.attach()
     author = composer_document()
     author.get("text", type=Text).insert(0, "submitted")
-    author.get("attachments", type=Map[str])["selected"] = "old-capture"
+    selected, extra = "inline-" + "1" * 36, "inline-" + "2" * 36
+    author.get("attachments", type=Map[str])[selected] = "old-capture"
+    author.get("text", type=Text).insert(len(str(author["text"])), f"\ufffc{selected}\ufffc")
     await draft.command(participant, sync(draft, author), valid)
     captured = replica(author)
     next_input = replica(author)
     next_input.get("text", type=Text).insert(3, "NEW")
-    next_input.get("attachments", type=Map[str])["selected"] = "new-capture"
-    next_input.get("attachments", type=Map[str])["another"] = "added"
+    next_input.get("attachments", type=Map[str])[selected] = "new-capture"
+    next_input.get("attachments", type=Map[str])[extra] = "added"
+    next_input.get("text", type=Text).insert(0, f"\ufffc{extra}\ufffc\ufffc{selected}\ufffc")
     # The immutable input is read before ordinary HTTP submission. Only after
     # positive acknowledgment does this CLIENT perform its deletion transaction.
-    assert composer_values(captured) == ("submitted", ("old-capture",))
+    assert composer_values(captured) == (f"submitted\ufffc{selected}\ufffc", ("old-capture",))
     with captured.transaction():
         del captured.get("text", type=Text)[:]
-        for key in list(captured.get("attachments", type=Map[str]).keys()):
-            del captured.get("attachments", type=Map[str])[key]
     for incoming in (captured, next_input) if clear_first else (next_input, captured):
         await draft.command(participant, sync(draft, incoming), valid)
-    assert composer_values(draft.document) == ("NEW", ("added", "new-capture"))
+    assert composer_values(draft.document) == (
+        f"\ufffc{extra}\ufffc\ufffc{selected}\ufffcNEW",
+        ("added", "new-capture"),
+    )
     for client in (author, captured, next_input):
         client.apply_update(draft.document.get_update())
         assert composer_values(client) == composer_values(draft.document)
@@ -67,7 +71,9 @@ async def test_offline_full_replica_updates_converge_and_invalid_selection_is_at
     assert str(a["text"]) == str(b["text"]) and len(str(a["text"])) == 3
     before = draft.document.get_update()
     a.get("text", type=Text).insert(0, "not accepted")
-    a.get("attachments", type=Map[str])["file"] = "foreign-thread-attachment"
+    key = "inline-" + "f" * 36
+    a.get("attachments", type=Map[str])[key] = "foreign-thread-attachment"
+    a.get("text", type=Text).insert(0, f"\ufffc{key}\ufffc")
 
     async def missing(ids: tuple[str, ...]) -> None:
         assert ids == ("foreign-thread-attachment",)
@@ -201,6 +207,9 @@ async def test_unsent_membership_changes_only_after_validated_content_transition
     assert await draft.command(participant, sync(draft, author), valid)
     assert draft.unsent_since is None
     registry["legacy"] = "failed"
+    assert not await draft.command(participant, sync(draft, author), valid)
+    assert draft.unsent_since is None
+    text.insert(0, f"\ufffc{key}\ufffc")
     assert await draft.command(participant, sync(draft, author), valid)
     assert draft.unsent_since is not None
     draft.detach(participant)

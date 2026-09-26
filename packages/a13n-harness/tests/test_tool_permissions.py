@@ -81,7 +81,7 @@ async def test_native_tools_are_gated_before_custom_validation(mode: str) -> Non
 
     def execute(ctx: RunContext[AgentContext]) -> str:
         assert ctx.deps.tool_approval is not None
-        assert not ctx.deps.tool_approval.approved_sources
+        assert not ctx.deps.tool_approval.approved
         steps.append("execute")
         return "ok"
 
@@ -99,15 +99,15 @@ async def test_native_tools_are_gated_before_custom_validation(mode: str) -> Non
     assert steps == ([] if mode == "deny" else ["validate", "execute"])
 
 
-async def test_permission_then_tool_hitl_preserves_both_approvals() -> None:
+async def test_native_approval_satisfies_permission_and_tool() -> None:
     seen = []
     executed = []
 
     def execute(ctx: RunContext[AgentContext]) -> str:
         approval = ctx.deps.tool_approval
         assert approval is not None
-        seen.append(approval.approved_sources)
-        if "tool" not in approval.approved_sources:
+        seen.append(approval.approved)
+        if not approval.approved:
             raise ApprovalRequired(metadata={"reason": "Confirm business action"})
         executed.append(True)
         return "ok"
@@ -124,17 +124,16 @@ async def test_permission_then_tool_hitl_preserves_both_approvals() -> None:
     result = await executable.run("go", bindings=RunBindings.embedded())
     assert result.status == "suspended"
     assert not seen
-    for source in ("permission", "tool"):
-        requests = result.deferred
-        assert requests is not None
-        assert requests.metadata["call-1"]["a13n.harness.tool-approval"]["requested_sources"] == [source]
-        result = await executable.run(
-            previous_state=result.state,
-            deferred_resume=DeferredToolResume(requests, DeferredToolResults(approvals={"call-1": ToolApproved()})),
-            bindings=RunBindings.embedded(),
-        )
+    requests = result.deferred
+    assert requests is not None
+    assert "a13n.harness.tool-approval" not in requests.metadata["call-1"]
+    result = await executable.run(
+        previous_state=result.state,
+        deferred_resume=DeferredToolResume(requests, DeferredToolResults(approvals={"call-1": ToolApproved()})),
+        bindings=RunBindings.embedded(),
+    )
     assert result.status == "completed"
-    assert seen == [frozenset({"permission"}), frozenset({"permission", "tool"})]
+    assert seen == [True]
     assert executed == [True]
 
 
@@ -144,7 +143,7 @@ async def test_review_allow_is_not_human_approval_and_runs_before_validator() ->
 
     def validate(ctx: RunContext[AgentContext], value: str) -> None:
         assert len(reviewer.requests) == 1
-        assert not ctx.deps.tool_approval.approved_sources
+        assert not ctx.deps.tool_approval.approved
 
     def execute(ctx: RunContext[AgentContext], value: str) -> str:
         executed.append(value)
@@ -223,7 +222,7 @@ async def test_inline_native_handler_does_not_need_to_echo_approval_metadata() -
     seen = []
 
     def execute(ctx: RunContext[AgentContext]) -> str:
-        seen.append(ctx.deps.tool_approval.approved_sources)
+        seen.append(ctx.deps.tool_approval.approved)
         return "ok"
 
     async def approve(ctx, requests):
@@ -241,10 +240,10 @@ async def test_inline_native_handler_does_not_need_to_echo_approval_metadata() -
     )
     result = await executable.run("go", bindings=RunBindings.embedded())
     assert result.status == "completed"
-    assert seen == [frozenset({"permission"})]
+    assert seen == [True]
 
 
-async def test_reviewer_approval_does_not_approve_managed_policy() -> None:
+async def test_native_approval_satisfies_review_and_managed_policy() -> None:
     from a13n_harness.tools import (
         HarnessTool,
         HarnessToolMetadata,
@@ -258,7 +257,7 @@ async def test_reviewer_approval_does_not_approve_managed_policy() -> None:
     reviewer = _Reviewer(risk="extra_high")
 
     def execute(ctx: RunContext[AgentContext]) -> str:
-        seen.append(ctx.deps.tool_approval.approved_sources)
+        seen.append(ctx.deps.tool_approval.approved)
         return "ok"
 
     async def policy(invocation, metadata, *, context):
@@ -303,21 +302,20 @@ async def test_reviewer_approval_does_not_approve_managed_policy() -> None:
     result = await executable.run("go", bindings=bindings())
     assert result.status == "suspended"
     assert not policy_calls
-    for source in ("reviewer", "permission"):
-        requests = result.deferred
-        assert requests is not None
-        assert requests.metadata["call-1"]["a13n.harness.tool-approval"]["requested_sources"] == [source]
-        assert seen == []
-        result = await executable.run(
-            previous_state=result.state,
-            deferred_resume=DeferredToolResume(
-                requests,
-                DeferredToolResults(approvals={"call-1": ToolApproved()}),
-            ),
-            bindings=bindings(),
-        )
+    requests = result.deferred
+    assert requests is not None
+    assert "a13n.harness.tool-approval" not in requests.metadata["call-1"]
+    assert seen == []
+    result = await executable.run(
+        previous_state=result.state,
+        deferred_resume=DeferredToolResume(
+            requests,
+            DeferredToolResults(approvals={"call-1": ToolApproved()}),
+        ),
+        bindings=bindings(),
+    )
     assert result.status == "completed"
-    assert seen == [frozenset({"reviewer", "permission"})]
+    assert seen == [True]
 
 
 @pytest.mark.parametrize("failure", [None, "tool_review_failed"])
@@ -478,8 +476,8 @@ async def test_agent_reviewer_keeps_instruction_separate_and_requires_structured
     assert f"<custom-instruction>\n{expected} &lt;rule&gt;\n</custom-instruction>" in instruction
 
 
-@pytest.mark.parametrize("outcome", ["denied", "changed_arguments", "changed_schema"])
-async def test_pending_permission_never_dispatches_denial_or_changed_binding(outcome) -> None:
+@pytest.mark.parametrize("outcome", ["denied", "changed_arguments", "changed_schema", "invalid_arguments"])
+async def test_pending_permission_accepts_native_overrides_and_current_schema(outcome) -> None:
     from pydantic_ai import ToolDenied
 
     executed = []
@@ -510,6 +508,8 @@ async def test_pending_permission_never_dispatches_denial_or_changed_binding(out
         if outcome == "denied"
         else ToolApproved(override_args={"value": 2})
         if outcome == "changed_arguments"
+        else ToolApproved(override_args={"value": "not an integer"})
+        if outcome == "invalid_arguments"
         else ToolApproved()
     )
     if outcome == "changed_schema":
@@ -519,8 +519,10 @@ async def test_pending_permission_never_dispatches_denial_or_changed_binding(out
         deferred_resume=DeferredToolResume(first.deferred, DeferredToolResults(approvals={"call-1": decision})),
         bindings=RunBindings.embedded(),
     )
-    assert result.status == "completed"
-    assert not executed
+    assert result.status == ("suspended" if outcome == "invalid_arguments" else "completed")
+    assert executed == (
+        [] if outcome in {"denied", "invalid_arguments"} else [2 if outcome == "changed_arguments" else 1]
+    )
 
 
 async def test_declarative_permissions_gate_native_tools_without_host_type_registration() -> None:

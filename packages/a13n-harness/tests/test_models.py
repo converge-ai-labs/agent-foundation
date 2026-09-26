@@ -22,7 +22,6 @@ from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models import (
     MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
-    MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
     SelfHealingModel,
     SelfHealingModelCapability,
 )
@@ -340,15 +339,14 @@ async def test_automatic_request_affinity_runs_inside_other_innermost_request_wr
 
 
 @pytest.mark.parametrize(
-    ("disabled_environment", "expect_session_header", "expect_prompt_cache_key"),
+    ("expect_session_header", "expect_prompt_cache_key"),
     [
-        (MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, False, True),
-        (MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, True, False),
+        (False, True),
+        (True, False),
     ],
 )
 async def test_model_request_patches_can_be_disabled_independently_at_builder_creation(
     monkeypatch: pytest.MonkeyPatch,
-    disabled_environment: str,
     expect_session_header: bool,
     expect_prompt_cache_key: bool,
 ) -> None:
@@ -359,10 +357,9 @@ async def test_model_request_patches_can_be_disabled_independently_at_builder_cr
         seen.append(info.model_settings)
         yield "configured"
 
-    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, "true")
-    monkeypatch.setenv(disabled_environment, "false")
-    builder = HarnessBuilder()
-    monkeypatch.setenv(disabled_environment, "true")
+    monkeypatch.setenv(MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, str(expect_prompt_cache_key))
+    builder = HarnessBuilder(session_affinity_header="x-session-id" if expect_session_header else None)
+    monkeypatch.setenv(MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, str(not expect_prompt_cache_key))
     executable = builder.build(
         AgentSpec(),
         output_type=str,
@@ -380,11 +377,11 @@ async def test_model_request_patches_can_be_disabled_independently_at_builder_cr
     assert seen == [expected]
 
 
-# One padded and one unknown value, one per variable: the parser has only these two rejections.
+# The cache-policy parser rejects padded and unknown values.
 @pytest.mark.parametrize(
     ("environment_name", "value"),
     [
-        (MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, " true"),
+        (MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, " true"),
         (MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, "enabled"),
     ],
 )

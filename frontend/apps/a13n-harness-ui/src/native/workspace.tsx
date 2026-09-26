@@ -73,8 +73,7 @@ export function NativeWorkspace({
   const thread = useThread(threadId ?? "");
   const composers = useContext(ComposerDrafts);
   const isNew =
-    location.pathname === "/" ||
-    !!matchPath("/new/:draftId?", location.pathname);
+    location.pathname === "/" || !!matchPath("/new", location.pathname);
   const memoryMode =
     location.pathname === "/memory" || !!thread.data?.thread.memory_scope;
   const isWorkspace =

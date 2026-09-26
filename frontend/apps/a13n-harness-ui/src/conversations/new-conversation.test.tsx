@@ -132,7 +132,10 @@ beforeEach(() => {
   drafts = new Map();
   localStorage.clear();
   creations = new NewDraftStore();
-  creations.get(drafts, id);
+  const initial = creations.get(drafts);
+  drafts.delete(initial.threadId);
+  initial.threadId = id;
+  drafts.set(id, initial.composer);
   queries = new QueryClient({
     defaultOptions: {
       queries: { retry: false, staleTime: Infinity },
@@ -402,7 +405,7 @@ function mount(initial = path) {
                 <Location />
                 <Routes>
                   <Route
-                    path="/new/:draftId?"
+                    path="/new"
                     element={
                       <NewConversationPage
                         profile={{ display_name: "Test", color: "#000000" }}

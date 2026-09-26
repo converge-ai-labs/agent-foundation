@@ -452,9 +452,6 @@ class TerminalProjectionService:
             value, omitted = _bounded_json(request.args)
             raw_metadata = requests.metadata.get(request.tool_call_id)
             metadata = _json_mapping(raw_metadata)
-            # Bound Harness approvals authorize the captured arguments, not edits.
-            # Read the original evidence even when its display projection is omitted.
-            bound = isinstance(raw_metadata, dict) and "a13n.harness.tool-approval" in raw_metadata
             projected.append(
                 ApprovalRequestView(
                     request_id=request.tool_call_id,
@@ -463,7 +460,7 @@ class TerminalProjectionService:
                     arguments_omitted=omitted,
                     metadata=metadata,
                     metadata_omitted=raw_metadata is not None and metadata is None,
-                    override_allowed=not bound and not omitted,
+                    override_allowed=not omitted,
                 )
             )
         expires_at = await self._root_runs.interaction_expiry(thread_id, continuation_id)

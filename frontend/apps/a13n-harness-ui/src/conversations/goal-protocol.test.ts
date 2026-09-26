@@ -88,7 +88,7 @@ it("rejects an empty Goal objective without admitting work", async () => {
   await expect(
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path: { thread_id: created.thread_id } },
-      body: { prompt: "  ", mode: "goal" },
+      body: { parts: ["  "], mode: "goal" },
     }),
   ).rejects.toMatchObject({ status: 400 });
   const saved = await result(

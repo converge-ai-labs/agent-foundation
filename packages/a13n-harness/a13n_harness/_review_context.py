@@ -6,7 +6,7 @@ from html import escape
 from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDenied
 
 from a13n_harness._json import dump_json_text
@@ -34,9 +34,18 @@ class ReviewEvidence(BaseModel):
     decision: Literal["allow", "deny", "approval_required"] | None = None
     reason: str | None = Field(default=None, max_length=400)
     risk: Literal["low", "medium", "high", "extra_high"] | None = None
-    approved_sources: tuple[Literal["permission", "reviewer", "tool"], ...] = ()
-    denied_sources: tuple[Literal["permission", "reviewer", "tool"], ...] = ()
+    approved: bool = False
     outcome: Literal["not_executed", "tool_returned", "tool_reported_failure", "unknown"] = "not_executed"
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_historical_sources(cls, value: object) -> object:
+        if isinstance(value, dict):
+            value = dict(value)
+            sources = value.pop("approved_sources", ())
+            value.pop("denied_sources", None)
+            value.setdefault("approved", bool(sources))
+        return value
 
 
 class ReviewHistory(BaseModel):
@@ -64,42 +73,33 @@ async def record_approval_denials(
     context: AgentContext,
 ) -> None:
     """Observe the Host approval channel, not tool-return text or result metadata."""
-    from a13n_harness.tools.approval import NATIVE_TOOL_APPROVAL_KEY, TOOL_APPROVAL_KEY
+    from a13n_harness.tools.approval import APPROVAL_PRESENTATION_KEY
 
     if not context.deferred_tools_supported:
         return  # Automatic unsupported-Host denials are not human feedback.
     pending = requests.metadata if requests is not None else context._tool_pending_approvals
+    names = {call.tool_call_id: call.tool_name for call in requests.approvals} if requests is not None else {}
     for call_id, result in results.approvals.items():
         if result is not False and not isinstance(result, ToolDenied):
             continue
         metadata = pending.get(call_id, {})
-        facts = metadata.get(TOOL_APPROVAL_KEY, metadata.get(NATIVE_TOOL_APPROVAL_KEY))
-        if not isinstance(facts, dict):
-            continue
-        tool_id, binding = facts.get("tool_id"), facts.get("binding")
-        sources = facts.get("requested_sources")
-        if not isinstance(tool_id, str) or not isinstance(binding, str) or not isinstance(sources, list):
-            continue
-        if not sources or any(source not in ("permission", "reviewer", "tool") for source in sources):
-            continue
+        presentation = metadata.get(APPROVAL_PRESENTATION_KEY)
+        tool_id = presentation.get("tool_id") if isinstance(presentation, dict) else None
         await append_review_evidence(
             context,
-            ReviewEvidence.model_validate(
-                {
-                    "evidence_id": f"denied:{context.run_id}:{call_id}:{binding}",
-                    "run_id": context.run_id,
-                    "tool_id": tool_id,
-                    "tool_call_id": call_id,
-                    "binding": binding,
-                    "kind": "approval",
-                    "decision": "deny",
-                    "denied_sources": sources,
-                    "reason": (
-                        result.message[:400]
-                        if isinstance(result, ToolDenied) and result.message
-                        else "Approval channel denied the request."
-                    ),
-                }
+            ReviewEvidence(
+                evidence_id=f"denied:{context.run_id}:{call_id}",
+                run_id=context.run_id,
+                tool_id=tool_id if isinstance(tool_id, str) else names.get(call_id, call_id),
+                tool_call_id=call_id,
+                binding="",
+                kind="approval",
+                decision="deny",
+                reason=(
+                    result.message[:400]
+                    if isinstance(result, ToolDenied) and result.message
+                    else "Approval channel denied the request."
+                ),
             ),
         )
 
@@ -163,10 +163,8 @@ def _evidence(record: ReviewEvidence) -> str:
         facts["risk"] = record.risk
     if record.decision is not None:
         facts["policy-decision"] = record.decision
-    if record.approved_sources:
-        facts["verified-approval-sources"] = ",".join(record.approved_sources)
-    if record.denied_sources:
-        facts["denied-approval-sources"] = ",".join(record.denied_sources)
+    if record.approved:
+        facts["approved"] = "true"
     attrs = " ".join(f'{name}="{escape(value, quote=True)}"' for name, value in facts.items())
     text = " | ".join(value for value in (record.target, record.reason) if value)
     return f"<entry {attrs}>{escape(text, quote=False)}</entry>"
@@ -182,7 +180,7 @@ def render_review_input(
     task: str | None = None,
     description: str | None = None,
     context: dict[str, JsonValue] | None = None,
-    approved_sources: tuple[str, ...] = (),
+    approved: bool = False,
     previous_reviews: tuple[ReviewEvidence, ...] = (),
     recent_actions: tuple[ReviewEvidence, ...] = (),
     omitted: tuple[str, ...] = (),
@@ -201,7 +199,7 @@ def render_review_input(
         + _element("tool-name", tool_name)
         + f"<arguments>{_arguments(tool_id, arguments)}</arguments>"
         + _element("parameters-schema", dump_json_text(parameters_schema))
-        + _element("verified-approval-sources", ", ".join(approved_sources) or "none")
+        + _element("approved", "true" if approved else "false")
         + "</current-call>"
     )
     sections: list[str] = []

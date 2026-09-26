@@ -375,7 +375,7 @@ function WorkbenchContent({
                 }
               />
               <Route
-                path="/new/:draftId?"
+                path="/new"
                 element={
                   <NewConversationPage
                     profile={profile}

@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 import yaml
+from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from anyio import Event, fail_after
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
@@ -17,7 +18,7 @@ from websockets.asyncio.client import connect
 from .test_app import _write_configuration
 from .test_comment_protocol import publication
 from .test_configuration_protocol import HEADERS, settled
-from .test_interactive_protocol import frame_until, listener
+from .test_interactive_protocol import frame_until, listener, listener_with_app
 
 pytestmark = pytest.mark.anyio
 
@@ -87,11 +88,11 @@ async def test_child_question_competing_response_history_and_restart(
         return FunctionModel(stream_function=stream)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
-    async with listener(tmp_path, configuration_path=root) as (http, ws):
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, ws, app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             thread_id = (await api.post("/api/threads", json={})).json()["thread_id"]
             prefix = f"/api/threads/{thread_id}"
-            first = (await api.post(prefix + "/submit", json={"prompt": "Delegate then ask"})).json()["receipt_id"]
+            first = (await api.post(prefix + "/submit", json={"parts": ["Delegate then ask"]})).json()["receipt_id"]
             assert (await settled(api, first))["status"] == "suspended"
             children = (await api.get(prefix + "/children")).json()
             assert children["total"] == 1
@@ -166,16 +167,13 @@ async def test_child_question_competing_response_history_and_restart(
             history = (await api.get(prefix + "/transcript")).json()
             assert "Root completed after one answer." in json.dumps(history)
             assert (await api.get(prefix + "/decisions")).json() is None
-            unavailable = await api.get(prefix + "/children/execution-missing/review")
-            assert (
-                unavailable.status_code == 400
-                and unavailable.json()["error"]["code"] == "subagent_execution_unavailable"
-            )
-            child_review = await api.get(prefix + f"/children/{child['execution_id']}/review")
-            assert child_review.status_code == 200, child_review.text
+            with pytest.raises(HarnessUiError) as unavailable:
+                await app.child_review(parent_thread_id=thread_id, execution_id="execution-missing")
+            assert unavailable.value.code == "subagent_execution_unavailable"
+            child_review = await app.child_review(parent_thread_id=thread_id, execution_id=child["execution_id"])
             if len(child_output) <= 32 * 1024:
-                assert child_review.json()["summary"] == child_output
-                assert child_review.json()["truncated"] is False
+                assert child_review.summary == child_output
+                assert child_review.truncated is False
             output_page = await api.get(prefix + f"/children/{child['execution_id']}/saved-output", params={"limit": 1})
             assert output_page.status_code == 200, output_page.text
             output = output_page.json()["outputs"][0]
@@ -193,7 +191,7 @@ async def test_child_question_competing_response_history_and_restart(
             usage = (await api.get(prefix + "/usage")).json()
             assert usage["descendants"]["model_requests"] == 1
             assert usage["root"]["model_requests"] == 4
-    async with listener(tmp_path, configuration_path=root) as (http, _):
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, _, app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             restored = (await api.get(prefix + "/transcript")).json()
             assert restored == history
@@ -213,11 +211,10 @@ async def test_child_question_competing_response_history_and_restart(
             assert (await api.get(prefix + "/children")).json()["executions"][0]["execution_id"] == child[
                 "execution_id"
             ]
-            restored_review = await api.get(prefix + f"/children/{child['execution_id']}/review")
-            assert restored_review.status_code == 200, restored_review.text
+            restored_review = await app.child_review(parent_thread_id=thread_id, execution_id=child["execution_id"])
             if len(child_output) <= 32 * 1024:
-                assert restored_review.json()["summary"] == child_output
-                assert restored_review.json()["truncated"] is False
+                assert restored_review.summary == child_output
+                assert restored_review.truncated is False
             assert (await api.get(prefix + "/decisions")).json() is None
 
 
@@ -309,7 +306,9 @@ async def test_child_streams_provisional_text_before_message_close_and_saved_com
                 try:
                     with fail_after(10):
                         await subscribed.wait()
-                        receipt = (await api.post(prefix + "/submit", json={"prompt": "Delegate"})).json()["receipt_id"]
+                        receipt = (await api.post(prefix + "/submit", json={"parts": ["Delegate"]})).json()[
+                            "receipt_id"
+                        ]
                         await observed.wait()
                     assert not completed.is_set()
                     child = (await api.get(prefix + "/children")).json()["executions"][0]
@@ -359,7 +358,7 @@ async def test_realtime_observes_all_active_roots_with_bounded_idle_capacity(
             roots = [(await api.post("/api/threads", json={})).json()["thread_id"] for _ in range(32)]
             receipts = []
             for root in roots[:20]:
-                response = await api.post(f"/api/threads/{root}/submit", json={"prompt": "Hold"})
+                response = await api.post(f"/api/threads/{root}/submit", json={"parts": ["Hold"]})
                 assert response.status_code == 200, response.text
                 receipts.append(response.json()["receipt_id"])
             try:

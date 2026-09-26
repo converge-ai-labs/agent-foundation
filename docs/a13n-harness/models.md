@@ -182,10 +182,9 @@ builder = HarnessBuilder(
 )
 ```
 
-The legacy `x_session_id_enabled=True` Builder option and environment switch remain compatibility aliases for explicitly selecting `x-session-id`. Their absent default is now **false**. An explicit custom header name wins over that alias. The independent cache-key switch still defaults to **true**. Explicit booleans override their corresponding environment variables without reading them:
+The old `x_session_id_enabled` Builder option is removed and its environment switch is ignored. Use `session_affinity_header="x-session-id"` explicitly instead. The independent cache-key switch still defaults to **true**; an explicit `openai_prompt_cache_key_enabled` boolean overrides its environment value without reading it:
 
 ```bash
-export A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED=false
 export A13N_HARNESS_MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED=false
 ```
 

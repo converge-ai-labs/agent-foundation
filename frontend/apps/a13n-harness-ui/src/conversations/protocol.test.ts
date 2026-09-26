@@ -296,7 +296,7 @@ it("selects a model for one HTTP admission without changing sticky configuration
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path: { thread_id: thread } },
       body: {
-        prompt: "Use the alternate model",
+        parts: ["Use the alternate model"],
         model_id: "model-alternate",
         thinking: "low",
         fast: true,
@@ -308,7 +308,7 @@ it("selects a model for one HTTP admission without changing sticky configuration
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        prompt: "Continue",
+        parts: ["Continue"],
         model_id: "model-fixture",
         thinking: "high",
         fast: false,
@@ -346,7 +346,7 @@ it("selects a model for one HTTP admission without changing sticky configuration
   await expect(
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path: { thread_id: thread } },
-      body: { prompt: "Do not silently fall back", model_id: "missing-model" },
+      body: { parts: ["Do not silently fall back"], model_id: "missing-model" },
     }),
   ).rejects.toMatchObject({ status: 400, code: "model_missing" });
   const retained = await result(
@@ -386,7 +386,7 @@ it("projects skills before creation and validates references on submit and activ
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path },
       body: {
-        prompt: "$missing",
+        parts: ["$missing"],
         skill_references: [{ ...ref, name: "missing" }],
       },
     }),
@@ -395,7 +395,7 @@ it("projects skills before creation and validates references on submit and activ
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path },
       body: {
-        prompt: `$${skill.name}`,
+        parts: [`$${skill.name}`],
         skill_references: [
           { ...ref, catalog_id: idle.catalog_id, item_id: "0".repeat(64) },
         ],
@@ -406,7 +406,7 @@ it("projects skills before creation and validates references on submit and activ
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path },
       body: {
-        prompt: `Use $${skill.name} and wait for skill inspection`,
+        parts: [`Use $${skill.name} and wait for skill inspection`],
         skill_references: [ref],
       },
     }),
@@ -433,7 +433,7 @@ it("projects skills before creation and validates references on submit and activ
     transport.client.POST("/api/operations/{receipt_id}/steer", {
       params: { path: { receipt_id: accepted.receipt_id } },
       body: {
-        prompt: "$missing",
+        parts: ["$missing"],
         skill_references: [{ ...ref, name: "missing" }],
       },
     }),
@@ -441,7 +441,7 @@ it("projects skills before creation and validates references on submit and activ
   const steered = await result(
     transport.client.POST("/api/operations/{receipt_id}/steer", {
       params: { path: { receipt_id: accepted.receipt_id } },
-      body: { prompt: `Check $${skill.name}`, skill_references: [ref] },
+      body: { parts: [`Check $${skill.name}`], skill_references: [ref] },
     }),
   );
   expect(steered.accepted).toBe(true);
@@ -472,7 +472,7 @@ it("projects skills before creation and validates references on submit and activ
   const replacement = await result(
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path },
-      body: { prompt: "wait for skill inspection again" },
+      body: { parts: ["wait for skill inspection again"] },
     }),
   );
   const oldStop = await result(
@@ -661,7 +661,7 @@ it("multiplexes real summary and focus replay with independent reset and authent
     const receipt = await result(
       transport.client.POST("/api/threads/{thread_id}/submit", {
         params: { path: { thread_id: created.thread_id } },
-        body: { prompt: "Generate a response" },
+        body: { parts: ["Generate a response"] },
       }),
     );
     await until(
@@ -723,7 +723,7 @@ it("captures an HTTP environment override without changing defaults and never fa
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path: { thread_id: thread } },
       body: {
-        prompt: "Use Full Control for this Run",
+        parts: ["Use Full Control for this Run"],
         environment: { environment_profile_id: "environment-native" },
       },
     }),
@@ -758,7 +758,7 @@ it("captures an HTTP environment override without changing defaults and never fa
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        prompt: "Continue",
+        parts: ["Continue"],
         environment_profile_id: "environment-native",
       }),
     }),
@@ -767,7 +767,7 @@ it("captures an HTTP environment override without changing defaults and never fa
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path: { thread_id: thread } },
       body: {
-        prompt: "Do not fall back",
+        parts: ["Do not fall back"],
         environment: { environment_profile_id: "missing-environment" },
       },
     }),

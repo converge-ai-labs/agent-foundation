@@ -20,8 +20,7 @@ from opentelemetry import trace
 from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import OTELResourceDetector, Resource
-from opentelemetry.sdk.trace import Span as SdkSpan
-from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import INVALID_SPAN, Link, NoOpTracerProvider, ProxyTracerProvider, Span, StatusCode
 from pydantic import JsonValue
@@ -55,31 +54,6 @@ _MODEL_ENUM_SETTINGS = {
     "openai_reasoning_effort": {"none", "minimal", "low", "medium", "high", "xhigh"},
     "openai_service_tier": {"auto", "default", "flex", "priority"},
 }
-_TRACE_FIELDS = ("langfuse.trace.name", "langfuse.session.id", "langfuse.trace.tags")
-
-
-class HarnessUiSpanProcessor(SpanProcessor):
-    """Enrich existing spans for Langfuse without another execution pipeline.
-
-    Legacy opt-in propagation for independently instrumented SDK spans. UI and
-    Harness-selected spans are enriched automatically without this processor.
-    Only local parent attributes are copied; no baggage or registry is used.
-    """
-
-    def on_start(self, span: SdkSpan, parent_context: Context | None = None) -> None:
-        parent = trace.get_current_span(parent_context)
-        if isinstance(parent, SdkSpan) and parent.get_span_context().trace_id == span.get_span_context().trace_id:
-            attributes = parent.attributes or {}
-            for key in _TRACE_FIELDS:
-                value = attributes.get(key)
-                if value is not None and key not in (span.attributes or {}):
-                    span.set_attribute(key, value)
-        attributes = span.attributes or {}
-        operation = attributes.get("gen_ai.operation.name")
-        if span.name == "harness.run" or operation == "invoke_agent":
-            span.set_attribute("langfuse.observation.type", "agent")
-        elif operation == "execute_tool":
-            span.set_attribute("langfuse.observation.type", "tool")
 
 
 @dataclass(frozen=True)

@@ -133,7 +133,7 @@ result = await executable.run(
 )
 ```
 
-You may also supply new input. Native Pydantic AI continuation processes the retained calls and partial results before the next model request. Recovery uses native `ToolApproved` values as programmatic permission to replay selected calls. Native argument validation still runs, tools currently requiring approval or external execution still suspend, and managed invocations are checked against fresh policy and resources. Recovery permission does not substitute for resource-bound approval evidence. A fresh `DeferredToolResume` uses the supplied approval/result batch independently of `tool_recovery`; an interrupted resume uses `recovery=True` and the current recovery policy. Provider-suspended responses retain their native continuation path.
+You may also supply new input. Native Pydantic AI continuation processes the retained calls and partial results before the next model request. Recovery uses native `ToolApproved` values as programmatic permission to replay selected calls. Native argument validation still runs, tools currently requiring approval or external execution still suspend, and managed invocations are checked against fresh policy and resources. Recovery replay permission does not satisfy current approval requirements. A fresh `DeferredToolResume` uses the supplied approval/result batch independently of `tool_recovery`; an interrupted resume uses `recovery=True` and the current recovery policy. Provider-suspended responses retain their native continuation path.
 
 This option belongs to the run, not serialized state or model retry policy. It does not guarantee exactly-once effects or stop a later model decision from requesting another call.
 
@@ -175,11 +175,11 @@ Resume validates that:
 
 - previous state is present;
 - the deferred request and supplied results correlate exactly;
-- managed tools remount with the expected identity and schema;
+- pending calls match the legal message history and current tool category;
 - overridden arguments validate again;
 - fresh policy and provider enforcement still allow dispatch.
 
-A prior approval does not bypass current policy. Standard Environment-backed approvals bind the tool, arguments, resource kinds, and resolved paths, not mount IDs, connection generations, or backing identities. Reconnecting or replacing the backing environment does not by itself invalidate approval during HITL resume. Harness does not guarantee that the same path still refers to the same underlying target; Hosts needing that restriction use their invocation policy or approval verifier. Downloads bind their destination directory; document conversion binds its source and output parent directory. Pending approvals recorded with the old backing- or mount-based revisions, and legacy download/document approvals without revision facts, require fresh approval once.
+A prior approval does not bypass current policy. Hosts may construct legal history and supply native `bool`, `ToolApproved`, or `ToolDenied` decisions without private Harness metadata. Historical argument/schema fingerprints, resource revisions, and managed identity attestations are not required. Keep pending requests consistent with history; use `ToolApproved.override_args` for replacement arguments. Current schema validation, review, policy and Environment enforcement still apply. Approval does not reserve the backing target or authorize automatic replay after an unknown outcome.
 
 This native resume flow also applies to Host-managed children when current bindings support deferred tools. [Built-in inline children](delegation-and-codeact.md#host-managed-feedback) disable deferred tools and support ordinary prompt continuation only. Hosts without a deferred lifecycle explicitly set `deferred_tools_supported=False`; lineage alone does not disable interaction.
 
