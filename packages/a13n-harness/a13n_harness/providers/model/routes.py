@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 import httpx2
 from anyio import move_on_after
 
-from ...models.inference import ROUTE_ALIASES
+from ...models.inference import ROUTE_ALIASES as ROUTE_ALIASES
 from ...models.transport import create_model_http_client
 from ..endpoint_policy import EndpointPolicy
 from .builtins import BUILT_IN_MODEL_PROVIDERS
