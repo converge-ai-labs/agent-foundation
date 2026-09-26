@@ -20,9 +20,9 @@ from a13n_harness_ui.model_fast import FastControl
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl
 from a13n_harness_ui.model_thinking import ThinkingControl
 from a13n_harness_ui.output_comment_models import SavedOutputTarget
-from a13n_harness_ui.storage import AgentResourceSource, MarkdownSubagentSource, ThreadConfiguration
+from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
-from a13n_harness_ui.storage.contracts import ThreadCompletion
+from a13n_harness_ui.storage.contracts import AgentSource, ThreadCompletion
 
 _MAX_FAILURE_MESSAGE = 32 * 1024
 _MAX_DEFERRED_RESPONSE_BYTES = 1024 * 1024
@@ -57,11 +57,11 @@ class ContextUsageView(SurfaceModel):
 
 
 class AgentSourceView(SurfaceModel):
-    kind: Literal["agent", "markdown"]
+    kind: Literal["agent", "markdown", "memory"]
     id: str = Field(min_length=1, max_length=128)
 
     @classmethod
-    def from_stored(cls, source: AgentResourceSource | MarkdownSubagentSource) -> Self:
+    def from_stored(cls, source: AgentSource) -> Self:
         return cls(kind=source.kind, id=source.id)
 
 
@@ -138,6 +138,7 @@ class RootActivityView(SurfaceModel):
 
 
 class ThreadSummary(SurfaceModel):
+    memory_scope: str | None = None
     role: Literal["ordinary", "coordinator", "worker"] = "ordinary"
     auto_followup: bool | None = None
     thread_id: str = Field(min_length=1, max_length=80)
@@ -166,7 +167,21 @@ class ThreadSummary(SurfaceModel):
         return value.astimezone(UTC)
 
 
+class MemoryFileEntry(SurfaceModel):
+    path: str
+    version: str
+    size: int
+    description: str | None = None
+
+
+class MemoryFileText(SurfaceModel):
+    path: str
+    version: str
+    text: str
+
+
 class ThreadLookup(SurfaceModel):
+    memory: bool = False
     thread_ids: tuple[Annotated[str, Field(min_length=1, max_length=80)], ...] = Field(min_length=1, max_length=100)
 
 

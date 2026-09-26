@@ -1992,6 +1992,7 @@ def _initial_child_configuration(
 
 def _selection(thread_id: str, configuration: ThreadConfiguration) -> ThreadCompositionSelection:
     source = configuration.agent_source
+    assert source.kind != "memory"
     return ThreadCompositionSelection(
         thread_id=thread_id,
         version=configuration.version,

@@ -157,6 +157,133 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it.each([false, true])(
+  "shows the Memory entry exactly when Memory is enabled (%s), independently of automatic organization",
+  async (enabled) => {
+    localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
+    vi.mocked(fetch).mockImplementation(async (request) => {
+      if (new URL((request as Request).url).pathname === "/api/status")
+        return json({
+          ...status,
+          app: {
+            ...status.app,
+            memory_organization: {
+              memory_enabled: enabled,
+              availability: "disabled",
+            },
+          },
+        });
+      return fixture(request as Request);
+    });
+    render(<BrowserApp />);
+    await screen.findByText("1.2.3rc2");
+    expect(!!screen.queryByRole("link", { name: "Memory" })).toBe(enabled);
+  },
+);
+
+it("observes Memory with the shared Thread viewer and scoped files without mounting an editor", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
+  window.history.replaceState(null, "", "/memory");
+  const reads: string[] = [];
+  const thread = {
+    thread_id: "memory-global",
+    memory_scope: "global",
+    title: "Global memory",
+    created_at: "2026-09-01",
+    updated_at: "2026-09-01",
+    metadata_version: 1,
+    archived: false,
+    continuation_state: "selected",
+    root_activity: { state: "inactive" },
+    configuration: {
+      version: 1,
+      agent_source: { kind: "memory", id: "memory" },
+      environment_profile_id: "environment-native",
+    },
+  };
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const request = input as Request;
+    const url = new URL(request.url);
+    reads.push(url.pathname + url.search);
+    expect(request.method).toBe("GET");
+    if (url.pathname === "/api/status")
+      return json({
+        ...status,
+        app: {
+          ...status.app,
+          memory_organization: {
+            memory_enabled: true,
+            availability: "disabled",
+          },
+        },
+      });
+    if (url.pathname === "/api/projects")
+      return json([{ project_id: "project-main", name: "Main" }]);
+    if (url.pathname === "/api/threads") {
+      expect(url.searchParams.get("memory")).toBe("true");
+      return json({
+        threads: url.searchParams.has("project_id") ? [] : [thread],
+        total: 1,
+      });
+    }
+    if (url.pathname === "/api/threads/memory-global")
+      return json({ thread, available_actions: [], continuation_id: "saved" });
+    if (url.pathname.endsWith("/inputs"))
+      return json({ turns: [], next_cursor: null });
+    if (url.pathname.endsWith("/transcript"))
+      return json({
+        continuation_id: "saved",
+        entries: [],
+        turns: [],
+        next_cursor: null,
+      });
+    if (url.pathname.endsWith("/children"))
+      return json({ executions: [], next_cursor: null });
+    if (url.pathname === "/api/memory/files")
+      return json([{ path: "MEMORY.md" }]);
+    if (url.pathname === "/api/memory/file")
+      return json({
+        path: "MEMORY.md",
+        text: url.searchParams.has("project_id")
+          ? "Project-only memory"
+          : "Global-only memory",
+      });
+    return fixture(request);
+  });
+  render(<BrowserApp />);
+  await screen.findByText("Global-only memory");
+  await screen.findByRole("button", { name: "Inspect & usage" });
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(Realtime.prototype.subscribe)
+        .mock.calls.some(
+          ([channel]) =>
+            channel.stream === "focus" && channel.root === "memory-global",
+        ),
+    ).toBe(true),
+  );
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  expect(
+    reads.some((path) =>
+      /memory-global\/draft|configuration-preview/.test(path),
+    ),
+  ).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Inspect & usage" }));
+  await screen.findByRole("dialog");
+  expect(screen.getByText("Inspect")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  fireEvent.click(screen.getByRole("link", { name: "Main" }));
+  await screen.findByText("Project-only memory");
+  await screen.findByText("No organization history yet");
+  expect(screen.queryByText("Global-only memory")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Inspect & usage" })).toBeNull();
+  expect(reads.some((path) => path.includes("project_id=project-main"))).toBe(
+    true,
+  );
+});
+
 it("keeps a public startup shell instead of flashing login while checking a retained key", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
   window.history.replaceState(

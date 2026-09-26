@@ -21,17 +21,19 @@ export function ConversationDetails({
   threadId,
   receipt,
   reconcile,
+  readOnly = false,
 }: {
   threadId: string;
   receipt?: string | null;
   continuation?: string | null;
+  readOnly?: boolean;
   reconcile: () => void;
 }) {
   const [tab, setTab] = useState("execution");
   // Activity owns the latest process-local terminal receipt. Focus snapshots only
   // carry an active operation, so an inactive snapshot cannot substitute for it.
   const activity = useThreads(threadId, undefined, true, {
-    enabled: tab === "execution" && !receipt,
+    enabled: tab === "execution" && !receipt && !readOnly,
   });
   const row = activity.data?.pages
     .flatMap((page) => page.rows)
@@ -71,7 +73,11 @@ export function ConversationDetails({
         </>
       )}
       {tab === "configuration" && (
-        <ConversationConfiguration threadId={threadId} reconcile={reconcile} />
+        <ConversationConfiguration
+          threadId={threadId}
+          reconcile={reconcile}
+          readOnly={readOnly}
+        />
       )}
       {tab === "context" && <ContextDetails threadId={threadId} />}
     </div>

@@ -40,7 +40,14 @@ class MarkdownSubagentSource(StoredContract):
     id: str = Field(min_length=1, max_length=128)
 
 
-type AgentSource = AgentResourceSource | MarkdownSubagentSource
+class MemoryAgentSource(StoredContract):
+    """Application-owned organizer; not a selectable Agent resource."""
+
+    kind: Literal["memory"] = "memory"
+    id: str = "memory"
+
+
+type AgentSource = AgentResourceSource | MarkdownSubagentSource | MemoryAgentSource
 
 
 class ThreadConfiguration(StoredContract):
@@ -140,6 +147,7 @@ class ThreadReadModel(StoredContract):
 
 
 class Thread(StoredContract):
+    memory_scope: str | None = None
     thread_id: str = Field(min_length=1, max_length=80)
     parent_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     created_at: datetime

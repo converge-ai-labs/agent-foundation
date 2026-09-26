@@ -75,7 +75,10 @@ export function NativeWorkspace({
   const isNew =
     location.pathname === "/" ||
     !!matchPath("/new/:draftId?", location.pathname);
-  const isWorkspace = location.pathname === "/" || !!threadId || isNew;
+  const memoryMode =
+    location.pathname === "/memory" || !!thread.data?.thread.memory_scope;
+  const isWorkspace =
+    !memoryMode && (location.pathname === "/" || !!threadId || isNew);
   const projectLoading = !!threadId && (thread.isPending || projects.isPending);
   const resolvedProject = projects.data?.find(
     (item) =>
@@ -515,9 +518,11 @@ export function NativeWorkspace({
                 )
               : isWorkspace
                 ? "New conversation"
-                : location.pathname === "/archived"
-                  ? "Archived conversations"
-                  : "Settings"}
+                : memoryMode
+                  ? "Memory"
+                  : location.pathname === "/archived"
+                    ? "Archived conversations"
+                    : "Settings"}
           </h1>
           {isWorkspace && (
             <div className={styles.panelTools} aria-label="Workbench views">
@@ -570,7 +575,7 @@ export function NativeWorkspace({
               tabIndex={-1}
               onFocusCapture={() => setFocusedArea("page")}
               onPointerDown={() => setFocusedArea("page")}
-              className={`${styles.page} a13n-scrollbar ${!threadId ? styles.documentPage : ""}`}
+              className={`${styles.page} a13n-scrollbar ${!threadId && !memoryMode ? styles.documentPage : ""}`}
             >
               <OpenHostFile
                 value={

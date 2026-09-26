@@ -33,6 +33,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20260926_1da116a90fda_add_memory_scope_to_observable_threads.py").unlink()
     (newer / "versions/20260924_6fb2512c92a3_add_shared_thread_stars.py").unlink()
     (newer / "versions/20260924_0a7582171995_replace_project_leads_with_thread_.py").unlink()
     (newer / "versions/20260923_78e4e7206898_add_project_lead_worker_ownership.py").unlink()
@@ -82,6 +83,8 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("ALTER TABLE thread ADD COLUMN completed_at DATETIME"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN touched_at DATETIME"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN starred BOOLEAN NOT NULL DEFAULT 0"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN memory_scope VARCHAR(256)"))
+            connection.execute(text("CREATE UNIQUE INDEX uq_thread_memory_scope ON thread (memory_scope)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_digest VARCHAR(64)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_schema_version VARCHAR(64)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_json TEXT"))
@@ -305,3 +308,40 @@ async def test_comment_lifecycle_upgrade_preserves_rows_and_blocks_lossy_downgra
     with pytest.raises(RuntimeError, match="Cannot downgrade while edited or deleted"):
         migrator._run(lambda config: command.downgrade(config, "4b71199c8ee5"), write=True)
     migrator.verify_current()
+
+
+async def test_memory_migration_preserves_existing_threads_and_enforces_scope_identity(tmp_path):
+    from sqlalchemy.exc import IntegrityError
+
+    configuration = _write_configuration(tmp_path)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=configuration) as app:
+        ordinary = await app.create_thread(title="Before Memory")
+    migrator = DatabaseMigrator(settings.storage.data_root / "metadata.sqlite3")
+    migrator._run(lambda config: command.downgrade(config, "6fb2512c92a3"), write=True)
+    engine = create_engine(f"sqlite:///{settings.storage.data_root / 'metadata.sqlite3'}")
+    try:
+        assert "memory_scope" not in {column["name"] for column in inspect(engine).get_columns("thread")}
+        with engine.connect() as connection:
+            before = connection.execute(text("SELECT * FROM thread")).mappings().one()
+            before_config = connection.execute(text("SELECT * FROM thread_configuration")).mappings().one()
+        migrator.upgrade()
+        with engine.connect() as connection:
+            after = connection.execute(text("SELECT * FROM thread")).mappings().one()
+            assert dict(after) == {**before, "memory_scope": None}
+            assert connection.execute(text("SELECT * FROM thread_configuration")).mappings().one() == before_config
+        async with open_harness_ui_app(settings, configuration_path=configuration) as app:
+            memory = await app._threads.memory_thread(scope="global", project_id=None, model_id="model-primary")
+            assert (
+                await app._threads.memory_thread(scope="global", project_id=None, model_id="model-primary")
+            ).thread_id == memory.thread_id
+            assert (await app.get_thread(ordinary.thread_id)).thread.title == "Before Memory"
+        with engine.begin() as connection, pytest.raises(IntegrityError):
+            connection.execute(
+                text("UPDATE thread SET memory_scope = 'global' WHERE thread_id = :id"), {"id": ordinary.thread_id}
+            )
+        with pytest.raises(RuntimeError, match="Cannot downgrade while Memory Threads exist"):
+            migrator._run(lambda config: command.downgrade(config, "6fb2512c92a3"), write=True)
+        migrator.verify_current()
+    finally:
+        engine.dispose()

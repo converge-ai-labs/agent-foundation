@@ -7,7 +7,6 @@ import yaml
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.providers.memory import DirectoryFileStore, MemoryStoreError, Origin
 from a13n_harness_ui.app import open_harness_ui_app
-from a13n_harness_ui.composition import AgentCompositionResolver
 from a13n_harness_ui.configuration import load_harness_ui_configuration
 from a13n_harness_ui.memory import bind_memory, memory_scopes
 from a13n_harness_ui.memory_organization import (
@@ -18,7 +17,6 @@ from a13n_harness_ui.memory_organization import (
     _write_state,
     manifest,
 )
-from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.storage import StoredContinuation
 from a13n_harness_ui.surfaces import RootOperationStatus
@@ -54,15 +52,10 @@ def _organizer(tmp_path, source, *, webui=True):
     async def current():
         return source
 
-    return MemoryOrganizer(
-        configuration_root=tmp_path,
-        current=current,
-        resolver=AgentCompositionResolver(),
-        api_keys=ApiKeyStore(tmp_path / "auth.json"),
-        subscription_sources={},
-        instrumentation=None,
-        webui=webui,
-    )
+    async def forbidden(request):
+        raise AssertionError("This scheduler-only test must not admit a model Run")
+
+    return MemoryOrganizer(configuration_root=tmp_path, current=current, run=forbidden, webui=webui)
 
 
 async def _settle(organizer):
@@ -136,7 +129,7 @@ async def test_own_effects_confirm_but_concurrent_write_never_advances_manifest(
 
 
 async def test_organizer_runs_real_restricted_harness_and_gates_clean_or_cooled_scopes(tmp_path, monkeypatch):
-    _, source, scope, store = await _seed(tmp_path)
+    root, source, scope, store = await _seed(tmp_path)
     calls = []
 
     async def model(messages, info):
@@ -150,9 +143,8 @@ async def test_organizer_runs_real_restricted_harness_and_gates_clean_or_cooled_
         return FunctionModel(stream_function=model)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
-    organizer = _organizer(tmp_path, source)
-    async with create_task_group() as group:
-        organizer.start(group)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        organizer = app._memory_organizer
         organizer.offer(None)
         organizer.offer(None)
         await _settle(organizer)
@@ -261,7 +253,7 @@ async def test_partial_edits_remain_dirty_after_interrupted_or_conflicting_organ
 
 
 @pytest.mark.parametrize("host_mode", ["webui", "local"])
-async def test_app_input_starts_parallel_internal_work_without_extra_threads(tmp_path, monkeypatch, host_mode):
+async def test_app_input_starts_parallel_memory_work_hidden_from_ordinary_threads(tmp_path, monkeypatch, host_mode):
     root, _, _, _ = await _seed(tmp_path)
     maintenance_started = Event()
     release = Event()
@@ -332,7 +324,7 @@ async def test_organizer_real_memory_tool_write(tmp_path, monkeypatch):
 
     from pydantic_ai.models.function import DeltaToolCall
 
-    _, source, scope, store = await _seed(tmp_path)
+    root, source, scope, store = await _seed(tmp_path)
     calls = 0
 
     async def model(messages, info):
@@ -354,9 +346,8 @@ async def test_organizer_real_memory_tool_write(tmp_path, monkeypatch):
         return FunctionModel(stream_function=model)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
-    organizer = _organizer(tmp_path, source)
-    async with create_task_group() as group:
-        organizer.start(group)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        organizer = app._memory_organizer
         organizer.offer(None)
         await _settle(organizer)
         assert organizer.status(source).last_outcome == "completed"
@@ -431,3 +422,160 @@ async def test_app_reload_disables_running_maintenance_without_waiting_for_foreg
         await _settle(app._memory_organizer)
         assert (await app.status()).memory_organization.availability == "disabled"
         assert (await app.status()).memory_organization.last_outcome == "cancelled"
+
+
+@pytest.mark.parametrize("ending", ["disable", "deadline", "shutdown"])
+async def test_real_memory_root_settles_before_scope_lock_is_released(tmp_path, monkeypatch, ending):
+    from a13n_harness_ui import memory_organization
+
+    root, _, scope, _ = await _seed(tmp_path)
+    started, finished = Event(), Event()
+
+    async def model(messages, info):
+        started.set()
+        try:
+            await sleep_forever()
+            yield "unreachable"
+        finally:
+            finished.set()
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    if ending == "deadline":
+        monkeypatch.setattr(memory_organization, "_DEADLINE", 1)
+    settings = _settings(tmp_path / "state")
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        organizer = app._memory_organizer
+        organizer.offer(None)
+        with fail_after(5):
+            await started.wait()
+        thread = (await app.list_threads(memory=True)).threads[0]
+        if ending == "disable":
+            value = yaml.safe_load(root.read_text())
+            value["memory"]["auto_organize"]["enabled"] = False
+            root.write_text(yaml.safe_dump(value))
+            await app.reload_configuration()
+        elif ending == "shutdown":
+            organizer.stop()
+        await _settle(organizer)
+        assert finished.is_set()
+        assert (await app.get_thread(thread.thread_id)).thread.root_activity.state == "inactive"
+        with FileLock(scope.root / ".a13n-memory/organize.lock", timeout=0):
+            assert (await app.get_thread_transcript(thread_id=thread.thread_id)).entries
+        state = _read_state(scope.root / ".a13n-memory/organization.json")
+        assert state.manifest == {} and state.next_attempt_at > 0
+        assert (await app.status()).memory_organization.last_outcome == (
+            "failed" if ending == "deadline" else "cancelled"
+        )
+
+
+async def test_memory_rounds_share_identity_history_and_usage_but_not_model_context(tmp_path, monkeypatch):
+    root, _, scope, store = await _seed(tmp_path)
+    contexts = []
+
+    async def model(messages, info):
+        contexts.append(str(messages))
+        assert all(tool.name.startswith("memory_") for tool in info.function_tools)
+        yield f"Organization result {len(contexts)}"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    settings = _settings(tmp_path / "state")
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        organizer = app._memory_organizer
+        organizer.offer(None)
+        await _settle(organizer)
+        page = await app.list_threads(memory=True)
+        assert page.total == 1
+        thread = page.threads[0]
+        assert thread.memory_scope == "global"
+        assert not (await app.list_threads()).threads
+        assert not (await app.get_thread(thread.thread_id)).available_actions
+        assert (await app.lookup_threads(thread_ids=(thread.thread_id,))).total == 0
+        assert (await app.lookup_threads(thread_ids=(thread.thread_id,), memory=True)).total == 1
+        first_usage = await app.thread_usage(thread_id=thread.thread_id)
+        assert first_usage.root.model_requests == 1
+        version = (await store.read("MEMORY.md")).version
+        await store.write("MEMORY.md", "Second round preference\n", expected=version, origin=Origin())
+        state_path = scope.root / ".a13n-memory/organization.json"
+        state = _read_state(state_path)
+        state.next_attempt_at = 0
+        _write_state(state_path, state)
+        organizer.offer(None)
+        await _settle(organizer)
+        assert len(contexts) == 2
+        assert "Organization result 1" not in contexts[1]
+        assert "Second round preference" in contexts[1]
+        assert (await app.list_threads(memory=True)).threads[0].thread_id == thread.thread_id
+        transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
+        text = transcript.model_dump_json()
+        assert "Organization result 1" in text and "Organization result 2" in text
+        assert sum("Automatic memory organization" in entry.model_dump_json() for entry in transcript.entries) == 2
+        assert (await app.thread_usage(thread_id=thread.thread_id)).root.model_requests == 2
+        assert (await app.inspect_thread_configuration(thread.thread_id)).captured.agent.source_kind == "memory"
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        assert (await app.list_threads(memory=True)).threads[0].thread_id == thread.thread_id
+        assert (await app.thread_usage(thread_id=thread.thread_id)).root.model_requests == 2
+        assert (
+            "Organization result 1" in (await app.get_thread_transcript(thread_id=thread.thread_id)).model_dump_json()
+        )
+        assert len(contexts) == 2  # Merely opening and reading never schedules inference.
+
+
+async def test_memory_scope_files_and_mutation_boundaries(tmp_path, monkeypatch):
+    from a13n_harness_ui.errors import ThreadError
+    from a13n_harness_ui.surfaces import ThreadMetadataMutation, ThreadMetadataPatch
+
+    root, _, _, _ = await _seed(tmp_path)
+    project = memory_scopes(tmp_path, "project-main")[-1]
+    await DirectoryFileStore(project.root).write("MEMORY.md", "Project only\n", expected=None, origin=Origin())
+
+    async def model(messages, info):
+        text = str(messages)
+        assert not ("Project only" in text and "Keep stable preferences" in text)
+        yield "done"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        assert [entry.path for entry in await app.memory_files()] == ["MEMORY.md"]
+        assert (await app.memory_file(path="MEMORY.md", project_id="project-main")).text == "Project only\n"
+        assert not (await app.list_threads(memory=True)).threads
+        with pytest.raises(ThreadError):
+            await app.memory_file(path="../a13n-harness-ui.yaml")
+        with pytest.raises(ThreadError):
+            await app.memory_files(project_id="../outside")
+        app._memory_organizer.offer("project-main")
+        await _settle(app._memory_organizer)
+        page = await app.list_threads(memory=True)
+        assert {thread.memory_scope for thread in page.threads} == {"global", "project:project-main"}
+        assert (await app.list_threads(memory=True, projectless=True)).total == 1
+        assert (await app.list_threads(memory=True, project_id="project-main")).total == 1
+        for thread in page.threads:
+            tid = thread.thread_id
+            operations = [
+                lambda tid=tid, thread=thread: app.submit_thread(thread_id=tid, prompt="manual"),
+                lambda tid=tid, thread=thread: app.shared_draft(tid),
+                lambda tid=tid, thread=thread: app.touch_thread(tid),
+                lambda tid=tid, thread=thread: app.update_thread_metadata(
+                    thread_id=tid,
+                    mutation=ThreadMetadataMutation(
+                        expected_version=thread.metadata_version, patch=ThreadMetadataPatch(title="changed")
+                    ),
+                ),
+                lambda tid=tid, thread=thread: app.promote_coordinator(tid),
+                lambda tid=tid, thread=thread: app.create_thread(coordinator_thread_id=tid),
+                lambda tid=tid, thread=thread: app.preview_project_defaults(thread_id=tid),
+            ]
+            for operation in operations:
+                with pytest.raises(ThreadError) as error:
+                    await operation()
+                assert error.value.code == "memory_thread_read_only"
+        assert (await app.list_threads()).total == 0
+        assert len(await app.memory_files()) == 1  # Internal bookkeeping never appears as user files.

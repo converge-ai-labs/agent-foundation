@@ -18,7 +18,7 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness.capabilities import SubagentCapability, SubagentOperator, ToolProxyPlan, ToolProxySelection
-from a13n_harness.capabilities.memory import MemoryCursors
+from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
@@ -47,7 +47,7 @@ from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
 from a13n_harness_ui.media_understanding import FileMediaUnderstanding
-from a13n_harness_ui.memory import bind_memory
+from a13n_harness_ui.memory import MemoryOrganizationRun, bind_memory
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver, SubscriptionSource, model_recipe_id
 
@@ -196,7 +196,16 @@ class AgentReconstructor:
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         pricing_catalog: PricingCatalog | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
+        organization: MemoryOrganizationRun | None = None,
     ) -> ReconstructedAgent:
+        if composition.memory_organization:
+            if organization is None:
+                raise CompositionError(
+                    "Memory organization requires a new scope admission.", code="memory_admission_required"
+                )
+            return self._reconstruct_memory(
+                composition, organization, root_capabilities, subscription_sources, pricing_catalog
+            )
         memory, cursors = bind_memory(
             self._configuration_root,
             enabled=composition.memory_enabled,
@@ -268,6 +277,53 @@ class AgentReconstructor:
             media_models={
                 kind: recipe.model_copy(deep=True) for kind, recipe in composition.media_understanding.items()
             },
+        )
+
+    def _reconstruct_memory(
+        self,
+        composition: ResolvedRunComposition,
+        organization: MemoryOrganizationRun,
+        root_capabilities: Sequence[AbstractCapability[Any]],
+        subscription_sources: Mapping[str, SubscriptionSource] | None,
+        pricing_catalog: PricingCatalog | None,
+    ) -> ReconstructedAgent:
+        node = composition.root
+        recipe_id = model_recipe_id(node.model)
+        memory = FileMemoryCapability(
+            (
+                FileMount(
+                    name=organization.scope.name,
+                    store=organization.store,
+                    access="write",
+                    always_load=("MEMORY.md",),
+                ),
+            )
+        )
+        definition = AgentDefinition(
+            agent=AgentSpec(
+                model=recipe_id,
+                system_prompt=list(node.system_prompt) if node.system_prompt is not None else None,
+                instructions=list(node.instructions),
+                model_settings=dict(node.model.settings),
+                model_characteristics=node.model.model_characteristics,
+                usage_limits=UsageLimits(request_limit=12),
+            ),
+            output_type=str,
+            capabilities=(*root_capabilities, memory),
+        )
+        executable = HarnessBuilder(
+            configured_plugins_enabled=False,
+            instrumentation=self._instrumentation,
+            x_session_id_enabled=False,
+        ).build(definition, pricing_catalog=pricing_catalog)
+        return ReconstructedAgent(
+            executable=cast(ExecutableAgent[str], executable),
+            model_resolver=HarnessUiModelResolver(
+                {recipe_id: node.model},
+                subscription_sources=subscription_sources,
+                api_keys=self._api_keys,
+            ),
+            definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
         )
 
     def _definition(

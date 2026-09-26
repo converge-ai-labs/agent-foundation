@@ -126,6 +126,7 @@ class CoordinatorWorkerRecord(Base):
 class ThreadRecord(Base):
     __tablename__ = "thread"
 
+    memory_scope: Mapped[str | None] = mapped_column(String(256), nullable=True, unique=True)
     thread_id: Mapped[str] = mapped_column(String(80), primary_key=True)
     parent_thread_id: Mapped[str | None] = mapped_column(
         String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), nullable=True, index=True
@@ -198,7 +199,7 @@ class ThreadConfigurationRecord(Base):
     __tablename__ = "thread_configuration"
     __table_args__ = (
         CheckConstraint("version >= 1", name="version"),
-        CheckConstraint("agent_source_kind IN ('agent', 'markdown')", name="agent_source_kind"),
+        CheckConstraint("agent_source_kind IN ('agent', 'markdown', 'memory')", name="agent_source_kind"),
     )
 
     thread_id: Mapped[str] = mapped_column(

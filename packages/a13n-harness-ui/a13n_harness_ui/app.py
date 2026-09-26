@@ -22,13 +22,15 @@ from a13n_harness.input import RunInputValue
 from a13n_harness.plugin_factories import HarnessPluginFactory
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.remote_envd.pairing import PairingChallenge, PairingRequest, PairingResponse
+from a13n_harness.providers.memory import DirectoryFileStore, MemoryStoreError
 from a13n_harness.providers.model.oauth import GrokCredentials
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic_ai import BinaryContent, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
+from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.composition import (
     AgentCompositionResolver,
@@ -133,6 +135,7 @@ from a13n_harness_ui.live import (
     SummaryCursor,
     SummarySubscription,
 )
+from a13n_harness_ui.memory import MemoryOrganizationRun, memory_scopes
 from a13n_harness_ui.memory_organization import MemoryOrganizationStatus, MemoryOrganizer
 from a13n_harness_ui.model_accounts import (
     DEFAULT_GROK_OAUTH_SCOPE,
@@ -230,6 +233,8 @@ from a13n_harness_ui.surfaces import (
     EnvironmentProfileSummary,
     ExternalToolResult,
     LaunchProjectResolution,
+    MemoryFileEntry,
+    MemoryFileText,
     NewThreadDefaults,
     NotePage,
     ProjectDefaultsApply,
@@ -239,6 +244,7 @@ from a13n_harness_ui.surfaces import (
     QuestionResponse,
     ReviewView,
     RootControlResult,
+    RootOperationStatus,
     RootOperationView,
     RootRunReceipt,
     RunModelOverrides,
@@ -1144,7 +1150,11 @@ class HarnessUiApp:
                     ),
                 ),
                 next_generation_digest=None if source is None else source.source_digest,
-                next_model_id=selected.default_model_id or (None if agent is None else agent.model),
+                next_model_id=(
+                    source.document.memory.auto_organize.model
+                    if thread.memory_scope is not None and source is not None
+                    else selected.default_model_id or (None if agent is None else agent.model)
+                ),
                 next_capability_ids=() if agent is None else tuple(item.capability for item in agent.capabilities),
                 next_tool_proxy=(
                     None
@@ -1190,6 +1200,8 @@ class HarnessUiApp:
     async def list_threads(
         self,
         *,
+        memory: bool = False,
+        projectless: bool = False,
         query: str | None = None,
         project_id: str | None = None,
         include_archived: bool = False,
@@ -1200,6 +1212,8 @@ class HarnessUiApp:
     ) -> ThreadPage:
         async with self._operation():
             return await self._projections.list_threads(
+                memory=memory,
+                projectless=projectless,
                 query=query,
                 project_id=project_id,
                 include_archived=include_archived,
@@ -1211,18 +1225,21 @@ class HarnessUiApp:
 
     async def publish_output_comment(self, thread_id: str, publication: CommentPublication) -> OutputComment:
         async with self._operation():
+            await self._threads.require_interactive(thread_id)
             result = await self._output_comments.publish(thread_id, publication)
             await self._summary_hub.publish(kind="comment", root_thread_id=thread_id, thread_id=thread_id)
             return result
 
     async def edit_output_comment(self, thread_id: str, comment_id: str, edit: CommentEdit) -> OutputComment:
         async with self._operation():
+            await self._threads.require_interactive(thread_id)
             result = await self._output_comments.edit(thread_id, comment_id, edit)
             await self._summary_hub.publish(kind="comment", root_thread_id=thread_id, thread_id=thread_id)
             return result
 
     async def delete_output_comment(self, thread_id: str, comment_id: str, *, expected_version: int) -> None:
         async with self._operation():
+            await self._threads.require_interactive(thread_id)
             await self._output_comments.delete(thread_id, comment_id, expected_version=expected_version)
             await self._summary_hub.publish(kind="comment", root_thread_id=thread_id, thread_id=thread_id)
 
@@ -1235,6 +1252,7 @@ class HarnessUiApp:
     ) -> ThreadAttachment:
         """Capture reviewed feedback without changing the composer or starting a Run."""
         async with self._operation():
+            await self._threads.require_interactive(thread_id)
             comment = await self._output_comments.get(thread_id, comment_id)
             if expected_version is not None and comment.version != expected_version:
                 raise StoreConflictError(
@@ -1302,9 +1320,31 @@ class HarnessUiApp:
         async with self._operation():
             return await self._terminal_projections.lookup_thread_activity(thread_ids)
 
-    async def lookup_threads(self, *, thread_ids: tuple[str, ...]) -> ThreadPage:
+    async def lookup_threads(self, *, thread_ids: tuple[str, ...], memory: bool = False) -> ThreadPage:
         async with self._operation():
-            return await self._projections.lookup_threads(thread_ids)
+            return await self._projections.lookup_threads(thread_ids, memory=memory)
+
+    async def memory_files(self, *, project_id: str | None = None) -> tuple[MemoryFileEntry, ...]:
+        async with self._operation():
+            store = await self._memory_store(project_id)
+            return tuple(MemoryFileEntry.model_validate(entry, from_attributes=True) for entry in await store.list())
+
+    async def memory_file(self, *, path: str, project_id: str | None = None) -> MemoryFileText:
+        async with self._operation():
+            store = await self._memory_store(project_id)
+            try:
+                return MemoryFileText.model_validate(await store.read(path), from_attributes=True)
+            except MemoryStoreError as exc:
+                raise ThreadError(str(exc), code=f"memory_{exc.code}") from exc
+
+    async def _memory_store(self, project_id: str | None) -> DirectoryFileStore:
+        source = await self._configurations.current()
+        if source is None or not source.document.memory.enabled:
+            raise ThreadError("Memory is disabled.", code="memory_disabled")
+        if project_id is not None and project_id not in source.projects:
+            raise ThreadError("Project is not configured.", code="project_not_found")
+        scope = memory_scopes(self._require_configuration_path().parent, project_id)[-1]
+        return DirectoryFileStore(scope.root)
 
     async def get_thread_transcript(
         self,
@@ -1347,7 +1387,7 @@ class HarnessUiApp:
         mutation: ThreadConfigurationMutation,
     ) -> ThreadSummary:
         async with self._operation():
-            thread = await self._threads.get(thread_id)
+            thread = await self._threads.require_interactive(thread_id)
             if thread.parent_thread_id is not None:
                 raise AppStateError(
                     "Child Threads are managed through their parent execution.", code="child_thread_scoped"
@@ -1384,7 +1424,7 @@ class HarnessUiApp:
         """Move a root Thread to recent navigation without changing its conversation."""
 
         async with self._operation():
-            thread = await self._threads.get(thread_id)
+            thread = await self._threads.require_interactive(thread_id)
             if thread.parent_thread_id is not None:
                 raise ThreadError(
                     "Child Threads are managed through their parent execution.", code="child_thread_scoped"
@@ -1500,7 +1540,7 @@ class HarnessUiApp:
 
     async def shared_draft(self, thread_id: str) -> SharedDraft:
         async with self._operation():
-            thread = await self._threads.get(thread_id)
+            thread = await self._threads.require_interactive(thread_id)
             if thread.parent_thread_id is not None:
                 raise AppStateError("Shared drafts require a root Thread.", code="child_thread_scoped")
             await self._thread_files.touch(thread_id)
@@ -1593,7 +1633,7 @@ class HarnessUiApp:
     async def capture_host_file(self, *, thread_id: str, request: FileCaptureRequest) -> FileCapture:
         async with self._operation():
             self.require_host_files()
-            await self._threads.get(thread_id)
+            await self._threads.require_interactive(thread_id)
             selected = await self._host_files.capture(request)
             attachment = await self._thread_files.stage(
                 thread_id,
@@ -1638,7 +1678,7 @@ class HarnessUiApp:
     async def capture_host_git_diff(self, *, thread_id: str, request: GitCaptureRequest) -> FileCapture:
         async with self._operation():
             self.require_host_git()
-            await self._threads.get(thread_id)
+            await self._threads.require_interactive(thread_id)
             selected = await self._host_git.capture(request)
             attachment = await self._thread_files.stage(
                 thread_id,
@@ -1653,7 +1693,7 @@ class HarnessUiApp:
 
     async def stage_thread_attachment(self, *, thread_id: str, upload: AttachmentUpload) -> ThreadAttachment:
         async with self._operation():
-            await self._threads.get(thread_id)
+            await self._threads.require_interactive(thread_id)
             return await self._thread_files.stage(thread_id, upload)
 
     async def read_thread_attachment(self, *, thread_id: str, attachment_id: str) -> tuple[ThreadAttachment, bytes]:
@@ -1794,6 +1834,7 @@ class HarnessUiApp:
         if mode not in {"normal", "goal"}:
             raise ValueError("Unknown submission mode")
         async with self._operation():
+            await self._threads.require_interactive(thread_id)
             goal = None
             if mode == "goal":
                 objective = (
@@ -1860,6 +1901,7 @@ class HarnessUiApp:
         model_overrides: RunModelOverrides | None = None,
     ) -> RootRunReceipt:
         async with self._operation():
+            await self._threads.require_interactive(thread_id)
             return await self._root_runs.submit_response(
                 thread_id=thread_id,
                 response=response,
@@ -1959,6 +2001,7 @@ class HarnessUiApp:
     ) -> RootControlResult:
         async with self._operation():
             operation = await self._root_runs.get(receipt_id)
+            await self._threads.require_interactive(operation.receipt.thread_id)
             await self._terminal_projections.validate_skill_references(
                 skill_references,
                 thread_id=operation.receipt.thread_id,
@@ -1972,6 +2015,8 @@ class HarnessUiApp:
 
     async def cancel_root_operation(self, receipt_id: str) -> RootControlResult:
         async with self._operation():
+            operation = await self._root_runs.get(receipt_id)
+            await self._threads.require_interactive(operation.receipt.thread_id)
             return await self._root_runs.cancel(receipt_id)
 
     async def query_child_executions(
@@ -2016,6 +2061,7 @@ class HarnessUiApp:
         message: str,
     ) -> ChildControlResult:
         async with self._operation():
+            await self._threads.require_interactive(parent_thread_id)
             result = await self._subagent_operator.steer_execution(
                 parent_thread_id=parent_thread_id,
                 execution_id=execution_id,
@@ -2034,6 +2080,7 @@ class HarnessUiApp:
         execution_id: str,
     ) -> ChildControlResult:
         async with self._operation():
+            await self._threads.require_interactive(parent_thread_id)
             result = await self._subagent_operator.cancel_execution(
                 parent_thread_id=parent_thread_id,
                 execution_id=execution_id,
@@ -2780,13 +2827,34 @@ async def open_harness_ui_app(
                     httpx2.AsyncClient(timeout=10, follow_redirects=False)
                 )
                 web_push = WebPush(store, push_client)
+
+            async def run_memory(organization: MemoryOrganizationRun) -> RunUsage:
+                model_id = organization.source.document.memory.auto_organize.model
+                assert model_id is not None
+                scope = organization.scope
+                thread = await threads.memory_thread(
+                    scope=scope.key,
+                    project_id=scope.key.removeprefix("project:") if scope.name == "project" else None,
+                    model_id=model_id,
+                )
+                receipt = await root_runs.submit_organization(thread.thread_id, organization)
+                try:
+                    operation = await root_runs.wait(receipt.receipt_id)
+                except BaseException:
+                    # Retain the scope lock until shared execution has joined, even
+                    # when disable/deadline/shutdown cancels the opportunity owner.
+                    with CancelScope(shield=True):
+                        await root_runs.cancel(receipt_id=receipt.receipt_id)
+                        await root_runs.wait(receipt.receipt_id)
+                    raise
+                if operation.status is not RootOperationStatus.completed or operation.outcome is None:
+                    raise ThreadError("Memory organization did not complete.", code="memory_organization_failed")
+                return TypeAdapter(RunUsage).validate_python(operation.outcome.execution.usage or {})
+
             memory_organizer = MemoryOrganizer(
                 configuration_root=configuration_path.expanduser().resolve().parent if configuration_path else None,
                 current=configurations.current,
-                resolver=resolver,
-                api_keys=ApiKeyStore(store.layout.root / "auth.json"),
-                subscription_sources=subscription_sources,
-                instrumentation=observation.instrumentation,
+                run=run_memory,
                 webui=host_mode == "webui",
             )
             root_runs = RootRunCoordinator(
@@ -2845,7 +2913,6 @@ async def open_harness_ui_app(
                     errors[Provider.GROK] = exc
                 root_executor.replace_subscription_sources(sources)
                 operator.replace_subscription_sources(sources)
-                memory_organizer.replace_subscription_sources(sources)
                 return discovered_codex, discovered_grok, errors
 
             app = HarnessUiApp(

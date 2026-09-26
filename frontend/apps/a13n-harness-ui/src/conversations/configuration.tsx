@@ -68,8 +68,10 @@ function ConfigurationSummary({
 export function ConversationConfiguration({
   threadId,
   reconcile,
+  readOnly = false,
 }: {
   threadId: string;
+  readOnly?: boolean;
   reconcile: () => void;
 }) {
   const { client } = useTransport();
@@ -196,35 +198,51 @@ export function ConversationConfiguration({
               </p>
             )}
           </section>
-          <section>
-            <h3>Next Run selections</h3>
-            <p>
-              Changes here affect later Runs, not an already running Agent.
-              Shared resource content is resolved again at the next Run.
-            </p>
-            <ConfigurationSummary configuration={data.next_run.configuration} />
-            <p>Model: {data.next_model_id || "Not configured"}</p>
-            <details className={styles.activity}>
-              <summary>Selection origins and tool proxy</summary>
-              <pre className={styles.code}>
-                {JSON.stringify(
-                  {
-                    provenance: data.next_run.provenance,
-                    tool_proxy: data.next_tool_proxy,
-                  },
-                  null,
-                  2,
-                )}
-              </pre>
-            </details>
-            <ThreadSelections
-              key={threadId}
-              threadId={threadId}
-              configuration={data.next_run.configuration}
-            />
-            <Link to="/settings/resources">Manage shared resources</Link>
-          </section>
-          {data.next_run.configuration.project_id && (
+          {readOnly ? (
+            <section>
+              <h3>Automatic organization</h3>
+              <p>
+                Only this scope's memory tools are available. No Environment,
+                shared Agent tools, plugins, MCP servers or subagents are
+                attached.
+              </p>
+              <p>Next model: {data.next_model_id || "Not configured"}</p>
+            </section>
+          ) : (
+            <section>
+              <h3>Next Run selections</h3>
+              <p>
+                Changes here affect later Runs, not an already running Agent.
+                Shared resource content is resolved again at the next Run.
+              </p>
+              <ConfigurationSummary
+                configuration={data.next_run.configuration}
+              />
+              <p>Model: {data.next_model_id || "Not configured"}</p>
+              <details className={styles.activity}>
+                <summary>Selection origins and tool proxy</summary>
+                <pre className={styles.code}>
+                  {JSON.stringify(
+                    {
+                      provenance: data.next_run.provenance,
+                      tool_proxy: data.next_tool_proxy,
+                    },
+                    null,
+                    2,
+                  )}
+                </pre>
+              </details>
+              {!readOnly && (
+                <ThreadSelections
+                  key={threadId}
+                  threadId={threadId}
+                  configuration={data.next_run.configuration}
+                />
+              )}
+              <Link to="/settings/resources">Manage shared resources</Link>
+            </section>
+          )}
+          {!readOnly && data.next_run.configuration.project_id && (
             <section>
               <h3>Apply Project defaults</h3>
               <p>

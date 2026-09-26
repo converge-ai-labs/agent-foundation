@@ -27,6 +27,7 @@ from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.interaction_timeout import timeout_response
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
+from a13n_harness_ui.memory import MemoryOrganizationRun
 from a13n_harness_ui.notifications import root_operation_notice
 from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.restart import GracefulRestart
@@ -82,6 +83,7 @@ class _RootOperation:
     cancel_requested: bool = False
     restart: RestartItem | None = None
     goal: GoalView | None = None
+    observation_only: bool = False
 
 
 @dataclass(slots=True)
@@ -255,6 +257,18 @@ class RootRunCoordinator:
             human_input=human_input,
         )
 
+    async def submit_organization(self, thread_id: str, organization: MemoryOrganizationRun) -> RootRunReceipt:
+        """Internal-only admission; the organizer owns eligibility and the scope lock."""
+        return await self._submit(
+            thread_id=thread_id,
+            prompt=organization.prompt,
+            response=None,
+            mutation=None,
+            model_overrides=None,
+            touch=False,
+            organization=organization,
+        )
+
     async def submit_response(
         self,
         *,
@@ -298,6 +312,7 @@ class RootRunCoordinator:
         environment: EnvironmentSelectionPatch | None = None,
         goal: GoalView | None = None,
         human_input: bool = False,
+        organization: MemoryOrganizationRun | None = None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
         receipt = RootRunReceipt(
@@ -311,6 +326,7 @@ class RootRunCoordinator:
             done=Event(),
             restart=restart,
             goal=goal,
+            observation_only=organization is not None,
         )
         async with self._lock:
             if self._restart is not None:
@@ -354,17 +370,18 @@ class RootRunCoordinator:
                     mutation=mutation,
                     model_overrides=None if model_overrides is None else model_overrides.model_copy(deep=True),
                     environment=environment,
+                    **({"organization": organization} if organization is not None else {}),
                 )
                 operation.composition = admission.published.reference
                 if matching and pending is not None:
                     self._interaction_waits.pop(thread_id)
                     pending.cancelled.set()
-                if self._restart is not None:
+                if self._restart is not None and organization is None:
                     self._restart.register(thread_id)
                 self._operations[receipt.receipt_id] = operation
                 self._active_by_thread[thread_id] = receipt.receipt_id
                 self._task_group.start_soon(self._run_operation, operation, admission)
-                if prompt is not None and self._on_input_admitted is not None:
+                if prompt is not None and self._on_input_admitted is not None and organization is None:
                     try:
                         self._on_input_admitted(admission.published.value.project_id)
                     except Exception:
@@ -410,14 +427,14 @@ class RootRunCoordinator:
                 result[thread_id] = RootActivityView(
                     state=RootActivityState.preparing,
                     receipt_id=operation.receipt.receipt_id,
-                    available_actions=("wait", "cancel"),
+                    available_actions=("wait",) if operation.observation_only else ("wait", "cancel"),
                 )
             else:
                 result[thread_id] = RootActivityView(
                     state=RootActivityState.running,
                     receipt_id=operation.receipt.receipt_id,
                     run_id=operation.run_id,
-                    available_actions=("wait", "steer", "cancel"),
+                    available_actions=("wait",) if operation.observation_only else ("wait", "steer", "cancel"),
                 )
         return result
 
@@ -643,7 +660,7 @@ class RootRunCoordinator:
                         pending.cancelled.set()
                 if operation.status is RootOperationStatus.suspended and outcome is not None:
                     self._start_interaction(operation, outcome)
-                if self._restart is not None:
+                if self._restart is not None and admission.organization is None:
                     self._restart.finished(operation.receipt.thread_id, failed=failure is not None)
                 operation.done.set()
             # Notify only after the Host has settled execution and continuation selection.
@@ -658,8 +675,8 @@ class RootRunCoordinator:
                 )
             except Exception:
                 notice = None
-            await self._publish_change(operation, notice=notice)
-            if self._on_settled is not None and self._accepting:
+            await self._publish_change(operation, notice=None if operation.observation_only else notice)
+            if self._on_settled is not None and self._accepting and not operation.observation_only:
                 try:
                     await self._on_settled(admission.published.value.project_id, _view(operation))
                 except Exception:
@@ -793,7 +810,9 @@ def _view(operation: _RootOperation) -> RootOperationView:
         outcome=operation.outcome,
         failure=operation.failure,
         goal=operation.goal,
-        available_actions=actions,
+        available_actions=tuple(action for action in actions if action == "wait")
+        if operation.observation_only
+        else actions,
     ).model_copy(deep=True)
 
 

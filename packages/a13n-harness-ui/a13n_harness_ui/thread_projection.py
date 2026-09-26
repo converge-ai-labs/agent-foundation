@@ -79,6 +79,7 @@ type RootActivityBatchLookup = Callable[[tuple[str, ...]], Awaitable[Mapping[str
 
 
 class _ThreadCursor(SurfaceModel):
+    memory: bool = False
     version: Literal["1"] = "1"
     kind: Literal["threads"] = "threads"
     query: str | None
@@ -153,6 +154,7 @@ class ThreadProjectionService:
     async def list_threads(
         self,
         *,
+        memory: bool = False,
         query: str | None = None,
         project_id: str | None = None,
         include_archived: bool = False,
@@ -185,7 +187,8 @@ class ThreadProjectionService:
         if cursor is not None:
             decoded = _decode_cursor(cursor, _ThreadCursor, code="thread_cursor_invalid")
             if (
-                decoded.query != normalized_query
+                decoded.memory != memory
+                or decoded.query != normalized_query
                 or decoded.project_id != project_id
                 or decoded.include_archived is not include_archived
                 or decoded.archived_only is not archived_only
@@ -205,6 +208,7 @@ class ThreadProjectionService:
                 raise ThreadError("Thread cursor belongs to another query.", code="thread_cursor_mismatch")
             before = (decoded.updated_at, decoded.thread_id)
         stored, total = await self._store.threads.list(
+            memory=memory,
             query=normalized_query,
             project_id=project_id,
             include_archived=include_archived,
@@ -243,6 +247,7 @@ class ThreadProjectionService:
             last = visible[-1]
             next_cursor = _encode_cursor(
                 _ThreadCursor(
+                    memory=memory,
                     query=normalized_query,
                     project_id=project_id,
                     include_archived=include_archived,
@@ -266,12 +271,12 @@ class ThreadProjectionService:
             )
         return ThreadPage(threads=summaries, total=total, next_cursor=next_cursor)
 
-    async def lookup_threads(self, thread_ids: tuple[str, ...]) -> ThreadPage:
+    async def lookup_threads(self, thread_ids: tuple[str, ...], *, memory: bool = False) -> ThreadPage:
         """Bounded root lookup, including archived and off-page conversations; no history hydration."""
         if not 1 <= len(thread_ids) <= 100 or any(not item or len(item) > 80 for item in thread_ids):
             raise ThreadError("Thread lookup is outside supported bounds.", code="thread_page_invalid")
         stored, total = await self._store.threads.list(
-            thread_ids=tuple(set(thread_ids)), include_archived=True, limit=100
+            memory=memory, thread_ids=tuple(set(thread_ids)), include_archived=True, limit=100
         )
         activities = {} if self._root_activities is None else await self._root_activities(thread_ids)
         owners = await self._store.threads.worker_owners(thread_ids)
@@ -311,7 +316,7 @@ class ThreadProjectionService:
             thread=summary,
             continuation_id=continuation_id,
             deferred_requests=requests,
-            available_actions=tuple(actions),
+            available_actions=() if thread.memory_scope is not None else tuple(actions),
         )
 
     async def transcript(
@@ -524,6 +529,7 @@ class ThreadProjectionService:
             coordinators = await self._store.threads.coordinators((thread.thread_id,))
         coordinator = coordinators.get(thread.thread_id)
         return ThreadSummary(
+            memory_scope=thread.memory_scope,
             role="coordinator" if coordinator else "worker" if thread.thread_id in owners else "ordinary",
             auto_followup=coordinator.auto_followup if coordinator else None,
             thread_id=thread.thread_id,

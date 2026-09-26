@@ -276,11 +276,11 @@ class ThreadToolController:
             )
 
     async def _require_target(self, source_thread_id: str, thread_id: str, *, control: bool = False) -> None:
+        target = await self._threads.get(thread_id)
+        if target is None or target.memory_scope is not None or target.parent_thread_id is not None:
+            raise ThreadError("This Thread is not accessible from your conversation.", code="thread_access_denied")
         if source_thread_id == thread_id:
             return
-        target = await self._threads.get(thread_id)
-        if target is None or target.parent_thread_id is not None:
-            raise ThreadError("This Thread is not accessible from your conversation.", code="thread_access_denied")
         owners = await self._threads.worker_owners((source_thread_id, thread_id))
         source_owner, target_owner = owners.get(source_thread_id), owners.get(thread_id)
         if source_owner is not None:
@@ -299,6 +299,8 @@ class ThreadToolController:
 
     async def _run_or_steer(self, *, thread_id: str, prompt: RunInputValue) -> dict[str, Any]:
         detail = await self._projections.detail(thread_id)
+        if detail.thread.memory_scope is not None:
+            raise ThreadError("Memory Threads are observation-only.", code="memory_thread_read_only")
         if detail.thread.parent_thread_id is not None:
             raise ThreadError("Child Threads use parent-scoped delegation controls.", code="child_thread_scoped")
         if detail.thread.archived:

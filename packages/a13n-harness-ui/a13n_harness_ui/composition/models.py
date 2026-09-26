@@ -112,7 +112,7 @@ class ResolvedEnvironmentBinding(CompositionModel):
 
 
 class ResolvedAgentNode(CompositionModel):
-    source_kind: Literal["agent", "markdown"]
+    source_kind: Literal["agent", "markdown", "memory"]
     source_id: str = Field(min_length=1, max_length=128)
     roster_name: str = Field(min_length=1, max_length=128)
     # None identifies legacy captures whose instructions held the combined system prompt.
@@ -160,6 +160,7 @@ class ResolvedRunComposition(CompositionModel):
     thread_configuration_version: int = Field(ge=1)
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     project_roots: tuple[str, ...] = Field(default=(), max_length=64)
+    memory_organization: bool = Field(default=False, exclude_if=lambda value: not value)
     # Missing in old captures means memory was not attached to that Run.
     memory_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     webui_sidekick: SidekickConfiguration | None = None

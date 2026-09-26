@@ -7,6 +7,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useMatch,
   useNavigate,
 } from "react-router";
 import {
@@ -21,6 +22,7 @@ import {
 } from "a13n-ui";
 import {
   Archive,
+  Brain,
   House,
   Moon,
   Sun,
@@ -48,6 +50,8 @@ import styles from "./workbench.module.css";
 import { ArchivedPage } from "../conversations/archived";
 import { ConversationNavigation } from "../conversations/navigation";
 import { ConversationPage } from "../conversations/conversation";
+import { useThread } from "../conversations/queries";
+import { MemoryNavigation, MemoryPage } from "../memory";
 import { NewConversationPage } from "../conversations/new-conversation";
 import { NativeWorkspace } from "../native/workspace";
 import { ResultsProvider, useResults } from "../conversations/results";
@@ -135,6 +139,12 @@ function WorkbenchContent({
   );
   const disconnected = live.summary === "Reconnecting";
   const location = useLocation();
+  const selectedThreadId = useMatch("/threads/:threadId")?.params.threadId;
+  const selectedThread = useThread(selectedThreadId ?? "");
+  const memoryMode =
+    location.pathname === "/memory" ||
+    !!selectedThread.data?.thread.memory_scope;
+  const memoryEnabled = !!status.app?.memory_organization?.memory_enabled;
   const navigate = useNavigate();
   useEffect(() => {
     if (
@@ -162,6 +172,7 @@ function WorkbenchContent({
   const links = [
     { to: "/", label: "Home", icon: House },
     { to: "/archived", label: "Archived", icon: Archive },
+    ...(memoryEnabled ? [{ to: "/memory", label: "Memory", icon: Brain }] : []),
     { to: "/settings", label: "Settings", icon: Gear },
   ];
   const themeToggle = (
@@ -178,7 +189,17 @@ function WorkbenchContent({
   );
   const navigation = (
     <>
-      <ConversationNavigation presence={live.presence} />
+      {memoryMode && memoryEnabled ? (
+        <MemoryNavigation
+          projectId={
+            selectedThread.data?.thread.memory_scope
+              ? selectedThread.data.thread.configuration.project_id
+              : undefined
+          }
+        />
+      ) : (
+        <ConversationNavigation presence={live.presence} />
+      )}
       <nav>
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink
@@ -338,6 +359,12 @@ function WorkbenchContent({
             unauthorized={unauthorized}
           >
             <Routes>
+              <Route
+                path="/memory"
+                element={
+                  <MemoryPage profile={profile} unauthorized={unauthorized} />
+                }
+              />
               <Route
                 path="/"
                 element={

@@ -16,6 +16,14 @@ WebUI enables native file browsing, editing, transfer, creation, move, deletion,
 
 Markdown files open with **Preview** selected and expose **Preview** and **Text** as explicit buttons; the preview renders the current local buffer, so unsaved edits can be checked before saving. File operations are compact buttons, and **Add to chat** is the single file-context action: it adds the selected source lines when the text editor has a selection, otherwise the complete reviewed file. It does not send the composer. Same-instance Host-file links in assistant Markdown open the Files drawer on the current page. WebUI root Agents receive the supported relative link shape in their per-input surface guidance: `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}`. Bare Host paths and direct Files API URLs are not browser file links; external Markdown links continue to open separately.
 
+## Observe Memory
+
+The **Memory** button in the bottom-left navigation opens an observation-only workspace when Memory is enabled. Global memory is separate from Project scopes. The center reuses conversation history, live tool activity and **Inspect & usage**, but has no input area or manual execution controls. Each automatic organization Run starts with fresh model context while previous rounds and recorded usage remain visible, including after server restart.
+
+The right panel shows **current** scope files, not historical snapshots. You can inspect files even before the first organization Run; opening a scope never starts one. The viewer is read-only and works without Host computer sharing. Use the existing authorized file tools or Host access if you intend to edit memory.
+
+Memory controls stay in **Settings → General**. Turning off automatic organization keeps the Memory button and viewer available; turning off Memory hides the button. Neither switch deletes files or saved history.
+
 ## Work with a Coordinator
 
 A Project can have several Coordinators for different objectives. Select a Project and enable **Coordinator** beside **Goal** in the composer, then send your first message to create one directly. In an existing ordinary conversation, the same toggle converts it before sending. Turning the toggle on or off does not change the conversation until Send, and this shortcut adds no confirmation dialog. On narrow screens, find the toggle in Composer settings; an enabled chip stays beside Send. Goal can be enabled independently.

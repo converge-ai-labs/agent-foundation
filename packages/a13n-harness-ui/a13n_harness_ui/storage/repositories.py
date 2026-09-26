@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from sqlalchemy import and_, case, func, or_, select, true, update
+from sqlalchemy import ColumnElement, and_, case, func, or_, select, true, update
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
@@ -193,6 +193,7 @@ class ThreadRepository:
         created_at: datetime | None = None,
         coordinator_thread_id: str | None = None,
         coordinator: bool = False,
+        memory_scope: str | None = None,
     ) -> Thread:
         if coordinator and (
             configuration.project_id is None or parent_thread_id is not None or coordinator_thread_id is not None
@@ -227,6 +228,7 @@ class ThreadRepository:
             if parent_thread_id is not None and await session.get(ThreadRecord, parent_thread_id) is None:
                 raise StoreIntegrityError("Parent Thread does not exist.", code="thread_parent_missing")
             record = ThreadRecord(
+                memory_scope=memory_scope,
                 thread_id=thread_id,
                 parent_thread_id=parent_thread_id,
                 metadata_version=1,
@@ -326,9 +328,15 @@ class ThreadRepository:
                 raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
             return _thread_value(record, _configuration_value(configuration))
 
+    async def memory_thread(self, scope: str) -> Thread | None:
+        async with short_session(self._sessions) as session:
+            thread_id = await session.scalar(select(ThreadRecord.thread_id).where(ThreadRecord.memory_scope == scope))
+        return None if thread_id is None else await self.get(thread_id)
+
     async def list(
         self,
         *,
+        memory: bool = False,
         query: str | None = None,
         project_id: str | None = None,
         include_children: bool = False,
@@ -368,7 +376,9 @@ class ThreadRepository:
                     ThreadConfigurationRecord,
                     ThreadConfigurationRecord.thread_id == ThreadRecord.thread_id,
                 )
-            predicates = []
+            predicates: list[ColumnElement[bool]] = [
+                ThreadRecord.memory_scope.is_not(None) if memory else ThreadRecord.memory_scope.is_(None)
+            ]
             workers = select(CoordinatorWorkerRecord.worker_thread_id)
             if coordinator_thread_id is not None:
                 predicates.append(
@@ -576,6 +586,7 @@ class ThreadRepository:
                     func.max(ThreadRecord.updated_at),
                 )
                 .join(ThreadRecord, ThreadRecord.thread_id == ThreadConfigurationRecord.thread_id)
+                .where(ThreadRecord.memory_scope.is_(None))
                 .where(true() if include_archived else ThreadRecord.archived.is_(False))
                 .group_by(ThreadConfigurationRecord.project_id)
             )
@@ -1036,8 +1047,12 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
 
 
 def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfiguration:
+    from .contracts import MemoryAgentSource
+
     source = (
-        AgentResourceSource(id=record.agent_source_id)
+        MemoryAgentSource()
+        if record.agent_source_kind == "memory"
+        else AgentResourceSource(id=record.agent_source_id)
         if record.agent_source_kind == "agent"
         else MarkdownSubagentSource(id=record.agent_source_id)
     )
@@ -1077,6 +1092,7 @@ def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> T
             completed_at=record.completed_at,
         )
     return Thread(
+        memory_scope=record.memory_scope,
         read_model=_read_model(record),
         completion=completion,
         thread_id=record.thread_id,

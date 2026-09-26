@@ -434,3 +434,31 @@ async function readTurnHistory(
     throw new Error("Turn history is incomplete.");
   return [...entries.values()].sort((a, b) => a.position - b.position);
 }
+
+// Scope identity is shared by Memory navigation and the existing live observer.
+// No Thread is created by this read; empty scopes remain file-only views.
+export function useMemoryThread(
+  projectId: string | undefined,
+  enabled: boolean,
+) {
+  const { client } = useTransport();
+  return useQuery({
+    queryKey: ["memory", "threads", projectId ?? null],
+    enabled,
+    refetchInterval: enabled ? 5000 : false,
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/threads", {
+          params: {
+            query: {
+              memory: true,
+              project_id: projectId,
+              projectless: !projectId,
+              limit: 1,
+            },
+          },
+          signal,
+        }),
+      ),
+  });
+}

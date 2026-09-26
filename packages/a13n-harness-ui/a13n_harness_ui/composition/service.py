@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, canonical_digest
 from a13n_harness_ui.errors import StoreIntegrityError
-from a13n_harness_ui.storage import LocalStore, ObjectKind, ObjectRef, ResourceIndexEntry
+from a13n_harness_ui.storage import LocalStore, ObjectKind, ObjectRef, ResourceIndexEntry, Thread
 from a13n_harness_ui.surfaces import RunModelOverrides
 
 from .models import ResolvedAgentNode, ResolvedRunComposition
@@ -127,6 +127,11 @@ class RunCompositionService:
     def __init__(self, store: LocalStore, resolver: AgentCompositionResolver) -> None:
         self._store = store
         self._resolver = resolver
+
+    async def publish_memory(self, source: LoadedHarnessUiConfiguration, thread: Thread) -> PublishedRunComposition:
+        value = self._resolver.resolve_memory(source, thread)
+        envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=value)
+        return PublishedRunComposition(value=value, reference=envelope.ref)
 
     async def publish(
         self,

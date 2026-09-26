@@ -31,6 +31,7 @@ from a13n_harness_ui.storage import (
     ThreadConfiguration,
     ThreadConfigurationMutation,
 )
+from a13n_harness_ui.storage.contracts import MemoryAgentSource
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.surfaces import (
     ConfigurationOrigin,
@@ -92,7 +93,7 @@ class ThreadService:
         source = await self._required_configuration()
         configuration = resolve_thread_configuration(source, defaults)
         if coordinator_thread_id is not None:
-            owner = await self.get(coordinator_thread_id)
+            owner = await self.require_interactive(coordinator_thread_id)
             if owner.archived:
                 raise ThreadError("Restore the Coordinator before adding work.", code="thread_archived")
             if owner.configuration.project_id not in source.projects:
@@ -107,8 +108,31 @@ class ThreadService:
             coordinator=coordinator,
         )
 
-    async def promote_coordinator(self, thread_id: str) -> Thread:
+    async def memory_thread(self, *, scope: str, project_id: str | None, model_id: str) -> Thread:
+        """Create once under the organizer's cross-process scope lock."""
+        existing = await self._store.threads.memory_thread(scope)
+        if existing is not None:
+            return existing
+        return await self._create(
+            configuration=ThreadConfiguration(
+                version=1,
+                project_id=project_id,
+                agent_source=MemoryAgentSource(),
+                default_model_id=model_id,
+                environment_profile_id=FULL_CONTROL_PROFILE_ID,
+            ),
+            title="Memory",
+            memory_scope=scope,
+        )
+
+    async def require_interactive(self, thread_id: str) -> Thread:
         thread = await self.get(thread_id)
+        if thread.memory_scope is not None:
+            raise ThreadError("Memory Threads are observation-only.", code="memory_thread_read_only")
+        return thread
+
+    async def promote_coordinator(self, thread_id: str) -> Thread:
+        thread = await self.require_interactive(thread_id)
         if await self._store.threads.is_coordinator(thread_id):
             return thread
         source = await self._required_configuration()
@@ -118,6 +142,7 @@ class ThreadService:
         return thread
 
     async def set_auto_followup(self, thread_id: str, auto_followup: bool) -> Thread:
+        await self.require_interactive(thread_id)
         await self._store.threads.set_auto_followup(thread_id, auto_followup)
         return await self.get(thread_id)
 
@@ -129,6 +154,7 @@ class ThreadService:
         thread_id: str | None = None,
         coordinator_thread_id: str | None = None,
         coordinator: bool = False,
+        memory_scope: str | None = None,
     ) -> Thread:
         baseline = HarnessState.new(thread_id=thread_id)
         initial = await self._store.objects.publish_model(
@@ -137,6 +163,7 @@ class ThreadService:
         )
         return await self._store.threads.create(
             thread_id=baseline.thread_id,
+            memory_scope=memory_scope,
             configuration=configuration,
             initial_state=initial.ref,
             title=title,
@@ -153,7 +180,7 @@ class ThreadService:
     async def preview_project_defaults(
         self, thread_id: str, *, environments_only: bool = False
     ) -> ProjectDefaultsPreview:
-        thread = await self.get(thread_id)
+        thread = await self.require_interactive(thread_id)
         if thread.parent_thread_id is not None:
             raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
         source = await self._required_configuration()
@@ -212,7 +239,7 @@ class ThreadService:
         The App serializes this command with root admission. Immutable publication
         precedes the ordinary compare-and-select, so failures retain the old head.
         """
-        thread = await self.get(thread_id)
+        thread = await self.require_interactive(thread_id)
         if thread.parent_thread_id is not None:
             raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
         if thread.archived:
@@ -257,7 +284,7 @@ class ThreadService:
         thread_id: str,
         mutation: ThreadMetadataMutation,
     ) -> Thread:
-        thread = await self.get(thread_id)
+        thread = await self.require_interactive(thread_id)
         if thread.parent_thread_id is not None:
             raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
         patch = mutation.patch

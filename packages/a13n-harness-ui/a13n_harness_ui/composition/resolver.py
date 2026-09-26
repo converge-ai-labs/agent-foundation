@@ -39,9 +39,11 @@ from a13n_harness_ui.environment_profiles import (
 )
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
+from a13n_harness_ui.memory import ORGANIZATION_PROMPT
 from a13n_harness_ui.model_adapters import PydanticAiModelAdapter, service_tier_setting
 from a13n_harness_ui.model_controls import apply_model_controls
 from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
+from a13n_harness_ui.storage.contracts import Thread
 from a13n_harness_ui.surfaces import RunModelOverrides
 
 from .models import (
@@ -448,6 +450,29 @@ class AgentCompositionResolver:
                 else None
             ),
             children=(),
+        )
+
+    def resolve_memory(self, source: LoadedHarnessUiConfiguration, thread: Thread) -> ResolvedRunComposition:
+        settings = source.document.memory.auto_organize
+        assert settings.model is not None and thread.memory_scope is not None
+        return ResolvedRunComposition(
+            package_prompt_revision=PACKAGE_PROMPT_REVISION,
+            generation_digest=source.source_digest,
+            thread_id=thread.thread_id,
+            thread_configuration_version=thread.configuration.version,
+            project_id=thread.configuration.project_id,
+            memory_organization=True,
+            root=ResolvedAgentNode(
+                source_kind="memory",
+                source_id="memory",
+                roster_name="memory",
+                system_prompt=(ORGANIZATION_PROMPT,),
+                instructions=(settings.instructions,) if settings.instructions else (),
+                model=self.model_recipe(source.models[settings.model]),
+            ),
+            # Retained for the shared composition schema; memory execution never
+            # enters this profile or grants Environment capabilities.
+            environment_profile=self._environment_profile(source, FULL_CONTROL_PROFILE_ID),
         )
 
     def model_recipe(self, item: ModelResource) -> ResolvedModelRecipe:

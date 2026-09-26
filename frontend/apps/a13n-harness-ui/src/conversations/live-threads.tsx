@@ -9,11 +9,12 @@ import {
 } from "react";
 import { useLocation } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { useTransport } from "../transport/context";
+import { useStatus, useTransport } from "../transport/context";
 import { FocusDisplay, watchThread } from "./stream";
 import {
   seedThreadSnapshot,
   useHistory,
+  useMemoryThread,
   useThread,
   useThreads,
 } from "./queries";
@@ -130,7 +131,17 @@ export function LiveThreadsProvider({ children }: { children: ReactNode }) {
   const store = useMemo(() => new LiveThreads(), [transport]);
   const location = useLocation();
   const selected = /^\/threads\/([^/]+)\/?$/.exec(location.pathname)?.[1];
-  const current = selected ? decodeURIComponent(selected) : undefined;
+  const status = useStatus();
+  const memory = useMemoryThread(
+    new URLSearchParams(location.search).get("project") ?? undefined,
+    location.pathname === "/memory" &&
+      !!status.data?.app.memory_organization?.memory_enabled,
+  );
+  const current = selected
+    ? decodeURIComponent(selected)
+    : location.pathname === "/memory"
+      ? memory.data?.threads[0]?.thread_id
+      : undefined;
   const [recent, setRecent] = useState<string[]>([]);
   // Global discovery is independent of sidebar pagination, filters and collapse.
   const activity = useThreads("", undefined, false, {

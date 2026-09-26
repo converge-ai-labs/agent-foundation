@@ -18,7 +18,7 @@ from a13n_harness_ui.surfaces import SurfaceModel, ThreadConfigurationResolution
 
 class CapturedAgentSelection(SurfaceModel):
     name: str
-    source_kind: Literal["agent", "markdown"]
+    source_kind: Literal["agent", "markdown", "memory"]
     source_id: str
     model_id: str
     thinking_summary: str | None = None
@@ -39,9 +39,9 @@ class CapturedConfiguration(SurfaceModel):
     capability_ids: tuple[str, ...]
     harness_plugin_ids: tuple[str, ...]
     mcp_server_ids: tuple[str, ...]
-    environment_profile_id: str
-    environment_provider: str
-    environment_adapter: str
+    environment_profile_id: str | None
+    environment_provider: str | None
+    environment_adapter: str | None
     environment_bindings: tuple[EnvironmentBindingSelection, ...] = ()
     default_environment: str | None = None
     environment_run_extension_ids: tuple[str, ...]
@@ -74,9 +74,11 @@ def captured_configuration(composition_id: str, value: ResolvedRunComposition) -
         project_id=value.project_id,
         project_roots=value.project_roots,
         webui_sidekick=value.webui_sidekick,
-        memory_enabled=value.memory_enabled,
+        memory_enabled=value.memory_enabled or value.memory_organization,
         memory_scopes=(
-            ("global", *((f"project:{value.project_id}",) if value.project_id is not None else ()))
+            ((f"project:{value.project_id}" if value.project_id is not None else "global"),)
+            if value.memory_organization
+            else ("global", *((f"project:{value.project_id}",) if value.project_id is not None else ()))
             if value.memory_enabled
             else ()
         ),
@@ -92,9 +94,9 @@ def captured_configuration(composition_id: str, value: ResolvedRunComposition) -
         capability_ids=tuple(item.capability for item in root.capabilities),
         harness_plugin_ids=tuple(item.plugin_id for item in root.harness_plugins),
         mcp_server_ids=tuple(item.server_id for item in root.mcp_servers),
-        environment_profile_id=value.environment_profile.profile_id,
-        environment_provider=value.environment_profile.provider_key,
-        environment_adapter=value.environment_profile.adapter_key,
+        environment_profile_id=None if value.memory_organization else value.environment_profile.profile_id,
+        environment_provider=None if value.memory_organization else value.environment_profile.provider_key,
+        environment_adapter=None if value.memory_organization else value.environment_profile.adapter_key,
         environment_bindings=tuple(item.selection for item in value.environment_bindings),
         default_environment=value.default_environment,
         environment_run_extension_ids=tuple(item.extension_id for item in value.environment_run_extensions),

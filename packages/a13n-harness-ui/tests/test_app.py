@@ -495,8 +495,10 @@ async def test_application_exposes_detached_child_query_and_control(
 ) -> None:
     calls: list[tuple[str, dict[str, object]]] = []
     page = ChildExecutionPage(executions=(), total=0)
+    root = _write_configuration(tmp_path)
 
-    async with open_harness_ui_app(_settings(tmp_path / "state")) as app:
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        await app.create_thread(thread_id="thread_parent")
 
         async def query(**kwargs):
             calls.append(("query", kwargs))
@@ -523,30 +525,30 @@ async def test_application_exposes_detached_child_query_and_control(
         monkeypatch.setattr(app._subagent_operator, "steer_execution", steer)
         monkeypatch.setattr(app._subagent_operator, "cancel_execution", cancel)
 
-        assert await app.query_child_executions(parent_thread_id="thread-parent") == page
+        assert await app.query_child_executions(parent_thread_id="thread_parent") == page
         assert (
             await app.wait_child_executions(
-                parent_thread_id="thread-parent",
+                parent_thread_id="thread_parent",
                 timeout_seconds=0.1,
             )
             == page
         )
         assert not (
             await app.steer_child_execution(
-                parent_thread_id="thread-parent",
+                parent_thread_id="thread_parent",
                 execution_id="execution-1",
                 message="focus",
             )
         ).accepted
         assert not (
             await app.cancel_child_execution(
-                parent_thread_id="thread-parent",
+                parent_thread_id="thread_parent",
                 execution_id="execution-1",
             )
         ).accepted
 
     assert [name for name, _arguments in calls] == ["query", "wait", "steer", "cancel"]
-    assert all(arguments["parent_thread_id"] == "thread-parent" for _, arguments in calls)
+    assert all(arguments["parent_thread_id"] == "thread_parent" for _, arguments in calls)
 
 
 async def test_application_thread_queries_are_detached_keyset_views_with_metadata_cas(tmp_path: Path) -> None:
@@ -1504,6 +1506,7 @@ class _CompletedReconstructor:
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
+        organization=None,
     ):
         del composition, subagent_operator, subscription_sources
 
@@ -1524,6 +1527,7 @@ class _DeferredReconstructor:
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
+        organization=None,
     ):
         del composition, subagent_operator, subscription_sources
 
@@ -1596,6 +1600,7 @@ class _SlowReconstructor:
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
+        organization=None,
     ):
         del composition, subagent_operator, subscription_sources
 

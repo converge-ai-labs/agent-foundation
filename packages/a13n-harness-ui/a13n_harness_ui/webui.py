@@ -121,6 +121,8 @@ from a13n_harness_ui.surfaces import (
     ContextUsageView,
     DecisionBatchView,
     DecisionResponseBatch,
+    MemoryFileEntry,
+    MemoryFileText,
     NewThreadDefaults,
     NotePage,
     ProjectDefaultsApply,
@@ -1345,7 +1347,7 @@ def create_webui(
     @server.post("/api/threads/lookup", response_model=ThreadPage, openapi_extra=_body(ThreadLookup))
     async def lookup_threads(request: Request) -> ThreadPage:
         query = await _document(request, ThreadLookup)
-        return await app().lookup_threads(thread_ids=query.thread_ids)
+        return await app().lookup_threads(thread_ids=query.thread_ids, memory=query.memory)
 
     @server.post(
         "/api/threads/activity/lookup", response_model=tuple[ThreadActivityView, ...], openapi_extra=_body(ThreadLookup)
@@ -1445,8 +1447,18 @@ def create_webui(
     async def cancel_child(thread_id: str, execution_id: str) -> ChildControlResult:
         return await app().cancel_child_execution(parent_thread_id=thread_id, execution_id=execution_id)
 
+    @server.get("/api/memory/files", response_model=tuple[MemoryFileEntry, ...])
+    async def memory_files(project_id: str | None = None) -> tuple[MemoryFileEntry, ...]:
+        return await app().memory_files(project_id=project_id)
+
+    @server.get("/api/memory/file", response_model=MemoryFileText)
+    async def memory_file(path: str, project_id: str | None = None) -> MemoryFileText:
+        return await app().memory_file(path=path, project_id=project_id)
+
     @server.get("/api/threads", response_model=ThreadPage)
     async def threads(
+        memory: bool = False,
+        projectless: bool = False,
         query: Annotated[str | None, Query(max_length=500)] = None,
         project_id: str | None = None,
         include_archived: bool = False,
@@ -1455,7 +1467,14 @@ def create_webui(
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadPage:
         return await app().list_threads(
-            query=query, project_id=project_id, include_archived=include_archived, sort=sort, cursor=cursor, limit=limit
+            memory=memory,
+            projectless=projectless,
+            query=query,
+            project_id=project_id,
+            include_archived=include_archived,
+            sort=sort,
+            cursor=cursor,
+            limit=limit,
         )
 
     @server.post("/api/threads", response_model=ThreadSummary, openapi_extra=_body(CreateThreadRequest))
@@ -1820,6 +1839,7 @@ def create_webui(
             "settings/environments",
             "settings/connections",
             "archived",
+            "memory",
         } or (len(segments) == 2 and segments[0] in {"threads", "projects", "new"} and bool(segments[1]))
         if not recognized:
             return _error("not_found", "Route not found.", 404)

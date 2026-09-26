@@ -4389,11 +4389,136 @@
         }
       }
     },
+    "/api/memory/files": {
+      "get": {
+        "summary": "Memory Files",
+        "operationId": "memory_files_api_memory_files_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryFileEntry"
+                  },
+                  "title": "Response Memory Files Api Memory Files Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/memory/file": {
+      "get": {
+        "summary": "Memory File",
+        "operationId": "memory_file_api_memory_file_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryFileText"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads": {
       "get": {
         "summary": "Threads",
         "operationId": "threads_api_threads_get",
         "parameters": [
+          {
+            "name": "memory",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Memory"
+            }
+          },
+          {
+            "name": "projectless",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Projectless"
+            }
+          },
           {
             "name": "query",
             "in": "query",
@@ -5423,6 +5548,9 @@
           },
           {
             "$ref": "#/components/schemas/MarkdownSubagentSource"
+          },
+          {
+            "$ref": "#/components/schemas/MemoryAgentSource"
           }
         ]
       },
@@ -5432,7 +5560,8 @@
           "kind": {
             "enum": [
               "agent",
-              "markdown"
+              "markdown",
+              "memory"
             ],
             "title": "Kind",
             "type": "string"
@@ -5901,7 +6030,8 @@
             "type": "string",
             "enum": [
               "agent",
-              "markdown"
+              "markdown",
+              "memory"
             ],
             "title": "Source Kind"
           },
@@ -6023,15 +6153,36 @@
             "title": "Mcp Server Ids"
           },
           "environment_profile_id": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Environment Profile Id"
           },
           "environment_provider": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Environment Provider"
           },
           "environment_adapter": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Environment Adapter"
           },
           "environment_bindings": {
@@ -9522,8 +9673,91 @@
         ],
         "title": "MarkdownSubagentSource"
       },
+      "MemoryAgentSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "memory",
+            "title": "Kind",
+            "default": "memory"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": "memory"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MemoryAgentSource",
+        "description": "Application-owned organizer; not a selectable Agent resource."
+      },
+      "MemoryFileEntry": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "version",
+          "size"
+        ],
+        "title": "MemoryFileEntry"
+      },
+      "MemoryFileText": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "version",
+          "text"
+        ],
+        "title": "MemoryFileText"
+      },
       "MemoryOrganizationStatus": {
         "properties": {
+          "memory_enabled": {
+            "type": "boolean",
+            "title": "Memory Enabled",
+            "default": false
+          },
           "availability": {
             "type": "string",
             "enum": [
@@ -13715,6 +13949,18 @@
       "ThreadSummary": {
         "additionalProperties": false,
         "properties": {
+          "memory_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Memory Scope"
+          },
           "role": {
             "default": "ordinary",
             "enum": [
@@ -17114,6 +17360,11 @@
       },
       "ThreadLookup": {
         "properties": {
+          "memory": {
+            "type": "boolean",
+            "title": "Memory",
+            "default": false
+          },
           "thread_ids": {
             "items": {
               "type": "string",

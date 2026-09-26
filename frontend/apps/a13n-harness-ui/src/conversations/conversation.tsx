@@ -55,7 +55,7 @@ export function ConversationPage(props: {
   const { threadId = "" } = useParams();
   return <Conversation key={threadId} threadId={threadId} {...props} />;
 }
-function Conversation({
+export function Conversation({
   threadId,
   profile,
   unauthorized,
@@ -68,6 +68,7 @@ function Conversation({
   const queries = useQueryClient();
   const detail = useThread(threadId);
   const selectors = useSelectors();
+  const readOnly = !!detail.data?.thread.memory_scope;
   const isCoordinator = detail.data?.thread.role === "coordinator";
   const ownerId = detail.data?.thread.coordinator_thread_id;
   const owner = useQuery({
@@ -82,7 +83,7 @@ function Conversation({
       ),
   });
   const results = useResults();
-  const tracker = results.tracker;
+  const tracker = readOnly ? undefined : results.tracker;
   useEffect(() => {
     if (detail.data)
       void tracker?.follow(detail.data.thread, detail.dataUpdatedAt);
@@ -141,7 +142,7 @@ function Conversation({
     // Saved body readiness is independent of live replay and editor sync.
     // The composer retains its own connection/control guards before sending.
   );
-  const rename = dialog === "rename";
+  const rename = !readOnly && dialog === "rename";
   const setRename = (open: boolean) => {
     if (!open) closeDialog();
   };
@@ -581,7 +582,7 @@ function Conversation({
           reconnections={reconnections}
         />
 
-        {thread?.archived && (
+        {!readOnly && thread?.archived && (
           <div className={styles.warning}>
             <p>This conversation is archived. Its history remains available.</p>
             <Button
@@ -725,7 +726,7 @@ function Conversation({
                 continuationId={detail.data?.continuation_id}
                 completedContinuationId={thread?.completion?.continuation_id}
                 retry={
-                  thread?.archived
+                  readOnly || thread?.archived
                     ? undefined
                     : () => {
                         void submitContinuation(
@@ -762,7 +763,15 @@ function Conversation({
                   <div
                     className={`${styles.empty} ${isCoordinator ? coordinatorStyles.intro : ""}`}
                   >
-                    {isCoordinator ? (
+                    {readOnly ? (
+                      <>
+                        <h2>No organization history yet</h2>
+                        <p>
+                          Automatic organization will appear here. Viewing
+                          memory does not start a Run.
+                        </p>
+                      </>
+                    ) : isCoordinator ? (
                       <>
                         <h2>What are we working on?</h2>
                         <p>
@@ -801,7 +810,7 @@ function Conversation({
               : "New output"}
           </Button>
         )}
-        {detail.data && (
+        {!readOnly && detail.data && (
           <WorkInspector
             threadId={threadId}
             display={display}
@@ -809,22 +818,24 @@ function Conversation({
             reconcile={reconcile}
           />
         )}
-        {!thread?.archived && (
+        {!readOnly && !thread?.archived && (
           <ErrorNotice error={agentSelection.error || selectors.error} />
         )}
-        {!thread?.archived && (agentSelection.isError || detail.isError) && (
-          <Button
-            variant="ghost"
-            disabled={detail.isFetching}
-            onClick={async () => {
-              const refreshed = await detail.refetch();
-              if (refreshed.isSuccess) agentSelection.reset();
-            }}
-          >
-            Refresh agent selection before sending
-          </Button>
-        )}
-        {!thread?.archived && (
+        {!readOnly &&
+          !thread?.archived &&
+          (agentSelection.isError || detail.isError) && (
+            <Button
+              variant="ghost"
+              disabled={detail.isFetching}
+              onClick={async () => {
+                const refreshed = await detail.refetch();
+                if (refreshed.isSuccess) agentSelection.reset();
+              }}
+            >
+              Refresh agent selection before sending
+            </Button>
+          )}
+        {!readOnly && !thread?.archived && (
           <Composer
             autoFocus={pageReady && search.get("compose") === "1"}
             threadId={threadId}
@@ -916,7 +927,7 @@ function Conversation({
             reconcile={reconcile}
           />
         )}
-        {thread && !thread.archived && (
+        {!readOnly && thread && !thread.archived && (
           <ComposerStatus
             threadId={threadId}
             receipt={receipt}
@@ -1014,8 +1025,9 @@ function Conversation({
             receipt={receipt}
             continuation={detail.data?.continuation_id}
             reconcile={reconcile}
+            readOnly={readOnly}
           />
-          {thread && (
+          {!readOnly && thread && (
             <CoordinatorSettings
               thread={thread}
               pending={!!detail.data?.deferred_requests?.length}

@@ -4,6 +4,12 @@ The optional browser server exposes a local App API. Its bundled browser current
 
 This is **not Service Native `/api/v1`**. It has a shared instance access key, process-local operation receipts, and best-effort live subscriptions. Use the [browser-server guide](webui.md) to start/configure the listener and [Python embedding guide](embedding.md) for App ownership.
 
+## Memory observation
+
+`GET /api/threads?memory=true` selects only Memory Threads; the default list excludes them. Project filters and pagination retain their ordinary semantics; `projectless=true` selects Global memory. `POST /api/threads/lookup` accepts the same `memory` discriminator. A Memory Thread exposes its `memory_scope` and supports the existing transcript, live, configuration-inspection and usage reads, but mutation or execution control returns `memory_thread_read_only`.
+
+`GET /api/memory/files` lists current Global memory files. Add `project_id` for a configured Project's scope. `GET /api/memory/file?path=MEMORY.md` reads a relative scope file, with the same optional Project selector. These routes are authenticated, read-only, independent of native computer sharing, and unavailable when Memory is disabled. They expose neither arbitrary Host paths nor internal bookkeeping and never trigger organization.
+
 ## Authenticate and discover the contract
 
 Set `HUI_URL` to the listener origin and `HUI_API_KEY` to its configured access key:
