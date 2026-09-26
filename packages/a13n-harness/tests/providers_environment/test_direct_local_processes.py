@@ -151,37 +151,57 @@ async def test_process_identity_follows_a_retyped_provider(tmp_path: Path) -> No
 
 @pytest.mark.parametrize("ending", ["root_exit", "kill", "cancel", "close"])
 async def test_native_owned_descendants_are_cleaned(tmp_path: Path, ending: str) -> None:
-    # The child would write after its owner ends and inherits its output handles.
-    marker = tmp_path / "escaped"
-    child = "import time,pathlib; time.sleep(2); pathlib.Path('escaped').write_text('leaked')"
-    parent = (
-        "import subprocess,sys,pathlib,time; "
-        f"subprocess.Popen([sys.executable, '-c', {child!r}]); "
-        "pathlib.Path('started').touch(); " + ("pass" if ending == "root_exit" else "time.sleep(30)")
+    # The child inherits its owner's output handles and holds a connection that closes only when it exits.
+    disconnected = asyncio.Event()
+
+    async def watch(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            await reader.read()
+        except ConnectionError:
+            pass
+        disconnected.set()
+        writer.close()
+
+    server = await asyncio.start_server(watch, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    child = (
+        "import pathlib,socket,time; "
+        f"connection = socket.create_connection(('127.0.0.1', {port})); "
+        "pathlib.Path('started').touch(); time.sleep(30)"
     )
-    async with _processes(tmp_path) as processes:
-        limits = CommandLimits(wall_time_seconds=10)
-        if ending == "cancel":
-            task = asyncio.create_task(processes.exec(_request(parent, limits=limits)))
-        else:
-            started = await processes.start(_request(parent, limits=limits))
-        async with asyncio.timeout(5):
-            while not (tmp_path / "started").exists():
-                await asyncio.sleep(0.01)
-        if ending == "cancel":
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
-        elif ending == "close":
-            await processes.close()
-        else:
-            if ending == "kill":
-                await processes.kill(started.process.handle)
-            terminal = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=5)
-            assert terminal.status.cleanup == "complete"
-            assert terminal.output is not None and terminal.output.stdout.producer_complete
-    await asyncio.sleep(2.1)
-    assert not marker.exists()
+    # The owner outlives the child's startup, so a root exit leaves a live descendant.
+    parent = "\n".join(
+        (
+            "import pathlib,subprocess,sys,time",
+            f"subprocess.Popen([sys.executable, '-c', {child!r}])",
+            "while not pathlib.Path('started').exists():",
+            "    time.sleep(0.01)",
+            "" if ending == "root_exit" else "time.sleep(30)",
+        )
+    )
+    async with server:
+        async with _processes(tmp_path) as processes:
+            limits = CommandLimits(wall_time_seconds=10)
+            if ending == "cancel":
+                task = asyncio.create_task(processes.exec(_request(parent, limits=limits)))
+            else:
+                started = await processes.start(_request(parent, limits=limits))
+            async with asyncio.timeout(5):
+                while not (tmp_path / "started").exists():
+                    await asyncio.sleep(0.01)
+            if ending == "cancel":
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            elif ending == "close":
+                await processes.close()
+            else:
+                if ending == "kill":
+                    await processes.kill(started.process.handle)
+                terminal = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=5)
+                assert terminal.status.cleanup == "complete"
+                assert terminal.output is not None and terminal.output.stdout.producer_complete
+        await asyncio.wait_for(disconnected.wait(), timeout=2)
 
 
 async def test_native_execution_deadline_reports_timeout_and_cleanup(tmp_path: Path) -> None:

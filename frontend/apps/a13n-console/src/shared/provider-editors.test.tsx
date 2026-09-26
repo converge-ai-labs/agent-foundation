@@ -52,12 +52,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const cases = ["workspace", "organization"].flatMap((kind) =>
-  ["connector", "environment", "memory"].map((surface) => ({
-    kind: kind as "workspace" | "organization",
-    surface,
-  })),
-);
+// The scope only changes the body's workspace_id, so each surface takes the
+// other scope in the edit journey instead of repeating both journeys per scope.
+const createCases = [
+  { kind: "workspace", surface: "connector" },
+  { kind: "organization", surface: "environment" },
+  { kind: "workspace", surface: "memory" },
+] as const;
+const editCases = [
+  { kind: "organization", surface: "connector" },
+  { kind: "workspace", surface: "environment" },
+  { kind: "organization", surface: "memory" },
+] as const;
 
 function setup(
   kind: "workspace" | "organization",
@@ -132,7 +138,7 @@ function setup(
   return { connector, type, listPath, detailPath, provider };
 }
 
-it.each(cases)(
+it.each(createCases)(
   "creates a $kind $surface provider after loading the first list page",
   async ({ kind, surface }) => {
     const user = userEvent.setup();
@@ -196,7 +202,7 @@ it.each(cases)(
   },
 );
 
-it.each(cases)(
+it.each(editCases)(
   "edits the exact $kind $surface provider after loading the list",
   async ({ kind, surface }) => {
     const user = userEvent.setup();

@@ -110,6 +110,8 @@ def _source(shell: CliShell) -> str:
 async def test_keyboard_search_preview_history_rename_and_cancel_preserve_draft(monkeypatch) -> None:
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest())
+        # A bare Escape otherwise waits 0.5 s for a longer input sequence and 1 s for a key chord.
+        shell.app.ttimeoutlen = shell.app.timeoutlen = 0.05
         shell.backend = backend = _backend()
         monkeypatch.setattr(shell, "_load_notes", AsyncMock())
         marker = shell.pastes.insert("large paste " * 200)

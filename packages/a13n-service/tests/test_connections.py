@@ -1384,11 +1384,21 @@ async def complete_account(service, composio: Composio) -> dict:  # type: ignore
     return callback.json()
 
 
+# Each selector completes a valid account and refuses a changed one; each way of changing the account's
+# authentication configuration is refused once. The comparison does not depend on the selector.
 @pytest.mark.parametrize(
-    "scheme,selector", [("OAUTH2", "ac_github"), ("OAUTH2", "create:OAUTH2"), ("API_KEY", "ac_github")]
-)
-@pytest.mark.parametrize(
-    "change", ["valid", "wrong_id", "wrong_scheme", "missing_id", "missing_scheme", "null", "empty"]
+    "scheme,selector,change",
+    [
+        ("OAUTH2", "ac_github", "valid"),
+        ("OAUTH2", "create:OAUTH2", "valid"),
+        ("API_KEY", "ac_github", "valid"),
+        ("OAUTH2", "ac_github", "wrong_id"),
+        ("OAUTH2", "create:OAUTH2", "wrong_scheme"),
+        ("API_KEY", "ac_github", "missing_id"),
+        ("OAUTH2", "ac_github", "missing_scheme"),
+        ("OAUTH2", "create:OAUTH2", "null"),
+        ("API_KEY", "ac_github", "empty"),
+    ],
 )
 async def test_account_completion_checks_setup_identity(  # type: ignore[no-untyped-def]
     service, monkeypatch: pytest.MonkeyPatch, scheme: str, selector: str, change: str

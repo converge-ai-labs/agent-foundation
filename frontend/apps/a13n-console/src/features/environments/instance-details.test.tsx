@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
 import { EnvironmentDetails } from "./instance-details";
 
@@ -27,6 +27,7 @@ vi.mock("react-i18next", () => ({
 beforeEach(() => {
   access.can.mockImplementation(() => true);
 });
+afterEach(() => vi.useRealTimers());
 
 /** Lifecycle commands live in the panel's overflow menu. */
 async function lifecycle(
@@ -108,11 +109,13 @@ function serve(
   });
 }
 
-function open(value: Schema["EnvironmentView"] = environment) {
+function open(
+  value: Schema["EnvironmentView"] = environment,
+  user = userEvent.setup(),
+) {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const user = userEvent.setup();
   render(
     <QueryClientProvider client={cache}>
       <EnvironmentDetails environment={value} />
@@ -128,6 +131,8 @@ it.each([
 ] as const)(
   "refreshes open details while a %s operation reports %s until %s",
   async (action, phase, outcome) => {
+    // Fake time lets the test reach the next 2 s poll without waiting for it.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     let current = environment;
     serve(() => current);
     const command = async () => {
@@ -141,7 +146,10 @@ it.each([
     };
     http.POST.mockReset().mockImplementation(command);
     http.DELETE.mockReset().mockImplementation(command);
-    const { cache, user } = open();
+    const { cache, user } = open(
+      environment,
+      userEvent.setup({ advanceTimers: vi.advanceTimersByTime }),
+    );
     await user.click(screen.getByRole("button", { name: "Details" }));
     await screen.findByText("ready");
     await lifecycle(user, action === "stop" ? "Stop target" : "Delete target");
@@ -174,7 +182,9 @@ it.each([
       outcome === "failed"
         ? { ...current, failure, version: 3 }
         : { ...current, status: outcome, operation_id: null, version: 3 };
-    await screen.findByText(outcome, {}, { timeout: 4000 });
+    expect(screen.queryByText(outcome)).toBeNull();
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    await screen.findByText(outcome);
     cache.clear();
   },
 );

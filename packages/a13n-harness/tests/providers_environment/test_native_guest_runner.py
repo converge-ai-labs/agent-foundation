@@ -27,7 +27,10 @@ def test_guest_runner_foreground_bounds(case, tmp_path):
                 "-c",
                 "import subprocess,sys; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); open('child','w').write(str(p.pid))",
             ]
-        request = {"argv": command, "cwd": str(tmp_path), "env": {}, "unset": [], "timeout": 0.5, "limit": 128}
+        # Bounded output must finish before its deadline, which costs nothing when it does. The descendant case
+        # waits out its deadline, which must leave its parent time to record the child; a plain timeout does not.
+        timeout = {"bounded-output": 5, "timeout": 0.1, "descendant": 0.5}[case]
+        request = {"argv": command, "cwd": str(tmp_path), "env": {}, "unset": [], "timeout": timeout, "limit": 128}
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-I",

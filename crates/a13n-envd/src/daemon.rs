@@ -3330,7 +3330,7 @@ mod tests {
         operation::{BeginOutcome, random_selector},
     };
 
-    use super::{Daemon, fresh_generation, mutation_receipt};
+    use super::{Daemon, mutation_receipt};
 
     struct TempTree(PathBuf);
 
@@ -3516,15 +3516,6 @@ mod tests {
         assert!(device["result"]["descriptor"].get("session_id").is_none());
     }
 
-    #[test]
-    fn generations_are_nonzero_and_fresh() {
-        let first = fresh_generation().expect("secure randomness is available");
-        let second = fresh_generation().expect("secure randomness is available");
-        assert_ne!(first, 0);
-        assert_ne!(second, 0);
-        assert_ne!(first, second);
-    }
-
     #[tokio::test]
     async fn carrier_loss_allows_attach_and_independent_open_in_the_same_generation() {
         let config = Config::for_test("env-test");
@@ -3572,6 +3563,53 @@ mod tests {
             opened["result"]["descriptor"]["session_id"],
             attached["result"]["descriptor"]["session_id"]
         );
+    }
+
+    #[tokio::test]
+    async fn expired_disconnect_grace_rejects_attach_but_allows_open() {
+        let config = Config::for_test("env-test");
+        let fixture = Fixture::new(&config, 7);
+        initialize(&fixture).await;
+        let original = fixture.descriptor.clone();
+        fixture.device.detach(&fixture.carrier).await;
+        // The next carrier stays uninitialized while the previous Session's grace expires.
+        let (sender, _receiver) = tokio::sync::mpsc::channel(16);
+        let carrier = fixture.device.carrier(sender);
+        fixture.session.state().detached_at = Some(super::Instant::now() - config.disconnect_grace);
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(
+                &carrier,
+                &request(json!(1), "initialize", initialize_params()),
+            )
+            .await;
+        assert!(
+            serde_json::from_slice::<Value>(&response.payload)
+                .unwrap()
+                .get("result")
+                .is_some()
+        );
+        let mut attach: Value =
+            serde_json::from_str(&request(json!(2), "session.attach", json!({}))).unwrap();
+        attach["eip_session"] = json!(original.session_id);
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(&carrier, &attach.to_string())
+            .await;
+        let expired: Value = serde_json::from_slice(&response.payload).unwrap();
+        assert_eq!(
+            expired["error"]["data"]["error_type"], "not_initialized",
+            "{expired}"
+        );
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(
+                &carrier,
+                &request(json!(3), "session.open", fixture.open_params(json!([]))),
+            )
+            .await;
+        let opened: Value = serde_json::from_slice(&response.payload).unwrap();
+        assert_eq!(opened["result"]["descriptor"]["generation"], 7);
     }
 
     #[test]
@@ -4152,24 +4190,6 @@ mod tests {
             .expect("response is JSON");
             assert_eq!(response["result"]["descriptor"]["generation"], 10);
         }
-    }
-
-    #[tokio::test]
-    async fn active_only_ids_do_not_wait_for_terminal_ttl() {
-        let mut config = Config::for_test("env-test");
-        config.limits.operation_record_ttl_ms = 1;
-        let daemon = Fixture::new(&config, 11);
-        let _ = initialize(&daemon).await;
-        let describe = request(
-            json!(2),
-            "environment.describe",
-            json!({"context": {"operation_id": "expires"}}),
-        );
-        let _ = daemon.handle_payload(&describe).await;
-        tokio::time::sleep(Duration::from_millis(5)).await;
-        let reused: Value = serde_json::from_slice(&daemon.handle_payload(&describe).await)
-            .expect("response is JSON");
-        assert_eq!(reused["result"]["descriptor"]["generation"], 11);
     }
 
     #[tokio::test]

@@ -88,8 +88,7 @@ async def test_recovery_prompt_factory_receives_detached_messages() -> None:
     assert prompt.content == "original"
 
 
-@pytest.mark.parametrize("error_type", [httpx2.RemoteProtocolError, httpx2.ReadError, ConnectionResetError])
-async def test_stream_failure_resumes_with_partial_history_and_shared_usage(error_type: type[Exception]) -> None:
+async def test_stream_failure_resumes_with_partial_history_and_shared_usage() -> None:
     calls: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -97,7 +96,7 @@ async def test_stream_failure_resumes_with_partial_history_and_shared_usage(erro
         calls.append(deepcopy(messages))
         if len(calls) == 1:
             yield "partial answer"
-            raise error_type("stream disconnected")
+            raise httpx2.RemoteProtocolError("stream disconnected")
         yield "resumed answer"
 
     executable = HarnessBuilder().build(
@@ -669,14 +668,12 @@ async def test_recovery_prompt_factory_receives_the_failure_and_repaired_history
     )
 
 
-@pytest.mark.parametrize("fraction", [0.0, 0.5, 1.0])
 @pytest.mark.parametrize(
     ("initial", "maximum", "ceilings"),
     [(1, 30, [1, 2, 4, 8]), (2, 5, [2, 4, 5, 5]), (10, 3, [3, 3, 3, 3])],
 )
 def test_recovery_backoff_is_equal_jitter_and_capped(
     monkeypatch: pytest.MonkeyPatch,
-    fraction: float,
     initial: float,
     maximum: float,
     ceilings: list[float],
@@ -685,7 +682,7 @@ def test_recovery_backoff_is_equal_jitter_and_capped(
 
     def sample(minimum: float, maximum: float) -> float:
         bounds.append((minimum, maximum))
-        return minimum + fraction * (maximum - minimum)
+        return (minimum + maximum) / 2
 
     monkeypatch.setattr("a13n_harness.recovery.random.uniform", sample)
     policy = ModelRecoveryPolicy(
@@ -694,11 +691,12 @@ def test_recovery_backoff_is_equal_jitter_and_capped(
         backoff_max_seconds=maximum,
     )
 
-    assert [policy.delay(index) for index in (1, 2, 3, 4)] == [ceiling / 2 * (1 + fraction) for ceiling in ceilings]
+    # The sampled value, not a bound, is the delay.
+    assert [policy.delay(index) for index in (1, 2, 3, 4)] == [ceiling * 3 / 4 for ceiling in ceilings]
     assert bounds == [(ceiling / 2, ceiling) for ceiling in ceilings]
 
 
-@pytest.mark.parametrize(("initial", "maximum"), [(0, 30), (1, 0), (0, 0)])
+@pytest.mark.parametrize(("initial", "maximum"), [(0, 30), (1, 0)])
 def test_recovery_backoff_can_be_explicitly_disabled(initial: float, maximum: float) -> None:
     policy = ModelRecoveryPolicy(backoff_initial_seconds=initial, backoff_max_seconds=maximum)
 
@@ -971,7 +969,6 @@ async def test_provider_suspended_continuation_remains_inside_one_pydantic_attem
     ("message", "recoverable"),
     [
         ("Tool 'some_tool' exceeded max retries count of 1.", False),
-        ("Exceeded maximum retries (1) for output validation", False),
         ("Streamed response ended without content or tool calls", True),
         ("Stream ended unexpectedly", False),
     ],
@@ -980,7 +977,7 @@ def test_unexpected_model_behavior_retry_classification(message: str, recoverabl
     assert is_recoverable_model_failure(UnexpectedModelBehavior(message)) is recoverable
 
 
-@pytest.mark.parametrize("retries", [0, 1, 2])
+@pytest.mark.parametrize("retries", [0, 2])
 @pytest.mark.parametrize("invalid_args", [False, True], ids=["model-retry", "argument-validation"])
 async def test_tool_retry_exhaustion_does_not_start_a_new_attempt(retries: int, invalid_args: bool) -> None:
     model_calls = 0
@@ -1031,7 +1028,7 @@ async def test_tool_retry_exhaustion_does_not_start_a_new_attempt(retries: int, 
     assert len(attempt_ids) == 1
 
 
-@pytest.mark.parametrize("retries", [0, 1, 2])
+@pytest.mark.parametrize("retries", [0, 2])
 async def test_output_retry_exhaustion_does_not_start_a_new_attempt(retries: int) -> None:
     class RequiredOutput(BaseModel):
         value: str
@@ -1197,7 +1194,9 @@ async def test_upstream_history_cleanup_removes_stale_tool_results_before_retry(
     assert isinstance(sent[result_index - 1], ModelResponse)
 
 
-@pytest.mark.parametrize("tool_recovery", ["never", "always", "declared"])
+# "never" closes the call while normalizing history; the other modes close it at dispatch
+# because shell_exec is not declared, so "always" repeats "declared".
+@pytest.mark.parametrize("tool_recovery", ["never", "declared"])
 async def test_saved_interrupted_tool_history_is_repaired_before_rerun(tool_recovery: str) -> None:
     calls: list[list[ModelMessage]] = []
     history = (
@@ -1299,11 +1298,8 @@ def test_retry_prompt_counts_as_a_real_tool_result_and_deferred_frontier_is_pres
     assert preserved == deferred_history
 
 
-@pytest.mark.parametrize("entrypoint", ["run", "stream"])
-@pytest.mark.parametrize("tool_recovery", [None, "never", "always"])
-async def test_unmarked_restored_tool_calls_require_execution_opt_in(
-    entrypoint: str, tool_recovery: str | None
-) -> None:
+@pytest.mark.parametrize("tool_recovery", [None, "always"])
+async def test_unmarked_restored_tool_calls_require_execution_opt_in(tool_recovery: str | None) -> None:
     executions: list[int] = []
     model_history: list[list[ModelMessage]] = []
 
@@ -1336,15 +1332,7 @@ async def test_unmarked_restored_tool_calls_require_execution_opt_in(
     payload = state.model_dump_json()
     restored = HarnessState.model_validate_json(payload)
     options = {} if tool_recovery is None else {"tool_recovery": tool_recovery}
-    if entrypoint == "run":
-        result = await executable.run(previous_state=restored, **options)
-    else:
-        result = None
-        async with executable.stream(previous_state=restored, **options) as stream:
-            async for event in stream:
-                if isinstance(event, HarnessRunResultEvent):
-                    result = event.result
-        assert result is not None
+    result = await executable.run(previous_state=restored, **options)
 
     assert result.output_or_raise() == "continued"
     assert len(model_history) == 1
@@ -1419,9 +1407,8 @@ def test_restored_provider_suspension_is_not_closed_as_unknown() -> None:
     assert closed == 0
 
 
-@pytest.mark.parametrize("entrypoint", ["run", "stream"])
 @pytest.mark.parametrize("mode", ["never", "always", "declared"])
-async def test_declared_recovery_selects_marked_calls_and_allows_fresh_calls(entrypoint: str, mode) -> None:
+async def test_declared_recovery_selects_marked_calls_and_allows_fresh_calls(mode) -> None:
     executions: list[str] = []
     histories: list[list[ModelMessage]] = []
 
@@ -1465,15 +1452,7 @@ async def test_declared_recovery_selects_marked_calls_and_allows_fresh_calls(ent
     )
     payload = state.model_dump_json()
     restored = HarnessState.model_validate_json(payload)
-    if entrypoint == "run":
-        result = await executable.run(previous_state=restored, tool_recovery=mode)
-    else:
-        result = None
-        async with executable.stream(previous_state=restored, tool_recovery=mode) as stream:
-            async for event in stream:
-                if isinstance(event, HarnessRunResultEvent):
-                    result = event.result
-        assert result is not None
+    result = await executable.run(previous_state=restored, tool_recovery=mode)
     assert result.output_or_raise() == "done"
     if mode == "never":
         assert executions == ["send"]
@@ -1575,8 +1554,8 @@ async def test_declared_recovery_closes_unmarked_call_before_argument_validation
 
 
 @pytest.mark.parametrize("native_tool", [False, True])
-@pytest.mark.parametrize("max_attempts", [2, 3])
-async def test_retry_retains_visible_text_beside_an_unfinished_tool(native_tool: bool, max_attempts: int) -> None:
+async def test_retry_retains_visible_text_beside_an_unfinished_tool(native_tool: bool) -> None:
+    max_attempts = 3  # Two interrupted responses must both be retained in order.
     calls: list[list[ModelMessage]] = []
 
     async def stream(
@@ -1620,8 +1599,8 @@ async def test_retry_retains_visible_text_beside_an_unfinished_tool(native_tool:
     assert [message for message in result.state.message_history if isinstance(message, ModelResponse)][:-1] == recovered
 
 
-@pytest.mark.parametrize("native_tool", [False, True])
-@pytest.mark.parametrize("stop", ["cancel", "exhaust"])
+# Both stops normalize through the same response tracker, so each tool kind needs only one stop.
+@pytest.mark.parametrize(("native_tool", "stop"), [(True, "cancel"), (False, "exhaust")])
 async def test_stopped_mixed_stream_exports_partial_text(native_tool: bool, stop: str) -> None:
     started = asyncio.Event()
     calls = 0

@@ -68,8 +68,11 @@ def _environment(root: Path):
     )
 
 
-@pytest.mark.parametrize("content", list(HarnessTraceContent))
-@pytest.mark.parametrize("nested", [False, True])
+# Content level only gates the NONE redaction check, so NONE runs on both paths and FULL once.
+@pytest.mark.parametrize(
+    ("content", "nested"),
+    [(HarnessTraceContent.NONE, False), (HarnessTraceContent.NONE, True), (HarnessTraceContent.FULL, True)],
+)
 async def test_environment_failures_mark_only_owning_native_tool_span(
     tmp_path: Path, content: HarnessTraceContent, nested: bool
 ) -> None:
@@ -461,8 +464,7 @@ async def test_http_status_failure_is_distinct_from_head_absence_probe() -> None
     assert "private" not in json.dumps(dict(spans["fetch"].attributes))
 
 
-@pytest.mark.parametrize("content", list(HarnessTraceContent))
-async def test_explicit_uncertainty_is_not_failure_or_business_result_inference(content: HarnessTraceContent) -> None:
+async def test_explicit_uncertainty_is_not_failure_or_business_result_inference() -> None:
     provider, exporter = _provider()
     tools = FunctionToolset()
     calls = []
@@ -481,9 +483,9 @@ async def test_explicit_uncertainty_is_not_failure_or_business_result_inference(
         await asyncio.sleep(0)
         return {"kind": "outcome_unknown"}
 
-    executable = HarnessBuilder(
-        instrumentation=HarnessInstrumentation(tracer_provider=provider, trace_content=content)
-    ).build(AgentSpec(), output_type=str, model=TestModel(), capabilities=[Capability(toolsets=[tools])])
+    executable = HarnessBuilder(instrumentation=HarnessInstrumentation(tracer_provider=provider)).build(
+        AgentSpec(), output_type=str, model=TestModel(), capabilities=[Capability(toolsets=[tools])]
+    )
     assert (await executable.run("inspect")).status == "completed"
     assert sorted(calls) == ["business", "unknown"]
     spans = exporter.get_finished_spans()

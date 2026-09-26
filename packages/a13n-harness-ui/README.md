@@ -121,7 +121,7 @@ The real Local Envd approval tests are opt-in because they require a matching na
 ```console
 make rust-build
 A13N_HARNESS_UI_TEST_SANDBOX=1 A13N_ENVD_EXECUTABLE="$PWD/target/debug/a13n-envd" \
-  uv run --locked pytest packages/a13n-harness-ui/tests/test_interactive.py -k pending_shell
+  uv run --locked pytest packages/a13n-harness-ui/tests/test_interactive_run_control.py -k pending_shell
 ```
 
 These tests inject the selected executable through App settings rather than downloading a release runtime. Unsupported isolation is a test failure when explicitly enabled; it never silently falls back to Full Control.

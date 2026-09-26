@@ -1,6 +1,7 @@
 """Real PTY input/output tests with no account or provider access.
 
-Keep the few terminal-boundary scenarios together; domain behavior is tested in-process.
+Keep the few terminal-boundary scenarios in this file; domain behavior is tested in-process.
+Each scenario starts a cold interpreter, so each has its own xdist group and can use another worker.
 """
 
 from __future__ import annotations
@@ -88,7 +89,13 @@ def _stop(process: subprocess.Popen[bytes], master: int) -> None:
         os.close(master)
 
 
-@pytest.mark.parametrize("command", [[], ["setup"]])
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param([], marks=pytest.mark.xdist_group("harness-ui-pty-launch-setup")),
+        pytest.param(["setup"], marks=pytest.mark.xdist_group("harness-ui-pty-explicit-setup")),
+    ],
+)
 def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path: Path, command: list[str]) -> None:
     configuration = tmp_path / ".a13n-harness-ui"
     configuration.mkdir()
@@ -137,6 +144,7 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
         _stop(process, master)
 
 
+@pytest.mark.xdist_group("harness-ui-pty-cancel")
 def test_cancel_initial_setup_never_opens_chat(tmp_path: Path) -> None:
     process, master = _spawn("from a13n_harness_ui.cli import main; main([])", tmp_path)
     try:
@@ -153,6 +161,7 @@ def test_cancel_initial_setup_never_opens_chat(tmp_path: Path) -> None:
         _stop(process, master)
 
 
+@pytest.mark.xdist_group("harness-ui-pty-update")
 @pytest.mark.parametrize("install", [False, True])
 def test_update_screen_precedes_setup_and_releases_terminal_for_installer(tmp_path: Path, install: bool) -> None:
     script = r"""
@@ -195,6 +204,7 @@ main(["setup"])
         _stop(process, master)
 
 
+@pytest.mark.xdist_group("harness-ui-pty-chat")
 def test_chat_paste_enter_steering_mode_switch_and_cancel_use_one_terminal(tmp_path: Path) -> None:
     pasted = "long pasted text\n" * 100
     script = r"""

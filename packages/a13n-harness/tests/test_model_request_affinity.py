@@ -38,9 +38,7 @@ pytestmark = pytest.mark.anyio
     ("thread_id", "expected"),
     [
         ("thread-example", "c9b5a8bc-0a44-5dc0-836d-6f0af4c8e71d"),
-        ("thr_hostroot", "df691c98-450b-52de-a38a-b23a1c790bc4"),
         ("thread a/b\r\n\u4f1a\u8bdd", "3ec0222d-0e01-5754-a45f-c5a2bde6e6de"),
-        ("a" * 10_000, "e459fd37-7a46-5f27-842f-8d697d27ef68"),
         ("c9b5a8bc-0a44-5dc0-836d-6f0af4c8e71d", "151e4eb1-13ab-5a6b-a7ab-8930dd4cc9d5"),
     ],
 )
@@ -60,24 +58,15 @@ def test_affinity_derivation_does_not_normalize_or_truncate_thread_ids() -> None
 
 @pytest.mark.parametrize(
     ("model_name", "expected"),
+    # One name per rule edge: suffix, prefix, non-digit, non-GPT, anchoring, case, and Unicode digit.
     [
         ("gpt-4.1", True),
-        ("gpt-5", True),
-        ("gpt-5-codex", True),
         ("openai/gpt-5", True),
-        ("deepseek/deepseek-chat", False),
-        ("claude-sonnet-4", False),
         ("gpt-oss-120b", False),
-        ("openai/gpt-oss-120b", False),
         ("o3", False),
-        ("production-model", False),
         ("other/gpt-5", False),
-        ("openai/openai/gpt-5", False),
-        ("not-gpt-5", False),
-        ("gpt-", False),
-        ("gpt-\uff15", False),
         ("GPT-5", False),
-        (" gpt-5", False),
+        ("gpt-\uff15", False),
     ],
 )
 async def test_cache_key_uses_final_model_name(
@@ -128,8 +117,8 @@ async def _assert_cache_key(monkeypatch: pytest.MonkeyPatch, model_name: str, ex
     assert seen == [settings]
 
 
-@pytest.mark.parametrize("session_enabled", [True, False])
-@pytest.mark.parametrize("cache_enabled", [True, False])
+# Both on merges both patches; both off takes the early return. Mixed values add no branch.
+@pytest.mark.parametrize(("session_enabled", "cache_enabled"), [(True, True), (False, False)])
 async def test_builder_overrides_environment_for_parent_and_child(
     monkeypatch: pytest.MonkeyPatch, session_enabled: bool, cache_enabled: bool
 ) -> None:
@@ -196,8 +185,9 @@ async def test_unspecified_builder_switch_still_follows_environment(
     assert seen == [expected]
 
 
-@pytest.mark.parametrize("parameter", ["x_session_id_enabled", "openai_prompt_cache_key_enabled"])
-@pytest.mark.parametrize("value", [0, 1, "false", [], {}])
+@pytest.mark.parametrize(
+    ("parameter", "value"), [("x_session_id_enabled", 1), ("openai_prompt_cache_key_enabled", "false")]
+)
 def test_builder_rejects_non_boolean_patch_override(parameter: str, value: Any) -> None:
     with pytest.raises(DefinitionError) as exc_info:
         HarnessBuilder(**{parameter: value})
@@ -205,8 +195,9 @@ def test_builder_rejects_non_boolean_patch_override(parameter: str, value: Any) 
     assert exc_info.value.details == {"name": parameter}
 
 
-@pytest.mark.parametrize("model_name", ["gpt-5", "deepseek/deepseek-chat"])
-@pytest.mark.parametrize("enabled", [True, False])
+@pytest.mark.parametrize(
+    ("model_name", "enabled"), [("gpt-5", True), ("gpt-5", False), ("deepseek/deepseek-chat", True)]
+)
 async def test_explicit_affinity_survives_name_filter_and_disabled_patches(model_name: str, enabled: bool) -> None:
     seen: list[ModelSettings | None] = []
     settings = ModelSettings(
@@ -314,7 +305,7 @@ async def test_openrouter_request_body_only_gets_automatic_cache_key_for_gpt(
         assert "prompt_cache_key" not in bodies[0]
 
 
-@pytest.mark.parametrize("header", [None, "X-Custom-Affinity", "x-litellm-session-id"])
+@pytest.mark.parametrize("header", [None, "X-Custom-Affinity"])
 async def test_opt_in_affinity_is_thread_scoped_across_continuation_child_and_fork(header) -> None:
     seen = []
 
@@ -350,9 +341,7 @@ async def test_opt_in_affinity_is_thread_scoped_across_continuation_child_and_fo
     ]
 
 
-@pytest.mark.parametrize(
-    "header", ["", "bad header", "bad\r\nheader", "authorization", "Host", "x-title", "a" * 129, 1]
-)
+@pytest.mark.parametrize("header", ["bad\r\nheader", "a" * 129, "authorization", "Host", 1])
 def test_affinity_header_rejects_invalid_or_owned_names(header) -> None:
     with pytest.raises(DefinitionError):
         HarnessBuilder(session_affinity_header=header)

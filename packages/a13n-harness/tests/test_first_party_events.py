@@ -450,7 +450,8 @@ async def test_automatic_compaction_skips_history_without_reported_usage() -> No
     assert _payloads(events, "context") == []
 
 
-@pytest.mark.parametrize("context_window", [None, 0, -1])
+# The guard is "is None or <= 0", so 0 stands for every non-positive window.
+@pytest.mark.parametrize("context_window", [None, 0])
 async def test_automatic_compaction_skips_unusable_native_context_window(context_window: int | None) -> None:
     calls = 0
 

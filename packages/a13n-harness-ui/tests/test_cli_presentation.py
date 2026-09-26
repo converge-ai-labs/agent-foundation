@@ -411,6 +411,8 @@ async def test_menu_escape_and_multiline_paste_preserve_draft_and_images() -> No
 
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest())
+        # A bare Escape otherwise waits 0.5 s for a longer input sequence and 1 s for a key chord.
+        shell.app.ttimeoutlen = shell.app.timeoutlen = 0.05
         backend = Backend()
         await backend.initialize()
         task = asyncio.create_task(shell.run(backend))
@@ -622,6 +624,7 @@ async def test_cancel_key_stops_pending_menu_query_without_consuming_next_draft(
 
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest())
+        shell.app.ttimeoutlen = shell.app.timeoutlen = 0.05  # Bare Escape, as above.
         backend = Backend()
         await backend.initialize()
         task = asyncio.create_task(shell.run(backend))

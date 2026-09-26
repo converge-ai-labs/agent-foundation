@@ -69,6 +69,15 @@ def test_unimported_module_falls_back_to_its_package_suite(workspace: Path) -> N
 def test_global_inputs_select_everything_and_scripts_select_their_tests(workspace: Path) -> None:
     assert _tests(workspace, "uv.lock", "packages/a13n-core/a13n_core/models.py") == {"ALL"}
     assert _tests(workspace, "scripts/tool.py") == {"scripts/tests/test_tool.py"}
+    # Make recipes do not change how tests behave; `make test` itself runs whenever tests are selected.
+    assert _tests(workspace, "Makefile") == set()
+
+
+def test_migration_revisions_without_importers_run_their_package_suite(workspace: Path) -> None:
+    revision = workspace / "packages/a13n-core/a13n_core/migrations/versions/20260101_revision.py"
+    revision.parent.mkdir(parents=True)
+    revision.write_text("def upgrade():\n    pass\n")
+    assert _tests(workspace, revision.relative_to(workspace).as_posix()) == {"packages/a13n-core/tests"}
 
 
 def test_parent_directory_absorbs_child_selections(workspace: Path) -> None:
@@ -84,7 +93,8 @@ def test_frontend_sources_select_related_files_and_project_inputs_select_full_ru
         path.write_text("")
     result = verify.plan(["frontend/apps/a13n-console/src/app.tsx", "frontend/packages/a13n-ui/vitest.config.ts"])
     assert result.frontend_full == {"packages/a13n-ui"}
-    assert set(result.frontend_related) == {"apps/a13n-console", "apps/a13n-harness-ui"}
+    # An application source is related only to its own tests.
+    assert set(result.frontend_related) == {"apps/a13n-console"}
     names = [step.name for step in verify.steps_for(result)]
     assert names == [
         "prettier",
@@ -92,8 +102,13 @@ def test_frontend_sources_select_related_files_and_project_inputs_select_full_ru
         "typecheck packages/a13n-ui",
         "vitest packages/a13n-ui",
         "vitest related apps/a13n-console",
-        "vitest related apps/a13n-harness-ui",
     ]
+    shared = workspace / "frontend/packages/a13n-ui/src/button.tsx"
+    shared.parent.mkdir(parents=True)
+    shared.write_text("")
+    assert set(verify.plan(["frontend/packages/a13n-ui/src/button.tsx"]).frontend_related) == set(
+        verify.FRONTEND_PROJECTS
+    )
 
 
 def test_python_steps_lint_changed_files_and_run_the_selection(workspace: Path) -> None:
@@ -233,3 +248,70 @@ def test_change_discovery_preserves_renames_deletions_and_unusual_names(tmp_path
     odd = "space and\nnewline.py"
     (tmp_path / odd).touch()
     assert set(verify.changed_files("HEAD")) == {"deleted.py", "old.py", "new.py", odd}
+
+
+def test_verify_covers_the_changes_since_the_last_passing_run(tmp_path: Path, monkeypatch, capsys) -> None:
+    import subprocess
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "Test")
+    (tmp_path / "tracked.py").write_text("value = 1\n")
+    git("add", ".")
+    git("commit", "-m", "initial")
+    monkeypatch.setattr(verify, "REPOSITORY_ROOT", tmp_path)
+    monkeypatch.setattr(verify, "DEFAULT_BASE", "HEAD")
+    planned: list[list[str]] = []
+    outcome = [0]
+
+    def plan(files, *, consumers=False):
+        planned.append(sorted(files))
+        return verify.Plan(markdown_files={"changed.md"})
+
+    monkeypatch.setattr(verify, "plan", plan)
+    monkeypatch.setattr(verify, "run", lambda steps, *, dry_run: outcome[0])
+
+    (tmp_path / "first.py").write_text("")
+    (tmp_path / "tracked.py").write_text("value = 2\n")
+    assert verify.main([]) == 0
+    assert planned[-1] == ["first.py", "tracked.py"]
+    (tmp_path / "second.py").write_text("")
+    outcome[0] = 1
+    assert verify.main([]) == 1
+    assert planned[-1] == ["second.py"]
+    # A failed run records nothing, so its changes stay selected.
+    (tmp_path / "tracked.py").write_text("value = 1\n")
+    outcome[0] = 0
+    assert verify.main([]) == 0
+    assert planned[-1] == ["second.py", "tracked.py"]
+    assert verify.main([]) == 0
+    assert "no changes since the last passing verify" in capsys.readouterr().out
+    # Consumers were not part of the passing run, and --base asks for the whole branch.
+    assert verify.main(["--consumers"]) == 0
+    assert planned[-1] == ["first.py", "second.py"]
+    assert verify.main(["--base", "HEAD"]) == 0
+    assert planned[-1] == ["first.py", "second.py"]
+
+
+def test_snapshot_sees_a_same_size_edit_made_in_the_indexed_second(tmp_path: Path, monkeypatch) -> None:
+    import os
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True).stdout
+
+    monkeypatch.setattr(verify, "REPOSITORY_ROOT", tmp_path)
+    source = tmp_path / "tracked.py"
+    source.write_text("value = 1\n")
+    os.utime(source, (1_000_000_000, 1_000_000_000))
+    git("init")
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "add", ".")
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-m", "initial")
+    # Same size and timestamp as the index entry: only Git's same-second check can notice the edit.
+    os.utime(tmp_path / ".git/index", (1_000_000_000, 1_000_000_000))
+    source.write_text("value = 2\n")
+    os.utime(source, (1_000_000_000, 1_000_000_000))
+    assert verify.changes_between("HEAD", verify.snapshot()) == ["tracked.py"]

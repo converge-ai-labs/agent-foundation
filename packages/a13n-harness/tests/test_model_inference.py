@@ -44,14 +44,8 @@ async def test_model_http_client_owns_only_transport_timeouts() -> None:
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [
-        ("timeout", 0),
-        ("timeout", -1),
-        ("timeout", True),
-        ("connect", 0),
-        ("connect", -1),
-        ("connect", False),
-    ],
+    # True passes the positive check, so only the bool rejection can catch it.
+    [("timeout", True), ("connect", 0)],
 )
 def test_model_http_client_rejects_invalid_timeouts(field: str, value: int) -> None:
     with pytest.raises(ValueError, match=f"{field} must be a positive integer"):

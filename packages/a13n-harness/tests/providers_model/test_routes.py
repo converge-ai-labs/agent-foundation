@@ -9,7 +9,8 @@ from pydantic_ai.models.google import GoogleModel
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("provider", ["google", "gemini", "google-gla", "google-vertex", "google-cloud"])
+# The gemini, google-gla and google-vertex aliases share one lookup into google-cloud; keep one alias.
+@pytest.mark.parametrize("provider", ["google", "gemini", "google-cloud"])
 async def test_google_routes_preserve_developer_and_cloud_transports(provider):
     model = await build_api_key_model(
         f"{provider}:gemini-2.5-pro", ApiKeyCredential(api_key="fixture"), base_url="https://127.0.0.1"
@@ -28,6 +29,7 @@ def test_credentials_reject_blank_keys_and_invalid_service_account_pem():
         GoogleServiceAccount(project_id="fixture", client_email="fixture@example.com", private_key="invalid-pem")
 
 
+# The default endpoints are where API keys are sent, so they are pinned here literally.
 @pytest.mark.parametrize(
     ("name", "provider_type", "model_api", "default_base_url"),
     [

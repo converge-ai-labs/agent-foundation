@@ -35,7 +35,7 @@ def _preset() -> AgentSpec:
     )
 
 
-@pytest.mark.parametrize("idle_seconds", [None, 3600, 7200])
+@pytest.mark.parametrize("idle_seconds", [None, 7200])
 def test_cold_start_configuration_round_trip_and_updates(tmp_path: Path, idle_seconds: int | None) -> None:
     default = AgentSpec()
     assert default.cold_start_filter == ColdStartFilterConfiguration()

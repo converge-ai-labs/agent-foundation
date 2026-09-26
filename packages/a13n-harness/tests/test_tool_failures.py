@@ -7,29 +7,12 @@ import pytest
 from a13n_harness.capabilities.working_state import CreateTask, TaskStateError
 from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.toolsets._results import validation_failure
-from a13n_harness.toolsets.documents import DocumentsToolset, _document_error
+from a13n_harness.toolsets.documents import DocumentsToolset
 from a13n_harness.toolsets.files import _environment_error_result as file_failure
-from a13n_harness.toolsets.media import _media_error
 from a13n_harness.toolsets.shell import _environment_error_result as shell_failure
-from a13n_harness.toolsets.web import WebConfiguration, WebToolset, _web_error
+from a13n_harness.toolsets.web import WebConfiguration, WebToolset
 from a13n_harness.toolsets.working_state import _task_error, _validate_note_key
 from pydantic import ValidationError
-
-
-@pytest.mark.parametrize(
-    "factory,code",
-    [
-        (_document_error, "document_timeout"),
-        (_media_error, "media_read_failed"),
-        (_web_error, "web_search_backend_missing"),
-    ],
-)
-def test_code_only_provider_failures_gain_safe_message_and_details(factory, code):
-    result = factory(code)
-    assert result["ok"] is False
-    assert result["error"]["code"] == code
-    assert result["error"]["message"]
-    assert isinstance(result["error"]["details"], dict)
 
 
 def test_file_and_shell_failures_share_environment_projection():

@@ -123,7 +123,8 @@ async def test_a_renewal_that_never_answers_stops_the_attempt(runtime, monkeypat
 async def test_one_heartbeat_serves_every_attempt_and_a_missed_renewal_cancels_only_its_own(
     runtime, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
-    runtime = _with_worker(runtime, slots=2, lease_seconds=1, authority_seconds=0.01, scan_seconds=5)
+    # The renewed attempt ignores its stop, so the final cancel drains only briefly.
+    runtime = _with_worker(runtime, slots=2, lease_seconds=1, authority_seconds=0.01, scan_seconds=5, drain_seconds=0.1)
     renewed, missed = LEASE, replace(LEASE, run_id="run_missed", attempt_id="rat_missed")
     unclaimed = [renewed, missed]
 
@@ -423,7 +424,8 @@ async def test_a_heartbeat_extends_only_leases_it_proves_and_never_waits(service
         await session.execute(
             update(AttemptRow).where(AttemptRow.id == expired.attempt_id).values(lease_expires_at=AttemptRow.created_at)
         )
-    leases = [healthy, expired, locked, replace(forged, token="forged")]
+    forged = replace(forged, token="forged")
+    leases = [healthy, expired, locked, forged]
     before = await _expiries(runtime)
     async with transaction(runtime.storage) as blocker:
         # An execution's own write holds its run, or an attempt row, until it commits.
@@ -433,7 +435,12 @@ async def test_a_heartbeat_extends_only_leases_it_proves_and_never_waits(service
             _, extended = await renew(
                 runtime.storage, runtime.access, leases, extend={lease.attempt_id for lease in leases}, seconds=30
             )
-    assert extended == {healthy.attempt_id}
+            # With every due lease held elsewhere or unproven, nothing is extended.
+            unproven = [locked, forged]
+            _, blocked = await renew(
+                runtime.storage, runtime.access, unproven, extend={lease.attempt_id for lease in unproven}, seconds=30
+            )
+    assert extended == {healthy.attempt_id} and blocked == set()
     after = await _expiries(runtime)
     assert {key for key in before if after[key] != before[key]} == {healthy.attempt_id}
     # The skipped lease is still due, and the next heartbeat extends it once its row is free.

@@ -39,14 +39,11 @@ SCHEMA = {
     },
 }
 VALID = {"items": [{"value": 2, "kind": "ok"}], "note": None}
+# The validator owns keyword semantics; these cover a root failure, a nested $ref failure that
+# Python's bool/int overlap could hide, and an extra key the output type must not drop.
 INVALID = [
     {},
-    {"items": []},
-    {"items": [{"value": "2", "kind": "ok"}]},
     {"items": [{"value": True, "kind": "ok"}]},
-    {"items": [{"value": 0, "kind": "ok"}]},
-    {"items": [{"value": 2, "kind": "bad"}]},
-    {"items": [{"value": 2}]},
     {**VALID, "extra": 1},
 ]
 

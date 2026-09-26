@@ -234,12 +234,11 @@ async def test_local_lifecycle_never_destroys_host_files(tmp_path):
 
 
 def test_local_configuration_contains_only_session_selection(tmp_path):
-    for obsolete in ({"workspace": {"path": str(tmp_path)}}, {"execution_network": "deny"}, {"max_file_bytes": 10}):
-        with pytest.raises(ValidationError):
-            LocalEnvdEnvironmentConfiguration.model_validate(obsolete)
     assert LocalEnvdEnvironmentConfiguration(working_directory="/C:/work").working_directory == "/C:/work"
     with pytest.raises(ValidationError):
         LocalEnvdEnvironmentConfiguration(working_directory="relative")
+    with pytest.raises(ValidationError):
+        LocalEnvdEnvironmentConfiguration.model_validate({"execution_network": "deny"})
     with pytest.raises(EnvironmentProviderError) as failure:
         LOCAL_ENVD.construct(
             operation_id="op-test",

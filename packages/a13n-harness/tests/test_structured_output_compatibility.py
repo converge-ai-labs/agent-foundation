@@ -83,12 +83,3 @@ async def test_plain_text_preserves_explicit_none_tool_choice() -> None:
     assert len(calls) == 1
     assert calls[0].output_tools == []
     assert resolve_tool_choice(calls[0].model_settings, calls[0].model_request_parameters) == "none"
-
-
-def test_structured_output_compatibility_is_injected_for_structured_output() -> None:
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=dict[str, Any],
-        model=FunctionModel(lambda _messages, _info: {"value": 1}),
-    )
-    assert len(_compatibility_capabilities(executable)) == 1

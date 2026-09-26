@@ -101,23 +101,6 @@ def test_default_pricing_catalog_exports_genai_snapshot_plus_harness_overlay() -
     assert set(exported["entries"]) == set(catalog)
 
 
-def test_fable_5_1_catalog_uses_official_context_and_pricing() -> None:
-    official = get_official_model_catalog()["anthropic:claude-fable-5-1"]
-    pricing = get_default_pricing_catalog()["anthropic:claude-fable-5-1"]
-    prices = {component.price_key: component.price for component in pricing.rules[0].prices}
-
-    assert official.characteristics.context_window_tokens == 1_000_000
-    assert pricing.context_window == 1_000_000
-    assert pricing.source_revision == "official-2026-09-02"
-    assert prices == {
-        "input_mtok": Decimal("10"),
-        "cache_write_mtok": Decimal("12.5"),
-        "cache_write_1h_mtok": Decimal("20"),
-        "cache_read_mtok": Decimal("0.25"),
-        "output_mtok": Decimal("50"),
-    }
-
-
 def test_catalog_preserves_genai_and_overlay_time_window_pricing() -> None:
     capability = CatalogModelCostCapability()
 

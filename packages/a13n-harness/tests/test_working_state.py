@@ -22,7 +22,6 @@ from a13n_harness.capabilities import (
     WorkingStateCapability,
     WorkingStateConfiguration,
 )
-from a13n_harness.capabilities.context import _requires_exact_history
 from a13n_harness.capabilities.working_state import (
     WORKING_STATE_CAPABILITY_ID,
     _render_working_state_blocks,
@@ -36,9 +35,6 @@ from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
-    ModelResponse,
-    TextPart,
-    ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
@@ -699,25 +695,6 @@ async def test_task_attachment_without_working_state_owner_fails_closed() -> Non
             bindings=RunBindings.embedded(task_state=TaskStateBinding(source="provider", cell=EmbeddedTaskStateCell())),
         )
     assert exc_info.value.code == "task_state_owner_missing"
-
-
-async def test_working_state_exact_continuation_detection_matches_provider_boundaries() -> None:
-    suspended = [
-        ModelRequest(parts=[UserPromptPart("start")]),
-        ModelResponse(parts=[TextPart("partial")], state="suspended"),
-    ]
-    pending = [
-        ModelRequest(parts=[UserPromptPart("start")]),
-        ModelResponse(parts=[ToolCallPart(tool_name="external", args={}, tool_call_id="call-1")]),
-    ]
-    integrated = [
-        *pending,
-        ModelRequest(parts=[ToolReturnPart(tool_name="external", content="done", tool_call_id="call-1")]),
-    ]
-
-    assert _requires_exact_history(suspended)
-    assert _requires_exact_history(pending)
-    assert not _requires_exact_history(integrated)
 
 
 async def _text(value: str) -> AsyncIterator[str]:

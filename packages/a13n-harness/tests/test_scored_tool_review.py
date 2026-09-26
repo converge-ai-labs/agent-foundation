@@ -45,20 +45,16 @@ def _answer(score, confidence=0.9):
     }
 
 
+# One score per grade: Pydantic AI owns score rounding; confidence alternates to show it never changes the grade.
 @pytest.mark.parametrize(
-    ("score", "risk"),
+    ("score", "risk", "confidence"),
     [
-        (0, "low"),
-        (0.49, "low"),
-        (0.5, "medium"),
-        (1.49, "medium"),
-        (1.5, "high"),
-        (2.49, "high"),
-        (2.5, "extra_high"),
-        (3, "extra_high"),
+        (0.49, "low", 0.99),
+        (0.5, "medium", 0.01),
+        (2.49, "high", 0.99),
+        (2.5, "extra_high", 0.01),
     ],
 )
-@pytest.mark.parametrize("confidence", [0.01, 0.99])
 async def test_native_jev_score_maps_to_risk_without_text_or_confidence_policy(
     reviewer_context, monkeypatch, score, risk, confidence
 ):
@@ -158,14 +154,7 @@ async def test_jev_provider_failures_are_bounded_review_errors(reviewer_context,
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("reason", [None, "Visible reason"])
-def test_review_reason_optional_round_trip(reason):
-    assessment = ToolReviewAssessment(risk="low", reason=reason)
-    assert ToolReviewAssessment.model_validate_json(assessment.model_dump_json()) == assessment
-    assert ToolReviewAssessment.model_validate({"risk": "low"}).reason is None
-
-
-@pytest.mark.parametrize("reason", ["", "  ", "bad\x00text", "x" * 2001])
+@pytest.mark.parametrize("reason", ["  ", "bad\x00text", "x" * 2001])
 def test_present_review_reason_still_validated(reason):
     with pytest.raises(ValidationError):
         ToolReviewAssessment(risk="low", reason=reason)

@@ -101,7 +101,7 @@ def backend() -> Iterator[Backend]:
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     fake = Backend(f"http://127.0.0.1:{server.server_port}")
-    Thread(target=server.serve_forever, daemon=True).start()
+    Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         yield fake
     finally:
@@ -473,39 +473,25 @@ async def test_numeric_and_boolean_attributes_match_as_the_backend_selected_them
     assert "attributes->>'http.status_code' = '200'" in sql and "attributes->>'retry.enabled' = 'true'" in sql
 
 
-@pytest.mark.parametrize(
-    "selectors",
-    [
-        [f"key{index}:value" for index in range(traces.MAX_ATTRIBUTE_SELECTORS + 1)],
-        ["no-separator"],
-        [":value"],
-        ["k" * 129 + ":value"],
-        ["key:" + "v" * 257],
-        ["key:one", "key:two"],
-        [f"{ORGANIZATION}:org_foreign"],
-        ["a13n.thread.id:thread_1"],
-        ["http.request.header.authorization:secret"],
-        ["note:Bearer abc123"],
-    ],
-    ids=[
-        "count",
-        "separator",
-        "empty-key",
-        "key-length",
-        "value-length",
-        "duplicate",
-        "correlation",
-        "reserved",
-        "credential-key",
-        "credential-value",
-    ],
-)
 async def test_attribute_selectors_never_name_correlation_or_credentials(
-    api: SimpleNamespace, backend: Backend, selectors: list[str]
+    api: SimpleNamespace, backend: Backend
 ) -> None:
+    refused = {
+        "count": [f"key{index}:value" for index in range(traces.MAX_ATTRIBUTE_SELECTORS + 1)],
+        "separator": ["no-separator"],
+        "empty-key": [":value"],
+        "key-length": ["k" * 129 + ":value"],
+        "value-length": ["key:" + "v" * 257],
+        "duplicate": ["key:one", "key:two"],
+        "correlation": [f"{ORGANIZATION}:org_foreign"],
+        "reserved": ["a13n.thread.id:thread_1"],
+        "credential-key": ["http.request.header.authorization:secret"],
+        "credential-value": ["note:Bearer abc123"],
+    }
     query_through(api, backend.logfire())
-    response = await api.client.get(f"{api.workspace}/traces", params={"attribute": selectors})
-    assert (response.status_code, response.json()["error"]["details"]["field"]) == (400, "attribute")
+    for case, selectors in refused.items():
+        response = await api.client.get(f"{api.workspace}/traces", params={"attribute": selectors})
+        assert (response.status_code, response.json()["error"]["details"]["field"]) == (400, "attribute"), case
     assert backend.requests == []
 
 
@@ -618,29 +604,25 @@ async def test_logfire_pages_continue_after_the_last_row(api: SimpleNamespace, b
     assert len(backend.requests) == 2
 
 
-@pytest.mark.parametrize(
-    "answer",
-    [
-        httpx2.Response(500, json={"detail": "down"}),
-        httpx2.Response(302, headers={"location": "http://127.0.0.1:9/elsewhere"}),
-        DROP,
-        httpx2.Response(200, content=b"{"),
-        httpx2.Response(200, json={"rows": []}),
-        httpx2.Response(200, json={"data": [{"trace_id": TRACE}]}),
-        httpx2.Response(200, content=b"[" + b" " * MAX_RESPONSE_BYTES + b"]"),
-    ],
-    ids=["status", "redirect", "connection", "json", "shape", "row", "size"],
-)
-async def test_backend_failures_are_unavailable(
-    api: SimpleNamespace, backend: Backend, answer: httpx2.Response | str
-) -> None:
-    provider = backend.answer(answer).logfire()
-    with pytest.raises(ServiceError) as error:
-        await traces.list_trace_spans(
-            api.runtime.storage, provider, admin(api), api.tenant.workspace_id, TRACE, limit=10, cursor=None
-        )
-    assert (error.value.code, error.value.details) == ("unavailable", {"dependency": "trace:logfire"})
-    assert len(backend.requests) == 1
+async def test_backend_failures_are_unavailable(api: SimpleNamespace, backend: Backend) -> None:
+    failures: dict[str, httpx2.Response | str] = {
+        "status": httpx2.Response(500, json={"detail": "down"}),
+        "redirect": httpx2.Response(302, headers={"location": "http://127.0.0.1:9/elsewhere"}),
+        "connection": DROP,
+        "json": httpx2.Response(200, content=b"{"),
+        "shape": httpx2.Response(200, json={"rows": []}),
+        "row": httpx2.Response(200, json={"data": [{"trace_id": TRACE}]}),
+        "size": httpx2.Response(200, content=b"[" + b" " * MAX_RESPONSE_BYTES + b"]"),
+    }
+    for sent, (case, answer) in enumerate(failures.items(), start=1):
+        provider = backend.answer(answer).logfire()
+        with pytest.raises(ServiceError) as error:
+            await traces.list_trace_spans(
+                api.runtime.storage, provider, admin(api), api.tenant.workspace_id, TRACE, limit=10, cursor=None
+            )
+        assert (error.value.code, error.value.details) == ("unavailable", {"dependency": "trace:logfire"}), case
+        # One request each: a failure is never retried.
+        assert len(backend.requests) == sent, case
 
 
 async def test_slow_or_unconfigured_backends_are_unavailable(api: SimpleNamespace, backend: Backend) -> None:

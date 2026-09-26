@@ -222,11 +222,12 @@ asyncio.run(main(sys.argv[1], int(sys.argv[2])))
 async def test_concurrent_processes_linearize_their_compare_and_swap(tmp_path: Path) -> None:
     store = DirectoryFileStore(tmp_path)
     await store.write("counter", "0", expected=None, origin=ORIGIN)
+    # Two writers of 40 increments collide about as often as four writers of 10, with half the interpreters.
     processes = [
-        await asyncio.create_subprocess_exec(sys.executable, "-c", _INCREMENT, str(tmp_path), "10") for _ in range(4)
+        await asyncio.create_subprocess_exec(sys.executable, "-c", _INCREMENT, str(tmp_path), "40") for _ in range(2)
     ]
-    assert [await process.wait() for process in processes] == [0, 0, 0, 0]
-    assert (await store.read("counter")).text == "40"
+    assert [await process.wait() for process in processes] == [0, 0]
+    assert (await store.read("counter")).text == "80"
 
 
 async def test_purge_removes_every_file(tmp_path: Path) -> None:

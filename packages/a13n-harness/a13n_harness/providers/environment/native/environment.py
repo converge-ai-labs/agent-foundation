@@ -32,6 +32,8 @@ from .commands import Execute, NativeCommands
 from .configuration import CommandConfiguration, NamedTargetState, TargetState
 from .errors import failure
 
+_DELETE_POLL_SECONDS = 0.5
+
 
 def descriptor(
     config: CommandConfiguration, identity: str | None = None, *, incarnation: str | None = None
@@ -151,7 +153,7 @@ class NativeEnvironment[C: CommandConfiguration, S: TargetState](Environment):
         try:
             async with asyncio.timeout(self.config.request_timeout_seconds):
                 while await inspect() is not None:
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(_DELETE_POLL_SECONDS)
         except (TimeoutError, EnvironmentProviderError) as error:
             raise failure(
                 self.provider_key,

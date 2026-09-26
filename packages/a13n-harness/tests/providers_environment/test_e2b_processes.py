@@ -543,16 +543,17 @@ async def test_metadata_guard_is_separate_from_active_and_output_budgets(monkeyp
     await process.close()
 
 
-async def test_wait_after_output_cap_polls_process_without_reattaching():
+async def test_wait_after_output_cap_polls_process_without_reattaching(monkeypatch):
+    monkeypatch.setattr("a13n_harness.providers.environment.e2b.processes._STATUS_POLL_SECONDS", 0.01)
     native = NativeCommands()
     process = adapter(native, max_observation_bytes=16)
     started = await process.start(request("immediate"))
     await tick()
     before = asyncio.get_running_loop().time()
-    info = await process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=0.25)
+    info = await process.wait(started.process.handle, condition="initial_terminal", timeout_seconds=0.025)
     elapsed = asyncio.get_running_loop().time() - before
     assert info.status.phase == "running"
-    assert 0.2 <= elapsed < 0.6
+    assert 0.02 <= elapsed < 0.6
     assert 1 <= sum(call[0] == "list" for call in native.calls) <= 4
     assert not any(call[0] == "connect" for call in native.calls)
     await process.close()
@@ -578,11 +579,13 @@ async def test_wait_budget_includes_native_requests(slow_operation):
     await process.close()
 
 
-async def test_exec_does_not_complete_when_output_is_capped():
+async def test_exec_does_not_complete_when_output_is_capped(monkeypatch):
+    monkeypatch.setattr("a13n_harness.providers.environment.e2b.processes._STATUS_POLL_SECONDS", 0.01)
     native = NativeCommands()
     process = adapter(native, max_observation_bytes=16)
     executing = asyncio.create_task(process.exec(request("immediate")))
-    await asyncio.sleep(0.15)
+    # Span several status polls before the process exits.
+    await asyncio.sleep(0.03)
     assert not executing.done()
     native.emit(10, exit_code=7)
     result = await asyncio.wait_for(executing, timeout=1)

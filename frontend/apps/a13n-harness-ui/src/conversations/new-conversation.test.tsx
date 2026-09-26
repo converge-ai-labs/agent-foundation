@@ -327,6 +327,10 @@ beforeEach(() => {
             environment_profile_id: "environment-native",
           },
         });
+      // A timer-driven activity lookup is a read sent as POST: it fails like any unmocked read and is
+      // not a write, so write counts do not depend on whether its timer fired before an assertion.
+      if (pathname === "/api/threads/activity/lookup")
+        throw new Error(`Unexpected read ${url}`);
       writes.push(request.clone());
       if (pathname === "/api/threads") {
         createdOwner = (await request.clone().json()).coordinator_thread_id;

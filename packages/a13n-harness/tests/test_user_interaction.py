@@ -147,17 +147,14 @@ async def test_structured_question_rejects_uncorrelated_answer_shape_before_resu
     assert invalid.value.code == "deferred_results_invalid"
 
 
-@pytest.mark.parametrize("invalid_kind", ["duplicate_labels", "duplicate_questions", "blank_label", "wrong_shape"])
+# Field constraints share the same ValidationError path as the Harness-owned duplicate validators.
+@pytest.mark.parametrize("invalid_kind", ["duplicate_labels", "duplicate_questions"])
 async def test_invalid_question_returns_tool_failure_before_deferral(invalid_kind: str) -> None:
     questions = json.loads(json.dumps(_QUESTIONS))
     if invalid_kind == "duplicate_labels":
         questions["questions"][0]["options"][1]["label"] = " Focused "
-    elif invalid_kind == "duplicate_questions":
-        questions["questions"].append({**questions["questions"][0], "question": " Which scope should be used? "})
-    elif invalid_kind == "blank_label":
-        questions["questions"][0]["options"][0]["label"] = " "
     else:
-        questions = {"questions": []}
+        questions["questions"].append({**questions["questions"][0], "question": " Which scope should be used? "})
     requests = 0
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:

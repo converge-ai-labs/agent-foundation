@@ -391,7 +391,7 @@ async def test_managed_dispatch_cancellation_releases_credentials_and_preserves_
 
 async def test_result_redaction_and_unavailable_spill_fallback_are_bounded() -> None:
     def produce() -> dict[str, str]:
-        return {"token": "top-secret", "content": "x" * 2000}
+        return {"token": "top-secret", "content": "x" * 2000, "hint": "continue"}
 
     result = await _run(
         HarnessTool(
@@ -420,6 +420,8 @@ async def test_result_redaction_and_unavailable_spill_fallback_are_bounded() -> 
     assert content["truncated"] is True
     assert content["output_file_path"] is None
     assert content["output_bytes"] > 1024
+    assert isinstance(content["result"], dict)
+    assert content["result"]["hint"] == "continue"
     assert len(json.dumps(content).encode()) <= 512
     assert "top-secret" not in repr(content)
 

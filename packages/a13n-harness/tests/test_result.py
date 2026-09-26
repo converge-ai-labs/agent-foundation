@@ -58,8 +58,7 @@ class _Passthrough(AbstractHarnessPlugin):
         return self.name
 
 
-@pytest.mark.parametrize("plugin_count", [0, 1, 3])
-async def test_plugin_boundaries_do_not_reserialize_normalized_history(plugin_count: int) -> None:
+async def test_plugin_boundaries_do_not_reserialize_normalized_history() -> None:
     async def response(messages, info):
         yield "done"
 
@@ -68,7 +67,7 @@ async def test_plugin_boundaries_do_not_reserialize_normalized_history(plugin_co
             agent=AgentSpec(),
             model=FunctionModel(stream_function=response),
             output_type=str,
-            plugins=tuple(_Passthrough(str(index)) for index in range(plugin_count)),
+            plugins=tuple(_Passthrough(str(index)) for index in range(3)),
         )
     )
     with (

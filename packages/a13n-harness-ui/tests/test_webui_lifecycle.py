@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 from contextlib import ExitStack, asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -24,6 +25,7 @@ from a13n_harness_ui.webui_lifecycle import RequestLog, WebUIServer
 from anyio import Event, fail_after, sleep, sleep_forever
 from starlette.routing import Route
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
+from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect
 
 from .test_app import _settings, _write_configuration
@@ -338,11 +340,20 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path
             while not (tmp_path / "run-started").exists():
                 assert time.monotonic() < deadline, "Run did not start"
                 time.sleep(0.02)
-            started = time.monotonic()
             process.send_signal(stop_signal)
             output, _ = process.communicate(timeout=8)
-            elapsed = time.monotonic() - started
-            assert elapsed < 3, output
+            for stream in (realtime, ws):
+                # Reading the unread backlog lets the client see the server's close instead
+                # of waiting out its own close timeout when the stack exits.
+                with pytest.raises(ConnectionClosed):
+                    while True:
+                        stream.recv(timeout=5)
+        # Bound the server's own stop; interpreter teardown is slowed by load and coverage saves.
+        logged = {
+            record["message"]: datetime.fromisoformat(record["timestamp"])
+            for record in (json.loads(line) for line in output.splitlines() if line.startswith("{"))
+        }
+        assert (logged["WebUI stopped."] - logged["Stop requested."]).total_seconds() < 3, output
         assert (tmp_path / "run-stopped").exists(), output
         assert not psutil.pid_exists(terminal_pid), output
         for message in (

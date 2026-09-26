@@ -272,8 +272,8 @@ async def test_web_text_fetch_distinguishes_transport_and_disclosure_truncation(
     assert spilled["truncated"] is False
 
 
-@pytest.mark.parametrize("cancel_caller", [False, True])
-@pytest.mark.parametrize("fail_close", [False, True])
+# Caller cancellation and late close failure act on independent paths, so each value appears once.
+@pytest.mark.parametrize(("cancel_caller", "fail_close"), [(False, False), (True, True)])
 async def test_response_cleanup_retains_late_tasks_until_completion(cancel_caller: bool, fail_close: bool) -> None:
     import asyncio
     import gc
@@ -318,6 +318,7 @@ async def test_response_cleanup_retains_late_tasks_until_completion(cancel_calle
     )
     caller = asyncio.create_task(web._close_response(response))
     try:
+        # The timeouts bound only the waits: a full gc.collect() scales with the worker heap and machine load.
         async with asyncio.timeout(2):
             await started.wait()
             if cancel_caller:
@@ -329,16 +330,17 @@ async def test_response_cleanup_retains_late_tasks_until_completion(cancel_calle
             await resisting.wait()
             while any(task.get_name() == "web-response-close-drain" for task in web._RESPONSE_CLOSE_TASKS - baseline):
                 await asyncio.sleep(0.01)
-            gc.collect()
-            assert failures == []
-            assert pending_ref is not None and pending_ref() is not None
-            assert len(web._RESPONSE_CLOSE_TASKS - baseline) == 1
-            pending_ref().set_result(None)
+        gc.collect()
+        assert failures == []
+        assert pending_ref is not None and pending_ref() is not None
+        assert len(web._RESPONSE_CLOSE_TASKS - baseline) == 1
+        pending_ref().set_result(None)
+        async with asyncio.timeout(2):
             await finished.wait()
             while web._RESPONSE_CLOSE_TASKS != baseline:
                 await asyncio.sleep(0.01)
-            gc.collect()
-            assert failures == []
+        gc.collect()
+        assert failures == []
     finally:
         caller.cancel()
         await asyncio.gather(caller, return_exceptions=True)

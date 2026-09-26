@@ -15,7 +15,7 @@ from typing import Any, get_args
 from a13n_harness import HarnessTraceContent
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
 from anyio.to_thread import run_sync
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.dependencies.models import Dependant
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.routing import APIRoute, APIRouter
@@ -303,14 +303,17 @@ def build_app(
         return {"status": "ok", "role": role}
 
     @app.get("/readyz")
-    async def ready() -> JSONResponse:
+    async def ready(request: Request) -> JSONResponse:
         """Ready while started and the database holds a usable schema. Redis only speeds work up, so losing it
         is reported as degraded rather than taking the replica out of service."""
+        # FastAPI caches each endpoint function process-wide, so a closure over `app` would keep every application
+        # built in the process alive; the request names its own.
+        state = request.app.state
         dependency = "runtime"
         try:
-            if not getattr(app.state, "started", False) or any(task.done() for task in app.state.background):
+            if not getattr(state, "started", False) or any(task.done() for task in state.background):
                 raise RuntimeError("not started")
-            runtime: Runtime = app.state.runtime
+            runtime: Runtime = state.runtime
             dependency = "database"
             async with asyncio.timeout(config.server.readiness_timeout):
                 await check_schema(runtime.storage, expected)

@@ -21,6 +21,15 @@ def default_workers(owner: Path) -> int:
     return max(2, min(8, (os.cpu_count() or 4) - 2))
 
 
+def selected_files(selections: list[str]) -> set[Path]:
+    """The test files a selection covers; each is one xdist group, so extra workers would idle."""
+    files: set[Path] = set()
+    for selection in selections:
+        path = Path(selection.split("::", 1)[0])
+        files.update(path.rglob("test_*.py") if path.is_dir() else (path,))
+    return files
+
+
 @contextlib.contextmanager
 def full_run_lock(enabled: bool) -> Iterator[None]:
     """Serialize whole-workspace runs on one machine so concurrent checkouts do not starve each other."""
@@ -67,8 +76,12 @@ def main(argv: list[str] | None = None) -> int:
 
     with full_run_lock(enabled=not requested and not args.no_lock):
         for owner, selections in batches.items():
-            workers = args.workers if args.workers is not None else default_workers(owner)
-            print(f"\n==> {owner} ({workers} workers)", flush=True)
+            workers = args.workers
+            if workers is None:
+                workers = min(default_workers(owner), len(selected_files(selections)))
+                # One file runs in one process anyway; skip starting and collecting in a worker.
+                workers = 0 if workers == 1 else workers
+            print(f"\n==> {owner} ({workers or 'no'} workers)", flush=True)
             result = subprocess.run(
                 [sys.executable, "-m", "pytest", "-n", str(workers), "--dist", "loadgroup", *selections],
                 check=False,

@@ -355,8 +355,8 @@ async def test_self_hosted_pages_within_its_listing() -> None:
     assert [request.url.params["top_k"] for request in fake.requests] == ["3", "5", "7"]
 
 
-@pytest.mark.parametrize("api", ["platform", "oss"])
-@pytest.mark.parametrize("text", ["", "   ", "x" * 8001])
+# Both APIs share the text check in their common add and update, so each text needs one API.
+@pytest.mark.parametrize(("api", "text"), [("platform", ""), ("oss", "   "), ("platform", "x" * 8001)])
 async def test_record_text_is_bounded_before_any_request(api: Api, text: str) -> None:
     fake = FakeMem0(api)
     record_id = fake.row("likes tea")

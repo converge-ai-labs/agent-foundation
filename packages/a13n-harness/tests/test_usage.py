@@ -482,8 +482,11 @@ async def test_imported_history_is_not_reattributed_on_resume() -> None:
     assert second.usage.requests == 1
 
 
-@pytest.mark.parametrize("outcome", ("success", "failure", "cancelled"))
-@pytest.mark.parametrize("inline", (False, True))
+# Nesting only changes parent identity; cancellation keeps both placements because it crosses the child run.
+@pytest.mark.parametrize(
+    ("outcome", "inline"),
+    (("success", False), ("failure", True), ("cancelled", False), ("cancelled", True)),
+)
 async def test_auxiliary_model_responses_share_pricing_and_ledger_not_native_budget(outcome: str, inline: bool) -> None:
     import asyncio
 

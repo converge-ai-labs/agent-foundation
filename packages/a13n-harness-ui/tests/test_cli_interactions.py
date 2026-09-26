@@ -836,7 +836,8 @@ async def test_terminal_decision_editor_keyboard_back_validation_and_submit(tmp_
         shell = CliShell(CliRequest(), directory=tmp_path)
         shell.ready = True
         shell.backend = SimpleNamespace(execute=execute, thread_id=None)
-        shell.app.timeoutlen = 0.05
+        # A bare Escape otherwise waits 0.5 s for a longer input sequence and 1 s for a key chord.
+        shell.app.ttimeoutlen = shell.app.timeoutlen = 0.05
         submitted = []
 
         def launch(operation, **kwargs):
@@ -864,8 +865,9 @@ async def test_terminal_decision_editor_keyboard_back_validation_and_submit(tmp_
             assert interaction.editor == ("result" if external else "reason")
             started = interaction.request_started
             pipe.send_text("\x1b")
-            await asyncio.sleep(0.6)
-            assert interaction.editor is None
+            async with asyncio.timeout(3):
+                while interaction.editor is not None:
+                    await asyncio.sleep(0.01)
             assert shell.selection.cursor == -1
             assert interaction.request_started == started
             pipe.send_text(("1" if external else "3") + "\r")

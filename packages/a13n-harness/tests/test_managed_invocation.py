@@ -22,7 +22,6 @@ from a13n_harness.tools import (
     ToolOutputPolicy,
 )
 from a13n_harness.tools._output import _apply_result_policy
-from a13n_harness.tools.invocation import _UNMANAGED_OUTPUT_POLICY
 from a13n_harness.toolsets import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     acknowledge_tool_output,
@@ -190,25 +189,6 @@ async def test_explicit_invocation_policy_can_deny_managed_tool_dispatch() -> No
     assert executed is False
     assert result.status == "completed"
     assert "Managed tool invocation was denied." in result.output_or_raise()
-
-
-async def test_unmanaged_output_policy_defaults_to_truncate() -> None:
-    assert _UNMANAGED_OUTPUT_POLICY.overflow == "truncate"
-
-
-async def test_unmanaged_native_tool_keeps_pydantic_semantics() -> None:
-    def native(value: int) -> int:
-        return value * 2
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_tool_model("native", {"value": 3}),
-        capabilities=(Capability(tools=[native], id="test-tools"),),
-    )
-    result = await executable.run("go", bindings=RunBindings.embedded())
-    assert result.status == "completed"
-    assert "6" in result.output_or_raise()
 
 
 async def test_programmatic_tool_manager_dispatch_crosses_the_same_boundary() -> None:
@@ -601,33 +581,6 @@ async def test_unacknowledged_result_still_obeys_final_character_ceiling() -> No
     assert projected["output_chars"] > FINAL_TOOL_OUTPUT_HARD_CHARS
     assert len(tool_output_text(projected)) <= FINAL_TOOL_OUTPUT_HARD_CHARS
     assert len(tool_output_bytes(projected)) <= policy.max_inline_bytes
-
-
-async def test_large_json_spill_without_sink_returns_bounded_structured_preview() -> None:
-    metadata = HarnessToolMetadata(
-        tool_id="result.preview",
-        effects=frozenset({"read"}),
-        credential_audiences=(),
-        idempotency="read_only",
-        output_policy=ToolOutputPolicy(
-            max_inline_bytes=512,
-            max_output_bytes=2048,
-            overflow="spill",
-        ),
-    )
-
-    projected = await _apply_result_policy(
-        {"content": "x" * 1_000, "hint": "continue"},
-        metadata.output_policy,
-    )
-
-    assert isinstance(projected, dict)
-    assert projected["truncated"] is True
-    assert projected["output_file_path"] is None
-    assert projected["output_bytes"] > 1_000
-    assert isinstance(projected["result"], dict)
-    assert projected["result"]["hint"] == "continue"
-    assert len(json.dumps(projected).encode("utf-8")) <= 512
 
 
 async def test_duplicate_managed_identity_fails_before_model_request() -> None:

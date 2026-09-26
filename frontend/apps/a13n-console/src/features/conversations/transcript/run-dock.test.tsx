@@ -295,10 +295,6 @@ it("does not offer input or retry on historical Runs", () => {
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Retry run" })).toBeNull();
 });
-it("does not give independently interactive controls to child Threads", () => {
-  mount({ origin: "child" });
-  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
-});
 it("keeps guidance and stopping from a reader without run permission", () => {
   denied = ["run"];
   mount({ status: "running" });

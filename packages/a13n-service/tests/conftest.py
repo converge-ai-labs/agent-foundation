@@ -30,18 +30,25 @@ from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
 from a13n_service.settings import Database, ProcessRole, Settings
+from a13n_service.tenancy import credentials
 from a13n_service.tenancy.bootstrap import BootstrapInput, Bootstrapped, bootstrap
+from argon2 import PasswordHasher
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from pydantic import SecretStr
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
+from testcontainers.core.config import testcontainers_config
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
 
 TEMPLATE = "a13n_template"
 EMAIL = "admin@example.com"
 PASSWORD = "test-password-1234"
+
+# Check container readiness every 0.1 s instead of every second, within the same two-minute budget.
+testcontainers_config.sleep_time = 0.1
+testcontainers_config.max_tries = 1200
 
 
 def database_url(base: str, name: str) -> str:
@@ -54,7 +61,16 @@ def _admin(base: str) -> Engine:
 
 @pytest.fixture(scope="session")
 def postgres_url() -> Iterator[str]:
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as postgres:
+    container = (
+        PostgresContainer("postgres:17-alpine", driver="psycopg")
+        # `DROP DATABASE` waits until every backend acknowledges a barrier, and a backend left in password
+        # authentication by a cancelled connect acknowledges it only at `authentication_timeout` (60 s).
+        .with_env("POSTGRES_HOST_AUTH_METHOD", "trust")
+        # A disposable cluster needs no crash safety; skipping fsync starts it seconds sooner.
+        .with_env("POSTGRES_INITDB_ARGS", "--no-sync")
+        .with_command("postgres -c fsync=off")
+    )
+    with container as postgres:
         yield postgres.get_connection_url()
 
 
@@ -113,6 +129,14 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _cheap_password_hashing() -> Iterator[None]:
+    """Minimal Argon2 cost: a default-cost hash takes tens of milliseconds of CPU, and most tests log in."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(credentials, "_HASHER", PasswordHasher(time_cost=1, memory_cost=8, parallelism=1))
+        yield
+
+
 @pytest.fixture
 def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Removes inherited `A13N_` variables, which loading settings refuses, such as the impact recorder's."""
@@ -129,6 +153,8 @@ def settings(database: Database, redis_url: str, tmp_path: Path) -> Settings:
         objects={"root": tmp_path / "objects"},
         encryption={"active_key_id": "test", "keys": {"test": base64.b64encode(b"k" * 32).decode()}},
         providers={"private_cidrs": ["127.0.0.0/8"], "require_https": False},
+        # On a loaded machine an application's first connection can take longer than the default 2 s startup check.
+        server={"readiness_timeout": 30},
     )
 
 
@@ -270,9 +296,12 @@ class ScriptedModel:
 
 @asynccontextmanager
 async def listening(app: Any) -> AsyncIterator[str]:
-    """Serve an ASGI app on a loopback port, for clients that need a real socket (streams, provider adapters)."""
+    """Serve an ASGI app on a loopback port, for clients that need a real socket (streams, provider adapters).
+
+    Responses still streaming when the block exits, such as a gated model turn, are cancelled after 0.1 s.
+    """
     config = uvicorn.Config(
-        app, host="127.0.0.1", port=0, log_level="warning", lifespan="off", timeout_graceful_shutdown=1
+        app, host="127.0.0.1", port=0, log_level="warning", lifespan="off", timeout_graceful_shutdown=0.1
     )
     server = uvicorn.Server(config)
     task = asyncio.create_task(server.serve())

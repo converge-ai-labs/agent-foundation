@@ -274,6 +274,8 @@ async def test_landing_reuses_one_application_and_replaces_question_content() ->
         async with LandingScreen() as screen:
             application = screen.application
             assert application.full_screen
+            # A bare Escape otherwise waits 0.5 s for a longer input sequence and 1 s for a key chord.
+            application.ttimeoutlen = application.timeoutlen = 0.05
             screen.emit("First step status")
             first = asyncio.create_task(screen.ask(Question("first", "First question", "first value", ())))
             await asyncio.sleep(0.02)

@@ -144,17 +144,10 @@ async def test_store_load_forget_are_key_only_and_null_is_not_missing() -> None:
     assert _values(result.state) == {}
 
 
-@pytest.mark.parametrize(
-    ("source", "expected"),
-    [
-        ("def report():\n    return normalize(4)\ndef normalize(x):\n    return x + 1\nreport()", 5),
-        ("funcs = [lambda x: x + 1]\n[f(4) for f in funcs]", [5]),
-        ("try:\n    fn = lambda x: x + 1\nexcept Exception:\n    fn = lambda x: x\nfn(4)", 5),
-    ],
-)
-async def test_monty_owns_python_scope_resolution(source: str, expected: Any) -> None:
+async def test_monty_owns_python_scope_resolution() -> None:
+    source = "def report():\n    return normalize(4)\ndef normalize(x):\n    return x + 1\nreport()"
     _, seen, _ = await _run([_code("saved = 7"), _code(source), _code("saved")])
-    assert seen[1].content == expected
+    assert seen[1].content == 5
     assert seen[2].content == 7
 
 

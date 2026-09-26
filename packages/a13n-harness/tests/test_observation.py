@@ -1174,7 +1174,8 @@ async def test_selective_sampler_does_not_attribute_child_models_to_parent_run()
     )
 
 
-@pytest.mark.parametrize("content", list(HarnessTraceContent))
+# Root and phase content only distinguish NONE from recorded content; FULL adds only binary and request detail.
+@pytest.mark.parametrize("content", [HarnessTraceContent.NONE, HarnessTraceContent.STANDARD])
 async def test_run_content_and_phases_follow_policy_and_native_ownership(content):
     import json
 

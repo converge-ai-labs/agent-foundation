@@ -69,7 +69,8 @@ async def running_card(*, multiple=False):
         app = Application(
             layout=Layout(card.container, focused_element=card.control), key_bindings=card.bindings, full_screen=True
         )
-        app.timeoutlen = 0.1
+        # A bare Escape otherwise waits 0.5 s for a longer input sequence and 1 s for a key chord.
+        app.ttimeoutlen = app.timeoutlen = 0.05
         task = asyncio.create_task(app.run_async())
         try:
             async with asyncio.timeout(3):
@@ -86,6 +87,12 @@ async def running_card(*, multiple=False):
 async def keys(pipe, text):
     pipe.send_text(text)
     await asyncio.sleep(0.08)
+
+
+async def until(predicate):
+    async with asyncio.timeout(3):
+        while not predicate():
+            await asyncio.sleep(0.01)
 
 
 def test_cell_wrapping_preserves_cjk_paragraphs_and_whitespace():
@@ -113,11 +120,12 @@ async def test_real_keys_require_explicit_confirmation_and_preserve_custom_draft
         assert answers == ["1"]  # A custom draft does not steal selection confirmation.
         await keys(pipe, "\t\r")
         assert answers[-1] == "my draft\nnext line"
+        assert card.editing
         await keys(pipe, "\x1b")
-        await asyncio.sleep(0.6)
-        assert not card.editing and not cancelled
+        await until(lambda: not card.editing)
+        assert not cancelled
         await keys(pipe, "\x1b")
-        await asyncio.sleep(0.6)
+        await until(lambda: cancelled)
         assert cancelled == [True]
 
 

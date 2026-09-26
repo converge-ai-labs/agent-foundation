@@ -1,10 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import sys
-from itertools import combinations, permutations
 
 import pytest
 from a13n_harness import AgentSpec, HarnessModelCharacteristics, ModelCapability
@@ -12,12 +8,7 @@ from a13n_harness import AgentSpec, HarnessModelCharacteristics, ModelCapability
 
 @pytest.mark.parametrize(
     "capabilities",
-    [
-        ordering
-        for size in range(4)
-        for subset in combinations(ModelCapability, size)
-        for ordering in permutations(subset)
-    ],
+    [(), (ModelCapability.VIDEO_UNDERSTANDING,), tuple(ModelCapability)],
 )
 def test_capabilities_have_canonical_json_without_changing_python_sets(capabilities):
     characteristics = HarnessModelCharacteristics(capabilities=frozenset(capabilities))
@@ -34,21 +25,10 @@ def test_capabilities_have_canonical_json_without_changing_python_sets(capabilit
     assert spec.model_dump(mode="json")["model_characteristics"]["capabilities"] == expected
 
 
-def test_capabilities_json_is_stable_across_hash_seeds():
-    script = """
-from a13n_harness import HarnessModelCharacteristics, ModelCapability
-print(HarnessModelCharacteristics(capabilities=frozenset(ModelCapability)).model_dump_json())
-"""
-    outputs = [
-        subprocess.run(
-            [sys.executable, "-c", script],
-            env={**os.environ, "PYTHONHASHSEED": str(seed)},
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        ).stdout
-        for seed in (0, 1, 2)
-    ]
-    assert len(set(outputs)) == 1
-    assert json.loads(outputs[0])["capabilities"] == sorted(capability.value for capability in ModelCapability)
+def test_capabilities_json_order_is_independent_of_set_iteration_order():
+    # Set iteration order follows the hash seed; an explicitly unsorted input makes this check deterministic.
+    unsorted = HarnessModelCharacteristics.model_construct(capabilities=list(reversed(ModelCapability)))
+
+    assert json.loads(unsorted.model_dump_json())["capabilities"] == sorted(
+        capability.value for capability in ModelCapability
+    )

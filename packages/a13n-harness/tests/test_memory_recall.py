@@ -182,16 +182,31 @@ async def test_a_failed_or_slow_recall_is_skipped_and_observed() -> None:
 
 
 async def test_cancelling_the_run_cancels_its_recall() -> None:
+    recalling = asyncio.Event()
+    recall_cancelled = asyncio.Event()
+
+    async def hang(operation: str) -> None:
+        recalling.set()
+        try:
+            await _hang(operation)
+        except asyncio.CancelledError:
+            recall_cancelled.set()
+            raise
+
     store = FakeRecordStore(["a"])
-    store.before = _hang
+    store.before = hang
     model = _Model()
     executable = _build(
         model,
         RecordMemoryCapability([RecordMount("facts", store, "write")], limits=RecordMemoryLimits(recall_seconds=30)),
     )
 
-    with pytest.raises(TimeoutError):
-        await asyncio.wait_for(executable.run("hi", bindings=RunBindings.embedded()), timeout=0.2)
+    run = asyncio.create_task(executable.run("hi", bindings=RunBindings.embedded()))
+    await asyncio.wait_for(recalling.wait(), timeout=5)
+    run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run
+    assert recall_cancelled.is_set()
     assert model.calls == []
 
 

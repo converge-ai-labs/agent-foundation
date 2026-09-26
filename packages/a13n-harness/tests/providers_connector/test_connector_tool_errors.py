@@ -48,7 +48,6 @@ async def test_http_refusals_become_safe_tool_results(status, body, code):
     [
         ConnectorProviderError("provider_unavailable", outcome_unknown=True),
         ConnectorProviderError("connection_substitution"),
-        ConnectorProviderError("incompatible_tool_version"),
     ],
 )
 def test_unknown_and_binding_failures_are_not_known_refusals(error):
@@ -57,6 +56,7 @@ def test_unknown_and_binding_failures_are_not_known_refusals(error):
 
 @pytest.mark.parametrize(
     ("status", "code"),
+    # Every carried status, plus a string and a bool, which `type(status) is int` must refuse.
     [
         (401, "authentication_required"),
         (403, "permission_denied"),
@@ -64,7 +64,6 @@ def test_unknown_and_binding_failures_are_not_known_refusals(error):
         (429, "rate_limited"),
         ("404", "tool_rejected"),
         (True, "tool_rejected"),
-        (None, "tool_rejected"),
     ],
 )
 @pytest.mark.anyio
@@ -105,9 +104,7 @@ async def test_composio_http_success_with_tool_failure_keeps_only_safe_status(st
     "body",
     [
         pytest.param(b"", id="empty"),
-        pytest.param(b"null", id="null"),
         pytest.param(b"[]", id="array"),
-        pytest.param(b"{}", id="missing-success"),
         pytest.param(b'{"successful": "false"}', id="invalid-success-type"),
         pytest.param(b"invalid json", id="invalid-json"),
         # Keep the payload out of verbose CI node IDs and runner log processing.

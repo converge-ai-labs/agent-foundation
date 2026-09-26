@@ -500,10 +500,7 @@ async def test_shared_reviewer_isolates_overlapping_executions(reviewer_context,
             assert measures["requests"] == 1
 
 
-@pytest.mark.parametrize("preparation_fails", [False, True])
-async def test_reviewer_allocates_identity_only_after_request_preparation(
-    reviewer_context, monkeypatch, preparation_fails
-):
+async def test_reviewer_allocates_identity_only_after_request_preparation(reviewer_context, monkeypatch):
     from dataclasses import replace
 
     from a13n_harness import model_calls
@@ -519,9 +516,7 @@ async def test_reviewer_allocates_identity_only_after_request_preparation(
     class Preparation(AbstractCapability):
         async def before_model_request(self, ctx, request_context):
             events.append("prepare")
-            if preparation_fails:
-                raise ValueError("preparation failed")
-            return request_context
+            raise ValueError("preparation failed")
 
     class Policy:
         async def check(self, call):
@@ -540,15 +535,10 @@ async def test_reviewer_allocates_identity_only_after_request_preparation(
         tool_id="fixture.write", tool_call_id="review-1", tool_name="write", parameters_schema={}, arguments={}
     )
     owner = replace(reviewer_context, model_call_check=Policy())
-    if preparation_fails:
-        with pytest.raises(tool_review.ToolReviewError) as error:
-            await reviewer.review(request, context=owner)
-        assert error.value.code == "tool_review_failed" and error.value.usage == ()
-        assert events == ["prepare"]
-    else:
-        result = await reviewer.review(request, context=owner)
-        assert result.usage
-        assert events == ["prepare", "allocate", "check", "provider"]
+    with pytest.raises(tool_review.ToolReviewError) as error:
+        await reviewer.review(request, context=owner)
+    assert error.value.code == "tool_review_failed" and error.value.usage == ()
+    assert events == ["prepare"]
 
 
 @pytest.mark.parametrize("deny", [False, True])

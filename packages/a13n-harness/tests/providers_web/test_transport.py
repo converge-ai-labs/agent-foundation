@@ -61,7 +61,10 @@ async def test_client_ownership_on_success_and_invalid_response(borrowed):
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("cleanup", ["normal", "hang", "fail"])
-async def test_cancellation_preserved_and_cleanup_bounded(cleanup, caplog):
+async def test_cancellation_preserved_and_cleanup_bounded(cleanup, caplog, monkeypatch):
+    # Shrink the shielded close bound so the hanging cleanup is cut short quickly.
+    monkeypatch.setattr("a13n_harness.providers.web.transport._CLOSE_TIMEOUT_SECONDS", 0.01)
+
     async def handler(request):
         await sleep_forever()
 
@@ -75,15 +78,15 @@ async def test_cancellation_preserved_and_cleanup_bounded(cleanup, caplog):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("borrowed", [False, True])
 @pytest.mark.parametrize(
-    "url",
+    ("url", "borrowed"),
     [
-        "http://127.0.0.1/private",
-        "https://127.0.0.1/private",
-        "https://[::1]/private",
-        "https://user:synthetic-secret@allowed.example/api",
-        "https://allowed.example/api#fragment",
+        ("http://127.0.0.1/private", False),
+        ("https://127.0.0.1/private", False),
+        ("https://[::1]/private", False),
+        ("https://user:synthetic-secret@allowed.example/api", False),
+        # Client ownership does not depend on the rejected URL; one borrowed case suffices.
+        ("https://allowed.example/api#fragment", True),
     ],
 )
 async def test_actual_request_destination_is_checked_before_send(url, borrowed):
@@ -148,8 +151,7 @@ async def test_generated_query_credentials_and_jina_paths_retain_the_actual_dest
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("borrowed", [False, True])
-async def test_scrape_deadline_cleans_up_its_owned_http_client(policy, borrowed):
+async def test_scrape_deadline_cleans_up_its_owned_http_client(policy):
     from a13n_harness.providers.web import WebProviderDefinition, WebScrapeRequest
     from a13n_harness.providers.web.configuration import EmptyConfiguration
 
@@ -165,11 +167,7 @@ async def test_scrape_deadline_cleans_up_its_owned_http_client(policy, borrowed)
         raise AssertionError("deadline should interrupt the request")
 
     client = Client(handler)
-    transport = WebProviderTransport(
-        client=client if borrowed else None,
-        client_factory=lambda: client,
-        endpoint_policy=EndpointPolicy(),
-    )
+    transport = WebProviderTransport(client_factory=lambda: client, endpoint_policy=EndpointPolicy())
     provider = WebProviderDefinition(
         type="custom",
         display_name="Custom",
@@ -190,6 +188,4 @@ async def test_scrape_deadline_cleans_up_its_owned_http_client(policy, borrowed)
                 ),
                 policy=policy,
             )
-    assert client.closes == (0 if borrowed else 1)
-    if borrowed:
-        await client.aclose()
+    assert client.closes == 1

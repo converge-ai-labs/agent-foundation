@@ -293,35 +293,6 @@ async def test_builder_uses_harness_model_inference_recursively(
     assert observed == [("company@openai:gpt-5", gateway_provider_factory)]
 
 
-async def test_explicit_request_affinity_overrides_automatic_values() -> None:
-    seen: list[ModelSettings | None] = []
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del messages
-        seen.append(info.model_settings)
-        yield "configured"
-
-    settings = ModelSettings(
-        temperature=0.25,
-        openai_prompt_cache_key="explicit-cache",
-        extra_headers={"X-Session-ID": "explicit", "X-Request": "request"},
-    )
-    executable = HarnessBuilder().build(
-        AgentSpec(model_settings=settings),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-    )
-
-    result = await executable.run("hello", bindings=RunBindings.embedded())
-
-    assert result.output_or_raise() == "configured"
-    assert seen == [settings]
-    assert settings["extra_headers"] == {
-        "X-Session-ID": "explicit",
-        "X-Request": "request",
-    }
-
-
 async def test_automatic_request_affinity_runs_inside_other_innermost_request_wrappers() -> None:
     seen: list[ModelSettings | None] = []
 
@@ -409,14 +380,14 @@ async def test_model_request_patches_can_be_disabled_independently_at_builder_cr
     assert seen == [expected]
 
 
+# One padded and one unknown value, one per variable: the parser has only these two rejections.
 @pytest.mark.parametrize(
-    "environment_name",
+    ("environment_name", "value"),
     [
-        MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
-        MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
+        (MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, " true"),
+        (MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, "enabled"),
     ],
 )
-@pytest.mark.parametrize("value", ["", " true", "true ", "enabled", "2"])
 def test_model_request_patch_environment_rejects_invalid_values(
     monkeypatch: pytest.MonkeyPatch,
     environment_name: str,

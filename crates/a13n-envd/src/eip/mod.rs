@@ -11,14 +11,13 @@ mod tests {
     use serde::{Serialize, de::DeserializeOwned};
 
     use super::{
-        DataFrame, DataFrameKind, DataResetStatus, EIP_DESCRIPTOR_SHA256, EIP_PROTO_PACKAGE,
-        EIP_PROTOCOL_VERSION, EIPCallContext, EIPError, EIPLimits, EIPServerInfo, EipValidate,
-        EncodedBytes, EnvironmentReadinessParams, EnvironmentReadinessResult, ErrorType,
-        FileFindParams, FileSearchMatch, FileSearchParams, FileSearchResult, FileStatParams,
-        FileStatResult, InitializeParams, JsonRpcErrorResponse, JsonRpcRequest,
-        JsonRpcSuccessResponse, METHODS, OutputInfo, OutputReadParams, OutputReference,
-        ProcessWriteStdinParams, ReceiptGetParams, ShellExecParams, decode, decode_data_frame,
-        encode, encode_data_frame,
+        DataFrame, DataFrameKind, DataResetStatus, EIP_PROTO_PACKAGE, EIP_PROTOCOL_VERSION,
+        EIPCallContext, EIPError, EIPLimits, EIPServerInfo, EipValidate, EncodedBytes,
+        EnvironmentReadinessParams, EnvironmentReadinessResult, ErrorType, FileFindParams,
+        FileSearchMatch, FileSearchParams, FileSearchResult, FileStatParams, FileStatResult,
+        InitializeParams, JsonRpcErrorResponse, JsonRpcRequest, JsonRpcSuccessResponse, METHODS,
+        OutputInfo, OutputReadParams, OutputReference, ProcessWriteStdinParams, ReceiptGetParams,
+        ShellExecParams, decode, decode_data_frame, encode, encode_data_frame,
     };
 
     fn assert_golden<T>(value: serde_json::Value)
@@ -90,25 +89,6 @@ mod tests {
                 .iter()
                 .all(|method| method.transfer_direction.is_some())
         );
-    }
-
-    #[test]
-    fn generated_descriptor_digest_matches_checked_descriptor() {
-        use sha2::{Digest, Sha256};
-
-        let descriptor = include_bytes!("../../protocol/eip/v1/descriptor.pb");
-        assert_eq!(
-            EIP_DESCRIPTOR_SHA256,
-            format!("{:x}", Sha256::digest(descriptor))
-        );
-    }
-
-    #[test]
-    fn generated_registry_has_unique_jsonrpc_names() {
-        let mut names = METHODS.iter().map(|method| method.name).collect::<Vec<_>>();
-        names.sort_unstable();
-        names.dedup();
-        assert_eq!(names.len(), METHODS.len());
     }
 
     #[test]

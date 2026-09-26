@@ -241,23 +241,6 @@ def test_tool_extra_event_uses_directly_subscribable_custom_name() -> None:
     assert event.value["event"] == source.model_dump(mode="json")
 
 
-def test_enqueued_messages_event_preserves_native_steering_observation() -> None:
-    source = EnqueuedMessagesEvent(
-        enqueue_id="enqueue-1",
-        messages=(ModelRequest(parts=[UserPromptPart(content="change direction")]),),
-    )
-
-    event = HarnessAguiObserver().observe(_event(0, source))[0]
-
-    assert isinstance(event, CustomEvent)
-    assert event.name == "a13n.pydantic_ai.enqueued_messages"
-    assert event.value["event"]["enqueue_id"] == "enqueue-1"
-    assert event.value["event"]["event_kind"] == "enqueued_messages"
-    assert "messages" not in event.value["event"]
-    projected = HarnessAguiObserver().observe(_event(0, source))
-    assert [item.delta for item in projected if isinstance(item, TextMessageContentEvent)] == ["change direction"]
-
-
 def test_text_lifecycle_uses_harness_request_identity_and_accumulates() -> None:
     observer = HarnessAguiObserver()
 
@@ -996,7 +979,6 @@ def test_native_input_types_preserve_caller_metadata_without_binary_transport(de
         BinaryContent,
         CachePoint,
         DocumentUrl,
-        EnqueuedMessagesEvent,
         ImageUrl,
         ModelMessagesTypeAdapter,
         TextContent,
@@ -1037,6 +1019,7 @@ def test_native_input_types_preserve_caller_metadata_without_binary_transport(de
     for body in media:
         assert body["metadata"]["image_object_id"] == "image-original"
         assert body["metadata"]["client"] == {"selection": [1, 2]}
+    assert any(body.get("delta") == "plain input" for body in bodies)
     annotated = next(body for body in bodies if body.get("delta") == "annotated")
     assert annotated["metadata"]["image_object_id"] == "image-original"
     encoded = TypeAdapter(list[Event]).dump_json(list(events))

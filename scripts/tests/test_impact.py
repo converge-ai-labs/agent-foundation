@@ -34,7 +34,14 @@ def test_value():
 def test_other():
     assert models.other() == 2
 """
+SETTINGS_SOURCE = """class Settings:
+    limit = 1
+
+    def current(self):
+        return self.limit
+"""
 MODELS = "packages/a13n-core/a13n_core/models.py"
+SETTINGS = "packages/a13n-core/a13n_core/settings.py"
 UNMEASURED = "packages/a13n-core/a13n_core/unmeasured.py"
 TEST_FILE = "packages/a13n-core/tests/test_models.py"
 PACKAGE = "a13n-core"
@@ -47,7 +54,12 @@ def _git(root: Path, *args: str) -> str:
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A committed miniature repository with a recorded map: two mapped tests, two unrelated ones."""
-    for relative, content in {MODELS: SOURCE, UNMEASURED: "X = 1\n", TEST_FILE: TESTS}.items():
+    for relative, content in {
+        MODELS: SOURCE,
+        SETTINGS: SETTINGS_SOURCE,
+        UNMEASURED: "X = 1\n",
+        TEST_FILE: TESTS,
+    }.items():
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
@@ -64,15 +76,21 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "tests": {
             f"{TEST_FILE}::test_value": {MODELS: ["value"], TEST_FILE: ["test_value"]},
             f"{TEST_FILE}::test_other": {MODELS: ["other"], TEST_FILE: ["test_other"]},
+            f"{TEST_FILE}::test_settings": {SETTINGS: ["Settings.current"]},
             f"{TEST_FILE}::test_unrelated_a": {},
             f"{TEST_FILE}::test_unrelated_b": {},
         },
         "reads": {},
         "funcmaps": {
             relative: {str(n): q for n, q in astmap.line_to_qualname_from_file(str(tmp_path / relative)).items()}
-            for relative in (MODELS, TEST_FILE)
+            for relative in (MODELS, SETTINGS, TEST_FILE)
         },
         "dynamic": {},
+        "durations": {
+            f"{TEST_FILE}::test_value": 0.5,
+            f"{TEST_FILE}::test_other": 1.5,
+            f"{TEST_FILE}::test_settings": 1,
+        },
     }
     target = impact.map_path(PACKAGE, document["ref"])
     target.parent.mkdir(parents=True)
@@ -90,7 +108,7 @@ def _select(root: Path, *files: str) -> impact.Selection:
 def test_find_map_walks_ancestors_and_reports_distance(repo: Path) -> None:
     assert impact.find_map("a13n-missing") is None
     found = impact.find_map(PACKAGE)
-    assert found is not None and found.distance == 0 and len(found.tests) == 4
+    assert found is not None and found.distance == 0 and len(found.tests) == 5
     (repo / "note.txt").write_text("later\n")
     _git(repo, "add", "note.txt")
     _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "later")
@@ -126,6 +144,12 @@ def test_module_level_edit_or_insertion_selects_every_test_touching_the_file(rep
     assert _select(repo).tests == {f"{TEST_FILE}::test_value", f"{TEST_FILE}::test_other"}
     (repo / MODELS).write_text(SOURCE.replace('"""Models."""\n', '"""Models."""\nimport os  # noqa: F401\n'))
     assert _select(repo).tests == {f"{TEST_FILE}::test_value", f"{TEST_FILE}::test_other"}
+
+
+def test_class_body_edit_selects_every_test_touching_the_file(repo: Path) -> None:
+    # Class bodies run at import, outside every test, so the map never records the class itself.
+    (repo / SETTINGS).write_text(SETTINGS_SOURCE.replace("limit = 1", "limit = 2"))
+    assert _select(repo, SETTINGS).tests == {f"{TEST_FILE}::test_settings"}
 
 
 def test_cosmetic_change_and_unmapped_file_are_reported(repo: Path) -> None:
@@ -186,6 +210,14 @@ def test_renamed_source_keeps_old_path_for_selecting_dependents(repo: Path) -> N
     assert _select(repo, MODELS).tests == {f"{TEST_FILE}::test_value", f"{TEST_FILE}::test_other"}
 
 
+def test_test_file_changed_since_the_recording_runs_in_full(repo: Path) -> None:
+    # The recorded node ids of a test file edited after the recording may no longer exist.
+    (repo / TEST_FILE).write_text(TESTS.replace("test_value", "test_renamed"))
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qam", "rename")
+    (repo / MODELS).write_text(SOURCE.replace("    return LIMIT", "    return LIMIT + 0"))
+    assert _select(repo).tests == {TEST_FILE}
+
+
 def test_deleted_tests_are_not_selected_from_old_maps(repo: Path) -> None:
     (repo / MODELS).write_text(SOURCE.replace("return LIMIT", "return LIMIT + 1"))
     (repo / TEST_FILE).unlink()
@@ -200,9 +232,23 @@ def test_verify_plan_prefers_the_map_and_falls_back_for_unmapped_files(repo: Pat
     result = verify.plan([MODELS, TEST_FILE, "packages/a13n-core/tests/conftest.py"], graph=verify.PythonGraph(repo))
     assert result.python_tests == {"packages/a13n-core/tests"}
     steps = verify.steps_for(verify.plan([MODELS], graph=verify.PythonGraph(repo)))
-    listing = steps[-1].command[-1]
+    listing = steps[-1].command[2]
     assert listing.startswith("PYTHON_TEST_DIRS=@")
     assert Path(listing.split("@", 1)[1]).read_text().strip() == f"{TEST_FILE}::test_value"
+
+
+def test_short_recorded_selections_run_without_xdist_workers(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    found = impact.find_map(PACKAGE)
+    assert found is not None
+    assert impact.recorded_seconds(found, [f"{TEST_FILE}::test_value", TEST_FILE]) == 3.5
+    assert impact.recorded_seconds(found, ["packages/a13n-core/tests"]) == 3
+    assert impact.recorded_seconds(found, [f"{TEST_FILE}::test_unrelated_a"]) is None
+    (repo / MODELS).write_text(SOURCE.replace("LIMIT = 1", "LIMIT = 2"))
+    result = verify.plan([MODELS], graph=verify.PythonGraph(repo))
+    assert result.python_seconds == 2
+    assert verify.steps_for(result)[-1].command[-1] == "PYTHON_TEST_WORKERS=0"
+    monkeypatch.setattr(verify, "SERIAL_SECONDS", 1)
+    assert "PYTHON_TEST_WORKERS=0" not in verify.steps_for(result)[-1].command
 
 
 def test_recording_under_xdist_writes_a_map_without_group_suffixes(tmp_path: Path) -> None:
@@ -223,5 +269,6 @@ def test_recording_under_xdist_writes_a_map_without_group_suffixes(tmp_path: Pat
     nodeids = set(document["tests"])
     assert any(nodeid.endswith("::test_parent_directory_absorbs_child_selections") for nodeid in nodeids)
     assert not any("@" in nodeid for nodeid in nodeids)
+    assert set(document["durations"]) >= nodeids
     assert "plan" in set(document["funcmaps"]["scripts/verify.py"].values())
     assert document["ref"] == _git(root, "rev-parse", "HEAD")

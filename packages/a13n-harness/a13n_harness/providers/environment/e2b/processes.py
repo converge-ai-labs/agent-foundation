@@ -30,6 +30,7 @@ from .errors import sdk_errors
 from .output import CommandObservation, ObservationPool
 
 _MAX_PROCESS_RECORDS = 100_000
+_STATUS_POLL_SECONDS = 0.1
 
 
 @dataclass(slots=True)
@@ -276,7 +277,7 @@ class E2BProcesses:
                 if info.status.phase in {"exited", "missing"}:
                     return info
                 observation = await self._observe(token, record)
-                next_poll = loop.time() + 0.1
+                next_poll = loop.time() + _STATUS_POLL_SECONDS
                 while True:
                     if observation.terminal is not None:
                         return self._info(token, record, observation.terminal)
@@ -285,7 +286,7 @@ class E2BProcesses:
                         info = await self.inspect(handle)
                         if info.status.phase in {"exited", "missing"}:
                             return info
-                        next_poll = loop.time() + 0.1
+                        next_poll = loop.time() + _STATUS_POLL_SECONDS
                         continue
                     if observation.closed:
                         await asyncio.sleep(delay)

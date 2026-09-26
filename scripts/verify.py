@@ -12,6 +12,7 @@ import argparse
 import ast
 import os
 import shlex
+import shutil
 import subprocess
 import tempfile
 import time
@@ -30,12 +31,17 @@ FRONTEND = REPOSITORY_ROOT / "frontend"
 SCRIPTS = REPOSITORY_ROOT / "scripts"
 
 # Files that change how every test runs.
-GLOBAL_PYTHON_INPUTS = {"pyproject.toml", "uv.lock", "conftest.py", "scripts/run_python_tests.py", "Makefile"}
+GLOBAL_PYTHON_INPUTS = {"pyproject.toml", "uv.lock", "conftest.py", "scripts/run_python_tests.py"}
 GLOBAL_FRONTEND_INPUTS = {"frontend/package.json", "frontend/pnpm-lock.yaml", "frontend/pnpm-workspace.yaml"}
 FRONTEND_PROJECT_INPUTS = {"package.json", "vitest.config.ts", "vite.config.ts", "tsconfig.json", "tests/setup.ts"}
 FRONTEND_SUFFIXES = {".ts", ".tsx", ".mjs", ".js", ".css", ".json"}
 FRONTEND_PROJECTS = ("apps/a13n-console", "apps/a13n-harness-ui", "packages/a13n-ui")
 COMPACT_PYTEST = "-q --tb=short --no-header"
+DEFAULT_BASE = "origin/main"
+# Below this much recorded (coverage-traced) test time, xdist worker startup costs more than it saves.
+SERIAL_SECONDS = 10.0
+# Per-worktree record of the last tree verify passed on, and whether consumers were included.
+PASSED_RECORD = "a13n-verify-passed"
 
 
 @dataclass
@@ -50,6 +56,8 @@ class Plan:
     frontend_files: set[str] = field(default_factory=set)
     markdown_files: set[str] = field(default_factory=set)
     notes: list[str] = field(default_factory=list)
+    # Recorded serial time of the Python selection, None when some selected test was never measured.
+    python_seconds: float | None = None
 
     @property
     def frontend_projects(self) -> set[str]:
@@ -59,20 +67,59 @@ class Plan:
 # --------------------------------------------------------------------------- change discovery
 
 
+def _git(*args: str, env: dict[str, str] | None = None) -> str:
+    result = subprocess.run(["git", *args], cwd=REPOSITORY_ROOT, capture_output=True, text=True, env=env, check=False)
+    if result.returncode:
+        raise SystemExit(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+    return result.stdout
+
+
+def _git_path(name: str) -> Path:
+    return REPOSITORY_ROOT / _git("rev-parse", "--git-path", name).strip()
+
+
 def changed_files(base: str) -> list[str]:
     """Committed changes since the merge base plus everything in the working tree."""
     files: set[str] = set()
-    commands = (
-        ["git", "diff", "--name-only", "-z", "--no-renames", "--merge-base", base],
-        ["git", "diff", "--name-only", "-z", "--no-renames", "HEAD"],
-        ["git", "ls-files", "-z", "--others", "--exclude-standard"],
-    )
-    for command in commands:
-        result = subprocess.run(command, cwd=REPOSITORY_ROOT, capture_output=True, text=True, check=False)
-        if result.returncode:
-            raise SystemExit(f"{' '.join(command)} failed: {result.stderr.strip()}")
-        files.update(path for path in result.stdout.split("\0") if path)
+    for command in (
+        ("diff", "--name-only", "-z", "--no-renames", "--merge-base", base),
+        ("diff", "--name-only", "-z", "--no-renames", "HEAD"),
+        ("ls-files", "-z", "--others", "--exclude-standard"),
+    ):
+        files.update(path for path in _git(*command).split("\0") if path)
     return sorted(files)
+
+
+def snapshot() -> str:
+    """A tree object of the working tree, untracked files included, written without touching the index."""
+    with tempfile.TemporaryDirectory() as scratch:
+        index = Path(scratch) / "index"
+        # A copy of the real index keeps its stat cache, so only modified files are hashed; keeping its
+        # modification time keeps Git's check for files changed within the same second as the index.
+        shutil.copy2(_git_path("index"), index)
+        env = {**os.environ, "GIT_INDEX_FILE": str(index)}
+        _git("add", "--all", env=env)
+        return _git("write-tree", env=env).strip()
+
+
+def passed_tree(*, consumers: bool) -> str | None:
+    """The last tree verify passed on in a mode covering this one, if its object still exists."""
+    try:
+        tree, mode = _git_path(PASSED_RECORD).read_text().split()
+    except (OSError, ValueError):
+        return None
+    if consumers and mode != "consumers":
+        return None
+    exists = subprocess.run(["git", "cat-file", "-e", f"{tree}^{{tree}}"], cwd=REPOSITORY_ROOT, check=False)
+    return tree if exists.returncode == 0 else None
+
+
+def record_passed(tree: str, *, consumers: bool) -> None:
+    _git_path(PASSED_RECORD).write_text(f"{tree} {'consumers' if consumers else 'changed'}\n")
+
+
+def changes_between(old: str, new: str) -> list[str]:
+    return sorted(path for path in _git("diff", "--name-only", "-z", "--no-renames", old, new).split("\0") if path)
 
 
 # --------------------------------------------------------------------------- python import graph
@@ -286,7 +333,7 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
             ):
                 # Recorded node IDs cannot cover newly added, renamed or reparametrized tests.
                 result.python_tests.add(posix)
-            if path.suffix == ".py" and tests_dir and path.name != "conftest.py" and "/migrations/" not in posix:
+            if path.suffix == ".py" and tests_dir and path.name != "conftest.py":
                 package_python.append(path)
             elif tests_dir and posix.startswith(tests_dir + "/"):
                 scope = path.parent
@@ -295,8 +342,6 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
                 result.python_tests.add(scope.relative_to(REPOSITORY_ROOT).as_posix())
             elif path.suffix == ".py":
                 python_sources.append(path)
-                if "/migrations/" in posix and tests_dir:
-                    result.python_tests.add(f"{tests_dir}/database")
             elif tests_dir:
                 result.python_tests.add(tests_dir)
                 result.notes.append(f"{posix} is a non-Python package input; running {tests_dir}")
@@ -312,15 +357,17 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
             if inside in FRONTEND_PROJECT_INPUTS:
                 result.frontend_full.add(project)
             elif path.suffix in FRONTEND_SUFFIXES and inside.startswith(("src/", "tests/")):
+                # Shared packages are imported by the applications; an application imports only itself.
+                affected = FRONTEND_PROJECTS if project.startswith("packages/") else (project,)
                 if not path.is_file():
-                    result.frontend_full.update(FRONTEND_PROJECTS if project.startswith("packages/") else (project,))
+                    result.frontend_full.update(affected)
                     continue
                 result.frontend_files.add(posix)
-                # Shared packages are imported by the applications, so every project checks relatedness.
-                for candidate in FRONTEND_PROJECTS:
+                for candidate in affected:
                     result.frontend_related[candidate].add(posix)
 
-    mapped = _impact_selection(package_python, result, consumers=consumers) if package_python else set()
+    maps: dict[str, impact.ImpactMap | None] = {}
+    mapped = _impact_selection(package_python, result, maps, consumers=consumers) if package_python else set()
     for path in package_python:
         posix = path.relative_to(REPOSITORY_ROOT).as_posix()
         if path in mapped:
@@ -379,15 +426,37 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
     for project in result.frontend_full:
         result.frontend_related.pop(project, None)
     _collapse_python_selection(result)
+    result.python_seconds = _recorded_seconds(result.python_tests, maps)
     return result
 
 
-def _impact_selection(paths: list[Path], result: Plan, *, consumers: bool) -> set[Path]:
+def _recorded_seconds(tests: set[str], maps: dict[str, impact.ImpactMap | None]) -> float | None:
+    """Recorded serial time of package test selections; None when any part was never measured."""
+    by_package: dict[str, list[str]] = defaultdict(list)
+    for entry in tests:
+        if not entry.startswith("packages/"):
+            return None
+        by_package[entry.split("/")[1]].append(entry)
+    total = 0.0
+    for package, entries in by_package.items():
+        if package not in maps:
+            maps[package] = impact.find_map(package)
+        found = maps[package]
+        seconds = impact.recorded_seconds(found, entries) if found else None
+        if seconds is None:
+            return None
+        total += seconds
+    return total if by_package else None
+
+
+def _impact_selection(
+    paths: list[Path], result: Plan, maps: dict[str, impact.ImpactMap | None], *, consumers: bool
+) -> set[Path]:
     """Select node ids from recorded impact maps; returns the paths the owning package's map covered."""
     handled: set[Path] = set()
     posix = {path: path.relative_to(REPOSITORY_ROOT).as_posix() for path in paths}
     owners = {path: posix[path].split("/")[1] for path in paths}
-    maps = {package: impact.find_map(package) for package in impact.packages_with_tests()}
+    maps.update((package, impact.find_map(package)) for package in impact.packages_with_tests())
     for package in sorted(set(owners.values())):
         if maps.get(package) is None:
             result.notes.append(f"no impact map for {package}; selecting by import graph (make impact-record)")
@@ -499,7 +568,10 @@ def steps_for(result: Plan) -> list[Step]:
                 selection = f"@{listing.name}"
             else:
                 selection = " ".join(entries)
-            steps.append(Step("python tests", ["make", "test", f"PYTHON_TEST_DIRS={selection}"], env=env))
+            command = ["make", "test", f"PYTHON_TEST_DIRS={selection}"]
+            if result.python_seconds is not None and result.python_seconds < SERIAL_SECONDS:
+                command.append("PYTHON_TEST_WORKERS=0")
+            steps.append(Step("python tests", command, env=env))
     for project in sorted(result.frontend_full):
         steps.append(
             Step(
@@ -561,7 +633,11 @@ def run(steps: list[Step], *, dry_run: bool) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base", default="origin/main", help="Ref whose merge base bounds committed changes")
+    parser.add_argument(
+        "--base",
+        help=f"Verify every change since the merge base with this ref (default {DEFAULT_BASE}) instead of "
+        "only the changes since the last passing run",
+    )
     parser.add_argument("--full", action="store_true", help="Run the complete lint, type, and test gates instead")
     parser.add_argument("--dry-run", action="store_true", help="Print the selected steps without running them")
     parser.add_argument(
@@ -570,15 +646,33 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("paths", nargs="*", help="Treat these paths as the change set instead of consulting git")
     args = parser.parse_args(argv)
 
+    tree = None if args.paths or args.dry_run else snapshot()
     if args.full:
-        return run(full_steps(), dry_run=args.dry_run)
+        status = run(full_steps(), dry_run=args.dry_run)
+    else:
+        status = verify_changes(args, tree)
+    if status == 0 and tree is not None:
+        record_passed(tree, consumers=args.consumers or args.full)
+    return status
 
-    files = args.paths or changed_files(args.base)
+
+def verify_changes(args: argparse.Namespace, tree: str | None) -> int:
+    files = args.paths
+    since = "given"
     if not files:
-        print("no local changes; nothing to verify")
+        files = changed_files(args.base or DEFAULT_BASE)
+        since = f"since {args.base or DEFAULT_BASE}"
+        passed = None if args.base else passed_tree(consumers=args.consumers)
+        if passed is not None:
+            # Everything the last passing run covered still holds for files unchanged since then.
+            since_passed = changes_between(passed, tree or snapshot())
+            if len(since_passed) <= len(files):
+                files, since = since_passed, "since the last passing verify"
+    if not files:
+        print(f"no changes {since}; nothing to verify")
         return 0
     result = plan(files, consumers=args.consumers)
-    print(f"{len(files)} changed file(s)")
+    print(f"{len(files)} changed file(s) {since}")
     for note in result.notes:
         print(f"  note: {note}")
     if result.python_tests:
@@ -587,6 +681,8 @@ def main(argv: list[str] | None = None) -> int:
             if result.python_tests == {"ALL"}
             else f"{len(result.python_tests)} Python test target(s)"
         )
+        if result.python_seconds is not None:
+            targets += f", recorded at {result.python_seconds:.1f}s"
         print(f"  selected: {targets}")
     for project in sorted(result.frontend_projects):
         scope = (

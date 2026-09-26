@@ -61,9 +61,12 @@ jobs:
         include:
           - name: Linux
             runner: ubuntu-24.04
+            # Two file-grouped workers, one per vCPU of the standard runner.
+            test_options: -n 2 --dist loadgroup
             test_targets: packages/a13n-harness/tests
           - name: Windows
             runner: windows-2025
+            test_options: ""
             test_targets: >-
               packages/a13n-harness/tests/test_environment_core.py
               packages/a13n-harness/tests/test_monitored_process.py
@@ -95,7 +98,7 @@ jobs:
         run: uv run --locked pyright packages/a13n-harness/a13n_harness
 
       - name: Test a13n Harness
-        run: uv run --locked python -m pytest -vv ${{ matrix.test_targets }} --junitxml=test-results/harness.xml --durations=30 -r a
+        run: uv run --locked python -m pytest -vv ${{ matrix.test_options }} ${{ matrix.test_targets }} --junitxml=test-results/harness.xml --durations=30 -r a
 
       - name: Test provider diagnostics without external calls
         if: matrix.name == 'Linux'

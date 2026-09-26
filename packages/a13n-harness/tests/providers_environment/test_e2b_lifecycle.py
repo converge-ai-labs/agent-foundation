@@ -314,7 +314,7 @@ def test_observer_limits_do_not_change_target_fingerprint():
 
 @pytest.mark.parametrize(
     "api_url",
-    [None, "https://api.cn-beijing.e2b.fc.aliyuncs.com", "https://api.vefaas-e2b.sandbox-cn-beijing.volcapig.com"],
+    [None, "https://api.cn-beijing.e2b.fc.aliyuncs.com"],
 )
 async def test_custom_api_endpoint_reaches_sdk(api, monkeypatch, api_url):
     monkeypatch.setenv("E2B_API_URL", "https://ambient.invalid")

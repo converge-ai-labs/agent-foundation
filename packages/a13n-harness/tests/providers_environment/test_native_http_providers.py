@@ -6,6 +6,7 @@ import shlex
 import sys
 from datetime import UTC, datetime, timedelta
 
+import a13n_harness.providers.environment.native.environment as native_environment
 import httpx2
 import pytest
 from a13n_harness.providers.catalog import ProviderCatalog
@@ -145,6 +146,7 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
             )
 
         monkeypatch.setattr(NativeHTTP, "__init__", transport_init)
+        monkeypatch.setattr(native_environment, "_DELETE_POLL_SECONDS", 0.01)
         provider = ProviderCatalog(select_builtin_environment_providers([key])).require(key)
         config = provider.validate_environment({"root": str(tmp_path), "python": sys.executable})
         backend = provider.configuration_model.model_validate(BACKENDS[key])
