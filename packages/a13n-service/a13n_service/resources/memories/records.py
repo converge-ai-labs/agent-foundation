@@ -30,8 +30,8 @@ from a13n_service.resources.memories.service import require_kind
 from a13n_service.resources.memories.tables import MemoryRow
 from a13n_service.resources.providers.service import ResolvedProvider, read_provider
 from a13n_service.resources.providers.tables import MemoryProviderRow
-from a13n_service.resources.requests import Runtime
 from a13n_service.resources.rows import find_row
+from a13n_service.resources.runtime import Runtime
 from a13n_service.settings import MemorySettings
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, Verb, WorkspaceScope

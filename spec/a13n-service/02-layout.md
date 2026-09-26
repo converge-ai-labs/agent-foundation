@@ -21,12 +21,13 @@ a13n_service/
     access.py  authenticate.py  authorize.py  credentials.py  bootstrap.py  expiry.py  mail.py
     organizations.py  workspaces.py  users.py  principals.py  service_accounts.py  api_keys.py
     grants.py  invitations.py  audit.py
-    requests.py  schemas.py  routes.py  organization_routes.py  member_routes.py
+    runtime.py  requests.py  schemas.py  routes.py  organization_routes.py  member_routes.py
 
   resources/          what a tenant configures
     revisions.py      rules every revisioned kind shares
     rows.py           rules every kind's rows share: scoped lookup, partial change, audit and key collisions
-    requests.py       the runtime dependency resource routes use
+    runtime.py        the runtime protocol resource operations use
+    requests.py       the HTTP runtime dependency resource routes use
     agents/           tables  schemas  service  routes  validation  definition  toolsets  assistant
     skills/           tables  schemas  service  routes  package  content  github  pins
     providers/        tables (all five provider tables)  schemas  service  routes  scope  probe
@@ -49,7 +50,7 @@ a13n_service/
     agent.py  host.py  calls.py  boundaries.py  checkpoints.py  display.py  deferred.py  children.py  subagents.py
     configuration.py  assets.py  skills.py  secrets.py  web.py
     stream.py  webhooks.py  usage.py  traces.py  backlog.py  runs.py  runtime.py
-    schemas.py  routes.py  trace_routes.py
+    requests.py  schemas.py  routes.py  trace_routes.py
     environments/     tables  schemas  service  routes  lifecycle  maintenance  mounts  execution  adapters
                       external
     memories/         tables  schemas  routes  mounts  execution
@@ -73,6 +74,8 @@ Four business packages answer four questions. `tenancy`: who is asking and what 
 Packages under `resources/` own tenant-configured records: identity, scope, configuration, encrypted credentials, enabled state and their API. `providers/` owns backend adapters and contracts that receive plain values. For example, `resources/providers/` stores a web provider account, and the Harness definition registered in `providers/registry.py` builds the backend that serves it.
 
 The tree fixes responsibilities and boundaries, not a file inventory. A module becomes a package, or a package gains a module, when a cohesive responsibility needs it; empty layers are not created ahead of need.
+
+Each business layer's `runtime.py` owns its runtime type: tenancy and resources expose protocol views of the assembled runs runtime. Business operations import these types from `runtime.py`; `requests.py` owns HTTP request extraction and FastAPI dependency declarations.
 
 ## Import direction
 

@@ -17,7 +17,7 @@ from a13n_service.runs.environments.schemas import (
     MountView,
 )
 from a13n_service.runs.environments.tables import STATUSES
-from a13n_service.runs.runtime import CurrentRuntime
+from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.tenancy.requests import Actor
 
 router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}", tags=["environments"])

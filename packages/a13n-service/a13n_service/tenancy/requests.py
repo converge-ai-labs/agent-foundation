@@ -1,43 +1,16 @@
 """The assembled runtime, who is calling, and the images they send, as FastAPI dependencies; they return values
-and never yield SQL sessions.
+and never yield SQL sessions."""
 
-`app.py` stores the runs layer's `Runtime`; `Runtime` here names only what tenancy uses, and resources extend it.
-"""
-
-from typing import Annotated, Protocol
+from typing import Annotated
 
 from fastapi import Depends, Request
-from redis.asyncio import Redis
 
-from a13n_service.infra.crypto import KeyRing
-from a13n_service.infra.db import Storage
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import answer_headers
-from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.infra.redis import rate_limit
-from a13n_service.settings import Settings
-from a13n_service.tenancy.access import Access, Authenticated, unauthenticated
+from a13n_service.tenancy.access import Authenticated, unauthenticated
 from a13n_service.tenancy.authorize import Principal
-
-
-class Runtime(Protocol):
-    @property
-    def storage(self) -> Storage: ...
-
-    @property
-    def objects(self) -> ObjectStore: ...
-
-    @property
-    def redis(self) -> Redis: ...
-
-    @property
-    def keys(self) -> KeyRing: ...
-
-    @property
-    def settings(self) -> Settings: ...
-
-    @property
-    def access(self) -> Access: ...
+from a13n_service.tenancy.runtime import Runtime
 
 
 async def current_runtime(request: Request) -> Runtime:

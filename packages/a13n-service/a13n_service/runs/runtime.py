@@ -2,12 +2,10 @@
 
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Annotated
 
 from a13n_harness import HarnessInstrumentation
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from fastapi import Depends, Request
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,10 +54,3 @@ class Runtime:
     def wake_workers(self, session: AsyncSession) -> None:
         """After commit, tell idle workers to scan now; the periodic scan covers a lost wakeup."""
         after_commit(session, partial(wake, self.redis, timeout=self.settings.redis.timeout))
-
-
-async def current_runtime(request: Request) -> Runtime:
-    return request.app.state.runtime
-
-
-CurrentRuntime = Annotated[Runtime, Depends(current_runtime)]

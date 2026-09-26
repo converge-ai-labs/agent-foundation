@@ -5,8 +5,9 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request, Response
 
 from a13n_service.infra.http import IfMatch, PageLimit, download_headers, tagged
-from a13n_service.resources.requests import CurrentRuntime, Runtime
+from a13n_service.resources.requests import CurrentRuntime
 from a13n_service.resources.revisions import Search
+from a13n_service.resources.runtime import Runtime
 from a13n_service.resources.skills import content, service
 from a13n_service.resources.skills.github import GitHub
 from a13n_service.resources.skills.schemas import (

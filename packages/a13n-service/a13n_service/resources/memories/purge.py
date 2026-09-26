@@ -17,7 +17,7 @@ from a13n_service.infra.outbox import Claim, Undelivered, settle
 from a13n_service.resources.memories.records import backend, open_record_store
 from a13n_service.resources.providers.service import read_provider
 from a13n_service.resources.providers.tables import MemoryProviderRow
-from a13n_service.resources.requests import Runtime
+from a13n_service.resources.runtime import Runtime
 
 
 @dataclass(frozen=True, slots=True)

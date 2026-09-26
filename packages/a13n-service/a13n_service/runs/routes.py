@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
 from a13n_service.runs import archive, entries, resume, runs, sessions, stream, submit, threads, usage
-from a13n_service.runs.runtime import CurrentRuntime
+from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
     Attempts,
     EntryPage,

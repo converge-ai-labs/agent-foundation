@@ -9,7 +9,7 @@ from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
 from a13n_service.providers.traces import Span, SpanPage
 from a13n_service.runs import traces
-from a13n_service.runs.runtime import CurrentRuntime
+from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.tenancy.requests import Actor
 
 router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}", tags=["runs"])
