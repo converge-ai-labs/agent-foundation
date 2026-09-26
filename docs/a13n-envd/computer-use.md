@@ -23,6 +23,16 @@ Use your actual reachable WebUI origin. A same-machine loopback HTTP origin is a
 
 The equivalent settings are `"computer_use": true` in daemon JSON or `A13N_ENVD_COMPUTER_USE=true`. It defaults off and is independent of `full_control`. Enabling computer use does not enable shell commands, and enabling shell commands does not enable computer use. The ordinary configuration precedence applies; `--computer-use false` overrides an environment opt-in.
 
+### Wait for macOS authorization
+
+After Host pairing, envd checks **Screen Recording** and **Accessibility**, requests missing permissions, and waits up to **120 seconds**. Grant access in **System Settings → Privacy & Security** to the process or launcher macOS identifies for envd. The daemon starts its reverse WebSocket only after both checks succeed. The same gate precedes the HTTP listener and stdio protocol processing; disabled computer use does not prompt or wait.
+
+Progress and errors go to stderr, never stdio protocol stdout. A timeout or Ctrl+C exits with a nonzero status and does not connect a partially authorized Device. If macOS requires a restart, restart the identified launcher and envd, then repeat the command. Rejecting or dismissing a prompt is not always distinguishable from a pending grant; envd waits until the deadline and reports the permissions still missing. Runtime revocation still fails observation/input even after successful startup.
+
+For a longer wait, set `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS=300000`, or include `"computer_use_permission_timeout_ms": 300000` in daemon JSON. This positive duration does not enable computer use by itself.
+
+For a parent launching stdio envd, forward/drain stderr during startup and configure the client's `initialization_timeout` longer than the permission wait plus startup overhead (for example 135 seconds for the default wait). The Python client's default 10-second initialization timeout is not a human-authorization timeout. Reverse WebSocket clients initialize only after envd connects; HTTP clients must wait until the listener is available.
+
 ## Authorize the conversation
 
 1. Open **Working environments** in the composer, or **Conversation details → Configuration** for saved next-Run settings.
@@ -72,6 +82,8 @@ Supported tools:
 | `computer_press_keys`             | Press and release a chord such as `["meta", "a"]`                         |
 
 Key names use `meta` for Command, `alt` for Option, `enter`, `page_up`, and `page_down`. Input results report native event effect and cleanup status. `executed` is not proof of application-level success. A partial or unknown effect, incomplete release, disconnect or interrupted Run must not be blindly retried; inspect the desktop before deciding what to do next.
+
+Screenshot storage shares the file-transfer staging byte and object budgets. Each capture needs 4 MiB of free staging capacity before it begins; after capture, only the actual encoded image length remains charged until the bytes are released. Close readers promptly rather than accumulating unread screenshots.
 
 ## Python client
 

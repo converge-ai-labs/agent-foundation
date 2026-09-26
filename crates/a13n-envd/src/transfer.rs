@@ -22,7 +22,7 @@ use crate::{
         FileReaderOpenResult, FileWriteMode, FileWriterAbortStatus, FileWriterCommitParams,
         FileWriterHandle, FileWriterOpenParams, FileWriterOpenResult,
     },
-    filesystem::{DeviceFilesystem, PathError, StagedCandidate},
+    filesystem::{DeviceFilesystem, PathError, StagedCandidate, StagingReservation},
     operation::{LedgerError, OperationInterruption, OperationLedger, ShortIdAllocator},
 };
 
@@ -85,7 +85,7 @@ enum TransferRecord {
 
 enum ReaderSource {
     File(std::fs::File),
-    Bytes(std::io::Cursor<Vec<u8>>),
+    Bytes(std::io::Cursor<Vec<u8>>, StagingReservation),
 }
 
 struct ReaderRecord {
@@ -330,11 +330,15 @@ impl TransferRegistry {
     pub(crate) async fn open_image_reader(
         &self,
         bytes: Vec<u8>,
+        mut staging: StagingReservation,
     ) -> Result<(FileReaderHandle, chrono::DateTime<chrono::Utc>), TransferError> {
         self.expire().await;
         if bytes.is_empty() || bytes.len() as u64 > self.inner.max_transfer_bytes {
             return Err(TransferError::Limit);
         }
+        staging
+            .shrink_to(bytes.len() as u64)
+            .map_err(map_path_error)?;
         let reservation = self.reserve_record()?;
         let expires_at = self.transfer_expiry(None)?;
         let handle = self
@@ -348,7 +352,7 @@ impl TransferRegistry {
             producing: Arc::new(AtomicBool::new(false)),
             handle: handle.clone(),
             max_bytes: bytes.len() as u64,
-            file: Some(ReaderSource::Bytes(std::io::Cursor::new(bytes))),
+            file: Some(ReaderSource::Bytes(std::io::Cursor::new(bytes), staging)),
             start_offset: 0,
             phase: ReaderPhase::Open,
             produced: 0,
@@ -817,15 +821,20 @@ impl TransferRegistry {
             let reader = record.lock().await;
             (reader.start_offset, reader.max_bytes)
         };
+        // The charge follows the buffer into the producer, and is released only
+        // after the buffer is dropped (including reset, cancellation and expiry).
+        let _staging;
         let mut file: Box<dyn tokio::io::AsyncRead + Unpin + Send> = match file {
             ReaderSource::File(file) => {
+                _staging = None;
                 let mut file = tokio::fs::File::from_std(file);
                 file.seek(SeekFrom::Start(start_offset))
                     .await
                     .map_err(|_| DataResetStatus::Source)?;
                 Box::new(file)
             }
-            ReaderSource::Bytes(mut bytes) => {
+            ReaderSource::Bytes(mut bytes, staging) => {
+                _staging = Some(staging);
                 bytes.set_position(start_offset);
                 Box::new(bytes)
             }
@@ -1448,8 +1457,13 @@ impl TransferRegistry {
             Some(TransferRecord::Reader(reader)) => reader.try_lock().is_ok_and(|mut reader| {
                 let terminal = matches!(reader.phase, ReaderPhase::Closed | ReaderPhase::Reset)
                     && !reader.producing.load(Ordering::Acquire);
-                if terminal && let Some(capacity) = &mut reader.capacity {
-                    capacity.active.take();
+                if terminal {
+                    // Expired, never-attached readers still own their source.
+                    // Terminal history retains evidence, not buffers or files.
+                    reader.file.take();
+                    if let Some(capacity) = &mut reader.capacity {
+                        capacity.active.take();
+                    }
                 }
                 terminal
             }),
@@ -1953,12 +1967,19 @@ mod tests {
 
     #[tokio::test]
     async fn image_reader_uses_shared_quota_integrity_and_cleanup() {
-        let (_tree, _config, _filesystem, transfers, mut outbound) = setup(60_000);
+        let (_tree, _config, filesystem, transfers, mut outbound) = setup(60_000);
         let bytes = b"immutable screen image".to_vec();
-        let (reader, _) = transfers.open_image_reader(bytes.clone()).await.unwrap();
+        let staging = filesystem.reserve_staging(1024).unwrap();
+        let (reader, _) = transfers
+            .open_image_reader(bytes.clone(), staging)
+            .await
+            .unwrap();
+        assert_eq!(filesystem.staging_usage(), (bytes.len() as u64, 1));
         assert!(reader.0.starts_with("screen-"));
         assert!(matches!(
-            transfers.open_image_reader(vec![1]).await,
+            transfers
+                .open_image_reader(vec![1], filesystem.reserve_staging(1).unwrap())
+                .await,
             Err(TransferError::Busy)
         ));
         transfers
@@ -2006,9 +2027,118 @@ mod tests {
             completion.digest.value,
             format!("{:x}", Sha256::digest(&bytes))
         );
-        let (next, _) = transfers.open_image_reader(vec![1]).await.unwrap();
+        assert_eq!(filesystem.staging_usage(), (0, 0));
+        let (next, _) = transfers
+            .open_image_reader(vec![1], filesystem.reserve_staging(1).unwrap())
+            .await
+            .unwrap();
         transfers.close_session().await;
         assert!(transfers.close_reader(&next).await.is_err());
+        assert_eq!(filesystem.staging_usage(), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn images_share_session_and_device_staging_bytes_with_files() {
+        let (tree, mut config, _, _, _) = setup(60_000);
+        config.limits.max_staged_file_bytes = 10;
+        config.limits.max_device_staged_file_bytes = 15;
+        config.limits.max_staged_file_objects = 4;
+        config.limits.max_concurrent_file_transfers = 4;
+        let device = DeviceFilesystem::new(&config).unwrap();
+        let first = device.for_session();
+        let second = device.for_session();
+        let transfers = TransferRegistry::new(
+            &config,
+            "session-test".into(),
+            crate::operation::ShortIdAllocator::for_generation(1),
+            crate::capacity::DeviceCapacity::new(&config.limits).transfers,
+        )
+        .unwrap();
+        let (sender, _receiver) = mpsc::channel(16);
+        transfers.attach(sender).unwrap();
+        let (reader, _) = transfers
+            .open_image_reader(vec![1; 6], first.reserve_staging(10).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(first.staging_usage(), (6, 1));
+        assert!(first.reserve_staging(5).is_err());
+        let sibling = second.reserve_staging(9).unwrap();
+        assert_eq!(device.staging_usage(), (15, 2));
+        assert!(first.reserve_staging(1).is_err());
+        drop(sibling);
+        // A real file writer uses the same Session quota, not an image-only pool.
+        let writer = transfers
+            .open_writer(
+                &first,
+                &FileWriterOpenParams {
+                    context: context("file-quota"),
+                    path: path(&tree, "quota.bin"),
+                    mode: FileWriteMode::Create,
+                    executable: None,
+                    transfer_timeout_ms: None,
+                },
+            )
+            .await
+            .unwrap();
+        transfers
+            .handle_frame(DataFrame {
+                session_id: "session-test".into(),
+                kind: DataFrameKind::Attach,
+                handle: writer.writer.0.clone(),
+                offset: 0,
+                payload: vec![],
+                reset_status: None,
+            })
+            .await
+            .unwrap();
+        let frame = DataFrame {
+            session_id: "session-test".into(),
+            kind: DataFrameKind::Chunk,
+            handle: writer.writer.0.clone(),
+            offset: 0,
+            payload: vec![2; 5],
+            reset_status: None,
+        };
+        assert_eq!(
+            transfers.handle_frame(frame).await.unwrap_err(),
+            TransferError::Quota
+        );
+        transfers
+            .handle_frame(DataFrame {
+                session_id: "session-test".into(),
+                kind: DataFrameKind::Reset,
+                handle: reader.0,
+                offset: 0,
+                payload: vec![],
+                reset_status: Some(DataResetStatus::Cancelled),
+            })
+            .await
+            .unwrap();
+        assert_eq!(first.staging_usage().0, 0);
+        transfers.close_session().await;
+        assert_eq!(device.staging_usage(), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn image_staging_rolls_back_failed_publication_and_expires_unread_bytes() {
+        let (_, _, device, transfers, _) = setup(1);
+        let filesystem = device.for_session();
+        assert!(matches!(
+            transfers
+                .open_image_reader(vec![1; 2], filesystem.reserve_staging(1).unwrap())
+                .await,
+            Err(TransferError::Quota)
+        ));
+        assert_eq!(device.staging_usage(), (0, 0));
+        transfers
+            .open_image_reader(vec![1], filesystem.reserve_staging(1).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(device.staging_usage(), (1, 1));
+        assert!(filesystem.reserve_staging(1).is_err());
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        transfers.expire().await;
+        assert_eq!(device.staging_usage(), (0, 0));
     }
 
     #[tokio::test]

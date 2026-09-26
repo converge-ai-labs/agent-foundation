@@ -49,6 +49,7 @@ const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
     "A13N_ENVD_DIRECTORY_DISCOVERY",
     "A13N_ENVD_FULL_CONTROL",
     "A13N_ENVD_COMPUTER_USE",
+    "A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS",
 ];
 
 const HTTP_VARIABLES: &[&str] = &[
@@ -114,6 +115,7 @@ struct FileConfig {
     directory_discovery: Option<bool>,
     full_control: Option<bool>,
     computer_use: Option<bool>,
+    computer_use_permission_timeout_ms: Option<u64>,
     idle_timeout_ms: Option<u64>,
     disconnect_grace_ms: Option<u64>,
     #[serde(default)]
@@ -218,6 +220,7 @@ pub(crate) struct ConnectionBootstrap {
 pub(crate) struct Config {
     #[serde(default)]
     pub(crate) computer_use: bool,
+    pub(crate) computer_use_permission_timeout: Duration,
     #[serde(skip)]
     pub(crate) managed: bool,
     pub(crate) execution: Option<crate::execution::Identity>,
@@ -401,6 +404,12 @@ impl Config {
             .sources()
             .map_err(|error| ConfigError::new(error.to_string()))?;
         let computer_use = file.computer_use.unwrap_or(false);
+        let permission_timeout_ms = file.computer_use_permission_timeout_ms.unwrap_or(120_000);
+        if permission_timeout_ms == 0 {
+            return Err(ConfigError::new(
+                "computer_use_permission_timeout_ms must be positive",
+            ));
+        }
         if computer_use
             && (!cfg!(target_os = "macos")
                 || file.sandbox.restricted()
@@ -423,6 +432,7 @@ impl Config {
         };
         Ok(Self {
             computer_use,
+            computer_use_permission_timeout: Duration::from_millis(permission_timeout_ms),
             managed: false,
             execution,
             allow_sudo,
@@ -449,6 +459,7 @@ impl Config {
     pub(crate) fn for_test(device_id: &str) -> Self {
         Self {
             computer_use: false,
+            computer_use_permission_timeout: Duration::from_secs(120),
             managed: false,
             execution: None,
             allow_sudo: true,
@@ -1158,6 +1169,10 @@ fn apply_environment(value: &mut serde_json::Value) -> Result<(), ConfigError> {
         ("A13N_ENVD_EXECUTION_UID", &["execution", "uid"][..]),
         ("A13N_ENVD_EXECUTION_GID", &["execution", "gid"][..]),
         ("A13N_ENVD_IDLE_TIMEOUT_MS", &["idle_timeout_ms"][..]),
+        (
+            "A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS",
+            &["computer_use_permission_timeout_ms"][..],
+        ),
         (
             "A13N_ENVD_DISCONNECT_GRACE_MS",
             &["disconnect_grace_ms"][..],

@@ -22,7 +22,7 @@ export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits"
 a13n-envd
 ```
 
-Scalar shortcuts include `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS`, and `A13N_ENVD_DISCONNECT_GRACE_MS`. Booleans accept `true`, `false`, `1`, or `0`.
+Scalar shortcuts include `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS`, and `A13N_ENVD_DISCONNECT_GRACE_MS`. Booleans accept `true`, `false`, `1`, or `0`.
 
 Device connections negotiate the carrier and protocol. EIP Sessions select a fixed cwd and own operations, processes, output and transfers; they cannot change trusted startup identity or sudo policy.
 
@@ -208,6 +208,7 @@ Device initialization verifies identity and protocol. Session readiness checks t
 | `egress`                                     | `{"mode":"inherit"}`; or `deny` / `controlled`                                                                                 |
 | `full_control`                               | `false`; automatic native shell and inherited command environment when enabled                                                 |
 | `computer_use`                               | `false`; opt-in macOS screenshot/input methods with disabled Sandbox and inherited egress; see [computer use](computer-use.md) |
+| `computer_use_permission_timeout_ms`         | `120000`; positive startup wait for Screen Recording and Accessibility before any EIP transport starts                         |
 | `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                                                                 |
 | `limits`                                     | Device aggregates and per-Session limits                                                                                       |
 

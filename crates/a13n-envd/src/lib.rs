@@ -145,6 +145,9 @@ pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
 }
 
 async fn serve(config: config::Config) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if config.computer_use {
+        computer::startup::prepare(config.computer_use_permission_timeout).await?;
+    }
     let daemon = Arc::new(daemon::Daemon::new(&config)?);
     match &config.transport {
         config::TransportConfig::Stdio => stdio::serve(daemon, &config).await?,

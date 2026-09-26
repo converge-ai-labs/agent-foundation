@@ -69,7 +69,7 @@ struct StagingQuotaState {
     objects: u64,
 }
 
-struct StagingReservation {
+pub(crate) struct StagingReservation {
     quota: StagingQuota,
     bytes: u64,
     state: ReservationState,
@@ -179,6 +179,15 @@ impl StagingQuota {
 }
 
 impl StagingReservation {
+    pub(crate) fn shrink_to(&mut self, bytes: u64) -> Result<(), PathError> {
+        if self.state != ReservationState::Active || bytes > self.bytes {
+            return Err(PathError::Quota);
+        }
+        self.quota.release_usage(self.bytes - bytes, 0);
+        self.bytes = bytes;
+        Ok(())
+    }
+
     fn reserve_bytes(&mut self, bytes: u64) -> Result<(), PathError> {
         if self.state != ReservationState::Active {
             return Err(PathError::Internal);
@@ -231,6 +240,13 @@ impl Drop for SessionStagingReservation {
 }
 
 impl DeviceFilesystem {
+    /// Share byte/object accounting between in-memory images and staged files.
+    pub(crate) fn reserve_staging(&self, bytes: u64) -> Result<StagingReservation, PathError> {
+        let mut reservation = self.staging_quota.reserve_object()?;
+        reservation.reserve_bytes(bytes)?;
+        Ok(reservation)
+    }
+
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub(crate) fn reserve_session_staging(
         &self,

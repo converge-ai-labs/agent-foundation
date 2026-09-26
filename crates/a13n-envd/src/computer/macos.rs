@@ -7,12 +7,32 @@
 
 use super::*;
 use image::{DynamicImage, codecs::jpeg::JpegEncoder, imageops::FilterType};
-use objc2_core_foundation::{CFRetained, CGPoint};
+use objc2_core_foundation::CGPoint;
 use objc2_core_graphics::{
     CGEvent, CGEventField, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton,
-    CGPreflightPostEventAccess, CGPreflightScreenCaptureAccess, CGScrollEventUnit,
+    CGPreflightPostEventAccess, CGPreflightScreenCaptureAccess, CGRequestPostEventAccess,
+    CGRequestScreenCaptureAccess, CGScrollEventUnit,
 };
 use xcap::Monitor;
+
+pub(super) fn permissions() -> startup::Permissions {
+    startup::Permissions {
+        capture: CGPreflightScreenCaptureAccess(),
+        input: CGPreflightPostEventAccess(),
+    }
+}
+
+pub(super) fn request_permissions(current: startup::Permissions) {
+    // Native prompts may wait on the user. Keep them off the async runtime so
+    // permission polling, cancellation and the startup deadline remain live.
+    // Runtime shutdown is bounded even if a native prompt has not returned.
+    if !current.capture {
+        tokio::task::spawn_blocking(|| CGRequestScreenCaptureAccess());
+    }
+    if !current.input {
+        tokio::task::spawn_blocking(|| CGRequestPostEventAccess());
+    }
+}
 
 fn unavailable() -> EIPError {
     error(
@@ -247,13 +267,13 @@ pub(super) fn execute(
     if !CGPreflightPostEventAccess() {
         return Err(denied());
     }
-    if let Some(basis) = basis {
-        if geometry(&select(Some(&basis.geometry.target_id))?)? != basis.geometry {
-            return Err(error(
-                ErrorType::Conflict,
-                "display layout changed; capture a fresh image",
-            ));
-        }
+    if let Some(basis) = basis
+        && geometry(&select(Some(&basis.geometry.target_id))?)? != basis.geometry
+    {
+        return Err(error(
+            ErrorType::Conflict,
+            "display layout changed; capture a fresh image",
+        ));
     }
     let point = |point: &ComputerPoint| -> Result<CGPoint, ()> {
         let (x, y) = basis.ok_or(())?.point(point).map_err(|_| ())?;

@@ -4,7 +4,7 @@
     reason = "generated EIP errors are the public contract"
 )]
 use super::*;
-use crate::computer::Action;
+use crate::{computer::Action, resource::map_path_error};
 
 impl Session {
     pub(super) async fn describe_computer(
@@ -54,15 +54,24 @@ impl Session {
         let operation_id = id.clone();
         let ledger = self.operations.clone();
         let transfers = self.transfers.clone();
+        let filesystem = self.filesystem.clone();
         // Session-owned work retains operation capacity and joins native capture
         // after a transport waiter disappears; no screenshot is replayed as input.
         let owned = self.operations.spawn_owned(id.clone(), async move {
-            let (observation, bytes) =
-                tokio::task::spawn_blocking(move || computer.observe(&params))
-                    .await
-                    .map_err(|_| {
-                        protocol_error(ErrorType::InternalError, "screen capture worker failed")
-                    })??;
+            // Reserve the bounded encoded image before native capture. On
+            // publication the reader shrinks this to the retained byte length.
+            transfers.expire().await;
+            let staging = filesystem
+                .reserve_staging(crate::computer::MAX_IMAGE_BYTES as u64)
+                .map_err(|error| map_resource_error(map_path_error(error)))?;
+            let (observation, bytes, staging) = tokio::task::spawn_blocking(move || {
+                let (observation, bytes) = computer.observe(&params)?;
+                Ok::<_, EIPError>((observation, bytes, staging))
+            })
+            .await
+            .map_err(|_| {
+                protocol_error(ErrorType::InternalError, "screen capture worker failed")
+            })??;
             if let Some(interruption) = ledger.interruption(&operation_id) {
                 return Err(protocol_error(
                     match interruption {
@@ -74,7 +83,7 @@ impl Session {
             }
             let size_bytes = bytes.len() as u64;
             let (reader, expires_at) = transfers
-                .open_image_reader(bytes)
+                .open_image_reader(bytes, staging)
                 .await
                 .map_err(map_transfer_error)?;
             let result = eip::ComputerObserveResult {

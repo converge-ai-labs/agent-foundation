@@ -62,7 +62,7 @@ Each generation gets fresh runtime storage. Nothing in it is a recovery checkpoi
 
 ## Startup and Readiness
 
-Startup loads configuration, establishes identity/generation and runtime ownership, initializes the Session registry and aggregate accounting, then admits its configured transport. Disabled-Sandbox/inherit launches retain native execution. Restricted Sandbox prepares its platform boundary for each Session worker. Controlled egress additionally prepares the private management runtime before any Session is admitted, as defined by [Execution Boundary](07-execution-isolation.md#controlled-session-egress).
+Startup loads configuration and establishes identity and runtime ownership. When computer use is enabled, the [desktop authorization gate](10-computer-use.md#startup-authorization) must succeed before the Session registry and aggregate accounting are initialized and the configured EIP transport is admitted. Disabled-Sandbox/inherit launches retain native execution. Restricted Sandbox prepares its platform boundary for each Session worker. Controlled egress additionally prepares the private management runtime before any Session is admitted, as defined by [Execution Boundary](07-execution-isolation.md#controlled-session-egress).
 
 Three observations are distinct:
 

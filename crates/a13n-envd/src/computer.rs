@@ -15,6 +15,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub(crate) mod startup;
+
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]

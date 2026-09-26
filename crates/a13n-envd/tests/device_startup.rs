@@ -200,6 +200,13 @@ fn malformed_environment_configuration_is_not_silently_ignored() {
         ("A13N_ENVD_EXECUTION_UID", "-1"),
         ("A13N_ENVD_EGRESS_ENABLED", ""),
         ("A13N_ENVD_IDLE_TIMEOUT_MS", "0"),
+        ("A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS", "0"),
+        ("A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS", "-1"),
+        ("A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS", "invalid"),
+        (
+            "A13N_ENVD_CONFIG_JSON",
+            r#"{"computer_use_permission_timeout_ms":0}"#,
+        ),
         ("A13N_ENVD_DISCONNECT_GRACE_MS", "not-a-number"),
     ] {
         let mut command = fixture.command();

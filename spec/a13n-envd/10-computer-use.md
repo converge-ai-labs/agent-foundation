@@ -8,6 +8,14 @@ Trusted startup must explicitly enable `computer_use` (default `false`). The nat
 
 [EIP](02-eip-protocol.md) owns method negotiation, Session selectors, operation admission and receipts. [Transfers](04-resource-operations.md) owns raw byte integrity and resource accounting. The [Harness Environment contract](../a13n-harness/08-environment-integration.md#computer-operations) owns model-facing references and exact action permissions.
 
+## Startup Authorization
+
+With computer use disabled, startup neither checks nor requests desktop permissions. With it enabled, envd checks Screen Recording and Accessibility before starting any EIP transport: no reverse WebSocket connection, HTTP listener or stdio protocol processing starts until both permissions are granted. Host enrollment through `connect` is separate and may precede this local authorization gate.
+
+Missing permissions trigger native authorization requests and a bounded wait. `computer_use_permission_timeout_ms` (default 120000, positive) or `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS` configures that wait independently of protocol initialization timeouts. Startup diagnostics go only to stderr and identify missing permissions, the System Settings path and possible launcher restart. Timeout, cancellation or a failed check exits unsuccessfully without starting an EIP transport; envd does not fall back to partial desktop capability. A pending native prompt does not extend the authorization deadline indefinitely.
+
+Startup permission readiness is not a permanent grant. Native observation and input recheck permission during operation; revocation fails the affected operation without implicitly reauthorizing it or replaying input.
+
 ## Targets and Observations
 
 `computer.describe` returns display targets (`target_id`, name, native width and height) and separate `observe_ready` and `input_ready` observations. Method availability is stable startup capability; readiness can change with desktop availability and native permissions.
@@ -18,7 +26,7 @@ Trusted startup must explicitly enable `computer_use` (default `false`). The nat
 - actual image width and height, MIME type and capture timestamp;
 - a Session-owned raw reader, exact immutable `size_bytes` and reader expiry.
 
-The native implementation produces JPEG images bounded to 4 MiB. Images travel on the existing raw data plane, not as JSON/base64. Screenshot readers share transfer concurrency and staging-byte limits and SHA-256 completion verification with file readers. `computer.close_observation` closes the image reader and returns transfer completion; it does not invalidate the geometry reference. Client readers close on success, error or cancellation. Session cleanup releases remaining readers.
+The native implementation produces JPEG images bounded to 4 MiB. Images travel on the existing raw data plane, not as JSON/base64. Screenshot readers share transfer concurrency, staging byte/object limits and SHA-256 completion verification with file transfers. Capture reserves the 4 MiB encoded-image bound and one staging object against both Session and Device budgets before native capture, then shrinks the reservation to the actual image length at reader publication. The charge follows image bytes into the raw producer and is released only when those bytes are dropped. `computer.close_observation` closes the image reader and returns transfer completion; it does not invalidate the geometry reference. Client readers close on success, error or cancellation. Session cleanup releases remaining readers.
 
 Observation geometry records the selected display's native origin and size and the returned image dimensions. Pointer coordinates are nonnegative image pixels with `x < width` and `y < height`; the daemon converts them through this recorded geometry. An unknown, expired or evicted reference, a missing display, or a changed display layout fails before input dispatch. References remain bounded (16 per Session, 120-second lifetime) and do not survive Session replacement.
 
