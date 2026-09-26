@@ -9,6 +9,7 @@ so a handler that keeps being cancelled, or whose process dies, also ends dead; 
 counted and logged once its transaction commits.
 """
 
+import asyncio
 import random
 import secrets
 from collections.abc import Awaitable, Callable, Mapping
@@ -16,7 +17,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
-import anyio
 from a13n_logging import exception_details, get_logger, log_context
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import (
@@ -303,16 +303,18 @@ class Delivery:
     policies: Mapping[OutboxKind, Policy]
 
     async def __call__(self) -> None:
-        async with anyio.create_task_group() as group:
+        # Like workers and sweeps, cancel once: database drivers await their own query cleanup.
+        async with asyncio.TaskGroup() as group:
             for kind, handler in self.handlers.items():
-                group.start_soon(self._deliver_kind, kind, handler)
+                group.create_task(self._deliver_kind(kind, handler))
 
     async def _deliver_kind(self, kind: OutboxKind, handler: Handler) -> None:
         # No batch starts after one lease has passed, so a pass ends within two leases, whatever the limit.
         policy = self.policies[kind]
-        deadline = anyio.current_time() + policy.lease_seconds
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + policy.lease_seconds
         limit = policy.batch
-        while limit > 0 and anyio.current_time() < deadline:
+        while limit > 0 and loop.time() < deadline:
             batch = min(policy.parallel, limit)
             claims = await claim(
                 self.storage,
@@ -322,9 +324,9 @@ class Delivery:
                 lease_seconds=policy.lease_seconds,
                 max_attempts=policy.max_attempts,
             )
-            async with anyio.create_task_group() as group:
+            async with asyncio.TaskGroup() as group:
                 for claimed in claims:
-                    group.start_soon(self._handle, handler, claimed)
+                    group.create_task(self._handle(handler, claimed))
             if len(claims) < batch:
                 return
             limit -= batch
@@ -333,7 +335,7 @@ class Delivery:
         """Never raises, so one delivery cannot cancel the others; an unsettled claim retries when its lease ends."""
         with log_context(outbox_id=claimed.id, kind=claimed.kind):
             try:
-                with anyio.fail_after(self.policies[claimed.kind].lease_seconds / 2):
+                async with asyncio.timeout(self.policies[claimed.kind].lease_seconds / 2):
                     await handler(claimed)
             except Exception as error:
                 logger.warning("Outbox handler failed", extra={"exception_details": exception_details(error)})
@@ -361,19 +363,24 @@ async def purge_settled(
 ) -> int:
     """Repeat short, bounded delete transactions within one shared wall-clock budget."""
     total = 0
-    with anyio.move_on_after(budget_seconds):
-        while True:
-            count = 0
-            for kind, policy in policies.items():
-                for status, seconds in (
-                    ("delivered", policy.delivered_retention_seconds),
-                    ("dead", policy.dead_retention_seconds),
-                ):
-                    deleted = await _purge_batch(storage, kind, status, seconds, limit)
-                    count += deleted
-                    total += deleted
-            if count == 0:
-                break
+    budget = asyncio.timeout(budget_seconds)
+    try:
+        async with budget:
+            while True:
+                count = 0
+                for kind, policy in policies.items():
+                    for status, seconds in (
+                        ("delivered", policy.delivered_retention_seconds),
+                        ("dead", policy.dead_retention_seconds),
+                    ):
+                        deleted = await _purge_batch(storage, kind, status, seconds, limit)
+                        count += deleted
+                        total += deleted
+                if count == 0:
+                    break
+    except TimeoutError:
+        if not budget.expired():
+            raise
     return total
 
 

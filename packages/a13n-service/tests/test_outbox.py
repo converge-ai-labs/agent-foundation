@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from a13n_service.infra import outbox
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.outbox import Delivery, OutboxRow, Policy, claim, enqueue, purge_settled, settle
 from a13n_service.runs.backlog import BacklogReporter
@@ -173,3 +174,90 @@ async def test_backlog_alert_requires_sustained_threshold_and_recovers(runtime, 
         )
     await reporter()
     assert reporter.dead == {"email"}
+
+
+@pytest.mark.parametrize("stage", ["claim", "handler"])
+async def test_stopping_delivery_allows_inflight_io_to_finish_cancellation_cleanup(runtime, monkeypatch, stage) -> None:  # type: ignore[no-untyped-def]
+    async with transaction(runtime.storage) as session:
+        enqueue(session, organization_id=None, workspace_id=None, kind="email", target={}, payload={})
+    entered, cleaned = asyncio.Event(), asyncio.Event()
+
+    async def interrupted(*args, **kwargs):  # type: ignore[no-untyped-def]
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            # Database drivers await their server-side query cancellation before unwinding.
+            # A second cancellation here interrupts that cleanup and can corrupt a pipeline.
+            await asyncio.sleep(0)
+            cleaned.set()
+
+    if stage == "claim":
+        monkeypatch.setattr(outbox, "claim", interrupted)
+    task = asyncio.create_task(
+        Delivery(runtime.storage, {"email": interrupted}, owner="test", policies={"email": Policy()})()
+    )
+    try:
+        async with asyncio.timeout(5):
+            await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert cleaned.is_set()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_a_delivery_deadline_allows_cleanup_and_schedules_a_retry(runtime) -> None:  # type: ignore[no-untyped-def]
+    async with transaction(runtime.storage) as session:
+        identity = enqueue(session, organization_id=None, workspace_id=None, kind="email", target={}, payload={})
+    cleaned = asyncio.Event()
+
+    async def interrupted(claimed):  # type: ignore[no-untyped-def]
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await asyncio.sleep(0)
+            cleaned.set()
+
+    # Shorten only this test's clock; deployment settings retain their minimum lease.
+    policy = Policy(batch=1).model_copy(update={"lease_seconds": 0.02})
+    async with asyncio.timeout(5):
+        await Delivery(runtime.storage, {"email": interrupted}, owner="test", policies={"email": policy})()
+    assert cleaned.is_set()
+    async with short_session(runtime.storage) as session:
+        row = await session.get_one(OutboxRow, identity)
+        assert (row.status, row.attempts, row.last_error) == ("pending", 1, "TimeoutError")
+        assert row.lease_owner is None
+
+
+@pytest.mark.parametrize("own_deadline", [True, False])
+async def test_purge_budget_allows_cleanup_and_only_suppresses_its_own_timeout(
+    runtime, monkeypatch, own_deadline
+) -> None:  # type: ignore[no-untyped-def]
+    cleaned = asyncio.Event()
+    calls = 0
+
+    async def batch(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return 3
+        try:
+            if not own_deadline:
+                raise TimeoutError("backend deadline")
+            await asyncio.Event().wait()
+        finally:
+            await asyncio.sleep(0)
+            cleaned.set()
+
+    monkeypatch.setattr(outbox, "_purge_batch", batch)
+    work = purge_settled(runtime.storage, policies={"email": Policy()}, limit=5, budget_seconds=0.02)
+    async with asyncio.timeout(5):
+        if own_deadline:
+            assert await work == 3
+        else:
+            with pytest.raises(TimeoutError, match="backend deadline"):
+                await work
+    assert cleaned.is_set()
