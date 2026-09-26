@@ -471,23 +471,29 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
     assert checked.returncode == 0, checked.stderr
 
 
-@pytest.mark.parametrize("component", ["a13n-service", "a13n-harness-ui"])
-def test_planned_dispatch_contract_line_is_injected_without_changing_source_versions(tmp_path, component):
+@pytest.mark.parametrize(
+    ("component", "version", "requirement"),
+    [
+        ("a13n-service", "0.1.0", ">=0.1.0,<0.2.0"),
+        ("a13n-harness-ui", "0.2.0", ">=0.2.0,<0.3.0"),
+    ],
+)
+def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):
     import tomllib
 
     copy_release_files(tmp_path)
     source_path = tmp_path / f"packages/{component}/pyproject.toml"
     source = tomllib.loads(source_path.read_text())
     assert source["project"]["version"] == "0.0.0"
-    assert source["tool"]["a13n"]["release-dependencies"]["a13n-harness"] == ">=0.1.0,<0.2.0"
+    assert source["tool"]["a13n"]["release-dependencies"]["a13n-harness"] == requirement
     source_requirement = next(
         item for item in source["project"]["dependencies"] if item.split("[")[0] == "a13n-harness"
     )
     assert ">=" not in source_requirement
-    result = run_script(PREPARER, tmp_path, component, "0.1.0")
+    result = run_script(PREPARER, tmp_path, component, version)
     assert result.returncode == 0, result.stderr
     prepared = tomllib.loads(source_path.read_text())
-    assert source_requirement + ">=0.1.0,<0.2.0" in prepared["project"]["dependencies"]
-    assert "a13n-stream-protocol>=0.1.0,<0.2.0" in prepared["project"]["dependencies"]
-    checked = run_script(CHECKER, tmp_path, component, "0.1.0")
+    assert source_requirement + requirement in prepared["project"]["dependencies"]
+    assert "a13n-stream-protocol" + requirement in prepared["project"]["dependencies"]
+    checked = run_script(CHECKER, tmp_path, component, version)
     assert checked.returncode == 0, checked.stderr

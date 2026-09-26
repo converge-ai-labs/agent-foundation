@@ -417,6 +417,9 @@ def _commit(repository: Path) -> None:
             "user.name=Test",
             "-c",
             "user.email=test@example.com",
+            # Keep copied templates free of asynchronous maintenance mutations.
+            "-c",
+            "maintenance.auto=false",
             "commit",
             "--quiet",
             "-m",
