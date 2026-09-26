@@ -22,6 +22,7 @@ message ComputerDescribeResult {
   repeated ComputerTarget targets = 1;
   bool observe_ready = 2;
   bool input_ready = 3;
+  repeated ComputerScrollUnit scroll_units = 4;
 }
 
 message ComputerObserveParams {
@@ -81,12 +82,20 @@ message ComputerDragParams {
   optional uint32 duration_ms = 6 [(eip_field).minimum = 100, (eip_field).maximum = 3000, (eip_field).default_uint = 500];
 }
 
+enum ComputerScrollUnit {
+  COMPUTER_SCROLL_UNIT_UNSPECIFIED = 0;
+  COMPUTER_SCROLL_UNIT_PIXELS = 1 [(eip_enum_value).json_name = "pixels"];
+  COMPUTER_SCROLL_UNIT_STEPS = 2 [(eip_enum_value).json_name = "steps"];
+}
+
 message ComputerScrollParams {
   EIPCallContext context = 1;
   string observation_id = 2 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
   ComputerPoint point = 3;
   sint32 delta_x = 4;
   sint32 delta_y = 5;
+  // Omission retains the original pixel semantics.
+  optional ComputerScrollUnit unit = 6;
 }
 
 message ComputerTypeTextParams {

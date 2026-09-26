@@ -30,7 +30,9 @@ class EIPComputerOperations:
         result = await invoke(
             session_client(self._session).computer_describe(eip.ComputerDescribeParams(context=new_context()))
         )
-        return ComputerDescription.model_validate(result.model_dump())
+        return ComputerDescription.model_validate(
+            {**result.model_dump(), "scroll_units": result.scroll_units or ("pixels",)}
+        )
 
     async def observe(self, *, target_id: str | None = None, max_dimension: int = 1280) -> ComputerScreenshot:
         return await invoke(self._observe(target_id=target_id, max_dimension=max_dimension))
@@ -92,6 +94,8 @@ class EIPComputerOperations:
                 )
             )
         elif isinstance(request, ComputerScroll):
+            if request.unit == "steps" and "steps" not in (await self.describe()).scroll_units:
+                raise EnvironmentError("Provider does not support step scrolling", code="environment_unsupported")
             result = await invoke(
                 client.computer_scroll(
                     eip.ComputerScrollParams(
@@ -100,6 +104,7 @@ class EIPComputerOperations:
                         point=eip.ComputerPoint(x=request.point.x, y=request.point.y),
                         delta_x=request.delta_x,
                         delta_y=request.delta_y,
+                        unit=eip.ComputerScrollUnit.STEPS if request.unit == "steps" else None,
                     )
                 )
             )

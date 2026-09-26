@@ -160,7 +160,9 @@ fn session_methods(config: &Config) -> Vec<String> {
             (!execution || config.command.is_some())
                 && (method.name != "process.signal" || cfg!(unix))
                 && (!method.name.starts_with("computer.")
-                    || (config.computer_use && cfg!(target_os = "macos")))
+                    || (config.computer_use
+                        && cfg!(any(target_os = "macos", target_os = "linux"))
+                        && (method.name != "computer.type_text" || cfg!(target_os = "macos"))))
         })
         .map(|method| method.name.to_owned())
         .collect()

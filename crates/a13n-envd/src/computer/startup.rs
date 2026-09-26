@@ -1,14 +1,19 @@
 //! Local permission readiness precedes every EIP transport, not Session admission.
-use std::{future::Future, io, time::Duration};
+#[cfg(any(target_os = "macos", test))]
+use std::future::Future;
+use std::{io, time::Duration};
 
+#[cfg(any(target_os = "macos", test))]
 const GUIDANCE: &str = "Open System Settings > Privacy & Security and enable Screen Recording and Accessibility for the process or launcher macOS identifies for envd. Restart that launcher and envd if macOS requires it, then run the same command again. No EIP transport has started.";
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct Permissions {
     pub(super) capture: bool,
     pub(super) input: bool,
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl Permissions {
     fn ready(self) -> bool {
         self.capture && self.input
@@ -43,16 +48,37 @@ pub(crate) async fn prepare(timeout: Duration) -> io::Result<()> {
             }
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        tokio::time::timeout(
+            timeout,
+            tokio::task::spawn_blocking(|| {
+                super::x11::Backend::default()
+                    .describe()
+                    .map(|_| ())
+                    .map_err(|e| io::Error::other(e.message))
+            }),
+        )
+        .await
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::TimedOut,
+                "X11 desktop readiness timed out; no EIP transport has started",
+            )
+        })?
+        .map_err(io::Error::other)?
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = timeout;
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "computer use requires macOS",
+            "computer use requires macOS or Linux X11",
         ))
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 async fn wait<P, F>(
     timeout: Duration,
     mut probe: P,

@@ -343,6 +343,13 @@
           "schema": {
             "$ref": "schema.json#/$defs/ComputerScrollParams/properties/delta_y"
           }
+        },
+        {
+          "name": "unit",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerScrollParams/properties/unit"
+          }
         }
       ],
       "result": {

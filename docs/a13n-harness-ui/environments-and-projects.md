@@ -246,4 +246,4 @@ The adapter adds each captured Project root to the grant set with `project_acces
 
 Envd can connect outward from a Mac and expose screenshots and bounded mouse/keyboard actions. Run `a13n-envd connect <your-WebUI-origin> --computer-use true`, approve the Device, then explicitly select **Desktop observation and control** in the binding's **Allowed actions**. Ordinary **Files and execution**, Device approval and local Full Control do not enable desktop tools. Use a model with image input and an Agent with Dynamic Environment tools.
 
-See [macOS computer use](../a13n-envd/computer-use.md) for native permissions, setup, observation-only configuration, screenshot preview and shared-desktop limitations.
+See [desktop computer use](../a13n-envd/computer-use.md) for native permissions, setup, observation-only configuration, screenshot preview and shared-desktop limitations.

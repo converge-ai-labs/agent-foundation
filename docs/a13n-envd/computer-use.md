@@ -1,19 +1,19 @@
-# macOS Computer Use
+# Desktop Computer Use
 
-Use a Mac's shared desktop from a Harness UI conversation: envd sends screenshots directly to the model, executes bounded input actions, and WebUI shows captured images with the tool results. The daemon connects outward over reverse WebSocket; the Mac needs no inbound listener.
+Use a macOS or Linux X11 shared desktop from a Harness UI conversation: envd sends screenshots directly to the model, executes bounded input actions, and WebUI shows captured images with the tool results. The daemon connects outward over reverse WebSocket; the desktop machine needs no inbound listener.
 
 ## Requirements and limits
 
-- Run a desktop-enabled envd build on macOS in the logged-in graphical session.
+- Run envd in the logged-in macOS or Linux X11 graphical session. Linux needs an existing X11 server with RandR 1.5, XKB and XTEST, a TrueColor root visual, and the correct `DISPLAY` and X11 authentication. Wayland and XWayland are not supported.
 - Grant Screen Recording and Accessibility permission in macOS System Settings to the process/launcher macOS identifies for envd. Restart that process after changing permissions if required by macOS. The daemon reports missing permission; it does not grant it.
-- Use disabled Sandbox and inherited egress. Restricted Sandbox, denied/controlled egress, Linux and Windows reject computer-use opt-in rather than controlling a host desktop outside the selected boundary.
+- Use disabled Sandbox and inherited egress. Restricted Sandbox, denied/controlled egress and Windows reject computer-use opt-in rather than controlling a host desktop outside the selected boundary.
 - Select an Agent with `dynamic_environment` tools and a model that accepts images.
 
 This is the real shared desktop, not a private browser or VM. Input can send messages, modify files, or invoke other applications using the logged-in user's authority. A selected working directory does not restrict those effects. Humans and other agents may change focus or content between screenshot and click. Do not operate a sensitive desktop unattended.
 
-## Connect the Mac
+## Connect the desktop
 
-In WebUI, open **Settings → Environments → Connect Device**. Run the displayed command on the Mac, adding the explicit opt-in:
+In WebUI, open **Settings → Environments → Connect Device**. Run the displayed command in the desktop's graphical session, adding the explicit opt-in:
 
 ```console
 a13n-envd connect https://your-harness-ui.example.com --computer-use true
@@ -33,10 +33,18 @@ For a longer wait, set `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS=300000`, or
 
 For a parent launching stdio envd, forward/drain stderr during startup and configure the client's `initialization_timeout` longer than the permission wait plus startup overhead (for example 135 seconds for the default wait). The Python client's default 10-second initialization timeout is not a human-authorization timeout. Reverse WebSocket clients initialize only after envd connects; HTTP clients must wait until the listener is available.
 
+### Linux X11 readiness
+
+Launch from a terminal in the intended X11 session so envd inherits `DISPLAY` and, when set, `XAUTHORITY`. It checks authenticated X11 access and required extensions before opening any EIP transport. It does not start Xorg/Xvfb, change `xhost` rules, mount host sockets, or request elevated input-device access. Do not disable X11 authentication to make a failed connection work.
+
+Linux supports screenshots, click, move, drag, physical key chords, and discrete wheel steps. Use `computer_describe` to inspect `scroll_units`, then pass `unit="steps"` with at most 100 steps per axis. Pixel scrolling is rejected before pointer movement. Linux does **not** expose `computer_type_text`; it does not modify the keyboard map or clipboard to imitate Unicode text entry. Physical chords depend on the active keyboard layout and are not a literal-text replacement. `meta` means Super, and `alt` means Alt.
+
+A lost X server requires a new Session and a fresh screenshot; envd will not silently reconnect an old geometry reference to a replacement server. A Wayland launch environment or a server advertising XWAYLAND is rejected, even when `DISPLAY` is also set.
+
 ## Authorize the conversation
 
 1. Open **Working environments** in the composer, or **Conversation details → Configuration** for saved next-Run settings.
-2. Add an environment for the connected Mac, choose an existing working directory, and name the alias `desktop`.
+2. Add an environment for the connected desktop, choose an existing working directory, and name the alias `desktop`.
 3. Select **Desktop observation and control** under **Allowed actions**. The default **Files and execution** excludes desktop actions. The desktop preset grants only desktop actions; add a separate binding if the agent also needs file/shell tools.
 4. Select the default environment deliberately, or ask the agent to use alias `desktop` explicitly.
 5. Save the enclosing selection and start a new Run.
@@ -77,11 +85,11 @@ Supported tools:
 | `computer_observe`                | Capture a display (primary by default), maximum dimension 256–2048 pixels |
 | `computer_click`, `computer_move` | Use a position in the returned image                                      |
 | `computer_drag`                   | Complete a bounded drag and release the button                            |
-| `computer_scroll`                 | Scroll at a position; positive deltas mean right/down                     |
-| `computer_type_text`              | Type literal Unicode text in current focus                                |
+| `computer_scroll`                 | Scroll with an advertised unit; positive means right/down                 |
+| `computer_type_text`              | Type literal Unicode text in current focus (macOS only)                   |
 | `computer_press_keys`             | Press and release a chord such as `["meta", "a"]`                         |
 
-Key names use `meta` for Command, `alt` for Option, `enter`, `page_up`, and `page_down`. Input results report native event effect and cleanup status. `executed` is not proof of application-level success. A partial or unknown effect, incomplete release, disconnect or interrupted Run must not be blindly retried; inspect the desktop before deciding what to do next.
+Key names use `meta` for Command/Super, `alt` for Option/Alt, `enter`, `page_up`, and `page_down`. Input results report native event effect and cleanup status. `executed` is not proof of application-level success. A partial or unknown effect, incomplete release, disconnect or interrupted Run must not be blindly retried; inspect the desktop before deciding what to do next.
 
 Screenshot storage shares the file-transfer staging byte and object budgets. Each capture needs 4 MiB of free staging capacity before it begins; after capture, only the actual encoded image length remains charged until the bytes are released. Close readers promptly rather than accumulating unread screenshots.
 
@@ -99,5 +107,7 @@ async with session.observe_computer(max_dimension=1280) as reader:
 Use the generated typed `computer_*` client calls for input, with a fresh operation context. Do not retry an ambiguous action with a new operation ID. See [Python EIP client](python-client.md) for Session construction and transport ownership.
 
 ## Validation
+
+The opt-in [Linux desktop fixture](https://github.com/converge-ai-labs/agent-foundation/tree/main/dev/fixtures/linux-desktop) runs Xvfb, Openbox, a real Tk application, native envd, reverse WebSocket and Harness UI in one disposable, non-root container. It requires no host display mounts or published ports. It verifies actual GUI events and changed screenshot pixels rather than returning a scripted desktop image.
 
 Portable integration tests use a scripted desktop peer over a real reverse WebSocket, with actual client, Harness, App, live/history and authenticated image retrieval. They do not prove native macOS capture, Retina geometry, Accessibility permission or event posting. Validate those on a Mac: first describe/capture, then perform harmless input in a disposable text document, verify the next screenshot, and test permission denial and display-layout changes. No production fake-desktop mode is provided.

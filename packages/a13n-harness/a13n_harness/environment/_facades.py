@@ -97,6 +97,9 @@ class _ComputerFacade:
             computer = entered.operations.computer
             if computer is None:
                 raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
+            if isinstance(request, ComputerScroll) and request.unit == "steps":
+                if max(abs(request.delta_x), abs(request.delta_y)) > 100:
+                    raise EnvironmentError("Scroll delta exceeds 100 steps", code="environment_request_invalid")
             result = await computer.execute(request)
             _validate_provider_artifacts(entered, result.receipt)
             return result

@@ -290,12 +290,38 @@ fn computer_use_is_explicit_and_cli_can_disable_environment_opt_in() {
     assert!(String::from_utf8_lossy(&result.stderr).contains("--computer-use"));
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 #[test]
-fn computer_use_fails_closed_outside_macos() {
+fn computer_use_fails_closed_on_unsupported_platforms() {
     let fixture = Fixture::new();
     let mut command = fixture.command();
     command.args(["--computer-use", "true"]);
     let result = fixture.reject(command);
-    assert!(String::from_utf8_lossy(&result.stderr).contains("computer_use requires macOS"));
+    assert!(
+        String::from_utf8_lossy(&result.stderr)
+            .contains("computer_use requires macOS or Linux X11")
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn x11_requires_a_display_and_rejects_wayland_before_transport() {
+    for wayland in [false, true] {
+        let fixture = Fixture::new();
+        let mut command = fixture.command();
+        command.args(["--computer-use", "true"]);
+        command
+            .env_remove("DISPLAY")
+            .env_remove("WAYLAND_DISPLAY")
+            .env_remove("XDG_SESSION_TYPE");
+        if wayland {
+            command.env("WAYLAND_DISPLAY", "wayland-0");
+        }
+        let result = fixture.reject(command);
+        let message = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            message.contains(if wayland { "Wayland" } else { "DISPLAY" }),
+            "{message}"
+        );
+    }
 }

@@ -411,12 +411,12 @@ impl Config {
             ));
         }
         if computer_use
-            && (!cfg!(target_os = "macos")
+            && (!cfg!(any(target_os = "macos", target_os = "linux"))
                 || file.sandbox.restricted()
                 || file.egress != Egress::Inherit {})
         {
             return Err(ConfigError::new(
-                "computer_use requires macOS with sandbox disabled and inherited egress",
+                "computer_use requires macOS or Linux X11 with sandbox disabled and inherited egress",
             ));
         }
         let full_control = file.full_control.unwrap_or(false);

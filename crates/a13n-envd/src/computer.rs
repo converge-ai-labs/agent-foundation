@@ -4,8 +4,8 @@
     reason = "EIP error values are the protocol boundary"
 )]
 #![cfg_attr(
-    not(target_os = "macos"),
-    allow(dead_code, reason = "native backend is macOS-only")
+    not(any(target_os = "macos", target_os = "linux")),
+    allow(dead_code, reason = "native backend requires macOS or Linux X11")
 )]
 
 use crate::{eip::*, operation::ShortIdAllocator};
@@ -21,24 +21,36 @@ pub(crate) mod startup;
 mod macos;
 #[cfg(target_os = "macos")]
 use macos as native;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+mod x11;
+#[cfg(target_os = "linux")]
+use x11 as native;
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 mod native {
     use super::*;
-    pub(super) fn describe() -> Result<ComputerDescribeResult, EIPError> {
-        Err(unsupported())
-    }
-    pub(super) fn capture(_: Option<&str>, _: u32) -> Result<Capture, EIPError> {
-        Err(unsupported())
-    }
-    pub(super) fn execute(
-        _: &Action,
-        _: Option<&Basis>,
-        _: &dyn Fn() -> bool,
-    ) -> Result<Effect, EIPError> {
-        Err(unsupported())
+    #[derive(Default)]
+    pub(super) struct Backend {}
+    impl Backend {
+        pub(super) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
+            Err(unsupported())
+        }
+        pub(super) fn capture(&self, _: Option<&str>, _: u32) -> Result<Capture, EIPError> {
+            Err(unsupported())
+        }
+        pub(super) fn execute(
+            &self,
+            _: &Action,
+            _: Option<&Basis>,
+            _: &dyn Fn() -> bool,
+        ) -> Result<Effect, EIPError> {
+            Err(unsupported())
+        }
     }
     fn unsupported() -> EIPError {
-        error(ErrorType::Unsupported, "computer use requires macOS")
+        error(
+            ErrorType::Unsupported,
+            "computer use requires macOS or Linux X11",
+        )
     }
 }
 
@@ -121,10 +133,14 @@ impl Action {
                 }
                 Self::Scroll(p) => {
                     basis.point(&p.point)?;
-                    if p.delta_x.unsigned_abs() > 10_000 || p.delta_y.unsigned_abs() > 10_000 {
+                    let limit = match p.unit.unwrap_or(ComputerScrollUnit::Pixels) {
+                        ComputerScrollUnit::Pixels => 10_000,
+                        ComputerScrollUnit::Steps => 100,
+                    };
+                    if p.delta_x.unsigned_abs() > limit || p.delta_y.unsigned_abs() > limit {
                         return Err(error(
                             ErrorType::InvalidParams,
-                            "scroll delta exceeds 10000 pixels",
+                            "scroll delta exceeds 10000 pixels or 100 steps",
                         ));
                     }
                 }
@@ -159,6 +175,7 @@ pub(crate) struct Effect {
 pub(crate) struct Computer {
     ids: ShortIdAllocator,
     observations: Mutex<VecDeque<Basis>>,
+    native: native::Backend,
 }
 
 impl Computer {
@@ -166,18 +183,21 @@ impl Computer {
         Self {
             ids,
             observations: Mutex::new(VecDeque::new()),
+            native: native::Backend::default(),
         }
     }
 
     pub(crate) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
-        native::describe()
+        self.native.describe()
     }
 
     pub(crate) fn observe(
         &self,
         params: &ComputerObserveParams,
     ) -> Result<(ComputerObservation, Vec<u8>), EIPError> {
-        let capture = native::capture(params.target_id.as_deref(), params.max_dimension)?;
+        let capture = self
+            .native
+            .capture(params.target_id.as_deref(), params.max_dimension)?;
         if capture.bytes.is_empty() || capture.bytes.len() > MAX_IMAGE_BYTES {
             return Err(error(
                 ErrorType::QuotaExceeded,
@@ -247,7 +267,7 @@ impl Computer {
                 cleanup_complete: true,
             });
         }
-        native::execute(action, basis.as_ref(), interrupted)
+        self.native.execute(action, basis.as_ref(), interrupted)
     }
 }
 
@@ -454,9 +474,49 @@ mod tests {
                 point: ComputerPoint { x: 0, y: 0 },
                 delta_x: delta,
                 delta_y: 0,
+                unit: None,
             });
             assert!(action.validate(Some(&basis())).is_err());
         }
+    }
+
+    #[test]
+    fn step_scroll_has_a_separate_bound_and_legacy_describe_omits_new_fields() {
+        let mut params = ComputerScrollParams {
+            context: EIPCallContext {
+                operation_id: "scroll-test".into(),
+                timeout_ms: None,
+            },
+            observation_id: "obs_1".into(),
+            point: ComputerPoint { x: 0, y: 0 },
+            delta_x: 0,
+            delta_y: 100,
+            unit: Some(ComputerScrollUnit::Steps),
+        };
+        assert!(
+            Action::Scroll(params.clone())
+                .validate(Some(&basis()))
+                .is_ok()
+        );
+        params.delta_y = 101;
+        assert!(
+            Action::Scroll(params.clone())
+                .validate(Some(&basis()))
+                .is_err()
+        );
+        params.unit = None;
+        assert!(Action::Scroll(params).validate(Some(&basis())).is_ok());
+        let value = serde_json::to_value(ComputerDescribeResult {
+            targets: vec![],
+            observe_ready: true,
+            input_ready: true,
+            scroll_units: vec![],
+        })
+        .unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({"observe_ready": true, "input_ready": true})
+        );
     }
 
     #[test]

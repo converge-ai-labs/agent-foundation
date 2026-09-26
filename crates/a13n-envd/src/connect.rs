@@ -46,9 +46,9 @@ Options:
   --execution-gid GID           Native primary group (paired with UID)
   --allow-sudo BOOL             Permit native privilege gains (default: true)
   --egress-mode MODE            Network: inherit, deny, or controlled
-  --computer-use BOOL           Enable shared macOS desktop observation and input (default: false)
+  --computer-use BOOL           Enable shared macOS/X11 desktop observation and input (default: false)
 
-Computer use waits for Screen Recording and Accessibility before connecting.
+Computer use checks desktop readiness before connecting (macOS permissions or X11 access).
 Set A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS to change the 120000 ms wait.
 Daemon settings also accept A13N_ENVD_CONFIG_JSON and scalar environment overrides.
 Set A13N_ENVD_ALLOW_SUDO=false to disable sudo/setuid privilege gains on Linux.

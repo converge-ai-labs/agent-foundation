@@ -138,3 +138,60 @@ async def test_pointer_reference_is_bound_to_mount_and_tool_cache_is_bounded():
             await tools.computer_observe()
         expired = await tools.computer_click(reference, ComputerPoint(x=0, y=0))
         assert expired["ok"] is False and len(computer.inputs) == 1
+
+
+async def test_step_scroll_is_explicit_and_bounded_before_dispatch():
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        tools = ComputerToolset(environment)
+        image = await tools.computer_observe()
+        reference = image.return_value["observation_id"]
+        rejected = await tools.computer_scroll(reference, ComputerPoint(x=0, y=0), delta_y=101, unit="steps")
+        assert not rejected["ok"] and not computer.inputs
+        accepted = await tools.computer_scroll(reference, ComputerPoint(x=0, y=0), delta_y=100, unit="steps")
+        assert accepted["ok"] and computer.inputs[-1].unit == "steps"
+        accepted = await tools.computer_scroll(reference, ComputerPoint(x=0, y=0), delta_y=10000)
+        assert accepted["ok"] and computer.inputs[-1].unit == "pixels"
+
+
+async def test_eip_scroll_preserves_legacy_pixels_and_requires_step_advertisement(monkeypatch):
+    from a13n_envd_client.eip import v1 as eip
+    from a13n_harness.providers.environment.computer import ComputerScroll
+    from a13n_harness.providers.environment.eip import computer as adapter
+
+    units = ()
+    sent = []
+
+    class Client:
+        async def computer_describe(self, request):
+            return eip.ComputerDescribeResult(targets=(), observe_ready=True, input_ready=True, scroll_units=units)
+
+        async def computer_scroll(self, request):
+            sent.append(request.model_dump(mode="json", exclude_none=True))
+            raise RuntimeError("sent")
+
+    monkeypatch.setattr(adapter, "session_client", lambda _: Client())
+    provider = adapter.EIPComputerOperations(None, mount_id="desktop", generation="one")
+    observation = ComputerObservation(
+        mount_id="desktop",
+        observed_generation="one",
+        observation_id="obs-one",
+        target_id="display-one",
+        width=100,
+        height=100,
+        mime_type="image/jpeg",
+        captured_at=datetime.now(UTC),
+    )
+    assert (await provider.describe()).scroll_units == ("pixels",)
+    with pytest.raises(EnvironmentError, match="does not support"):
+        await provider.execute(ComputerScroll(observation=observation, point=ComputerPoint(x=0, y=0), unit="steps"))
+    assert sent == []
+    with pytest.raises(EnvironmentError, match="EIP provider operation failed"):
+        await provider.execute(ComputerScroll(observation=observation, point=ComputerPoint(x=0, y=0)))
+    assert "unit" not in sent[-1]
+    units = (eip.ComputerScrollUnit.STEPS,)
+    with pytest.raises(EnvironmentError, match="EIP provider operation failed"):
+        await provider.execute(ComputerScroll(observation=observation, point=ComputerPoint(x=0, y=0), unit="steps"))
+    assert sent[-1]["unit"] == "steps"

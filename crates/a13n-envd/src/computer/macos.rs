@@ -15,6 +15,30 @@ use objc2_core_graphics::{
 };
 use xcap::Monitor;
 
+#[derive(Default)]
+pub(super) struct Backend {}
+
+impl Backend {
+    pub(super) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
+        describe()
+    }
+    pub(super) fn capture(
+        &self,
+        target: Option<&str>,
+        max_dimension: u32,
+    ) -> Result<Capture, EIPError> {
+        capture(target, max_dimension)
+    }
+    pub(super) fn execute(
+        &self,
+        action: &Action,
+        basis: Option<&Basis>,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<Effect, EIPError> {
+        execute(action, basis, interrupted)
+    }
+}
+
 pub(super) fn permissions() -> startup::Permissions {
     startup::Permissions {
         capture: CGPreflightScreenCaptureAccess(),
@@ -91,6 +115,8 @@ pub(super) fn describe() -> Result<ComputerDescribeResult, EIPError> {
         targets,
         observe_ready: CGPreflightScreenCaptureAccess(),
         input_ready: CGPreflightPostEventAccess(),
+        // Preserve the original macOS response for older strict EIP clients.
+        scroll_units: vec![],
     })
 }
 
@@ -266,6 +292,14 @@ pub(super) fn execute(
 ) -> Result<Effect, EIPError> {
     if !CGPreflightPostEventAccess() {
         return Err(denied());
+    }
+    if let Action::Scroll(p) = action
+        && p.unit == Some(ComputerScrollUnit::Steps)
+    {
+        return Err(error(
+            ErrorType::Unsupported,
+            "macOS scroll requires pixels",
+        ));
     }
     if let Some(basis) = basis
         && geometry(&select(Some(&basis.geometry.target_id))?)? != basis.geometry

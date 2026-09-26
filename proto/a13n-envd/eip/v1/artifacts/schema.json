@@ -312,6 +312,14 @@
           "title": "Observe Ready",
           "type": "boolean"
         },
+        "scroll_units": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ComputerScrollUnit"
+          },
+          "title": "Scroll Units",
+          "type": "array"
+        },
         "targets": {
           "default": [],
           "items": {
@@ -577,6 +585,17 @@
         },
         "point": {
           "$ref": "#/$defs/ComputerPoint"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ComputerScrollUnit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -588,6 +607,14 @@
       ],
       "title": "ComputerScrollParams",
       "type": "object"
+    },
+    "ComputerScrollUnit": {
+      "enum": [
+        "pixels",
+        "steps"
+      ],
+      "title": "ComputerScrollUnit",
+      "type": "string"
     },
     "ComputerTarget": {
       "additionalProperties": false,

@@ -24,6 +24,7 @@ class ComputerDescription(BaseModel):
     targets: tuple[ComputerTarget, ...]
     observe_ready: bool
     input_ready: bool
+    scroll_units: tuple[Literal["pixels", "steps"], ...] = ("pixels",)
 
 
 class ComputerObservation(BaseModel):
@@ -88,6 +89,7 @@ class ComputerScroll(BaseModel):
     point: ComputerPoint
     delta_x: int = Field(default=0, ge=-10000, le=10000)
     delta_y: int = Field(default=0, ge=-10000, le=10000)
+    unit: Literal["pixels", "steps"] = "pixels"
 
 
 class ComputerTypeText(BaseModel):

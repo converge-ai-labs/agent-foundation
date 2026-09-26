@@ -137,6 +137,11 @@ class ComputerEffect(StrEnum):
     UNKNOWN = "unknown"
 
 
+class ComputerScrollUnit(StrEnum):
+    PIXELS = "pixels"
+    STEPS = "steps"
+
+
 class DesiredPortStatus(StrEnum):
     LISTENING = "listening"
     NOT_LISTENING = "not_listening"
@@ -922,6 +927,7 @@ class ComputerDescribeResult(EIPModel):
     targets: tuple[ComputerTarget, ...] = ()
     observe_ready: StrictBool
     input_ready: StrictBool
+    scroll_units: tuple[ComputerScrollUnit, ...] = ()
 
 
 class ComputerDragParams(EIPModel):
@@ -963,6 +969,7 @@ class ComputerScrollParams(EIPModel):
     point: ComputerPoint
     delta_x: Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)]
     delta_y: Annotated[StrictInt, Field(ge=-2147483648, le=2147483647)]
+    unit: ComputerScrollUnit | None = None
 
 
 class ComputerTypeTextParams(EIPModel):
@@ -1454,6 +1461,7 @@ __all__ = [
     "ComputerPoint",
     "ComputerPressKeysParams",
     "ComputerScrollParams",
+    "ComputerScrollUnit",
     "ComputerTarget",
     "ComputerTypeTextParams",
     "ContentDigest",
