@@ -30,6 +30,14 @@ Projectless Runs receive global memory only. A Project's name, directory order, 
 
 Each bound scope exposes writable memory tools and always loads `MEMORY.md` when present. The index and other context follow Harness budgets and untrusted-data semantics. Guidance distinguishes cross-project preferences from Project decisions and asks Agents to keep the index concise. Runtime files and `.a13n-memory` bookkeeping are not configuration resources and do not change accepted-generation digests.
 
+## Memory Content Guidance
+
+Foreground guidance treats memory as historical context rather than proof of current state or new authority. Current user instructions take precedence over remembered preferences; changeable or consequential facts require current authoritative evidence when needed. A single-task request does not establish a standing preference, and an assistant proposal does not establish a user decision.
+
+Organization instructions require claims grounded in the current scope's files, retaining supported conditions, Project scope, ownership, chronology and distinctions between proposed, observed, completed, verified, superseded and uncertain information. Explicit corrections apply to the claims they address; ambiguous conflicts remain qualified rather than being resolved by guesses or file-reading order. Copies of the same event are not independent support for a reusable preference. Useful exact commands, paths, error text and safe references should survive compression; secrets and access-bearing URL values should not.
+
+The organizer is guided to respect edits and deletions, keep supported claims when other evidence remains, and never infer deletion merely because a source is unread or absent from a bounded context. It verifies local index references, makes the smallest useful change, permits no-op completion and reports unresolved conflicts or verification limits in its short summary. Custom instructions supplement language and organization choices without expanding scope or relaxing these rules. These are model-facing quality rules, not deterministic guarantees of semantic correctness; runtime scope, CAS and lifecycle enforcement remain separate.
+
 ## Foreground Composition and Continuation
 
 Every independently reconstructed root or delegated child receives fresh Capability, store, and cursor collaborators. The captured Run composition freezes whether memory is enabled and its optional Project; changes apply to later admissions, not active Runs. CLI and WebUI both support foreground memory.

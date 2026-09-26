@@ -126,6 +126,8 @@ memory:
     instructions: Keep decisions concise and preserve useful source references.
 ```
 
+Organization instructions are additional guidance, for example the summary language or preferred topic grouping; they do not replace the built-in scope and evidence rules. The organizer preserves whether information is proposed, verified or uncertain, does not turn a one-task request into a standing preference, respects user corrections and deletions, and may leave valid files unchanged. Its summary explains changes or why none were needed, including unresolved conflicts or verification limits. Foreground Agents are guided to treat memory as historical context, not current proof or permission to act.
+
 Choose an existing **Model**, not an Agent. Setup explicitly enables both switches and selects the setup connection Model when available, preserving existing choices. Older configurations without an organization Model still work: foreground memory is available, but automatic requests remain unavailable until you select a Model. There is no fallback to the current conversation Model.
 
 Automatic organization is **WebUI-only**. New conversation inputs offer parallel background maintenance for changed files in their scopes. It does not read old conversations or sweep other Projects. Each scope keeps one read-only Memory Thread, separate from your ordinary conversations. Its only tools are scoped memory tools; your Agent's other tools and instructions are not inherited. It may make additional model requests and consume quota or incur cost. General settings shows current-process availability, activity, outcomes and reported usage.
