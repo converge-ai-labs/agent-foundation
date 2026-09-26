@@ -1,9 +1,9 @@
 """The disposable Service a journey runs against: Control and two Workers started through the installed CLI.
 
 Stores are created once per session: a PostgreSQL template database migrated and bootstrapped through the CLI,
-and one Redis. Each journey clones the template, clears Redis, owns an object directory and a scripted model
-process, and talks to Control over HTTPS as the bootstrapped administrator. Workers are HTTPS processes too;
-their only routes are health and readiness.
+and one Redis. A Service stack clones the template and owns an object directory; ordinary journeys reuse that
+stack with a fresh workspace and scripted model process, while process-fault journeys own a dedicated stack.
+Clients talk to Control over HTTPS as the bootstrapped administrator. Workers serve health and readiness only.
 """
 
 import base64
@@ -38,7 +38,7 @@ from sqlalchemy.engine import make_url
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI = Path(sys.executable).with_name("a13n-service")
-EMAIL, PASSWORD = "live@example.com", "live-journey-password"
+EMAIL, PASSWORD = "e2e@example.com", "e2e-fixture-password"
 # The shortest lease the Service accepts; every other interval is set well below it.
 LEASE_SECONDS = 3
 DRAIN_SECONDS = 8
@@ -120,9 +120,9 @@ root = {json.dumps(str(objects))}
 # Settings require three object timeouts to fit in one lease.
 timeout = 0.9
 [encryption]
-active_key_id = "live"
+active_key_id = "e2e"
 [encryption.keys]
-live = {json.dumps(stores.encryption_key)}
+e2e = {json.dumps(stores.encryption_key)}
 [providers]
 private_cidrs = ["127.0.0.0/8"]
 require_https = false
@@ -168,7 +168,7 @@ def run_cli(config: Path, *arguments: str, stdin: str | None = None) -> subproce
 def prepare_template(stores_directory: Path, postgres_url: str, redis_url: str) -> Stores:
     """Migrate and bootstrap the template database through the installed CLI, as an operator would."""
     certificate, key = issue_certificate(stores_directory)
-    template = "live_template"
+    template = "e2e_template"
     with admin_engine(postgres_url).connect() as connection:
         connection.execute(text(f'CREATE DATABASE "{template}"'))
     stores = Stores(
@@ -191,7 +191,7 @@ def prepare_template(stores_directory: Path, postgres_url: str, redis_url: str) 
 @contextmanager
 def cloned_database(stores: Stores) -> Iterator[str]:
     """A fresh database from the migrated, bootstrapped template, dropped afterwards."""
-    name = f"live_{uuid4().hex}"
+    name = f"e2e_{uuid4().hex}"
     admin = admin_engine(stores.postgres_url)
     with admin.connect() as connection:
         connection.execute(text(f'CREATE DATABASE "{name}" TEMPLATE "{stores.template}"'))

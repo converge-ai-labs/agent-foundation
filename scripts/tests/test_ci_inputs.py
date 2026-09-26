@@ -109,6 +109,67 @@ def test_service_gate_requires_every_matrix_member(result: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "path,selected",
+    [
+        ("e2e/service/conftest.py", True),
+        ("e2e/__init__.py", True),
+        ("dev/fixtures/scripted_model.py", True),
+        ("scripts/tests/test_service_e2e_tooling.py", True),
+        ("packages/a13n-service/a13n_service/runs/worker.py", True),
+        ("Makefile", True),
+        ("dev/service/console_review.py", False),
+        ("docs/index.md", False),
+    ],
+)
+def test_service_e2e_owns_automated_scenarios(path: str, selected: bool) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
+    for event in ("pull_request", "push"):
+        assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"]) == selected
+
+
+@pytest.mark.parametrize("support", ["success", "failure", "cancelled", "skipped"])
+@pytest.mark.parametrize("scenarios", ["success", "failure", "cancelled", "skipped"])
+def test_service_e2e_gate_requires_support_and_scenarios(support: str, scenarios: str) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
+    gate = workflow["jobs"]["e2e"]
+    assert gate["name"] == "Service E2E" and set(gate["needs"]) == {"support", "scenarios"}
+    assert "always()" in gate["if"] and "draft == false" in gate["if"]
+    step = gate["steps"][0]
+    assert step["env"] == {
+        "SUPPORT_RESULT": "${{ needs.support.result }}",
+        "SCENARIOS_RESULT": "${{ needs.scenarios.result }}",
+    }
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]], env={"SUPPORT_RESULT": support, "SCENARIOS_RESULT": scenarios}, check=False
+    )
+    assert (result.returncode == 0) == (support == scenarios == "success")
+
+
+@pytest.mark.parametrize(
+    "cases,accepted",
+    [("", False), ("<testcase/>", True)]
+    + [(f"<testcase><{status}/></testcase>", False) for status in ("skipped", "failure", "error")],
+)
+def test_service_e2e_report_requires_success(tmp_path: Path, cases: str, accepted: bool) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
+    steps = workflow["jobs"]["scenarios"]["steps"]
+    step = next(step for step in steps if step.get("name") == "Report collected, executed and skipped journeys")
+    # Explicit Bash enables pipefail in Actions, so tee cannot hide a rejected report.
+    assert step["shell"] == "bash"
+    reports = tmp_path / "test-results"
+    reports.mkdir()
+    (reports / "service-e2e.xml").write_text(f"<testsuites><testsuite>{cases}</testsuite></testsuites>")
+    result = subprocess.run(
+        ["bash", "-eo", "pipefail", "-c", step["run"]],
+        cwd=tmp_path,
+        env={**os.environ, "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md")},
+        capture_output=True,
+        check=False,
+    )
+    assert (result.returncode == 0) == accepted
+
+
+@pytest.mark.parametrize(
     "workflow_name,job",
     [
         ("ci-a13n-envd.yml", "protocol"),
@@ -116,6 +177,7 @@ def test_service_gate_requires_every_matrix_member(result: str) -> None:
         ("ci-a13n-envd.yml", "daemon"),
         ("ci-a13n-harness.yml", "harness"),
         ("ci-a13n-service.yml", "validation"),
+        ("ci-a13n-service-e2e.yml", "scenarios"),
         ("ci-a13n-stream-protocol.yml", "protocol"),
         ("ci-a13n-harness-ui.yml", "tests"),
         ("ci-a13n-harness-ui.yml", "frontend"),

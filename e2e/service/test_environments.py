@@ -109,7 +109,7 @@ async def modal_app(token_id: str, token_secret: str) -> AsyncIterator[str]:
     """A fresh deployed Modal App to hold the journey's sandboxes, stopped afterwards."""
     import modal
 
-    name = f"a13n-live-{uuid4().hex[:12]}"
+    name = f"a13n-e2e-{uuid4().hex[:12]}"
     client = await modal.Client.from_credentials.aio(token_id, token_secret)
     await modal.App.lookup.aio(name, create_if_missing=True, client=client)
     try:
@@ -123,7 +123,7 @@ async def modal_app(token_id: str, token_secret: str) -> AsyncIterator[str]:
 async def hosted_account(provider: str, config: pytest.Config) -> AsyncIterator[tuple[dict, dict, dict]]:
     """A hosted type's account configuration, credential and a small recipe, from the operator's variables.
 
-    An organization or workspace name that only labels an account's backend defaults to `live-tests`.
+    An organization or workspace name that only labels an account's backend defaults to `service-e2e`.
     """
     if provider == "e2b":
         [key] = variables(config, provider, "E2B_API_KEY")
@@ -135,7 +135,7 @@ async def hosted_account(provider: str, config: pytest.Config) -> AsyncIterator[
     elif provider == "modal":
         token_id, token_secret = variables(config, provider, "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET")
         async with modal_app(token_id, token_secret) as app:
-            account = {"workspace": os.environ.get("MODAL_WORKSPACE", "live-tests"), "app_name": app}
+            account = {"workspace": os.environ.get("MODAL_WORKSPACE", "service-e2e"), "app_name": app}
             yield account, {"token_id": token_id, "token_secret": token_secret}, {"timeout_seconds": 900}
     elif provider == "vercel":
         token, team, project = variables(config, provider, "VERCEL_TOKEN", "VERCEL_TEAM_ID", "VERCEL_PROJECT_ID")
@@ -146,7 +146,7 @@ async def hosted_account(provider: str, config: pytest.Config) -> AsyncIterator[
         yield {"organization": organization}, {"api_key": token}, {}
     else:
         [key] = variables(config, provider, "RUNLOOP_API_KEY")
-        yield {"organization": os.environ.get("RUNLOOP_ORGANIZATION", "live-tests")}, {"api_key": key}, {}
+        yield {"organization": os.environ.get("RUNLOOP_ORGANIZATION", "service-e2e")}, {"api_key": key}, {}
 
 
 @asynccontextmanager
@@ -191,7 +191,12 @@ async def test_a_run_uses_its_environment_across_its_lifecycle(stack, provider, 
 
 async def create_template(api, account: Backend) -> str:  # type: ignore[no-untyped-def]
     """A provider resource for the account and a template of its recipe."""
-    body = {"workspace_id": None, "type": account.type, "name": account.type.title(), "config": account.config}
+    body = {
+        "workspace_id": api.tenant["workspace_id"],
+        "type": account.type,
+        "name": account.type.title(),
+        "config": account.config,
+    }
     if account.credential is not None:
         body["credential"] = account.credential
     provider_row = await api.client.post(f"{api.organization}/environment-providers", json=body)

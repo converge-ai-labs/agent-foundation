@@ -49,8 +49,13 @@ async def test_concurrent_input_is_consumed_once_in_order(stack) -> None:  # typ
         entries = await settled(api, thread_id)
         runs = await api.runs(thread_id)
         assert all(run["status"] == "completed" for run in runs)
-        # One active run per thread: each run was accepted only after its predecessor sealed.
-        assert all(later["created_at"] >= earlier["sealed_at"] for earlier, later in pairwise(runs))
+        # created_at is the transaction's start, which may precede its wait for the thread lock.
+        # Check the continuation chain and execution intervals using the actual lifecycle clocks.
+        runs.sort(key=lambda run: run["started_at"])
+        assert all(
+            later["parent_run_id"] == earlier["id"] and later["started_at"] >= earlier["sealed_at"]
+            for earlier, later in pairwise(runs)
+        )
         # FIFO consumption: entries are taken by runs in inbox order, each by exactly one run.
         order = {run["id"]: index for index, run in enumerate(runs)}
         taken = [order[entry["assigned_run_id"]] for entry in entries]
@@ -60,5 +65,9 @@ async def test_concurrent_input_is_consumed_once_in_order(stack) -> None:  # typ
         final = (await model.requests(marker))[-1]
         submitted = [entry["payload"]["content"][0]["text"] for entry in entries]
         assert user_texts(final) == submitted and len(submitted) == len(set(submitted))
-    workers = read_rows(stack.database, "SELECT DISTINCT worker_id FROM run_attempts")
+    workers = read_rows(
+        stack.database,
+        "SELECT DISTINCT worker_id FROM run_attempts WHERE workspace_id = :workspace_id",
+        workspace_id=api.tenant["workspace_id"],
+    )
     assert len(workers) == 2, "both workers should have claimed runs"

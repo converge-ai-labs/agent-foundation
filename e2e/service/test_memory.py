@@ -72,7 +72,12 @@ def recalls(request: dict) -> list[tuple[str, list[str]]]:
 
 async def record_memory(api, mem0: httpx2.AsyncClient, key: str, *texts: str) -> dict:  # type: ignore[no-untyped-def]
     """A record memory in the journey's fake mem0 server, holding `texts`."""
-    body = {"workspace_id": None, "type": "mem0_oss", "name": key, "config": {"base_url": str(mem0.base_url)}}
+    body = {
+        "workspace_id": api.tenant["workspace_id"],
+        "type": "mem0_oss",
+        "name": key,
+        "config": {"base_url": str(mem0.base_url)},
+    }
     provider = expect(await api.client.post(f"{api.organization}/memory-providers", json=body), 201)
     body = {"key": key, "name": key, "type": "mem0_oss", "provider_id": provider["id"]}
     memory = expect(await api.client.post(f"{api.path}/memories", json=body), 201)
@@ -104,6 +109,7 @@ def workers_of(stack, run_id: str) -> list[str]:  # type: ignore[no-untyped-def]
     return [row["worker_id"] for row in rows]
 
 
+@pytest.mark.isolated_service
 async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("helper", await api.create_model(model.base_url))
@@ -163,6 +169,7 @@ async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack
     assert cursors(stack, receipt["run"]["id"]) == {memory["id"]: "3"}
 
 
+@pytest.mark.isolated_service
 async def test_a_recovered_attempt_continues_from_the_committed_memory_cursors(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("helper", await api.create_model(model.base_url))
@@ -269,5 +276,9 @@ async def test_deleting_a_record_memory_purges_its_namespace_through_the_outbox(
 
     await eventually(purged)
     assert await namespace(mem0, kept) == ["never purged"]
-    rows = read_rows(stack.database, "SELECT dedupe_key, status FROM outbox WHERE kind = 'memory_purge'")
+    rows = read_rows(
+        stack.database,
+        "SELECT dedupe_key, status FROM outbox WHERE kind = 'memory_purge' AND workspace_id = :workspace_id",
+        workspace_id=api.tenant["workspace_id"],
+    )
     assert rows == [{"dedupe_key": memory["id"], "status": "delivered"}]

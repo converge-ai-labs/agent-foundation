@@ -40,7 +40,7 @@ class Workspace:
         provider = await self.client.post(
             f"{self.organization}/model-providers",
             json={
-                "workspace_id": None,
+                "workspace_id": self.tenant["workspace_id"],
                 "type": "openai",
                 "name": "Scripted",
                 "config": {"base_url": base_url},
@@ -50,7 +50,7 @@ class Workspace:
         model = await self.client.post(
             f"{self.organization}/models",
             json={
-                "workspace_id": None,
+                "workspace_id": self.tenant["workspace_id"],
                 "provider_id": expect(provider, 201)["id"],
                 "key": "scripted",
                 "name": "Scripted",

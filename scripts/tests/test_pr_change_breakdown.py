@@ -45,7 +45,7 @@ def node(script, data):
         ("spec/a13n-harness/01-design.md", "Specifications"),
         ("deploy/docker/images/a13n-service/Dockerfile", "Build, CI & deployment"),
         ("scripts/tests/test_verify.py", "Tests & fixtures"),
-        ("dev/live_tests/scripted.py", "Tests & fixtures"),
+        ("e2e/service/scripted.py", "Tests & fixtures"),
         ("scripts/verify.py", "Developer tools & examples"),
         ("examples/demo/main.py", "Developer tools & examples"),
         ("examples/demo/README.md", "Documentation"),
@@ -80,9 +80,10 @@ def test_classification_precedence(path, category):
         ("deploy/docker/compose/a13n-harness-ui.yaml", "a13n-harness-ui"),
         ("deploy/kubernetes/helm/a13n-service/values.yaml", "a13n-service"),
         ("deploy/kubernetes/README.md", "Repository"),
+        ("e2e/service/stack.py", "a13n-service"),
     ],
 )
-def test_deploy_paths_belong_to_their_component(path, name):
+def test_paths_belong_to_their_component(path, name):
     assert (
         node(
             "console.log(JSON.stringify(require(input.module).component(input.path)))",

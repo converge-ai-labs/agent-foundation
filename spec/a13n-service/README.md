@@ -45,7 +45,7 @@ A complete rule is defined once, in its owning section. Other chapters describe 
 | Routes, authentication at the HTTP boundary, path resolution, representations and stored-content headers, collections and cursors, preconditions and ETags, idempotency, the error envelope and statuses, and the OpenAPI export | [10: API](10-api.md)                               |
 | Signal ownership, log fields and events, the metric catalog and backlog, trace export and its correlation                                                                                                                        | [12: observability](12-observability.md)           |
 
-Tests, validation gates and live journeys are contributor workflow, owned by [CONTRIBUTING.md](../../CONTRIBUTING.md#local-validation) and [dev/live_tests](../../dev/live_tests/README.md). The glossary gives short definitions and links; it does not repeat rules.
+Tests, validation gates and end-to-end scenarios are contributor workflow, owned by [CONTRIBUTING.md](../../CONTRIBUTING.md#local-validation) and [e2e/service](../../e2e/service/README.md). The glossary gives short definitions and links; it does not repeat rules.
 
 ## Conventions in these documents
 

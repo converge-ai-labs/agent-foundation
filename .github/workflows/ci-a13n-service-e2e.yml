@@ -1,16 +1,16 @@
-name: Live Tests CI
+name: Service E2E CI
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - ".github/workflows/ci-live-tests.yml"
+      - ".github/workflows/ci-a13n-service-e2e.yml"
       - "Makefile"
       - "conftest.py"
       - "dev/fixtures/**"
-      - "dev/live_tests/**"
+      - "e2e/**"
       - "deploy/docker/images/docker-environment/**"
-      - "scripts/tests/test_live_test_tooling.py"
+      - "scripts/tests/test_service_e2e_tooling.py"
       - "packages/a13n-service/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-envd-client/**"
@@ -21,13 +21,13 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/ci-live-tests.yml"
+      - ".github/workflows/ci-a13n-service-e2e.yml"
       - "Makefile"
       - "conftest.py"
       - "dev/fixtures/**"
-      - "dev/live_tests/**"
+      - "e2e/**"
       - "deploy/docker/images/docker-environment/**"
-      - "scripts/tests/test_live_test_tooling.py"
+      - "scripts/tests/test_service_e2e_tooling.py"
       - "packages/a13n-service/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-envd-client/**"
@@ -49,7 +49,7 @@ concurrency:
 
 jobs:
   support:
-    name: Live test support
+    name: Service E2E support
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -65,10 +65,10 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Validate fixtures and reviewed selections
-        run: make live-test-check
+        run: make service-e2e-check
 
-  journeys:
-    name: Service live journeys
+  scenarios:
+    name: Service E2E scenarios
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -86,24 +86,39 @@ jobs:
       - name: Build the native Docker execution image
         run: make image-docker-environment
       - name: Run every journey but the opt-in hosted ones; an unavailable dependency fails it
-        run: make live-test LIVE_TEST_ARGS="--require-all --junitxml=test-results/live.xml"
+        run: make service-e2e SERVICE_E2E_ARGS="--require-all --junitxml=test-results/service-e2e.xml"
       - name: Report collected, executed and skipped journeys
         if: always()
+        shell: bash
         run: |
           python - <<'PYCODE' | tee -a "$GITHUB_STEP_SUMMARY"
           import xml.etree.ElementTree as ET
 
-          cases = ET.parse("test-results/live.xml").getroot().findall(".//testcase")
+          cases = ET.parse("test-results/service-e2e.xml").getroot().findall(".//testcase")
           skipped = [case for case in cases if case.find("skipped") is not None]
           failed = [case for case in cases if case.find("failure") is not None or case.find("error") is not None]
-          print(f"Live journeys: {len(cases)} collected, {len(cases) - len(skipped)} executed, "
+          print(f"Service E2E: {len(cases)} collected, {len(cases) - len(skipped)} executed, "
                 f"{len(skipped)} skipped, {len(failed)} failed")
-          assert cases and not skipped, "Every live journey must execute"
+          assert cases and not skipped and not failed, "Every selected Service E2E scenario must pass without skipping"
           PYCODE
-      - name: Retain live journey reports
+      - name: Retain Service E2E reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-journeys-${{ github.run_attempt }}
+          name: service-e2e-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
+
+  e2e:
+    name: Service E2E
+    needs: [support, scenarios]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require support checks and scenarios
+        env:
+          SUPPORT_RESULT: ${{ needs.support.result }}
+          SCENARIOS_RESULT: ${{ needs.scenarios.result }}
+        run: |
+          test "$SUPPORT_RESULT" = success
+          test "$SCENARIOS_RESULT" = success

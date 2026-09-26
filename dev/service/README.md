@@ -79,4 +79,4 @@ Removal stops the checkout's applications, deletes its Compose containers and vo
 - An application that exits: its log is in `var/dev/logs/`; the others are stopped with it.
 - Docker unavailable: start it and retry; nothing is switched or started implicitly.
 
-`make dev-state-check` lints and type-checks this directory and runs its tests, including one that seeds a disposable instance with its own Compose project (Docker required). `make db-migrate msg="..."` generates migrations against a separate disposable database (`db-migrate.sh`). `make live-test` and `make live-test-console` use their own stores and never touch this checkout's instance.
+`make dev-state-check` lints and type-checks this directory and runs its tests, including one that seeds a disposable instance with its own Compose project (Docker required). `make db-migrate msg="..."` generates migrations against a separate disposable database (`db-migrate.sh`). `make service-e2e` and `make console-review` use their own stores and never touch this checkout's instance.

@@ -1,6 +1,6 @@
-# Console browser journey
+# Manual Console review
 
-Run `make live-test-console CONSOLE_LIVE_DIR=/tmp/a13n-console-review` with Docker available. Use a new directory each time. The command prints the actual localhost URL, model endpoint and counted MCP peer URL. It owns its stores and processes; never use shared application storage for these steps.
+Run `make console-review CONSOLE_REVIEW_DIR=/tmp/a13n-console-review` with Docker available. Use a new directory each time. The command prints the actual localhost URL, model endpoint and counted MCP peer URL. It owns its stores and processes; never use shared application storage for these steps.
 
 1. Sign in as `console@example.com` with `console-fixture-password`. Reload and verify the workspace is restored. The fixture's workspace key intentionally collides with an inaccessible workspace in another organization. Its ID link succeeds; `/workspace/ambiguous/sessions` must show a conflict without switching scopes.
 2. In Models, add the deployment's OpenAI provider. Enter the printed model endpoint and a fixture-only API key, or select no authentication. Save, reopen the creation dialog and check that no credential remains. Add a named model with API Chat Completions, model ID `scripted` and a positive context window.

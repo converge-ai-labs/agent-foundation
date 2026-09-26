@@ -170,9 +170,9 @@ dev-status: ## Print this checkout's instance, URLs and listeners as JSON withou
 dev-env-list: ## List this machine's checkouts and their local instances
 	@python3 -m dev.service.envs list
 
-.PHONY: live-test
-live-test: sync ## Run the Service live journeys: Control and two Workers over HTTPS with disposable stores (Docker)
-	@uv run --locked python -m dev.live_tests $(LIVE_TEST_ARGS)
+.PHONY: service-e2e
+service-e2e: sync ## Run Service E2E scenarios: Control and two Workers over HTTPS with disposable stores (Docker)
+	@uv run --locked python -m e2e.service $(SERVICE_E2E_ARGS)
 
 .PHONY: langfuse-up langfuse-down langfuse-reset
 langfuse-up: ## Start and authenticate machine-shared local Langfuse
@@ -559,22 +559,25 @@ image-check-docker-environment: ## Validate native Docker image prerequisites
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(DOCKER_ENVIRONMENT_IMAGE)")" = "sandbox"
 	@docker run --rm --entrypoint sh "$(DOCKER_ENVIRONMENT_IMAGE)" -c 'python3 --version && git --version && bash --version && node --version && npm --version && test -w /workspace && test -w /tmp/a13n && ! command -v a13n-envd'
 
-.PHONY: docker-provider-live-test
-docker-provider-live-test: sync image-docker-environment ## Run the environment journey on the native Docker provider
-	@DOCKER_ENVIRONMENT_IMAGE="$(DOCKER_ENVIRONMENT_IMAGE)" uv run --locked python -m dev.live_tests -k docker --require-all
+.PHONY: service-e2e-docker
+service-e2e-docker: sync image-docker-environment ## Run the environment journey on the native Docker provider
+	@DOCKER_ENVIRONMENT_IMAGE="$(DOCKER_ENVIRONMENT_IMAGE)" uv run --locked python -m e2e.service -k docker --require-all
 
 .PHONY: service-boundaries
 service-boundaries: sync ## Verify Service import direction
 	@uv run --locked lint-imports --config packages/a13n-service/.importlinter
 
-.PHONY: live-test-check
-live-test-check: sync ## Check live-test fixtures, configuration and journey selection without Docker
-	@uv run --locked python -m pytest scripts/tests/test_live_test_tooling.py -q
+.PHONY: service-e2e-check
+service-e2e-check: sync ## Check Service E2E code, fixtures and scenario selection without Docker
+	@uv run --locked ruff check --no-fix e2e
+	@uv run --locked ruff format --check e2e
+	@uv run --locked pyright e2e
+	@uv run --locked python -m pytest scripts/tests/test_service_e2e_tooling.py -q
 
 .PHONY: service-config-check
 service-config-check:
 	@test -f "$(SERVICE_CONFIG)" || { echo "Missing Service settings: $(SERVICE_CONFIG). Run make setup first or set SERVICE_CONFIG to an existing file." >&2; exit 2; }
 
-.PHONY: live-test-console
-live-test-console: sync frontend-sync ## Launch Console with disposable real Service stores and model fixture
-	@uv run --locked python -m dev.live_tests.console --directory "$(CONSOLE_LIVE_DIR)"
+.PHONY: console-review
+console-review: sync frontend-sync ## Launch Console with disposable real Service stores and model fixture
+	@uv run --locked python -m dev.service.console_review --directory "$(CONSOLE_REVIEW_DIR)"

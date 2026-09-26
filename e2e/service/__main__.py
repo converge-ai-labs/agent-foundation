@@ -1,4 +1,4 @@
-"""Run the Service live journeys: `python -m dev.live_tests [pytest arguments]`.
+"""Run the Service E2E scenarios: `python -m e2e.service [pytest arguments]`.
 
 The report lists every journey with its outcome and names each skipped journey with its reason. Pass
 `--require-all` to fail, instead of skip, a journey whose external dependency is unavailable. Journeys on hosted

@@ -22,7 +22,7 @@ const rules = [
   ['Generated files', {test: path => generated.has(path)}],
   ['Documentation', /(?:\.md$|(?:^|\/)(?:LICENSE|NOTICE)(?:\.[^/]+)?$)/i],
   ['Dependencies & lockfiles', /(?:^|\/)(?:pyproject\.toml|Cargo\.(?:toml|lock)|package(?:-lock)?\.json|pnpm-(?:lock|workspace)\.yaml|uv\.lock|requirements[^/]*\.txt)$/],
-  ['Tests & fixtures', /(?:^|\/)(?:tests?|testdata|fixtures|__tests__|__snapshots__|live_tests)(?:\/|$)|(?:^|\/)(?:conftest\.py|test_[^/]+|[^/]+_test\.py)$|\.(?:test|spec)\.[cm]?[jt]sx?$/],
+  ['Tests & fixtures', /(?:^|\/)(?:tests?|testdata|fixtures|__tests__|__snapshots__|e2e)(?:\/|$)|(?:^|\/)(?:conftest\.py|test_[^/]+|[^/]+_test\.py)$|\.(?:test|spec)\.[cm]?[jt]sx?$/],
   ['Protocols & migrations', /^proto\/|\/a13n_service\/migrations\//],
   ['Build, CI & deployment', /^\.github\/|^deploy\/|^crates\/[^/]+\/build_support\/|^frontend\/(?:.*\/)?(?:tsconfig[^/]*\.json|\.prettierignore|coss-source\.json)$|(?:^|\/)(?:Makefile|Dockerfile|build\.rs|hatch_build\.py|build_skills\.py|[^/]+\.config\.[^/]+)$|^(?:\.[^/]+|mkdocs\.yml)$/],
   ['Developer tools & examples', /^(?:scripts|dev|examples|\.vscode|\.claude|\.agents)\/|^frontend\/.*\/(?:showcase|scripts|dev)\/|^frontend\/.*\/generate-[^/]+$/],
@@ -35,6 +35,7 @@ function classify(path) {
 }
 
 function component(path) {
+  if (path.startsWith('e2e/service/')) return 'a13n-service';
   const match = path.match(/^(?:packages|crates|spec|proto)\/(a13n-[^/]+)\//)
     || path.match(/^frontend\/(?:apps|packages)\/(a13n-[^/]+)\//)
     || path.match(/^deploy\/(?:[^/]+\/)+(a13n-[^/.]+)(?:[/.]|$)/);

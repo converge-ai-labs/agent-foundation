@@ -16,7 +16,7 @@ pytestmark = pytest.mark.anyio
 
 async def test_setup_submission_and_continuation(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    config = stack.directory / "service.toml"
+    config = stack.control.config
     # The template was migrated and bootstrapped through the same CLI: both commands are safe to repeat.
     again = run_cli(config, "migrate")
     assert again.returncode == 0, again.stderr

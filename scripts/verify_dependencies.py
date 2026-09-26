@@ -11,6 +11,8 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 TEST_INPUTS: dict[str, tuple[str, ...]] = {
+    "test_observability_tooling.py": ("dev/observability/*",),
+    "test_service_e2e_tooling.py": ("e2e/service/*", "dev/fixtures/*"),
     "test_pr_change_breakdown.py": (
         ".github/scripts/pr-change-*.cjs",
         ".github/workflows/pr-change-breakdown.yml",

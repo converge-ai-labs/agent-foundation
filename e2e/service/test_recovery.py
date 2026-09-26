@@ -35,6 +35,7 @@ async def tool_committed(api, run_id: str) -> None:  # type: ignore[no-untyped-d
     await eventually(check)
 
 
+@pytest.mark.isolated_service
 async def test_a_killed_worker_is_replaced_after_its_lease_expires(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("helper", await api.create_model(model.base_url), **LOOKUP)
@@ -96,6 +97,7 @@ async def test_heartbeats_keep_one_attempt_through_a_slow_model(stack) -> None: 
     assert [request["status"] for request in await model.requests("[slow]")] == ["answered"]
 
 
+@pytest.mark.isolated_service
 async def test_a_draining_worker_hands_its_run_to_another(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("helper", await api.create_model(model.base_url), **LOOKUP)
