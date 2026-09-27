@@ -109,7 +109,7 @@ def workers_of(stack, run_id: str) -> list[str]:  # type: ignore[no-untyped-def]
     return [row["worker_id"] for row in rows]
 
 
-@pytest.mark.isolated_service
+@pytest.mark.isolated_service(worker_slots=1)
 async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("helper", await api.create_model(model.base_url))
@@ -128,13 +128,10 @@ async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack
     await model.call("memory_file_view", view, call_id="call_b_view", to="[mem-b]")
     await model.call("memory_file_edit", edit("English", "Chinese"), call_id="call_b_edit", to="[mem-b]", hold="b")
     await model.say("Chinese noted.", to="[mem-b]")
-    first, second = stack.workers
-    with stack.only(first):
-        a = await api.start(agent, "[mem-a] I like coffee now", memories=mounts)
-        await model.arrived("[mem-a]", status="held")
-    with stack.only(second):
-        b = await api.start(agent, "[mem-b] Reply in Chinese from now on", memories=mounts)
-        await model.arrived("[mem-b]")
+    # A fills one worker's only slot; B must use the other without suspending A's heartbeats.
+    a = await api.start(agent, "[mem-a] I like coffee now", memories=mounts)
+    await model.arrived("[mem-a]", status="held")
+    b = await api.start(agent, "[mem-b] Reply in Chinese from now on", memories=mounts)
     await model.arrived("[mem-b]", status="held")
     a_run, b_run = a["run"]["id"], b["run"]["id"]
 
@@ -142,7 +139,9 @@ async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack
     assert (await api.sealed(b_run))["status"] == "completed"
     await model.open("a")
     assert (await api.sealed(a_run))["status"] == "completed"
-    assert workers_of(stack, a_run) != workers_of(stack, b_run)
+    [a_worker] = workers_of(stack, a_run)
+    [b_worker] = workers_of(stack, b_run)
+    assert a_worker != b_worker
 
     # The disjoint edits both apply; the edit based on the stale view fails and shows the current content.
     current = expect(await api.client.get(f"{api.path}/memories/{memory['id']}/files/prefs.md"), 200)

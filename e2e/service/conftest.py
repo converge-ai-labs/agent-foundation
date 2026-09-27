@@ -49,7 +49,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "hosted(type): a journey on a hosted sandbox vendor, run only when asked for")
-    config.addinivalue_line("markers", "isolated_service: owns Service processes to stop or suspend them")
+    config.addinivalue_line(
+        "markers", "isolated_service(worker_slots=4): owns Service processes for faults or custom worker capacity"
+    )
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -134,10 +136,12 @@ class Service:
 
 
 @contextmanager
-def running_service(stores: Stores, directory: Path) -> Iterator[Service]:
+def running_service(stores: Stores, directory: Path, *, worker_slots: int = 4) -> Iterator[Service]:
     with ExitStack() as cleanup:
         database = cleanup.enter_context(cloned_database(stores))
-        config = write_config(directory / "service.toml", stores, database, directory / "objects")
+        config = write_config(
+            directory / "service.toml", stores, database, directory / "objects", worker_slots=worker_slots
+        )
         control = ServiceProcess("control", config, directory / "control.log")
         workers = [ServiceProcess("worker", config, directory / f"worker-{index}.log") for index in (1, 2)]
         for process in [control, *workers]:
@@ -187,10 +191,10 @@ async def settled(service: Service, workspace_id: str) -> None:
 
 @pytest.fixture
 async def stack(stores: Stores, tmp_path: Path, request: pytest.FixtureRequest) -> AsyncIterator[Stack]:
-    isolated = request.node.get_closest_marker("isolated_service") is not None
+    isolated = request.node.get_closest_marker("isolated_service")
     with ExitStack() as cleanup:
         service = (
-            cleanup.enter_context(running_service(stores, tmp_path))
+            cleanup.enter_context(running_service(stores, tmp_path, **isolated.kwargs))
             if isolated
             else request.getfixturevalue("shared_service")
         )

@@ -54,7 +54,8 @@ def test_hosted_e2e_journeys_run_only_when_asked_for():
     assert collect_scenarios("-k", "environment") == {f"{lifecycle}[local]", f"{lifecycle}[docker]"}
 
 
-def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch):
+@pytest.mark.parametrize("worker_slots", [1, 4])
+def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch, worker_slots):
     for name in [name for name in os.environ if name.startswith("A13N_")]:
         monkeypatch.delenv(name)
     stores = Stores(
@@ -66,7 +67,10 @@ def test_the_e2e_service_configuration_is_valid(tmp_path, monkeypatch):
         encryption_key=base64.b64encode(bytes(32)).decode(),
         tenant={},
     )
-    journey = load_settings(write_config(tmp_path / "journey.toml", stores, "e2e_journey", tmp_path / "objects"))
+    journey = load_settings(
+        write_config(tmp_path / "journey.toml", stores, "e2e_journey", tmp_path / "objects", worker_slots=worker_slots)
+    )
+    assert journey.worker.slots == worker_slots
     assert journey.worker.lease_seconds == LEASE_SECONDS and journey.server.tls_certificate == stores.certificate
 
 
