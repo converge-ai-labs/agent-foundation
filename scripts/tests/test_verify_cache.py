@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
+import os
 import subprocess
+import sys
+import threading
 from pathlib import Path
+from queue import Queue
 
 import pytest
 
@@ -96,3 +101,113 @@ def test_declared_globs_include_new_resource_inputs(repository: Path) -> None:
     (repository / "config/new.json").write_text("{}")
     after = verify_cache.Successes(repository, record, verify.snapshot())
     assert after.signature(["check"], repository, inputs, None) != signature
+
+
+@pytest.fixture
+def verify_processes():
+    """Real verification entry points with a controlled, inexpensive check body."""
+    processes = []
+
+    def start(root: Path, name: str, *args: str):
+        script = """
+import sys
+from pathlib import Path
+from scripts import verify, verify_cache
+
+verify.REPOSITORY_ROOT = Path(sys.argv[1])
+name = sys.argv[2]
+
+def check(args, tree):
+    records = verify_cache.Successes(verify.REPOSITORY_ROOT, verify._git_path('a13n-verify-checks'), tree)
+    previous = ','.join(sorted(records.passed))
+    records.save(name, name)
+    print('entered', name, previous, flush=True)
+    sys.stdin.readline()
+    return 0
+
+verify.verify_changes = check
+raise SystemExit(verify.main(sys.argv[3:]))
+"""
+        process = subprocess.Popen(
+            [sys.executable, "-c", script, str(root), name, *args],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env={**os.environ, "PYTHONPATH": str(Path(verify.__file__).resolve().parents[1])},
+        )
+        processes.append(process)
+        output: Queue[str] = Queue()
+
+        def read_output():
+            assert process.stdout is not None
+            for line in process.stdout:
+                output.put(line.strip())
+
+        threading.Thread(target=read_output, daemon=True).start()
+        return process, output
+
+    yield start
+    for process in processes:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=10)
+        for stream in (process.stdin, process.stdout):
+            if stream is not None:
+                stream.close()
+
+
+def _release(process: subprocess.Popen[str]) -> None:
+    assert process.stdin is not None
+    process.stdin.write("\n")
+    process.stdin.flush()
+    assert process.wait(timeout=10) == 0
+
+
+@pytest.mark.parametrize("no_cache", [False, True])
+@pytest.mark.parametrize("terminate", [False, True])
+def test_concurrent_verify_waits_then_reads_completed_records(repository: Path, verify_processes, no_cache, terminate):
+    first, first_output = verify_processes(repository, "first")
+    assert first_output.get(timeout=10) == "entered first"
+    record = verify._git_path("a13n-verify-checks")
+    second, second_output = verify_processes(repository, "second", *(["--no-cache"] if no_cache else []))
+    assert second_output.get(timeout=10).startswith("waiting for another verify run in this worktree")
+    # In particular, --no-cache must not clear a running process's results before locking.
+    assert json.loads(record.read_text()) == {"first": "first"}
+    if terminate:
+        first.kill()
+        first.wait(timeout=10)
+    else:
+        _release(first)
+    assert second_output.get(timeout=10) == ("entered second" if no_cache else "entered second first")
+    _release(second)
+    assert json.loads(record.read_text()) == (
+        {"second": "second"} if no_cache else {"first": "first", "second": "second"}
+    )
+    # The parent and child environments differ; inspect the completed baseline directly.
+    tree, mode, _context = verify._git_path(verify.PASSED_RECORD).read_text().split()
+    assert (tree, mode) == (verify.snapshot(), "changed")
+
+
+def test_other_worktree_does_not_wait_for_active_verify(repository: Path, verify_processes):
+    other = repository.parent / "other-worktree"
+    subprocess.run(
+        ["git", "worktree", "add", "--detach", str(other), "HEAD"], cwd=repository, capture_output=True, check=True
+    )
+    first, first_output = verify_processes(repository, "first")
+    assert first_output.get(timeout=10) == "entered first"
+    second, second_output = verify_processes(other, "second")
+    assert second_output.get(timeout=10) == "entered second"
+    assert first.poll() is None
+    _release(second)
+    _release(first)
+    assert json.loads(verify._git_path("a13n-verify-checks").read_text()) == {"first": "first"}
+
+
+def test_dry_run_does_not_acquire_worktree_lock(repository: Path, monkeypatch):
+    def unexpected_lock(_path):
+        pytest.fail("dry-run should not wait for the verification lock")
+
+    monkeypatch.setattr(verify_cache, "worktree_lock", unexpected_lock)
+    monkeypatch.setattr(verify, "plan", lambda *args, **kwargs: verify.Plan())
+    assert verify.main(["--dry-run", "--no-cache", "README.md"]) == 0

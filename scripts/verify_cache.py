@@ -13,8 +13,27 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from fnmatch import fnmatchcase
 from pathlib import Path
+
+from filelock import FileLock, Timeout
+
+
+@contextmanager
+def worktree_lock(path: Path) -> Iterator[None]:
+    """Serialize verification from snapshot/cache reads through the last result write."""
+    lock = FileLock(path)
+    try:
+        lock.acquire(timeout=0)
+    except Timeout:
+        print(f"waiting for another verify run in this worktree ({path})", flush=True)
+        lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
 
 
 def digest(value: object) -> str:
@@ -35,6 +54,8 @@ def environment(root: Path) -> str:
 
 
 class Successes:
+    """Per-check records; the caller holds worktree_lock while loading and saving."""
+
     def __init__(self, root: Path, record: Path, tree: str) -> None:
         self.root, self.record = root, record
         self.context = environment(root)

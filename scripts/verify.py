@@ -889,6 +889,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("paths", nargs="*", help="Treat these paths as the change set instead of consulting git")
     args = parser.parse_args(argv)
 
+    if args.dry_run:
+        return _verify(args)
+    # Include explicit paths, --full and --no-cache. Wait before clearing records
+    # or taking a snapshot, so the next run sees the preceding run's final state.
+    with verify_cache.worktree_lock(_git_path("a13n-verify.lock")):
+        return _verify(args)
+
+
+def _verify(args: argparse.Namespace) -> int:
     if args.no_cache and not args.dry_run:
         _git_path(PASSED_RECORD).unlink(missing_ok=True)
         _git_path("a13n-verify-checks").unlink(missing_ok=True)
