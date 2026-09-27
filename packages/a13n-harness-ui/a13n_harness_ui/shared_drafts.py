@@ -86,6 +86,8 @@ class SharedDraft:
     def __init__(self) -> None:
         self.draft_id = f"draft-{uuid4().hex}"
         self.document = composer_document()
+        self._update = self.document.get_update()
+        self._update_base64 = base64.b64encode(self._update).decode("ascii")
         self.unsent_since: datetime | None = None
         self.participants: dict[str, DraftPresence] = {}
         self._presence_updated: dict[str, float] = {}
@@ -125,7 +127,7 @@ class SharedDraft:
         return DraftFrame(
             draft_id=self.draft_id,
             participant_id=participant,
-            update_base64=base64.b64encode(self.document.get_update()).decode("ascii"),
+            update_base64=self._update_base64,
             participants=dict(self.participants),
             closed=self.closed,
         )
@@ -156,15 +158,18 @@ class SharedDraft:
                 if len(update) > MAX_DRAFT_BYTES:
                     raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
                 candidate = composer_document()
-                candidate.apply_update(self.document.get_update())
+                candidate.apply_update(self._update)
                 candidate.apply_update(update)
                 _, attachments = composer_values(candidate)
-                if len(candidate.get_update()) > MAX_DRAFT_BYTES:
+                accepted_update = candidate.get_update()
+                if len(accepted_update) > MAX_DRAFT_BYTES:
                     raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
                 await validate_attachments(attachments)
                 # Publish only after the entire composer has validated. Rejected
                 # selections cannot partially replace the shared text.
                 self.document = candidate
+                self._update = accepted_update
+                self._update_base64 = base64.b64encode(accepted_update).decode("ascii")
                 text = str(candidate.get("text", type=Text))
                 # Live tokens count even during uploads; dormant entries do not.
                 nonempty = bool(text.strip())

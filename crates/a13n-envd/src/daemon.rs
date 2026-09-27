@@ -161,8 +161,13 @@ fn session_methods(config: &Config) -> Vec<String> {
                 && (method.name != "process.signal" || cfg!(unix))
                 && (!method.name.starts_with("computer.")
                     || (config.computer_use
-                        && cfg!(any(target_os = "macos", target_os = "linux"))
-                        && (method.name != "computer.type_text" || cfg!(target_os = "macos"))))
+                        && cfg!(any(
+                            target_os = "macos",
+                            target_os = "linux",
+                            target_os = "windows"
+                        ))
+                        && (method.name != "computer.type_text"
+                            || cfg!(any(target_os = "macos", target_os = "windows")))))
         })
         .map(|method| method.name.to_owned())
         .collect()
@@ -4789,6 +4794,30 @@ mod tests {
         assert_eq!(error.data.error_type, crate::eip::ErrorType::UnknownOutcome);
         assert!(!dispatched.load(Ordering::SeqCst));
         daemon.operations.wait_until_owned_idle().await;
+    }
+
+    #[test]
+    fn computer_method_negotiation_requires_opt_in_and_platform_text_support() {
+        let mut config = Config::for_test("computer-methods");
+        assert!(
+            !super::session_methods(&config)
+                .iter()
+                .any(|m| m.starts_with("computer."))
+        );
+        config.computer_use = true;
+        let methods = super::session_methods(&config);
+        assert_eq!(
+            methods.iter().any(|m| m == "computer.observe"),
+            cfg!(any(
+                target_os = "macos",
+                target_os = "linux",
+                target_os = "windows"
+            ))
+        );
+        assert_eq!(
+            methods.iter().any(|m| m == "computer.type_text"),
+            cfg!(any(target_os = "macos", target_os = "windows"))
+        );
     }
 
     #[tokio::test]

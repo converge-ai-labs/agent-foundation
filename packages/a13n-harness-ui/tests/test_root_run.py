@@ -141,6 +141,30 @@ async def test_shutdown_cancellation_during_error_reporting_still_settles_receip
     assert await coordinator.active_count() == 0
 
 
+async def test_usage_delivery_failure_retains_its_code_and_diagnostic_report(tmp_path, monkeypatch):
+    from a13n_harness.usage import UsageReportError
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    executor = _PreparingExecutor()
+
+    async def failing_execute(admission, **kwargs):
+        raise UsageReportError("Host usage delivery timed out.")
+
+    monkeypatch.setattr(executor, "execute", failing_execute)
+    coordinator = RootRunCoordinator(cast(Any, executor))
+    await coordinator.start()
+    try:
+        receipt = await coordinator.submit_prompt(thread_id="thread-1", prompt="run")
+        operation = await coordinator.wait(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.failed
+        assert operation.failure.code == "usage_report_failed"
+        assert operation.failure.message.startswith("Host usage delivery timed out.")
+        assert "Diagnostic report:" in operation.failure.message
+        assert list(tmp_path.glob("a13n-harness-ui-error-*.json"))
+    finally:
+        await coordinator.close(timeout_seconds=1)
+
+
 async def test_root_coordinator_cancels_the_operation_scope_after_stream_creation() -> None:
     executor = _RunningExecutor()
     coordinator = RootRunCoordinator(cast(Any, executor))

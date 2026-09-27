@@ -118,3 +118,27 @@ def test_eip_unknown_outcome_is_not_downgraded_to_provider_failure():
     assert error.retry_hint == "reconcile_first"
     assert error.safe_projection()["details"]["provider_retry_hint"] == "reconcile_first"
     assert "Reconcile" in error.safe_projection()["details"]["hint"]
+
+
+@pytest.mark.parametrize("stage", ["pre_dispatch", "unknown"])
+@pytest.mark.parametrize(
+    "kind,reason",
+    [
+        (eip.ErrorType.PROVIDER_UNAVAILABLE, "computer_windows_desktop_unavailable"),
+        (eip.ErrorType.CONFLICT, "computer_input_held"),
+        (eip.ErrorType.UNSUPPORTED, "computer_scroll_steps_required"),
+    ],
+)
+def test_computer_native_guidance_is_allowlisted_and_preserves_dispatch_evidence(stage, kind, reason):
+    code = {
+        eip.ErrorType.PROVIDER_UNAVAILABLE: -32050,
+        eip.ErrorType.CONFLICT: -32060,
+        eip.ErrorType.UNSUPPORTED: -32012,
+    }[kind]
+    value = convert_error(method_error(kind, code, safe_detail=reason, stage=stage)).safe_projection()
+    assert value["details"]["reason"] == reason
+    assert value["details"]["dispatch_stage"] == stage
+    assert ("No input was dispatched" in value["details"]["hint"]) == (stage == "pre_dispatch")
+    assert "private" not in json.dumps(value)
+    wrong_type = convert_error(method_error(eip.ErrorType.DENIED, -32010, safe_detail=reason)).safe_projection()
+    assert "reason" not in wrong_type["details"]

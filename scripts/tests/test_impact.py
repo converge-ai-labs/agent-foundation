@@ -162,11 +162,14 @@ def test_cosmetic_change_and_unmapped_file_are_reported(repo: Path) -> None:
     assert selection.unmapped == {UNMEASURED} and selection.tests == {f"{TEST_FILE}::test_value"}
 
 
-def test_large_selections_widen_to_the_package_suite(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(impact, "WIDEN_RATIO", 0.25)
+def test_large_selections_keep_only_affected_tests(repo: Path) -> None:
     (repo / MODELS).write_text(SOURCE.replace("LIMIT = 1", "LIMIT = 2"))
-    selection = _select(repo)
-    assert selection.widened and selection.tests == {"packages/a13n-core/tests"}
+    found = impact.find_map(PACKAGE)
+    assert found is not None
+    found.tests.pop(f"{TEST_FILE}::test_unrelated_a")
+    found.tests.pop(f"{TEST_FILE}::test_unrelated_b")
+    selection = impact.select(found, [MODELS])
+    assert selection.tests == {f"{TEST_FILE}::test_value", f"{TEST_FILE}::test_other"}
 
 
 @pytest.mark.parametrize(

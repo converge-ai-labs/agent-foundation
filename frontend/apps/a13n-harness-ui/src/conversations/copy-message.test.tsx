@@ -212,6 +212,11 @@ it("copies all final Markdown parts once, excluding execution details and resume
   expect(write).toHaveBeenCalledWith(
     "# Final\n\n**Exact** source\n\nSecond [part](https://example.com)",
   );
+  expect(screen.queryByText("Thinking")).toBeNull();
+  for (const toggle of screen.getAllByRole("button", {
+    name: /Execution details/,
+  }))
+    fireEvent.click(toggle);
   for (const text of ["Progress update", "Thinking", "Resumed progress"]) {
     const section = screen.getByText(text).closest("section, details")!;
     expect(

@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
 from a13n_harness.input import RunInputValue
-from a13n_harness.usage import RunUsageSummary
+from a13n_harness.usage import RunUsageSummary, UsageReportError
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
@@ -604,8 +604,12 @@ class RootRunCoordinator:
                             phase="root_operation",
                         )
                     )
-                    failure = FailureView(
-                        code="root_operation_failed", message=f"Unexpected {type(exc).__name__}.\n{feedback}"
+                    failure = (
+                        FailureView(code=exc.code, message=f"{exc}\n{feedback}")
+                        if isinstance(exc, UsageReportError)
+                        else FailureView(
+                            code="root_operation_failed", message=f"Unexpected {type(exc).__name__}.\n{feedback}"
+                        )
                     )
         with CancelScope(shield=True):
             # Completion is navigation-worthy, unlike streamed progress. Persist it

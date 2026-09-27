@@ -590,24 +590,42 @@ function TurnRows({
   onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
   continuation?: string | null;
 }) {
+  const indexed = useMemo(() => {
+    const ordered = [...turns].sort(
+      (a, b) => a.input_position - b.input_position,
+    );
+    const byPosition = new Map<number, Schema<"TranscriptTurn">>();
+    const byTurn = new Map<string, Schema<"TranscriptEntry">[]>();
+    for (const turn of ordered) byTurn.set(turn.turn_id, []);
+    for (const entry of entries) {
+      let low = 0;
+      let high = ordered.length;
+      while (low < high) {
+        const middle = (low + high) >>> 1;
+        if (ordered[middle].input_position <= entry.position) low = middle + 1;
+        else high = middle;
+      }
+      const turn = ordered[low - 1];
+      if (turn && entry.position < turn.end_position) {
+        byPosition.set(entry.position, turn);
+        byTurn.get(turn.turn_id)!.push(entry);
+      }
+    }
+    return { byPosition, byTurn };
+  }, [entries, turns]);
+  const localSends = new Map(
+    localInputs
+      .filter((input) => input.action === "send")
+      .map((input) => [`input:${input.id}`, input]),
+  );
   const groups: { id: string; turn?: Schema<"TranscriptTurn">; rows: Row[] }[] =
     [];
   for (const row of rows) {
     const turn =
       row.position === undefined
         ? undefined
-        : turns.find(
-            (candidate) =>
-              row.position! >= candidate.input_position &&
-              row.position! < candidate.end_position,
-          );
-    const local =
-      row.kind === "input"
-        ? localInputs.find(
-            (input) =>
-              `input:${input.id}` === row.id && input.action === "send",
-          )
-        : undefined;
+        : indexed.byPosition.get(row.position);
+    const local = row.kind === "input" ? localSends.get(row.id) : undefined;
     const id = turn?.turn_id ?? local?.id ?? groups.at(-1)?.id ?? "ungrouped";
     if (groups.at(-1)?.id !== id) groups.push({ id, turn, rows: [] });
     groups.at(-1)!.rows.push(row);
@@ -627,15 +645,11 @@ function TurnRows({
         {...group}
         recovery={index === groups.length - 1 ? recovery : undefined}
         pending={index === groups.length - 1 ? pending : undefined}
-        entries={entries}
+        entries={group.turn ? indexed.byTurn.get(group.turn.turn_id)! : entries}
         threadId={threadId}
         missing={
           !!group.turn &&
-          entries.filter(
-            (entry) =>
-              entry.position >= group.turn!.input_position &&
-              entry.position < group.turn!.end_position,
-          ).length <
+          indexed.byTurn.get(group.turn.turn_id)!.length <
             group.turn.end_position - group.turn.input_position
         }
         loadDetails={loadDetails}
@@ -694,19 +708,22 @@ function TurnHistory({
   useEffect(() => {
     if (history.data) onSavedEntries?.(history.data);
   }, [history.data, onSavedEntries]);
-  const byPosition = new Map<number, Schema<"TranscriptEntry">>();
-  for (const entry of [...entries, ...(history.data ?? [])]) {
-    if (
-      turn &&
-      entry.position >= turn.input_position &&
-      entry.position < turn.end_position
-    )
-      byPosition.set(entry.position, entry);
-  }
-  const loaded = [...byPosition.values()].sort(
-    (a, b) => a.position - b.position,
+  const loaded = useMemo(() => {
+    const byPosition = new Map<number, Schema<"TranscriptEntry">>();
+    for (const entry of [...entries, ...(history.data ?? [])]) {
+      if (
+        turn &&
+        entry.position >= turn.input_position &&
+        entry.position < turn.end_position
+      )
+        byPosition.set(entry.position, entry);
+    }
+    return [...byPosition.values()].sort((a, b) => a.position - b.position);
+  }, [entries, history.data, turn]);
+  const saved = useMemo(
+    () => savedRows(loaded, savedToolGroups(loaded), continuation),
+    [loaded, continuation],
   );
-  const saved = savedRows(loaded, savedToolGroups(loaded), continuation);
   const savedInputs = new Set(
     saved.filter((row) => row.kind === "input").map((row) => row.id),
   );

@@ -29,8 +29,6 @@ NODEID_PROPERTY = "a13n-impact-nodeid"
 KEEP_MAPS = 5
 SEARCH_COMMITS = 500
 STALE_COMMITS = 50
-# Above this share of the suite, one xdist run over the whole package balances better than a list.
-WIDEN_RATIO = 0.5
 
 
 def _git(*args: str) -> str:
@@ -76,7 +74,6 @@ class ImpactMap:
 @dataclass
 class Selection:
     tests: set[str] = field(default_factory=set)
-    widened: bool = False
     cosmetic: set[str] = field(default_factory=set)
     unmapped: set[str] = field(default_factory=set)
 
@@ -119,7 +116,7 @@ def find_map(package: str) -> ImpactMap | None:
 
 
 def select(impact: ImpactMap, files: Iterable[str]) -> Selection:
-    """Tests to run for the changed Python files, as node ids or the widened package directory."""
+    """Tests affected by the changed Python files, without count-based widening."""
     from tia import diff, resolve, semantic
     from tia import select as tia_select
 
@@ -155,11 +152,7 @@ def select(impact: ImpactMap, files: Iterable[str]) -> Selection:
         if (REPOSITORY_ROOT / test_file).is_file():
             # A test file changed since the recording may have renamed or reparametrized the recorded node ids.
             selected.add(test_file if test_file in since_map else nodeid)
-    if len(selected) > WIDEN_RATIO * len(impact.tests):
-        result.tests = {impact.tests_dir}
-        result.widened = True
-    else:
-        result.tests = set(selected)
+    result.tests = selected
     return result
 
 

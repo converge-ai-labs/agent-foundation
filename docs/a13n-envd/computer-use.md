@@ -1,12 +1,13 @@
 # Desktop Computer Use
 
-Use a macOS or Linux X11 shared desktop from a Harness UI conversation: envd sends screenshots directly to the model, executes bounded input actions, and WebUI shows captured images with the tool results. The daemon connects outward over reverse WebSocket; the desktop machine needs no inbound listener.
+Use a macOS, Linux X11 or Windows shared desktop from a Harness UI conversation: envd sends screenshots directly to the model, executes bounded input actions, and WebUI shows captured images with the tool results. The daemon connects outward over reverse WebSocket; the desktop machine needs no inbound listener.
 
 ## Requirements and limits
 
 - Run envd in the logged-in macOS or Linux X11 graphical session. Linux needs an existing X11 server with RandR 1.5, XKB and XTEST, a TrueColor root visual, and the correct `DISPLAY` and X11 authentication. Wayland and XWayland are not supported.
 - Grant Screen Recording and Accessibility permission in macOS System Settings to the process/launcher macOS identifies for envd. Restart that process after changing permissions if required by macOS. The daemon reports missing permission; it does not grant it.
-- Use disabled Sandbox and inherited egress. Restricted Sandbox, denied/controlled egress and Windows reject computer-use opt-in rather than controlling a host desktop outside the selected boundary.
+- On Windows, run envd in the intended signed-in, unlocked interactive user session. Services, disconnected sessions, login/UAC secure desktops and higher-integrity targets are not supported.
+- Use disabled Sandbox and inherited egress. Restricted Sandbox and denied/controlled egress reject computer-use opt-in rather than controlling a host desktop outside the selected boundary.
 - Select an Agent with `dynamic_environment` tools and a model that accepts images.
 
 This is the real shared desktop, not a private browser or VM. Input can send messages, modify files, or invoke other applications using the logged-in user's authority. A selected working directory does not restrict those effects. Humans and other agents may change focus or content between screenshot and click. Do not operate a sensitive desktop unattended.
@@ -40,6 +41,16 @@ Launch from a terminal in the intended X11 session so envd inherits `DISPLAY` an
 Linux supports screenshots, click, move, drag, physical key chords, and discrete wheel steps. Use `computer_describe` to inspect `scroll_units`, then pass `unit="steps"` with at most 100 steps per axis. Pixel scrolling is rejected before pointer movement. Linux does **not** expose `computer_type_text`; it does not modify the keyboard map or clipboard to imitate Unicode text entry. Physical chords depend on the active keyboard layout and are not a literal-text replacement. `meta` means Super, and `alt` means Alt.
 
 A lost X server requires a new Session and a fresh screenshot; envd will not silently reconnect an old geometry reference to a replacement server. A Wayland launch environment or a server advertising XWAYLAND is rejected, even when `DISPLAY` is also set.
+
+### Windows readiness and input
+
+Start envd from an ordinary terminal on the desktop you want to control. It checks that the current Windows session is active and its desktop receives input before starting any EIP transport. There is no generic Windows desktop-permission popup for this path. Keep UAC and other Windows protections enabled; do not run envd as administrator merely to suppress an error. Pairing and the Harness action ceiling are separate from operating-system desktop access.
+
+Windows supports screenshots, pointer gestures, physical scan-code chords, literal Unicode text and wheel steps. Use `unit="steps"` after checking `computer_describe`; pixel scrolling is rejected before pointer movement. `meta` is the Windows key. Capture and input coordinates use physical pixels even when display scaling is enabled. Protected/excluded content can remain black in a screenshot.
+
+Text uses UTF-16 Unicode input events, not clipboard replacement or a keyboard-layout guess. A CRLF pair is submitted as one carriage return to avoid duplicate line breaks. Applications using raw keyboard input may not accept Unicode entry, and standalone newline/Tab behavior depends on the target control. Verify the application after typing. Already-held required keys/buttons or text modifiers cause a pre-dispatch conflict; ask the user to release them instead of clearing their input.
+
+If the desktop becomes locked or disconnected, reconnect/unlock it manually and capture a new observation. Input failure alone does not prove UIPI caused it, nor does a native success count prove the application accepted it. Partial/unknown effects, transport loss and cleanup failure require inspection before another action, not automatic replay.
 
 ## Authorize the conversation
 
@@ -86,10 +97,10 @@ Supported tools:
 | `computer_click`, `computer_move` | Use a position in the returned image                                      |
 | `computer_drag`                   | Complete a bounded drag and release the button                            |
 | `computer_scroll`                 | Scroll with an advertised unit; positive means right/down                 |
-| `computer_type_text`              | Type literal Unicode text in current focus (macOS only)                   |
+| `computer_type_text`              | Type literal Unicode text in current focus (macOS and Windows)            |
 | `computer_press_keys`             | Press and release a chord such as `["meta", "a"]`                         |
 
-Key names use `meta` for Command/Super, `alt` for Option/Alt, `enter`, `page_up`, and `page_down`. Input results report native event effect and cleanup status. `executed` is not proof of application-level success. A partial or unknown effect, incomplete release, disconnect or interrupted Run must not be blindly retried; inspect the desktop before deciding what to do next.
+Key names use `meta` for Command/Super/Windows, `alt` for Option/Alt, `enter`, `page_up`, and `page_down`. Input results report native event effect and cleanup status. `executed` is not proof of application-level success. A partial or unknown effect, incomplete release, disconnect or interrupted Run must not be blindly retried; inspect the desktop before deciding what to do next.
 
 Screenshot storage shares the file-transfer staging byte and object budgets. Each capture needs 4 MiB of free staging capacity before it begins; after capture, only the actual encoded image length remains charged until the bytes are released. Close readers promptly rather than accumulating unread screenshots.
 
@@ -110,4 +121,4 @@ Use the generated typed `computer_*` client calls for input, with a fresh operat
 
 The opt-in [Linux desktop fixture](https://github.com/converge-ai-labs/agent-foundation/tree/main/dev/fixtures/linux-desktop) runs Xvfb, Openbox, a real Tk application, native envd, reverse WebSocket and Harness UI in one disposable, non-root container. It requires no host display mounts or published ports. It verifies actual GUI events and changed screenshot pixels rather than returning a scripted desktop image.
 
-Portable integration tests use a scripted desktop peer over a real reverse WebSocket, with actual client, Harness, App, live/history and authenticated image retrieval. They do not prove native macOS capture, Retina geometry, Accessibility permission or event posting. Validate those on a Mac: first describe/capture, then perform harmless input in a disposable text document, verify the next screenshot, and test permission denial and display-layout changes. No production fake-desktop mode is provided.
+Portable integration tests use a scripted desktop peer over a real reverse WebSocket, with actual client, Harness, App, live/history and authenticated image retrieval. They do not prove native macOS or Windows capture/input, Retina or mixed-DPI geometry, OS permission behavior or event posting. Validate those on a Mac: first describe/capture, then perform harmless input in a disposable text document, verify the next screenshot, and test permission denial and display-layout changes. No production fake-desktop mode is provided.

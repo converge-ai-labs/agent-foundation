@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
+from time import monotonic
 from typing import Annotated, Literal
 
 from a13n_harness import HarnessRunResultEvent, HarnessState
@@ -16,14 +18,19 @@ from a13n_harness.usage import (
     UsageSnapshot,
     select_usage_snapshot,
 )
+from a13n_logging import get_logger
+from anyio import sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlalchemy import DateTime, func, literal, select, text, true, type_coerce, union_all
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_harness_ui.errors import StoreIntegrityError
 
 from .database import DatabaseSessions, short_session, transaction
 from .models import ThreadRecord, ThreadUsageRecord
+
+logger = get_logger(__name__)
 
 _RECORD = TypeAdapter(Annotated[UsageRecord, Field(discriminator="kind")])
 _BATCH = 128
@@ -46,6 +53,25 @@ class _StoredSnapshot(BaseModel):
     kind: Literal["snapshot"] = "snapshot"
     snapshot: UsageSnapshot
     observed_through: datetime
+
+
+def _prepare_snapshot_write(
+    snapshot: UsageSnapshot, previous_payload: str | None
+) -> tuple[str, datetime, dict[str, ProviderUsageRecord]] | None:
+    """Validate and serialize detached values; never move the session to a worker."""
+    previous = None if previous_payload is None else _StoredSnapshot.model_validate_json(previous_payload).snapshot
+    if previous is not None and select_usage_snapshot(previous, snapshot).sequence == previous.sequence:
+        return None
+    # Retained receipts were checked on admission; selection forbids losing or changing them.
+    known = {record.record_id for record in previous.records} if previous is not None else set()
+    receipts = {
+        record.record_id: record
+        for record in snapshot.records
+        if isinstance(record, ProviderUsageRecord) and record.record_id not in known
+    }
+    now = datetime.now(UTC)
+    payload = _StoredSnapshot(snapshot=snapshot, observed_through=now).model_dump_json()
+    return payload, now, receipts
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,10 +265,30 @@ class _Aggregation:
         )
 
 
-def _contributions(root_id: str):
+def _contributions(root_id: str, *, root_only: bool = False):
     """Flatten current scopes and legacy facts, retaining the first receipt attribution."""
-    table = ThreadUsageRecord
-    kind = func.json_extract(table.payload_json, "$.kind")
+    # Extract envelope metadata once per scope, not once per contribution.
+    # Without materialization SQLite flattens the CTE and reparses a complete
+    # growing snapshot for each record, making these reads quadratic.
+    scopes = (
+        select(
+            ThreadUsageRecord.sequence,
+            ThreadUsageRecord.descendant,
+            ThreadUsageRecord.payload_json,
+            ThreadUsageRecord.observed_at,
+            func.json_extract(ThreadUsageRecord.payload_json, "$.kind").label("kind"),
+            type_coerce(
+                func.json_extract(ThreadUsageRecord.payload_json, "$.observed_through"), DateTime(timezone=True)
+            ).label("observed_through"),
+        )
+        .where(
+            ThreadUsageRecord.root_thread_id == root_id,
+            ThreadUsageRecord.descendant.is_(False) if root_only else true(),
+        )
+        .cte("usage_scopes")
+        .prefix_with("MATERIALIZED")
+    )
+    table = scopes.c
     entries = func.json_each(table.payload_json, "$.snapshot.records").table_valued("key", "value")
     legacy = select(
         table.sequence,
@@ -251,7 +297,7 @@ def _contributions(root_id: str):
         table.payload_json.label("payload"),
         table.observed_at,
         table.observed_at.label("observed_through"),
-    ).where(table.root_thread_id == root_id, kind != "snapshot")
+    ).where(table.kind != "snapshot")
     current = (
         select(
             table.sequence,
@@ -259,13 +305,11 @@ def _contributions(root_id: str):
             table.descendant,
             entries.c.value.label("payload"),
             table.observed_at,
-            type_coerce(func.json_extract(table.payload_json, "$.observed_through"), DateTime(timezone=True)).label(
-                "observed_through"
-            ),
+            table.observed_through,
         )
-        .select_from(table)
+        .select_from(scopes)
         .join(entries, true())
-        .where(table.root_thread_id == root_id, kind == "snapshot")
+        .where(table.kind == "snapshot")
     )
     facts = union_all(legacy, current).cte("usage_contributions")
     ranked = select(
@@ -286,8 +330,46 @@ class ThreadUsageReporter:
     thread_id: str
 
     async def report(self, snapshot: UsageSnapshot) -> None:
+        """Own transient storage retries; queueing is cancellable, admitted commits settle."""
         # Inline child scopes have their own Harness Thread, but belong to this Host root.
-        await self.repository.save(thread_id=self.thread_id, snapshot=snapshot)
+        started = monotonic()
+        for attempt in range(1, 4):
+            try:
+                await self.repository.save(thread_id=self.thread_id, snapshot=snapshot)
+            except (TimeoutError, OperationalError) as exc:
+                if isinstance(exc, OperationalError) and not (
+                    isinstance(exc.orig, sqlite3.OperationalError)
+                    and getattr(exc.orig, "sqlite_errorcode", 0) & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+                ):
+                    raise
+                logger.warning(
+                    "Usage persistence attempt timed out or was busy",
+                    extra={
+                        "thread_id": self.thread_id,
+                        "usage_id": snapshot.usage_id,
+                        "usage_sequence": snapshot.sequence,
+                        "attempt": attempt,
+                        "elapsed_seconds": monotonic() - started,
+                        "retrying": attempt < 3,
+                    },
+                )
+                if attempt == 3:
+                    raise
+                # save() has returned its transaction/connection before this wait.
+                await sleep(0.1 * attempt)
+            else:
+                elapsed = monotonic() - started
+                if elapsed >= 5:
+                    logger.warning(
+                        "Usage persistence completed slowly",
+                        extra={
+                            "thread_id": self.thread_id,
+                            "usage_id": snapshot.usage_id,
+                            "usage_sequence": snapshot.sequence,
+                            "elapsed_seconds": elapsed,
+                        },
+                    )
+                return
 
 
 class ThreadUsageRepository:
@@ -332,16 +414,18 @@ class ThreadUsageRepository:
                     ThreadUsageRecord.record_id == snapshot.usage_id,
                 )
             )
-            if row is not None:
-                if row.origin_thread_id != thread_id:
-                    raise StoreIntegrityError("Usage scope changed its Host owner.", code="usage_record_conflict")
-                previous = _StoredSnapshot.model_validate_json(row.payload_json).snapshot
-                selected = select_usage_snapshot(previous, snapshot)
-                if selected.sequence == previous.sequence:
-                    return
+            if row is not None and row.origin_thread_id != thread_id:
+                raise StoreIntegrityError("Usage scope changed its Host owner.", code="usage_record_conflict")
+            # Compare against the admitted row atomically, but keep ledger-sized CPU work
+            # off the event loop. The transaction still owns cancellation through commit.
+            prepared = await to_thread.run_sync(
+                _prepare_snapshot_write, snapshot, None if row is None else row.payload_json
+            )
+            if prepared is None:
+                return
+            payload, now, receipts = prepared
             # A provider receipt may be returned by several independent scopes.
-            # Keep all Context state, but reject changed facts and charge its first owner only.
-            receipts = {r.record_id: r for r in snapshot.records if isinstance(r, ProviderUsageRecord)}
+            # Check new IDs under the writer lock and charge their first owner only.
             if receipts:
                 facts = _contributions(root_id)
                 for start in range(0, len(receipts), _BATCH):
@@ -351,12 +435,10 @@ class ThreadUsageRepository:
                             func.json_extract(facts.c.payload, "$.record_id").in_(ids),
                         )
                     )
-                    for payload in payloads:
-                        prior = _RECORD.validate_json(payload)
+                    for prior_payload in payloads:
+                        prior = _RECORD.validate_json(prior_payload)
                         if not isinstance(prior, ProviderUsageRecord) or prior.usage != receipts[prior.record_id].usage:
                             raise StoreIntegrityError("A receipt changed its facts.", code="usage_record_conflict")
-            now = datetime.now(UTC)
-            payload = _StoredSnapshot(snapshot=snapshot, observed_through=now).model_dump_json()
             if row is None:
                 session.add(
                     ThreadUsageRecord(
@@ -439,7 +521,7 @@ class ThreadUsageRepository:
 
     async def latest_root_request(self, *, thread_id: str, run_id: str | None = None) -> ModelUsageRecord | None:
         """Read current primary-request occupancy, never cumulative Context usage."""
-        facts = _contributions(thread_id)
+        facts = _contributions(thread_id, root_only=True)
         query = select(facts.c.payload).where(
             facts.c.descendant.is_(False),
             func.json_extract(facts.c.payload, "$.kind") == "model",
@@ -489,10 +571,12 @@ class ThreadUsageRepository:
         current = thread_id
         while current not in ancestors:
             ancestors.add(current)
-            thread = await session.get(ThreadRecord, current)
-            if thread is None:
+            row = (
+                await session.execute(select(ThreadRecord.parent_thread_id).where(ThreadRecord.thread_id == current))
+            ).one_or_none()
+            if row is None:
                 raise StoreIntegrityError("Usage refers to an unknown Thread.", code="thread_not_found")
-            if thread.parent_thread_id is None:
+            if row.parent_thread_id is None:
                 return current
-            current = thread.parent_thread_id
+            current = row.parent_thread_id
         raise StoreIntegrityError("Thread ancestry contains a cycle.", code="thread_ancestry_invalid")

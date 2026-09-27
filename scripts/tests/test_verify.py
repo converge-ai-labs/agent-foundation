@@ -141,7 +141,7 @@ def test_frontend_sources_select_related_files_and_project_inputs_select_full_ru
 def test_python_steps_lint_changed_files_and_run_the_selection(workspace: Path) -> None:
     result = verify.plan(["packages/a13n-core/a13n_core/models.py"], graph=verify.PythonGraph(workspace))
     steps = verify.steps_for(result)
-    assert [step.name for step in steps] == ["ruff check", "ruff format", "pyright", "python tests"]
+    assert [step.name for step in steps] == ["ruff check", "ruff format", "pyright", "python tests a13n-core"]
     assert steps[-1].command[:2] == ["make", "test"]
     assert "-q --tb=short" in steps[-1].env["PYTEST_ADDOPTS"]
 
@@ -294,12 +294,12 @@ def test_verify_covers_the_changes_since_the_last_passing_run(tmp_path: Path, mo
     planned: list[list[str]] = []
     outcome = [0]
 
-    def plan(files, *, consumers=False):
+    def plan(files, *, consumers=False, base="HEAD"):
         planned.append(sorted(files))
         return verify.Plan(markdown_files={"changed.md"})
 
     monkeypatch.setattr(verify, "plan", plan)
-    monkeypatch.setattr(verify, "run", lambda steps, *, dry_run: outcome[0])
+    monkeypatch.setattr(verify, "run", lambda steps, *, dry_run, cache=None: outcome[0])
 
     (tmp_path / "first.py").write_text("")
     (tmp_path / "tracked.py").write_text("value = 2\n")
@@ -320,6 +320,13 @@ def test_verify_covers_the_changes_since_the_last_passing_run(tmp_path: Path, mo
     assert verify.main(["--consumers"]) == 0
     assert planned[-1] == ["first.py", "second.py"]
     assert verify.main(["--base", "HEAD"]) == 0
+    assert planned[-1] == ["first.py", "second.py"]
+    # An explicit fresh run that fails must invalidate the earlier passing baseline.
+    outcome[0] = 1
+    assert verify.main(["--no-cache"]) == 1
+    assert verify.passed_tree(consumers=False) is None
+    outcome[0] = 0
+    assert verify.main([]) == 0
     assert planned[-1] == ["first.py", "second.py"]
 
 
@@ -342,3 +349,118 @@ def test_snapshot_sees_a_same_size_edit_made_in_the_indexed_second(tmp_path: Pat
     source.write_text("value = 2\n")
     os.utime(source, (1_000_000_000, 1_000_000_000))
     assert verify.changes_between("HEAD", verify.snapshot()) == ["tracked.py"]
+
+
+@pytest.mark.parametrize("name", ["README.md", "LICENSE", "NOTICE.txt"])
+def test_package_documentation_does_not_select_runtime_tests(workspace: Path, name: str) -> None:
+    path = f"packages/a13n-core/{name}"
+    (workspace / path).write_text("Documentation\n")
+    assert not _tests(workspace, path)
+
+
+def test_declared_resource_dependency_prevents_whole_package_fallback(workspace: Path, monkeypatch) -> None:
+    from scripts import verify_dependencies
+
+    source = "packages/a13n-core/data.json"
+    test = "packages/a13n-core/tests/test_models.py"
+    monkeypatch.setattr(verify_dependencies, "TEST_INPUTS", {test: (source,)})
+    assert _tests(workspace, source) == {test}
+    # Missing knowledge about a runtime resource must still be visible and conservative.
+    assert _tests(workspace, "packages/a13n-core/unknown.json") == {"packages/a13n-core/tests"}
+    assert _tests(workspace, "packages/a13n-core/a13n_core/assets/system_prompt.md") == {"packages/a13n-core/tests"}
+
+
+def test_real_migrations_select_their_database_checks() -> None:
+    for revision, test in [
+        (
+            "packages/a13n-service/a13n_service/migrations/versions/new.py",
+            "packages/a13n-service/tests/test_migrations.py",
+        ),
+        (
+            "packages/a13n-harness-ui/a13n_harness_ui/storage/migrations/versions/new.py",
+            "packages/a13n-harness-ui/tests/test_coordinator_migration.py",
+        ),
+    ]:
+        assert verify.plan([revision]).python_tests == {test}
+
+
+def test_real_license_and_vite_changes_select_build_fixture_without_application_suites() -> None:
+    result = verify.plan(
+        [
+            "frontend/packages/a13n-ui/LICENSE.coss",
+            "frontend/apps/a13n-console/vite.config.ts",
+            "frontend/apps/a13n-harness-ui/vite.config.ts",
+        ]
+    )
+    assert not result.frontend_full
+    assert not result.frontend_build
+    assert result.frontend_tests == {"packages/a13n-ui": {"frontend/packages/a13n-ui/tests/license-build.test.ts"}}
+    assert result.python_tests == {
+        "scripts/tests/test_docs.py",
+        "scripts/tests/test_check_a13n_harness_ui_distribution.py",
+    }
+
+
+def test_vite_config_without_a_build_fixture_selects_build_and_preserves_inherited_test_config(workspace: Path) -> None:
+    directory = workspace / "frontend/apps/a13n-console"
+    directory.mkdir(parents=True)
+    (directory / "vite.config.ts").touch()
+    path = "frontend/apps/a13n-console/vite.config.ts"
+    assert verify.plan([path]).frontend_full == {"apps/a13n-console"}
+    (directory / "vitest.config.ts").touch()
+    result = verify.plan([path])
+    assert not result.frontend_full
+    assert result.frontend_build == {"apps/a13n-console"}
+
+
+def test_frontend_manifest_metadata_and_exports_are_scoped(workspace: Path, monkeypatch) -> None:
+    from scripts import verify_inputs
+
+    directory = workspace / "frontend/packages/a13n-ui"
+    directory.mkdir(parents=True)
+    (directory / "vite.ts").touch()
+    monkeypatch.setattr(verify_inputs, "documents", lambda *args: ({"description": "a"}, {"description": "b"}))
+    path = "frontend/packages/a13n-ui/package.json"
+    assert not verify.plan([path]).frontend_full
+    monkeypatch.setattr(
+        verify_inputs, "documents", lambda *args: ({"exports": {}}, {"exports": {"./vite": "./vite.ts"}})
+    )
+    result = verify.plan([path])
+    assert not result.frontend_full
+    assert all(files == {"frontend/packages/a13n-ui/vite.ts"} for files in result.frontend_related.values())
+
+
+def test_python_suites_are_independently_reusable(workspace: Path) -> None:
+    result = verify.plan(
+        ["packages/a13n-core/a13n_core/models.py"], graph=verify.PythonGraph(workspace), consumers=True
+    )
+    steps = [step for step in verify.steps_for(result) if step.name.startswith("python tests")]
+    assert {step.name for step in steps} == {"python tests a13n-core", "python tests a13n-app"}
+    app = next(step for step in steps if step.name.endswith("a13n-app"))
+    assert {"packages/a13n-app", "packages/a13n-core"} <= set(app.inputs)
+
+
+def test_frontend_cache_scopes_do_not_include_unrelated_changed_applications(workspace: Path) -> None:
+    files = [f"frontend/{project}/src/app.tsx" for project in verify.FRONTEND_PROJECTS[:2]]
+    for file in files:
+        path = workspace / file
+        path.parent.mkdir(parents=True)
+        path.touch()
+    steps = verify.steps_for(verify.plan(files))
+    harness = next(step for step in steps if step.name == "vitest related apps/a13n-harness-ui")
+    assert "frontend/apps/a13n-harness-ui" in harness.inputs
+    assert not any(path.startswith("frontend/apps/a13n-console") for path in harness.inputs)
+
+
+def test_lock_consumers_include_tooling_importers(workspace: Path, monkeypatch) -> None:
+    from scripts import verify_inputs
+
+    (workspace / "scripts/tool.py").write_text("from a13n_core.models import VALUE\n")
+    monkeypatch.setattr(verify_inputs, "documents", lambda *args: ({}, {}))
+    monkeypatch.setattr(verify_inputs, "python_lock", lambda *args: {"packages/a13n-core/tests"})
+    result = verify.plan(["uv.lock"], graph=verify.PythonGraph(workspace))
+    assert result.python_tests == {
+        "packages/a13n-core/tests",
+        "packages/a13n-app/tests/test_service.py",
+        "scripts/tests/test_tool.py",
+    }

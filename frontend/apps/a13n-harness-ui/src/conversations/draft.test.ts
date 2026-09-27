@@ -1,4 +1,12 @@
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { mockWebSocket } from "../../tests/fake-websocket";
+import { createTransport } from "../transport/client";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 import * as Y from "yjs";
 import { covers, encode, replica, ThreadDraft, values } from "./draft";
 import { attachmentToken } from "./inline-attachments";
@@ -171,3 +179,118 @@ it.each([true, false])(
     peer.destroy();
   },
 );
+
+it("does not decode repeated presence-only frames or acknowledge local edits with them", () => {
+  const draft = new ThreadDraft();
+  const server = replica();
+  server.getText("text").insert(0, "shared");
+  const accepted = frame(server);
+  draft.receive(accepted);
+  draft.doc.getText("text").insert(0, "local ");
+  const decode = vi.spyOn(globalThis, "atob");
+  draft.receive({
+    ...accepted,
+    participants: { peer: { name: "Peer", color: "#112233" } },
+  });
+  expect(decode).not.toHaveBeenCalled();
+  expect(draft.participants.peer.name).toBe("Peer");
+  expect(draft.synchronized).toBe(false);
+  // Even byte-identical updates must initialize a replacement document.
+  draft.receive({ ...accepted, draft_id: "draft-two" });
+  draft.joinReplacement(false);
+  expect(decode).toHaveBeenCalledTimes(1);
+  expect(values(draft.doc).prompt).toBe("shared");
+  expect(draft.synchronized).toBe(true);
+});
+
+it("publishes attachment registry and token in one update without changing undo", () => {
+  const draft = new ThreadDraft();
+  const updates = vi.fn();
+  draft.doc.on("update", updates);
+  draft.addAttachment("attachment-one");
+  expect(updates).toHaveBeenCalledTimes(1);
+  draft.undo.undo();
+  expect(values(draft.doc).attachment_ids).toEqual([]);
+  draft.undo.redo();
+  expect(values(draft.doc).attachment_ids).toEqual(["attachment-one"]);
+});
+
+it.each([false, true])(
+  "replays the latest pre-join presence and only sends uncovered edits (%s)",
+  (offlineEdit) => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", { location: { origin: "http://localhost" } });
+    const socket = mockWebSocket();
+    const draft = new ThreadDraft();
+    if (offlineEdit) draft.doc.getText("text").insert(0, "offline");
+    const connection = draft.connect(
+      createTransport("key", () => {}),
+      "thread-one",
+      () => {},
+    );
+    connection.presence({
+      name: "Old",
+      color: "#112233",
+      anchor: "YQ==",
+      head: "Yg==",
+    });
+    connection.presence({
+      name: "Alice",
+      color: "#112233",
+      anchor: null,
+      head: null,
+    });
+    const ws = socket();
+    ws.open();
+    ws.message({ kind: "draft", ...frame(replica()) });
+    expect(ws.sent.filter((item) => item.kind === "sync")).toHaveLength(
+      offlineEdit ? 1 : 0,
+    );
+    expect(ws.sent.filter((item) => item.kind === "presence")).toEqual([
+      {
+        kind: "presence",
+        draft_id: "draft-one",
+        presence: { name: "Alice", color: "#112233", anchor: null, head: null },
+      },
+    ]);
+    connection.presence({
+      name: "Alice",
+      color: "#112233",
+      anchor: "YQ==",
+      head: "Yg==",
+    });
+    ws.close();
+    vi.advanceTimersByTime(1000);
+    socket().open();
+    socket().message({ kind: "draft", ...frame(replica()) });
+    expect(
+      socket().sent.find((item) => item.kind === "presence")?.presence,
+    ).toEqual({ name: "Alice", color: "#112233", anchor: null, head: null });
+    connection.close();
+  },
+);
+
+it("does not revive an expired pre-join selection", () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("window", { location: { origin: "http://localhost" } });
+  const socket = mockWebSocket();
+  const draft = new ThreadDraft();
+  const connection = draft.connect(
+    createTransport("key", () => {}),
+    "thread-one",
+    () => {},
+  );
+  connection.presence({
+    name: "Alice",
+    color: "#112233",
+    anchor: "YQ==",
+    head: "Yg==",
+  });
+  vi.advanceTimersByTime(30000);
+  socket().open();
+  socket().message({ kind: "draft", ...frame(replica()) });
+  expect(
+    socket().sent.find((item) => item.kind === "presence")?.presence,
+  ).toEqual({ name: "Alice", color: "#112233", anchor: null, head: null });
+  connection.close();
+});

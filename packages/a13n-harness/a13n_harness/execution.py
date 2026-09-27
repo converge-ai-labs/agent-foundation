@@ -1357,7 +1357,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 continue
             if terminal:
                 self._install_terminal_fence()
-                await self.context.usage_attribution._flush(reason="terminal")
+                if item.status in {"failed", "cancelled"}:
+                    await self.context.usage_attribution._flush_cleanup()
+                else:
+                    await self.context.usage_attribution._flush(reason="terminal")
                 item = self._validate_result_candidate(
                     item.replace(
                         usage_records=self.context.usage_records,

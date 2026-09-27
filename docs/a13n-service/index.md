@@ -4,6 +4,8 @@ The Service runs agents as a shared, multi-user application. It stores agent con
 
 Use the Service when several people or applications share agents, credentials and history. For a personal terminal agent, use [Harness UI](../a13n-harness-ui/index.md); to run agents inside your own process, use the Harness directly.
 
+Integrate through the [SDKs and remote CLI](sdks.md), or use the [HTTP API](http.md) directly. Client-specific installation and examples live with each independent SDK repository.
+
 ## Concepts
 
 | Concept                    | Meaning                                                                                                                                                                                                                                                                     |

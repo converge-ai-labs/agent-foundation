@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, runtime_checkable
 
 import anyio
+from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, WrapModelRequestHandler
@@ -34,7 +35,10 @@ from a13n_harness.state import AgentContextState, AgentContextStateSnapshot, Cap
 if TYPE_CHECKING:
     from a13n_harness.events import HarnessEventEmitter
 
+logger = get_logger(__name__)
+
 USAGE_CAPABILITY_ID = "a13n.usage"
+_USAGE_CLEANUP_SECONDS = 5
 _MAX_RECORDS = 10_000
 _MAX_REPORT_BYTES = 56 * 1024
 _MAX_REPORT_RECORDS = 64
@@ -440,13 +444,17 @@ def select_usage_snapshot(previous: UsageSnapshot, current: UsageSnapshot) -> Us
 @runtime_checkable
 class UsageReporter(Protocol):
     async def report(self, snapshot: UsageSnapshot) -> None:
-        """Persist the current scope atomically; retry the snapshot, never model execution."""
+        """Persist atomically and idempotently; own storage deadlines and safe cancellation.
+
+        Normal delivery has no Harness deadline. Cancellation may redeliver an
+        unacknowledged snapshot during bounded cleanup, never replay the Model.
+        """
         ...
 
 
 class UsageReportError(RunError):
-    def __init__(self) -> None:
-        super().__init__("Host usage delivery failed.", code="usage_report_failed")
+    def __init__(self, message: str = "Host usage delivery failed.") -> None:
+        super().__init__(message, code="usage_report_failed")
 
 
 class RunUsageLedger:
@@ -487,6 +495,7 @@ class RunUsageLedger:
         self._records = {r.record_id: r.model_copy(deep=True) for r in snapshot.records} if snapshot else {}
         self._pending: dict[str, UsageRecord] = {}
         self._reported_sequence = self._sequence
+        self._persisted_sequence = self._sequence
         self._model_ordinal = 1 + max(
             (r.response_ordinal for r in self._records.values() if isinstance(r, ModelUsageRecord)), default=-1
         )
@@ -621,12 +630,31 @@ class RunUsageLedger:
         self._sequence += 1
 
     async def _flush(self, *, reason: UsageReportReason, trigger_record_id: str | None = None) -> None:
-        with anyio.move_on_after(5, shield=True) as cleanup:
+        try:
             await self._deliver(reason=reason, trigger_record_id=trigger_record_id)
-        if cleanup.cancel_called:
-            raise UsageReportError()
+        except asyncio.CancelledError:
+            await self._flush_cleanup()
+            raise
 
-    async def _deliver(self, *, reason: UsageReportReason, trigger_record_id: str | None) -> None:
+    async def _flush_cleanup(
+        self,
+        *,
+        reason: UsageReportReason = "terminal",
+        trigger_record_id: str | None = None,
+        display: bool = False,
+    ) -> None:
+        """Bound usage cleanup while preserving a primary failure or cancellation."""
+        try:
+            with anyio.move_on_after(_USAGE_CLEANUP_SECONDS, shield=True) as cleanup:
+                await self._deliver(reason=reason, trigger_record_id=trigger_record_id, display=display)
+            if cleanup.cancelled_caught:
+                logger.warning("Usage cleanup timed out", extra={"usage_id": self.usage_id})
+        except Exception:
+            # The original failure remains authoritative; retained facts are
+            # still available to the Host's terminal reconciliation and recovery.
+            logger.warning("Usage cleanup failed", extra={"usage_id": self.usage_id})
+
+    async def _deliver(self, *, reason: UsageReportReason, trigger_record_id: str | None, display: bool = True) -> None:
         from a13n_harness.events import UsageReportPayload, emit_harness_event
 
         async with self._flush_lock:
@@ -636,13 +664,20 @@ class RunUsageLedger:
             pending = list(self._pending.values())
             if snapshot.sequence == self._reported_sequence:
                 return
-            if self.reporter is not None:
-                try:
-                    await self.reporter.report(snapshot)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    raise UsageReportError() from exc
+            if snapshot.sequence != self._persisted_sequence:
+                if self.reporter is not None:
+                    try:
+                        await self.reporter.report(snapshot)
+                    except asyncio.CancelledError as exc:
+                        task = asyncio.current_task()
+                        if task is not None and task.cancelling():
+                            raise
+                        raise UsageReportError("Host usage reporter was cancelled.") from exc
+                    except Exception as exc:
+                        raise UsageReportError() from exc
+                self._persisted_sequence = snapshot.sequence
+            if not display:
+                return
             if self._events is not None:
                 chunks = _report_chunks(pending)
                 report_id = _stable_id("report", self.usage_id, str(snapshot.sequence))

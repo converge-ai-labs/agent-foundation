@@ -52,6 +52,27 @@ class EIPComputerOperations:
             return ComputerScreenshot(observation, data)
 
     async def execute(self, request: ComputerInput) -> ComputerActionResult:
+        try:
+            return await self._execute(request)
+        except EnvironmentError as error:
+            if error.retry_hint == "new_run" and "dispatch_stage" not in error.details:
+                raise EnvironmentError(
+                    "Computer input outcome is unconfirmed",
+                    code=error.code,
+                    retry_hint="reconcile_first",
+                    details={
+                        **error.details,
+                        "dispatch_stage": "unknown",
+                        "hint": (
+                            "The connection or response failed; input may already have affected the desktop. "
+                            "Reconnect if needed and inspect a fresh observation before another action. "
+                            "Do not automatically replay input; a new Run or Session does not undo it."
+                        ),
+                    },
+                ) from error
+            raise
+
+    async def _execute(self, request: ComputerInput) -> ComputerActionResult:
         client = session_client(self._session)
         context = new_context()
         if isinstance(request, ComputerClick | ComputerMove | ComputerDrag | ComputerScroll):

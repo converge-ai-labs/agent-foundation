@@ -28,7 +28,9 @@ def request(call="appop_one"):
     )
 
 
-@pytest.mark.parametrize("outcome", ["success", "invalid", "failure", "report_failure", "cancel", "timeout"])
+@pytest.mark.parametrize(
+    "outcome", ["success", "invalid", "failure", "report_failure", "report_cancel", "cancel", "timeout"]
+)
 @pytest.mark.parametrize("reported", ["tokens", "cost_only", "unknown"])
 async def test_host_review_retains_facts_on_every_exit(monkeypatch, outcome, reported):
     checks = []
@@ -41,6 +43,9 @@ async def test_host_review_retains_facts_on_every_exit(monkeypatch, outcome, rep
 
     monkeypatch.setattr("a13n_harness.metering.RunUsageLedger", forbidden)
     monkeypatch.setattr("a13n_harness.context.AgentContext", forbidden)
+    if outcome == "success":
+        # Normal Host delivery has no Harness-owned deadline or cancellation shield.
+        monkeypatch.setattr("a13n_harness.metering.anyio.move_on_after", forbidden)
 
     class Check:
         async def check(self, call):
@@ -53,6 +58,8 @@ async def test_host_review_retains_facts_on_every_exit(monkeypatch, outcome, rep
         assert budget.pending == 0 and budget.used == 1
         if outcome == "report_failure":
             raise RuntimeError("report unavailable")
+        if outcome == "report_cancel":
+            raise asyncio.CancelledError()
 
     deadline = None
     original_timeout = asyncio.timeout
@@ -109,7 +116,7 @@ async def test_host_review_retains_facts_on_every_exit(monkeypatch, outcome, rep
     elif outcome == "cancel":
         with pytest.raises(asyncio.CancelledError):
             await task
-    elif outcome == "report_failure":
+    elif outcome in {"report_failure", "report_cancel"}:
         with pytest.raises(UsageReportError):
             await task
     else:
@@ -183,3 +190,43 @@ async def test_concurrent_host_reviews_have_independent_accounting():
     )
     assert len({usage.records[0].call_id for usage in collectors}) == 2
     assert [usage.records[0].tool_call_id for usage in collectors] == [item.tool_call_id for item in requests]
+
+
+async def test_host_report_cancellation_retries_captured_fact_without_model_replay():
+    entered = asyncio.Event()
+    reports = []
+    dispatches = 0
+
+    class Check:
+        async def check(self, call):
+            return None
+
+    async def report(record):
+        reports.append(record)
+        if len(reports) == 1:
+            entered.set()
+            await asyncio.Event().wait()
+
+    async def provider(messages, info):
+        nonlocal dispatches
+        dispatches += 1
+        yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"risk":"low"}')}
+
+    usage = HostModelUsage(
+        check=Check(),
+        cost=NoModelCostCapability(),
+        source="tool.review",
+        tool_id=request().tool_id,
+        tool_call_id=request().tool_call_id,
+        report=report,
+    )
+    reviewer = AgentToolReviewer(FunctionModel(stream_function=provider), ToolReviewConfig(model="review-model"))
+    task = asyncio.create_task(reviewer.review_for_host(request(), usage=usage))
+    await asyncio.wait_for(entered.wait(), 5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert dispatches == 1
+    assert len(usage.records) == 1 and len(reports) == 2
+    assert reports[0] == reports[1] == usage.records[0]
+    assert usage.requests.used == 1 and usage.requests.pending == 0

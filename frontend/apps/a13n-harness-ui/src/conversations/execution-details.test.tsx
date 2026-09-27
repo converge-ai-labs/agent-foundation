@@ -156,3 +156,33 @@ it("switches between mobile inspection and the existing desktop disclosure", asy
     screen.queryByRole("region", { name: "Execution details" }),
   ).toBeNull();
 });
+
+it("mounts desktop details on first expansion and preserves the reader and disclosures on collapse", async () => {
+  viewport()(false);
+  const view = render(transcript());
+  expect(document.querySelectorAll("[data-execution-reader]")).toHaveLength(0);
+  expect(screen.queryByText("A long internal plan")).toBeNull();
+  const user = userEvent.setup();
+  const trigger = screen.getByRole("button", { name: /Execution details/ });
+  await user.click(trigger);
+  const reader = screen.getByRole("region", { name: "Execution details" });
+  const reasoning = within(reader)
+    .getByText("A long internal plan")
+    .closest("details")!;
+  fireEvent.click(within(reader).getByText("Reasoning"));
+  expect(reasoning.open).toBe(false);
+  await user.click(trigger);
+  expect(
+    screen.queryByRole("region", { name: "Execution details" }),
+  ).toBeNull();
+  expect(reader.isConnected).toBe(true);
+  view.rerender(transcript(true));
+  await user.click(trigger);
+  expect(screen.getByRole("region", { name: "Execution details" })).toBe(
+    reader,
+  );
+  expect(reasoning.open).toBe(false);
+  expect(
+    screen.getByText("The final answer").closest("[data-execution-reader]"),
+  ).toBeNull();
+});

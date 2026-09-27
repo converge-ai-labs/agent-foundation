@@ -481,3 +481,89 @@ def test_prompt_rejects_invalid_presentation_identity(values: dict[str, object])
 
     with pytest.raises(ValidationError):
         PromptRequest.model_validate(values)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("route", ["/api/presence/connect", "/api/realtime/connect"])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        'Cannot call "send" once a close message has been sent.',
+        "Unexpected ASGI message 'websocket.send', after sending 'websocket.close'.",
+        "Unexpected ASGI message 'websocket.send', after sending 'websocket.close' or response already completed.",
+    ],
+)
+async def test_interactive_output_handles_transport_close_before_disconnect_is_received(tmp_path, route, failure):
+    received = 0
+    applications = []
+
+    @asynccontextmanager
+    async def opened_app():
+        async with open_harness_ui_app(_settings(tmp_path / "state")) as app:
+            applications.append(app)
+            yield app
+
+    async def receive():
+        nonlocal received
+        received += 1
+        if received == 1:
+            return {"type": "websocket.connect"}
+        if received == 2:
+            return {"type": "websocket.receive", "text": "{}"}
+        await sleep_forever()
+
+    async def send(message):
+        if message["type"] == "websocket.send":
+            # A server-side transport close can precede Starlette's receive
+            # observation. Its application state still says CONNECTED here.
+            raise RuntimeError(failure)
+
+    server = create_webui(opened_app, api_key=None)
+    endpoint = next(item.endpoint for item in server.routes if item.path == route)
+    async with server.router.lifespan_context(server):
+        with fail_after(2):
+            await endpoint(WebSocket({"type": "websocket"}, receive, send))
+        assert applications[0].page_presence().participants == {}
+
+
+@pytest.mark.anyio
+async def test_interactive_output_serializes_producers_with_close_and_preserves_unrelated_errors():
+    from a13n_harness_ui.interactive_transport import InteractiveOutput
+    from a13n_harness_ui.page_presence import PresenceFrame
+    from anyio import create_task_group, wait_all_tasks_blocked
+
+    started, release = Event(), Event()
+    messages = []
+
+    async def receive():
+        return {"type": "websocket.connect"}
+
+    async def send(message):
+        messages.append(message)
+        if message["type"] == "websocket.send":
+            started.set()
+            await release.wait()
+
+    socket = WebSocket({"type": "websocket"}, receive, send)
+    await socket.accept()
+    output = InteractiveOutput(socket)
+    async with create_task_group() as group:
+        group.start_soon(output.send, PresenceFrame(participants=()))
+        await started.wait()
+        group.start_soon(output.close)
+        await wait_all_tasks_blocked()
+        assert [message["type"] for message in messages] == ["websocket.accept", "websocket.send"]
+        release.set()
+    with pytest.raises(WebSocketDisconnect):
+        await output.send(PresenceFrame(participants=()))
+    await output.close()
+    assert [message["type"] for message in messages] == ["websocket.accept", "websocket.send", "websocket.close"]
+
+    async def broken(message):
+        if message["type"] == "websocket.send":
+            raise RuntimeError("Unrelated application defect")
+
+    socket = WebSocket({"type": "websocket"}, receive, broken)
+    await socket.accept()
+    with pytest.raises(RuntimeError, match="Unrelated application defect"):
+        await InteractiveOutput(socket).send(PresenceFrame(participants=()))

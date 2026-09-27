@@ -361,9 +361,12 @@ function BindingEditor({
       />
       {permission === "computer" && (
         <p className="text-sm text-muted-foreground">
-          Allows screenshots and input on this Device’s shared desktop. It does
-          not reserve the desktop. Requires computer-use enabled in envd and
-          macOS Screen Recording and Accessibility permissions.
+          Allows screenshots and input on this Device’s shared desktop, not just
+          this directory. It does not reserve the desktop. Screenshots can be
+          sent to the configured model and retained in conversation history.
+          Requires explicit computer-use enablement in envd and
+          platform-specific desktop access. Pairing and this action ceiling do
+          not grant operating-system access.
         </p>
       )}
       <TextField

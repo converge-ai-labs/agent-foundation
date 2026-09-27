@@ -7,10 +7,21 @@ reads a file or launches a program instead of importing it.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from fnmatch import fnmatchcase
 from pathlib import Path
 
 TEST_INPUTS: dict[str, tuple[str, ...]] = {
+    "packages/a13n-service/tests/test_migrations.py": ("packages/a13n-service/a13n_service/migrations/*",),
+    "packages/a13n-harness-ui/tests/test_coordinator_migration.py": (
+        "packages/a13n-harness-ui/a13n_harness_ui/storage/migrations/*",
+    ),
+    "frontend/packages/a13n-ui/tests/license-build.test.ts": (
+        "frontend/*/*/vite.config.ts",
+        "frontend/packages/a13n-ui/vite.ts",
+        "frontend/packages/a13n-ui/LICENSE.coss",
+        "frontend/packages/a13n-ui/package.json",
+    ),
     "test_observability_tooling.py": ("dev/observability/*",),
     "test_mcp_apps_demo.py": ("dev/harness-ui/mcp_apps.py",),
     "test_service_e2e_tooling.py": ("e2e/service/*", "dev/fixtures/*"),
@@ -74,7 +85,21 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
 def tests_for(path: str, root: Path) -> set[Path]:
     """Existing tests declaring this input, including inputs deleted from the checkout."""
     return {
-        root / "scripts/tests" / test
+        target
         for test, patterns in TEST_INPUTS.items()
-        if any(fnmatchcase(path, pattern) for pattern in patterns) and (root / "scripts/tests" / test).is_file()
+        if any(fnmatchcase(path, pattern) for pattern in patterns)
+        for target in [root / test if test.startswith(("packages/", "frontend/")) else root / "scripts/tests" / test]
+        if target.is_file()
+    }
+
+
+def inputs_for(scopes: Iterable[str]) -> set[str]:
+    """Non-import inputs of tests within the selected file/directory scopes."""
+    scopes = tuple(scope.split("::", 1)[0] for scope in scopes)
+    return {
+        pattern
+        for test, patterns in TEST_INPUTS.items()
+        for target in [test if test.startswith(("packages/", "frontend/")) else f"scripts/tests/{test}"]
+        if any(target == scope or target.startswith(scope + "/") for scope in scopes)
+        for pattern in patterns
     }

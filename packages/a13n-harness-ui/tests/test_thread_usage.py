@@ -502,6 +502,59 @@ async def test_latest_snapshots_replace_in_place_and_are_visible_to_another_engi
             assert await session.scalar(select(func.count()).select_from(ThreadUsageRecord)) == 1
 
 
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_snapshot_preparation_keeps_loop_responsive_and_admitted_write_settles(tmp_path, monkeypatch, cancel):
+    import threading
+
+    from a13n_harness_ui.storage import usage as usage_module
+    from a13n_harness_ui.storage.push import PushRepository
+    from anyio import CancelScope, Event, create_task_group, fail_after, from_thread
+
+    async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        push = PushRepository(database.sessions)
+        key = await push.private_key()
+        await repository.save(thread_id="thr_root", snapshot=_snapshot(_model(0)))
+        loop_thread = threading.get_ident()
+        entered, finished = Event(), Event()
+        release = threading.Event()
+        original = usage_module._prepare_snapshot_write
+        scope = CancelScope()
+
+        def prepare(snapshot, previous_payload):
+            # A misplaced inline call fails immediately instead of blocking the test loop.
+            assert threading.get_ident() != loop_thread
+            assert previous_payload is not None
+            from_thread.run_sync(entered.set)
+            assert release.wait(5)
+            return original(snapshot, previous_payload)
+
+        async def save():
+            with scope:
+                await repository.save(thread_id="thr_root", snapshot=_snapshot(_model(0), _model(1), sequence=2))
+            finished.set()
+
+        monkeypatch.setattr(usage_module, "_prepare_snapshot_write", prepare)
+        async with create_task_group() as tasks:
+            tasks.start_soon(save)
+            try:
+                with fail_after(2):
+                    await entered.wait()
+                    # The write remains atomic, but readers and loop callbacks can proceed.
+                    assert database.sessions.write_lock.locked()
+                    assert await push.private_key() == key
+                    if cancel:
+                        scope.cancel()
+                    assert not finished.is_set()
+            finally:
+                release.set()
+            with fail_after(2):
+                await finished.wait()
+        assert (await repository.snapshot(thread_id="thr_root")).combined.model_requests == 2
+
+
 async def test_snapshots_and_legacy_receipts_share_one_attribution_without_losing_child_usage(tmp_path):
     settings = StorageSettings(data_root=tmp_path)
     async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
@@ -651,3 +704,203 @@ async def test_projection_pins_one_read_snapshot_during_concurrent_replacement(t
             release.set()
         assert (await pending).combined.model_requests == 1
         assert (await reader.snapshot(thread_id="thr_root")).combined.model_requests == 2
+
+
+async def test_usage_queries_extract_envelope_metadata_once_per_scope(tmp_path):
+    import json
+
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+            await session.flush()
+            session.add(_thread("thr_child", "thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        root = _snapshot(*(_model(index) for index in range(50)))
+        child = _snapshot(
+            *(_model(index, run="child", child=True) for index in range(50)),
+            usage_id="usage-child",
+            thread_id="thr_child",
+        )
+        await repository.save(thread_id="thr_root", snapshot=root)
+        await repository.save(thread_id="thr_child", snapshot=child)
+        envelope_reads = 0
+
+        def json_extract(payload, path):
+            nonlocal envelope_reads
+            if path == "$.observed_through":
+                envelope_reads += 1
+            value = json.loads(payload)
+            for key in path.removeprefix("$.").split("."):
+                value = value.get(key) if isinstance(value, dict) else None
+            return json.dumps(value) if isinstance(value, (dict, list)) else value
+
+        # Count SQL expression evaluations, not elapsed time or SQL spelling.
+        # Sequential repository calls reuse this pool connection.
+        async with database.engine.connect() as connection:
+            await connection.run_sync(
+                lambda conn: conn.connection.dbapi_connection.create_function("json_extract", 2, json_extract)
+            )
+        assert await repository.latest_root_request(thread_id="thr_root") == root.records[-1]
+        assert envelope_reads == 1  # Descendant scopes are excluded before flattening.
+        envelope_reads = 0
+        view = await repository.snapshot(thread_id="thr_root")
+        assert view.combined.model_requests == 100
+        assert envelope_reads == 4  # Two coherent queries, each reading two envelopes.
+
+
+async def test_repeated_receipts_do_not_rescan_family_in_write_transaction(tmp_path):
+    from sqlalchemy import event
+
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        await repository.save(thread_id="thr_root", snapshot=_snapshot(_model(0), _receipt()))
+        statements = []
+
+        def observe(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement)
+
+        event.listen(database.engine.sync_engine, "before_cursor_execute", observe)
+        await repository.save(thread_id="thr_root", snapshot=_snapshot(_model(0), _model(1), _receipt(), sequence=2))
+        assert not any("json_each" in statement for statement in statements)
+        statements.clear()
+        new_receipt = _receipt().model_copy(update={"record_id": "usage-second-receipt"})
+        await repository.save(
+            thread_id="thr_root", snapshot=_snapshot(_model(0), _model(1), _receipt(), new_receipt, sequence=3)
+        )
+        assert sum("json_each" in statement for statement in statements) == 1
+        event.remove(database.engine.sync_engine, "before_cursor_execute", observe)
+        assert (await repository.snapshot(thread_id="thr_root")).combined.provider_receipts == 2
+
+
+@pytest.mark.parametrize("failures", [1, 2, 3])
+@pytest.mark.parametrize("failure_kind", ["timeout", "busy", "locked"])
+async def test_reporter_retries_only_transient_failures_with_warning(
+    tmp_path, monkeypatch, caplog, failures, failure_kind
+):
+    import sqlite3
+
+    from a13n_harness_ui.storage import usage as usage_module
+    from sqlalchemy.exc import OperationalError
+
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        original = repository.save
+        attempts, delays = [], []
+        snapshot = _snapshot(_model(0))
+        error = TimeoutError("storage deadline")
+        if failure_kind != "timeout":
+            driver_error = sqlite3.OperationalError("database unavailable")
+            driver_error.sqlite_errorcode = sqlite3.SQLITE_BUSY if failure_kind == "busy" else sqlite3.SQLITE_LOCKED
+            error = OperationalError("", {}, driver_error)
+
+        async def save(*, thread_id, snapshot):
+            attempts.append(snapshot)
+            if len(attempts) <= failures:
+                raise error
+            await original(thread_id=thread_id, snapshot=snapshot)
+
+        async def backoff(delay):
+            assert not database.sessions.write_lock.locked()
+            delays.append(delay)
+
+        monkeypatch.setattr(repository, "save", save)
+        monkeypatch.setattr(usage_module, "sleep", backoff)
+        if failures == 3:
+            with pytest.raises(type(error)):
+                await repository.reporter("thr_root").report(snapshot)
+        else:
+            await repository.reporter("thr_root").report(snapshot)
+        assert attempts == [snapshot] * min(failures + 1, 3)
+        assert delays == [0.1, 0.2][: min(failures, 2)]
+        warnings = [r for r in caplog.records if r.message == "Usage persistence attempt timed out or was busy"]
+        assert len(warnings) == failures
+        assert [r.attempt for r in warnings] == list(range(1, failures + 1))
+        assert all(r.usage_id == snapshot.usage_id and r.usage_sequence == snapshot.sequence for r in warnings)
+        assert warnings[-1].retrying is (failures < 3)
+        assert (await repository.snapshot(thread_id="thr_root")).combined.model_requests == int(failures < 3)
+
+
+@pytest.mark.parametrize("failure_kind", ["conflict", "disk", "cancelled"])
+async def test_reporter_does_not_retry_permanent_errors_or_cancellation(tmp_path, monkeypatch, failure_kind):
+    import asyncio
+    import sqlite3
+
+    from sqlalchemy.exc import OperationalError
+
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        repository = ThreadUsageRepository(database.sessions)
+        attempts = []
+        error = StoreIntegrityError("conflict", code="usage_record_conflict")
+        if failure_kind == "disk":
+            driver_error = sqlite3.OperationalError("disk I/O error")
+            driver_error.sqlite_errorcode = sqlite3.SQLITE_IOERR
+            error = OperationalError("", {}, driver_error)
+        elif failure_kind == "cancelled":
+            error = asyncio.CancelledError()
+
+        async def save(**kwargs):
+            attempts.append(kwargs)
+            raise error
+
+        monkeypatch.setattr(repository, "save", save)
+        with pytest.raises(type(error)):
+            await repository.reporter("thr_root").report(_snapshot(_model(0)))
+        assert len(attempts) == 1
+
+
+async def test_harness_reporter_waits_past_old_deadline_and_persists_once(tmp_path, caplog):
+    import asyncio
+
+    from a13n_harness.metering import ModelUsageBinding
+
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        ledger = ModelUsageBinding.standalone(source="test").ledger
+        ledger.reporter = repository.reporter("thr_root")
+        ledger._append(
+            _model(0).model_copy(
+                update={"run_id": ledger.run_id, "agent_instance_id": ledger.instance.agent_instance_id}
+            )
+        )
+        async with database.sessions.write_lock:
+            pending = asyncio.create_task(ledger._flush(reason="model_request"))
+            # This regression specifically crosses the removed five-second deadline.
+            await asyncio.sleep(5.1)
+            assert not pending.done()
+        await pending
+        await ledger._flush(reason="terminal")
+        assert not ledger._pending
+        assert (await repository.snapshot(thread_id="thr_root")).combined.model_requests == 1
+        assert "Usage persistence completed slowly" in caplog.text
+
+
+async def test_reporter_retries_commit_with_lost_acknowledgement_without_double_counting(tmp_path, monkeypatch):
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        original = repository.save
+        attempts = []
+
+        async def save(**kwargs):
+            await original(**kwargs)
+            attempts.append(kwargs)
+            if len(attempts) == 1:
+                raise TimeoutError("acknowledgement lost after commit")
+
+        monkeypatch.setattr(repository, "save", save)
+        await repository.reporter("thr_root").report(_snapshot(_model(0)))
+        assert len(attempts) == 2
+        assert (await repository.snapshot(thread_id="thr_root")).combined.model_requests == 1

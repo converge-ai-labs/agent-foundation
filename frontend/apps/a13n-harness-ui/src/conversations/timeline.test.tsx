@@ -455,18 +455,22 @@ it("keeps every input and text part visible between independent execution segmen
     ).toBeNull();
     expect(screen.getByText(text).closest("[hidden]")).toBeNull();
   }
-  expect(screen.getByText("Internal plan").closest("[hidden]")).toBeTruthy();
-  expect(screen.getByText("Final reasoning").closest("[hidden]")).toBeTruthy();
-  expect(view.container.textContent).toMatch(
-    /Original input.*Internal plan.*Progress update.*Change direction.*Final reasoning.*Final part one.*Final part two/s,
-  );
+  expect(screen.queryByText("Internal plan")).toBeNull();
+  expect(screen.queryByText("Final reasoning")).toBeNull();
   fireEvent.click(toggles[0]);
+  expect(screen.getByText("Internal plan").closest("[hidden]")).toBeNull();
+  expect(screen.queryByText("Final reasoning")).toBeNull();
   view.rerender(transcript("new-head"));
   expect(
     screen
       .getAllByRole("button", { name: /Execution details/ })
       .map((toggle) => toggle.getAttribute("aria-expanded")),
   ).toEqual(["true", "false"]);
+  fireEvent.click(toggles[1]);
+  expect(screen.getByText("Final reasoning").closest("[hidden]")).toBeNull();
+  expect(view.container.textContent).toMatch(
+    /Original input.*Internal plan.*Progress update.*Change direction.*Final reasoning.*Final part one.*Final part two/s,
+  );
 });
 
 it("defaults unfinished details closed without treating prose as successful completion", () => {

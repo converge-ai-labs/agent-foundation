@@ -160,10 +160,7 @@ class HostModelUsage:
         if self.report is None:
             return
         try:
-            with anyio.move_on_after(5, shield=True) as cleanup:
-                await self.report(record.model_copy(deep=True))
-            if cleanup.cancel_called:
-                raise UsageReportError()
+            await self.report(record.model_copy(deep=True))
         except asyncio.CancelledError:
             task = asyncio.current_task()
             if task is not None and task.cancelling():
@@ -171,6 +168,15 @@ class HostModelUsage:
             raise UsageReportError() from None
         except Exception as exc:
             raise UsageReportError() from exc
+
+    async def _deliver_cleanup(self, record: ModelCallUsage) -> None:
+        try:
+            with anyio.move_on_after(5, shield=True) as cleanup:
+                await self.deliver(record)
+            if cleanup.cancelled_caught:
+                logger.warning("Host usage cleanup timed out")
+        except Exception:
+            logger.warning("Host usage cleanup failed")
 
 
 type UsageBinding = ModelUsageBinding | HostModelUsage
@@ -399,7 +405,14 @@ class MeteredModel(WrapperModel):
                 refusal = binding.requests.finish(call_id, record)
                 if host_budget is not None:
                     refusal = host_budget.finish(call_id, record) or refusal
-                await binding.deliver(record)
+                if error is not None:
+                    await binding._deliver_cleanup(record)
+                else:
+                    try:
+                        await binding.deliver(record)
+                    except asyncio.CancelledError:
+                        await binding._deliver_cleanup(record)
+                        raise
                 if error is None and refusal is not None:
                     raise refusal
                 return
@@ -410,7 +423,14 @@ class MeteredModel(WrapperModel):
                 if response.metadata is None:
                     response.metadata = {}
                 response.metadata[_STATE_KEY] = {"usage_id": ledger.usage_id, "record_id": record.record_id}
-            await ledger._flush(reason="model_request", trigger_record_id=record.record_id)
+            if error is not None:
+                await ledger._flush_cleanup(
+                    reason="model_request",
+                    trigger_record_id=record.record_id,
+                    display=not isinstance(error, asyncio.CancelledError),
+                )
+            else:
+                await ledger._flush(reason="model_request", trigger_record_id=record.record_id)
             if (
                 pricing is not None
                 and pricing.status == "failed"

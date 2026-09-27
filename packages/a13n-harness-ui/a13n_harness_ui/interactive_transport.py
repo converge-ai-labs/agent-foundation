@@ -4,11 +4,65 @@ from __future__ import annotations
 
 import hmac
 
-from anyio import fail_after
+from anyio import Lock, fail_after
 from pydantic import Field, ValidationError
-from starlette.websockets import WebSocket, WebSocketDisconnect
+from starlette.types import Message
+from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
 from a13n_harness_ui.surfaces import SurfaceModel
+
+
+class InteractiveOutput:
+    """One bounded send/close owner for concurrent browser stream producers."""
+
+    def __init__(self, socket: WebSocket) -> None:
+        self.socket = socket
+        self._lock = Lock()
+        self._closed = False
+
+    @property
+    def closed(self) -> bool:
+        return (
+            self._closed
+            or self.socket.application_state is WebSocketState.DISCONNECTED
+            or self.socket.client_state is WebSocketState.DISCONNECTED
+        )
+
+    async def send(self, frame: SurfaceModel) -> None:
+        with fail_after(10):
+            async with self._lock:
+                if self.closed:
+                    raise WebSocketDisconnect(code=1001)
+                await self._send({"type": "websocket.send", "text": frame.model_dump_json()})
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        with fail_after(10):
+            async with self._lock:
+                if self.closed:
+                    return
+                self._closed = True
+                await self._send({"type": "websocket.close", "code": code, "reason": reason})
+
+    async def _send(self, message: Message) -> None:
+        try:
+            await self.socket.send(message)
+        except WebSocketDisconnect:
+            self._closed = True
+            raise
+        except RuntimeError as exc:
+            # Uvicorn may close its transport before Starlette receives the
+            # disconnect. Starlette versions also use RuntimeError (or its
+            # WebSocketDisconnected subclass) for sends after close. Normalize
+            # only these known closed-transport errors, not application defects.
+            kind = message["type"]
+            if str(exc) not in {
+                'Cannot call "send" once a close message has been sent.',
+                f"Unexpected ASGI message '{kind}', after sending 'websocket.close'.",
+                f"Unexpected ASGI message '{kind}', after sending 'websocket.close' or response already completed.",
+            }:
+                raise
+            self._closed = True
+            raise WebSocketDisconnect(code=1001) from exc
 
 
 class InteractiveAuthentication(SurfaceModel):

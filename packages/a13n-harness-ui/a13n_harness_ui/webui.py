@@ -26,7 +26,7 @@ from a13n_harness.providers.environment.remote_envd.pairing import (
     credential_digest,
 )
 from a13n_logging import get_logger
-from anyio import CancelScope, Event, Lock, create_task_group, fail_after, move_on_after, sleep
+from anyio import CancelScope, Event, create_task_group, fail_after, move_on_after, sleep
 from anyio.abc import TaskStatus
 from fastapi import FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
@@ -34,7 +34,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field, JsonValue, ValidationError, model_validator
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
-from starlette.websockets import WebSocketDisconnect, WebSocketState
+from starlette.websockets import WebSocketDisconnect
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
@@ -78,7 +78,12 @@ from a13n_harness_ui.host_git import (
     GitStatus,
 )
 from a13n_harness_ui.host_terminal import TerminalCommand, TerminalCreate, TerminalFrame, TerminalView
-from a13n_harness_ui.interactive_transport import InteractiveAuthentication, authenticate_interactive, receive_text
+from a13n_harness_ui.interactive_transport import (
+    InteractiveAuthentication,
+    InteractiveOutput,
+    authenticate_interactive,
+    receive_text,
+)
 from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, SummaryCursor, SummaryInvalidation
 from a13n_harness_ui.mcp_apps.context import AppContext, AppContextReference, AppContextUpdate
 from a13n_harness_ui.mcp_apps.messages import AppMessageReceipt, AppMessageRequest
@@ -688,12 +693,13 @@ def create_webui(
     async def connect_presence(socket: WebSocket) -> None:
         if not await authenticate_interactive(socket, api_key):
             return
+        delivery = InteractiveOutput(socket)
         try:
             directory = app().page_presence()
             participant = directory.attach()
         except HarnessUiError as exc:
-            await socket.send_json(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump())
-            await socket.close(code=4404)
+            await delivery.send(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))))
+            await delivery.close(code=4404)
             return
         try:
             async with create_task_group() as group:
@@ -705,9 +711,9 @@ def create_webui(
                             frame = PresenceFrame(participant_id=participant, participants=(), closed=True)
                         else:
                             frame = await app().page_presence_snapshot(participant)
-                        await socket.send_json(frame.model_dump(mode="json"))
+                        await delivery.send(frame)
                         if frame.closed:
-                            await socket.close()
+                            await delivery.close()
                             group.cancel_scope.cancel()
                             return
                         with move_on_after(PRESENCE_REFRESH_SECONDS):
@@ -721,7 +727,7 @@ def create_webui(
                         if own is not None and own.pointer_enabled:
                             frame = directory.pointer_snapshot(participant)
                             if frame != previous:
-                                await socket.send_json(frame.model_dump(mode="json"))
+                                await delivery.send(frame)
                                 previous = frame
                         with move_on_after(1):
                             await changed.wait()
@@ -742,22 +748,20 @@ def create_webui(
                                 report = PresenceReport.model_validate(payload)
                                 await app().report_page_presence(participant, report)
                         except (ValidationError, ValueError):
-                            await socket.send_json(
+                            await delivery.send(
                                 ErrorEnvelope(
                                     error=ErrorBody(code="presence_invalid", message="Invalid page presence report.")
-                                ).model_dump()
+                                )
                             )
                         except HarnessUiError as exc:
-                            await socket.send_json(
-                                ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump()
-                            )
+                            await delivery.send(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))))
                 except TimeoutError:
-                    await socket.close(code=4408, reason="Presence report timed out")
+                    await delivery.close(code=4408, reason="Presence report timed out")
                 except WebSocketDisconnect:
                     pass
                 finally:
                     group.cancel_scope.cancel()
-        except* WebSocketDisconnect:
+        except* (WebSocketDisconnect, TimeoutError):
             pass
         finally:
             directory.detach(participant)
@@ -849,11 +853,12 @@ def create_webui(
     async def connect_draft(socket: WebSocket, thread_id: str) -> None:
         if not await authenticate_interactive(socket, api_key):
             return
+        delivery = InteractiveOutput(socket)
         try:
             draft = await app().shared_draft(thread_id)
         except HarnessUiError as exc:
-            await socket.send_json(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump())
-            await socket.close(code=4404)
+            await delivery.send(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))))
+            await delivery.close(code=4404)
             return
         participant = draft.attach()
         try:
@@ -863,9 +868,9 @@ def create_webui(
                     while True:
                         changed = draft.changed
                         frame = draft.frame(participant)
-                        await socket.send_json(frame.model_dump(mode="json"))
+                        await delivery.send(frame)
                         if frame.closed:
-                            await socket.close()
+                            await delivery.close()
                             group.cancel_scope.cancel()
                             return
                         while not changed.is_set():
@@ -880,23 +885,21 @@ def create_webui(
                             command = DraftCommand.model_validate_json(await receive_text(socket, limit=710000))
                             await app().edit_shared_draft(thread_id, participant, command)
                         except (ValidationError, ValueError):
-                            await socket.send_json(
+                            await delivery.send(
                                 ErrorEnvelope(
                                     error=ErrorBody(
                                         code="draft_invalid",
                                         message="Invalid shared draft; local edits were not accepted.",
                                     )
-                                ).model_dump()
+                                )
                             )
                         except HarnessUiError as exc:
-                            await socket.send_json(
-                                ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump()
-                            )
+                            await delivery.send(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))))
                 except WebSocketDisconnect:
                     pass
                 finally:
                     group.cancel_scope.cancel()
-        except* WebSocketDisconnect:
+        except* (WebSocketDisconnect, TimeoutError):
             pass
         finally:
             draft.detach(participant)
@@ -921,11 +924,12 @@ def create_webui(
     async def connect_terminal(socket: WebSocket, terminal_id: str, cursor: int = 0) -> None:
         if not await authenticate_interactive(socket, api_key):
             return
+        delivery = InteractiveOutput(socket)
         try:
             session = app().host_terminal(terminal_id)
         except HarnessUiError as exc:
-            await socket.send_json(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump())
-            await socket.close(code=4404)
+            await delivery.send(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))))
+            await delivery.close(code=4404)
             return
         participant = session.attach()
         try:
@@ -936,10 +940,10 @@ def create_webui(
                     while True:
                         changed = session.changed
                         frame = session.frame(participant, position)
-                        await socket.send_json(frame.model_dump(mode="json"))
+                        await delivery.send(frame)
                         position = frame.end
                         if frame.terminal.state == "closed":
-                            await socket.close()
+                            await delivery.close()
                             group.cancel_scope.cancel()
                             return
                         await changed.wait()
@@ -952,20 +956,18 @@ def create_webui(
                             command = TerminalCommand.model_validate_json(raw)
                             await session.command(participant, command)
                         except (ValidationError, ValueError):
-                            await socket.send_json(
+                            await delivery.send(
                                 ErrorEnvelope(
                                     error=ErrorBody(code="request_invalid", message="Invalid terminal command.")
-                                ).model_dump()
+                                )
                             )
                         except HarnessUiError as exc:
-                            await socket.send_json(
-                                ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump()
-                            )
+                            await delivery.send(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))))
                 except WebSocketDisconnect:
                     pass
                 finally:
                     group.cancel_scope.cancel()
-        except* WebSocketDisconnect:
+        except* (WebSocketDisconnect, TimeoutError):
             pass
         finally:
             session.detach(participant)
@@ -1737,30 +1739,8 @@ def create_webui(
         if not await authenticate_interactive(socket, api_key):
             return
         channels: dict[str, tuple[CancelScope, str | None]] = {}
-        sending = Lock()
-        closing = False
-
-        async def send(frame: RealtimeFrame | RealtimePing) -> None:
-            # A stalled connection cannot retain channel tasks indefinitely.
-            with fail_after(10):
-                async with sending:
-                    if closing or socket.application_state is WebSocketState.DISCONNECTED:
-                        raise WebSocketDisconnect(code=1001)
-                    await socket.send_text(frame.model_dump_json())
-
-        async def close(*, code: int, reason: str = "") -> None:
-            nonlocal closing
-            with fail_after(10):
-                async with sending:
-                    if closing:
-                        return
-                    # The transport marks itself disconnected before its close
-                    # send completes; observers must share this lock and state.
-                    closing = True
-                    # A failed transport send also disconnects Starlette, before
-                    # its observer's exception cancels the heartbeat task.
-                    if socket.application_state is not WebSocketState.DISCONNECTED:
-                        await socket.close(code=code, reason=reason)
+        output = InteractiveOutput(socket)
+        send, close = output.send, output.close
 
         try:
             async with create_task_group() as group:
