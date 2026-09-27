@@ -19,10 +19,11 @@ from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage, UsageLimits
 
+from a13n_harness._json import redact_json
 from a13n_harness._review_context import ReviewEvidence, render_review_input
 from a13n_harness._tool_selectors import match_selector, validate_selector
 from a13n_harness.context import AgentContext
-from a13n_harness.metering import ModelUsageBinding, ModelUsageCapability
+from a13n_harness.metering import HostModelUsage, ModelUsageBinding, ModelUsageCapability, UsageBinding
 from a13n_harness.model_calls import ModelCallCheckError
 from a13n_harness.models.binding import selected_model
 from a13n_harness.models.structured_output import StructuredOutputAutoToolChoiceModel
@@ -210,14 +211,9 @@ class _ReviewExecution:
     like its own requests; used on its own, the reviewer checks its request and returns receipts.
     """
 
-    def __init__(self, owner: AgentContext, request: ToolReviewRequest, usage: ModelUsageBinding | None) -> None:
-        self._attached = usage is not None
-        self._binding = usage or replace(
-            ModelUsageBinding.standalone(source="tool.review"),
-            owner=owner,
-            tool_id=request.tool_id,
-            tool_call_id=request.tool_call_id,
-        )
+    def __init__(self, binding: UsageBinding, *, return_receipts: bool) -> None:
+        self._binding = binding
+        self._return_receipts = return_receipts
         self._usage = RunUsage()
 
     async def run(
@@ -257,7 +253,7 @@ class _ReviewExecution:
         return ToolReviewResult(assessment=assessment, usage=self._usage_receipts())
 
     def _usage_receipts(self) -> tuple[ProviderUsage, ...]:
-        return () if self._attached else self._binding.receipts()
+        return self._binding.receipts() if self._return_receipts else ()
 
 
 class AgentToolReviewer:
@@ -308,7 +304,31 @@ class AgentToolReviewer:
     async def review(
         self, request: ToolReviewRequest, *, context: AgentContext, usage: ModelUsageBinding | None = None
     ) -> ToolReviewResult:
-        return await _ReviewExecution(context, request, usage).run(
+        binding = usage or replace(
+            ModelUsageBinding.standalone(source="tool.review"),
+            owner=context,
+            tool_id=request.tool_id,
+            tool_call_id=request.tool_call_id,
+        )
+        return await _ReviewExecution(binding, return_receipts=usage is None).run(
+            self._agent, request, timeout=self._config.timeout_seconds
+        )
+
+    async def review_for_host(self, request: ToolReviewRequest, *, usage: HostModelUsage) -> ToolReviewResult:
+        """Review without a Harness Run; the Host-owned collector retains all usage exits."""
+        if usage.tool_id != request.tool_id or usage.tool_call_id != request.tool_call_id:
+            raise ValueError("Host reviewer usage must name the reviewed invocation.")
+        arguments = dict(request.arguments)
+        omitted = list(request.omitted)
+        environment = arguments.get("environment")
+        if isinstance(environment, dict):
+            arguments["environment"] = cast(JsonValue, {"keys": sorted(environment)})
+            omitted.append("arguments.environment.values")
+        redacted = cast(dict[str, JsonValue], redact_json(arguments))
+        if redacted != arguments:
+            omitted.append("arguments.sensitive_fields")
+        request = request.model_copy(update={"arguments": redacted, "omitted": tuple(omitted)})
+        return await _ReviewExecution(usage, return_receipts=False).run(
             self._agent, request, timeout=self._config.timeout_seconds
         )
 

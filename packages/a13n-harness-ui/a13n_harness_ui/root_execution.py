@@ -59,6 +59,7 @@ from a13n_harness_ui.environment_runtime import EnvironmentFinalization, Environ
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
+from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
 from a13n_harness_ui.memory import MemoryOrganizationRun
 from a13n_harness_ui.model_runtime import SubscriptionSource
 from a13n_harness_ui.observation import (
@@ -145,8 +146,10 @@ class RootRunExecutor:
         thread_files: ThreadFiles | None = None,
         work: ThreadWorkService | None = None,
         restart_coordinator: GracefulRestart | None = None,
+        mcp_apps: AppSnapshots | None = None,
     ) -> None:
         self._store = store
+        self._mcp_apps = mcp_apps
         self._restart = restart_coordinator
         self._threads = threads
         self._configurations = configurations
@@ -469,12 +472,18 @@ class RootRunExecutor:
                         excerpts.observe(item)
                         tool_evidence.observe(item)
                         image_events = await tool_images.observe(item)
+                        app_events = (
+                            await self._mcp_apps.observe(item, thread_id=thread.thread_id, run_id=stream.run_id)
+                            if self._mcp_apps is not None
+                            else ()
+                        )
                         await self._store.usage.observe(thread_id=thread.thread_id, item=item)
                         try:
                             await self._publish_live(
                                 thread_id=thread.thread_id,
                                 run_id=stream.run_id,
-                                events=(*observer.observe(item), *image_events),
+                                events=observer.observe(item),
+                                supplements=(*image_events, *app_events),
                                 observer=observer,
                                 base_continuation_id=base_continuation_id,
                             )
@@ -488,6 +497,9 @@ class RootRunExecutor:
                 # A suspended candidate includes deferred requests as well as state.
                 # Preserve the whole envelope even when cleanup/cancellation prevents delivery.
                 result = stream.outcome
+        finally:
+            if self._mcp_apps is not None and stream is not None:
+                self._mcp_apps.connections.captures.discard_run(stream.run_id)
 
         if result is not None:
             record_output(result.output, status=result.status)
@@ -797,6 +809,7 @@ class RootRunExecutor:
         events: tuple[Any, ...],
         observer: HarnessAguiObserver,
         base_continuation_id: str | None,
+        supplements: tuple[Any, ...] = (),
     ) -> None:
         if self._live_hub is None:
             return
@@ -807,6 +820,7 @@ class RootRunExecutor:
             thread_id=thread_id,
             run_id=run_id,
             events=events,
+            supplements=supplements,
             observer=observer,
             base_continuation_id=base_continuation_id,
         )
@@ -908,23 +922,7 @@ def _validate_question_result(arguments: object, value: object) -> dict[str, obj
 
 
 def _selection(thread: Thread) -> ThreadCompositionSelection:
-    source = thread.configuration.agent_source
-    assert source.kind != "memory"
-    return ThreadCompositionSelection(
-        thread_id=thread.thread_id,
-        version=thread.configuration.version,
-        project_id=thread.configuration.project_id,
-        local_roots=thread.configuration.local_roots,
-        agent_source_kind=source.kind,
-        agent_source_id=source.id,
-        default_model_id=thread.configuration.default_model_id,
-        environment_profile_id=thread.configuration.environment_profile_id,
-        environment_bindings=thread.configuration.environment_bindings,
-        default_environment=thread.configuration.default_environment,
-        harness_plugin_ids=thread.configuration.harness_plugin_ids,
-        environment_run_extension_ids=thread.configuration.environment_run_extension_ids,
-        mcp_server_ids=thread.configuration.mcp_server_ids,
-    )
+    return ThreadCompositionSelection.from_thread(thread)
 
 
 __all__ = ["RootContinuationSelection", "RootRunExecutor", "RootRunOutcome"]

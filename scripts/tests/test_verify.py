@@ -73,6 +73,33 @@ def test_global_inputs_select_everything_and_scripts_select_their_tests(workspac
     assert _tests(workspace, "Makefile") == set()
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "Makefile",
+        "examples/mcp-apps/src/mcp_apps_example/server.py",
+        "examples/mcp-apps/tests/test_server.py",
+        "examples/mcp-apps/app.js",
+        "examples/mcp-apps/app.html",
+        "examples/mcp-apps/build.mjs",
+        "examples/mcp-apps/pyproject.toml",
+        "examples/mcp-apps/uv.lock",
+        "examples/mcp-apps/package.json",
+        "examples/mcp-apps/package-lock.json",
+    ],
+)
+def test_example_inputs_use_the_independent_build_and_test_gate(workspace: Path, path: str) -> None:
+    result = verify.plan([path], graph=verify.PythonGraph(workspace))
+    assert result.examples
+    assert not result.python_tests
+    assert [step.command for step in verify.steps_for(result)] == [["make", "examples-check-all"]]
+    assert ["make", "examples-check-all"] in [step.command for step in verify.full_steps()]
+
+
+def test_example_readme_does_not_select_execution(workspace: Path) -> None:
+    assert not verify.plan(["examples/mcp-apps/README.md"]).examples
+
+
 def test_migration_revisions_without_importers_run_their_package_suite(workspace: Path) -> None:
     revision = workspace / "packages/a13n-core/a13n_core/migrations/versions/20260101_revision.py"
     revision.parent.mkdir(parents=True)

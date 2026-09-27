@@ -254,6 +254,177 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/apps/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Mcp App */
+        post: operations["open_mcp_app_api_threads__thread_id__apps_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/apps/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate Mcp App */
+        post: operations["activate_mcp_app_api_threads__thread_id__apps_activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/apps/{view_id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Call Mcp App Tool */
+        post: operations["call_mcp_app_tool_api_threads__thread_id__apps__view_id__tools_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/apps/{view_id}/resources/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read Mcp App Resource */
+        post: operations["read_mcp_app_resource_api_threads__thread_id__apps__view_id__resources_read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/apps/{view_id}/operations/{request_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Mcp App Operation */
+        get: operations["get_mcp_app_operation_api_threads__thread_id__apps__view_id__operations__request_key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/apps/{view_id}/operations/{request_key}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Mcp App Operation */
+        post: operations["decide_mcp_app_operation_api_threads__thread_id__apps__view_id__operations__request_key__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/apps/{view_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Mcp App Message */
+        post: operations["send_mcp_app_message_api_threads__thread_id__apps__view_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/apps/{view_id}/messages/{request_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Mcp App Message */
+        get: operations["get_mcp_app_message_api_threads__thread_id__apps__view_id__messages__request_key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/apps/{view_id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Mcp App Context */
+        put: operations["update_mcp_app_context_api_threads__thread_id__apps__view_id__context_put"];
+        post?: never;
+        /** Discard Mcp App Context */
+        delete: operations["discard_mcp_app_context_api_threads__thread_id__apps__view_id__context_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/apps/{view_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Close Mcp App View */
+        delete: operations["close_mcp_app_view_api_threads__thread_id__apps__view_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/drafts": {
         parameters: {
             query?: never;
@@ -1719,6 +1890,18 @@ export interface components {
              */
             hosts?: string[];
         };
+        /**
+         * Annotations
+         * @description Optional annotations the client can use to inform how objects are used or displayed.
+         */
+        Annotations: {
+            /** Audience */
+            audience?: ("user" | "assistant")[] | null;
+            /** Priority */
+            priority?: number | null;
+            /** Lastmodified */
+            lastModified?: string | null;
+        };
         /** ApiKeyAuthentication */
         ApiKeyAuthentication: {
             /**
@@ -1733,6 +1916,180 @@ export interface components {
         /** ApiKeyStatus */
         ApiKeyStatus: {
             credential_ref: components["schemas"]["ResourceId"];
+        };
+        /** AppContext */
+        AppContext: {
+            reference: components["schemas"]["AppContextReference"];
+            value: components["schemas"]["AppContextUpdate"];
+        };
+        /** AppContextReference */
+        AppContextReference: {
+            /** View Id */
+            view_id: string;
+            /** Context Id */
+            context_id: string;
+        };
+        /** AppContextUpdate */
+        AppContextUpdate: {
+            /**
+             * Content
+             * @default []
+             */
+            content?: components["schemas"]["TextContent"][];
+            /** Structuredcontent */
+            structuredContent?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+        };
+        /** AppMessageReceipt */
+        AppMessageReceipt: {
+            request: components["schemas"]["AppMessageRequest"];
+            /** View Id */
+            view_id: string;
+            /** Root Thread Id */
+            root_thread_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "submitting" | "accepted" | "failed";
+            receipt?: components["schemas"]["RootRunReceipt"] | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** AppMessageRequest */
+        AppMessageRequest: {
+            /** Request Key */
+            request_key: string;
+            /**
+             * Role
+             * @default user
+             * @constant
+             */
+            role?: "user";
+            /** Content */
+            content: components["schemas"]["TextContent"][];
+            context?: components["schemas"]["AppContextReference"] | null;
+        };
+        /** AppOperation */
+        AppOperation: {
+            /** Operation Id */
+            operation_id: string;
+            /** View Id */
+            view_id: string;
+            /** Request Key */
+            request_key: string;
+            /** Tool Id */
+            tool_id: string;
+            /** Name */
+            name: string;
+            /** Arguments */
+            arguments: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "checking" | "approval_required" | "running" | "completed" | "denied" | "failed";
+            /** Reason */
+            reason?: string | null;
+            /** Result */
+            result?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Review Usage
+             * @default []
+             */
+            review_usage?: components["schemas"]["ModelCallUsage"][];
+        };
+        /** AppPresentation */
+        AppPresentation: {
+            reference: components["schemas"]["AppReference"];
+            snapshot: components["schemas"]["AppSnapshot"];
+            resource: components["schemas"]["AppResource"] | null;
+            /** Sandbox Url */
+            sandbox_url?: string | null;
+            /**
+             * Connected
+             * @default false
+             */
+            connected?: boolean;
+        };
+        /**
+         * AppReference
+         * @description Provenance and an authority-neutral immutable MCP App snapshot reference.
+         */
+        AppReference: {
+            /** App Id */
+            app_id: string;
+            /** Thread Id */
+            thread_id: string;
+            /** Run Id */
+            run_id: string;
+            /** Tool Call Id */
+            tool_call_id: string;
+            /** Server Id */
+            server_id: string;
+            /** Tool Name */
+            tool_name: string;
+            snapshot?: components["schemas"]["ObjectRef"] | null;
+            /** Unavailable */
+            unavailable?: string | null;
+        };
+        /** AppResource */
+        AppResource: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version?: "1";
+            /** Uri */
+            uri: string;
+            /** Html */
+            html: string;
+            /** Metadata */
+            metadata?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /** AppSnapshot */
+        AppSnapshot: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version?: "1";
+            /** Connection Generation */
+            connection_generation: string;
+            /** App Id */
+            app_id: string;
+            /** Thread Id */
+            thread_id: string;
+            /** Run Id */
+            run_id: string;
+            /** Tool Call Id */
+            tool_call_id: string;
+            /** Server Id */
+            server_id: string;
+            /** Tool */
+            tool: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Arguments */
+            arguments: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Result */
+            result: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            resource?: components["schemas"]["ObjectRef"] | null;
+            /** Unavailable */
+            unavailable?: string | null;
         };
         /**
          * AppState
@@ -1765,6 +2122,21 @@ export interface components {
              */
             capability_warnings?: string[];
             memory_organization?: components["schemas"]["MemoryOrganizationStatus"] | null;
+        };
+        /** AppView */
+        AppView: {
+            /** View Id */
+            view_id: string;
+            reference: components["schemas"]["AppReference"];
+            /** Connection Generation */
+            connection_generation: string;
+            /** Root Thread Id */
+            root_thread_id: string;
+            /**
+             * Route
+             * @default []
+             */
+            route?: string[];
         };
         /**
          * AppliedEditView
@@ -1822,6 +2194,58 @@ export interface components {
          * @enum {string}
          */
         Availability: "available" | "absent" | "incompatible" | "unsupported";
+        /**
+         * BoundedRequestUsage
+         * @description One request's counters and bounded provider detail, with USD cost.
+         */
+        BoundedRequestUsage: {
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens?: number;
+            /**
+             * Cache Write Tokens
+             * @default 0
+             */
+            cache_write_tokens?: number;
+            /**
+             * Cache Read Tokens
+             * @default 0
+             */
+            cache_read_tokens?: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens?: number;
+            /**
+             * Input Audio Tokens
+             * @default 0
+             */
+            input_audio_tokens?: number;
+            /**
+             * Cache Audio Read Tokens
+             * @default 0
+             */
+            cache_audio_read_tokens?: number;
+            /**
+             * Output Audio Tokens
+             * @default 0
+             */
+            output_audio_tokens?: number;
+            /**
+             * Audio Seconds
+             * @default 0
+             */
+            audio_seconds?: string;
+            /** Cost */
+            cost?: string | null;
+            /** Details */
+            details?: {
+                [key: string]: number;
+            };
+        };
         /** CapabilitySelection */
         CapabilitySelection: {
             capability: components["schemas"]["CatalogKey"];
@@ -2084,6 +2508,11 @@ export interface components {
             /** Resumable */
             resumable: boolean;
             activity?: components["schemas"]["ChildActivityView"] | null;
+            /**
+             * Mcp Apps
+             * @default []
+             */
+            mcp_apps?: components["schemas"]["AppReference"][];
             /**
              * Available Actions
              * @default []
@@ -2460,6 +2889,8 @@ export interface components {
              */
             kind: "copilot_subscription";
         };
+        /** @enum {string} */
+        CostSource: "catalog" | "custom" | "provider_or_genai_prices" | "unknown";
         /** DecisionBatchView */
         DecisionBatchView: {
             /** Continuation Id */
@@ -3283,6 +3714,65 @@ export interface components {
             output_tokens?: number;
         };
         ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
+        /**
+         * ModelCallUsage
+         * @description One priced native call owned by a Host operation, with no invented Run lineage.
+         */
+        ModelCallUsage: {
+            /**
+             * Usage Status
+             * @default complete
+             * @enum {string}
+             */
+            usage_status?: "complete" | "partial" | "unavailable";
+            /**
+             * Outcome
+             * @default completed
+             * @enum {string}
+             */
+            outcome?: "completed" | "failed" | "cancelled";
+            /** Response State */
+            response_state: string;
+            /** Model Name */
+            model_name?: string | null;
+            /** Provider Name */
+            provider_name?: string | null;
+            /**
+             * Response Timestamp
+             * Format: date-time
+             */
+            response_timestamp: string;
+            request_usage: components["schemas"]["BoundedRequestUsage"];
+            /** Pricing Revision */
+            pricing_revision?: string | null;
+            /** Pricing Rule Id */
+            pricing_rule_id?: string | null;
+            /** @default unknown */
+            cost_source?: components["schemas"]["CostSource"];
+            /** @default not_reached */
+            pricing_status?: components["schemas"]["PricingStatus"];
+            /** Record Id */
+            record_id: string;
+            /** Call Id */
+            call_id: string;
+            /** Model Run Id */
+            model_run_id?: string | null;
+            /** Model Id */
+            model_id?: string | null;
+            /** Provider Response Id */
+            provider_response_id?: string | null;
+            /**
+             * Request Started At
+             * Format: date-time
+             */
+            request_started_at: string;
+            /** Source */
+            source: string;
+            /** Tool Id */
+            tool_id?: string | null;
+            /** Tool Call Id */
+            tool_call_id?: string | null;
+        };
         /** ModelCatalogSnapshot */
         ModelCatalogSnapshot: {
             /** Items */
@@ -3523,6 +4013,23 @@ export interface components {
             total?: number;
             page?: components["schemas"]["NotePage"] | null;
         };
+        /**
+         * ObjectKind
+         * @description Immutable payload families owned by the Harness UI store.
+         * @enum {string}
+         */
+        ObjectKind: "configuration-generation" | "run-composition" | "thread-initial-state" | "continuation" | "child-checkpoint" | "environment-state" | "mcp-app-resource" | "mcp-app-snapshot";
+        /**
+         * ObjectRef
+         * @description Authority-neutral identity for one verified immutable object.
+         */
+        ObjectRef: {
+            object_kind: components["schemas"]["ObjectKind"];
+            /** Object Schema Version */
+            object_schema_version: string;
+            /** Logical Digest */
+            logical_digest: string;
+        };
         /** OutputComment */
         OutputComment: {
             /** Body */
@@ -3687,6 +4194,8 @@ export interface components {
              */
             closed?: boolean;
         };
+        /** @enum {string} */
+        PricingStatus: "applied" | "declined" | "failed" | "disabled" | "not_reached";
         /**
          * ProjectDefaults
          * @description One creation combination; omission falls back and empty lists select none.
@@ -4495,6 +5004,25 @@ export interface components {
             /** Output End */
             output_end: number;
         };
+        /**
+         * TextContent
+         * @description Text provided to or from an LLM.
+         */
+        TextContent: {
+            /**
+             * Type
+             * @default text
+             * @constant
+             */
+            type?: "text";
+            /** Text */
+            text: string;
+            annotations?: components["schemas"]["Annotations"] | null;
+            /** Meta */
+            _meta?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** ThinkingControl */
         ThinkingControl: {
             /**
@@ -5046,6 +5574,11 @@ export interface components {
              */
             tool_images?: components["schemas"]["ToolImageView"][];
             /**
+             * Mcp Apps
+             * @default []
+             */
+            mcp_apps?: components["schemas"]["AppReference"][];
+            /**
              * Tool Image Unavailable
              * @default false
              */
@@ -5074,6 +5607,11 @@ export interface components {
             output_position?: number | null;
             /** Output Preview */
             output_preview?: string | null;
+            /**
+             * App Positions
+             * @default []
+             */
+            app_positions?: number[];
             /** Preview */
             preview: string;
             /** Timestamp */
@@ -5653,6 +6191,27 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** AppToolRequest */
+        AppToolRequest: {
+            /** Request Key */
+            request_key: string;
+            /** Name */
+            name: string;
+            /** Arguments */
+            arguments?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /** AppResourceRequest */
+        AppResourceRequest: {
+            /** Uri */
+            uri: string;
+        };
+        /** AppDecision */
+        AppDecision: {
+            /** Approve */
+            approve: boolean;
+        };
         /** TerminalCreate */
         TerminalCreate: {
             /**
@@ -6058,6 +6617,11 @@ export interface components {
             skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
+            /**
+             * App Context
+             * @default []
+             */
+            app_context?: components["schemas"]["AppContextReference"][];
             /**
              * Mode
              * @default normal
@@ -6482,6 +7046,385 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DirectoryListResult"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_mcp_app_api_threads__thread_id__apps_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppReference"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPresentation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_mcp_app_api_threads__thread_id__apps_activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppReference"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    call_mcp_app_tool_api_threads__thread_id__apps__view_id__tools_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppToolRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_mcp_app_resource_api_threads__thread_id__apps__view_id__resources_read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppResourceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_mcp_app_operation_api_threads__thread_id__apps__view_id__operations__request_key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                view_id: string;
+                request_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_mcp_app_operation_api_threads__thread_id__apps__view_id__operations__request_key__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                view_id: string;
+                request_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_mcp_app_message_api_threads__thread_id__apps__view_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppMessageReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_mcp_app_message_api_threads__thread_id__apps__view_id__messages__request_key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                view_id: string;
+                request_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppMessageReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_mcp_app_context_api_threads__thread_id__apps__view_id__context_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppContextUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppContext"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_mcp_app_context_api_threads__thread_id__apps__view_id__context_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_mcp_app_view_api_threads__thread_id__apps__view_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

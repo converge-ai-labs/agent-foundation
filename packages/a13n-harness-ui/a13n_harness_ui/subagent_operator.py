@@ -56,6 +56,7 @@ from a13n_logging import get_logger
 from a13n_stream_protocol import ContentMetadata, HarnessAguiObserver
 from ag_ui.core import Event as AguiEvent
 from ag_ui.core.events import (
+    CustomEvent,
     ReasoningMessageContentEvent,
     ReasoningMessageEndEvent,
     ReasoningMessageStartEvent,
@@ -92,6 +93,8 @@ from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_runtime import EnvironmentRunPlan, EnvironmentRunService
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError, StoreError
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
+from a13n_harness_ui.mcp_apps.models import AppReference
+from a13n_harness_ui.mcp_apps.snapshots import METADATA_KEY, AppSnapshots
 from a13n_harness_ui.model_runtime import SubscriptionSource
 from a13n_harness_ui.observation import (
     UiObservation,
@@ -244,8 +247,10 @@ class HarnessUiSubagentOperator(SubagentOperator):
         observation: UiObservation | None = None,
         restart_coordinator: GracefulRestart | None = None,
         thread_files: ThreadFiles | None = None,
+        mcp_apps: AppSnapshots | None = None,
     ) -> None:
         self._thread_files = thread_files
+        self._mcp_apps = mcp_apps
         self._observation = observation or UiObservation()
         self._restart = restart_coordinator
         self._store = store
@@ -1318,7 +1323,12 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         record_skill_event(item)
                         await self._store.usage.observe(thread_id=prepared.state.thread_id, item=item)
                         image_events = await tool_images.observe(item)
-                        events = (*observer.observe(item), *image_events)
+                        app_events = (
+                            await self._mcp_apps.observe(item, thread_id=prepared.state.thread_id, run_id=stream.run_id)
+                            if self._mcp_apps is not None
+                            else ()
+                        )
+                        events = (*observer.observe(item), *image_events, *app_events)
                         compactor.observe(events)
                         async with self._lock:
                             active.display = compactor.snapshot()
@@ -1333,6 +1343,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         except BaseException as exc:
             run_error = exc
 
+        if self._mcp_apps is not None:
+            self._mcp_apps.connections.captures.discard_run(prepared.stream.run_id)
         finalization_error: BaseException | None = None
         with CancelScope(shield=True):
             try:
@@ -1784,8 +1796,10 @@ class HarnessUiSubagentOperator(SubagentOperator):
     ) -> ChildExecutionView:
         subagent_name, child_definition_id = await self._execution_identity(head)
         activity = None
+        display = None
         if include_activity:
-            view = await self._execution_view(head)
+            display = await self._execution_display(head)
+            view = await self._execution_view(head, display=display)
             activity = _surface_activity(view.activity or SubagentActivitySnapshot(sequence=0))
         if root_thread_id is None:
             root_thread_id = await self._root_thread_id(await self._require_child_thread(head))
@@ -1808,14 +1822,27 @@ class HarnessUiSubagentOperator(SubagentOperator):
             failure=None if head.failure is None else _surface_failure(head.failure),
             resumable=head.resumable,
             activity=activity,
+            mcp_apps=display.mcp_apps if display is not None else (),
             available_actions=("wait", "steer", "cancel") if locally_active else (),
             created_at=head.created_at,
             updated_at=head.updated_at,
             completed_at=head.completed_at,
         )
 
-    async def _execution_view(self, head: ChildExecutionHead) -> SubagentExecutionView:
-        subagent_name, child_definition_id = await self._execution_identity(head)
+    async def retains_mcp_app(self, reference: AppReference, *, parent_thread_id: str) -> bool:
+        """Only retained live/selected child displays grant presentation access."""
+        after = None
+        while True:
+            heads, _ = await self._store.child_executions.page_for_parent(parent_thread_id, after=after, limit=100)
+            for head in heads:
+                if head.child_thread_id == reference.thread_id:
+                    if reference in (await self._execution_display(head)).mcp_apps:
+                        return True
+            if len(heads) < 100:
+                return False
+            after = (heads[-1].created_at, heads[-1].execution_id)
+
+    async def _execution_display(self, head: ChildExecutionHead) -> CompactChildDisplay:
         async with self._lock:
             active = self._active.get(head.execution_id)
             display = active.display if active is not None else None
@@ -1825,6 +1852,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 if head.selected_checkpoint is not None
                 else CompactChildDisplay()
             )
+        return display
+
+    async def _execution_view(
+        self, head: ChildExecutionHead, *, display: CompactChildDisplay | None = None
+    ) -> SubagentExecutionView:
+        subagent_name, child_definition_id = await self._execution_identity(head)
+        if display is None:
+            display = await self._execution_display(head)
         return SubagentExecutionView(
             execution_id=head.execution_id,
             subagent_name=subagent_name,
@@ -1872,6 +1907,7 @@ class _DisplayCompactor:
 
     def __init__(self, initial: CompactChildDisplay) -> None:
         self._activities = list(initial.activities)
+        self._apps = {item.app_id: item for item in initial.mcp_apps}
         self._final_answer = initial.final_answer
         self._text: dict[str, str] = {}
         self._reasoning: dict[str, str] = {}
@@ -1886,7 +1922,15 @@ class _DisplayCompactor:
             metadata = ContentMetadata.from_native(extra.get("metadata"))
             if not metadata.display or extra.get("role") == "user":
                 continue
-            if isinstance(event, TextMessageStartEvent):
+            if isinstance(event, CustomEvent) and event.name == METADATA_KEY:
+                value = event.value
+                if isinstance(value, dict) and isinstance(value.get("event"), dict):
+                    for item in value["event"].get("apps", []):
+                        reference = AppReference.model_validate(item, strict=False)
+                        self._apps[reference.app_id] = reference
+                    while len(self._apps) > 128:
+                        del self._apps[next(iter(self._apps))]
+            elif isinstance(event, TextMessageStartEvent):
                 self._text[event.message_id] = ""
             elif isinstance(event, TextMessageContentEvent):
                 self._text[event.message_id] = _append_bounded(self._text.get(event.message_id, ""), event.delta)
@@ -1931,6 +1975,7 @@ class _DisplayCompactor:
     def snapshot(self) -> CompactChildDisplay:
         return CompactChildDisplay(
             activities=tuple(self._activities[-_MAX_DISPLAY_ACTIVITIES:]),
+            mcp_apps=tuple(self._apps.values()),
             final_answer=self._final_answer,
         )
 

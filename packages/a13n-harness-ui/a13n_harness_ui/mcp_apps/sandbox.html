@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>MCP App sandbox</title>
+<style>html,body,iframe{width:100%;height:100%;margin:0;border:0;display:block;background:transparent}</style>
+</head>
+<body><script>
+"use strict";
+// This origin serves only this proxy, never Host APIs, credentials, or App HTML.
+const host = new URLSearchParams(location.search).get("host");
+if (parent === window || !host || new URL(host).origin !== host || host === location.origin) {
+  throw new Error("A separate Host origin is required.");
+}
+const view = document.createElement("iframe");
+view.title = "MCP App view";
+view.setAttribute("sandbox", "allow-scripts");
+view.referrerPolicy = "no-referrer";
+document.body.append(view);
+let loaded = false;
+window.addEventListener("message", (event) => {
+  if (event.source === parent && event.origin === host) {
+    if (event.data?.method === "ui/notifications/sandbox-resource-ready") {
+      if (!loaded && typeof event.data.params?.html === "string") {
+        loaded = true;
+        // Never accept sandbox flags from the App or a resource notification.
+        view.srcdoc = event.data.params.html;
+      }
+    } else if (loaded) {
+      view.contentWindow.postMessage(event.data, "*");
+    }
+  } else if (loaded && event.source === view.contentWindow && event.origin === "null") {
+    // The exact Window is essential: opaque origin alone does not identify a View.
+    parent.postMessage(event.data, host);
+  }
+});
+parent.postMessage({jsonrpc:"2.0",method:"ui/notifications/sandbox-proxy-ready",params:{}}, host);
+</script></body>
+</html>

@@ -241,6 +241,20 @@ class StoredContinuation(StoredContract):
         return self
 
 
+class AppReference(BaseModel):
+    """Provenance and an authority-neutral immutable MCP App snapshot reference."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    app_id: str
+    thread_id: str
+    run_id: str
+    tool_call_id: str
+    server_id: str
+    tool_name: str
+    snapshot: ObjectRef | None = None
+    unavailable: str | None = None
+
+
 class CompactChildActivity(StoredContract):
     kind: Literal["text", "thinking", "tool", "failure", "completion"]
     text: str | None = Field(default=None, max_length=32 * 1024)
@@ -262,6 +276,7 @@ class CompactChildActivity(StoredContract):
 
 class CompactChildDisplay(StoredContract):
     activities: tuple[CompactChildActivity, ...] = Field(default=(), max_length=512)
+    mcp_apps: tuple[AppReference, ...] = Field(default=(), max_length=128)
     # The latest completed answer is retained losslessly; transport reads are paged.
     final_answer: str | None = None
 

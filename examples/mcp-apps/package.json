@@ -1,0 +1,8 @@
+{
+  "name": "a13n-mcp-apps-example",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "node build.mjs" },
+  "dependencies": { "@modelcontextprotocol/ext-apps": "1.7.5" },
+  "devDependencies": { "esbuild": "^0.27.0" }
+}

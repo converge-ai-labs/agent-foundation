@@ -37,6 +37,7 @@ nav:
       - Add tools:
           - Tools and extension types: a13n-harness-ui/extensions-and-mcp.md
           - MCP servers: a13n-harness-ui/mcp.md
+          - Interactive MCP Apps: a13n-harness-ui/mcp-apps.md
           - Skills and Content Plugins: a13n-harness-ui/skills-and-content-plugins.md
           - Native tools and Web providers: a13n-harness-ui/native-and-web-tools.md
       - Operate and reference:

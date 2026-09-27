@@ -27,7 +27,7 @@ from a13n_harness.providers.model.oauth import GrokCredentials
 from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from pydantic_ai import BinaryContent, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
@@ -135,6 +135,15 @@ from a13n_harness_ui.live import (
     SummaryCursor,
     SummarySubscription,
 )
+from a13n_harness_ui.mcp_apps.connections import Connections
+from a13n_harness_ui.mcp_apps.context import AppContext, AppContextReference, AppContextUpdate
+from a13n_harness_ui.mcp_apps.messages import AppMessageReceipt, AppMessageRequest
+from a13n_harness_ui.mcp_apps.models import AppPresentation, AppReference
+from a13n_harness_ui.mcp_apps.operations import AppOperation, AppOperations, AppToolRequest, AppView
+from a13n_harness_ui.mcp_apps.owners import CurrentOwners
+from a13n_harness_ui.mcp_apps.resources import AppResourceRequest
+from a13n_harness_ui.mcp_apps.review import AppReviewer
+from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
 from a13n_harness_ui.memory import MemoryOrganizationRun, memory_scopes
 from a13n_harness_ui.memory_organization import MemoryOrganizationStatus, MemoryOrganizer
 from a13n_harness_ui.model_accounts import (
@@ -376,8 +385,17 @@ class HarnessUiApp:
         web_push: WebPush | None = None,
         restart_coordinator: GracefulRestart,
         memory_organizer: MemoryOrganizer,
+        mcp_apps: AppSnapshots | None = None,
+        mcp_operations: AppOperations | None = None,
     ) -> None:
         self._settings = settings
+        self._mcp_apps = mcp_apps
+        self._mcp_operations = mcp_operations
+        self._mcp_app_owners = (
+            mcp_operations.owners
+            if mcp_operations is not None
+            else CurrentOwners(store, configurations, AgentCompositionResolver(catalog))
+        )
         self._restart = restart_coordinator
         self._memory_organizer = memory_organizer
         self._web_push = web_push
@@ -547,6 +565,7 @@ class HarnessUiApp:
                 )
                 generation_changed = True
                 self._memory_organizer.configuration_changed(candidate)
+                await self._retire_mcp_bindings(candidate)
             await self._devices.synchronize_registrations(candidate.devices.values())
             candidate_error: HarnessUiError | None = None
         except HarnessUiError as exc:
@@ -1190,8 +1209,85 @@ class HarnessUiApp:
                 defaults_digest=request.defaults_digest,
                 environments_only=environments_only,
             )
+            await self._retire_mcp_owners()
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
+
+    async def open_mcp_app(self, thread_id: str, reference: AppReference) -> AppPresentation:
+        async with self._operation():
+            thread = await self._threads.get(thread_id)
+            source = await self._configurations.current()
+            if source is None or not source.document.webui.mcp_apps.enabled or self._mcp_apps is None:
+                raise HarnessUiError("MCP Apps are disabled.", code="mcp_apps_disabled")
+            if reference.thread_id != thread_id:
+                raise HarnessUiError("App belongs to another Thread.", code="mcp_app_reference_invalid")
+            if thread.parent_thread_id is not None:
+                retained = await self._subagent_operator.retains_mcp_app(
+                    reference, parent_thread_id=thread.parent_thread_id
+                )
+            else:
+                retained = await self._live_hub.retains_mcp_app(reference)
+                if not retained:
+                    retained = await self._projections.retains_mcp_app(reference)
+            if not retained:
+                raise HarnessUiError("App is not in retained Thread history.", code="mcp_app_reference_invalid")
+            return await self._mcp_apps.read(reference)
+
+    def _apps(self) -> AppOperations:
+        if self._mcp_operations is None:
+            raise HarnessUiError("Interactive MCP Apps are unavailable.", code="mcp_apps_disabled")
+        return self._mcp_operations
+
+    async def activate_mcp_app(self, thread_id: str, reference: AppReference) -> AppView:
+        # Opening checks retained presentation access independently of today's activation authority.
+        await self.open_mcp_app(thread_id, reference)
+        async with self._operation():
+            return await self._apps().activate(reference)
+
+    async def call_mcp_app_tool(self, thread_id: str, view_id: str, request: AppToolRequest) -> AppOperation:
+        async with self._operation():
+            return await self._apps().call_tool(thread_id, view_id, request)
+
+    async def read_mcp_app_resource(
+        self, thread_id: str, view_id: str, request: AppResourceRequest
+    ) -> dict[str, JsonValue]:
+        async with self._operation():
+            return await self._apps().read_resource(thread_id, view_id, request)
+
+    async def get_mcp_app_operation(self, thread_id: str, view_id: str, request_key: str) -> AppOperation:
+        async with self._operation():
+            return self._apps().get_operation(thread_id, view_id, request_key)
+
+    async def decide_mcp_app_operation(
+        self, thread_id: str, view_id: str, request_key: str, *, approve: bool
+    ) -> AppOperation:
+        async with self._operation():
+            return self._apps().decide(thread_id, view_id, request_key, approve=approve)
+
+    async def send_mcp_app_message(self, thread_id: str, view_id: str, request: AppMessageRequest) -> AppMessageReceipt:
+        async with self._operation():
+            return self._apps().send_message(thread_id, view_id, request, self._submit_app_message)
+
+    async def get_mcp_app_message(self, thread_id: str, view_id: str, request_key: str) -> AppMessageReceipt:
+        async with self._operation():
+            return self._apps().get_message(thread_id, view_id, request_key)
+
+    async def _submit_app_message(self, view: AppView, parts: tuple[str, ...]) -> RootRunReceipt:
+        return await self.submit_thread(
+            thread_id=view.root_thread_id, prompt=ComposerInput(parts=parts), input_surface="webui", mcp_app_view=view
+        )
+
+    async def update_mcp_app_context(self, thread_id: str, view_id: str, value: AppContextUpdate) -> AppContext:
+        async with self._operation():
+            return await self._apps().update_context(thread_id, view_id, value)
+
+    async def discard_mcp_app_context(self, thread_id: str, view_id: str) -> None:
+        async with self._operation():
+            self._apps().discard_context(thread_id, view_id)
+
+    async def close_mcp_app_view(self, thread_id: str, view_id: str) -> None:
+        async with self._operation():
+            self._apps().close_view(thread_id, view_id)
 
     async def get_thread(self, thread_id: str) -> ThreadDetail:
         async with self._operation():
@@ -1396,6 +1492,7 @@ class HarnessUiApp:
                 thread_id=thread_id,
                 mutation=mutation,
             )
+            await self._retire_mcp_owners()
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
 
@@ -1454,6 +1551,7 @@ class HarnessUiApp:
             if mutation.patch.archived is True:
                 async with self._root_runs.require_inactive(thread_id):
                     await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
+                await self._retire_mcp_owners()
             else:
                 await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
@@ -1828,6 +1926,8 @@ class HarnessUiApp:
         input_surface: Literal["tui", "webui"] | None = None,
         environment: EnvironmentSelectionPatch | None = None,
         mode: GoalMode = "normal",
+        app_context: tuple[AppContextReference, ...] = (),
+        mcp_app_view: AppView | None = None,
     ) -> RootRunReceipt:
         prompt = deepcopy(prompt)
         attachment_ids = tuple(attachment_ids)
@@ -1835,6 +1935,7 @@ class HarnessUiApp:
             raise ValueError("Unknown submission mode")
         async with self._operation():
             await self._threads.require_interactive(thread_id)
+            selected_context = await self._apps().capture_context(thread_id, app_context) if app_context else ()
             goal = None
             if mode == "goal":
                 objective = (
@@ -1873,8 +1974,21 @@ class HarnessUiApp:
             )
             await self._threads.get(thread_id)
             prompt = await self._prepare_input(thread_id, prompt, attachment_ids)
+            if selected_context:
+                prompt = tuple([prompt] if isinstance(prompt, str) else prompt) + tuple(
+                    TextContent(text, metadata={"harness_ui": {"mcp_app_context": True}}) for text in selected_context
+                )
             if input_surface is not None:
                 prompt = append_surface_hint(prompt, input_surface)
+
+            async def authorize_app_message() -> None:
+                if mcp_app_view is not None:
+                    if mcp_app_view.root_thread_id != thread_id:
+                        raise HarnessUiError(
+                            "The App message belongs to another root.", code="mcp_app_owner_unavailable"
+                        )
+                    await self._apps().authorize_message(mcp_app_view)
+
             receipt = await self._root_runs.submit_prompt(
                 thread_id=thread_id,
                 prompt=prompt,
@@ -1884,6 +1998,7 @@ class HarnessUiApp:
                 goal=goal,
                 touch=True,
                 human_input=True,
+                authorize=authorize_app_message if mcp_app_view is not None else None,
             )
             self._terminal_projections.pin_active_skill_catalog(
                 receipt_id=receipt.receipt_id,
@@ -2492,9 +2607,27 @@ class HarnessUiApp:
             raise
         self._replace_candidate_error(None)
         self._memory_organizer.configuration_changed(result.configuration)
+        await self._retire_mcp_bindings(result.configuration)
         self._configuration_fingerprint = await configuration_tree_fingerprint(self._require_configuration_path())
         await self._summary_hub.publish(kind="configuration")
         await self._summary_hub.publish(kind="project")
+
+    async def _retire_mcp_bindings(self, source: LoadedHarnessUiConfiguration) -> None:
+        if self._mcp_apps is not None:
+            settings = source.document.webui.mcp_apps
+            self._mcp_apps.connections.retain_bindings(
+                {
+                    identity: server.transport.model_dump_json()
+                    for identity, server in source.mcp_servers.items()
+                    if settings.enabled and identity in settings.servers
+                }
+            )
+
+        await self._retire_mcp_owners()
+
+    async def _retire_mcp_owners(self) -> None:
+        if self._mcp_apps is not None:
+            await self._mcp_app_owners.retire_unselected(self._mcp_apps.connections)
 
     def _replace_candidate_error(self, replacement: HarnessUiError | None) -> bool:
         previous = None if self._candidate_error is None else (self._candidate_error.code, str(self._candidate_error))
@@ -2746,8 +2879,13 @@ async def open_harness_ui_app(
                 if configuration_path is not None
                 else None,
             )
+            app_connections = Connections() if host_mode == "webui" else None
+            if app_connections is not None:
+                resources.push_async_callback(app_connections.close)
+            mcp_apps = AppSnapshots(store.objects, app_connections) if app_connections is not None else None
             agent_reconstructor = AgentReconstructor(
                 catalog,
+                mcp_apps=app_connections,
                 instrumentation=observation.instrumentation,
                 api_keys=ApiKeyStore(store.layout.root / "auth.json"),
                 configuration_root=configuration_path.expanduser().resolve().parent
@@ -2786,8 +2924,26 @@ async def open_harness_ui_app(
                     refresh=grok_refresh,
                 )
 
+            mcp_operations = None
+            app_reviewer = None
+            if mcp_apps is not None and configuration_path is not None:
+                mcp_operations = AppOperations(
+                    mcp_apps,
+                    CurrentOwners(store, configurations, AgentCompositionResolver(catalog)),
+                    configuration_path.expanduser().resolve().parent,
+                )
+                app_reviewer = AppReviewer(
+                    mcp_operations,
+                    api_keys=ApiKeyStore(store.layout.root / "auth.json"),
+                    subscription_sources=subscription_sources,
+                )
+                mcp_operations.review = app_reviewer
+                # Drain admitted operations while their MCP transports and store still exist.
+                resources.push_async_callback(mcp_operations.close)
+
             restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui")
             operator = HarnessUiSubagentOperator(
+                mcp_apps=mcp_apps,
                 thread_files=thread_files,
                 restart_coordinator=restart_coordinator,
                 observation=observation,
@@ -2807,6 +2963,7 @@ async def open_harness_ui_app(
             )
             work = ThreadWorkService(store, summary_hub, operator.active_execution_ids)
             root_executor = RootRunExecutor(
+                mcp_apps=mcp_apps,
                 restart_coordinator=restart_coordinator,
                 work=work,
                 store=store,
@@ -2914,11 +3071,15 @@ async def open_harness_ui_app(
                     errors[Provider.GROK] = exc
                 root_executor.replace_subscription_sources(sources)
                 operator.replace_subscription_sources(sources)
+                if app_reviewer is not None:
+                    app_reviewer.subscription_sources = dict(sources)
                 return discovered_codex, discovered_grok, errors
 
             app = HarnessUiApp(
                 settings,
                 store,
+                mcp_apps=mcp_apps,
+                mcp_operations=mcp_operations,
                 configuration_path=configuration_path,
                 catalog=catalog,
                 configurations=configurations,

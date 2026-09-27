@@ -6,6 +6,7 @@ This directory contains runnable, tested examples of public Agent Foundation ext
 
 | Goal                                        | Example                                                                          | What it demonstrates                                                                                              |
 | ------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Host an interactive MCP tool result         | [Stateful MCP App example](mcp-apps/README.md)                                   | Real stdio server, bundled App SDK, post-Run interaction, approval, resources and explicit context                |
 | Build a recoverable Agent application       | [Agent application example](agent-app/README.md)                                 | Offline streaming turns, successful-turn state persistence, restart recovery, and a fresh Environment per turn    |
 | Use the built-in Environment Providers      | [Environment Provider example](environment-provider/README.md)                   | Direct Local, Local Envd, and Docker Host lifecycles, state re-entry, non-destructive close, and explicit destroy |
 | Extend Agent-loop behavior                  | [Custom Capability example](plugins/README.md#custom-capability)                 | Host-authorized `AgentSpec` reconstruction and direct code composition of one custom Capability                   |

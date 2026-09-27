@@ -15,6 +15,7 @@ from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
+from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.model_controls import ModelControlSelection
 from a13n_harness_ui.model_fast import FastControl
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl
@@ -271,6 +272,7 @@ class TranscriptPart(SurfaceModel):
     provider: str | None = None
     applied_edit: AppliedEditView | None = None
     tool_images: tuple[ToolImageView, ...] = ()
+    mcp_apps: tuple[AppReference, ...] = ()
     tool_image_unavailable: bool = False
     value: JsonValue | None = None
     value_omitted: bool = False
@@ -308,6 +310,7 @@ class TranscriptTurn(SurfaceModel):
     final_position: int | None = Field(default=None, ge=0)
     output_position: int | None = Field(default=None, ge=0)
     output_preview: str | None = Field(default=None, max_length=512)
+    app_positions: tuple[int, ...] = ()
     preview: str = Field(max_length=512)
     timestamp: datetime | None = None
     tool_count: int = Field(default=0, ge=0)
@@ -534,6 +537,7 @@ class ChildExecutionView(SurfaceModel):
     resumable: bool
     # List summaries omit activity; inspect one execution to load its payloads.
     activity: ChildActivityView | None = None
+    mcp_apps: tuple[AppReference, ...] = ()
     available_actions: tuple[Literal["wait", "steer", "cancel"], ...] = ()
     created_at: datetime
     updated_at: datetime

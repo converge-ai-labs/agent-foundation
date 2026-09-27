@@ -162,7 +162,7 @@ class RemoteTransport(BaseModel):
 
 Literal environment/header credentials are permitted in user-owned source files, but not copied into normalized resources, configuration display, or Run compositions. Remote URLs remain credential-free HTTPS values. Plain HTTP is permitted only for a literal loopback host and only when `headers` is empty; Harness UI never sends secret-backed headers over plaintext transport. Redirects cannot weaken this rule or forward configured headers to another origin. Command arguments and environment names are bounded. An MCP file has no global `enabled` flag: an Agent or Thread exact selection enables it.
 
-Every Run creates fresh MCP clients or Toolsets. MCP process handles, sessions, resolved credentials, and discovered tools never enter managed snapshot files, SQLite, or continuation state. Disabling an MCP server removes it from later Run compositions; re-enabling the same resource uses its current file definition.
+Every Run creates fresh MCP Toolset adapters. Ordinary servers also receive fresh clients; explicitly enabled [MCP Apps](09-mcp-apps.md) adapters borrow the App-owned Thread/server connection across Runs. MCP process handles, sessions and resolved credentials never enter managed snapshot files, SQLite or continuation state. MCP Apps retain the original public tool descriptor, raw result and resource as immutable presentation objects, with small references on actual tool returns; these snapshots are not live discovery or execution authority. Disabling an MCP server removes it from later Run compositions and prevents new App admission; re-enabling the same resource uses its current file definition.
 
 ## Agent Resources
 

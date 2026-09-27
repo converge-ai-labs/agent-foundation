@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Session counter</title>
+  <style>
+    :root { color-scheme: light; font: 14px/1.5 system-ui, sans-serif; color: #242424; background: #fff; }
+    :root[data-theme="dark"] { color-scheme: dark; color: #eee; background: #191919; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; }
+    main { max-width: 600px; margin: auto; }
+    h1 { font-size: 18px; font-weight: 500; margin: 0 0 4px; }
+    p { margin: 0 0 16px; opacity: .72; }
+    output { display: block; font-size: 56px; font-variant-numeric: tabular-nums; line-height: 1.2; margin: 24px 0; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    button, textarea { font: inherit; border-radius: 8px; }
+    button { cursor: pointer; padding: 8px 12px; border: 0; color: inherit; background: color-mix(in srgb, currentColor 8%, transparent); }
+    button.primary { color: Canvas; background: CanvasText; }
+    button:disabled { opacity: .5; cursor: wait; }
+    :focus-visible { outline: 2px solid #6596d5; outline-offset: 3px; }
+    details { margin-top: 20px; }
+    summary { cursor: pointer; margin-bottom: 12px; }
+    label { display: block; margin-bottom: 6px; }
+    textarea { display: block; width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #8886; color: inherit; background: transparent; resize: vertical; }
+    #status { min-height: 42px; font-size: 12px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Session counter</h1>
+    <p>One MCP process. Still interactive after the assistant finishes.</p>
+    <output id="count" aria-label="Counter value">—</output>
+    <div class="actions">
+      <button id="increment" class="primary" disabled>Add one</button>
+      <button id="reset" disabled>Reset (approval)</button>
+      <button id="read" disabled>Read current value</button>
+    </div>
+    <button id="context" disabled>Offer value as context</button>
+    <details>
+      <summary>Send a follow-up or open a link</summary>
+      <label for="message">Proposed message</label>
+      <textarea id="message" rows="2">Explain the current counter value.</textarea>
+      <div class="actions">
+        <button id="send" disabled>Propose message</button>
+        <button id="link" disabled>Open MCP documentation</button>
+      </div>
+    </details>
+    <p id="status" role="status">Connecting to the Host…</p>
+  </main>
+  <!-- APP_SCRIPT -->
+</body>
+</html>

@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { modelControlRequest } from "./model-controls";
+import { useAppContextSelection } from "../mcp-apps/context-selection";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import {
@@ -155,6 +156,7 @@ export async function submitDraft(
   signal?: AbortSignal,
   preset?: string,
   prepare?: () => Promise<void>,
+  captureAppContext?: () => Schema<"AppContextReference">[],
 ) {
   if (
     draft.submission.kind === "pending" ||
@@ -174,7 +176,9 @@ export async function submitDraft(
   let captured: DraftCapture | undefined;
   let parts: OrderedInputPart[];
   let references: Schema<"SkillReference">[] = [];
+  let appContext: Schema<"AppContextReference">[] = [];
   try {
+    if (action === "send") appContext = captureAppContext?.() ?? [];
     if (prepare) await prepare();
     signal?.throwIfAborted();
     if (preset === undefined) {
@@ -209,6 +213,7 @@ export async function submitDraft(
             mode,
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
+            ...(appContext.length ? { app_context: appContext } : {}),
             ...(modelId ? { model_id: modelId } : {}),
             ...(environment ? { environment } : {}),
             ...controls,
@@ -349,6 +354,7 @@ export function Composer({
   modelId?: string;
 }) {
   const draft = useDraft(threadId);
+  const appContexts = useAppContextSelection();
   const promotion = useCoordinatorMutation({ thread_id: threadId });
   const { tracker: results } = useResults();
   const [preparing, setPreparing] = useState(false);
@@ -681,6 +687,7 @@ export function Composer({
               }
             }
           : undefined,
+        () => appContexts?.capture(threadId) ?? [],
       );
       reconcile();
       if (submitted && !controller.signal.aborted) await onSubmitted?.();

@@ -15,6 +15,7 @@ import {
 } from "./reading-anchor";
 import { ArrowClockwise } from "@phosphor-icons/react";
 import { ExecutionDetails } from "./execution-details";
+import { AppCard } from "../mcp-apps/app-card";
 import { QuestionInteraction, ToolActivity } from "./tool-call";
 import {
   activityKind,
@@ -55,6 +56,7 @@ type Row = {
   | { kind: "input"; parts: InputPart[]; status?: string }
   | { kind: "thinking"; segments: { id: string; text: string }[] }
   | { kind: "tools"; tools: ToolView[] }
+  | { kind: "app"; reference: Schema<"AppReference">; live?: boolean }
   | { kind: "question"; tool?: ToolView; content?: ReactNode }
   | {
       kind: "assistant";
@@ -159,6 +161,9 @@ function savedRows(
             (part.text ?? JSON.stringify(part.value, null, 2)) +
             (part.value_omitted ? "\nContent omitted by the server." : ""),
         });
+      for (const reference of part.mcp_apps ?? []) {
+        rows.push({ id: reference.app_id, kind: "app", reference });
+      }
     });
     for (let index = start; index < rows.length; index++) {
       rows[index].position = entry.position;
@@ -237,6 +242,9 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
         name: block.name || "Activity",
         text: [block.text, block.result].filter(Boolean).join("\n"),
       });
+    for (const reference of block.apps ?? []) {
+      rows.push({ id: reference.app_id, kind: "app", reference, live: true });
+    }
   }
   return rows;
 }
@@ -399,6 +407,8 @@ function Rows({
         <Reasoning segments={row.segments} />
       ) : row.kind === "question" ? (
         (row.content ?? (row.tool && <QuestionInteraction tool={row.tool} />))
+      ) : row.kind === "app" ? (
+        <AppCard reference={row.reference} live={row.live} />
       ) : row.kind === "tools" ? (
         <ToolActivity tools={row.tools} />
       ) : row.kind === "assistant" ? (
@@ -855,13 +865,14 @@ function TurnSegments({
     const kind =
       row.kind === "input" ||
       row.kind === "assistant" ||
+      row.kind === "app" ||
       row.kind === "question"
         ? "visible"
         : "execution";
     if (row.kind === "input") {
       boundary = row.id;
       textIndex = 0;
-    } else if (row.kind === "question") {
+    } else if (row.kind === "question" || row.kind === "app") {
       boundary = row.id;
       textIndex = 0;
     } else if (row.kind === "assistant") textIndex++;
@@ -869,7 +880,10 @@ function TurnSegments({
     if (
       previous?.kind === kind &&
       (kind === "execution" ||
-        (row.kind !== "question" && previous.rows.at(-1)?.kind !== "question"))
+        (row.kind !== "question" &&
+          row.kind !== "app" &&
+          previous.rows.at(-1)?.kind !== "question" &&
+          previous.rows.at(-1)?.kind !== "app"))
     )
       previous.rows.push(row);
     else

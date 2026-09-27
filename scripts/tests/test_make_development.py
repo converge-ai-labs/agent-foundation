@@ -45,6 +45,7 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     uv.chmod(0o755)
     # The same recorder stands in for asset tooling, not the foreground server.
     shutil.copy2(uv, bin_dir / "pnpm")
+    shutil.copy2(uv, bin_dir / "npm")
     shutil.copy2(uv, bin_dir / "python3")
     (tmp_path / "frontend").mkdir()
     for name in ("package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"):

@@ -6,7 +6,7 @@ import json
 from collections import OrderedDict, deque
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 from uuid import uuid4
 
@@ -28,6 +28,8 @@ from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStre
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
 from a13n_harness_ui.errors import LivePresentationError
+from a13n_harness_ui.mcp_apps.models import AppReference
+from a13n_harness_ui.mcp_apps.snapshots import METADATA_KEY
 
 _LIVE_PAYLOAD_ADAPTER = TypeAdapter(dict[str, JsonValue])
 _DEFAULT_RING_SIZE = 256
@@ -80,13 +82,15 @@ class RootStreamEvent(_StreamModel):
 class RootStreamReplay:
     summary: RootStreamSummary
     observer: HarnessAguiObserver
+    observed_count: int
+    supplements: tuple[tuple[int, AguiEvent], ...] = ()
 
     def includes_continuation(self, continuation_id: str | None) -> bool:
         """The original base or a checkpoint covered by this exact replay prefix."""
         if continuation_id == self.summary.base_continuation_id:
             return True
-        for start in range(0, self.summary.event_count, 16):
-            for event in self.observer.snapshot(start=start, stop=min(start + 16, self.summary.event_count)):
+        for start in range(0, self.observed_count, 16):
+            for event in self.observer.snapshot(start=start, stop=min(start + 16, self.observed_count)):
                 if isinstance(event, CustomEvent) and event.name == "a13n.harness_ui.checkpoint":
                     value = event.value
                     source = value.get("event") if isinstance(value, dict) else None
@@ -96,15 +100,27 @@ class RootStreamReplay:
 
     def batches(self) -> Iterator[tuple[RootStreamEvent, ...]]:
         """Read only the captured prefix; do not copy an entire Run per page."""
-        for start in range(0, self.summary.event_count, 16):
-            events = self.observer.snapshot(start=start, stop=min(start + 16, self.summary.event_count))
-            batch = []
-            for index, event in enumerate(events, start):
-                payload, omitted = _bounded_payload(event)
-                batch.append(
-                    RootStreamEvent(index=index, event_type=event.type.value, payload=payload, payload_omitted=omitted)
-                )
+        batch = []
+        for index, event in enumerate(self._events()):
+            payload, omitted = _bounded_payload(event)
+            batch.append(
+                RootStreamEvent(index=index, event_type=event.type.value, payload=payload, payload_omitted=omitted)
+            )
+            if len(batch) == 16:
+                yield tuple(batch)
+                batch = []
+        if batch:
             yield tuple(batch)
+
+    def _events(self) -> Iterator[AguiEvent]:
+        position = 0
+        for stop, event in self.supplements:
+            for start in range(position, stop, 16):
+                yield from self.observer.snapshot(start=start, stop=min(start + 16, stop))
+            position = stop
+            yield event
+        for start in range(position, self.observed_count, 16):
+            yield from self.observer.snapshot(start=start, stop=min(start + 16, self.observed_count))
 
 
 @dataclass(slots=True)
@@ -114,6 +130,8 @@ class _RootStream:
     observer: HarnessAguiObserver
     base_continuation_id: str | None
     published_count: int = 0
+    supplements: list[tuple[int, AguiEvent]] = field(default_factory=list)
+    apps: dict[str, AppReference] = field(default_factory=dict)
 
     def capture(self) -> RootStreamReplay:
         return RootStreamReplay(
@@ -121,9 +139,11 @@ class _RootStream:
                 thread_id=self.thread_id,
                 run_id=self.run_id,
                 base_continuation_id=self.base_continuation_id,
-                event_count=self.published_count,
+                event_count=self.published_count + len(self.supplements),
             ),
             observer=self.observer,
+            observed_count=self.published_count,
+            supplements=tuple(self.supplements),
         )
 
 
@@ -301,6 +321,7 @@ class HarnessUiLiveHub:
         execution_id: str | None = None,
         observer: HarnessAguiObserver | None = None,
         base_continuation_id: str | None = None,
+        supplements: Sequence[AguiEvent] = (),
     ) -> None:
         """Publish detached events while marking slow subscribers for reset.
 
@@ -311,7 +332,8 @@ class HarnessUiLiveHub:
         start = 0 if observer is None else observer.event_count - len(events)
         if observer is not None and (run_kind != "root" or start < 0):
             raise ValueError("observer replay requires the root's latest observed batch")
-        for index, source in enumerate(events, start):
+        for offset, source in enumerate((*events, *supplements)):
+            is_supplement = offset >= len(events)
             async with self._lock:
                 if self._closed:
                     return
@@ -347,7 +369,14 @@ class HarnessUiLiveHub:
                         current = _RootStream(thread_id, run_id, observer, base_continuation_id)
                         self._root_streams[thread_id] = current
                         self._terminal_streams.pop(thread_id, None)
-                    current.published_count = index + 1
+                    if is_supplement:
+                        current.supplements.append((current.published_count, source.model_copy(deep=True)))
+                        if isinstance(source, CustomEvent) and source.name == METADATA_KEY:
+                            for item in source.value["event"]["apps"]:
+                                reference = AppReference.model_validate(item, strict=False)
+                                current.apps[reference.app_id] = reference
+                    else:
+                        current.published_count = start + offset + 1
                 self._trim_root_rings()
                 for subscriber in self._subscribers:
                     if not subscriber.accepts(event) or subscriber.gap:
@@ -363,6 +392,11 @@ class HarnessUiLiveHub:
             # A large framed event must not overflow even a ready consumer merely
             # because its producer submitted one batch. Never await under the lock.
             await checkpoint()
+
+    async def retains_mcp_app(self, reference: AppReference) -> bool:
+        async with self._lock:
+            current = self._root_streams.get(reference.thread_id)
+            return current is not None and current.apps.get(reference.app_id) == reference
 
     async def finish_root(self, *, thread_id: str, run_id: str, saved_continuation_id: str | None) -> None:
         """Release saved Runs; bound inspection of terminal unsaved output."""

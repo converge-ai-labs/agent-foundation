@@ -520,6 +520,601 @@
         }
       }
     },
+    "/api/threads/{thread_id}/apps/open": {
+      "post": {
+        "summary": "Open Mcp App",
+        "operationId": "open_mcp_app_api_threads__thread_id__apps_open_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPresentation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppReference"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/apps/activate": {
+      "post": {
+        "summary": "Activate Mcp App",
+        "operationId": "activate_mcp_app_api_threads__thread_id__apps_activate_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppReference"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/apps/{view_id}/tools": {
+      "post": {
+        "summary": "Call Mcp App Tool",
+        "operationId": "call_mcp_app_tool_api_threads__thread_id__apps__view_id__tools_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "view_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "View Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppToolRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/apps/{view_id}/resources/read": {
+      "post": {
+        "summary": "Read Mcp App Resource",
+        "operationId": "read_mcp_app_resource_api_threads__thread_id__apps__view_id__resources_read_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "view_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "View Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/JsonValue"
+                  },
+                  "title": "Response Read Mcp App Resource Api Threads  Thread Id  Apps  View Id  Resources Read Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppResourceRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/apps/{view_id}/operations/{request_key}": {
+      "get": {
+        "summary": "Get Mcp App Operation",
+        "operationId": "get_mcp_app_operation_api_threads__thread_id__apps__view_id__operations__request_key__get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "view_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "View Id"
+            }
+          },
+          {
+            "name": "request_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/apps/{view_id}/operations/{request_key}/decision": {
+      "post": {
+        "summary": "Decide Mcp App Operation",
+        "operationId": "decide_mcp_app_operation_api_threads__thread_id__apps__view_id__operations__request_key__decision_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "view_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "View Id"
+            }
+          },
+          {
+            "name": "request_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppDecision"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/apps/{view_id}/messages": {
+      "post": {
+        "summary": "Send Mcp App Message",
+        "operationId": "send_mcp_app_message_api_threads__thread_id__apps__view_id__messages_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "view_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "View Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppMessageReceipt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppMessageRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/apps/{view_id}/messages/{request_key}": {
+      "get": {
+        "summary": "Get Mcp App Message",
+        "operationId": "get_mcp_app_message_api_threads__thread_id__apps__view_id__messages__request_key__get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "view_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "View Id"
+            }
+          },
+          {
+            "name": "request_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppMessageReceipt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/apps/{view_id}/context": {
+      "put": {
+        "summary": "Update Mcp App Context",
+        "operationId": "update_mcp_app_context_api_threads__thread_id__apps__view_id__context_put",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "view_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "View Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppContext"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppContextUpdate"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Discard Mcp App Context",
+        "operationId": "discard_mcp_app_context_api_threads__thread_id__apps__view_id__context_delete",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "view_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "View Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/apps/{view_id}": {
+      "delete": {
+        "summary": "Close Mcp App View",
+        "operationId": "close_mcp_app_view_api_threads__thread_id__apps__view_id__delete",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "view_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "View Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/drafts": {
       "get": {
         "summary": "List Unsent Drafts",
@@ -5345,6 +5940,55 @@
         "title": "AllowlistDestinations",
         "type": "object"
       },
+      "Annotations": {
+        "description": "Optional annotations the client can use to inform how objects are used or displayed.",
+        "properties": {
+          "audience": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audience"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "lastModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastmodified"
+          }
+        },
+        "title": "Annotations",
+        "type": "object"
+      },
       "ApiKeyAuthentication": {
         "properties": {
           "kind": {
@@ -5395,6 +6039,489 @@
           "credential_ref"
         ],
         "title": "ApiKeyStatus"
+      },
+      "AppContext": {
+        "properties": {
+          "reference": {
+            "$ref": "#/components/schemas/AppContextReference"
+          },
+          "value": {
+            "$ref": "#/components/schemas/AppContextUpdate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reference",
+          "value"
+        ],
+        "title": "AppContext"
+      },
+      "AppContextReference": {
+        "additionalProperties": false,
+        "properties": {
+          "view_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "View Id",
+            "type": "string"
+          },
+          "context_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Context Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "view_id",
+          "context_id"
+        ],
+        "title": "AppContextReference",
+        "type": "object"
+      },
+      "AppContextUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TextContent"
+            },
+            "maxItems": 64,
+            "title": "Content",
+            "type": "array"
+          },
+          "structuredContent": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structuredcontent"
+          }
+        },
+        "title": "AppContextUpdate",
+        "type": "object"
+      },
+      "AppMessageReceipt": {
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/AppMessageRequest"
+          },
+          "view_id": {
+            "type": "string",
+            "title": "View Id"
+          },
+          "root_thread_id": {
+            "type": "string",
+            "title": "Root Thread Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "submitting",
+              "accepted",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootRunReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request",
+          "view_id",
+          "root_thread_id",
+          "status"
+        ],
+        "title": "AppMessageReceipt"
+      },
+      "AppMessageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "request_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Key",
+            "type": "string"
+          },
+          "role": {
+            "const": "user",
+            "default": "user",
+            "title": "Role",
+            "type": "string"
+          },
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/TextContent"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Content",
+            "type": "array"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppContextReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_key",
+          "content"
+        ],
+        "title": "AppMessageRequest",
+        "type": "object"
+      },
+      "AppOperation": {
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "title": "Operation Id"
+          },
+          "view_id": {
+            "type": "string",
+            "title": "View Id"
+          },
+          "request_key": {
+            "type": "string",
+            "title": "Request Key"
+          },
+          "tool_id": {
+            "type": "string",
+            "title": "Tool Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Arguments"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "checking",
+              "approval_required",
+              "running",
+              "completed",
+              "denied",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "review_usage": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCallUsage"
+            },
+            "type": "array",
+            "maxItems": 1,
+            "title": "Review Usage",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation_id",
+          "view_id",
+          "request_key",
+          "tool_id",
+          "name",
+          "arguments",
+          "status"
+        ],
+        "title": "AppOperation"
+      },
+      "AppPresentation": {
+        "properties": {
+          "reference": {
+            "$ref": "#/components/schemas/AppReference"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/AppSnapshot"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppResource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sandbox_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sandbox Url"
+          },
+          "connected": {
+            "type": "boolean",
+            "title": "Connected",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reference",
+          "snapshot",
+          "resource"
+        ],
+        "title": "AppPresentation"
+      },
+      "AppReference": {
+        "additionalProperties": false,
+        "description": "Provenance and an authority-neutral immutable MCP App snapshot reference.",
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "tool_call_id": {
+            "title": "Tool Call Id",
+            "type": "string"
+          },
+          "server_id": {
+            "title": "Server Id",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ObjectRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable"
+          }
+        },
+        "required": [
+          "app_id",
+          "thread_id",
+          "run_id",
+          "tool_call_id",
+          "server_id",
+          "tool_name"
+        ],
+        "title": "AppReference",
+        "type": "object"
+      },
+      "AppResource": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "1",
+            "title": "Schema Version",
+            "default": "1"
+          },
+          "uri": {
+            "type": "string",
+            "title": "Uri"
+          },
+          "html": {
+            "type": "string",
+            "maxLength": 8388608,
+            "title": "Html"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "uri",
+          "html"
+        ],
+        "title": "AppResource"
+      },
+      "AppSnapshot": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "1",
+            "title": "Schema Version",
+            "default": "1"
+          },
+          "connection_generation": {
+            "type": "string",
+            "title": "Connection Generation"
+          },
+          "app_id": {
+            "type": "string",
+            "title": "App Id"
+          },
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "tool_call_id": {
+            "type": "string",
+            "title": "Tool Call Id"
+          },
+          "server_id": {
+            "type": "string",
+            "title": "Server Id"
+          },
+          "tool": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Tool"
+          },
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Arguments"
+          },
+          "result": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Result"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ObjectRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "connection_generation",
+          "app_id",
+          "thread_id",
+          "run_id",
+          "tool_call_id",
+          "server_id",
+          "tool",
+          "arguments",
+          "result"
+        ],
+        "title": "AppSnapshot"
       },
       "AppState": {
         "type": "string",
@@ -5486,6 +6613,42 @@
         ],
         "title": "AppStatus",
         "description": "Detached application health and accepted-source projection."
+      },
+      "AppView": {
+        "properties": {
+          "view_id": {
+            "type": "string",
+            "title": "View Id"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/AppReference"
+          },
+          "connection_generation": {
+            "type": "string",
+            "title": "Connection Generation"
+          },
+          "root_thread_id": {
+            "type": "string",
+            "title": "Root Thread Id"
+          },
+          "route": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Route",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "view_id",
+          "reference",
+          "connection_generation",
+          "root_thread_id"
+        ],
+        "title": "AppView"
       },
       "AppliedEditView": {
         "properties": {
@@ -5615,6 +6778,88 @@
           "unsupported"
         ],
         "title": "Availability"
+      },
+      "BoundedRequestUsage": {
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "maximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Input Tokens",
+            "default": 0
+          },
+          "cache_write_tokens": {
+            "type": "integer",
+            "maximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Cache Write Tokens",
+            "default": 0
+          },
+          "cache_read_tokens": {
+            "type": "integer",
+            "maximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Cache Read Tokens",
+            "default": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "maximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Output Tokens",
+            "default": 0
+          },
+          "input_audio_tokens": {
+            "type": "integer",
+            "maximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Input Audio Tokens",
+            "default": 0
+          },
+          "cache_audio_read_tokens": {
+            "type": "integer",
+            "maximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Cache Audio Read Tokens",
+            "default": 0
+          },
+          "output_audio_tokens": {
+            "type": "integer",
+            "maximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Output Audio Tokens",
+            "default": 0
+          },
+          "audio_seconds": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Audio Seconds",
+            "default": "0"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "details": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BoundedRequestUsage",
+        "description": "One request's counters and bounded provider detail, with USD cost."
       },
       "CapabilitySelection": {
         "properties": {
@@ -6374,6 +7619,14 @@
                 "type": "null"
               }
             ]
+          },
+          "mcp_apps": {
+            "items": {
+              "$ref": "#/components/schemas/AppReference"
+            },
+            "type": "array",
+            "title": "Mcp Apps",
+            "default": []
           },
           "available_actions": {
             "items": {
@@ -7330,6 +8583,15 @@
           "kind"
         ],
         "title": "CopilotSubscriptionAuthentication"
+      },
+      "CostSource": {
+        "type": "string",
+        "enum": [
+          "catalog",
+          "custom",
+          "provider_or_genai_prices",
+          "unknown"
+        ]
       },
       "DecisionBatchView": {
         "properties": {
@@ -9497,6 +10759,189 @@
           }
         }
       },
+      "ModelCallUsage": {
+        "properties": {
+          "usage_status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "unavailable"
+            ],
+            "title": "Usage Status",
+            "default": "complete"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Outcome",
+            "default": "completed"
+          },
+          "response_state": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Response State"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name"
+          },
+          "provider_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Name"
+          },
+          "response_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Response Timestamp"
+          },
+          "request_usage": {
+            "$ref": "#/components/schemas/BoundedRequestUsage"
+          },
+          "pricing_revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricing Revision"
+          },
+          "pricing_rule_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricing Rule Id"
+          },
+          "cost_source": {
+            "$ref": "#/components/schemas/CostSource",
+            "default": "unknown"
+          },
+          "pricing_status": {
+            "$ref": "#/components/schemas/PricingStatus",
+            "default": "not_reached"
+          },
+          "record_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Record Id"
+          },
+          "call_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Call Id"
+          },
+          "model_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Run Id"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "provider_response_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Response Id"
+          },
+          "request_started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Request Started At"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "tool_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Id"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Call Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "response_state",
+          "response_timestamp",
+          "request_usage",
+          "record_id",
+          "call_id",
+          "request_started_at",
+          "source"
+        ],
+        "title": "ModelCallUsage",
+        "description": "One priced native call owned by a Host operation, with no invented Run lineage."
+      },
       "ModelCatalogSnapshot": {
         "properties": {
           "items": {
@@ -10128,6 +11573,49 @@
         "type": "object",
         "title": "NoteWorkSummary"
       },
+      "ObjectKind": {
+        "description": "Immutable payload families owned by the Harness UI store.",
+        "enum": [
+          "configuration-generation",
+          "run-composition",
+          "thread-initial-state",
+          "continuation",
+          "child-checkpoint",
+          "environment-state",
+          "mcp-app-resource",
+          "mcp-app-snapshot"
+        ],
+        "title": "ObjectKind",
+        "type": "string"
+      },
+      "ObjectRef": {
+        "additionalProperties": false,
+        "description": "Authority-neutral identity for one verified immutable object.",
+        "properties": {
+          "object_kind": {
+            "$ref": "#/components/schemas/ObjectKind"
+          },
+          "object_schema_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Object Schema Version",
+            "type": "string"
+          },
+          "logical_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Logical Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_kind",
+          "object_schema_version",
+          "logical_digest"
+        ],
+        "title": "ObjectRef",
+        "type": "object"
+      },
       "OutputComment": {
         "properties": {
           "body": {
@@ -10523,6 +12011,16 @@
         ],
         "title": "PresenceFrame",
         "type": "object"
+      },
+      "PricingStatus": {
+        "type": "string",
+        "enum": [
+          "applied",
+          "declined",
+          "failed",
+          "disabled",
+          "not_reached"
+        ]
       },
       "ProjectDefaults": {
         "properties": {
@@ -12656,6 +14154,48 @@
         "title": "TerminalView",
         "type": "object"
       },
+      "TextContent": {
+        "description": "Text provided to or from an LLM.",
+        "properties": {
+          "type": {
+            "const": "text",
+            "default": "text",
+            "title": "Type",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "annotations": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Annotations"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "_meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "TextContent",
+        "type": "object"
+      },
       "ThinkingControl": {
         "properties": {
           "status": {
@@ -14296,6 +15836,14 @@
             "title": "Tool Images",
             "default": []
           },
+          "mcp_apps": {
+            "items": {
+              "$ref": "#/components/schemas/AppReference"
+            },
+            "type": "array",
+            "title": "Mcp Apps",
+            "default": []
+          },
           "tool_image_unavailable": {
             "type": "boolean",
             "title": "Tool Image Unavailable",
@@ -14375,6 +15923,14 @@
               }
             ],
             "title": "Output Preview"
+          },
+          "app_positions": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "App Positions",
+            "default": []
           },
           "preview": {
             "type": "string",
@@ -15785,6 +17341,66 @@
           "name"
         ],
         "title": "PairingRequest"
+      },
+      "AppToolRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "request_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Key",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Arguments",
+            "type": "object"
+          }
+        },
+        "required": [
+          "request_key",
+          "name"
+        ],
+        "title": "AppToolRequest",
+        "type": "object"
+      },
+      "AppResourceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "uri": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri"
+        ],
+        "title": "AppResourceRequest",
+        "type": "object"
+      },
+      "AppDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "approve"
+        ],
+        "title": "AppDecision",
+        "type": "object"
       },
       "TerminalCreate": {
         "properties": {
@@ -17229,6 +18845,15 @@
               }
             ],
             "title": "Source Id"
+          },
+          "app_context": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AppContextReference"
+            },
+            "maxItems": 8,
+            "title": "App Context",
+            "type": "array"
           },
           "mode": {
             "default": "normal",

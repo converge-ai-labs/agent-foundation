@@ -25,6 +25,38 @@ def input_message(text: str, source: str) -> ModelRequest:
     return ModelRequest(parts=[UserPromptPart([TextContent(text, metadata={"source_id": source})])])
 
 
+def test_app_presentations_are_turn_boundaries_independent_of_execution_pages():
+    from a13n_harness_ui.mcp_apps.models import AppReference
+    from a13n_harness_ui.mcp_apps.snapshots import METADATA_KEY
+
+    reference = AppReference(
+        app_id="app-one",
+        thread_id="thread-one",
+        run_id="run-one",
+        tool_call_id="call-one",
+        server_id="counter",
+        tool_name="counter",
+    )
+    messages = (
+        input_message("Show counter", "input-one"),
+        ModelResponse(parts=[ToolCallPart("counter", {}, tool_call_id="call-one")]),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    "counter",
+                    {"count": 1},
+                    tool_call_id="call-one",
+                    metadata={METADATA_KEY: [reference.model_dump(mode="json")]},
+                )
+            ]
+        ),
+        ModelResponse(parts=[TextPart("Counter is ready")]),
+    )
+    turn = _transcript_turns(messages, (3,))[0]
+    assert turn.app_positions == (2,)
+    assert turn.input_position == 0 and turn.output_position == 3
+
+
 def test_only_successful_saved_completion_marks_final_and_survives_reload():
     messages = [
         input_message("Question", "input-1"),

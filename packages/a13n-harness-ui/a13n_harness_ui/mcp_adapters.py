@@ -10,7 +10,7 @@ import httpx2
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
 from anyio import to_thread
-from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability
 from pydantic_ai.mcp import MCPToolset
@@ -25,16 +25,24 @@ from a13n_harness_ui.configuration.models import (
     McpValueSource,
 )
 from a13n_harness_ui.errors import ConfigurationError
+from a13n_harness_ui.mcp_apps.connections import AppMCP, AppToolset, Connections
 
 
 class HarnessUiMCP(MCP[AgentContext]):
     """Inert definition capability that creates one MCP client per logical Run."""
 
-    def __init__(self, recipe: ResolvedMcpRecipe, *, configuration_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        recipe: ResolvedMcpRecipe,
+        *,
+        configuration_root: Path | None = None,
+        apps: Connections | None = None,
+    ) -> None:
         if not isinstance(recipe, ResolvedMcpRecipe):
             raise TypeError("recipe must be a ResolvedMcpRecipe")
         self._recipe = recipe.model_copy(deep=True)
         self._configuration_root = configuration_root
+        self._apps = apps
         transport = recipe.transport
         self.url = transport.url if isinstance(transport, McpRemoteTransport) else None
         self.id = recipe.server_id
@@ -57,40 +65,51 @@ class HarnessUiMCP(MCP[AgentContext]):
                 )
             return existing
 
-        transport = self._recipe.transport
-        if isinstance(transport, McpRemoteTransport):
-            headers = await resolve_mcp_values(transport.headers, self._configuration_root)
-            toolset = MCPToolset[AgentContext](
-                StreamableHttpTransport(
-                    transport.url,
-                    headers=headers or None,
-                    httpx_client_factory=_no_redirect_client,
-                ),
-                id=self._recipe.server_id,
+        client_transport, effective_recipe, init_timeout = await prepare_mcp_transport(
+            self._recipe, self._configuration_root
+        )
+        if self._apps is not None:
+            connection = await self._apps.acquire(
+                ctx.deps.thread_id,
+                self._recipe.server_id,
+                # Effective credentials are compared only in process memory, never persisted.
+                effective_recipe,
+                client_transport,
+                binding=self._recipe.transport.model_dump_json(),
             )
-        elif isinstance(transport, McpCommandTransport):
-            environment = await resolve_mcp_values(transport.environment, self._configuration_root)
-            toolset = MCPToolset[AgentContext](
-                StdioTransport(
-                    command=transport.command,
-                    args=list(transport.arguments),
-                    env=environment or None,
-                    keep_alive=False,
-                ),
-                id=self._recipe.server_id,
-                # A spawned server imports its runtime before answering; the 5-second default
-                # fails on a busy machine while still leaving a hung process unbounded.
-                init_timeout=30,
-            )
+            toolset = AppToolset(connection, self._apps.captures)
         else:
-            raise TypeError("unsupported MCP transport")
-        replacement = MCP[AgentContext](
+            toolset = MCPToolset[AgentContext](client_transport, id=self._recipe.server_id, init_timeout=init_timeout)
+        capability = AppMCP if self._apps is not None else MCP[AgentContext]
+        replacement = capability(
             id=self._recipe.server_id,
             native=False,
             local=toolset,
         )
         ctx.deps._record_run_capability(cache_id, replacement)
         return replacement
+
+
+async def prepare_mcp_transport(
+    recipe: ResolvedMcpRecipe, configuration_root: Path | None
+) -> tuple[ClientTransport, str, int]:
+    """Resolve current credentials for a fresh Run or App operation; never persist the comparison value."""
+    transport = recipe.transport
+    if isinstance(transport, McpRemoteTransport):
+        values = await resolve_mcp_values(transport.headers, configuration_root)
+        client_transport = StreamableHttpTransport(
+            transport.url, headers=values or None, httpx_client_factory=_no_redirect_client
+        )
+        init_timeout = 5
+    elif isinstance(transport, McpCommandTransport):
+        values = await resolve_mcp_values(transport.environment, configuration_root)
+        client_transport = StdioTransport(
+            command=transport.command, args=list(transport.arguments), env=values or None, keep_alive=False
+        )
+        init_timeout = 30
+    else:
+        raise TypeError("unsupported MCP transport")
+    return client_transport, repr((recipe.model_dump(), values)), init_timeout
 
 
 async def resolve_mcp_values(

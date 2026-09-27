@@ -3,7 +3,7 @@
 A13N_SERVICE_IMAGE ?= a13n-service:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
 A13N_HARNESS_UI_IMAGE ?= a13n-harness-ui:local
-EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins examples/provider-plugin
+EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins examples/provider-plugin examples/mcp-apps
 PYTHON_TEST_DIRS ?=
 PYTHON_TEST_WORKERS ?=
 SERVICE_CONFIG ?= var/dev/service.toml
@@ -39,7 +39,7 @@ sync: ## Synchronize the locked Python workspace
 	@uv sync --quiet --locked --all-packages
 
 .PHONY: examples-sync
-examples-sync: ## Synchronize every independent example project
+examples-sync: mcp-apps-example-assets ## Synchronize every independent example project
 	@for directory in $(EXAMPLE_DIRS); do uv sync --quiet --project "$$directory" --locked || exit $$?; done
 
 .PHONY: examples-lock-check
@@ -146,6 +146,14 @@ cli: harness-ui-env ## Run Harness UI with workspace-local config/data (CLI_ARGS
 
 webui: harness-ui-env a13n-harness-ui-assets ## Build and start WebUI with a generated login link (WEBUI_ARGS forwards options)
 	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.cli $(CLI_ARGS) webui $(WEBUI_ARGS)
+
+.PHONY: mcp-apps-example-assets mcp-apps-demo
+mcp-apps-example-assets: ## Bundle the standalone MCP App example without CDN dependencies
+	@npm --prefix examples/mcp-apps ci --no-audit --no-fund
+	@npm --prefix examples/mcp-apps run build
+
+mcp-apps-demo: a13n-harness-ui-assets mcp-apps-example-assets ## Run a disposable real MCP Apps demo (WEBUI_ARGS forwards options)
+	@uv run --locked python -m dev.harness-ui.mcp_apps $(WEBUI_ARGS)
 
 .PHONY: cli-landing webui-landing
 cli-landing: ## Try CLI first-run setup with disposable home/config/data; clean up on exit

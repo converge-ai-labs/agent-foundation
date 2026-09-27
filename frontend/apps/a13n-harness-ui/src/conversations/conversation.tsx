@@ -1,4 +1,5 @@
 import {
+  type ComponentProps,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -17,6 +18,7 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, submitContinuation, useDraft } from "./composer";
+import { AppContextProvider } from "../mcp-apps/context-selection";
 import { ComposerStatus } from "./composer-status";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
@@ -55,7 +57,16 @@ export function ConversationPage(props: {
   const { threadId = "" } = useParams();
   return <Conversation key={threadId} threadId={threadId} {...props} />;
 }
-export function Conversation({
+export function Conversation(
+  props: ComponentProps<typeof ConversationContent>,
+) {
+  return (
+    <AppContextProvider key={props.threadId}>
+      <ConversationContent {...props} />
+    </AppContextProvider>
+  );
+}
+function ConversationContent({
   threadId,
   profile,
   unauthorized,

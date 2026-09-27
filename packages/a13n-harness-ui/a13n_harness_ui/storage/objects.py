@@ -74,6 +74,8 @@ class ObjectKind(StrEnum):
     continuation = "continuation"
     child_checkpoint = "child-checkpoint"
     environment_state = "environment-state"
+    mcp_app_resource = "mcp-app-resource"
+    mcp_app_snapshot = "mcp-app-snapshot"
 
 
 class ObjectRef(BaseModel):

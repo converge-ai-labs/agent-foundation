@@ -1,0 +1,47 @@
+[project]
+name = "a13n-mcp-apps-example"
+version = "0.0.0"
+description = "A stateful MCP App using FastMCP and the public browser SDK"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.13"
+dependencies = ["fastmcp>=4.0.3,<5", "mcp>=2.2.0,<3"]
+
+[project.scripts]
+mcp-apps-example = "mcp_apps_example.server:main"
+
+[dependency-groups]
+dev = ["pyright>=1.1,<2", "pytest>=9,<10", "ruff>=0.16,<0.17"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_apps_example"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/mcp_apps_example/assets" = "mcp_apps_example/assets"
+
+[tool.hatch.build.targets.sdist.force-include]
+"src/mcp_apps_example/assets" = "src/mcp_apps_example/assets"
+
+[tool.uv.workspace]
+members = []
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.13"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "UP"]
+ignore = ["E501"]

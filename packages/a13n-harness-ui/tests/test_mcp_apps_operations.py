@@ -1,0 +1,574 @@
+from __future__ import annotations
+
+import asyncio
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+import yaml
+from a13n_harness.tools.identity import ToolIdentity
+from a13n_harness_ui.composition import AgentCompositionResolver, CompositionAcceptanceService
+from a13n_harness_ui.configuration import load_harness_ui_configuration
+from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.mcp_adapters import prepare_mcp_transport
+from a13n_harness_ui.mcp_apps.connections import CapturedCall, Connections
+from a13n_harness_ui.mcp_apps.messages import AppMessageRequest
+from a13n_harness_ui.mcp_apps.operations import AppOperations, AppToolRequest
+from a13n_harness_ui.mcp_apps.owners import CurrentOwners
+from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
+from a13n_harness_ui.settings import StorageSettings
+from a13n_harness_ui.storage import AgentResourceSource, ObjectKind, ThreadConfiguration, open_local_store
+from a13n_harness_ui.surfaces import RootRunReceipt
+from mcp.types import TextContent
+
+from .test_composition import _catalog, _selection, _write_source
+from .test_mcp_apps_connections import _SERVER
+from .test_thread_repository import _initial
+
+pytestmark = pytest.mark.anyio
+
+
+@pytest.fixture
+async def apps(tmp_path: Path):
+    config = _write_source(tmp_path)
+    root = yaml.safe_load(config.read_text())
+    root["webui"] = {"mcp_apps": {"enabled": True, "servers": ["mcp-docs"]}}
+    config.write_text(yaml.safe_dump(root))
+    script = tmp_path / "apps_server.py"
+    script.write_text(_SERVER)
+    mcp = tmp_path / "mcp/docs.yaml"
+    server = yaml.safe_load(mcp.read_text())
+    server["transport"] = {"command": sys.executable, "arguments": [str(script)]}
+    mcp.write_text(yaml.safe_dump(server))
+    source = await load_harness_ui_configuration(config)
+    resolver = AgentCompositionResolver(_catalog())
+    async with open_local_store(StorageSettings(data_root=tmp_path / "state")) as store:
+        configurations = CompositionAcceptanceService(store, resolver)
+        await configurations.accept(source, expected_current_digest=None)
+        selection = _selection()
+        await store.threads.create(
+            thread_id="thread-1",
+            configuration=ThreadConfiguration(
+                version=1,
+                project_id=selection.project_id,
+                agent_source=AgentResourceSource(id=selection.agent_source_id),
+                environment_profile_id=selection.environment_profile_id,
+                harness_plugin_ids=selection.harness_plugin_ids,
+                mcp_server_ids=selection.mcp_server_ids,
+            ),
+            initial_state=_initial(),
+        )
+        owners = CurrentOwners(store, configurations, resolver)
+        connections = Connections()
+        snapshots = AppSnapshots(store.objects, connections)
+        operations = AppOperations(snapshots, owners, tmp_path)
+        try:
+            owner = await owners.resolve("thread-1")
+            recipe = owner.recipe("mcp-docs")
+            transport, effective, _ = await prepare_mcp_transport(recipe, tmp_path)
+            connection = await connections.acquire(
+                "thread-1", "mcp-docs", effective, transport, binding=recipe.transport.model_dump_json()
+            )
+            tool = next(tool for tool in await connection.client.list_tools() if tool.name == "counter")
+            result = await connection.client.call_tool_mcp("counter", {})
+            reference = await snapshots.capture(
+                CapturedCall(connection, tool, {}, result),
+                thread_id="thread-1",
+                run_id="run-original",
+                call_id="call-original",
+            )
+            yield operations, reference
+        finally:
+            await operations.close()
+            await connections.close()
+
+
+async def _policy(operations: AppOperations, mode: str, *, tools=None, review=None) -> None:
+    path = operations.configuration_root / "agents/assistant.yaml"
+    agent = yaml.safe_load(path.read_text())
+    permissions = {"rules": {"mcp/mcp-docs/counter": mode, "mcp/mcp-docs/reset": mode}}
+    if review is not None:
+        permissions["review"] = review
+    agent["capabilities"] = [{"capability": "ToolPermissionsCapability", "configuration": permissions}]
+    agent["tools"] = tools
+    path.write_text(yaml.safe_dump(agent))
+    await _accept(operations)
+
+
+async def _accept(operations: AppOperations) -> None:
+    previous = await operations.owners.configurations.current()
+    source = await load_harness_ui_configuration(operations.configuration_root / "a13n-harness-ui.yaml")
+    await operations.owners.configurations.accept(source, expected_current_digest=previous.source_digest)
+
+
+async def _settle(operations: AppOperations, view_id: str, key: str):
+    async with asyncio.timeout(10):
+        while True:
+            operation = operations.get_operation("thread-1", view_id, key)
+            if operation.status not in {"checking", "running"}:
+                return operation
+            await asyncio.wait(tuple(operations._tasks), return_when=asyncio.FIRST_COMPLETED)
+
+
+async def test_views_share_session_not_followup_results_and_requests_are_single_consumption(apps) -> None:
+    operations, reference = apps
+    first = await operations.activate(reference)
+    second = await operations.activate(reference)
+    assert first.view_id != second.view_id
+    assert first.connection_generation == second.connection_generation
+    request = AppToolRequest(request_key="one", name="counter")
+    await operations.call_tool("thread-1", first.view_id, request)
+    result = await _settle(operations, first.view_id, "one")
+    assert result.status == "completed"
+    assert result.result["structuredContent"]["count"] == 2  # Activation did not replay the original.
+    assert (await operations.call_tool("thread-1", first.view_id, request)) == result
+    with pytest.raises(HarnessUiError, match="different arguments"):
+        await operations.call_tool("thread-1", first.view_id, request.model_copy(update={"arguments": {"delay": 0}}))
+    with pytest.raises(HarnessUiError, match="unavailable"):
+        operations.get_operation("thread-1", second.view_id, "one")
+    original = await operations.snapshots.read(reference)
+    assert original.snapshot.result["structuredContent"]["count"] == 1
+    operations.close_view("thread-1", first.view_id)
+    assert operations.snapshots.connections.get("thread-1", "mcp-docs").connected
+    await operations.call_tool("thread-1", second.view_id, request)
+    assert (await _settle(operations, second.view_id, "one")).result["structuredContent"]["count"] == 3
+
+
+async def test_current_policy_and_schema_reject_before_business_dispatch(apps) -> None:
+    operations, reference = apps
+    view = await operations.activate(reference)
+    await operations.call_tool(
+        "thread-1", view.view_id, AppToolRequest(request_key="bad", name="counter", arguments={"delay": "wrong"})
+    )
+    assert (await _settle(operations, view.view_id, "bad")).status == "failed"
+    await _policy(operations, "deny")
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="denied", name="counter"))
+    assert (await _settle(operations, view.view_id, "denied")).status == "failed"
+    await _policy(operations, "allow")
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="ok", name="counter"))
+    assert (await _settle(operations, view.view_id, "ok")).result["structuredContent"]["count"] == 2
+
+
+async def test_approval_is_bound_consumed_once_and_rechecked_against_current_policy(apps) -> None:
+    operations, reference = apps
+    await _policy(operations, "ask")
+    view = await operations.activate(reference)
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="ask", name="counter"))
+    pending = await _settle(operations, view.view_id, "ask")
+    assert pending.status == "approval_required"
+    assert pending.tool_id == "mcp/mcp-docs/counter"
+    connection = operations.snapshots.connections.get("thread-1", "mcp-docs")
+    async with connection.dispatch:
+        operations.decide("thread-1", view.view_id, "ask", approve=True)
+        with pytest.raises(HarnessUiError, match="no longer pending"):
+            operations.decide("thread-1", view.view_id, "ask", approve=True)
+        # The approval has been consumed, but another admitted call still owns the lane.
+        await _policy(operations, "deny")
+    denied = await _settle(operations, view.view_id, "ask")
+    assert denied.status == "failed"
+    await _policy(operations, "ask")
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="accepted", name="counter"))
+    assert (await _settle(operations, view.view_id, "accepted")).status == "approval_required"
+    operations.decide("thread-1", view.view_id, "accepted", approve=True)
+    assert (await _settle(operations, view.view_id, "accepted")).result["structuredContent"]["count"] == 2
+
+
+async def test_close_invalidates_pending_approval_without_closing_session(apps) -> None:
+    operations, reference = apps
+    await _policy(operations, "ask")
+    view = await operations.activate(reference)
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="ask", name="counter"))
+    assert (await _settle(operations, view.view_id, "ask")).status == "approval_required"
+    operations.close_view("thread-1", view.view_id)
+    with pytest.raises(HarnessUiError, match="closed"):
+        operations.decide("thread-1", view.view_id, "ask", approve=True)
+    assert operations.get_operation("thread-1", view.view_id, "ask").status == "denied"
+    assert operations.snapshots.connections.get("thread-1", "mcp-docs").connected
+
+
+async def test_app_only_tools_still_obey_host_allowlist(apps) -> None:
+    operations, reference = apps
+    view = await operations.activate(reference)
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="reset", name="reset"))
+    assert (await _settle(operations, view.view_id, "reset")).status == "completed"
+    await _policy(operations, "allow", tools=["counter"])
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="excluded", name="reset"))
+    assert (await _settle(operations, view.view_id, "excluded")).status == "failed"
+
+
+async def _child(operations: AppOperations):
+    owners = operations.owners
+    root = await owners.resolve("thread-1")
+    edge = next(edge for edge in root.node.children if edge.source_kind == "markdown")
+    source = await owners.configurations.current()
+    composition = owners.resolver.resolve_run(source, _selection()).model_copy(
+        update={"thread_id": "child", "root": edge.definition}
+    )
+    saved = await owners.store.objects.publish_model(object_kind=ObjectKind.run_composition, value=composition)
+    thread = await owners.store.threads.get("thread-1")
+    await owners.store.threads.create(
+        thread_id="child", parent_thread_id="thread-1", configuration=thread.configuration, initial_state=_initial()
+    )
+    await owners.store.child_executions.create(
+        execution_id="execution-child",
+        parent_thread_id="thread-1",
+        child_thread_id="child",
+        child_run_id="run-child",
+        run_composition=saved.ref,
+    )
+    assert (await owners.resolve("child")).route == (edge.name,)
+    return edge
+
+
+async def test_current_child_route_uses_current_parent_policy_and_never_historical_fallback(apps) -> None:
+    operations, _ = apps
+    await _child(operations)
+    owners = operations.owners
+    await _policy(operations, "deny")
+    child = await owners.resolve("child")
+    assert owners.permissions(child).permissions.resolve(ToolIdentity("mcp/mcp-docs/counter")) == "deny"
+    agent_path = operations.configuration_root / "agents/assistant.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent["subagents"] = []
+    agent_path.write_text(yaml.safe_dump(agent))
+    await _accept(operations)
+    with pytest.raises(HarnessUiError, match="no longer selected"):
+        await owners.resolve("child")
+
+
+async def test_review_without_a_reviewer_matches_native_no_extra_restriction_and_missing_adapter_fails_closed(
+    apps,
+) -> None:
+    operations, reference = apps
+    await _policy(operations, "review")
+    view = await operations.activate(reference)
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="no-reviewer", name="counter"))
+    assert (await _settle(operations, view.view_id, "no-reviewer")).status == "completed"
+    await _policy(operations, "review", review={"model": "model-primary", "on_error": "allow"})
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="unsupported", name="counter"))
+    failed = await _settle(operations, view.view_id, "unsupported")
+    assert failed.status == "failed" and "reviewer is unavailable" in failed.reason
+
+    async def review(admission, operation):
+        assert admission.owner.thread_id == "thread-1"
+        assert operation.tool_id == "mcp/mcp-docs/counter"
+        return "deny", "Rejected by the configured reviewer."
+
+    operations.review = review
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="reviewed", name="counter"))
+    assert (await _settle(operations, view.view_id, "reviewed")).status == "denied"
+    await _policy(operations, "allow")
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="after", name="counter"))
+    assert (await _settle(operations, view.view_id, "after")).result["structuredContent"]["count"] == 3
+
+
+async def test_explicit_reactivation_does_not_recover_private_state_or_reauthorize_old_views(apps) -> None:
+    operations, reference = apps
+    first = await operations.activate(reference)
+    await operations.snapshots.connections.get("thread-1", "mcp-docs").close()
+    second = await operations.activate(reference)
+    assert first.connection_generation != second.connection_generation
+    await operations.call_tool("thread-1", first.view_id, AppToolRequest(request_key="old", name="counter"))
+    assert (await _settle(operations, first.view_id, "old")).status == "failed"
+    await operations.call_tool("thread-1", second.view_id, AppToolRequest(request_key="new", name="counter"))
+    assert (await _settle(operations, second.view_id, "new")).result["structuredContent"]["count"] == 1
+
+
+async def test_activation_rejects_changed_original_resource(apps, monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import AsyncMock
+
+    from a13n_harness_ui.mcp_apps.connections import MIME_TYPE
+    from mcp.types import ReadResourceResult, TextResourceContents
+
+    operations, reference = apps
+    connection = operations.snapshots.connections.get("thread-1", "mcp-docs")
+    monkeypatch.setattr(
+        connection.client,
+        "read_resource_mcp",
+        AsyncMock(
+            return_value=ReadResourceResult(
+                contents=[TextResourceContents(uri="ui://counter/app.html", mime_type=MIME_TYPE, text="<p>Changed</p>")]
+            )
+        ),
+    )
+    with pytest.raises(HarnessUiError, match="resource changed"):
+        await operations.activate(reference)
+    assert not operations._views
+
+
+async def test_retained_operation_data_is_bounded_and_closed_views_release_capacity(
+    apps, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from a13n_harness_ui.mcp_apps import operations as module
+
+    operations, reference = apps
+    first = await operations.activate(reference)
+    bound = operations._retained_bytes + 64
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "_MAX_RETAINED_BYTES", bound)
+        with pytest.raises(HarnessUiError, match="retained operation data"):
+            await operations.call_tool(
+                "thread-1", first.view_id, AppToolRequest(request_key="no-space", name="counter")
+            )
+        assert operations._retained_bytes <= bound
+    await operations.call_tool("thread-1", first.view_id, AppToolRequest(request_key="ok", name="counter"))
+    assert (await _settle(operations, first.view_id, "ok")).result["structuredContent"]["count"] == 2
+    retained = operations._retained_bytes
+    await asyncio.gather(*operations._tasks)
+    operations.close_view("thread-1", first.view_id)
+    await operations.activate(reference)
+    assert operations._retained_bytes < retained
+
+
+async def test_effective_credential_change_rejects_existing_view_without_auto_reconnect(
+    apps, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    operations, reference = apps
+    server_path = operations.configuration_root / "mcp/docs.yaml"
+    server = yaml.safe_load(server_path.read_text())
+    server["transport"]["environment"] = {"APP_CREDENTIAL": {"env": "APP_CREDENTIAL"}}
+    server_path.write_text(yaml.safe_dump(server))
+    monkeypatch.setenv("APP_CREDENTIAL", "first")
+    await _accept(operations)
+    view = await operations.activate(reference)
+    monkeypatch.setenv("APP_CREDENTIAL", "changed")
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="changed", name="counter"))
+    failed = await _settle(operations, view.view_id, "changed")
+    assert failed.status == "failed" and "binding changed" in failed.reason
+    assert operations.snapshots.connections.get("thread-1", "mcp-docs").generation == view.connection_generation
+
+
+@pytest.mark.parametrize("revoke", ["view", "policy"])
+async def test_revocation_while_dispatch_enumerates_tools_prevents_business_call(
+    apps, monkeypatch: pytest.MonkeyPatch, revoke: str
+) -> None:
+    operations, reference = apps
+    view = await operations.activate(reference)
+    connection = operations.snapshots.connections.get("thread-1", "mcp-docs")
+    list_tools = connection.client.list_tools
+    enumerating = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def paused(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            enumerating.set()
+            await release.wait()
+        return await list_tools(*args, **kwargs)
+
+    monkeypatch.setattr(connection.client, "list_tools", paused)
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="revoked", name="counter"))
+    try:
+        async with asyncio.timeout(10):
+            await enumerating.wait()
+        if revoke == "view":
+            operations.close_view("thread-1", view.view_id)
+        else:
+            await _policy(operations, "deny")
+    finally:
+        release.set()
+    await asyncio.gather(*operations._tasks)
+    result = operations.get_operation("thread-1", view.view_id, "revoked")
+    assert result.status in {"failed", "denied"}
+    assert (await connection.client.call_tool_mcp("counter", {})).structured_content["count"] == 2
+
+
+@pytest.mark.parametrize(
+    ("risk", "on_error", "expected"),
+    [
+        ("low", "deny", "completed"),
+        ("extra_high", "allow", "denied"),
+        ("invalid", "approval_required", "approval_required"),
+        ("invalid", "allow", "completed"),
+    ],
+)
+async def test_builtin_app_review_uses_host_model_and_retains_only_operation_usage(
+    apps, monkeypatch, risk, on_error, expected
+):
+    from a13n_harness_ui.mcp_apps.review import AppReviewer
+    from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    operations, reference = apps
+    model_path = operations.configuration_root / "models/primary.yaml"
+    model = yaml.safe_load(model_path.read_text())
+    model["settings"] = {"temperature": 0.8, "max_tokens": 250}
+    model_path.write_text(yaml.safe_dump(model))
+    await _policy(
+        operations,
+        "review",
+        review={
+            "model": "model-primary",
+            "model_settings": {"temperature": 0},
+            "on_error": on_error,
+            "on_flagged": "deny",
+        },
+    )
+    view = await operations.activate(reference)
+    before = await operations.owners.store.threads.get("thread-1")
+    resolutions = []
+    prompts = []
+
+    async def provider(messages, info):
+        assert info.model_settings["temperature"] == 0 and info.model_settings["max_tokens"] == 250
+        prompts.append(str(messages))
+        yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"risk":"' + risk + '"}')}
+
+    async def resolve(self, model_id, *, thread_id):
+        resolutions.append((model_id, thread_id))
+        return FunctionModel(stream_function=provider)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    operations.review = AppReviewer(
+        operations, api_keys=ApiKeyStore(operations.configuration_root / "auth.json"), subscription_sources={}
+    )
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="review", name="counter"))
+    result = await _settle(operations, view.view_id, "review")
+    assert result.status == expected
+    assert len(result.review_usage) == len(resolutions) == len(prompts) == 1
+    record = result.review_usage[0]
+    assert record.tool_call_id == result.operation_id and record.tool_id == result.tool_id
+    assert record.model_id == resolutions[0][0] and resolutions[0][1] == "thread-1"
+    assert "Root authored instructions" not in prompts[0]
+    assert "run_id" not in record.model_dump() and "agent_instance_id" not in record.model_dump()
+    assert await operations.owners.store.threads.get("thread-1") == before
+    if expected == "completed":
+        assert result.result["structuredContent"]["count"] == 2
+    else:
+        assert result.result is None
+    if expected == "approval_required":
+        operations.decide("thread-1", view.view_id, "review", approve=True)
+        completed = await _settle(operations, view.view_id, "review")
+        assert completed.status == "completed" and completed.review_usage == result.review_usage
+
+
+@pytest.mark.parametrize("revoke", ["close", "policy", "model"])
+async def test_app_model_admission_rechecks_authority_after_resolution(apps, monkeypatch, revoke):
+    from a13n_harness_ui.mcp_apps.review import AppReviewer
+    from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from pydantic_ai.models.function import FunctionModel
+
+    operations, reference = apps
+    await _policy(operations, "review", review={"model": "model-primary", "on_error": "allow"})
+    view = await operations.activate(reference)
+    providers = []
+
+    async def provider(messages, info):
+        providers.append(True)
+        yield "must not dispatch"
+
+    async def resolve(self, model_id, *, thread_id):
+        if revoke == "close":
+            operations.close_view("thread-1", view.view_id)
+        elif revoke == "policy":
+            await _policy(operations, "deny")
+        else:
+            path = operations.configuration_root / "models/primary.yaml"
+            model = yaml.safe_load(path.read_text())
+            model["settings"] = {"temperature": 0.5}
+            path.write_text(yaml.safe_dump(model))
+            await _accept(operations)
+        return FunctionModel(stream_function=provider)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    operations.review = AppReviewer(
+        operations, api_keys=ApiKeyStore(operations.configuration_root / "auth.json"), subscription_sources={}
+    )
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="revoked", name="counter"))
+    await asyncio.gather(*operations._tasks)
+    result = operations.get_operation("thread-1", view.view_id, "revoked")
+    assert result.status in {"failed", "denied"} and result.result is None
+    assert result.review_usage == () and providers == []
+
+
+@pytest.mark.parametrize("configured", [False, True])
+async def test_custom_run_reviewer_never_falls_through_to_builtin_app_review(apps, monkeypatch, configured):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.capabilities.tool_review import ToolReviewConfig
+    from a13n_harness.tools.permissions import ToolPermissions, ToolPermissionsCapability
+
+    operations, reference = apps
+    await _policy(operations, "review", review={"model": "model-primary"} if configured else None)
+    custom = AsyncMock(side_effect=AssertionError("Run-bound reviewer must not run"))
+    policy = ToolPermissionsCapability(
+        ToolPermissions(default="review"),
+        review=ToolReviewConfig(model="model-primary", on_error="allow") if configured else None,
+        reviewer=SimpleNamespace(review=custom),
+    )
+    monkeypatch.setattr(operations.owners, "permissions", lambda owner: policy)
+    adapter = AsyncMock(side_effect=AssertionError("Builtin review must not replace the custom reviewer"))
+    operations.review = adapter
+    view = await operations.activate(reference)
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="custom", name="counter"))
+    result = await _settle(operations, view.view_id, "custom")
+    assert result.status == "failed" and "custom Run-bound reviewer" in result.reason
+    custom.assert_not_awaited()
+    adapter.assert_not_awaited()
+
+
+async def test_child_message_is_attributed_to_root_and_rechecks_route_before_submission(apps) -> None:
+    operations, _ = apps
+    child_source = operations.configuration_root / "subagents/explorer.md"
+    child_source.write_text(child_source.read_text().replace("tools: [glob, grep]", "tools: [glob, grep, counter]"))
+    await _accept(operations)
+    edge = await _child(operations)
+    owner = await operations.owners.resolve("child")
+    recipe = owner.recipe("mcp-docs")
+    transport, effective, _ = await prepare_mcp_transport(recipe, operations.configuration_root)
+    connection = await operations.snapshots.connections.acquire(
+        "child", "mcp-docs", effective, transport, binding=recipe.transport.model_dump_json()
+    )
+    tool = next(item for item in await connection.client.list_tools() if item.name == "counter")
+    result = await connection.client.call_tool_mcp("counter", {})
+    reference = await operations.snapshots.capture(
+        CapturedCall(connection, tool, {}, result), thread_id="child", run_id="run-child", call_id="child-call"
+    )
+    view = await operations.activate(reference)
+    submitted = []
+    preparing = asyncio.Event()
+    prepared = asyncio.Event()
+
+    async def submit(value, parts):
+        preparing.set()
+        await prepared.wait()
+        # Ordinary input preparation happens before this final Host authorization.
+        await operations.authorize_message(value)
+        submitted.append((value.root_thread_id, parts))
+        return RootRunReceipt(receipt_id="receipt-child", thread_id="thread-1", submitted_at=datetime.now(UTC))
+
+    request = AppMessageRequest(request_key="first", content=(TextContent(type="text", text="Review this selection"),))
+    operations.send_message("child", view.view_id, request, submit)
+    await preparing.wait()
+    prepared.set()
+    await asyncio.gather(*tuple(operations._tasks))
+    accepted = operations.get_message("child", view.view_id, "first")
+    assert accepted.status == "accepted"
+    assert submitted[0][0] == "thread-1"
+    assert "attributed handoff from a child App" in submitted[0][1][0]
+    assert edge.name in submitted[0][1][0]
+    assert submitted[0][1][1] == "Review this selection"
+    assert operations.send_message("child", view.view_id, request, submit) == accepted
+    assert len(submitted) == 1
+
+    preparing.clear()
+    prepared.clear()
+    operations.send_message("child", view.view_id, request.model_copy(update={"request_key": "second"}), submit)
+    await preparing.wait()
+    path = operations.configuration_root / "agents/assistant.yaml"
+    agent = yaml.safe_load(path.read_text())
+    agent["subagents"] = []
+    path.write_text(yaml.safe_dump(agent))
+    await _accept(operations)
+    prepared.set()
+    await asyncio.gather(*tuple(operations._tasks))
+    rejected = operations.get_message("child", view.view_id, "second")
+    assert rejected.status == "failed"
+    assert "no longer selected" in rejected.reason
+    assert len(submitted) == 1

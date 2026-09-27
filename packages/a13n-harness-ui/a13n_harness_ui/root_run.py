@@ -243,6 +243,7 @@ class RootRunCoordinator:
         touch: bool = False,
         goal: GoalView | None = None,
         human_input: bool = False,
+        authorize: Callable[[], Awaitable[None]] | None = None,
     ) -> RootRunReceipt:
         prompt = detach_input(prompt)
         return await self._submit(
@@ -255,6 +256,7 @@ class RootRunCoordinator:
             touch=touch,
             goal=goal,
             human_input=human_input,
+            authorize=authorize,
         )
 
     async def submit_organization(self, thread_id: str, organization: MemoryOrganizationRun) -> RootRunReceipt:
@@ -313,6 +315,7 @@ class RootRunCoordinator:
         goal: GoalView | None = None,
         human_input: bool = False,
         organization: MemoryOrganizationRun | None = None,
+        authorize: Callable[[], Awaitable[None]] | None = None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
         receipt = RootRunReceipt(
@@ -372,6 +375,10 @@ class RootRunCoordinator:
                     environment=environment,
                     **({"organization": organization} if organization is not None else {}),
                 )
+                # Additional source authority must survive lock, touch and capture
+                # waits. Nothing suspends between this guard and registration.
+                if authorize is not None:
+                    await authorize()
                 operation.composition = admission.published.reference
                 if matching and pending is not None:
                     self._interaction_waits.pop(thread_id)

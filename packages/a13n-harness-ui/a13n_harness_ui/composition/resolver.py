@@ -95,6 +95,28 @@ class ThreadCompositionSelection:
     role: Literal["ordinary", "coordinator", "worker"] = "ordinary"
     coordinator_thread_id: str | None = None
 
+    @classmethod
+    def from_thread(cls, thread: Thread) -> ThreadCompositionSelection:
+        configuration = thread.configuration
+        source = configuration.agent_source
+        if source.kind == "memory":
+            raise CompositionError("Memory Threads have no interactive Agent selection.", code="thread_scope_invalid")
+        return cls(
+            thread_id=thread.thread_id,
+            version=configuration.version,
+            project_id=configuration.project_id,
+            local_roots=configuration.local_roots,
+            agent_source_kind=source.kind,
+            agent_source_id=source.id,
+            default_model_id=configuration.default_model_id,
+            environment_profile_id=configuration.environment_profile_id,
+            environment_bindings=configuration.environment_bindings,
+            default_environment=configuration.default_environment,
+            harness_plugin_ids=configuration.harness_plugin_ids,
+            environment_run_extension_ids=configuration.environment_run_extension_ids,
+            mcp_server_ids=configuration.mcp_server_ids,
+        )
+
 
 class AgentCompositionResolver:
     """Validate installed selections and capture a complete immutable Run value."""
@@ -146,15 +168,15 @@ class AgentCompositionResolver:
         for agent in source.agents.values():
             self._capability_recipes(source, agent, warnings=warnings)
 
-    def resolve_run(
+    def resolve_agent(
         self,
         source: LoadedHarnessUiConfiguration,
         selection: ThreadCompositionSelection,
         *,
         parent_node: ResolvedAgentNode | None = None,
         model_overrides: RunModelOverrides | None = None,
-    ) -> ResolvedRunComposition:
-        """Resolve one exact Thread head against one accepted source generation."""
+    ) -> ResolvedAgentNode:
+        """Resolve current Agent policy without publishing a Run or preparing an Environment."""
 
         self._validate_selection(source, selection)
         if selection.default_model_id is not None and (model_overrides is None or model_overrides.model_id is None):
@@ -191,6 +213,18 @@ class AgentCompositionResolver:
                 depth=1,
             )
 
+        return root
+
+    def resolve_run(
+        self,
+        source: LoadedHarnessUiConfiguration,
+        selection: ThreadCompositionSelection,
+        *,
+        parent_node: ResolvedAgentNode | None = None,
+        model_overrides: RunModelOverrides | None = None,
+    ) -> ResolvedRunComposition:
+        """Resolve one exact Thread head against one accepted source generation."""
+        root = self.resolve_agent(source, selection, parent_node=parent_node, model_overrides=model_overrides)
         environment = self._environment_profile(source, selection.environment_profile_id)
         run_extensions, extension_dependencies = self._run_extensions(source, selection.environment_run_extension_ids)
         dependencies = [
@@ -300,7 +334,14 @@ class AgentCompositionResolver:
         plugin_ids = source.selected_plugins(agent) if root_plugins is None else root_plugins
         mcp_ids = source.selected_mcp_servers(agent) if root_mcp is None else root_mcp
         plugins = self._plugins(source, plugin_ids, plugin_catalog)
-        mcp = tuple(ResolvedMcpRecipe(server_id=item, transport=source.mcp_servers[item].transport) for item in mcp_ids)
+        mcp = tuple(
+            ResolvedMcpRecipe(
+                server_id=item,
+                transport=source.mcp_servers[item].transport,
+                apps_enabled=source.document.webui.mcp_apps.enabled and item in source.document.webui.mcp_apps.servers,
+            )
+            for item in mcp_ids
+        )
         selected_model = model_overrides.model_id if model_overrides and model_overrides.model_id else agent.model
         if selected_model is None:
             raise CompositionError(
@@ -441,7 +482,13 @@ class AgentCompositionResolver:
                 self.catalog.plugin_catalog(tuple(item.plugin_key for item in source.harness_plugins.values())),
             ),
             mcp_servers=tuple(
-                ResolvedMcpRecipe(server_id=item, transport=source.mcp_servers[item].transport) for item in mcp_ids
+                ResolvedMcpRecipe(
+                    server_id=item,
+                    transport=source.mcp_servers[item].transport,
+                    apps_enabled=source.document.webui.mcp_apps.enabled
+                    and item in source.document.webui.mcp_apps.servers,
+                )
+                for item in mcp_ids
             ),
             tools=parent.tools if child.tools is None else child.tools,
             tool_proxy=(

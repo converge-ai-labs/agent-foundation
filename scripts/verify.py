@@ -48,6 +48,7 @@ PASSED_RECORD = "a13n-verify-passed"
 class Plan:
     workflows: set[str] = field(default_factory=set)
     lint_all_workflows: bool = False
+    examples: bool = False
     python_tests: set[str] = field(default_factory=set)
     consumer_tests: set[str] = field(default_factory=set)
     python_files: set[str] = field(default_factory=set)
@@ -294,6 +295,9 @@ def plan(files: Iterable[str], graph: PythonGraph | None = None, *, consumers: b
             selected = {test.relative_to(REPOSITORY_ROOT).as_posix() for test in declared}
             result.python_tests.update(selected)
             result.notes.append(f"{posix}: declared file/command dependencies -> {', '.join(sorted(selected))}")
+        if posix == "Makefile" or (posix.startswith("examples/") and not posix.endswith(".md")):
+            # Examples own independent environments and build inputs, outside the workspace runner.
+            result.examples = True
         if posix in GLOBAL_PYTHON_INPUTS:
             python_full = True
             result.notes.append(f"{posix} changes every Python suite")
@@ -600,6 +604,8 @@ def steps_for(result: Plan) -> list[Step]:
                 cwd=FRONTEND,
             )
         )
+    if result.examples:
+        steps.append(Step("examples", ["make", "examples-check-all"]))
     return steps
 
 
@@ -610,6 +616,7 @@ def full_steps() -> list[Step]:
         Step("frontend check", ["make", "frontend-check"]),
         Step("python tests (all)", ["make", "test"]),
         Step("frontend tests", ["make", "frontend-test"]),
+        Step("examples", ["make", "examples-check-all"]),
     ]
 
 

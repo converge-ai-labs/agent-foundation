@@ -22,6 +22,7 @@ export type DisplayBlock = {
   stopped?: boolean;
   edit?: AppliedEdit;
   images?: Schema<"ToolImageView">[];
+  apps?: Schema<"AppReference">[];
   imageUnavailable?: boolean;
   provider?: string;
   metadata?: Record<string, unknown>;
@@ -612,6 +613,33 @@ export class FocusDisplay {
         });
         return;
       }
+    }
+    if (
+      name === "a13n.harness-ui.mcp_apps" &&
+      typeof source.tool_call_id === "string" &&
+      Array.isArray(source.apps)
+    ) {
+      const key = `${this.runId}:${source.tool_call_id}`;
+      const apps = source.apps.filter(
+        (value): value is Schema<"AppReference"> =>
+          object(value) &&
+          [
+            "app_id",
+            "thread_id",
+            "run_id",
+            "tool_call_id",
+            "server_id",
+            "tool_name",
+          ].every((field) => typeof value[field] === "string"),
+      );
+      this.blocks.set(key, {
+        id: key,
+        kind: "tool",
+        text: "",
+        ...this.blocks.get(key),
+        apps,
+      });
+      return;
     }
     if (
       name === "a13n.harness-ui.tool_images" &&

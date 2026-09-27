@@ -117,6 +117,23 @@ def test_pytest_groups_by_file_and_preserves_explicit_cross_file_groups(tmp_path
         assert groups[f"test_{name}.py::test_shared"] == ["shared"]
 
 
+def test_examples_build_assets_once_before_server_tests_and_packaging() -> None:
+    result = subprocess.run(
+        ["make", "--dry-run", "examples-check-all"],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    output = result.stdout
+    build = "npm --prefix examples/mcp-apps run build"
+    assert output.count(build) == 1
+    assert output.index(build) < output.index("uv sync --quiet --project")
+    assert output.index(build) < output.index("uv run --locked pytest")
+    assert output.index(build) < output.index("uv build")
+
+
 def test_full_frontend_check_and_python_packaging_share_one_build() -> None:
     result = subprocess.run(
         ["make", "--dry-run", "frontend-check-all", "python-build"],

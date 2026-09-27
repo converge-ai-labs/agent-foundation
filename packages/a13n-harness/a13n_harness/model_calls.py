@@ -23,9 +23,9 @@ class ModelCallCheckError(RunError):
 @dataclass(frozen=True, slots=True)
 class ModelCall:
     call_id: str
-    harness_run_id: str
+    harness_run_id: str | None
     model_run_id: str | None
-    agent_instance_id: str
+    agent_instance_id: str | None
     parent_agent_instance_id: str | None
     delegation_id: str | None
     model_id: str | None
@@ -71,9 +71,14 @@ async def _check_model_call(
         tool_call_id=tool_call_id,
         continuation_of=continuation_of,
     )
-    if owner.model_call_check is not None:
+    return await check_model_call(owner.model_call_check, call)
+
+
+async def check_model_call(check: ModelCallCheck | None, call: ModelCall) -> RequestBudget | None:
+    """Invoke a borrowed admission check without requiring a conversational Run."""
+    if check is not None:
         try:
-            return await owner.model_call_check.check(call)
+            return await check.check(call)
         except asyncio.CancelledError as error:
             task = asyncio.current_task()
             if task is not None and task.cancelling():

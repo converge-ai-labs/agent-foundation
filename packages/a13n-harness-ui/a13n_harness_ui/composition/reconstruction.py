@@ -46,11 +46,13 @@ from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
+from a13n_harness_ui.mcp_apps.connections import Connections
 from a13n_harness_ui.media_understanding import FileMediaUnderstanding
 from a13n_harness_ui.memory import MemoryOrganizationRun, bind_memory
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver, SubscriptionSource, model_recipe_id
 
+from .auxiliary import capability_configuration
 from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunComposition
 
 
@@ -180,8 +182,10 @@ class AgentReconstructor:
         api_keys: ApiKeyStore | None = None,
         configuration_root: Path | None = None,
         instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
+        mcp_apps: Connections | None = None,
     ) -> None:
         self._instrumentation: HarnessInstrumentation | Literal["environment"] | None = instrumentation
+        self._mcp_apps = mcp_apps
         self._api_keys = api_keys
         self._configuration_root = configuration_root
         self._catalog = catalog or HarnessUiExtensionCatalog()
@@ -341,38 +345,18 @@ class AgentReconstructor:
         if previous != node.model:
             raise CompositionError("Model recipe identity collision.", code="model_recipe_collision")
 
-        selections = []
-        for item in node.capabilities:
-            configuration = dict(item.configuration)
-            if item.model is not None:
-                auxiliary_id = model_recipe_id(item.model)
-                previous = model_recipes.setdefault(auxiliary_id, item.model)
-                if previous != item.model:
-                    raise CompositionError("Model recipe identity collision.", code="model_recipe_collision")
-                review = (
-                    configuration.get("review") if item.capability == "ToolPermissionsCapability" else configuration
-                )
-                if not isinstance(review, dict):
-                    raise CompositionError("Tool review must be an object.", code="capability_configuration_invalid")
-                review = dict(review)
-                review["model"] = auxiliary_id
-                overrides = review.get("model_settings", {})
-                if not isinstance(overrides, dict):
-                    raise CompositionError(
-                        "Auxiliary Model settings must be an object.", code="capability_model_settings_invalid"
-                    )
-                review["model_settings"] = {**item.model.settings, **overrides}
-                if item.capability == "ToolPermissionsCapability":
-                    configuration["review"] = review
-                else:
-                    configuration = review
-            selections.append((item.capability, configuration))
+        selections = [(item.capability, capability_configuration(item, model_recipes)) for item in node.capabilities]
         selected = self._catalog.capabilities(tuple(selections), path_layout=path_layout)
         capabilities: list[AbstractCapability[Any]] = [item.capability for item in selected]
         if node.global_guidance is not None:
             capabilities.append(_GlobalGuidanceCapability(node.global_guidance))
         mcp_sources = {
-            item.server_id: HarnessUiMCP(item, configuration_root=self._configuration_root) for item in node.mcp_servers
+            item.server_id: HarnessUiMCP(
+                item,
+                configuration_root=self._configuration_root,
+                apps=self._mcp_apps if item.apps_enabled else None,
+            )
+            for item in node.mcp_servers
         }
         capabilities.extend(mcp_sources.values())
         tool_proxy = (

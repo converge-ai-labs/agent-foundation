@@ -8,6 +8,7 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import { ConversationConfiguration } from "./configuration";
 import { MessageText } from "./message-text";
 import { ChildSavedOutputs } from "./child-output";
+import { AppCard } from "../mcp-apps/app-card";
 import { useOperation, useThreads } from "./queries";
 import type { FocusDisplay } from "./stream";
 import { LiveOutput, RecoveryNotice } from "./transcript";
@@ -480,6 +481,22 @@ function ChildPresentation({
         <p role="status">Loading activity…</p>
       )}
       <LiveOutput blocks={tools} gap={false} />
+      {(
+        inspection.data?.executions?.find(
+          (item) => item.execution_id === child.execution_id,
+        )?.mcp_apps ??
+        child.mcp_apps ??
+        []
+      )
+        .filter(
+          (reference) =>
+            !observed?.some((block) =>
+              block.apps?.some((app) => app.app_id === reference.app_id),
+            ),
+        )
+        .map((reference) => (
+          <AppCard key={reference.app_id} reference={reference} />
+        ))}
       {!!activity?.dropped_tool_calls && (
         <small>Earlier tools are outside this activity window.</small>
       )}

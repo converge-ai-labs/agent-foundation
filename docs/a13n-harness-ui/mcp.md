@@ -48,7 +48,7 @@ Command `env` (or canonical `transport.environment`) and remote `headers` accept
 
 Empty literal strings and whitespace are preserved. References require non-empty variables in the **Harness UI process** environment; exporting in another shell does not change an already-running process. Expansion is one pass, only for `${NAME}` with a valid environment-variable name; there is no shell execution or default-value syntax. These substitutions apply only to environment/header values, not commands, arguments, or URLs.
 
-Direct token configuration is supported; environment references are optional. Keep credential-bearing source files private and out of version control. Harness UI does not copy MCP source text or literal environment/header values into `config show`, accepted generations, or Run compositions: it retains source locations and digests, then reads values at Run startup. A captured Run requires that literal-bearing source file to remain present and byte-identical until client construction. Editing it is supported for newly captured Runs, but an older captured Run or child continuation may fail with `mcp_source_changed`; use current configuration for a new Run. Already constructed clients keep their Run-local values. Environment references can rotate without editing the source file.
+Direct token configuration is supported; environment references are optional. Keep credential-bearing source files private and out of version control. Harness UI does not copy MCP source text or literal environment/header values into `config show`, accepted generations, or Run compositions: it retains source locations and digests, then reads values at Run startup. A captured Run requires that literal-bearing source file to remain present and byte-identical until client construction. Editing it is supported for newly captured Runs, but an older captured Run or child continuation may fail with `mcp_source_changed`; use current configuration for a new Run. Already constructed ordinary clients keep their Run-local values. Opted-in [MCP Apps connections](mcp-apps.md) outlive a Run but recheck current binding and credentials before follow-up operations. Environment references can rotate without editing the source file.
 
 After editing, run `a13n-harness-ui config validate` and start a new session if you changed default MCP selections. Validation does not connect to servers or verify credentials.
 
@@ -104,7 +104,7 @@ defaults:
   mcp_servers: [mcp-github]
 ```
 
-An Agent's `mcp_servers: null` inherits the root defaults; `[]` explicitly selects none. Existing sessions retain exact sticky selections. Clients/processes are constructed fresh for Runs and are not saved into continuations. Model Sandbox selection does not imply that an arbitrary external MCP command or remote service is sandboxed.
+An Agent's `mcp_servers: null` inherits the root defaults; `[]` explicitly selects none. Existing sessions retain exact sticky selections. Ordinary clients/processes are constructed fresh for Runs and are not saved into continuations. Opted-in [MCP Apps](mcp-apps.md) use App-owned connections that can stay interactive after Run completion; they are still never serialized into continuations. Model Sandbox selection does not imply that an arbitrary external MCP command or remote service is sandboxed.
 
 ## MCP field reference
 

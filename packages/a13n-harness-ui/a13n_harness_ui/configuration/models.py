@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import re
 from collections.abc import Mapping
@@ -37,6 +38,7 @@ from a13n_harness_ui.environment_bindings import (
     validate_environment_selection,
 )
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
+from a13n_harness_ui.mcp_apps.origins import origin
 from a13n_harness_ui.settings import DEFAULT_MAX_OBJECT_BYTES, ObjectSizeLimit
 from a13n_harness_ui.subagents import BuiltinSubagentName
 
@@ -201,8 +203,33 @@ class SidekickConfiguration(ConfigurationModel):
     model: ResourceId | None = None
 
 
+class McpAppsSandboxConfiguration(ConfigurationModel):
+    bind: str = "127.0.0.1"
+    port: int = Field(default=0, ge=0, le=65535)
+    public_url: str | None = None
+
+    @field_validator("bind")
+    @classmethod
+    def _bind_address(cls, value: str) -> str:
+        return str(ipaddress.ip_address(value))
+
+    @field_validator("public_url")
+    @classmethod
+    def _public_origin(cls, value: str | None) -> str | None:
+        return None if value is None else origin(value)
+
+
+class McpAppsConfiguration(ConfigurationModel):
+    """Opt-in UI behavior for already selected MCP servers; never a server selection."""
+
+    enabled: bool = False
+    servers: tuple[ResourceId, ...] = Field(default=(), max_length=128)
+    sandbox: McpAppsSandboxConfiguration = Field(default_factory=McpAppsSandboxConfiguration)
+
+
 class WebUiConfiguration(ConfigurationModel):
     sidekick: SidekickConfiguration | None = Field(default_factory=SidekickConfiguration)
+    mcp_apps: McpAppsConfiguration = Field(default_factory=McpAppsConfiguration)
 
 
 class MediaUnderstandingConfiguration(ConfigurationModel):

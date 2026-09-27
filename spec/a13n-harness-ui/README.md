@@ -30,6 +30,8 @@ Harness UI depends on the [Harness](../a13n-harness/README.md), including its [E
 
 [File Memory and Automatic Organization](08-file-memory.md) owns global/Project file scopes, foreground cursor persistence, and bounded input-triggered WebUI maintenance without ordinary Threads.
 
+[MCP Apps Host](09-mcp-apps.md) owns opt-in retained tool-result Apps, connection and View lifetimes, same-server interaction authority, explicit model context/messages, and browser isolation.
+
 The [WebUI catalog](webui/README.md) indexes the browser workbench, page presence and collaborative conversations, saved-output comments, native computer sharing, and bundled/Docker distribution contracts. Listener and HTTP/API behavior remain owned by `05`; transient drafts and durable comments retain their separate storage boundaries in `03`.
 
 ## Reading Paths
@@ -59,7 +61,7 @@ Read `05`. A surface calls `HarnessUiApp` commands and queries and consumes deta
 05. `HarnessUiApp` owns validated last-write-wins configuration-file publication, detached Project and Thread projections, Host-authoritative Environment state, process-local root receipts and deferred response, async child execution, and live presentation.
 06. Harness and Pydantic AI own native Agent construction, Agent loops, public stream items, results, Capability behavior, and `HarnessState` continuation semantics.
 07. The Environment package owns Provider configuration, fresh adapter construction, `EnvironmentState` codecs, and non-destructive `close()`. Harness UI owns Project-root binding, runtime collaborators, current state, and changed-only publication.
-08. Every independent root or async child Run receives fresh Model, Harness Plugin, MCP, Provider-runtime, Environment-adapter, and Environment Run Extension collaborators. Shell references are Run-local; native command survival and recovery follow the Provider Environment state contract.
+08. Every independent root or async child Run receives fresh Model, Harness Plugin, MCP Toolset, Provider-runtime, Environment-adapter, and Environment Run Extension collaborators. Opt-in MCP Apps Toolsets borrow App-owned Thread/server connections under `09`; ordinary MCP clients remain Run-local. Shell references are Run-local; native command survival and recovery follow the Provider Environment state contract.
 09. Root and child continuation checkpoints are independent authorities. Compact AG-UI child display is inspection history and never reconstructs `HarnessState`.
 10. Saved root and child facts never imply current-process liveness. Root receipts and all control availability are process-local; Harness UI does not infer liveness or silently replay work. Graceful-restart continuation requires a separately committed, single-use handoff.
 11. The full-terminal CLI is an adapter over one reusable `HarnessUiApp`. Desired configuration remains editable; setup publication is explicit. Project and Thread management are not terminal workflows, but their durable identities and existing history remain intact.

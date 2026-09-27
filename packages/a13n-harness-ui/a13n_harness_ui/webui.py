@@ -10,7 +10,7 @@ import json
 import os
 import secrets
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from urllib.parse import quote, urlsplit
@@ -25,12 +25,13 @@ from a13n_harness.providers.environment.remote_envd.pairing import (
     PairingResponse,
     credential_digest,
 )
+from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, fail_after, move_on_after, sleep
 from anyio.abc import TaskStatus
 from fastapi import FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, JsonValue, ValidationError, model_validator
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect, WebSocketState
@@ -79,6 +80,12 @@ from a13n_harness_ui.host_git import (
 from a13n_harness_ui.host_terminal import TerminalCommand, TerminalCreate, TerminalFrame, TerminalView
 from a13n_harness_ui.interactive_transport import InteractiveAuthentication, authenticate_interactive, receive_text
 from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, SummaryCursor, SummaryInvalidation
+from a13n_harness_ui.mcp_apps.context import AppContext, AppContextReference, AppContextUpdate
+from a13n_harness_ui.mcp_apps.messages import AppMessageReceipt, AppMessageRequest
+from a13n_harness_ui.mcp_apps.models import AppPresentation, AppReference
+from a13n_harness_ui.mcp_apps.operations import AppDecision, AppOperation, AppToolRequest, AppView
+from a13n_harness_ui.mcp_apps.resources import AppResourceRequest
+from a13n_harness_ui.mcp_apps.sandbox import origin, serve_sandbox
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
@@ -228,6 +235,7 @@ class SteerRequest(SurfaceModel):
 
 
 class SubmitRequest(PromptRequest, ModelControlSelection):
+    app_context: tuple[AppContextReference, ...] = Field(default=(), max_length=8)
     mode: Literal["normal", "goal"] = "normal"
     environment: EnvironmentSelectionPatch | None = None
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -460,17 +468,31 @@ def create_webui(
     if api_key == "":
         raise ValueError("API key cannot be empty")
     owner: HarnessUiApp | None = None
+    sandbox_url: str | None = None
+    sandbox_error: str | None = None
     stopping = stopping if stopping is not None else Event()
 
     @asynccontextmanager
     async def lifespan(_server: FastAPI) -> AsyncIterator[None]:
-        nonlocal owner
-        async with app_factory() as opened:
+        nonlocal owner, sandbox_url, sandbox_error
+        async with app_factory() as opened, AsyncExitStack() as resources:
+            source = await opened.current_configuration()
+            if source is not None and source.document.webui.mcp_apps.enabled:
+                sandbox = source.document.webui.mcp_apps.sandbox
+                if not ipaddress.ip_address(host).is_loopback and sandbox.public_url is None:
+                    raise ValueError("Non-loopback WebUI requires an explicit MCP Apps sandbox public_url.")
+                try:
+                    sandbox_url = await resources.enter_async_context(serve_sandbox(sandbox))
+                except OSError:
+                    sandbox_error = "The MCP Apps sandbox could not start. Check its bind address and port, then restart WebUI. The original tool result remains available."
+                    get_logger(__name__).warning(sandbox_error)
             owner = opened
             try:
                 yield
             finally:
                 owner = None
+                sandbox_url = None
+                sandbox_error = None
 
     def app() -> HarnessUiApp:
         if owner is None:
@@ -739,6 +761,85 @@ def create_webui(
             pass
         finally:
             directory.detach(participant)
+
+    @server.post(
+        "/api/threads/{thread_id}/apps/open", response_model=AppPresentation, openapi_extra=_body(AppReference)
+    )
+    async def open_mcp_app(thread_id: str, request: Request) -> AppPresentation:
+        if sandbox_error is not None:
+            raise HarnessUiError(sandbox_error, code="mcp_apps_sandbox_unavailable")
+        if sandbox_url is None:
+            raise HarnessUiError("MCP Apps sandbox is disabled. Enable it and restart WebUI.", code="mcp_apps_disabled")
+        sandbox_origin = origin(sandbox_url.removesuffix("/sandbox.html"))
+        if sandbox_origin == origin(str(request.base_url)):
+            raise HarnessUiError("MCP Apps require a separate sandbox origin.", code="mcp_apps_origin_invalid")
+        result = await app().open_mcp_app(thread_id, await _document(request, AppReference))
+        return result.model_copy(update={"sandbox_url": sandbox_url})
+
+    @server.post("/api/threads/{thread_id}/apps/activate", response_model=AppView, openapi_extra=_body(AppReference))
+    async def activate_mcp_app(thread_id: str, request: Request) -> AppView:
+        return await app().activate_mcp_app(thread_id, await _document(request, AppReference))
+
+    @server.post(
+        "/api/threads/{thread_id}/apps/{view_id}/tools",
+        response_model=AppOperation,
+        openapi_extra=_body(AppToolRequest),
+    )
+    async def call_mcp_app_tool(thread_id: str, view_id: str, request: Request) -> AppOperation:
+        return await app().call_mcp_app_tool(thread_id, view_id, await _document(request, AppToolRequest))
+
+    @server.post(
+        "/api/threads/{thread_id}/apps/{view_id}/resources/read",
+        response_model=dict[str, JsonValue],
+        openapi_extra=_body(AppResourceRequest),
+    )
+    async def read_mcp_app_resource(thread_id: str, view_id: str, request: Request) -> dict[str, JsonValue]:
+        return await app().read_mcp_app_resource(thread_id, view_id, await _document(request, AppResourceRequest))
+
+    @server.get("/api/threads/{thread_id}/apps/{view_id}/operations/{request_key}", response_model=AppOperation)
+    async def get_mcp_app_operation(thread_id: str, view_id: str, request_key: str) -> AppOperation:
+        return await app().get_mcp_app_operation(thread_id, view_id, request_key)
+
+    @server.post(
+        "/api/threads/{thread_id}/apps/{view_id}/operations/{request_key}/decision",
+        response_model=AppOperation,
+        openapi_extra=_body(AppDecision),
+    )
+    async def decide_mcp_app_operation(
+        thread_id: str, view_id: str, request_key: str, request: Request
+    ) -> AppOperation:
+        decision = await _document(request, AppDecision)
+        return await app().decide_mcp_app_operation(thread_id, view_id, request_key, approve=decision.approve)
+
+    @server.post(
+        "/api/threads/{thread_id}/apps/{view_id}/messages",
+        response_model=AppMessageReceipt,
+        openapi_extra=_body(AppMessageRequest),
+    )
+    async def send_mcp_app_message(thread_id: str, view_id: str, request: Request) -> AppMessageReceipt:
+        return await app().send_mcp_app_message(thread_id, view_id, await _document(request, AppMessageRequest))
+
+    @server.get("/api/threads/{thread_id}/apps/{view_id}/messages/{request_key}", response_model=AppMessageReceipt)
+    async def get_mcp_app_message(thread_id: str, view_id: str, request_key: str) -> AppMessageReceipt:
+        return await app().get_mcp_app_message(thread_id, view_id, request_key)
+
+    @server.put(
+        "/api/threads/{thread_id}/apps/{view_id}/context",
+        response_model=AppContext,
+        openapi_extra=_body(AppContextUpdate),
+    )
+    async def update_mcp_app_context(thread_id: str, view_id: str, request: Request) -> AppContext:
+        return await app().update_mcp_app_context(thread_id, view_id, await _document(request, AppContextUpdate))
+
+    @server.delete("/api/threads/{thread_id}/apps/{view_id}/context", status_code=204)
+    async def discard_mcp_app_context(thread_id: str, view_id: str) -> Response:
+        await app().discard_mcp_app_context(thread_id, view_id)
+        return Response(status_code=204)
+
+    @server.delete("/api/threads/{thread_id}/apps/{view_id}", status_code=204)
+    async def close_mcp_app_view(thread_id: str, view_id: str) -> Response:
+        await app().close_mcp_app_view(thread_id, view_id)
+        return Response(status_code=204)
 
     @server.get("/api/drafts", response_model=tuple[DraftSummary, ...])
     async def list_unsent_drafts() -> tuple[DraftSummary, ...]:
@@ -1535,6 +1636,7 @@ def create_webui(
             return await app().submit_thread(
                 thread_id=thread_id,
                 prompt=document.input(),
+                app_context=document.app_context,
                 mode=document.mode,
                 environment=document.environment,
                 model_overrides=RunModelOverrides(model_id=document.model_id, **document.controls().model_dump()),
@@ -1793,7 +1895,11 @@ def create_webui(
             index,
             headers={
                 "Cache-Control": "no-cache",
-                "Content-Security-Policy": "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+                "Content-Security-Policy": (
+                    "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+                    "script-src 'self'; frame-ancestors 'none'; base-uri 'none'; frame-src "
+                    + (origin(sandbox_url.removesuffix("/sandbox.html")) if sandbox_url is not None else "'none'")
+                ),
             },
         )
 

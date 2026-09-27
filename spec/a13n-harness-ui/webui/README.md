@@ -19,6 +19,8 @@ WebUI is the project-centric collaborative browser surface of Harness UI. Truste
 
 Read `00` for the product and `04` for the end-to-end user experience. Read `01` for page awareness and pair prompting, `05` and [local comment storage](../03-local-storage-and-recovery.md#output-comment-storage) for persistent discussion, `02` for native server access, and `03` for packaging and container deployment boundaries.
 
+[MCP Apps Host](../09-mcp-apps.md) owns inline tool-result Apps, retained originals, trusted interaction confirmations and separate-origin sandboxing.
+
 [App and surfaces](../05-runtime-subagents-and-surfaces.md) owns listener startup, API-key selection, HTTP and realtime delivery, and execution authority. [Configuration](../01-configuration-and-resource-catalog.md), [Projects and Threads](../04-projects-threads-and-environments.md), and [storage](../03-local-storage-and-recovery.md) own the shared domain contracts consumed by the browser.
 
 ## Authority Rules

@@ -75,6 +75,7 @@ class ResolvedPluginRecipe(CompositionModel):
 class ResolvedMcpRecipe(CompositionModel):
     server_id: str = Field(min_length=1, max_length=128)
     transport: McpTransport
+    apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class ResolvedRunExtensionRecipe(CompositionModel):

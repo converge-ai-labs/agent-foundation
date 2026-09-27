@@ -34,6 +34,8 @@ from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
 from a13n_harness_ui.conversation import excerpt_text, input_excerpt
 from a13n_harness_ui.errors import ThreadError
+from a13n_harness_ui.mcp_apps.models import AppReference
+from a13n_harness_ui.mcp_apps.snapshots import app_references
 from a13n_harness_ui.output_comment_models import RootOutputLocation, SavedOutputTarget
 from a13n_harness_ui.storage import (
     LocalStore,
@@ -320,6 +322,18 @@ class ThreadProjectionService:
             available_actions=() if thread.memory_scope is not None else tuple(actions),
         )
 
+    async def retains_mcp_app(self, reference: AppReference) -> bool:
+        """Search the selected display history, including entries outside the visible page."""
+        thread = await self._required_thread(reference.thread_id)
+        header = await self._inspection_header(thread)
+        for start in range(0, header.message_count, 100):
+            entries = await self._inspection_entries(
+                thread.thread_id, header.source_id, tuple(range(start, min(start + 100, header.message_count)))
+            )
+            if any(reference in part.mcp_apps for entry in entries for part in entry.parts):
+                return True
+        return False
+
     async def transcript(
         self,
         *,
@@ -384,7 +398,7 @@ class ThreadProjectionService:
             {
                 boundary
                 for turn in visible_turns
-                for boundary in (turn.input_position, turn.output_position)
+                for boundary in (turn.input_position, turn.output_position, *turn.app_positions)
                 if boundary is not None and not position <= boundary < upper_bound
             }
         )
@@ -816,6 +830,11 @@ def _transcript_turns(
                 final_position=final_position,
                 output_position=output_position,
                 output_preview=output_preview,
+                app_positions=tuple(
+                    position + offset
+                    for offset, message in enumerate(messages)
+                    if any(isinstance(part, ToolReturnPart) and app_references(part) for part in message.parts)
+                ),
                 preview=preview,
                 timestamp=history[position].timestamp,
                 tool_count=sum(
@@ -987,6 +1006,7 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
                 outcome=part.outcome,
                 applied_edit=applied_edit(part),
                 tool_images=tool_images(part),
+                mcp_apps=app_references(part),
                 tool_image_unavailable=tool_image_unavailable(part),
                 value=value,
                 value_omitted=omitted,

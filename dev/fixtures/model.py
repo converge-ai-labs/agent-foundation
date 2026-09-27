@@ -180,6 +180,7 @@ def planned_tool(body: dict, prompt: str) -> dict | list[dict] | None:
             {"prompt": "Review this fictional release. Supply a decision and a short reason."},
         ),
         ("[mcp]", "lookup_local_review", {"topic": "Fictional release navigation"}),
+        ("[mcp-app]", "show_counter", {}),
         ("[mcp-fail]", "fail_local_review", {"topic": "Fictional release navigation"}),
         (
             "[delegate]",

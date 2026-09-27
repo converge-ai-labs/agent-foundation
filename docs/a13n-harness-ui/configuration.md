@@ -142,6 +142,10 @@ To keep memory without automatic requests, set `auto_organize.enabled: false`. S
 
 `media_understanding.image`, `.video`, and `.audio` select saved Model IDs for file `view` fallback when the active Model cannot accept that media natively. Each defaults to `null`, preserving the corresponding Harness environment fallback. Configure these in **Settings → Models** or `/model defaults`. See [media understanding defaults](models-and-authentication.md#media-understanding-defaults) for precedence, capability requirements, and Run capture behavior.
 
+### WebUI MCP Apps
+
+Interactive MCP results are opt-in. Set `webui.mcp_apps.enabled: true` and allowlist the selected server IDs under `webui.mcp_apps.servers`; the Agent must independently select those servers. Restart WebUI when enabling Apps or changing its separate-origin sandbox listener. See [MCP Apps](mcp-apps.md) for the field reference, interaction permissions and local, Docker and reverse-proxy configuration.
+
 ### WebUI Sidekick
 
 Sidekick is enabled by default. Setup writes `webui.sidekick: {}` explicitly in new configuration files. Existing files that omit `webui` or `sidekick` also enable it without being rewritten. An existing `sidekick: null` remains disabled; setup preserves explicit null and custom Agent/Model selections.

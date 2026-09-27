@@ -39,6 +39,8 @@ The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its 
 
 [File Memory](08-file-memory.md) owns the root `memory` mapping, default-on switches, Model selection, and the runtime `memory/` directory beside this root. Memory files and maintenance bookkeeping are not resource sources or accepted-generation inputs.
 
+[MCP Apps Host](09-mcp-apps.md#opt-in-and-compatibility) owns the default-disabled `webui.mcp_apps` mapping and the separate-origin sandbox configuration. Its server allowlist does not select MCP servers or grant tool permissions.
+
 The root file owns restart-bound process settings, user-input delivery, global defaults, application tool switches, and WebUI collaboration preferences:
 
 ```yaml
