@@ -193,72 +193,140 @@ async def test_failed_reporter_preserves_usage_without_retrying_model() -> None:
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("shield_commit", [False, True])
-@pytest.mark.parametrize("with_events", [False, True])
-async def test_delivery_deadline_distinguishes_interruption_from_completed_commit(
-    monkeypatch, shield_commit, with_events
-):
-    import anyio
-    from a13n_harness import usage as usage_module
-
-    scopes = []
-
-    def deadline(*args, **kwargs):
-        scope = anyio.CancelScope(shield=True)
-        scopes.append(scope)
-        return scope
-
-    monkeypatch.setattr(usage_module.anyio, "move_on_after", deadline)
-    committed = False
-    emitted = []
-
-    class Events:
-        async def emit(self, event):
-            await anyio.lowlevel.checkpoint()
-            emitted.append(event)
-
-    class Reporter:
-        async def report(self, snapshot):
-            nonlocal committed
-            with anyio.CancelScope(shield=shield_commit):
-                # Deterministic expiry during Host work, without a wall-clock sleep.
-                scopes[0].cancel()
-                await anyio.lowlevel.checkpoint()
-                committed = True
-
+def _delivery_ledger():
     ledger = ModelUsageBinding.standalone(source="test").ledger
-    ledger.reporter = Reporter()
-    ledger._events = Events() if with_events else None
     ledger._append(
         record(request_usage=BoundedRequestUsage(input_tokens=3)).model_copy(
             update={"run_id": ledger.run_id, "agent_instance_id": ledger.instance.agent_instance_id}
         )
     )
-    if shield_commit:
-        await ledger._flush(reason="model_request")
-        assert committed
-        assert len(emitted) == int(with_events)
-        assert not ledger._pending
-        assert ledger._reported_sequence == ledger.snapshot.sequence
-    else:
-        with pytest.raises(UsageReportError):
-            await ledger._flush(reason="model_request")
-        assert not committed
-        assert len(ledger._pending) == 1
-        assert ledger._reported_sequence < ledger.snapshot.sequence
+    return ledger
 
 
-async def test_usage_display_timeout_retains_pending_records(monkeypatch):
+async def test_normal_delivery_has_no_harness_deadline_or_shield(monkeypatch):
     import anyio
     from a13n_harness import usage as usage_module
 
-    scopes = []
-    reports = []
+    delivered = []
 
-    def deadline(*args, **kwargs):
-        scope = anyio.CancelScope(shield=True)
-        scopes.append(scope)
-        return scope
+    def unexpected_deadline(*args, **kwargs):
+        pytest.fail("Normal usage delivery must use the Host's deadline policy")
+
+    class Reporter:
+        async def report(self, snapshot):
+            assert anyio.current_effective_deadline() == float("inf")
+            await anyio.lowlevel.checkpoint()
+            delivered.append("persist")
+
+    class Events:
+        async def emit(self, event):
+            assert anyio.current_effective_deadline() == float("inf")
+            await anyio.lowlevel.checkpoint()
+            delivered.append("display")
+
+    monkeypatch.setattr(usage_module.anyio, "move_on_after", unexpected_deadline)
+    ledger = _delivery_ledger()
+    ledger.reporter, ledger._events = Reporter(), Events()
+    await ledger._flush(reason="model_request")
+    await ledger._flush(reason="terminal")
+    assert delivered == ["persist", "display"]
+    assert not ledger._pending
+
+
+@pytest.mark.parametrize("failure", [TimeoutError("Host deadline"), asyncio.CancelledError("borrowed reporter")])
+async def test_host_failure_retains_unacknowledged_snapshot(failure):
+    class Reporter:
+        async def report(self, snapshot):
+            raise failure
+
+    ledger = _delivery_ledger()
+    ledger.reporter = Reporter()
+    with pytest.raises(UsageReportError) as caught:
+        await ledger._flush(reason="model_request")
+    assert caught.value.__cause__ is failure
+    assert len(ledger._pending) == 1
+    assert ledger._persisted_sequence < ledger.snapshot.sequence
+
+
+@pytest.mark.parametrize("stage", ["persist", "display"])
+@pytest.mark.parametrize("cancel_kind", ["task", "scope"])
+async def test_cancelled_delivery_persists_without_waiting_for_display(stage, cancel_kind):
+    import anyio
+
+    entered = asyncio.Event()
+    reports = []
+    displays = []
+    scopes = []
+    cancelled = []
+
+    class Reporter:
+        async def report(self, snapshot):
+            reports.append(snapshot)
+            if stage == "persist" and len(reports) == 1:
+                entered.set()
+                await anyio.sleep_forever()
+
+    class Events:
+        async def emit(self, event):
+            displays.append(event)
+            entered.set()
+            await anyio.sleep_forever()
+
+    ledger = _delivery_ledger()
+    ledger.reporter, ledger._events = Reporter(), Events()
+
+    async def deliver():
+        with anyio.CancelScope() as scope:
+            scopes.append(scope)
+            try:
+                await ledger._flush(reason="model_request")
+            except asyncio.CancelledError:
+                cancelled.append(True)
+                raise
+
+    task = asyncio.create_task(deliver())
+    await entered.wait()
+    if cancel_kind == "task":
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    else:
+        scopes[0].cancel()
+        await task
+    assert cancelled == [True]
+    assert len(reports) == (2 if stage == "persist" else 1)
+    assert reports[0] == reports[-1]
+    assert len(displays) == (1 if stage == "display" else 0)
+    assert ledger._persisted_sequence == ledger.snapshot.sequence
+    assert len(ledger._pending) == 1  # Display is not acknowledged by persistence cleanup.
+
+
+async def test_cancelled_delivery_cleanup_is_bounded_and_retains_facts(monkeypatch, caplog):
+    import anyio
+    from a13n_harness import usage as usage_module
+
+    entered = asyncio.Event()
+
+    class Reporter:
+        async def report(self, snapshot):
+            entered.set()
+            await anyio.sleep_forever()
+
+    monkeypatch.setattr(usage_module, "_USAGE_CLEANUP_SECONDS", 0.01)
+    ledger = _delivery_ledger()
+    ledger.reporter = Reporter()
+    task = asyncio.create_task(ledger._flush(reason="model_request"))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert ledger._persisted_sequence < ledger.snapshot.sequence
+    assert len(ledger.records) == len(ledger._pending) == 1
+    assert "Usage cleanup timed out" in caplog.text
+
+
+async def test_display_retry_does_not_repeat_acknowledged_persistence():
+    reports, displayed = [], []
 
     class Reporter:
         async def report(self, snapshot):
@@ -266,22 +334,48 @@ async def test_usage_display_timeout_retains_pending_records(monkeypatch):
 
     class Events:
         async def emit(self, event):
-            scopes[-1].cancel()
-            await anyio.lowlevel.checkpoint()
+            displayed.append(event)
+            if len(displayed) == 1:
+                raise ConnectionError("display unavailable")
 
-    monkeypatch.setattr(usage_module.anyio, "move_on_after", deadline)
-    ledger = ModelUsageBinding.standalone(source="test").ledger
-    ledger.reporter = Reporter()
-    ledger._events = Events()
-    ledger._append(
-        record(request_usage=BoundedRequestUsage(input_tokens=3)).model_copy(
-            update={"run_id": ledger.run_id, "agent_instance_id": ledger.instance.agent_instance_id}
-        )
-    )
-    with pytest.raises(UsageReportError, match="display delivery timed out"):
+    ledger = _delivery_ledger()
+    ledger.reporter, ledger._events = Reporter(), Events()
+    with pytest.raises(ConnectionError):
         await ledger._flush(reason="model_request")
-    assert len(reports) == len(ledger._pending) == 1
-    assert ledger._reported_sequence < ledger.snapshot.sequence
+    assert len(ledger._pending) == 1
+    await ledger._flush(reason="terminal")
+    assert len(reports) == 1 and len(displayed) == 2
+    assert not ledger._pending
+
+
+async def test_model_cancellation_uses_bounded_persistence_cleanup(monkeypatch, caplog):
+    import anyio
+    from a13n_harness import usage as usage_module
+
+    entered = asyncio.Event()
+    reports = []
+
+    async def model(messages, info):
+        entered.set()
+        await anyio.sleep_forever()
+
+    class Reporter:
+        async def report(self, snapshot):
+            reports.append(snapshot)
+            await anyio.sleep_forever()
+
+    monkeypatch.setattr(usage_module, "_USAGE_CLEANUP_SECONDS", 0.01)
+    binding = ModelUsageBinding.standalone(source="test")
+    binding.ledger.reporter = Reporter()
+    agent = Agent(FunctionModel(model), capabilities=[ModelUsageCapability(binding)])
+    task = asyncio.create_task(agent.run("go"))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert len(reports) == len(binding.ledger.records) == 1
+    assert not binding.ledger.requests.pending
+    assert "Usage cleanup timed out" in caplog.text
 
 
 @pytest.mark.parametrize("limits", [UsageLimits(total_tokens_limit=15), UsageLimits(cost_limit=Decimal("0.15"))])
@@ -514,3 +608,105 @@ async def test_failed_report_retries_facts_without_holding_request_capacity() ->
     assert binding.ledger.summary().requests == 2
     assert len(received) == 2 and len({item.record_id for item in received}) == 2
     assert binding.ledger.requests.pending == 0
+
+
+async def test_cancelled_harness_terminal_does_not_restart_unbounded_delivery(monkeypatch):
+    import anyio
+    from a13n_harness import HarnessRunResultEvent
+    from a13n_harness import usage as usage_module
+
+    entered = asyncio.Event()
+    reports = []
+
+    async def model(messages, info):
+        entered.set()
+        await anyio.sleep_forever()
+        yield "unreachable"
+
+    class Reporter:
+        async def report(self, snapshot):
+            reports.append(snapshot)
+            await anyio.sleep_forever()
+
+    monkeypatch.setattr(usage_module, "_USAGE_CLEANUP_SECONDS", 0.01)
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=model))
+    async with executable.stream("go", bindings=RunBindings.embedded(usage_reporter=Reporter())) as stream:
+
+        async def consume():
+            return [item async for item in stream]
+
+        task = asyncio.create_task(consume())
+        await entered.wait()
+        stream.cancel()
+        items = await asyncio.wait_for(task, timeout=2)
+    assert isinstance(items[-1], HarnessRunResultEvent)
+    assert items[-1].result.status == "cancelled"
+    assert items[-1].result.usage.requests == 1
+    assert len(items[-1].result.usage_records) == 1
+    assert reports
+
+
+@pytest.mark.parametrize("first_report", ["timeout", "blocked"])
+async def test_failed_harness_terminal_uses_bounded_cleanup(monkeypatch, caplog, first_report):
+    import anyio
+    from a13n_harness import HarnessRunResultEvent
+    from a13n_harness import usage as usage_module
+
+    reports = []
+    calls = []
+
+    async def model(messages, info):
+        calls.append(True)
+        raise RuntimeError("model failed")
+        yield "unreachable"
+
+    class Reporter:
+        async def report(self, snapshot):
+            reports.append(snapshot)
+            if first_report == "timeout" and len(reports) == 1:
+                raise TimeoutError("Host deadline")
+            await anyio.sleep_forever()
+
+    monkeypatch.setattr(usage_module, "_USAGE_CLEANUP_SECONDS", 0.01)
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=model))
+    async with executable.stream("go", bindings=RunBindings.embedded(usage_reporter=Reporter())) as stream:
+
+        async def consume():
+            return [item async for item in stream]
+
+        items = await asyncio.wait_for(consume(), timeout=2)
+    assert isinstance(items[-1], HarnessRunResultEvent)
+    assert items[-1].result.status == "failed"
+    assert items[-1].result.usage.requests == 1
+    assert len(items[-1].result.usage_records) == 1
+    assert calls == [True]
+    assert len(reports) == 2
+    assert reports[0] == reports[1]
+    assert "Usage cleanup timed out" in caplog.text
+
+
+async def test_cleanup_budget_does_not_reject_a_shielded_commit(monkeypatch, caplog):
+    import anyio
+    from a13n_harness import usage as usage_module
+
+    scopes, reports = [], []
+
+    def deadline(*args, **kwargs):
+        scope = anyio.CancelScope(shield=True)
+        scopes.append(scope)
+        return scope
+
+    class Reporter:
+        async def report(self, snapshot):
+            with anyio.CancelScope(shield=True):
+                scopes[0].cancel()
+                await anyio.lowlevel.checkpoint()
+                reports.append(snapshot)
+
+    monkeypatch.setattr(usage_module.anyio, "move_on_after", deadline)
+    ledger = _delivery_ledger()
+    ledger.reporter = Reporter()
+    await ledger._flush_cleanup()
+    assert len(reports) == 1
+    assert ledger._persisted_sequence == ledger.snapshot.sequence
+    assert "Usage cleanup timed out" not in caplog.text

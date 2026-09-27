@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
+from time import monotonic
 from typing import Annotated, Literal
 
 from a13n_harness import HarnessRunResultEvent, HarnessState
@@ -16,14 +18,19 @@ from a13n_harness.usage import (
     UsageSnapshot,
     select_usage_snapshot,
 )
+from a13n_logging import get_logger
+from anyio import sleep
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlalchemy import DateTime, func, literal, select, text, true, type_coerce, union_all
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_harness_ui.errors import StoreIntegrityError
 
 from .database import DatabaseSessions, short_session, transaction
 from .models import ThreadRecord, ThreadUsageRecord
+
+logger = get_logger(__name__)
 
 _RECORD = TypeAdapter(Annotated[UsageRecord, Field(discriminator="kind")])
 _BATCH = 128
@@ -304,8 +311,46 @@ class ThreadUsageReporter:
     thread_id: str
 
     async def report(self, snapshot: UsageSnapshot) -> None:
+        """Own transient storage retries; queueing is cancellable, admitted commits settle."""
         # Inline child scopes have their own Harness Thread, but belong to this Host root.
-        await self.repository.save(thread_id=self.thread_id, snapshot=snapshot)
+        started = monotonic()
+        for attempt in range(1, 4):
+            try:
+                await self.repository.save(thread_id=self.thread_id, snapshot=snapshot)
+            except (TimeoutError, OperationalError) as exc:
+                if isinstance(exc, OperationalError) and not (
+                    isinstance(exc.orig, sqlite3.OperationalError)
+                    and getattr(exc.orig, "sqlite_errorcode", 0) & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+                ):
+                    raise
+                logger.warning(
+                    "Usage persistence attempt timed out or was busy",
+                    extra={
+                        "thread_id": self.thread_id,
+                        "usage_id": snapshot.usage_id,
+                        "usage_sequence": snapshot.sequence,
+                        "attempt": attempt,
+                        "elapsed_seconds": monotonic() - started,
+                        "retrying": attempt < 3,
+                    },
+                )
+                if attempt == 3:
+                    raise
+                # save() has returned its transaction/connection before this wait.
+                await sleep(0.1 * attempt)
+            else:
+                elapsed = monotonic() - started
+                if elapsed >= 5:
+                    logger.warning(
+                        "Usage persistence completed slowly",
+                        extra={
+                            "thread_id": self.thread_id,
+                            "usage_id": snapshot.usage_id,
+                            "usage_sequence": snapshot.sequence,
+                            "elapsed_seconds": elapsed,
+                        },
+                    )
+                return
 
 
 class ThreadUsageRepository:

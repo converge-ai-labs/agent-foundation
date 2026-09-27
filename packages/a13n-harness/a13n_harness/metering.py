@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from copy import copy
@@ -284,7 +285,14 @@ class MeteredModel(WrapperModel):
                 if response.metadata is None:
                     response.metadata = {}
                 response.metadata[_STATE_KEY] = {"usage_id": ledger.usage_id, "record_id": record.record_id}
-            await ledger._flush(reason="model_request", trigger_record_id=record.record_id)
+            if error is not None:
+                await ledger._flush_cleanup(
+                    reason="model_request",
+                    trigger_record_id=record.record_id,
+                    display=not isinstance(error, asyncio.CancelledError),
+                )
+            else:
+                await ledger._flush(reason="model_request", trigger_record_id=record.record_id)
             if (
                 pricing is not None
                 and pricing.status == "failed"
