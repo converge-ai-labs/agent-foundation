@@ -1,25 +1,5 @@
 {
   "$defs": {
-    "Assistant": {
-      "additionalProperties": false,
-      "properties": {
-        "models": {
-          "default": [
-            "gpt-5.6-luna",
-            "claude-sonnet-5",
-            "deepseek-v4.1-flash",
-            "gemini-3.8-flash"
-          ],
-          "items": {
-            "type": "string"
-          },
-          "title": "Models",
-          "type": "array"
-        }
-      },
-      "title": "Assistant",
-      "type": "object"
-    },
     "Authentication": {
       "additionalProperties": false,
       "properties": {
@@ -70,6 +50,26 @@
         }
       },
       "title": "Authentication",
+      "type": "object"
+    },
+    "Composer": {
+      "additionalProperties": false,
+      "properties": {
+        "models": {
+          "default": [
+            "gpt-5.6-luna",
+            "claude-sonnet-5",
+            "deepseek-v4.1-flash",
+            "gemini-3.8-flash"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Models",
+          "type": "array"
+        }
+      },
+      "title": "Composer",
       "type": "object"
     },
     "Control": {
@@ -1465,8 +1465,8 @@
     "plugins": {
       "$ref": "#/$defs/Plugins"
     },
-    "assistant": {
-      "$ref": "#/$defs/Assistant"
+    "composer": {
+      "$ref": "#/$defs/Composer"
     },
     "telemetry": {
       "$ref": "#/$defs/Telemetry"

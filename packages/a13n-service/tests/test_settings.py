@@ -31,7 +31,7 @@ def test_environment_variables_carry_lists_maps_and_sections_as_json(
     key = "a" * 44
     for name, value in {
         "A13N_PLUGINS__KEYS": '["notes"]',
-        "A13N_ASSISTANT__MODELS": '["claude-sonnet-5"]',
+        "A13N_COMPOSER__MODELS": '["claude-sonnet-5"]',
         "A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS": '["/srv/shared"]',
         "A13N_PROVIDERS__MCP_SERVERS": json.dumps(
             [
@@ -51,7 +51,7 @@ def test_environment_variables_carry_lists_maps_and_sections_as_json(
     }.items():
         monkeypatch.setenv(name, value)
     loaded = load_settings()
-    assert (loaded.plugins.keys, loaded.assistant.models) == (("notes",), ("claude-sonnet-5",))
+    assert (loaded.plugins.keys, loaded.composer.models) == (("notes",), ("claude-sonnet-5",))
     assert [str(root) for root in loaded.environments.docker_mount_roots] == ["/srv/shared"]
     assert [server.key for server in loaded.providers.mcp_servers] == ["docs"]
     assert loaded.encryption.keys["k"].get_secret_value() == key

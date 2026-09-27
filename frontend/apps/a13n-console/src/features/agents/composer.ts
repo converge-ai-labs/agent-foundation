@@ -10,7 +10,7 @@ import { modelApi } from "../models/api";
 import { providersPath } from "../providers/navigation";
 import { agentQuery } from "./queries";
 
-const ASSISTANT_KEY = "configuration-assistant";
+const COMPOSER_KEY = "agent-composer";
 
 function modelRequired(error: unknown) {
   return (
@@ -20,19 +20,19 @@ function modelRequired(error: unknown) {
   );
 }
 
-/** The agent version a conversation with the assistant starts from. */
-export interface AssistantTarget {
+/** The agent version a conversation with the composer starts from. */
+export interface ComposerTarget {
   agent: Pick<Schema["Agent"], "id" | "key" | "name">;
   revision: Pick<Schema["AgentRevision"], "id" | "number">;
 }
 
 /**
- * The configuration assistant is the workspace's builtin agent. Writers
+ * Agent Composer is the workspace's builtin agent. Writers
  * prepare it, which creates it or brings it up to date, before conversing;
  * other runners converse with it once it exists. A conversation about an
  * existing agent opens with a first message naming it, which the user sends.
  */
-export function useConfigurationAssistant() {
+export function useAgentComposer() {
   const { t } = useTranslation(),
     client = useClient(),
     cache = useQueryClient(),
@@ -41,10 +41,10 @@ export function useConfigurationAssistant() {
     { workspace, organization, basePath, can } = useWorkspace();
   const write = can("write");
   const existing = useQuery({
-    ...agentQuery(client, workspace.id, ASSISTANT_KEY),
+    ...agentQuery(client, workspace.id, COMPOSER_KEY),
     enabled: !write && can("run"),
   });
-  const converse = (agentId: string, target?: AssistantTarget) => {
+  const converse = (agentId: string, target?: ComposerTarget) => {
     const search = new URLSearchParams({ agent: agentId });
     if (target)
       search.set(
@@ -63,9 +63,9 @@ export function useConfigurationAssistant() {
     navigate(`${basePath}/sessions/new?${search}`);
   };
   const prepare = useMutation({
-    mutationFn: (_target?: AssistantTarget) =>
+    mutationFn: (_target?: ComposerTarget) =>
       client.http
-        .POST("/api/v1/workspaces/{workspace_id}/configuration-assistant", {
+        .POST("/api/v1/workspaces/{workspace_id}/agent-composer", {
           params: { path: { workspace_id: workspace.id } },
         })
         .then(data),
@@ -89,7 +89,7 @@ export function useConfigurationAssistant() {
         title: t(
           configured
             ? "Provider configured. Add an enabled model to continue."
-            : "Configure a model provider to start the assistant.",
+            : "Configure a model provider to start Agent Composer.",
         ),
         actionProps: {
           children: t(configured ? "Open Models" : "Open model setup"),
@@ -103,15 +103,15 @@ export function useConfigurationAssistant() {
       });
     },
   });
-  const assistant = existing.data?.source === "builtin" ? existing.data : null;
+  const composer = existing.data?.source === "builtin" ? existing.data : null;
   return {
-    available: write || !!assistant,
+    available: write || !!composer,
     pending: prepare.isPending,
     /** Failures other than a missing model, which the setup notice covers. */
     error: modelRequired(prepare.error) ? null : prepare.error,
-    start: (target?: AssistantTarget) =>
+    start: (target?: ComposerTarget) =>
       write
         ? prepare.mutate(target)
-        : assistant && converse(assistant.id, target),
+        : composer && converse(composer.id, target),
   };
 }

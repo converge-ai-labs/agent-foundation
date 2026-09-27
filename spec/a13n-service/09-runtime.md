@@ -73,9 +73,9 @@ The schema is one Alembic graph composed from the distribution's migration direc
 Settings are loaded and validated once per process into frozen, typed sections:
 
 - An optional TOML file is named by `--config` or `A13N_SETTINGS_FILE`.
-- An environment variable `A13N_<SECTION>__<FIELD>` replaces one field of the file; it is not merged with the file's value. A field that takes a list, map or section is given as JSON, as in `A13N_PLUGINS__KEYS='["…"]'`, `A13N_ASSISTANT__MODELS`, `A13N_ENCRYPTION__KEYS` or `A13N_AUTH__MAIL`; a nested section is set whole, never field by field.
+- An environment variable `A13N_<SECTION>__<FIELD>` replaces one field of the file; it is not merged with the file's value. A field that takes a list, map or section is given as JSON, as in `A13N_PLUGINS__KEYS='["…"]'`, `A13N_COMPOSER__MODELS`, `A13N_ENCRYPTION__KEYS` or `A13N_AUTH__MAIL`; a nested section is set whole, never field by field.
 - Unknown sections, fields and variable names fail loading.
-- The sections are `server`, `database`, `objects`, `redis`, `auth` (with `auth.mail`), `encryption`, `control`, `worker`, `environments`, `memory` (with `memory.default_guide`), `providers`, `plugins`, `assistant` and `telemetry`, plus the sections a distribution declares under their own names. A distribution section that shares a core section's name fails loading, naming it.
+- The sections are `server`, `database`, `objects`, `redis`, `auth` (with `auth.mail`), `encryption`, `control`, `worker`, `environments`, `memory` (with `memory.default_guide`), `providers`, `plugins`, `composer` and `telemetry`, plus the sections a distribution declares under their own names. A distribution section that shares a core section's name fails loading, naming it.
 
 The generated [configuration reference](../../docs/a13n-service/configuration-reference.md) lists every field with its default and range. Beyond per-field ranges, loading refuses:
 

@@ -102,7 +102,7 @@ nav:
       - Use:
           - Identity and access: a13n-service/identity.md
           - Agents, threads and runs: a13n-service/agents-and-runs.md
-          - Configuration assistant: a13n-service/configuration-assistant.md
+          - Agent Composer: a13n-service/agent-composer.md
       - Configure resources:
           - Resource basics: a13n-service/resources.md
           - Models: a13n-service/models.md

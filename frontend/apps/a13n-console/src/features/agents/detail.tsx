@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, MenuItem, MenuSeparator, ModalFrame } from "a13n-ui";
 import {
+  ChatIcon,
   DownloadSimpleIcon,
   PencilSimpleIcon,
   PlayIcon,
-  SparkleIcon,
 } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -30,7 +30,7 @@ import {
 } from "../../shared/page";
 import { isResourceKey } from "../../shared/paths";
 import { environmentTemplates } from "../environments/api";
-import { useConfigurationAssistant } from "./assistant";
+import { useAgentComposer } from "./composer";
 import { AgentAvatar } from "./avatar";
 import type { AgentConfig } from "./configuration";
 import { AgentEditor, type AgentDraftSummary } from "./editor";
@@ -49,7 +49,7 @@ export function AgentDetail() {
     { workspace, can, basePath } = useWorkspace(),
     navigate = useNavigate(),
     cache = useQueryClient(),
-    assistant = useConfigurationAssistant();
+    composer = useAgentComposer();
   const [tab, setTab] = useTabParam(["configuration", "versions"]);
   const [generation, setGeneration] = useState(0);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -269,14 +269,14 @@ export function AgentDetail() {
           }
           actions={
             <>
-              {assistant.available && (
+              {composer.available && (
                 <Button
                   variant="outline"
-                  loading={assistant.pending}
-                  onClick={() => assistant.start({ agent, revision })}
+                  loading={composer.pending}
+                  onClick={() => composer.start({ agent, revision })}
                 >
-                  <SparkleIcon size={15} aria-hidden="true" />
-                  {t("Configure with assistant")}
+                  <ChatIcon size={15} aria-hidden="true" />
+                  {t("Edit with AI")}
                 </Button>
               )}
               {can("run") && (
@@ -339,7 +339,7 @@ export function AgentDetail() {
           onDefaultChanged={reload}
         />
       )}
-      <ErrorToast error={assistant.error} />
+      <ErrorToast error={composer.error} />
     </DetailPage>
   );
 }

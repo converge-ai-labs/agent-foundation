@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query, Response
 
 from a13n_service.infra import images
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
-from a13n_service.resources.agents import assistant, service
+from a13n_service.resources.agents import composer, service
 from a13n_service.resources.agents.schemas import (
     Agent,
     AgentCreate,
@@ -45,17 +45,17 @@ async def validate_revision(workspace_id: str, body: AgentValidate, actor: Actor
     )
 
 
-@router.post("/configuration-assistant", response_model=Agent)
-async def prepare_assistant(response: Response, workspace_id: str, actor: Actor, runtime: CurrentRuntime) -> Agent:
-    """The workspace's configuration assistant, created or brought up to date with the deployment's definition.
+@router.post("/agent-composer", response_model=Agent)
+async def prepare_composer(response: Response, workspace_id: str, actor: Actor, runtime: CurrentRuntime) -> Agent:
+    """The workspace's Agent Composer, created or brought up to date with the deployment's definition.
 
     Refused with `model_required` while the workspace has no model the caller can use.
     """
-    prepared = await assistant.prepare_assistant(
+    prepared = await composer.prepare(
         runtime.storage,
         actor,
         workspace_id,
-        preferred=runtime.settings.assistant.models,
+        preferred=runtime.settings.composer.models,
         registry=runtime.registry,
         plugins=runtime.plugins,
     )

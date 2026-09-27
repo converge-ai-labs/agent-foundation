@@ -155,7 +155,7 @@ def seed_agents(api: Api, ws: str, local: Local, skills: dict[str, Json], connec
     )
     legacy = agent("legacy-triage", "Legacy triage", "Replaced by the release reviewer.", {"team": "support"})
     api.post(f"{ws}/agents/{legacy['id']}/archive", current=legacy)
-    api.post(f"{ws}/configuration-assistant")
+    api.post(f"{ws}/agent-composer")
     for number, name in enumerate(CATALOG, start=1):
         agent(f"catalog-{number:02d}", name, "An idle fictional agent.", {"team": "catalog"})
     return cast

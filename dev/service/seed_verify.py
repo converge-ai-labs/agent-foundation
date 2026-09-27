@@ -103,10 +103,10 @@ def _resources(api: Api, org: str, ws: str, index: dict[str, str]) -> Iterator[C
     )
     agents = {agent["key"]: agent for agent in api.items(f"{ws}/agents")}
     yield (
-        "Agents: more than a Console page, an archived one, a duplicate and the configuration assistant",
+        "Agents: more than a Console page, an archived one, a duplicate and Agent Composer",
         len(agents) > AGENT_PAGE
         and agents["legacy-triage"]["archived_at"] is not None
-        and {"release-writer-copy", "configuration-assistant"} <= agents.keys(),
+        and {"release-writer-copy", "agent-composer"} <= agents.keys(),
     )
     writer = agents["release-writer"]
     revisions = api.items(f"{ws}/agents/{writer['id']}/revisions")

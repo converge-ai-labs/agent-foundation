@@ -6,6 +6,24 @@ Download [the complete OpenAPI JSON](../assets/reference/service-openapi.json).
 
 ## agents
 
+### `POST /api/v1/workspaces/{workspace_id}/agent-composer`
+
+Prepare Composer.
+
+The workspace's Agent Composer, created or brought up to date with the deployment's definition.
+
+Refused with `model_required` while the workspace has no model the caller can use.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Agent`).
+- **400** — .
+- **default** — .
+
 ### `GET /api/v1/workspaces/{workspace_id}/agents`
 
 List Agents.
@@ -271,24 +289,6 @@ Unarchive Agent.
 | `workspace_id` | path     | true     | string         | —                       |
 | `agent_id`     | path     | true     | string         | —                       |
 | `If-Match`     | header   | false    | string or null | maxLength=512           |
-
-Responses:
-
-- **200** — Successful Response (`application/json: Agent`).
-- **400** — .
-- **default** — .
-
-### `POST /api/v1/workspaces/{workspace_id}/configuration-assistant`
-
-Prepare Assistant.
-
-The workspace's configuration assistant, created or brought up to date with the deployment's definition.
-
-Refused with `model_required` while the workspace has no model the caller can use.
-
-| Parameter      | Location | Required | Type / schema | Constraints and default |
-| -------------- | -------- | -------- | ------------- | ----------------------- |
-| `workspace_id` | path     | true     | string        | —                       |
 
 Responses:
 

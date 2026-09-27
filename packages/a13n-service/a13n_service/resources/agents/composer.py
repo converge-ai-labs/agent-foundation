@@ -1,8 +1,8 @@
-"""The configuration assistant: the workspace's builtin agent that creates and changes agents with its users.
+"""Agent Composer: the workspace's builtin agent that creates and changes agents with its users.
 
 It is an ordinary agent whose head has `source = 'builtin'`: its runs, threads and approvals are every agent's,
 and it can be duplicated. The deployment owns its definition; the workspace owns the model it runs on, so
-`prepare_assistant` builds it on demand. The first preparation creates the head; a later one publishes the current
+`prepare` builds it on demand. The first preparation creates the head; a later one publishes the current
 definition, which appends a revision only when it changed or its model is no longer usable. The chosen model is
 kept while usable.
 """
@@ -30,7 +30,9 @@ from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 from a13n_service.tenancy.tables import WorkspaceRow
 
-KEY = "configuration-assistant"
+KEY = "agent-composer"
+NAME = "Agent Composer"
+DESCRIPTION = "Create and refine your agents."
 
 _INSTRUCTIONS = """\
 You help the user create and change agents in this workspace.
@@ -50,7 +52,7 @@ or repeat credential values; connections and secrets are configured by the user 
 """
 
 
-def assistant_config(model_id: str) -> AgentConfig:
+def configuration(model_id: str) -> AgentConfig:
     return AgentConfig(
         model=AgentModel(model_id=model_id),
         instructions=_INSTRUCTIONS,
@@ -63,7 +65,7 @@ def assistant_config(model_id: str) -> AgentConfig:
     )
 
 
-async def prepare_assistant(
+async def prepare(
     storage: Storage,
     actor: Principal,
     workspace_id: str,
@@ -86,12 +88,12 @@ async def prepare_assistant(
             model_id = await _model(session, actor, scope, None, preferred)
             body = AgentCreate(
                 key=KEY,
-                name="Configuration assistant",
-                description="Creates and changes agents with you, from the workspace's resources.",
-                config=assistant_config(model_id),
+                name=NAME,
+                description=DESCRIPTION,
+                config=configuration(model_id),
             )
             head = await insert_head(session, actor, scope, body, source="builtin", registry=registry, plugins=plugins)
-            audit_row(session, actor, head, "assistant.prepare")
+            audit_row(session, actor, head, "composer.prepare")
             return agent_view(head)
         if not head.builtin:
             raise conflict(head.KIND, head.id, "key_in_use")
@@ -100,11 +102,12 @@ async def prepare_assistant(
         )
         model_id = await _model(session, actor, scope, current, preferred)
         config = await validate_config(
-            session, actor, scope, head.id, assistant_config(model_id), registry=registry, plugins=plugins
+            session, actor, scope, head.id, configuration(model_id), registry=registry, plugins=plugins
         )
+        await revisions.update_head(session, actor, head, {"name": NAME, "description": DESCRIPTION})
         revision, created = await revisions.publish(session, head, AgentRevisionRow, config, actor=actor, note=None)
         if created:
-            audit_row(session, actor, head, "assistant.prepare", {"revision_id": revision.id})
+            audit_row(session, actor, head, "composer.prepare", {"revision_id": revision.id})
             await session.flush()
             await session.refresh(head)
         return agent_view(head)

@@ -109,12 +109,12 @@ An author's references need `read`. A run's override (`options.overrides`, [05](
 
 Export and import are Console features: the Console serializes one revision's configuration and imports by creating an agent.
 
-### The configuration assistant
+### Agent Composer
 
-The configuration assistant is an ordinary agent with key `configuration-assistant` and `source = 'builtin'`. `POST /workspaces/{ws}/configuration-assistant` (needs `write`) creates or refreshes it on demand and returns it:
+**Agent Composer** is an ordinary agent with key `agent-composer` and `source = 'builtin'`. `POST /workspaces/{ws}/agent-composer` (needs `write`) creates or refreshes it on demand and returns it:
 
-- Its model is the one it already uses while that model stays usable, else the first model whose upstream name, after its last `/`, matches `assistant.models` in preference order, else the workspace's first usable model by key. Without a usable model the call is 409 `model_required`. A custom agent holding the key makes the call 409 `key_in_use`.
-- A refresh appends a revision only when the configuration's digest changed.
+- Its model is the one it already uses while that model stays usable, else the first model whose upstream name, after its last `/`, matches `composer.models` in preference order, else the workspace's first usable model by key. Without a usable model the call is 409 `model_required`. A custom agent holding the key makes the call 409 `key_in_use`.
+- A refresh synchronizes the deployment-owned name and description and appends a revision only when the configuration's digest changed. A preparation that changes neither metadata nor configuration leaves the head version unchanged and emits no update audit event.
 - A builtin head refuses metadata and avatar changes, revisions, default changes and archiving (409 `builtin`). It is visible and can be duplicated into a custom agent.
 
 Its tools are the built-in `configuration` toolset, which any agent may enable: `find_resources`, `read_resource` (an agent with its default revision's configuration, or with `revision_id`'s) and `describe_agent_config` read resources the run's principal may read, and `create_agent` and `create_agent_revision` call the same service functions as the API under the run's authority. The write tools default to the `ask` permission. How a refusal reaches the model is [05](05-runs.md#execute)'s Service tools rule. There are no drafts and no separate session kind: the conversation is the editing session, and the revision is its result.

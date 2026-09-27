@@ -27,6 +27,7 @@ from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
+from a13n_service.resources.agents import composer as builtin_composer
 from a13n_service.resources.agents import definition, toolsets
 from a13n_service.resources.agents.schemas import (
     AgentConfig,
@@ -607,10 +608,10 @@ async def test_agent_keys_change_and_lists_filter(service) -> None:  # type: ign
         ).all()
     assert events == [{"fields": ["key"]}]
     # A built-in agent keeps its key.
-    assistant = await service.client.post(f"{service.workspace}/configuration-assistant")
-    assert assistant.status_code == 200, assistant.text
+    composer = await service.client.post(f"{service.workspace}/agent-composer")
+    assert composer.status_code == 200, composer.text
     builtin = await service.client.patch(
-        f"{agents}/{assistant.json()['id']}", json={"key": "helper"}, headers={"if-match": assistant.headers["etag"]}
+        f"{agents}/{composer.json()['id']}", json={"key": "helper"}, headers={"if-match": composer.headers["etag"]}
     )
     assert builtin.status_code == 409 and builtin.json()["error"]["details"]["reason"] == "builtin"
 
@@ -621,11 +622,43 @@ async def test_agent_keys_change_and_lists_filter(service) -> None:  # type: ign
 
     await service.client.post(f"{agents}/reader/archive", headers={"if-match": etag(reader)})
     assert await keys(q="AUTH") == {"author"}
-    assert await keys(q="assistant") == {"configuration-assistant"}
+    assert await keys(q="composer") == {"agent-composer"}
     assert await keys(archived="true") == {"reader"}
-    assert await keys(archived="false") == {"author", "configuration-assistant"}
+    assert await keys(archived="false") == {"author", "agent-composer"}
     assert await keys(q="read", archived="false") == set()
     assert (await service.client.get(agents, params={"q": ""})).status_code == 400
+
+
+async def test_preparing_composer_refreshes_metadata_without_a_revision(service, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    await create_model(service)
+    prepare = f"{service.workspace}/agent-composer"
+    with monkeypatch.context() as previous:
+        previous.setattr(builtin_composer, "NAME", "Previous name")
+        previous.setattr(builtin_composer, "DESCRIPTION", "Previous description")
+        initial = await service.client.post(prepare)
+    assert initial.status_code == 200, initial.text
+    before = initial.json()
+
+    refreshed = await service.client.post(prepare)
+    assert refreshed.status_code == 200, refreshed.text
+    composer = refreshed.json()
+    assert (composer["name"], composer["description"]) == ("Agent Composer", "Create and refine your agents.")
+    assert composer["id"] == before["id"]
+    assert composer["default_revision_id"] == before["default_revision_id"]
+    assert composer["version"] == before["version"] + 1
+    assert (await service.client.get(f"{service.workspace}/agents/{composer['id']}")).json() == composer
+    repeated = await service.client.post(prepare)
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json() == composer
+    async with short_session(service.runtime.storage) as session:
+        events = (
+            await session.scalars(
+                select(AuditEventRow.details).where(
+                    AuditEventRow.action == "agent.update", AuditEventRow.target_id == composer["id"]
+                )
+            )
+        ).all()
+    assert events == [{"fields": ["name", "description"]}]
 
 
 async def test_agent_avatars(service, settings: Settings) -> None:  # type: ignore[no-untyped-def]

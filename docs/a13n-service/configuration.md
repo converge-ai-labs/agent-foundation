@@ -141,7 +141,7 @@ Other `providers` settings bound provider work: `model_timeout` (each read of on
 
 `environments.allow_local = true` offers the `local` environment provider, which runs commands directly on the worker host with no isolation. Use it only for development.
 
-`plugins.keys` lists installed Harness plugin factories, by entry-point key, that agents may select. `assistant.models` lists preferred upstream model names for the [configuration assistant](configuration-assistant.md).
+`plugins.keys` lists installed Harness plugin factories, by entry-point key, that agents may select. `composer.models` lists preferred upstream model names for the [Agent Composer](agent-composer.md).
 
 ## Logs, metrics and traces
 

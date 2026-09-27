@@ -1,8 +1,8 @@
 import {
   CaretDownIcon,
+  ChatIcon,
   FileArrowUpIcon,
   PlusIcon,
-  SparkleIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -28,7 +28,7 @@ import { FileUpload } from "../../shared/forms";
 import { FormActions, TextAreaField } from "../../shared/forms";
 import shared from "../../shared/shared.module.css";
 import styles from "./agents.module.css";
-import { useConfigurationAssistant } from "./assistant";
+import { useAgentComposer } from "./composer";
 import { AgentFilePreview } from "./export";
 import { createWithKey } from "../../shared/keys";
 import {
@@ -46,7 +46,7 @@ import {
 export function AgentCreationMenu() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const assistant = useConfigurationAssistant();
+  const composer = useAgentComposer();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -74,23 +74,23 @@ export function AgentCreationMenu() {
           >
             <CaretDownIcon size={14} aria-hidden="true" />
           </MenuTrigger>
-          <MenuPopup align="end" className="min-w-56">
+          <MenuPopup align="end" className="min-w-48">
             <MenuItem onClick={() => navigate("new")}>
               <PlusIcon size={16} aria-hidden="true" />
-              {t("New agent")}
+              {t("Create manually")}
             </MenuItem>
-            {assistant.available && (
+            {composer.available && (
               <MenuItem
-                disabled={assistant.pending}
-                onClick={() => assistant.start()}
+                disabled={composer.pending}
+                onClick={() => composer.start()}
               >
-                <SparkleIcon size={16} aria-hidden="true" />
-                {t("Configure with assistant")}
+                <ChatIcon size={16} aria-hidden="true" />
+                {t("Create with AI")}
               </MenuItem>
             )}
             <MenuItem onClick={() => setOpen(true)}>
               <FileArrowUpIcon size={16} aria-hidden="true" />
-              {t("Import from YAML")}
+              {t("Import YAML")}
             </MenuItem>
           </MenuPopup>
         </Menu>
@@ -116,7 +116,7 @@ export function AgentCreationMenu() {
           />
         )}
       </ModalFrame>
-      <ErrorToast error={assistant.error} />
+      <ErrorToast error={composer.error} />
     </>
   );
 }

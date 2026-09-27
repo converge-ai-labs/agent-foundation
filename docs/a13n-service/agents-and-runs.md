@@ -24,7 +24,7 @@ curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/agents" \
 - `POST …/archive` stops new runs of the agent (`422 disabled`); runs already accepted finish. `POST …/unarchive` reverses it.
 - Lists filter by `label`, `q` (key, name or description), `archived`, and the skill or skill revision the agents pin.
 
-The built-in [configuration assistant](configuration-assistant.md) is an agent too; it cannot be changed or archived.
+The built-in [Agent Composer](agent-composer.md) is an agent too; it cannot be changed or archived.
 
 ### Agent configuration
 

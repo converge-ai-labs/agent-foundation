@@ -74,9 +74,9 @@ Costs sum reported observation-local USD values once per observation identity; m
 
 Details separate Observations, root Input/output and Metadata. Observations default to a parent-aware call tree and timeline; missing parents remain identifiable. Inspection retains diagnostics, attributes, scope, events and links, with attempt/environment metadata only where explicitly supplied. Telemetry status never implies Run success. Model, tool, agent and service observations remain distinguishable. Content offers safe readable preview and unchanged raw JSON with copy, bounded scrolling and plain fallback. HTML is not executed, and remote media is not fetched automatically.
 
-## Configuration Assistant
+## Agent Composer
 
-The assistant is an ordinary visible, duplicable builtin Agent under [resources](../a13n-service/04-resources.md#the-configuration-assistant). Its conversation uses normal Sessions/Threads and tool approvals; creation/revision tools run under the caller's authority and produce ordinary Agent revisions. Console shows the actual resulting resource links and execution evidence. The builtin definition is deployment-owned; setup links for missing permitted resources do not grant access.
+Agent Composer is an ordinary visible, duplicable builtin Agent under [resources](../a13n-service/04-resources.md#agent-composer). Its conversation uses normal Sessions/Threads and tool approvals; creation/revision tools run under the caller's authority and produce ordinary Agent revisions. Console shows the actual resulting resource links and execution evidence. The builtin definition is deployment-owned; setup links for missing permitted resources do not grant access.
 
 ## Experience and Accessibility
 

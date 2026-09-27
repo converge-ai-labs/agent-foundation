@@ -14,7 +14,7 @@ import {
 } from "../../shared/feedback";
 import { Confirm } from "../../shared/dialogs";
 import { JsonView } from "../../shared/forms";
-import { useConfigurationAssistant } from "./assistant";
+import { useAgentComposer } from "./composer";
 import { editableAgent, useModelsById } from "./queries";
 import styles from "../../shared/shared.module.css";
 
@@ -32,7 +32,7 @@ export function AgentVersions({
     { workspace, can } = useWorkspace(),
     cache = useQueryClient(),
     page = useCursor(),
-    assistant = useConfigurationAssistant(),
+    composer = useAgentComposer(),
     models = useModelsById();
   const [selected, setSelected] = useState<Schema["AgentRevision"]>();
   // Revisions name their model by ID; versions show the model's key.
@@ -145,15 +145,15 @@ export function AgentVersions({
         ]}
       />
       <Pagination page={page} next={query.data.next_cursor} />
-      <ErrorToast error={assistant.error} />
+      <ErrorToast error={composer.error} />
       {selected && (
         <section>
-          {assistant.available && (
+          {composer.available && (
             <Button
               type="button"
               variant="link"
-              loading={assistant.pending}
-              onClick={() => assistant.start({ agent, revision: selected })}
+              loading={composer.pending}
+              onClick={() => composer.start({ agent, revision: selected })}
             >
               {t("Configure from this version")}
             </Button>

@@ -997,6 +997,28 @@ export interface paths {
     patch: operations["update_workspace_api_v1_workspaces__workspace_id__patch"];
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace_id}/agent-composer": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Prepare Composer
+     * @description The workspace's Agent Composer, created or brought up to date with the deployment's definition.
+     *
+     *     Refused with `model_required` while the workspace has no model the caller can use.
+     */
+    post: operations["prepare_composer_api_v1_workspaces__workspace_id__agent_composer_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace_id}/agents": {
     parameters: {
       query?: never;
@@ -1265,28 +1287,6 @@ export interface paths {
     get: operations["list_workspace_audit_events_api_v1_workspaces__workspace_id__audit_events_get"];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/configuration-assistant": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Prepare Assistant
-     * @description The workspace's configuration assistant, created or brought up to date with the deployment's definition.
-     *
-     *     Refused with `model_required` while the workspace has no model the caller can use.
-     */
-    post: operations["prepare_assistant_api_v1_workspaces__workspace_id__configuration_assistant_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -9228,6 +9228,30 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  prepare_composer_api_v1_workspaces__workspace_id__agent_composer_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_agents_api_v1_workspaces__workspace_id__agents_get: {
     parameters: {
       query?: {
@@ -9850,30 +9874,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AuditPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  prepare_assistant_api_v1_workspaces__workspace_id__configuration_assistant_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
         };
       };
       400: components["responses"]["Error"];

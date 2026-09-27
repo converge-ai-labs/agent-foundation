@@ -60,7 +60,7 @@ Every conditional route declares the `If-Match` header (at most 512 characters).
 - ending a login session, changing one's password and disabling one's own account, which name one session or check the current password;
 - interrupt, whose outcome follows from the run's state ([05](05-runs.md#waiting-interrupt-and-fork));
 - webhook redelivery, which requires a dead delivery ([07](07-facts-and-delivery.md#lifecycle-webhooks));
-- provider and connection tests, validation checks and preparing the configuration assistant.
+- provider and connection tests, validation checks and preparing Agent Composer.
 
 ### Idempotency
 
@@ -95,7 +95,7 @@ Every failure, including a request no route answers, answers in one envelope; `/
 
 ### Statuses
 
-201 answers a creation, 200 a replay or any other success with a body, and 204 a success without one. A revision publication equal to the current default also answers 201 ([04](04-resources.md#revisioned-heads)), and preparing the configuration assistant answers 200 whether it creates or updates the agent. 202 answers environment stop and delete, which only begin an operation ([06](06-environments.md#stop-start-and-delete)).
+201 answers a creation, 200 a replay or any other success with a body, and 204 a success without one. A revision publication equal to the current default also answers 201 ([04](04-resources.md#revisioned-heads)), and preparing Agent Composer answers 200 whether it creates or updates the agent. 202 answers environment stop and delete, which only begin an operation ([06](06-environments.md#stop-start-and-delete)).
 
 ## Route index
 
@@ -181,30 +181,30 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 ### Agents, skills and toolsets
 
-| Path                                                                | Methods          | Owner                                             |
-| ------------------------------------------------------------------- | ---------------- | ------------------------------------------------- |
-| `/workspaces/{ws}/agents`                                           | GET, POST        | [04](04-resources.md#agents)                      |
-| `/workspaces/{ws}/agents/validate`                                  | POST             | [04](04-resources.md#operations)                  |
-| `/workspaces/{ws}/agents/{agent}`                                   | GET, PATCH       | [04](04-resources.md#operations)                  |
-| `/workspaces/{ws}/agents/{agent}/archive`                           | POST             | [04](04-resources.md#revisioned-heads)            |
-| `/workspaces/{ws}/agents/{agent}/unarchive`                         | POST             | [04](04-resources.md#revisioned-heads)            |
-| `/workspaces/{ws}/agents/{agent}/duplicate`                         | POST             | [04](04-resources.md#operations)                  |
-| `/workspaces/{ws}/agents/{agent}/avatar`                            | GET, PUT, DELETE | [04](04-resources.md#operations)                  |
-| `/workspaces/{ws}/agents/{agent}/revisions`                         | GET, POST        | [04](04-resources.md#revisioned-heads)            |
-| `/workspaces/{ws}/agents/{agent}/revisions/{revision}`              | GET              | [04](04-resources.md#revisioned-heads)            |
-| `/workspaces/{ws}/agents/{agent}/revisions/{revision}/set-default`  | POST             | [04](04-resources.md#revisioned-heads)            |
-| `/workspaces/{ws}/configuration-assistant`                          | POST             | [04](04-resources.md#the-configuration-assistant) |
-| `/workspaces/{ws}/toolsets`                                         | GET              | [04](04-resources.md#agents)                      |
-| `/workspaces/{ws}/skills`                                           | GET, POST        | [04](04-resources.md#skills)                      |
-| `/workspaces/{ws}/skills/validate`                                  | POST             | [04](04-resources.md#skills)                      |
-| `/workspaces/{ws}/skills/{skill}`                                   | GET, PATCH       | [04](04-resources.md#skills)                      |
-| `/workspaces/{ws}/skills/{skill}/archive`                           | POST             | [04](04-resources.md#revisioned-heads)            |
-| `/workspaces/{ws}/skills/{skill}/unarchive`                         | POST             | [04](04-resources.md#revisioned-heads)            |
-| `/workspaces/{ws}/skills/{skill}/revisions`                         | GET, POST        | [04](04-resources.md#skills)                      |
-| `/workspaces/{ws}/skills/{skill}/revisions/{revision}`              | GET              | [04](04-resources.md#skills)                      |
-| `/workspaces/{ws}/skills/{skill}/revisions/{revision}/content`      | GET              | [04](04-resources.md#skills)                      |
-| `/workspaces/{ws}/skills/{skill}/revisions/{revision}/files/{path}` | GET              | [04](04-resources.md#skills)                      |
-| `/workspaces/{ws}/skills/{skill}/revisions/{revision}/set-default`  | POST             | [04](04-resources.md#revisioned-heads)            |
+| Path                                                                | Methods          | Owner                                  |
+| ------------------------------------------------------------------- | ---------------- | -------------------------------------- |
+| `/workspaces/{ws}/agents`                                           | GET, POST        | [04](04-resources.md#agents)           |
+| `/workspaces/{ws}/agents/validate`                                  | POST             | [04](04-resources.md#operations)       |
+| `/workspaces/{ws}/agents/{agent}`                                   | GET, PATCH       | [04](04-resources.md#operations)       |
+| `/workspaces/{ws}/agents/{agent}/archive`                           | POST             | [04](04-resources.md#revisioned-heads) |
+| `/workspaces/{ws}/agents/{agent}/unarchive`                         | POST             | [04](04-resources.md#revisioned-heads) |
+| `/workspaces/{ws}/agents/{agent}/duplicate`                         | POST             | [04](04-resources.md#operations)       |
+| `/workspaces/{ws}/agents/{agent}/avatar`                            | GET, PUT, DELETE | [04](04-resources.md#operations)       |
+| `/workspaces/{ws}/agents/{agent}/revisions`                         | GET, POST        | [04](04-resources.md#revisioned-heads) |
+| `/workspaces/{ws}/agents/{agent}/revisions/{revision}`              | GET              | [04](04-resources.md#revisioned-heads) |
+| `/workspaces/{ws}/agents/{agent}/revisions/{revision}/set-default`  | POST             | [04](04-resources.md#revisioned-heads) |
+| `/workspaces/{ws}/agent-composer`                                   | POST             | [04](04-resources.md#agent-composer)   |
+| `/workspaces/{ws}/toolsets`                                         | GET              | [04](04-resources.md#agents)           |
+| `/workspaces/{ws}/skills`                                           | GET, POST        | [04](04-resources.md#skills)           |
+| `/workspaces/{ws}/skills/validate`                                  | POST             | [04](04-resources.md#skills)           |
+| `/workspaces/{ws}/skills/{skill}`                                   | GET, PATCH       | [04](04-resources.md#skills)           |
+| `/workspaces/{ws}/skills/{skill}/archive`                           | POST             | [04](04-resources.md#revisioned-heads) |
+| `/workspaces/{ws}/skills/{skill}/unarchive`                         | POST             | [04](04-resources.md#revisioned-heads) |
+| `/workspaces/{ws}/skills/{skill}/revisions`                         | GET, POST        | [04](04-resources.md#skills)           |
+| `/workspaces/{ws}/skills/{skill}/revisions/{revision}`              | GET              | [04](04-resources.md#skills)           |
+| `/workspaces/{ws}/skills/{skill}/revisions/{revision}/content`      | GET              | [04](04-resources.md#skills)           |
+| `/workspaces/{ws}/skills/{skill}/revisions/{revision}/files/{path}` | GET              | [04](04-resources.md#skills)           |
+| `/workspaces/{ws}/skills/{skill}/revisions/{revision}/set-default`  | POST             | [04](04-resources.md#revisioned-heads) |
 
 ### Connections
 

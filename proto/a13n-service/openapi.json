@@ -17836,6 +17836,54 @@
         ]
       }
     },
+    "/api/v1/workspaces/{workspace_id}/agent-composer": {
+      "post": {
+        "description": "The workspace's Agent Composer, created or brought up to date with the deployment's definition.\n\nRefused with `model_required` while the workspace has no model the caller can use.",
+        "operationId": "prepare_composer_api_v1_workspaces__workspace_id__agent_composer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Prepare Composer",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/v1/workspaces/{workspace_id}/agents": {
       "get": {
         "description": "Agents of the workspace. `q` matches the key, name or description, ignoring case; `archived` keeps only\narchived agents, or only open ones; the skill filters keep those with a revision pinning that skill or\nrevision.",
@@ -19470,54 +19518,6 @@
         "summary": "List Workspace Audit Events",
         "tags": [
           "tenancy"
-        ]
-      }
-    },
-    "/api/v1/workspaces/{workspace_id}/configuration-assistant": {
-      "post": {
-        "description": "The workspace's configuration assistant, created or brought up to date with the deployment's definition.\n\nRefused with `model_required` while the workspace has no model the caller can use.",
-        "operationId": "prepare_assistant_api_v1_workspaces__workspace_id__configuration_assistant_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Agent"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "security": [
-          {
-            "apiKey": []
-          },
-          {
-            "csrf": [],
-            "loginSession": []
-          }
-        ],
-        "summary": "Prepare Assistant",
-        "tags": [
-          "agents"
         ]
       }
     },

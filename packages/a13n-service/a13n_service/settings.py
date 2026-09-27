@@ -353,8 +353,8 @@ class Plugins(Section):
     keys: tuple[str, ...] = ()
 
 
-class Assistant(Section):
-    # Upstream model names, most preferred first, that the configuration assistant runs on when the workspace has
+class Composer(Section):
+    # Upstream model names, most preferred first, that Agent Composer runs on when the workspace has
     # them; otherwise it runs on the workspace's first usable model by key. A `vendor/` prefix is ignored.
     models: tuple[str, ...] = ("gpt-5.6-luna", "claude-sonnet-5", "deepseek-v4.1-flash", "gemini-3.8-flash")
 
@@ -449,7 +449,7 @@ class Settings(Section):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     providers: Providers = Field(default_factory=Providers)
     plugins: Plugins = Field(default_factory=Plugins)
-    assistant: Assistant = Field(default_factory=Assistant)
+    composer: Composer = Field(default_factory=Composer)
     telemetry: Telemetry = Field(default_factory=Telemetry)
     # Sections a distribution declares, validated by their own types.
     extensions: dict[str, Any] = Field(default_factory=dict)

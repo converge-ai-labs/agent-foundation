@@ -199,11 +199,11 @@ The complete machine-readable validation schema, including named enum/union defi
 | -------------- | -------------------- | --------------- | ----------------------- |
 | `plugins.keys` | `A13N_PLUGINS__KEYS` | array of string | default=[]              |
 
-## `assistant`
+## `composer`
 
-| Setting            | Environment variable     | Type / choices  | Constraints and default                                                                |
-| ------------------ | ------------------------ | --------------- | -------------------------------------------------------------------------------------- |
-| `assistant.models` | `A13N_ASSISTANT__MODELS` | array of string | default=["gpt-5.6-luna", "claude-sonnet-5", "deepseek-v4.1-flash", "gemini-3.8-flash"] |
+| Setting           | Environment variable    | Type / choices  | Constraints and default                                                                |
+| ----------------- | ----------------------- | --------------- | -------------------------------------------------------------------------------------- |
+| `composer.models` | `A13N_COMPOSER__MODELS` | array of string | default=["gpt-5.6-luna", "claude-sonnet-5", "deepseek-v4.1-flash", "gemini-3.8-flash"] |
 
 ## `telemetry`
 

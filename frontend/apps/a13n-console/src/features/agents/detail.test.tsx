@@ -34,8 +34,8 @@ vi.mock("./settings", () => ({
   AgentDetails: () => null,
 }));
 vi.mock("./export", () => ({ ExportAgent: () => null }));
-vi.mock("./assistant", () => ({
-  useConfigurationAssistant: () => ({ available: false, error: null }),
+vi.mock("./composer", () => ({
+  useAgentComposer: () => ({ available: false, error: null }),
 }));
 vi.mock("./editor", () => ({
   AgentEditor: ({
