@@ -1466,9 +1466,13 @@ it.each([
       name: /Execution details/,
     });
     expect(details.getAttribute("aria-expanded")).toBe("false");
-    expect(
-      screen.getByText("Folded intermediate work").closest("[hidden]"),
-    ).toBeTruthy();
+    expect(screen.queryByText("Folded intermediate work")).toBeNull();
+    fireEvent.click(details);
+    const work = screen.getByText("Folded intermediate work");
+    expect(work.closest("[hidden]")).toBeNull();
+    fireEvent.click(details);
+    expect(screen.getByText("Folded intermediate work")).toBe(work);
+    expect(work.closest("[hidden]")).toBeTruthy();
     fireEvent.scroll(reader);
     await act(async () => {});
     expect(requests).toEqual(expectedRequests);

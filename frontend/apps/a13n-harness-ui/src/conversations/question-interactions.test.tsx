@@ -102,6 +102,13 @@ it("keeps question receipts between independently keyed execution stretches with
     "true",
     "false",
   ]);
+  expect(screen.getByText("Before question")).toBeTruthy();
+  expect(screen.queryByText("After question")).toBeNull();
+  fireEvent.click(toggles[1]);
+  expect(toggles.map((item) => item.getAttribute("aria-expanded"))).toEqual([
+    "true",
+    "true",
+  ]);
   expect(container.textContent).toMatch(
     /Before question.*Which scope\?.*WebUI.*After question.*Final answer/s,
   );
