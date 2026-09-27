@@ -111,7 +111,7 @@ The session view keeps a compact header (agent identity, session identifier, sta
 
 ## Navigation
 
-The sidebar is a tinted column without a border: workspace switcher at the top, navigation rows at 32px with an 8px radius, active rows on the selected fill with a duotone icon, 11px medium sentence-case group labels, and the account menu at the bottom. Hover is lighter than the active fill, so pointing at a row never reads as being on it. It collapses to an icon rail with tooltips. Settings open in the contextual layout with a clear way back. Internal links never open new tabs. Every route names itself in the document title, settings sections included.
+The sidebar is a tinted column without a border: workspace switcher at the top, navigation rows at 32px with an 8px radius, active rows on the selected fill with a duotone icon, 11px medium sentence-case group labels, and the account menu at the bottom. Hover is lighter than the active fill, so pointing at a row never reads as being on it. It collapses to an icon rail with tooltips. Below the shared `md` breakpoint (768px), navigation opens in a drawer from an always-visible menu button. Named JavaScript media queries match Tailwind's breakpoints and use exclusive upper bounds so resizing never leaves a gap between mobile and desktop navigation. Settings open in the contextual layout with a clear way back. Internal links never open new tabs. Every route names itself in the document title, settings sections included.
 
 ## Overlays and Feedback
 

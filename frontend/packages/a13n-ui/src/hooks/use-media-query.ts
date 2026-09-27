@@ -7,7 +7,7 @@ const BREAKPOINTS = {
   "3xl": 1600,
   "4xl": 2000,
   lg: 1024,
-  md: 800,
+  md: 768,
   sm: 640,
   xl: 1280,
 } as const;
@@ -24,7 +24,7 @@ function resolveMin(value: Breakpoint | number): string {
 
 function resolveMax(value: Breakpoint | number): string {
   const px = typeof value === "number" ? value : BREAKPOINTS[value];
-  return `(max-width: ${px - 1}px)`;
+  return `(width < ${px}px)`;
 }
 
 function parseQuery(

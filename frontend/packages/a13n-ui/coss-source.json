@@ -39,6 +39,7 @@
     "ui/tooltip.tsx"
   ],
   "localChanges": [
+    "Named media queries match Tailwind's breakpoints; exclusive upper bounds keep mobile and desktop queries complementary at fractional viewport widths.",
     "Select and Combobox selection checks sit at the trailing edge, with rounded 32px option rows; downward chevrons and below-trigger positioning clarify selection.",
     "Fieldset legends and dialog, sheet, popover, and empty-state titles use medium font weight.",
     "Field containers position screen-reader-only labels locally so fields inside scroll panels do not expand the document viewport.",
