@@ -7,7 +7,9 @@ export function ResourceKeyChip({ value }: { value: string }) {
   const { t } = useTranslation();
   return (
     <span className={styles.resourceKeyChip}>
-      <span title={value}>{value}</span>
+      <span className={styles.resourceKeyText} title={value}>
+        {value}
+      </span>
       <CopyButton value={value} iconOnly copyLabel={t("Copy resource key")} />
     </span>
   );

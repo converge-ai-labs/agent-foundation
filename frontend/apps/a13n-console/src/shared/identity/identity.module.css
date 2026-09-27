@@ -176,16 +176,22 @@
   align-items: center;
   gap: 4px;
   min-width: 0;
-  padding: 1px 4px 1px 7px;
+  min-height: 32px;
+  padding: 2px 6px 2px 12px;
   border-radius: 999px;
   background: var(--a13n-surface);
   color: var(--a13n-secondary);
   font-size: 12px;
+  line-height: 18px;
 }
-.resourceKeyChip > span {
+.resourceKeyText {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: min(320px, 30vw);
+}
+.resourceKeyChip .control button {
+  width: 24px;
+  height: 24px;
 }

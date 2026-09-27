@@ -37,11 +37,13 @@ export function TextAreaField({
   if (readOnly)
     return (
       <ReadOnlyField label={label} description={hint} hideLabel={hideLabel}>
-        {code ? (
-          <pre className={styles.codeValue}>{value || "—"}</pre>
-        ) : (
-          value || "—"
-        )}
+        <div className={styles.textValue}>
+          {code ? (
+            <pre className={styles.codeValue}>{value || "—"}</pre>
+          ) : (
+            value || "—"
+          )}
+        </div>
       </ReadOnlyField>
     );
   return (

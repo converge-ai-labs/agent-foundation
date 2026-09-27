@@ -28,6 +28,11 @@
   flex: none;
   gap: 8px;
 }
+.textValue {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--a13n-surface);
+}
 .codeValue {
   margin: 0;
   font-family: var(--a13n-mono);

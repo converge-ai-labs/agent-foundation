@@ -541,13 +541,11 @@
   align-items: stretch;
   gap: 1px;
 }
-.splitButton > *:first-child button,
-.splitButton > *:first-child {
+.splitButton > button:first-of-type {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
 }
-.splitButton > *:last-child button,
-.splitButton > *:last-child {
+.splitButton > button:last-of-type {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
 }
