@@ -274,3 +274,49 @@ async def test_text_input_provider_failure_does_not_claim_pre_dispatch_or_replac
         assert result["error"]["retry_hint"] == "reconcile_first"
         assert "private" not in str(result)
         assert len(computer.inputs) == 1
+
+
+@pytest.mark.parametrize("effect,cleanup", [("partial", True), ("unknown", True), ("executed", False)])
+async def test_incomplete_input_explains_reconciliation_and_never_replays(monkeypatch, effect, cleanup):
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    original = computer.execute
+
+    async def incomplete(request):
+        result = await original(request)
+        return ComputerActionResult(receipt=result.receipt, effect=effect, input_cleanup_complete=cleanup)
+
+    monkeypatch.setattr(computer, "execute", incomplete)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        result = await ComputerToolset(environment).computer_type_text("private text")
+        assert not result["ok"]
+        assert result["effect"] == effect
+        assert result["input_cleanup_complete"] == cleanup
+        assert "do not automatically replay" in result["hint"]
+        assert ("may remain held" in result["hint"]) == (not cleanup)
+        assert len(computer.inputs) == 1
+        assert "private text" not in str(result)
+
+
+async def test_eip_computer_transport_loss_requires_inspection_not_new_run_replay(monkeypatch):
+    from a13n_envd_client import EIPTransportClosedError
+    from a13n_harness.providers.environment.eip import computer as adapter
+
+    sent = []
+
+    class Client:
+        async def computer_type_text(self, request):
+            sent.append(request)
+            raise EIPTransportClosedError("private connection detail")
+
+    monkeypatch.setattr(adapter, "session_client", lambda _: Client())
+    provider = adapter.EIPComputerOperations(None, mount_id="desktop", generation="one")
+    with pytest.raises(EnvironmentError) as caught:
+        await provider.execute(ComputerTypeText(text="private text"))
+    projection = caught.value.safe_projection()
+    assert projection["retry_hint"] == "reconcile_first"
+    assert projection["details"]["dispatch_stage"] == "unknown"
+    assert "Do not automatically replay" in projection["details"]["hint"]
+    assert "private" not in str(projection)
+    assert len(sent) == 1

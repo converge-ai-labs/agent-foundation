@@ -4,8 +4,11 @@
     reason = "EIP error values are the protocol boundary"
 )]
 #![cfg_attr(
-    not(any(target_os = "macos", target_os = "linux")),
-    allow(dead_code, reason = "native backend requires macOS or Linux X11")
+    not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+    allow(
+        dead_code,
+        reason = "native backend requires macOS, Linux X11 or Windows"
+    )
 )]
 
 use crate::{eip::*, operation::ShortIdAllocator};
@@ -25,7 +28,11 @@ use macos as native;
 mod x11;
 #[cfg(target_os = "linux")]
 use x11 as native;
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(target_os = "windows")]
+mod windows;
+#[cfg(target_os = "windows")]
+use windows as native;
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 mod native {
     use super::*;
     #[derive(Default)]
@@ -49,7 +56,7 @@ mod native {
     fn unsupported() -> EIPError {
         error(
             ErrorType::Unsupported,
-            "computer use requires macOS or Linux X11",
+            "computer use requires macOS, Linux X11 or Windows",
         )
     }
 }

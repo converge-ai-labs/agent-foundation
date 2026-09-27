@@ -290,7 +290,7 @@ fn computer_use_is_explicit_and_cli_can_disable_environment_opt_in() {
     assert!(String::from_utf8_lossy(&result.stderr).contains("--computer-use"));
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 #[test]
 fn computer_use_fails_closed_on_unsupported_platforms() {
     let fixture = Fixture::new();
@@ -299,7 +299,7 @@ fn computer_use_fails_closed_on_unsupported_platforms() {
     let result = fixture.reject(command);
     assert!(
         String::from_utf8_lossy(&result.stderr)
-            .contains("computer_use requires macOS or Linux X11")
+            .contains("computer_use requires macOS, Linux X11 or Windows")
     );
 }
 

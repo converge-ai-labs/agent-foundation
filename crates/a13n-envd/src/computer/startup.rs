@@ -68,12 +68,22 @@ pub(crate) async fn prepare(timeout: Duration) -> io::Result<()> {
         })?
         .map_err(io::Error::other)?
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(target_os = "windows")]
+    {
+        tokio::time::timeout(timeout, tokio::task::spawn_blocking(|| {
+            super::windows::Backend::default().describe().map(|_| ()).map_err(|e| {
+                io::Error::other(format!("{}. No EIP transport has started. Windows does not provide a generic desktop permission prompt; keep UAC enabled and do not elevate envd merely to suppress an error.", e.message))
+            })
+        })).await.map_err(|_| io::Error::new(io::ErrorKind::TimedOut,
+            "Windows desktop readiness timed out; no EIP transport has started"))?
+            .map_err(io::Error::other)?
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         let _ = timeout;
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "computer use requires macOS or Linux X11",
+            "computer use requires macOS, Linux X11 or Windows",
         ))
     }
 }

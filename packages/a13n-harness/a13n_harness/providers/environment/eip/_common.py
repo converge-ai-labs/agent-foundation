@@ -158,6 +158,27 @@ def convert_error(error: BaseException) -> EnvironmentError:
         if error_type == eip.ErrorType.INVALID_PARAMS and data.safe_detail in hints:
             details["reason"] = data.safe_detail
             details["hint"] = hints[data.safe_detail]
+        computer_hints = {
+            (eip.ErrorType.PROVIDER_UNAVAILABLE, "computer_windows_desktop_unavailable"): (
+                "On the Device, start envd in the intended signed-in, unlocked Windows user session. "
+                "Reconnect a disconnected session manually, then capture a fresh image. Services, login/UAC "
+                "secure desktops and higher-integrity targets are not supported. Do not disable UAC or "
+                "elevate envd merely to suppress this error."
+            ),
+            (eip.ErrorType.CONFLICT, "computer_input_held"): (
+                "A required key/button or text-input modifier is already held. Ask the user to release it, "
+                "then inspect the desktop before a new action. Do not clear another user's held input."
+            ),
+            (eip.ErrorType.UNSUPPORTED, "computer_scroll_steps_required"): (
+                "This desktop requires wheel steps, not pixels. Check computer_describe and use unit=steps."
+            ),
+        }
+        computer_hint = computer_hints.get((error_type, data.safe_detail or ""))
+        if computer_hint is not None:
+            details["reason"] = data.safe_detail
+            details["hint"] = computer_hint
+            if data.dispatch_stage == eip.DispatchStage.PRE_DISPATCH:
+                details["hint"] = f"{computer_hint} No input was dispatched."
         for key, value in (
             ("emitted_items", data.emitted_items),
             ("produced_bytes", data.produced_bytes),

@@ -275,12 +275,21 @@ class ComputerToolset:
     async def _execute(self, request: ComputerInput, *, alias: _ComputerAlias = None) -> Any:
         try:
             result = await self._environment.computer.execute(request, alias=alias)
-            return {
+            response: dict[str, Any] = {
                 "ok": result.effect == "executed" and result.input_cleanup_complete,
                 "effect": result.effect,
                 "input_cleanup_complete": result.input_cleanup_complete,
                 "receipt": result.receipt.model_dump(mode="json"),
             }
+            if result.effect in {"partial", "unknown"} or not result.input_cleanup_complete:
+                response["hint"] = (
+                    "Input may already have affected the shared desktop. Capture a fresh image and inspect "
+                    "the application before another action; do not automatically replay the gesture or switch "
+                    "desktops. A new Run or Session does not undo prior input."
+                )
+                if not result.input_cleanup_complete:
+                    response["hint"] += " Input cleanup failed; keys or mouse buttons may remain held."
+            return response
         except EnvironmentError as error:
             if isinstance(request, ComputerClick | ComputerMove | ComputerDrag | ComputerScroll) and error.code in {
                 "environment_stale_mount",
