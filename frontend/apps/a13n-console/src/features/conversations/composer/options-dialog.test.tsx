@@ -312,6 +312,7 @@ it("mounts initial memories on the new thread and changes their access before se
   await user.click(await screen.findByRole("option", { name: "Read" }));
   // A memory already mounted is not offered again.
   await user.click(screen.getByRole("combobox", { name: "Memory" }));
+  await screen.findByRole("option", { name: "Handbook (handbook)" });
   expect(
     screen.queryByRole("option", { name: "Preferences (user-prefs)" }),
   ).toBeNull();

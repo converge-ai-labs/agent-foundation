@@ -305,9 +305,9 @@
     padding-inline: 24px;
   }
 }
-@media (max-width: 760px) {
+@media (width < 768px) {
   .page {
-    padding: 24px 18px 40px;
+    padding: 24px var(--a13n-page-gutter-mobile) 40px;
   }
   .header {
     flex-direction: column;
@@ -315,7 +315,7 @@
     gap: 14px;
   }
   .detailPage {
-    padding: 20px 16px 140px;
+    padding: 20px var(--a13n-page-gutter-mobile) 140px;
   }
   .saveBar {
     flex-wrap: wrap;

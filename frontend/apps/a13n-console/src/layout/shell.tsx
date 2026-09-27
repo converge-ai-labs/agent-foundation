@@ -252,15 +252,15 @@ function WorkspaceNavigation({
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className="h-dvh min-w-0">
-        <div className="flex shrink-0 px-4 pt-4 sm:px-7 md:hidden">
+        <div className="flex shrink-0 px-(--a13n-page-gutter-mobile) pt-4 md:hidden">
           <Button
             variant="ghost"
             size="icon-sm"
-            className="md:hidden"
+            className="-ml-2 size-8 sm:size-8"
             aria-label={t("Open navigation")}
             onClick={() => setOpenMobile(true)}
           >
-            <ListIcon />
+            <ListIcon className="size-4" />
           </Button>
         </div>
         <PageOutlet />
