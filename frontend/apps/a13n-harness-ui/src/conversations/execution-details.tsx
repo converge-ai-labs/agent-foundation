@@ -56,7 +56,13 @@ export function ExecutionDetails({
           type="button"
           aria-expanded={open}
           className={conversation.executionToggle}
-          onClick={() => setExpanded(!open)}
+          onClick={() => {
+            if (!open) {
+              pauseFollowing?.();
+              setVisited(true);
+            }
+            setExpanded(!open);
+          }}
         >
           <span className={conversation.executionTitle}>
             {open ? (
@@ -68,7 +74,7 @@ export function ExecutionDetails({
           </span>
           {summary}
         </button>
-        {children(open)}
+        {visited && children(open)}
       </div>
     );
 

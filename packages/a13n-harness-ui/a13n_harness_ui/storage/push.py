@@ -19,6 +19,11 @@ class PushRepository:
         self._sessions = sessions
 
     async def private_key(self) -> str:
+        async with short_session(self._sessions) as session:
+            record = await session.get(WebPushKeyRecord, 1)
+            if record is not None:
+                return record.private_key
+        # Recheck under the cross-process writer lock only for first initialization.
         async with transaction(self._sessions) as session:
             record = await session.get(WebPushKeyRecord, 1)
             if record is None:

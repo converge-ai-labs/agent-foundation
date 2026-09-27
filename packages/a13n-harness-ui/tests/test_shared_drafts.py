@@ -214,3 +214,63 @@ async def test_unsent_membership_changes_only_after_validated_content_transition
     assert draft.unsent_since is not None
     draft.detach(participant)
     assert draft.unsent_since is not None
+
+
+async def test_presence_frames_reuse_validated_document_encoding(monkeypatch):
+    from a13n_harness_ui.shared_drafts import DraftPresence
+
+    draft = SharedDraft()
+    first, second = draft.attach(), draft.attach()
+    author = composer_document()
+    author.get("text", type=Text).insert(0, "shared text")
+    await draft.command(first, sync(draft, author), valid)
+    accepted = draft.frame(first).update_base64
+
+    def unexpected_encode(*args, **kwargs):
+        raise AssertionError("Presence must not re-encode the document")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Doc, "get_update", unexpected_encode)
+        await draft.command(
+            first, DraftCommand(kind="presence", draft_id=draft.draft_id, presence=DraftPresence(name="Alice")), valid
+        )
+        for participant in (first, second):
+            frame = draft.frame(participant)
+            assert frame.update_base64 == accepted
+            assert frame.participants[first].name == "Alice"
+    author.get("text", type=Text).insert(0, "next ")
+    await draft.command(first, sync(draft, author), valid)
+    assert draft.frame(second).update_base64 != accepted
+
+
+async def test_joined_draft_commands_do_not_repeat_thread_lookup_or_scratch_touch(tmp_path, monkeypatch):
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.errors import HarnessUiError
+    from a13n_harness_ui.shared_drafts import DraftPresence
+    from a13n_harness_ui.thread_files import ThreadFiles
+    from a13n_harness_ui.thread_service import ThreadService
+
+    from .test_app import _settings, _write_configuration
+
+    async with open_harness_ui_app(_settings(tmp_path), configuration_path=_write_configuration(tmp_path)) as app:
+        thread = await app.create_thread()
+        draft = await app.shared_draft(thread.thread_id)
+        participant = draft.attach()
+
+        async def unexpected(*args, **kwargs):
+            raise AssertionError("Joined edits must not repeat join I/O")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(ThreadService, "require_interactive", unexpected)
+            patch.setattr(ThreadFiles, "touch", unexpected)
+            author = composer_document()
+            author.get("text", type=Text).insert(0, "typing")
+            await app.edit_shared_draft(thread.thread_id, participant, sync(draft, author))
+            command = DraftCommand(kind="presence", draft_id=draft.draft_id, presence=DraftPresence(name="Alice"))
+            await app.edit_shared_draft(thread.thread_id, participant, command)
+            for thread_id, participant_id in (("thread-missing", participant), (thread.thread_id, "foreign")):
+                with pytest.raises(HarnessUiError, match="instance changed"):
+                    await app.edit_shared_draft(thread_id, participant_id, command)
+            draft.detach(participant)
+            with pytest.raises(HarnessUiError, match="instance changed"):
+                await app.edit_shared_draft(thread.thread_id, participant, command)

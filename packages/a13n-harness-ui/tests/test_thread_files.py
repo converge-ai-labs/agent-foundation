@@ -529,3 +529,56 @@ async def test_root_and_child_tool_results_use_their_own_thread_scratch(
             assert (scratch / "keep.txt").read_text() == "ordinary scratch"
     assert not (tmp_path / "workspace/.a13n").exists()
     assert not list((tmp_path / "data/threads").glob("*/.a13n"))
+
+
+@pytest.mark.anyio
+async def test_draft_attachment_validation_reads_metadata_only_and_counts_repeated_selections(tmp_path, monkeypatch):
+    import a13n_harness_ui.thread_files as module
+
+    files = ThreadFiles(tmp_path)
+    attachment = await files.stage("thread-one", AttachmentUpload("large.bin", b"x" * (8 * 1024 * 1024)))
+    original = module._read_file
+    reads = []
+
+    def read(directory, name, limit):
+        reads.append(name)
+        assert name == "metadata.json"
+        return original(directory, name, limit)
+
+    monkeypatch.setattr(module, "_read_file", read)
+    await files.validate_attachments("thread-one", (attachment.attachment_id,) * 2)
+    assert reads == ["metadata.json"]
+    with pytest.raises(ValueError, match="20 MiB"):
+        await files.validate_attachments("thread-one", (attachment.attachment_id,) * 3)
+    with pytest.raises(ValueError, match="missing"):
+        await files.validate_attachments("thread-other", (attachment.attachment_id,))
+    await files.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("damage", ["size", "identity", "symlink", "missing", "oversize", "directory"])
+async def test_draft_attachment_validation_rejects_changed_or_unsafe_files(tmp_path, damage):
+    files = ThreadFiles(tmp_path)
+    attachment = await files.stage("thread-one", AttachmentUpload("small.bin", b"safe"))
+    directory = files.directory("thread-one") / "tmp/uploads" / attachment.attachment_id
+    content = directory / "content"
+    if damage == "size":
+        content.write_bytes(b"changed")
+    elif damage == "identity":
+        (directory / "metadata.json").write_text(
+            attachment.model_copy(update={"attachment_id": "other"}).model_dump_json()
+        )
+    elif damage == "oversize":
+        with content.open("wb") as stream:
+            stream.truncate(11 * 1024 * 1024)
+    else:
+        content.unlink()
+        if damage == "symlink":
+            outside = tmp_path / "outside"
+            outside.write_bytes(b"safe")
+            content.symlink_to(outside)
+        elif damage == "directory":
+            content.mkdir()
+    with pytest.raises((ValueError, IsADirectoryError)):
+        await files.validate_attachments("thread-one", (attachment.attachment_id,))
+    await files.close()

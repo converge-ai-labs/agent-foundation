@@ -19,7 +19,7 @@ from a13n_harness.usage import (
     select_usage_snapshot,
 )
 from a13n_logging import get_logger
-from anyio import sleep
+from anyio import sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlalchemy import DateTime, func, literal, select, text, true, type_coerce, union_all
 from sqlalchemy.exc import OperationalError
@@ -53,6 +53,25 @@ class _StoredSnapshot(BaseModel):
     kind: Literal["snapshot"] = "snapshot"
     snapshot: UsageSnapshot
     observed_through: datetime
+
+
+def _prepare_snapshot_write(
+    snapshot: UsageSnapshot, previous_payload: str | None
+) -> tuple[str, datetime, dict[str, ProviderUsageRecord]] | None:
+    """Validate and serialize detached values; never move the session to a worker."""
+    previous = None if previous_payload is None else _StoredSnapshot.model_validate_json(previous_payload).snapshot
+    if previous is not None and select_usage_snapshot(previous, snapshot).sequence == previous.sequence:
+        return None
+    # Retained receipts were checked on admission; selection forbids losing or changing them.
+    known = {record.record_id for record in previous.records} if previous is not None else set()
+    receipts = {
+        record.record_id: record
+        for record in snapshot.records
+        if isinstance(record, ProviderUsageRecord) and record.record_id not in known
+    }
+    now = datetime.now(UTC)
+    payload = _StoredSnapshot(snapshot=snapshot, observed_through=now).model_dump_json()
+    return payload, now, receipts
 
 
 @dataclass(frozen=True, slots=True)
@@ -389,31 +408,24 @@ class ThreadUsageRepository:
         """Replace one current JSON payload under SQLite's cross-process writer lock."""
         async with transaction(self._sessions) as session:
             root_id = await self._root_id(session, thread_id)
-            previous: UsageSnapshot | None = None
             row = await session.scalar(
                 select(ThreadUsageRecord).where(
                     ThreadUsageRecord.root_thread_id == root_id,
                     ThreadUsageRecord.record_id == snapshot.usage_id,
                 )
             )
-            if row is not None:
-                if row.origin_thread_id != thread_id:
-                    raise StoreIntegrityError("Usage scope changed its Host owner.", code="usage_record_conflict")
-                previous = _StoredSnapshot.model_validate_json(row.payload_json).snapshot
-                selected = select_usage_snapshot(previous, snapshot)
-                if selected.sequence == previous.sequence:
-                    return
+            if row is not None and row.origin_thread_id != thread_id:
+                raise StoreIntegrityError("Usage scope changed its Host owner.", code="usage_record_conflict")
+            # Compare against the admitted row atomically, but keep ledger-sized CPU work
+            # off the event loop. The transaction still owns cancellation through commit.
+            prepared = await to_thread.run_sync(
+                _prepare_snapshot_write, snapshot, None if row is None else row.payload_json
+            )
+            if prepared is None:
+                return
+            payload, now, receipts = prepared
             # A provider receipt may be returned by several independent scopes.
-            # Keep all Context state, but reject changed facts and charge its first owner only.
-            # Existing receipts were checked when first admitted, and snapshot
-            # validation above forbids changing or losing them. Only new IDs
-            # need a family-wide conflict check under the writer lock.
-            known = {r.record_id for r in previous.records} if previous is not None else set()
-            receipts = {
-                r.record_id: r
-                for r in snapshot.records
-                if isinstance(r, ProviderUsageRecord) and r.record_id not in known
-            }
+            # Check new IDs under the writer lock and charge their first owner only.
             if receipts:
                 facts = _contributions(root_id)
                 for start in range(0, len(receipts), _BATCH):
@@ -423,12 +435,10 @@ class ThreadUsageRepository:
                             func.json_extract(facts.c.payload, "$.record_id").in_(ids),
                         )
                     )
-                    for payload in payloads:
-                        prior = _RECORD.validate_json(payload)
+                    for prior_payload in payloads:
+                        prior = _RECORD.validate_json(prior_payload)
                         if not isinstance(prior, ProviderUsageRecord) or prior.usage != receipts[prior.record_id].usage:
                             raise StoreIntegrityError("A receipt changed its facts.", code="usage_record_conflict")
-            now = datetime.now(UTC)
-            payload = _StoredSnapshot(snapshot=snapshot, observed_through=now).model_dump_json()
             if row is None:
                 session.add(
                     ThreadUsageRecord(

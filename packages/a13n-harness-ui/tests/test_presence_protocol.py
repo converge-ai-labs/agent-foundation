@@ -284,3 +284,114 @@ async def test_pointer_transport_opt_in_same_page_clear_and_legacy_compatibility
                     assert frame["kind"] == "presence"
                     if any(item["display_name"] == "Updated" for item in frame["participants"]):
                         break
+
+
+async def test_concurrent_snapshots_share_inspection_but_later_reads_recheck_resources():
+    from a13n_harness_ui.page_presence import ConversationPage, PageFocus
+    from anyio import Event, create_task_group, wait_all_tasks_blocked
+
+    presence = PagePresence()
+    identities = [presence.attach() for _ in range(8)]
+    for identity in identities:
+        presence.report(identity, PresenceReport(focus=PageFocus(target=ConversationPage(thread_id="thread-one"))))
+    entered, release = Event(), Event()
+    calls = 0
+    reason = None
+    results = {}
+
+    async def availability(_focus):
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await release.wait()
+        return reason
+
+    async def snapshot(identity):
+        results[identity] = await presence.snapshot(identity, availability)
+
+    async with create_task_group() as group:
+        group.start_soon(snapshot, identities[0])
+        await entered.wait()
+        for identity in identities[1:]:
+            group.start_soon(snapshot, identity)
+        await wait_all_tasks_blocked()
+        assert calls == 1
+        release.set()
+    for identity, frame in results.items():
+        assert frame.participant_id == identity
+        assert set(frame.same_page_participant_ids) == set(identities) - {identity}
+        assert all(item.availability == "available" for item in frame.participants)
+    reason = "thread_not_found"
+    fresh = await presence.snapshot(None, availability)
+    assert calls == 2
+    assert all(item.unavailable_reason == reason for item in fresh.participants)
+
+
+async def test_presence_navigation_does_not_join_an_old_projection():
+    from a13n_harness_ui.page_presence import ConversationPage, PageFocus
+    from anyio import Event, create_task_group
+
+    presence = PagePresence()
+    identity = presence.attach()
+    old_focus = PageFocus(target=ConversationPage(thread_id="thread-old"))
+    new_focus = PageFocus(target=ConversationPage(thread_id="thread-new"))
+    presence.report(identity, PresenceReport(focus=old_focus))
+    entered, release = Event(), Event()
+    frames = []
+
+    async def availability(focus):
+        if focus == old_focus:
+            entered.set()
+            await release.wait()
+        return None
+
+    async def old_snapshot():
+        frames.append(await presence.snapshot(identity, availability))
+
+    async with create_task_group() as group:
+        group.start_soon(old_snapshot)
+        await entered.wait()
+        presence.report(identity, PresenceReport(focus=new_focus))
+        current = await presence.snapshot(identity, availability)
+        assert current.participants[0].focus == new_focus
+        release.set()
+    assert frames[0].participants[0].focus == old_focus
+
+
+async def test_cancelled_presence_projection_wakes_followers():
+    from a13n_harness_ui.page_presence import PageFocus, WorkbenchPage
+    from anyio import CancelScope, Event, create_task_group, wait_all_tasks_blocked
+
+    presence = PagePresence()
+    identity = presence.attach()
+    presence.report(identity, PresenceReport(focus=PageFocus(target=WorkbenchPage())))
+    entered, release = Event(), Event()
+    owner = CancelScope()
+    calls = 0
+    frames = []
+
+    async def availability(_focus):
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await release.wait()
+        return None
+
+    async def snapshot(first=False):
+        if first:
+            with owner:
+                await presence.snapshot(identity, availability)
+        else:
+            frames.append(await presence.snapshot(identity, availability))
+
+    with fail_after(2):
+        async with create_task_group() as group:
+            group.start_soon(snapshot, True)
+            await entered.wait()
+            group.start_soon(snapshot)
+            await wait_all_tasks_blocked()
+            owner.cancel()
+            await wait_all_tasks_blocked()
+            release.set()
+    assert calls == 2
+    assert frames[0].participants[0].availability == "available"

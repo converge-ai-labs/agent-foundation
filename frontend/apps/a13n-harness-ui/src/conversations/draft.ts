@@ -107,6 +107,7 @@ export class ThreadDraft {
   controls: ModelControlValues = {};
   replacement: Schema<"DraftFrame"> | undefined;
   private accepted: Y.Snapshot | undefined;
+  private acceptedUpdate: string | undefined;
   private listeners = new Set<() => void>();
   private version = 0;
   private send: (() => void) | undefined;
@@ -193,11 +194,14 @@ export class ThreadDraft {
     this.draftId = frame.draft_id;
     this.participantId = frame.participant_id;
     this.participants = frame.participants;
-    const update = decode(frame.update_base64);
-    const server = replica(update);
-    this.accepted = Y.snapshot(server);
-    server.destroy();
-    Y.applyUpdate(this.doc, update, remote);
+    if (frame.update_base64 !== this.acceptedUpdate) {
+      const update = decode(frame.update_base64);
+      const server = replica(update);
+      this.accepted = Y.snapshot(server);
+      server.destroy();
+      Y.applyUpdate(this.doc, update, remote);
+      this.acceptedUpdate = frame.update_base64;
+    }
     this.status = frame.closed ? "Disconnected" : "Connected";
     this.notify();
   }
@@ -215,6 +219,8 @@ export class ThreadDraft {
     this.undo = new Y.UndoManager(this.doc.getText("text"));
     this.doc.on("update", this.documentChanged);
     this.draftId = undefined;
+    this.acceptedUpdate = undefined;
+    this.accepted = undefined;
     this.replacement = undefined;
     this.error = "";
     this.receive(frame);
@@ -233,9 +239,11 @@ export class ThreadDraft {
     if (attachmentSelections(this.doc).length >= 8)
       throw new Error("Select up to eight attachments.");
     const key = `inline-${crypto.randomUUID()}`;
-    this.doc.getMap("attachments").set(key, id);
     this.undo.stopCapturing();
-    this.doc.getText("text").insert(at, attachmentToken(key));
+    this.doc.transact(() => {
+      this.doc.getMap("attachments").set(key, id);
+      this.doc.getText("text").insert(at, attachmentToken(key));
+    });
     this.undo.stopCapturing();
     return key;
   }
@@ -257,6 +265,27 @@ export class ThreadDraft {
     let presenceExpiry: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     let joined = false;
+    let latestPresence: Schema<"DraftPresence"> | undefined;
+    let presenceUpdated = 0;
+    const sendPresence = () => {
+      if (
+        latestPresence &&
+        joined &&
+        !this.replacement &&
+        this.draftId &&
+        socket?.readyState === WebSocket.OPEN
+      )
+        socket.send(
+          JSON.stringify({
+            kind: "presence",
+            draft_id: this.draftId,
+            presence:
+              Date.now() - presenceUpdated < 30000
+                ? latestPresence
+                : { ...latestPresence, anchor: null, head: null },
+          } satisfies Schema<"DraftCommand">),
+        );
+    };
     this.send = () => {
       if (
         !joined ||
@@ -328,7 +357,10 @@ export class ThreadDraft {
             this.notify();
           }, 30000);
           failures = 0;
-          if (first) this.send?.();
+          if (first) {
+            if (!this.synchronized) this.send?.();
+            sendPresence();
+          }
         } catch (error) {
           this.error =
             error instanceof Error
@@ -341,6 +373,8 @@ export class ThreadDraft {
       ws.onclose = (event) => {
         if (stopped) return;
         joined = false;
+        if (latestPresence)
+          latestPresence = { ...latestPresence, anchor: null, head: null };
         clearTimeout(presenceExpiry);
         this.status = "Disconnected";
         this.participants = {};
@@ -355,19 +389,9 @@ export class ThreadDraft {
     connect();
     return {
       presence: (presence: Schema<"DraftPresence">) => {
-        if (
-          joined &&
-          !this.replacement &&
-          this.draftId &&
-          socket?.readyState === WebSocket.OPEN
-        )
-          socket.send(
-            JSON.stringify({
-              kind: "presence",
-              draft_id: this.draftId,
-              presence,
-            } satisfies Schema<"DraftCommand">),
-          );
+        latestPresence = presence;
+        presenceUpdated = Date.now();
+        sendPresence();
       },
       close: () => {
         stopped = true;

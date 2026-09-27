@@ -1481,6 +1481,8 @@ class HarnessUiApp:
             if isinstance(target, WorkbenchPage):
                 return None
             if isinstance(target, ConversationPage):
+                if target.thread_id == focus.root_thread_id:
+                    return None
                 thread = await self._threads.get(target.thread_id)
                 return "child_thread_scoped" if thread.parent_thread_id is not None else None
             if isinstance(target, FilePage):
@@ -1550,12 +1552,15 @@ class HarnessUiApp:
 
     async def edit_shared_draft(self, thread_id: str, participant: str, command: DraftCommand) -> None:
         async with self._operation():
-            draft = await self.shared_draft(thread_id)
+            # Joining establishes the immutable root/interactive scope and holds
+            # Thread files until App close. Commands must belong to that room;
+            # do not repeat database reads and scratch touches on every edit.
+            draft = self._shared_drafts.get(thread_id)
+            if draft is None:
+                raise AppStateError("The shared draft instance changed.", code="draft_instance_conflict")
 
             async def validate(attachments: tuple[str, ...]) -> None:
-                selected = [await self._thread_files.read(thread_id, identity) for identity in attachments]
-                if sum(item.size for item, _ in selected) > MAX_INPUT_BYTES:
-                    raise ValueError("An input supports up to 20 MiB of attachments.")
+                await self._thread_files.validate_attachments(thread_id, attachments)
 
             if await draft.command(participant, command, validate):
                 await self._summary_hub.publish(kind="draft", thread_id=thread_id)

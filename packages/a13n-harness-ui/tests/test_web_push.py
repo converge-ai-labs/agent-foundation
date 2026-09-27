@@ -114,6 +114,29 @@ async def test_repository_persists_key_and_expires_unmaintained_subscriptions(tm
 
 
 @pytest.mark.anyio
+async def test_initialized_push_key_read_does_not_wait_for_an_unrelated_writer(tmp_path: Path) -> None:
+    async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
+        repository = PushRepository(database.sessions)
+        key = await repository.private_key()
+        entered, release = Event(), Event()
+
+        async def hold_writer() -> None:
+            async with transaction(database.sessions):
+                entered.set()
+                await release.wait()
+
+        async with create_task_group() as tasks:
+            tasks.start_soon(hold_writer)
+            await entered.wait()
+            try:
+                with fail_after(2):
+                    assert await repository.private_key() == key
+                assert database.sessions.write_lock.locked()
+            finally:
+                release.set()
+
+
+@pytest.mark.anyio
 async def test_push_encrypts_preview_and_signs_valid_vapid_with_port(tmp_path: Path) -> None:
     receiver, device = subscription()
     requests: list[httpx2.Request] = []

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from time import monotonic
 from typing import Annotated, Literal, Self
 from uuid import uuid4
@@ -126,6 +127,13 @@ class PointerFrame(SurfaceModel):
     pointers: dict[str, PointerPosition] = Field(default_factory=dict)
 
 
+@dataclass
+class _PendingProjection:
+    revision: Event
+    ready: Event = field(default_factory=Event)
+    participants: tuple[ParticipantPresence, ...] | None = None
+
+
 class PagePresence:
     """Only live membership; every reconnect allocates a fresh tab identity."""
 
@@ -135,6 +143,7 @@ class PagePresence:
         self.pointer_changed = Event()
         self.pointers: dict[str, tuple[PointerPosition, float]] = {}
         self.closed = False
+        self._projection: _PendingProjection | None = None
 
     def _notify(self) -> None:
         self.changed.set()
@@ -206,13 +215,55 @@ class PagePresence:
     async def snapshot(
         self, identity: str | None, availability: Callable[[PageFocus], Awaitable[str | None]]
     ) -> PresenceFrame:
-        # Detach before any asynchronous resource inspection. No document, DB
-        # transaction or live membership lock spans I/O or transport delivery.
-        reports = tuple(self.participants.items())
-        own = dict(reports).get(identity) if identity is not None else None
+        participants = await self._project(availability)
+        if self.closed:
+            return PresenceFrame(participant_id=identity, participants=(), closed=True)
+        own = next((item for item in participants if item.participant_id == identity), None)
+        return PresenceFrame(
+            participant_id=identity,
+            participants=participants,
+            same_page_participant_ids=tuple(
+                item.participant_id
+                for item in participants
+                if item.participant_id != identity
+                and own is not None
+                and own.focus is not None
+                and item.focus is not None
+                and own.focus.target == item.focus.target
+            ),
+        )
+
+    async def _project(
+        self, availability: Callable[[PageFocus], Awaitable[str | None]]
+    ) -> tuple[ParticipantPresence, ...]:
+        # Share only in-flight work for the same membership revision. A later
+        # snapshot rechecks resources even if no tab has navigated (e.g. a file
+        # was deleted). Cancellation must wake followers without stranding them.
+        while True:
+            pending = self._projection
+            if pending is not None and pending.revision is self.changed:
+                await pending.ready.wait()
+                if pending.participants is not None:
+                    return pending.participants
+                continue
+            pending = _PendingProjection(self.changed)
+            self._projection = pending
+            try:
+                pending.participants = await self._inspect(tuple(self.participants.items()), availability)
+                return pending.participants
+            finally:
+                if self._projection is pending:
+                    self._projection = None
+                pending.ready.set()
+
+    @staticmethod
+    async def _inspect(
+        reports: tuple[tuple[str, PresenceReport], ...],
+        availability: Callable[[PageFocus], Awaitable[str | None]],
+    ) -> tuple[ParticipantPresence, ...]:
+        # Detached before I/O; no DB transaction or membership lock spans it.
         participants: list[ParticipantPresence] = []
         checked: dict[str, str | None] = {}
-        same_page: list[str] = []
         for participant, report in reports:
             reason = None
             if report.focus is not None:
@@ -228,22 +279,7 @@ class PagePresence:
                     unavailable_reason=reason,
                 )
             )
-            if (
-                participant != identity
-                and own is not None
-                and own.focus is not None
-                and report.focus is not None
-                and own.focus.target == report.focus.target
-            ):
-                same_page.append(participant)
-        if self.closed:
-            return PresenceFrame(participant_id=identity, participants=(), closed=True)
-        return PresenceFrame(
-            participant_id=identity,
-            participants=tuple(participants),
-            same_page_participant_ids=tuple(same_page),
-            closed=self.closed,
-        )
+        return tuple(participants)
 
     def close(self) -> None:
         self.closed = True

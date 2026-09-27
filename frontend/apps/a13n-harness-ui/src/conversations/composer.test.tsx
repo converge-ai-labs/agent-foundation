@@ -283,7 +283,8 @@ it.each(["accepted", "rejected", "unknown"] as const)(
 
 it("keeps accepted receipts and healthy sync quiet while preserving errors and accessible keyboard hints", async () => {
   const draft = new ThreadDraft();
-  vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
+  const presence = vi.fn();
+  vi.spyOn(draft, "connect").mockReturnValue({ presence, close() {} });
   draft.receive({
     draft_id: "draft-one",
     participant_id: "p-one",
@@ -314,6 +315,9 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
         </ComposerDrafts>
       </TransportContext>
     </QueryClientProvider>,
+  );
+  expect(presence).toHaveBeenCalledWith(
+    expect.objectContaining({ name: "Alice", color: "#2563eb" }),
   );
   expect(screen.queryByRole("status")).toBeNull();
   expect(

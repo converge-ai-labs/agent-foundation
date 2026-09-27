@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO
 from uuid import uuid4
 
 from anyio import CancelScope, Lock, to_thread
@@ -156,14 +157,16 @@ def _directory(root: Path, parts: tuple[str, ...], *, create: bool = False) -> I
             os.close(descriptor)
 
 
-def _read_file(directory: tuple[Path, int | None], name: str, limit: int) -> bytes:
+@contextmanager
+def _open_file(directory: tuple[Path, int | None], name: str) -> Iterator[BinaryIO]:
     path, descriptor = directory
     if descriptor is None:
         target = path / name
         if target.is_symlink() or not target.is_file():
             raise ValueError("Attachment files must be regular files, not symbolic links.")
         with target.open("rb") as stream:
-            return stream.read(limit)
+            yield stream
+        return
     try:
         fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
     except OSError as exc:
@@ -175,6 +178,11 @@ def _read_file(directory: tuple[Path, int | None], name: str, limit: int) -> byt
     with os.fdopen(fd, "rb") as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
             raise ValueError("Attachment files must be regular files.")
+        yield stream
+
+
+def _read_file(directory: tuple[Path, int | None], name: str, limit: int) -> bytes:
+    with _open_file(directory, name) as stream:
         return stream.read(limit)
 
 
@@ -271,24 +279,51 @@ class ThreadFiles:
             metadata = attachment.model_dump_json(exclude=absent)
             _write_file(target, "metadata.json", metadata.encode("utf-8"))
 
-    def _read(self, thread_id: str, attachment_id: str) -> tuple[ThreadAttachment, bytes]:
+    @contextmanager
+    def _open_attachment(self, thread_id: str, attachment_id: str) -> Iterator[tuple[ThreadAttachment, BinaryIO]]:
         if not _SAFE_ID.fullmatch(attachment_id):
             raise ValueError("Invalid attachment identifier.")
         for parent in (("attachments",), ("tmp", "uploads")):
             try:
                 with _directory(self.directory(thread_id), (*parent, attachment_id)) as directory:
                     attachment = ThreadAttachment.model_validate_json(_read_file(directory, "metadata.json", 65536))
-                    data = _read_file(directory, "content", MAX_ATTACHMENT_BYTES + 1)
-                    if (
-                        attachment.attachment_id != attachment_id
-                        or len(data) != attachment.size
-                        or len(data) > MAX_ATTACHMENT_BYTES
-                    ):
-                        raise ValueError("Attachment content has changed or exceeds the size limit.")
-                    return attachment, data
+                    with _open_file(directory, "content") as stream:
+                        size = os.fstat(stream.fileno()).st_size
+                        if (
+                            attachment.attachment_id != attachment_id
+                            or size != attachment.size
+                            or size > MAX_ATTACHMENT_BYTES
+                        ):
+                            raise ValueError("Attachment content has changed or exceeds the size limit.")
+                        yield attachment, stream
+                    return
             except FileNotFoundError:
                 continue
         raise ValueError("Attachment is missing or its unsubmitted draft has expired.")
+
+    def _read(self, thread_id: str, attachment_id: str) -> tuple[ThreadAttachment, bytes]:
+        with self._open_attachment(thread_id, attachment_id) as (attachment, stream):
+            data = stream.read(MAX_ATTACHMENT_BYTES + 1)
+            if len(data) != attachment.size or len(data) > MAX_ATTACHMENT_BYTES:
+                raise ValueError("Attachment content has changed or exceeds the size limit.")
+            return attachment, data
+
+    async def validate_attachments(self, thread_id: str, attachment_ids: tuple[str, ...]) -> None:
+        """Validate live selections without rereading payload bytes on each edit."""
+        if not attachment_ids:
+            return
+        await self.touch(thread_id)
+        await to_thread.run_sync(self._validate_attachments, thread_id, attachment_ids)
+
+    def _validate_attachments(self, thread_id: str, attachment_ids: tuple[str, ...]) -> None:
+        with self._gate(thread_id):
+            sizes: dict[str, int] = {}
+            for identity in dict.fromkeys(attachment_ids):
+                with self._open_attachment(thread_id, identity) as (attachment, _):
+                    sizes[identity] = attachment.size
+            # Repeated references still count toward the admitted input limit.
+            if sum(sizes[identity] for identity in attachment_ids) > MAX_INPUT_BYTES:
+                raise ValueError("An input supports up to 20 MiB of attachments.")
 
     def _read_locked(self, thread_id: str, attachment_id: str) -> tuple[ThreadAttachment, bytes]:
         with self._gate(thread_id):

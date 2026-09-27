@@ -383,6 +383,10 @@ export function Composer({
       !coordinatorActive &&
       !coordinator?.available);
   const connection = useRef<ReturnType<ThreadDraft["connect"]> | null>(null);
+  const editorPresence = useRef<{
+    draft: ThreadDraft;
+    value: Schema<"DraftPresence">;
+  } | null>(null);
   const upload = useRef<HTMLInputElement>(null);
   const editor = useRef<EditorView | null>(null);
   const sendButton = useRef<HTMLButtonElement>(null);
@@ -498,6 +502,8 @@ export function Composer({
     if (local) return;
     const current = draft.connect(transport, threadId, unauthorized);
     connection.current = current;
+    if (editorPresence.current?.draft === draft)
+      current.presence(editorPresence.current.value);
     return () => {
       current.close();
       connection.current = null;
@@ -997,7 +1003,10 @@ export function Composer({
             }}
             draft={draft}
             profile={profile}
-            presence={(value) => connection.current?.presence(value)}
+            presence={(value) => {
+              editorPresence.current = { draft, value };
+              connection.current?.presence(value);
+            }}
             submit={() => void submit(busy ? "steer" : "send")}
             editor={editor}
             attachments={{

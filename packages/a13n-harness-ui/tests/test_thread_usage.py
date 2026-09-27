@@ -502,6 +502,59 @@ async def test_latest_snapshots_replace_in_place_and_are_visible_to_another_engi
             assert await session.scalar(select(func.count()).select_from(ThreadUsageRecord)) == 1
 
 
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_snapshot_preparation_keeps_loop_responsive_and_admitted_write_settles(tmp_path, monkeypatch, cancel):
+    import threading
+
+    from a13n_harness_ui.storage import usage as usage_module
+    from a13n_harness_ui.storage.push import PushRepository
+    from anyio import CancelScope, Event, create_task_group, fail_after, from_thread
+
+    async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        push = PushRepository(database.sessions)
+        key = await push.private_key()
+        await repository.save(thread_id="thr_root", snapshot=_snapshot(_model(0)))
+        loop_thread = threading.get_ident()
+        entered, finished = Event(), Event()
+        release = threading.Event()
+        original = usage_module._prepare_snapshot_write
+        scope = CancelScope()
+
+        def prepare(snapshot, previous_payload):
+            # A misplaced inline call fails immediately instead of blocking the test loop.
+            assert threading.get_ident() != loop_thread
+            assert previous_payload is not None
+            from_thread.run_sync(entered.set)
+            assert release.wait(5)
+            return original(snapshot, previous_payload)
+
+        async def save():
+            with scope:
+                await repository.save(thread_id="thr_root", snapshot=_snapshot(_model(0), _model(1), sequence=2))
+            finished.set()
+
+        monkeypatch.setattr(usage_module, "_prepare_snapshot_write", prepare)
+        async with create_task_group() as tasks:
+            tasks.start_soon(save)
+            try:
+                with fail_after(2):
+                    await entered.wait()
+                    # The write remains atomic, but readers and loop callbacks can proceed.
+                    assert database.sessions.write_lock.locked()
+                    assert await push.private_key() == key
+                    if cancel:
+                        scope.cancel()
+                    assert not finished.is_set()
+            finally:
+                release.set()
+            with fail_after(2):
+                await finished.wait()
+        assert (await repository.snapshot(thread_id="thr_root")).combined.model_requests == 2
+
+
 async def test_snapshots_and_legacy_receipts_share_one_attribution_without_losing_child_usage(tmp_path):
     settings = StorageSettings(data_root=tmp_path)
     async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
