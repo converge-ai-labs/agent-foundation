@@ -1,8 +1,9 @@
 import tailwindcss from "@tailwindcss/vite";
+import { cossLicense } from "a13n-ui/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [tailwindcss()],
+  plugins: [tailwindcss(), cossLicense()],
   server: {
     host: "127.0.0.1",
     port: 5174,

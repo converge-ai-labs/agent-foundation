@@ -146,6 +146,11 @@ def _validate_assets(read: Callable[[str], bytes], names: set[str], prefix: Pure
             f"Harness UI asset manifest does not match packaged files; undeclared={undeclared}, missing={missing}"
         )
 
+    license_name = "assets/LICENSE.coss"
+    license_source = Path(__file__).resolve().parents[1] / "frontend/packages/a13n-ui/LICENSE.coss"
+    if license_name not in declared_assets or read(str(prefix / license_name)) != license_source.read_bytes():
+        raise DistributionError("Harness UI artifact has a missing or altered Coss UI license")
+
     try:
         index = read(index_path).decode("utf-8")
     except UnicodeDecodeError as error:

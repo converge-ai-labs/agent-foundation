@@ -25,6 +25,7 @@ from check_a13n_harness_ui_distribution import (  # noqa: E402
 )
 
 type Artifact = tuple[Path, Callable[..., None]]
+COSS_LICENSE = (SCRIPTS_DIRECTORY.parent / "frontend/packages/a13n-ui/LICENSE.coss").read_bytes()
 
 HARNESS_RANGE = ">=0.0.5,<0.1.0"
 LOGGING_RANGE = ">=0.2.3,<0.3.0"
@@ -41,6 +42,7 @@ def _write_wheel(
     requirements: list[str] | None = None,
     include_terminal_shell: bool = True,
     include_license: bool = True,
+    coss_license: bytes | None = COSS_LICENSE,
     omitted_package_file: str | None = None,
     include_entrypoint: bool = True,
     cli_content: bytes = b"def main(): pass\n",
@@ -52,6 +54,8 @@ def _write_wheel(
         "assets/main.css": b"body { color: black; }\n",
         "assets/main.js": b"console.log('a13n-harness-ui')\n",
     }
+    if coss_license is not None:
+        files["assets/LICENSE.coss"] = coss_license
     manifest = {
         "schema_version": "1",
         "source": "frontend/apps/a13n-harness-ui",
@@ -223,9 +227,15 @@ def test_rejects_packaged_file_missing_from_manifest(tmp_path: Path) -> None:
         validate_wheel(wheel, require_compatible_dependencies=True)
 
 
-def _write_sdist(path: Path, *, requirements: list[str] | None = None, omitted_skill_file: str | None = None) -> None:
+def _write_sdist(
+    path: Path,
+    *,
+    requirements: list[str] | None = None,
+    omitted_skill_file: str | None = None,
+    coss_license: bytes | None = COSS_LICENSE,
+) -> None:
     wheel = path.with_suffix(".whl")
-    _write_wheel(wheel, requirements=requirements, omitted_skill_file=omitted_skill_file)
+    _write_wheel(wheel, requirements=requirements, omitted_skill_file=omitted_skill_file, coss_license=coss_license)
     root = "a13n_harness_ui-9.8.7"
     dependencies = RELEASE_REQUIREMENTS if requirements is None else requirements
     pyproject = (
@@ -255,6 +265,14 @@ def test_rejects_incomplete_configuration_skill(artifact: Artifact, missing: str
     path, write = artifact
     write(path, omitted_skill_file=missing)
     with pytest.raises(DistributionError, match="missing"):
+        _validate_release_artifact(path)
+
+
+@pytest.mark.parametrize("license_text", [None, b"MIT License\n"])
+def test_rejects_missing_or_altered_coss_license(artifact: Artifact, license_text: bytes | None) -> None:
+    path, write = artifact
+    write(path, coss_license=license_text)
+    with pytest.raises(DistributionError, match="missing or altered Coss UI license"):
         _validate_release_artifact(path)
 
 

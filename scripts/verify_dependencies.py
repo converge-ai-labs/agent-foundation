@@ -50,7 +50,10 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
     "test_check_release_version.py": ("scripts/check-release-version.py",),
     "test_prepare_release_version.py": ("scripts/prepare-release-version.py", "scripts/check-release-version.py"),
     "test_check_a13n_distributions.py": ("scripts/check-a13n-distributions.py",),
-    "test_check_a13n_harness_ui_distribution.py": ("scripts/check-a13n-harness-ui-distribution.py",),
+    "test_check_a13n_harness_ui_distribution.py": (
+        "scripts/check-a13n-harness-ui-distribution.py",
+        "frontend/packages/a13n-ui/LICENSE.coss",
+    ),
     "test_service_contract.py": ("scripts/export-a13n-service-openapi.py",),
     "test_install_envd.py": ("scripts/install-a13n-envd.sh",),
     "test_docs.py": (
@@ -58,6 +61,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         "scripts/docs/*.css",
         "scripts/docs/*.json",
         "scripts/docs/theme/*",
+        "frontend/packages/a13n-ui/LICENSE.coss",
         "mkdocs.yml",
         "docs/*.md",
     ),

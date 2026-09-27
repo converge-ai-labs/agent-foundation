@@ -5,6 +5,7 @@
 ## Sources
 
 - `frontend/packages/a13n-ui/src/styles/theme.css` owns the Coss neutral light/dark colors. `theme.css` maps those semantic values to Material variables, with larger documentation typography and accessible indigo links derived from the brand palette. It is an adapter, not another frontend theme.
+- `hooks.py` bundles the shared `LICENSE.coss` beside the generated theme and preserves its complete text in the CSS output.
 - `frontend/packages/a13n-ui/src/styles/tokens.css` owns the application font/token aliases and is included unchanged. The adapter exposes the active semantic palette on `:root` as well as Material's `body`, so root-scoped aliases resolve in both themes.
 - `frontend/packages/a13n-ui/src/brand` owns the logo, Space Grotesk Bold font, and font license. `hooks.py` copies them into the built site directly from those sources. No duplicate brand binaries are committed here.
 - `.icons/phosphor` under `theme/` contains selected regular-weight SVGs rendered from the frontend's **@phosphor-icons/react 2.1.10** public components. The 256px view box and path geometry are unchanged; SVGs use `currentColor` at a nominal 24px size. `phosphor-LICENSE` contains the MIT notice and ships with the site.

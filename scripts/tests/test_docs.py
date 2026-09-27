@@ -82,6 +82,9 @@ def test_theme_reuses_frontend_brand_and_bundles_license(built_site: Path) -> No
     }.items():
         assert (assets / generated).read_bytes() == (ui / source).read_bytes()
     assert (assets / "phosphor-LICENSE").read_bytes() == (ROOT / "scripts/docs/phosphor-LICENSE").read_bytes()
+    coss_license = (ui.parent / "LICENSE.coss").read_text(encoding="utf-8")
+    assert (assets / "LICENSE.coss").read_text(encoding="utf-8") == coss_license
+    assert coss_license.rstrip() in (assets / "theme.css").read_text(encoding="utf-8")
     for icon in (ROOT / "scripts/docs/theme/.icons/phosphor").glob("*.svg"):
         assert (assets / "icons" / icon.name).read_bytes() == icon.read_bytes()
 

@@ -51,6 +51,10 @@ Applications own translations, navigation, persistence, data fetching, and domai
 
 `coss-source.json` records the imported registry revision and local changes. Review upstream diffs before updating imported sources. Keep application-specific behavior in `src/patterns`, and the Coss semantic theme in `src/styles/theme.css`.
 
+## License distribution
+
+Every Vite consumer uses `cossLicense()` from `a13n-ui/vite`. It copies the canonical `LICENSE.coss` to `assets/LICENSE.coss` and preserves the complete notice in JavaScript and CSS output through minification. The application asset trees carry this notice into Python wheels, source distributions, and Docker images; the documentation site also bundles the same license with its theme. No product branding or visible attribution is added.
+
 ## Development
 
 Run `pnpm --dir frontend --filter a13n-ui dev` for the showcase. The package scripts `check`, `test`, and `build` run type checking, interaction tests, and the showcase build respectively. The complete frontend gate is `make frontend-check-all`.
