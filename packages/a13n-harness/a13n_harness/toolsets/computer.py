@@ -235,6 +235,8 @@ class ComputerToolset:
         """Type 1-16384 UTF-8 bytes into the selected mount's foreground focus, without focusing a window.
 
         Pass alias explicitly to keep typing on the intended desktop; a preceding click does not select this mount.
+        Availability is mount-specific: native X11 does not support literal text entry. Physical key chords
+        are not a literal-text substitute.
         """
         return await self._execute(ComputerTypeText(text=text), alias=alias)
 
@@ -296,6 +298,28 @@ class ComputerToolset:
                             "Check the intended mount in the latest Environment context, then use computer_observe "
                             "with its alias and reassess the GUI. Do not reuse this observation_id or blindly replay "
                             "the input."
+                        ),
+                    },
+                )
+            elif (
+                isinstance(request, ComputerTypeText)
+                and error.code == "environment_denied"
+                and error.details.get("reason") == "mount_action_denied"
+            ):
+                error = EnvironmentError(
+                    "Literal text entry is unavailable on the selected mount.",
+                    code=error.code,
+                    retry_hint=error.retry_hint,
+                    details={
+                        **error.details,
+                        "field": "alias",
+                        "dispatch_stage": "pre_dispatch",
+                        "hint": (
+                            f"{error.details.get('hint', '')} "
+                            "No text input was dispatched. computer_type_text being visible does not mean it is "
+                            "available on this alias. Do not retry unchanged or automatically switch desktops. "
+                            "computer_press_keys sends physical key chords, not literal text. If text entry is "
+                            "needed on this desktop, explain the limitation to the user."
                         ),
                     },
                 )

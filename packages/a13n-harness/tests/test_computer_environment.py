@@ -195,3 +195,82 @@ async def test_eip_scroll_preserves_legacy_pixels_and_requires_step_advertisemen
     with pytest.raises(EnvironmentError, match="EIP provider operation failed"):
         await provider.execute(ComputerScroll(observation=observation, point=ComputerPoint(x=0, y=0), unit="steps"))
     assert sent[-1]["unit"] == "steps"
+
+
+@pytest.mark.parametrize("alias", [None, "linux-desktop"])
+@pytest.mark.parametrize("provider_supports_text", [False, True])
+async def test_text_input_denial_explains_selected_alias_without_switching_desktops(alias, provider_supports_text):
+    text_action = EnvironmentAction.COMPUTER_TYPE_TEXT
+    no_text = COMPUTER_ACTIONS - {text_action}
+    computers = {}
+    mounts = {}
+    for name, permissions, ceiling in (
+        (
+            "linux-desktop",
+            COMPUTER_ACTIONS if provider_supports_text else no_text,
+            no_text if provider_supports_text else COMPUTER_ACTIONS,
+        ),
+        ("mac-desktop", COMPUTER_ACTIONS, COMPUTER_ACTIONS),
+    ):
+        computer = Computer()
+        binding = _Binding(
+            name,
+            families=frozenset({"computer"}),
+            operations=EnvironmentOperations(computer=computer),
+            permissions=permissions,
+        )
+        computer.binding = binding
+        computers[name] = computer
+        mounts[name] = EnvironmentRuntimeMount(
+            binding=binding, permission_ceiling=EnvironmentPermissionSet(operations=ceiling)
+        )
+    runtime = create_environment_runtime(mounts=mounts, default_mount="linux-desktop")
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        tools = ComputerToolset(environment)
+        assert "computer_type_text" in tools.get_toolset().tools
+        assert (await tools.computer_type_text("allowed", alias="mac-desktop"))["ok"]
+
+        # An omitted alias uses the default, not the last successful desktop.
+        rejected = await tools.computer_type_text("private text must not appear in errors", alias=alias)
+        assert rejected["ok"] is False
+        error = rejected["error"]
+        assert error["code"] == "environment_denied"
+        assert error["details"]["reason"] == "mount_action_denied"
+        assert error["details"]["field"] == "alias"
+        assert error["details"]["dispatch_stage"] == "pre_dispatch"
+        hint = error["details"]["hint"]
+        assert "Mount 'linux-desktop'" in hint
+        assert "No text input was dispatched" in hint
+        assert "Do not retry unchanged or automatically switch desktops" in hint
+        assert "physical key chords, not literal text" in hint
+        assert "do not change tools or mounts to bypass a denial" in hint
+        assert "private text" not in str(rejected)
+        assert not computers["linux-desktop"].inputs
+        assert [request.text for request in computers["mac-desktop"].inputs] == ["allowed"]
+
+
+async def test_text_input_provider_failure_does_not_claim_pre_dispatch_or_replace_evidence(monkeypatch):
+    runtime, computer = mount(COMPUTER_ACTIONS)
+
+    async def fail(request):
+        computer.inputs.append(request)
+        raise EnvironmentError(
+            "private provider failure",
+            code="environment_provider_failure",
+            retry_hint="reconcile_first",
+            details={"dispatch_stage": "unknown", "hint": "Reconcile possible effects before retrying."},
+        )
+
+    monkeypatch.setattr(computer, "execute", fail)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        result = await ComputerToolset(environment).computer_type_text("private text")
+        assert result["error"]["code"] == "environment_provider_failure"
+        assert result["error"]["details"]["dispatch_stage"] == "unknown"
+        assert result["error"]["details"]["hint"] == "Reconcile possible effects before retrying."
+        assert result["error"]["retry_hint"] == "reconcile_first"
+        assert "private" not in str(result)
+        assert len(computer.inputs) == 1
