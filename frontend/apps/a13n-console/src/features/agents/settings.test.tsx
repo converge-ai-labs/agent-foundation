@@ -131,8 +131,10 @@ it("follows a changed key to the agent's new address", async () => {
     key: "deep-research",
     description: "Finds sources",
   });
-  expect(screen.getByLabelText("Current path").textContent).toBe(
-    "/workspace/test/agents/deep-research",
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current path").textContent).toBe(
+      "/workspace/test/agents/deep-research",
+    ),
   );
   expect(reload).not.toHaveBeenCalled();
 });
