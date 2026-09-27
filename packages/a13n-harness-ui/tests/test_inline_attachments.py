@@ -317,10 +317,17 @@ async def test_unknown_slash_prompt_can_include_images(monkeypatch) -> None:
 
 @pytest.mark.anyio
 async def test_failed_admission_survives_help_and_recovers_numbering() -> None:
+    from weakref import ref
+
+    from prompt_toolkit.application.current import set_app
+    from prompt_toolkit.key_binding.key_processor import KeyPress, KeyPressEvent
+    from prompt_toolkit.keys import Keys
+
     started, fail = asyncio.Event(), asyncio.Event()
 
     class Backend:
         thread_id = None
+        receipt_id = None
 
         async def execute(self, *args, **kwargs):
             started.set()
@@ -329,6 +336,9 @@ async def test_failed_admission_survives_help_and_recovers_numbering() -> None:
 
         async def skill_catalog(self):
             return None
+
+        def thinking_choices(self):
+            return ()
 
         async def interaction(self):
             return None
@@ -339,24 +349,38 @@ async def test_failed_admission_survives_help_and_recovers_numbering() -> None:
         shell.ready = True
         shell.insert_attachments((_image(),))
         original = shell.composer.text
-        terminal = asyncio.create_task(shell.app.run_async())
+
+        async def submit() -> None:
+            # Exercise the real draft retention binding without a terminal reader
+            # or completion/render scheduling; real-key behavior is covered above.
+            with set_app(shell.app):
+                event = KeyPressEvent(ref(shell.app.key_processor), None, [KeyPress(Keys.ControlM)], [], False)
+                bindings = shell._bindings().get_bindings_for_keys((Keys.ControlM,))
+                assert len(bindings) == 1
+                bindings[0].call(event)
+            assert shell._input_task is not None
+            await asyncio.wait_for(shell._input_task, timeout=3)
+
         try:
-            await _until(lambda: shell.app.is_running)
-            pipe.send_text("\r")
-            await started.wait()
-            pipe.send_text("/help\r")
-            await _until(lambda: "Command accepted: /help" in _source(shell.renderer))
+            await submit()
+            await asyncio.wait_for(started.wait(), timeout=3)
+            assert not shell.can_steer
+            shell.composer.buffer.document = Document("/help", 5)
+            await submit()
+            assert "Command accepted: /help" in _source(shell.renderer)
             assert original in shell.inline.values
             fail.set()
-            await shell.job
+            assert shell.job is not None
+            await asyncio.wait_for(shell.job, timeout=3)
             assert shell.composer.text == original
             shell.insert_attachments((_image(),))
             assert shell.inline.display(shell.composer.text) == "[image#1][image#2]"
             assert len(shell.inline.compile(shell.composer.text).attachments) == 2
         finally:
             fail.set()
-            shell.app.exit()
-            await terminal
+            if shell.job is not None:
+                await asyncio.wait_for(shell.job, timeout=3)
+            await shell.app.cancel_and_wait_for_background_tasks()
             shell.renderer.transcript.close()
 
 
