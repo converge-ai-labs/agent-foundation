@@ -969,7 +969,8 @@ it("keeps the selected lifecycle observation across pagination but accepts a ref
   });
   await waitFor(() => expect(within(row).queryByText("Running")).toBeNull());
   const more = within(project).getByRole("button", { name: /Show more/ });
-  expect(more.textContent).toBe("More");
+  expect(more.textContent).toBe("");
+  expect(more.getAttribute("title")).toBe("Show more conversations in One");
   fireEvent.click(more);
   await within(project).findByRole("link", { name: /Older one/ });
   expect(within(row).queryByText("Running")).toBeNull();

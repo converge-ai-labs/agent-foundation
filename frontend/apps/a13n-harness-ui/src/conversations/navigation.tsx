@@ -18,6 +18,7 @@ import {
   Funnel,
   Folder,
   CaretRight,
+  CaretDoubleDown,
   DotsThree,
   DotsSixVertical,
   Gear,
@@ -567,13 +568,13 @@ function ProjectGroup({
           {list.hasNextPage && (
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               loading={list.isFetchingNextPage}
               onClick={() => void list.fetchNextPage()}
               aria-label={`Show more conversations in ${group.name}`}
-              className={styles.moreConversations}
+              title={`Show more conversations in ${group.name}`}
             >
-              More
+              <CaretDoubleDown aria-hidden="true" />
             </Button>
           )}
         </div>

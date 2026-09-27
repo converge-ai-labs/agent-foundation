@@ -661,9 +661,6 @@
 .composer:focus-within {
   border-color: var(--ring);
 }
-.moreConversations {
-  font-weight: 400;
-}
 .composerConnection {
   margin: 4px 4px 0;
   font-size: 12px;
