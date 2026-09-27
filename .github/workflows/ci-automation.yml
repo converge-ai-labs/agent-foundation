@@ -32,9 +32,9 @@ on:
       - "scripts/tests/test_local_validation.py"
       - "dev/observability/**"
       - "scripts/tests/test_observability_tooling.py"
-      - "scripts/verify.py"
-      - "scripts/verify_dependencies.py"
-      - "scripts/tests/test_verify.py"
+      - "scripts/verify*.py"
+      - "scripts/impact.py"
+      - "scripts/tests/test_verify*.py"
       - "scripts/tests/test_impact.py"
       - "scripts/tests/test_check_release_version.py"
       - "scripts/tests/test_prepare_release_version.py"
@@ -72,9 +72,9 @@ on:
       - "scripts/tests/test_local_validation.py"
       - "dev/observability/**"
       - "scripts/tests/test_observability_tooling.py"
-      - "scripts/verify.py"
-      - "scripts/verify_dependencies.py"
-      - "scripts/tests/test_verify.py"
+      - "scripts/verify*.py"
+      - "scripts/impact.py"
+      - "scripts/tests/test_verify*.py"
       - "scripts/tests/test_impact.py"
       - "scripts/tests/test_check_release_version.py"
       - "scripts/tests/test_prepare_release_version.py"
@@ -144,6 +144,11 @@ jobs:
           scripts/release_notes.py
           scripts/release_version.py
           scripts/run_python_tests.py
+          scripts/verify.py
+          scripts/verify_inputs.py
+          scripts/verify_cache.py
+          scripts/verify_dependencies.py
+          scripts/impact.py
           scripts/prepare_harness_ui_image.py
           scripts/k8s_local.py
           scripts/deploy_smoke.py
@@ -164,6 +169,8 @@ jobs:
           scripts/tests/test_local_validation.py
           scripts/tests/test_observability_tooling.py
           scripts/tests/test_verify.py
+          scripts/tests/test_verify_inputs.py
+          scripts/tests/test_verify_cache.py
           scripts/tests/test_impact.py
           scripts/tests/test_image_workflows.py
           scripts/tests/test_prepare_harness_ui_image.py
