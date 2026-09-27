@@ -112,6 +112,7 @@ nav:
           - Memory: a13n-service/memory.md
           - Files and webhooks: a13n-service/files-and-webhooks.md
       - Integrate:
+          - SDKs and CLI: a13n-service/sdks.md
           - HTTP conventions: a13n-service/http.md
           - HTTP reference: a13n-service/api-reference.md
       - Operate:

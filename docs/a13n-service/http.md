@@ -2,7 +2,7 @@
 
 Every API operation is under `/api/v1` on the Service's public URL. Requests and responses are JSON unless an operation says otherwise (uploads, file content, images and the thread stream). A running Service publishes its OpenAPI document at `/api/v1/openapi.json` and an interactive page at `/api/v1/docs`; the [HTTP reference](api-reference.md) is generated from the same document.
 
-Request bodies are strict: unknown fields are refused. Language SDKs and the companion command-line client are developed in independent repositories of [converge-ai-labs](https://github.com/converge-ai-labs).
+Request bodies are strict: unknown fields are refused. For language integrations or shell scripts, see [SDKs and CLI](sdks.md); detailed usage is maintained in each client's own Markdown documentation.
 
 ## Authentication
 

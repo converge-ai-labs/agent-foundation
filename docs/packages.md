@@ -31,7 +31,7 @@ The daemon does not execute an Agent. The low-level Python client does not insta
 
 Service client packages live in four independent repositories, not in this source tree or its language workspaces. The Rust SDK repository also owns the remote `a13n-service-cli`. These clients call Service; they are not alternate implementations of the embedded Harness SDK.
 
-Independent SDK repositories own installation, API coverage, examples, compatibility and releases; check each one for the Service versions it supports. The [HTTP reference](a13n-service/api-reference.md) describes the API of the Service in this repository.
+Choose a language or the remote executable in [SDKs and CLI](a13n-service/sdks.md), which links directly to each repository's Markdown quick start and application guide. Those repositories own installation, API coverage, examples, compatibility and releases. The [HTTP reference](a13n-service/api-reference.md) describes the API of the Service in this repository.
 
 ## Private frontend workspace
 

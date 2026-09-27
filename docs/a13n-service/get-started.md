@@ -40,6 +40,8 @@ The conversation shows the agent's reasoning, tool calls and answer as they stre
 
 ## Use the API
 
+For application code or shell workflows, choose a [Service SDK or the remote CLI](sdks.md) and follow its repository-owned quick start. The curl examples below illustrate the Service HTTP boundary without duplicating those client guides.
+
 Create an API key under **Workspace settings → My API keys** and export it with the Service URL. API paths accept the workspace key in place of its ID:
 
 ```sh
