@@ -239,10 +239,30 @@ class _Aggregation:
         )
 
 
-def _contributions(root_id: str):
+def _contributions(root_id: str, *, root_only: bool = False):
     """Flatten current scopes and legacy facts, retaining the first receipt attribution."""
-    table = ThreadUsageRecord
-    kind = func.json_extract(table.payload_json, "$.kind")
+    # Extract envelope metadata once per scope, not once per contribution.
+    # Without materialization SQLite flattens the CTE and reparses a complete
+    # growing snapshot for each record, making these reads quadratic.
+    scopes = (
+        select(
+            ThreadUsageRecord.sequence,
+            ThreadUsageRecord.descendant,
+            ThreadUsageRecord.payload_json,
+            ThreadUsageRecord.observed_at,
+            func.json_extract(ThreadUsageRecord.payload_json, "$.kind").label("kind"),
+            type_coerce(
+                func.json_extract(ThreadUsageRecord.payload_json, "$.observed_through"), DateTime(timezone=True)
+            ).label("observed_through"),
+        )
+        .where(
+            ThreadUsageRecord.root_thread_id == root_id,
+            ThreadUsageRecord.descendant.is_(False) if root_only else true(),
+        )
+        .cte("usage_scopes")
+        .prefix_with("MATERIALIZED")
+    )
+    table = scopes.c
     entries = func.json_each(table.payload_json, "$.snapshot.records").table_valued("key", "value")
     legacy = select(
         table.sequence,
@@ -251,7 +271,7 @@ def _contributions(root_id: str):
         table.payload_json.label("payload"),
         table.observed_at,
         table.observed_at.label("observed_through"),
-    ).where(table.root_thread_id == root_id, kind != "snapshot")
+    ).where(table.kind != "snapshot")
     current = (
         select(
             table.sequence,
@@ -259,13 +279,11 @@ def _contributions(root_id: str):
             table.descendant,
             entries.c.value.label("payload"),
             table.observed_at,
-            type_coerce(func.json_extract(table.payload_json, "$.observed_through"), DateTime(timezone=True)).label(
-                "observed_through"
-            ),
+            table.observed_through,
         )
-        .select_from(table)
+        .select_from(scopes)
         .join(entries, true())
-        .where(table.root_thread_id == root_id, kind == "snapshot")
+        .where(table.kind == "snapshot")
     )
     facts = union_all(legacy, current).cte("usage_contributions")
     ranked = select(
@@ -326,6 +344,7 @@ class ThreadUsageRepository:
         """Replace one current JSON payload under SQLite's cross-process writer lock."""
         async with transaction(self._sessions) as session:
             root_id = await self._root_id(session, thread_id)
+            previous: UsageSnapshot | None = None
             row = await session.scalar(
                 select(ThreadUsageRecord).where(
                     ThreadUsageRecord.root_thread_id == root_id,
@@ -341,7 +360,15 @@ class ThreadUsageRepository:
                     return
             # A provider receipt may be returned by several independent scopes.
             # Keep all Context state, but reject changed facts and charge its first owner only.
-            receipts = {r.record_id: r for r in snapshot.records if isinstance(r, ProviderUsageRecord)}
+            # Existing receipts were checked when first admitted, and snapshot
+            # validation above forbids changing or losing them. Only new IDs
+            # need a family-wide conflict check under the writer lock.
+            known = {r.record_id for r in previous.records} if previous is not None else set()
+            receipts = {
+                r.record_id: r
+                for r in snapshot.records
+                if isinstance(r, ProviderUsageRecord) and r.record_id not in known
+            }
             if receipts:
                 facts = _contributions(root_id)
                 for start in range(0, len(receipts), _BATCH):
@@ -439,7 +466,7 @@ class ThreadUsageRepository:
 
     async def latest_root_request(self, *, thread_id: str, run_id: str | None = None) -> ModelUsageRecord | None:
         """Read current primary-request occupancy, never cumulative Context usage."""
-        facts = _contributions(thread_id)
+        facts = _contributions(thread_id, root_only=True)
         query = select(facts.c.payload).where(
             facts.c.descendant.is_(False),
             func.json_extract(facts.c.payload, "$.kind") == "model",
@@ -489,10 +516,12 @@ class ThreadUsageRepository:
         current = thread_id
         while current not in ancestors:
             ancestors.add(current)
-            thread = await session.get(ThreadRecord, current)
-            if thread is None:
+            row = (
+                await session.execute(select(ThreadRecord.parent_thread_id).where(ThreadRecord.thread_id == current))
+            ).one_or_none()
+            if row is None:
                 raise StoreIntegrityError("Usage refers to an unknown Thread.", code="thread_not_found")
-            if thread.parent_thread_id is None:
+            if row.parent_thread_id is None:
                 return current
-            current = thread.parent_thread_id
+            current = row.parent_thread_id
         raise StoreIntegrityError("Thread ancestry contains a cycle.", code="thread_ancestry_invalid")

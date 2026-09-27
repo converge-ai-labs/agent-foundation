@@ -651,3 +651,73 @@ async def test_projection_pins_one_read_snapshot_during_concurrent_replacement(t
             release.set()
         assert (await pending).combined.model_requests == 1
         assert (await reader.snapshot(thread_id="thr_root")).combined.model_requests == 2
+
+
+async def test_usage_queries_extract_envelope_metadata_once_per_scope(tmp_path):
+    import json
+
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+            await session.flush()
+            session.add(_thread("thr_child", "thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        root = _snapshot(*(_model(index) for index in range(50)))
+        child = _snapshot(
+            *(_model(index, run="child", child=True) for index in range(50)),
+            usage_id="usage-child",
+            thread_id="thr_child",
+        )
+        await repository.save(thread_id="thr_root", snapshot=root)
+        await repository.save(thread_id="thr_child", snapshot=child)
+        envelope_reads = 0
+
+        def json_extract(payload, path):
+            nonlocal envelope_reads
+            if path == "$.observed_through":
+                envelope_reads += 1
+            value = json.loads(payload)
+            for key in path.removeprefix("$.").split("."):
+                value = value.get(key) if isinstance(value, dict) else None
+            return json.dumps(value) if isinstance(value, (dict, list)) else value
+
+        # Count SQL expression evaluations, not elapsed time or SQL spelling.
+        # Sequential repository calls reuse this pool connection.
+        async with database.engine.connect() as connection:
+            await connection.run_sync(
+                lambda conn: conn.connection.dbapi_connection.create_function("json_extract", 2, json_extract)
+            )
+        assert await repository.latest_root_request(thread_id="thr_root") == root.records[-1]
+        assert envelope_reads == 1  # Descendant scopes are excluded before flattening.
+        envelope_reads = 0
+        view = await repository.snapshot(thread_id="thr_root")
+        assert view.combined.model_requests == 100
+        assert envelope_reads == 4  # Two coherent queries, each reading two envelopes.
+
+
+async def test_repeated_receipts_do_not_rescan_family_in_write_transaction(tmp_path):
+    from sqlalchemy import event
+
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        await repository.save(thread_id="thr_root", snapshot=_snapshot(_model(0), _receipt()))
+        statements = []
+
+        def observe(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement)
+
+        event.listen(database.engine.sync_engine, "before_cursor_execute", observe)
+        await repository.save(thread_id="thr_root", snapshot=_snapshot(_model(0), _model(1), _receipt(), sequence=2))
+        assert not any("json_each" in statement for statement in statements)
+        statements.clear()
+        new_receipt = _receipt().model_copy(update={"record_id": "usage-second-receipt"})
+        await repository.save(
+            thread_id="thr_root", snapshot=_snapshot(_model(0), _model(1), _receipt(), new_receipt, sequence=3)
+        )
+        assert sum("json_each" in statement for statement in statements) == 1
+        event.remove(database.engine.sync_engine, "before_cursor_execute", observe)
+        assert (await repository.snapshot(thread_id="thr_root")).combined.provider_receipts == 2

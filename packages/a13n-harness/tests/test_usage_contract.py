@@ -193,6 +193,97 @@ async def test_failed_reporter_preserves_usage_without_retrying_model() -> None:
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize("shield_commit", [False, True])
+@pytest.mark.parametrize("with_events", [False, True])
+async def test_delivery_deadline_distinguishes_interruption_from_completed_commit(
+    monkeypatch, shield_commit, with_events
+):
+    import anyio
+    from a13n_harness import usage as usage_module
+
+    scopes = []
+
+    def deadline(*args, **kwargs):
+        scope = anyio.CancelScope(shield=True)
+        scopes.append(scope)
+        return scope
+
+    monkeypatch.setattr(usage_module.anyio, "move_on_after", deadline)
+    committed = False
+    emitted = []
+
+    class Events:
+        async def emit(self, event):
+            await anyio.lowlevel.checkpoint()
+            emitted.append(event)
+
+    class Reporter:
+        async def report(self, snapshot):
+            nonlocal committed
+            with anyio.CancelScope(shield=shield_commit):
+                # Deterministic expiry during Host work, without a wall-clock sleep.
+                scopes[0].cancel()
+                await anyio.lowlevel.checkpoint()
+                committed = True
+
+    ledger = ModelUsageBinding.standalone(source="test").ledger
+    ledger.reporter = Reporter()
+    ledger._events = Events() if with_events else None
+    ledger._append(
+        record(request_usage=BoundedRequestUsage(input_tokens=3)).model_copy(
+            update={"run_id": ledger.run_id, "agent_instance_id": ledger.instance.agent_instance_id}
+        )
+    )
+    if shield_commit:
+        await ledger._flush(reason="model_request")
+        assert committed
+        assert len(emitted) == int(with_events)
+        assert not ledger._pending
+        assert ledger._reported_sequence == ledger.snapshot.sequence
+    else:
+        with pytest.raises(UsageReportError):
+            await ledger._flush(reason="model_request")
+        assert not committed
+        assert len(ledger._pending) == 1
+        assert ledger._reported_sequence < ledger.snapshot.sequence
+
+
+async def test_usage_display_timeout_retains_pending_records(monkeypatch):
+    import anyio
+    from a13n_harness import usage as usage_module
+
+    scopes = []
+    reports = []
+
+    def deadline(*args, **kwargs):
+        scope = anyio.CancelScope(shield=True)
+        scopes.append(scope)
+        return scope
+
+    class Reporter:
+        async def report(self, snapshot):
+            reports.append(snapshot)
+
+    class Events:
+        async def emit(self, event):
+            scopes[-1].cancel()
+            await anyio.lowlevel.checkpoint()
+
+    monkeypatch.setattr(usage_module.anyio, "move_on_after", deadline)
+    ledger = ModelUsageBinding.standalone(source="test").ledger
+    ledger.reporter = Reporter()
+    ledger._events = Events()
+    ledger._append(
+        record(request_usage=BoundedRequestUsage(input_tokens=3)).model_copy(
+            update={"run_id": ledger.run_id, "agent_instance_id": ledger.instance.agent_instance_id}
+        )
+    )
+    with pytest.raises(UsageReportError, match="display delivery timed out"):
+        await ledger._flush(reason="model_request")
+    assert len(reports) == len(ledger._pending) == 1
+    assert ledger._reported_sequence < ledger.snapshot.sequence
+
+
 @pytest.mark.parametrize("limits", [UsageLimits(total_tokens_limit=15), UsageLimits(cost_limit=Decimal("0.15"))])
 async def test_auxiliary_cumulative_token_and_cost_limits_preserve_the_exceeded_call(limits) -> None:
     binding = ModelUsageBinding.standalone(source="media")

@@ -445,8 +445,8 @@ class UsageReporter(Protocol):
 
 
 class UsageReportError(RunError):
-    def __init__(self) -> None:
-        super().__init__("Host usage delivery failed.", code="usage_report_failed")
+    def __init__(self, message: str = "Host usage delivery failed.") -> None:
+        super().__init__(message, code="usage_report_failed")
 
 
 class RunUsageLedger:
@@ -623,8 +623,10 @@ class RunUsageLedger:
     async def _flush(self, *, reason: UsageReportReason, trigger_record_id: str | None = None) -> None:
         with anyio.move_on_after(5, shield=True) as cleanup:
             await self._deliver(reason=reason, trigger_record_id=trigger_record_id)
-        if cleanup.cancel_called:
-            raise UsageReportError()
+        # A Host can shield an admitted transaction through commit. A deadline
+        # firing during that work is not a delivery failure if it completed.
+        if cleanup.cancelled_caught:
+            raise UsageReportError("Host usage delivery timed out.")
 
     async def _deliver(self, *, reason: UsageReportReason, trigger_record_id: str | None) -> None:
         from a13n_harness.events import UsageReportPayload, emit_harness_event
@@ -646,21 +648,27 @@ class RunUsageLedger:
             if self._events is not None:
                 chunks = _report_chunks(pending)
                 report_id = _stable_id("report", self.usage_id, str(snapshot.sequence))
-                for index, chunk in enumerate(chunks):
-                    await emit_harness_event(
-                        self._events,
-                        kind="usage",
-                        payload=UsageReportPayload(
-                            report_id=report_id,
-                            usage_id=self.usage_id,
-                            usage_sequence=snapshot.sequence,
-                            reason=reason,
-                            trigger_record_id=trigger_record_id,
-                            chunk_index=index,
-                            chunk_count=len(chunks),
-                            records=tuple(record.model_dump(mode="json") for record in chunk),
-                        ),
-                    )
+                # A shielded Host commit can finish after the reporting deadline.
+                # Display delivery has its own bounded cleanup budget; do not
+                # immediately cancel it using an already-expired commit deadline.
+                with anyio.move_on_after(5, shield=True) as display:
+                    for index, chunk in enumerate(chunks):
+                        await emit_harness_event(
+                            self._events,
+                            kind="usage",
+                            payload=UsageReportPayload(
+                                report_id=report_id,
+                                usage_id=self.usage_id,
+                                usage_sequence=snapshot.sequence,
+                                reason=reason,
+                                trigger_record_id=trigger_record_id,
+                                chunk_index=index,
+                                chunk_count=len(chunks),
+                                records=tuple(record.model_dump(mode="json") for record in chunk),
+                            ),
+                        )
+                if display.cancelled_caught:
+                    raise UsageReportError("Usage display delivery timed out.")
             for record in pending:
                 if self._pending.get(record.record_id) == record:
                     del self._pending[record.record_id]
