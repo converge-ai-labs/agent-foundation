@@ -344,6 +344,8 @@ async def test_a_cancelled_attempt_still_records_its_usage(service, scripted_mod
 
 
 async def test_a_stale_attempt_changes_nothing_after_a_takeover(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    # This test drives expiry and takeover; a concurrent sweep can make claim skip the locked run.
+    await runs_kit.pause_sweeps(service)
     runtime = service.runtime
     agent = await runs_kit.create_agent(service, scripted_model)
     run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
