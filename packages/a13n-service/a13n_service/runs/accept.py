@@ -6,7 +6,6 @@ the revision and the options it runs with. Both are SQL-only and run under the c
 """
 
 from dataclasses import dataclass
-from enum import Enum
 from functools import partial
 from typing import Literal
 
@@ -26,7 +25,7 @@ from a13n_service.runs.attachments import require_readable
 from a13n_service.runs.environments.mounts import freeze_mounts, has_primary, reserve_primary
 from a13n_service.runs.memories.mounts import freeze_memories, inherited_cursors
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Failure, MessagePayload, Pending, Resume, RunOptions, Trigger
+from a13n_service.runs.schemas import Failure, MessagePayload, Resume, RunOptions, Trigger
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.webhooks import notify_subscribers
 from a13n_service.tenancy.access import principal_for, require_active_workspace
@@ -40,19 +39,9 @@ RUNS_ACCEPTED = meter.create_counter("a13n.runs.accepted", unit="{run}", descrip
 SCAN = 16
 
 
-class Eligible(Enum):
-    NOTHING = "nothing"
-    MESSAGES = "messages"
-    ANY = "any"
-
-
-def eligibility(thread: ThreadRow, head: RunRow | None) -> Eligible:
-    if thread.archived_at is not None or thread.current_run_id is not None:
-        return Eligible.NOTHING
-    if head is not None and head.status == "waiting":
-        # Every pending item decides: a mixed wait needs resume even if it also asks a question.
-        return Eligible.MESSAGES if Pending.model_validate(head.pending).question_only else Eligible.NOTHING
-    return Eligible.ANY
+def eligible(thread: ThreadRow, head: RunRow | None) -> bool:
+    """Ordinary queued input cannot resolve a wait; only an explicit resume can."""
+    return thread.archived_at is None and thread.current_run_id is None and (head is None or head.status != "waiting")
 
 
 def paused(last: RunRow | None) -> bool:
@@ -359,14 +348,13 @@ async def accept(
     operation or the advance sweep can still start the entry.
     """
     head = await _run(session, thread.head_run_id)
-    kind = eligibility(thread, head)
-    if kind is Eligible.NOTHING:
+    if not eligible(thread, head):
         return None
     if paused(await _run(session, thread.last_run_id)):
         # An explicit submission may start that new message; unrelated pending entries never replace it.
         entries = [explicit.entry] if explicit is not None and explicit.entry is not None else []
     else:
-        entries = await inbox.pending_entries(session, thread.id, limit=SCAN, messages_only=kind is Eligible.MESSAGES)
+        entries = await inbox.pending_entries(session, thread.id, limit=SCAN)
     for entry in entries:
         try:
             source = await _source(session, runtime, thread, entry, explicit)
@@ -404,8 +392,8 @@ async def advance(runtime: Runtime, thread_id: str, *, skip_locked: bool = False
 class ThreadAdvancer:
     """The advance_threads sweep: idle, unpaused threads with pending input, visited in rotating ID order.
 
-    Rotation keeps threads whose entries stay pending (an approval wait) from starving the rest, and a thread
-    that fails to advance is logged and retried by a later pass without holding up the others.
+    Waiting heads are excluded before the batch limit. Rotation keeps a thread that fails to advance
+    from holding up the others; it is logged and retried by a later pass.
     """
 
     def __init__(self, runtime: Runtime, *, batch: int):
@@ -419,6 +407,7 @@ class ThreadAdvancer:
                     select(ThreadRow.id)
                     .where(
                         ThreadRow.current_run_id.is_(None),
+                        ~exists().where(RunRow.id == ThreadRow.head_run_id, RunRow.status == "waiting"),
                         ThreadRow.archived_at.is_(None),
                         ThreadRow.last_run_id.is_not_distinct_from(ThreadRow.head_run_id),
                         ThreadRow.id > self.after,

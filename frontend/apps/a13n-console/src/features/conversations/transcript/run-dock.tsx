@@ -21,7 +21,6 @@ import { PendingRequests, RunFeedback } from "./pending-request";
 import { ThreadInbox } from "./inbox";
 import {
   isInteractive,
-  questionsOnly,
   useInterruptRun,
   useRunAcceptance,
 } from "./run-actions";
@@ -57,19 +56,23 @@ export function RunDock({
   const headRun = useRun(thread.head_run_id);
   const current = latest === run.id;
   const active = isActiveRun(run.status);
+  const head = thread.head_run_id === run.id ? run : headRun.data;
+  // A failed successor leaves the waiting head resumable. Show its exact
+  // questions from either the latest Run or the waiting head itself.
   const waiting =
-    current && thread.head_run_id === run.id && run.status === "waiting";
+    !thread.current_run_id &&
+    (current || thread.head_run_id === run.id) &&
+    head?.status === "waiting"
+      ? head
+      : null;
   const interactive = isInteractive(thread);
   // After a failed or cancelled Run the inbox advances only when someone
-  // starts its next message, and a head waiting for more than answers to its
-  // questions still has to be resumed first.
+  // starts its next message; any waiting head must be resumed first.
   const canRunNext =
     !!latestRun.data &&
     ["failed", "cancelled"].includes(latestRun.data.status) &&
     (!thread.head_run_id ||
-      (!!headRun.data &&
-        (headRun.data.status !== "waiting" ||
-          questionsOnly(headRun.data.pending?.items ?? []))));
+      (!!headRun.data && headRun.data.status !== "waiting"));
   // Guidance is an inbox entry; its own status says whether the run took it,
   // and it is read again whenever the Thread reports a change.
   const [steer, setSteer] = useState<Schema["EntryView"]>();
@@ -101,24 +104,23 @@ export function RunDock({
     <>
       <ErrorToast error={interrupt.error} />
       {waiting &&
-        run.pending &&
+        waiting.pending &&
         (interactive && can("run") ? (
           <RunFeedback
-            key={run.id}
-            run={run}
-            thread={thread}
-            actions={run.pending.items}
+            key={waiting.id}
+            run={waiting}
+            actions={waiting.pending.items}
             accepted={accepted}
             continuation={
               <ContinueWithoutFeedback
-                run={run}
+                run={waiting}
                 thread={thread}
                 accepted={accepted}
               />
             }
           />
         ) : (
-          <PendingRequests actions={run.pending.items} />
+          <PendingRequests actions={waiting.pending.items} />
         ))}
       <ThreadInbox thread={thread} canRunNext={canRunNext} />
       <div className={styles.dock}>

@@ -85,7 +85,7 @@ A client tool is declared in the revision and executed by your application:
 
 When the model calls it, the run ends `waiting` with the call in `pending`. Your application performs it and [resumes](#resume-a-waiting-run) the run with the result.
 
-With `user_questions: true`, the model can ask the user a question with `ask_user_question`. The run waits with a `user_input` item; the answer is the user's next message.
+With `user_questions: true`, the model can ask the user a question with `ask_user_question`. The run waits with a `user_input` item; answer that specific call through [resume](#resume-a-waiting-run). Ordinary messages remain queued until the wait is explicitly resolved.
 
 ### Subagents
 
@@ -226,9 +226,9 @@ A run that needs something from outside ends `waiting`. Its `pending.items` list
 | ------------- | ------------------------------------------------------------------------ |
 | `approval`    | `approve`, or `reject` with an optional `reason`.                        |
 | `client_tool` | `complete` with the tool's `result`.                                     |
-| `user_input`  | Send the answer as a message; see [Submit a message](#submit-a-message). |
+| `user_input`  | `complete` with question `answers` or a free-text `response`; see below. |
 
-In Console, a pending approval offers **Approve once**, **Deny** and **Deny with reason**; a question offers **Continue without a response**.
+In Console, a pending approval offers **Approve once**, **Deny** and **Deny with reason**; a question offers selections or a custom answer, plus an explicit **Continue without a response** choice. Submit the complete response set together, including questions in mixed waits.
 
 ### Resume a waiting run
 
@@ -242,7 +242,20 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
                    {"tool_call_id": "call_...", "action": "complete", "result": {"ticket": "T-42"}}]}'
 ```
 
-The response is the successor run (`201`, or `200` for a replay). Answer every item in one request: an omitted approval is rejected, and an omitted client tool or question gets no response. Resuming with no answers therefore abandons the wait. Only the thread's latest run can be resumed, while nothing else runs; otherwise the request fails with `409 conflict` and reason `not_idle_waiting_head`.
+For a user question, use the waiting Run's ID and the question's `tool_call_id`, with either a general response or answers keyed by the exact question text:
+
+```json
+{"answers": [{"tool_call_id": "call_question", "action": "complete",
+              "result": {"response": "Up to 200 dollars per night."}}]}
+```
+
+A structured result could be `{"answers": {"Which color?": "blue"}}`; multi-select answers use arrays. The Service checks the result against that call's questions before accepting it. It stores the normalized result in the successor's `resume` field, not in the inbox. Messages already queued, and new ordinary messages, cannot close the wait. They keep their order; after explicit resume, compatible steers can join the successor while `next_run` messages wait for a later run.
+
+The response is the successor run (`201`, or `200` for a replay). Answer every item in one request: an omitted approval is rejected, and an omitted client tool or question gets no response. Resuming with no answers therefore abandons the wait. Only the thread's waiting history head can be resumed, while nothing else runs; otherwise the request fails with `409 conflict` and reason `not_idle_waiting_head`.
+
+### Upgrading question-response clients
+
+Clients that previously answered questions by submitting ordinary messages must send correlated `/resume` results instead. The existing `complete` answer envelope supports both client-tool and question results; no new response table is needed. Upgrade Service support before enabling this client behavior. Replace every control and worker process before relying on the waiting rule, since older processes can still advance a question wait from queued input. Existing waiting Runs can be answered through resume after the upgrade; queued messages are preserved and are never guessed to be question answers.
 
 ## Interrupt, fork and archive
 
@@ -250,7 +263,7 @@ The response is the successor run (`201`, or `200` for a replay). Answer every i
 - **Fork**: `POST …/runs/{run_id}/fork` starts a new thread in the same session whose first run continues from a `completed` or `waiting` run, with a new message (the same body as a submission) and an `Idempotency-Key`. A fork of a waiting run closes its pending calls with the default answers. The fork shares the origin thread's mounted environments unless `fresh_environments` is `true`, and `environments` adds more. It copies the origin thread's memory mounts, and `memories` adds more. Failed and cancelled runs cannot be forked.
 - **Archive**: `POST …/threads/{thread_id}/archive` with the thread's `If-Match` ends a thread permanently: pending messages are withdrawn, its mounts are removed, and an active run is interrupted. Its history stays readable.
 
-A failed or cancelled run never becomes history: the thread's next run continues from its last completed or waiting run.
+A failed or cancelled run never becomes history: continuation uses the last completed or waiting run. If that head is still waiting, resume it explicitly; ordinary messages stay queued.
 
 ## Results
 

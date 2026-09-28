@@ -8,7 +8,7 @@ from a13n_service.infra.db import lock, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.runs import inbox
-from a13n_service.runs.accept import ThreadAdvancer
+from a13n_service.runs.accept import ThreadAdvancer, advance
 from a13n_service.runs.tables import RunRow, ThreadRow
 
 pytestmark = pytest.mark.anyio
@@ -264,3 +264,68 @@ async def test_archive_withdraws_the_steers_a_completing_run_left_unused(service
     assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
     entries = {entry["id"]: entry for entry in await runs_kit.inbox(service, thread_id)}
     assert entries[steer["id"]]["status"] == "withdrawn", entries[steer["id"]]
+
+
+async def test_question_wait_keeps_old_and_new_messages_until_explicit_resume(
+    service, scripted_model, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model, user_questions=True)
+    initial = await runs_kit.start_thread(service, agent, "pick a color")
+    thread_id, run_id = initial["thread"]["id"], initial["run"]["id"]
+    old = await _queue(service, runs_kit, thread_id, agent, "check the weather")
+    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
+    await (await runs_kit.attempt(service))  # Includes the post-seal advance.
+    assert (await runs_kit.get_run(service, run_id))["status"] == "waiting"
+    new = await _queue(service, runs_kit, thread_id, agent, "another unrelated task")
+    sweep = ThreadAdvancer(service.runtime, batch=1)
+    for _ in range(2):
+        await advance(service.runtime, thread_id)
+        await sweep()
+    thread = await runs_kit.get_thread(service, thread_id)
+    assert thread["current_run_id"] is None and thread["head_run_id"] == run_id
+    queued = (await runs_kit.inbox(service, thread_id))[1:]
+    assert [(e["id"], e["status"]) for e in queued] == [(old["id"], "pending"), (new["id"], "pending")]
+
+    resumed = await service.client.post(
+        f"{service.api}/runs/{run_id}/resume",
+        json={"answers": [{"tool_call_id": "call_ask", "action": "complete", "result": {"response": "blue"}}]},
+        headers=runs_kit.fresh_key(),
+    )
+    assert resumed.status_code == 201, resumed.text
+    scripted_model.say("Blue selected")
+    await (await runs_kit.attempt(service))
+    entries = await runs_kit.inbox(service, thread_id)
+    # Normal FIFO acceptance resumes after the explicit successor completes.
+    assert [(e["id"], e["status"]) for e in entries[1:]] == [(old["id"], "assigned"), (new["id"], "pending")]
+    await scripted_model.request()
+    answered = await scripted_model.request()
+    assert "check the weather" not in str(answered) and "another unrelated task" not in str(answered)
+    scripted_model.say("Weather checked")
+    await (await runs_kit.attempt(service))
+    assert [(e["id"], e["status"]) for e in (await runs_kit.inbox(service, thread_id))[1:]] == [
+        (old["id"], "consumed"),
+        (new["id"], "assigned"),
+    ]
+
+
+async def test_waiting_threads_do_not_use_the_advance_batch(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model, user_questions=True)
+    submissions = [await runs_kit.start_thread(service, agent, text) for text in ("first", "second")]
+    blocked, healthy = sorted(item["thread"]["id"] for item in submissions)
+    for item in submissions:
+        await _queue(service, runs_kit, item["thread"]["id"], agent, "queued")
+    policy = _Breaking()
+    policy.threads.add(healthy)
+    for item in submissions:
+        if item["thread"]["id"] == blocked:
+            scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
+        else:
+            scripted_model.say("Done")
+        await (await runs_kit.attempt(service, runtime=replace(service.runtime, admission=policy)))
+    assert (await runs_kit.get_thread(service, healthy))["current_run_id"] is None
+    # The lower-ID waiting thread must be excluded before LIMIT 1, not just rejected after selection.
+    await ThreadAdvancer(service.runtime, batch=1)()
+    assert (await runs_kit.get_thread(service, blocked))["current_run_id"] is None
+    assert (await runs_kit.get_thread(service, healthy))["current_run_id"] is not None

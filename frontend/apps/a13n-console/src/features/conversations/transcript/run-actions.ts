@@ -13,14 +13,6 @@ export function isInteractive(thread: Schema["ThreadView"]) {
   return thread.origin !== "child";
 }
 
-/**
- * A wait of questions alone takes the next message as its answer; any other
- * wait continues only by resuming.
- */
-export function questionsOnly(actions: readonly Schema["PendingItem"][]) {
-  return actions.every((action) => action.kind === "user_input");
-}
-
 /** Where an accepted command lands: the Run it started, when it started one. */
 export function useRunAcceptance(
   run: Schema["RunView"],

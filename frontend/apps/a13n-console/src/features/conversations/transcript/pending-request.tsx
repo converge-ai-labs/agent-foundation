@@ -16,7 +16,6 @@ import { ErrorNotice } from "../../../shared/feedback";
 import { CopyButton } from "../../../shared/identity";
 import { JsonView, TextAreaField } from "../../../shared/forms";
 import { QuestionResponse, readQuestions } from "./questions";
-import { questionsOnly } from "./run-actions";
 import styles from "./cards.module.css";
 
 type Answer = {
@@ -59,19 +58,16 @@ export function PendingRequests({
 
 /**
  * Every pending action is answered together; the agent resumes with the set.
- * Questions are answered by a message, which a wait of questions alone takes
- * as the next run's input; any other wait resumes with approvals and tool
- * results, and its questions go unanswered.
+ * Questions, approvals and tool results all name their exact pending call.
+ * Ordinary inbox messages never resolve this wait.
  */
 export function RunFeedback({
   run,
-  thread,
   actions,
   accepted,
   continuation,
 }: {
   run: Schema["RunView"];
-  thread: Schema["ThreadView"];
   actions: readonly Schema["PendingItem"][];
   accepted: (next: Schema["RunView"] | null) => void;
   /** The "continue without feedback" escape, shown beside Submit. */
@@ -82,11 +78,9 @@ export function RunFeedback({
     { workspace, can } = useWorkspace();
   const [answers, setAnswers] = useState<Record<string, Answer>>({}),
     [key, setKey] = useState(crypto.randomUUID());
-  const answerable = questionsOnly(actions);
   const mutation = useMutation({
     mutationFn: async () => {
       const resume: Schema["Answer"][] = [];
-      const message: Schema["Part"][] = [];
       for (const pending of actions) {
         const answer = answers[pending.tool_call_id];
         if (!answer?.action)
@@ -106,44 +100,27 @@ export function RunFeedback({
           );
           continue;
         }
-        if (answer.action === "respond" && !answer.structured) {
-          message.push({ type: "text", text: answer.value });
-          continue;
-        }
         let value: Schema["JsonValue"];
-        try {
-          value = JSON.parse(answer.value);
-        } catch {
-          throw new Error(t("Tool results and responses must be valid JSON."));
+        if (answer.action === "respond" && !answer.structured) {
+          if (!answer.value.trim())
+            throw new Error(t("Choose a response for every pending action."));
+          value = { response: answer.value.trim() };
+        } else {
+          try {
+            value = JSON.parse(answer.value);
+          } catch {
+            throw new Error(
+              t("Tool results and responses must be valid JSON."),
+            );
+          }
         }
-        if (answer.action === "complete")
-          resume.push({
-            action: "complete",
-            tool_call_id: pending.tool_call_id,
-            result: value,
-          });
-        else message.push({ type: "json", value });
+        resume.push({
+          action: "complete",
+          tool_call_id: pending.tool_call_id,
+          result: value,
+        });
       }
       const workspace_id = workspace.id;
-      if (message.length) {
-        const receipt = data(
-          await client
-            .workspace(workspace_id)
-            .POST("/api/v1/threads/{thread_id}/inbox", {
-              params: {
-                path: { thread_id: thread.id },
-                header: commandHeaders(key),
-              },
-              body: {
-                kind: "message",
-                delivery: "next_run",
-                payload: { content: message },
-                agent_id: run.agent_id,
-              },
-            }),
-        );
-        return receipt.run;
-      }
       return data(
         await client
           .workspace(workspace_id)
@@ -189,7 +166,8 @@ export function RunFeedback({
             value: "",
           };
           const questions =
-            answerable && action.tool_name === "ask_user_question"
+            action.kind === "user_input" &&
+            action.tool_name === "ask_user_question"
               ? readQuestions(action.arguments)
               : null;
           if (questions)
@@ -297,22 +275,15 @@ export function RunFeedback({
                   label={t("Response")}
                   hideLabel
                   options={[
-                    // Only a wait of questions alone takes a message as answer.
-                    ...(action.kind === "client_tool" || answerable
-                      ? [
-                          {
-                            value:
-                              action.kind === "client_tool"
-                                ? "complete"
-                                : "respond",
-                            label: t(
-                              action.kind === "client_tool"
-                                ? "Return tool result"
-                                : "Respond",
-                            ),
-                          },
-                        ]
-                      : []),
+                    {
+                      value:
+                        action.kind === "client_tool" ? "complete" : "respond",
+                      label: t(
+                        action.kind === "client_tool"
+                          ? "Return tool result"
+                          : "Respond",
+                      ),
+                    },
                     { value: "omit", label: t("Continue without a response") },
                   ]}
                 />

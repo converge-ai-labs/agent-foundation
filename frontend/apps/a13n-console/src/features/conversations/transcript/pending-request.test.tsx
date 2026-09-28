@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../../shared/api";
-import { fixtureRun, fixtureThread } from "./fixture";
+import { fixtureRun } from "./fixture";
 import { RunFeedback } from "./pending-request";
 
 const { post, accepted } = vi.hoisted(() => ({
@@ -32,7 +32,6 @@ afterEach(() => {
 });
 
 const run = fixtureRun({ status: "waiting" });
-const thread = fixtureThread();
 const successor = fixtureRun({ id: "run_3", status: "accepted" });
 /** The resumed Run the Service answers a resume with. */
 function resumes() {
@@ -59,7 +58,6 @@ it("requires an explicit decision for every approval before sending the complete
       <RunFeedback
         accepted={accepted}
         run={run}
-        thread={thread}
         actions={[approval("first"), approval("second")]}
       />
     </QueryClientProvider>,
@@ -92,7 +90,6 @@ it("submits a bounded denial reason with the rest of the answers", async () => {
     <QueryClientProvider client={new QueryClient()}>
       <RunFeedback
         run={run}
-        thread={thread}
         actions={[
           approval("first", {
             target: "path: /workspace/report",
@@ -126,7 +123,6 @@ it("falls back to JSON for malformed approval presentation", () => {
     <QueryClientProvider client={new QueryClient()}>
       <RunFeedback
         run={run}
-        thread={thread}
         actions={[
           approval("first", {
             target: "path: /workspace",
@@ -152,18 +148,14 @@ function question(
     presentation: null,
   };
 }
-/** A wait of questions alone is answered by the message that starts the next Run. */
+/** Render the durable pending call, including after a page refresh. */
 function renderQuestions(questions = questionPresentation) {
-  post.mockResolvedValue({
-    data: { thread, entry: { id: "inb_2" }, run: successor },
-    response: new Response(),
-  });
+  resumes();
   render(
     <QueryClientProvider client={new QueryClient()}>
       <RunFeedback
         accepted={accepted}
         run={run}
-        thread={thread}
         actions={[question(questions)]}
       />
     </QueryClientProvider>,
@@ -171,14 +163,9 @@ function renderQuestions(questions = questionPresentation) {
   return userEvent.setup();
 }
 function answered() {
-  expect(post.mock.calls[0]![0]).toBe("/api/v1/threads/{thread_id}/inbox");
-  const body = post.mock.calls[0]![1].body;
-  expect(body).toMatchObject({
-    kind: "message",
-    delivery: "next_run",
-    agent_id: run.agent_id,
-  });
-  return body.payload.content;
+  expect(post.mock.calls[0]![0]).toBe("/api/v1/runs/{run_id}/resume");
+  expect(post.mock.calls[0]![1].params.path).toEqual({ run_id: run.id });
+  return post.mock.calls[0]![1].body.answers;
 }
 const questionPresentation = {
   questions: [
@@ -218,8 +205,9 @@ it("answers questions with single and multiple selections in the exact answer en
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   expect(answered()).toEqual([
     {
-      type: "json",
-      value: {
+      action: "complete",
+      tool_call_id: "question",
+      result: {
         answers: {
           "Which business?": "Retail",
           "Which tools?": ["Search", "Tickets"],
@@ -249,13 +237,14 @@ it("allows free text instead of an option and does not submit an empty answer", 
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   expect(answered()).toEqual([
     {
-      type: "json",
-      value: { answers: { "Which business?": "Travel support" } },
+      action: "complete",
+      tool_call_id: "question",
+      result: { answers: { "Which business?": "Travel support" } },
     },
   ]);
 });
 
-it("resumes a wait that mixes questions and approvals, leaving its questions unanswered", async () => {
+it("answers questions and approvals together in a mixed wait", async () => {
   const user = userEvent.setup();
   resumes();
   render(
@@ -263,7 +252,6 @@ it("resumes a wait that mixes questions and approvals, leaving its questions una
       <RunFeedback
         accepted={accepted}
         run={run}
-        thread={thread}
         actions={[
           question({ questions: [questionPresentation.questions[0]!] }),
           approval("approval", {
@@ -277,19 +265,53 @@ it("resumes a wait that mixes questions and approvals, leaving its questions una
   const submit = screen.getByRole("button", {
     name: "Submit responses",
   }) as HTMLButtonElement;
-  // Only a message answers a question, and a mixed wait takes none.
-  expect(screen.queryByRole("radio", { name: /Retail/ })).toBeNull();
-  await user.click(screen.getByRole("combobox", { name: "Response" }));
-  expect(screen.queryByRole("option", { name: "Respond" })).toBeNull();
-  await user.click(
-    await screen.findByRole("option", { name: "Continue without a response" }),
-  );
+  await user.click(screen.getByRole("radio", { name: /Retail/ }));
   expect(submit.disabled).toBe(true);
   await user.click(screen.getByRole("button", { name: "Approve once" }));
   expect(submit.disabled).toBe(false);
   await user.click(submit);
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   expect(post.mock.calls[0]![1].body).toEqual({
-    answers: [{ action: "approve", tool_call_id: "approval" }],
+    answers: [
+      {
+        action: "complete",
+        tool_call_id: "question",
+        result: { answers: { "Which business?": "Retail" } },
+      },
+      { action: "approve", tool_call_id: "approval" },
+    ],
   });
+});
+
+it("only skips a question after an explicit choice and submission", async () => {
+  const user = renderQuestions();
+  await user.click(
+    screen.getByRole("button", { name: "Continue without a response" }),
+  );
+  expect(post).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Submit responses" }));
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  expect(answered()).toEqual([]);
+});
+
+it("preserves the question response and exact request after a stale-wait conflict", async () => {
+  const user = renderQuestions({
+    questions: [questionPresentation.questions[0]!],
+  });
+  post.mockResolvedValue({
+    error: { error: { code: "conflict", message: "This wait has changed." } },
+    response: new Response(null, { status: 409 }),
+  });
+  await user.click(screen.getByRole("radio", { name: /Retail/ }));
+  await user.click(screen.getByRole("button", { name: "Submit responses" }));
+  await screen.findByRole("alert");
+  expect(screen.getByRole("radio", { name: /Retail/ })).toHaveProperty(
+    "checked",
+    true,
+  );
+  expect(accepted).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Submit responses" }));
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+  expect(post.mock.calls[1]).toEqual(post.mock.calls[0]);
+  expect(answered()[0].tool_call_id).toBe("question");
 });

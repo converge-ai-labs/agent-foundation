@@ -7,6 +7,7 @@ successor always carries one decision per pending call and no partial progress i
 
 import hashlib
 
+from a13n_harness.toolsets.interaction import validate_user_question_result
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +38,7 @@ from a13n_service.tenancy.authorize import Principal
 _ACCEPTS: dict[str, tuple[type, ...]] = {
     "approval": (Approve, Reject),
     "client_tool": (Complete,),
-    "user_input": (),
+    "user_input": (Complete,),
 }
 
 
@@ -64,6 +65,18 @@ def normalize(pending: Pending, request: ResumeRequest) -> Resume:
                 "invalid_argument",
                 f"A {item.kind} call cannot be answered with {answer.action}",
                 {"field": "action", "reason": "action_not_accepted", "id": tool_call_id},
+            )
+        if item.kind == "user_input" and isinstance(answer, Complete):
+            try:
+                result = validate_user_question_result(item.arguments, answer.result)
+            except ValueError as error:
+                raise ServiceError(
+                    "invalid_argument",
+                    "Question response does not match the pending question",
+                    {"field": "result", "reason": "invalid_question_response", "id": tool_call_id},
+                ) from error
+            answers[tool_call_id] = Complete.model_validate(
+                {"tool_call_id": tool_call_id, "action": "complete", "result": result}
             )
     return Resume(answers=tuple(answers.get(item.tool_call_id) or _default(item) for item in pending.items))
 
@@ -97,6 +110,9 @@ async def resume(
             thread = await get_thread(session, scope.workspace_id, waiting.thread_id, lock=True)
             require_open(thread)
             if not (waiting.status == "waiting" and thread.head_run_id == waiting.id and thread.current_run_id is None):
+                # A concurrent request may have committed this same intent while we waited for the thread.
+                if found := await _replay(session, scope.workspace_id, actor, request_key, digest):
+                    return await run_view(session, found), False
                 raise conflict("run", waiting.id, "not_idle_waiting_head")
             answers = normalize(Pending.model_validate(waiting.pending), request)
             source = await Source.inherited(

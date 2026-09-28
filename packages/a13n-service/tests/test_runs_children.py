@@ -54,7 +54,7 @@ async def _child_run(service, parent_run_id: str) -> RunRow:  # type: ignore[no-
         return await session.get_one(RunRow, child.current_run_id)
 
 
-async def test_a_question_reply_starts_behind_child_results(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+async def test_a_question_response_keeps_queued_child_results(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     coordinator = await runs_kit.delegating(service, scripted_model, "async", user_questions=True)
     scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
@@ -69,18 +69,31 @@ async def test_a_question_reply_starts_behind_child_results(service, scripted_mo
     scripted_model.say("42", to="Role: worker")
     await (await runs_kit.attempt(service))
     await _deliver(service)
-    # A question-only wait takes messages only: the child result waits for the reply's run.
+    # A child result cannot resolve a question; it remains queued for explicit continuation.
     assert [(entry["kind"], entry["status"]) for entry in await runs_kit.inbox(service, thread_id)] == [
         ("message", "consumed"),
         ("child_result", "pending"),
     ]
 
-    # Acceptance examines one entry at a time here, and the child result is first in line.
-    monkeypatch.setattr(accept_module, "SCAN", 1)
-    reply = await runs_kit.submit(service, thread_id, runs_kit.message(coordinator, "blue"))
+    await accept_module.ThreadAdvancer(service.runtime, batch=1)()
+    assert (await runs_kit.get_thread(service, thread_id))["current_run_id"] is None
+    reply = await service.client.post(
+        f"{service.api}/runs/{waiting['id']}/resume",
+        json={"answers": [{"tool_call_id": "call_ask", "action": "complete", "result": {"response": "blue"}}]},
+        headers=runs_kit.fresh_key(),
+    )
     assert reply.status_code == 201, reply.text
-    run = reply.json()["run"]
-    assert run is not None and (run["trigger"], run["parent_run_id"]) == ("input", waiting["id"]), reply.json()
+    run = reply.json()
+    assert (run["trigger"], run["parent_run_id"]) == ("resume", waiting["id"])
+    scripted_model.say("Answer received", to="Role: coordinator")
+    await (await runs_kit.attempt(service))
+    # A one-turn successor may finish before taking the steer; it then starts the queued child result.
+    child_result = (await runs_kit.inbox(service, thread_id))[1]
+    assert child_result["status"] in {"assigned", "consumed"}
+    if child_result["status"] == "assigned":
+        scripted_model.say("Child result received", to="Role: coordinator")
+        await (await runs_kit.attempt(service))
+    assert [entry["status"] for entry in await runs_kit.inbox(service, thread_id)] == ["consumed", "consumed"]
 
 
 async def test_a_child_result_waits_for_room_and_is_delivered_once(serve, settings, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

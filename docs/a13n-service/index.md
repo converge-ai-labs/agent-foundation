@@ -42,7 +42,7 @@ flowchart LR
 
 1. A client submits a message to a thread. The Service stores it in the thread's inbox and, when the thread is free, accepts it as a run that pins the agent revision and its resources.
 2. A worker claims the run, executes the agent with the Harness, and commits a checkpoint and the run's display at each safe boundary, before model requests and tool calls. Live output flows through Redis to clients that follow the thread stream.
-3. When the agent needs an approval, a client tool result or an answer, the run waits; a resume or a new message continues it as a successor run. When a run completes, the next queued input starts; after a failed or cancelled run, the thread waits for a new message.
+3. When the agent needs an approval, a client tool result or an answer, the run waits; an explicit resume with correlated answers continues it as a successor run. Ordinary messages stay queued during the wait. When a run completes, the next queued input starts; after a failed or cancelled run, the thread needs an explicit continuation, using resume if its history head is still waiting.
 
 Control and worker are roles of one executable; a single process can run both. See [Run and maintain](operations.md).
 

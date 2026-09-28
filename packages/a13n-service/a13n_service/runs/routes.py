@@ -361,7 +361,7 @@ async def resume_run(
     actor: Actor,
     key: IdempotencyKey,
 ) -> RunView:
-    """Answer the waiting run's approvals and client tools; the successor run continues from them."""
+    """Answer the exact waiting run's approvals, client tools and user questions; the successor continues from them."""
     successor, created = await resume.resume(runtime, actor, workspace_id, run_id, body, request_key=key)
     response.status_code = 201 if created else 200
     return tagged(response, successor)

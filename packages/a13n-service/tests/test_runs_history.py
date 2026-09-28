@@ -1,10 +1,12 @@
 """A thread's committed history: resuming a wait, forking a run, reading run items and session activity."""
 
+import asyncio
 import json
 from dataclasses import replace
 
 import pytest
 from a13n_service.runs import display
+from a13n_service.runs.accept import ThreadAdvancer, advance
 
 pytestmark = pytest.mark.anyio
 
@@ -200,3 +202,63 @@ async def test_run_items_keep_the_newest_over_their_limit(service, scripted_mode
     listing = await runs_kit.items(service, bounded)
     assert listing["dropped"] == len(complete["items"]) - 2, listing
     assert [item["kind"] for item in listing["items"]] == [item["kind"] for item in complete["items"]][-2:]
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {},
+        {"response": "  "},
+        {"answers": {"Another question?": "blue"}},
+        {"answers": {"Which color?": ["red", "blue"]}},
+        {"response": "blue", "extra": "not allowed"},
+    ],
+)
+async def test_invalid_question_results_leave_the_wait_unchanged(service, scripted_model, runs_kit, result) -> None:  # type: ignore[no-untyped-def]
+    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
+    waiting = await _waiting(service, scripted_model, runs_kit, user_questions=True)
+    refused = await service.client.post(
+        f"{service.api}/runs/{waiting['id']}/resume",
+        json={"answers": [{"tool_call_id": "call_ask", "action": "complete", "result": result}]},
+        headers=runs_kit.fresh_key(),
+    )
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"] == {
+        "field": "result",
+        "reason": "invalid_question_response",
+        "id": "call_ask",
+    }
+    thread = await runs_kit.get_thread(service, waiting["thread_id"])
+    assert thread["head_run_id"] == waiting["id"] and thread["current_run_id"] is None
+    assert len(await runs_kit.inbox(service, waiting["thread_id"])) == 1
+
+
+@pytest.mark.parametrize("same_key", [False, True])
+async def test_question_resume_arbitrates_concurrent_replies_and_inbox_scans(
+    service, scripted_model, runs_kit, same_key
+) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model, user_questions=True)
+    original = await runs_kit.start_thread(service, agent, "pick a color")
+    thread_id, run_id = original["thread"]["id"], original["run"]["id"]
+    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
+    await (await runs_kit.attempt(service))
+    key = runs_kit.fresh_key()
+    answers = {"answers": [{"tool_call_id": "call_ask", "action": "complete", "result": {"response": "blue"}}]}
+    first, second, message, _, _ = await asyncio.gather(
+        service.client.post(f"{service.api}/runs/{run_id}/resume", json=answers, headers=key),
+        service.client.post(
+            f"{service.api}/runs/{run_id}/resume", json=answers, headers=key if same_key else runs_kit.fresh_key()
+        ),
+        runs_kit.submit(service, thread_id, runs_kit.message(agent, "unrelated", delivery="next_run")),
+        advance(service.runtime, thread_id),
+        ThreadAdvancer(service.runtime, batch=1)(),
+    )
+    assert sorted([first.status_code, second.status_code]) == ([200, 201] if same_key else [201, 409])
+    winner = first if first.status_code == 201 else second
+    if same_key:
+        assert first.json()["id"] == second.json()["id"]
+    assert message.status_code == 201 and message.json()["entry"]["status"] == "pending"
+    assert (await runs_kit.get_thread(service, thread_id))["current_run_id"] == winner.json()["id"]
+    runs = (await service.client.get(f"{service.api}/threads/{thread_id}/runs")).json()["items"]
+    assert len(runs) == 2 and sum(run["trigger"] == "resume" for run in runs) == 1

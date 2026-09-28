@@ -97,7 +97,8 @@ async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scr
         assert "Role: stand-in" in json.dumps(request) and "Role: default" not in json.dumps(request)
 
 
-async def test_a_message_continues_a_question_only_wait(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+@pytest.mark.parametrize("result", [{"response": "blue please"}, {"answers": {"Which color?": "blue"}}])
+async def test_a_question_response_resumes_its_exact_call(executing, scripted_model, runs_kit, result) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(executing, scripted_model, user_questions=True)
     scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
     submitted = await runs_kit.start_thread(executing, agent, "pick a color")
@@ -106,18 +107,21 @@ async def test_a_message_continues_a_question_only_wait(executing, scripted_mode
 
     scripted_model.say("Blue it is")
     reply = await executing.client.post(
-        f"{executing.api}/threads/{waiting['thread_id']}/inbox",
-        json=runs_kit.message(agent, "blue please"),
+        f"{executing.api}/runs/{waiting['id']}/resume",
+        json={"answers": [{"tool_call_id": "call_ask", "action": "complete", "result": result}]},
         headers=runs_kit.fresh_key(),
     )
     assert reply.status_code == 201, reply.text
-    successor = await runs_kit.sealed(executing, reply.json()["run"]["id"])
+    successor = await runs_kit.sealed(executing, reply.json()["id"])
     assert successor["status"] == "completed" and successor["parent_run_id"] == waiting["id"]
+    assert successor["trigger"] == "resume" and successor["resumed_by_id"] == waiting["principal_id"]
+    assert successor["resume"]["answers"][0]["result"] == {"answers": {}, **result}
+    # The response is durable resume data, not another inbox message.
+    assert len(await runs_kit.inbox(executing, waiting["thread_id"])) == 1
     await scripted_model.request()
     second = await scripted_model.request()
-    # The question is closed with no response, then the message is read once.
-    assert [message["role"] for message in second["messages"][-2:]] == ["tool", "user"]
-    assert "blue please" in str(second["messages"][-1]["content"])
+    answers = [m for m in second["messages"] if m["role"] == "tool" and m["tool_call_id"] == "call_ask"]
+    assert len(answers) == 1 and json.loads(answers[0]["content"]) == {"answers": {}, **result}
 
 
 async def test_an_interrupt_cancels_the_model_call_in_flight(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

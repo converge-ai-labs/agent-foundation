@@ -2282,6 +2282,7 @@
       },
       "Complete": {
         "additionalProperties": false,
+        "description": "A client-tool result, or user-question answers matching the pending call's arguments.\n\nQuestion results use `{answers: {question: selection}, response?: text}`; a general `response`\ncan answer the call without individual selections. Ordinary inbox messages do not resolve waits.",
         "properties": {
           "action": {
             "const": "complete",
@@ -22541,7 +22542,7 @@
     },
     "/api/v1/runs/{run_id}/resume": {
       "post": {
-        "description": "Answer the waiting run's approvals and client tools; the successor run continues from them.",
+        "description": "Answer the exact waiting run's approvals, client tools and user questions; the successor continues from them.",
         "operationId": "resume_run_api_v1_runs__run_id__resume_post",
         "parameters": [
           {

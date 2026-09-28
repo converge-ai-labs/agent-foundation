@@ -1613,7 +1613,7 @@ export interface paths {
     put?: never;
     /**
      * Resume Run
-     * @description Answer the waiting run's approvals and client tools; the successor run continues from them.
+     * @description Answer the exact waiting run's approvals, client tools and user questions; the successor continues from them.
      */
     post: operations["resume_run_api_v1_runs__run_id__resume_post"];
     delete?: never;
@@ -3600,7 +3600,13 @@ export interface components {
        */
       permission?: "inherit" | "allow" | "deny";
     };
-    /** Complete */
+    /**
+     * Complete
+     * @description A client-tool result, or user-question answers matching the pending call's arguments.
+     *
+     *     Question results use `{answers: {question: selection}, response?: text}`; a general `response`
+     *     can answer the call without individual selections. Ordinary inbox messages do not resolve waits.
+     */
     Complete: {
       /**
        * @description discriminator enum property added by openapi-typescript

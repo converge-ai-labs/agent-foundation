@@ -265,13 +265,9 @@ async def reorder(session: AsyncSession, thread: ThreadRow, entry_ids: Sequence[
     await session.flush()
 
 
-async def pending_entries(
-    session: AsyncSession, thread_id: str, *, limit: int, messages_only: bool = False
-) -> Sequence[InboxEntryRow]:
-    """The first `limit` pending entries in position order; `messages_only` skips child results in the query."""
+async def pending_entries(session: AsyncSession, thread_id: str, *, limit: int) -> Sequence[InboxEntryRow]:
+    """The first `limit` pending entries in position order."""
     query = select(InboxEntryRow).where(InboxEntryRow.thread_id == thread_id, InboxEntryRow.status == "pending")
-    if messages_only:
-        query = query.where(InboxEntryRow.kind == "message")
     return (await session.scalars(query.order_by(InboxEntryRow.position).limit(limit).with_for_update())).all()
 
 

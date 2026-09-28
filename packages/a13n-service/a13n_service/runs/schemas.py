@@ -214,6 +214,12 @@ class Reject(_Frozen):
 
 
 class Complete(_Frozen):
+    """A client-tool result, or user-question answers matching the pending call's arguments.
+
+    Question results use `{answers: {question: selection}, response?: text}`; a general `response`
+    can answer the call without individual selections. Ordinary inbox messages do not resolve waits.
+    """
+
     tool_call_id: str = Field(min_length=1, max_length=1024)
     action: Literal["complete"]
     result: JsonValue
@@ -263,10 +269,6 @@ class Pending(_Frozen):
     def reason(self) -> WaitReason:
         kinds: set[WaitReason] = {item.kind for item in self.items}
         return kinds.pop() if len(kinds) == 1 else "multiple"
-
-    @property
-    def question_only(self) -> bool:
-        return all(item.kind == "user_input" for item in self.items)
 
 
 class Outcome(_Frozen):
