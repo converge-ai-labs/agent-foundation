@@ -1,16 +1,11 @@
 """Synchronous request reservations, independent of usage delivery and budget scope."""
 
-from typing import Protocol
+from typing import TYPE_CHECKING
 
 from pydantic_ai.exceptions import UsageLimitExceeded
 
-
-class RequestContribution(Protocol):
-    @property
-    def call_id(self) -> str | None: ...
-
-    @property
-    def record_id(self) -> str: ...
+if TYPE_CHECKING:
+    from a13n_harness.usage import ModelUsageRecord
 
 
 class RequestBudget:
@@ -43,7 +38,7 @@ class RequestBudget:
         if not continuation:
             self._pending.add(call_id)
 
-    def finish(self, call_id: str, record: RequestContribution) -> UsageLimitExceeded | None:
+    def finish(self, call_id: str, record: "ModelUsageRecord") -> UsageLimitExceeded | None:
         """Release and charge atomically; return a refusal to raise after reporting."""
         self.cancel(call_id)
         if record.call_id == call_id:

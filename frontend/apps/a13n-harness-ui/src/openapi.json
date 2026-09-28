@@ -6271,15 +6271,6 @@
               }
             ],
             "title": "Result"
-          },
-          "review_usage": {
-            "items": {
-              "$ref": "#/components/schemas/ModelCallUsage"
-            },
-            "type": "array",
-            "maxItems": 1,
-            "title": "Review Usage",
-            "default": []
           }
         },
         "additionalProperties": false,
@@ -6778,88 +6769,6 @@
           "unsupported"
         ],
         "title": "Availability"
-      },
-      "BoundedRequestUsage": {
-        "properties": {
-          "input_tokens": {
-            "type": "integer",
-            "maximum": 9.223372036854776e+18,
-            "minimum": 0.0,
-            "title": "Input Tokens",
-            "default": 0
-          },
-          "cache_write_tokens": {
-            "type": "integer",
-            "maximum": 9.223372036854776e+18,
-            "minimum": 0.0,
-            "title": "Cache Write Tokens",
-            "default": 0
-          },
-          "cache_read_tokens": {
-            "type": "integer",
-            "maximum": 9.223372036854776e+18,
-            "minimum": 0.0,
-            "title": "Cache Read Tokens",
-            "default": 0
-          },
-          "output_tokens": {
-            "type": "integer",
-            "maximum": 9.223372036854776e+18,
-            "minimum": 0.0,
-            "title": "Output Tokens",
-            "default": 0
-          },
-          "input_audio_tokens": {
-            "type": "integer",
-            "maximum": 9.223372036854776e+18,
-            "minimum": 0.0,
-            "title": "Input Audio Tokens",
-            "default": 0
-          },
-          "cache_audio_read_tokens": {
-            "type": "integer",
-            "maximum": 9.223372036854776e+18,
-            "minimum": 0.0,
-            "title": "Cache Audio Read Tokens",
-            "default": 0
-          },
-          "output_audio_tokens": {
-            "type": "integer",
-            "maximum": 9.223372036854776e+18,
-            "minimum": 0.0,
-            "title": "Output Audio Tokens",
-            "default": 0
-          },
-          "audio_seconds": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Audio Seconds",
-            "default": "0"
-          },
-          "cost": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost"
-          },
-          "details": {
-            "additionalProperties": {
-              "type": "integer"
-            },
-            "type": "object",
-            "title": "Details"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "BoundedRequestUsage",
-        "description": "One request's counters and bounded provider detail, with USD cost."
       },
       "CapabilitySelection": {
         "properties": {
@@ -8583,15 +8492,6 @@
           "kind"
         ],
         "title": "CopilotSubscriptionAuthentication"
-      },
-      "CostSource": {
-        "type": "string",
-        "enum": [
-          "catalog",
-          "custom",
-          "provider_or_genai_prices",
-          "unknown"
-        ]
       },
       "DecisionBatchView": {
         "properties": {
@@ -10759,189 +10659,6 @@
           }
         }
       },
-      "ModelCallUsage": {
-        "properties": {
-          "usage_status": {
-            "type": "string",
-            "enum": [
-              "complete",
-              "partial",
-              "unavailable"
-            ],
-            "title": "Usage Status",
-            "default": "complete"
-          },
-          "outcome": {
-            "type": "string",
-            "enum": [
-              "completed",
-              "failed",
-              "cancelled"
-            ],
-            "title": "Outcome",
-            "default": "completed"
-          },
-          "response_state": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Response State"
-          },
-          "model_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 1024
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Name"
-          },
-          "provider_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 512
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Provider Name"
-          },
-          "response_timestamp": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Response Timestamp"
-          },
-          "request_usage": {
-            "$ref": "#/components/schemas/BoundedRequestUsage"
-          },
-          "pricing_revision": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 256
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pricing Revision"
-          },
-          "pricing_rule_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 128
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pricing Rule Id"
-          },
-          "cost_source": {
-            "$ref": "#/components/schemas/CostSource",
-            "default": "unknown"
-          },
-          "pricing_status": {
-            "$ref": "#/components/schemas/PricingStatus",
-            "default": "not_reached"
-          },
-          "record_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Record Id"
-          },
-          "call_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Call Id"
-          },
-          "model_run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Run Id"
-          },
-          "model_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Id"
-          },
-          "provider_response_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Provider Response Id"
-          },
-          "request_started_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Request Started At"
-          },
-          "source": {
-            "type": "string",
-            "title": "Source"
-          },
-          "tool_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tool Id"
-          },
-          "tool_call_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tool Call Id"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "response_state",
-          "response_timestamp",
-          "request_usage",
-          "record_id",
-          "call_id",
-          "request_started_at",
-          "source"
-        ],
-        "title": "ModelCallUsage",
-        "description": "One priced native call owned by a Host operation, with no invented Run lineage."
-      },
       "ModelCatalogSnapshot": {
         "properties": {
           "items": {
@@ -12011,16 +11728,6 @@
         ],
         "title": "PresenceFrame",
         "type": "object"
-      },
-      "PricingStatus": {
-        "type": "string",
-        "enum": [
-          "applied",
-          "declined",
-          "failed",
-          "disabled",
-          "not_reached"
-        ]
       },
       "ProjectDefaults": {
         "properties": {

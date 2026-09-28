@@ -53,7 +53,6 @@ The package root is a closed primary code-first facade. It exports only the valu
 | `a13n_harness.tools`                 | Tool recovery declarations, managed tool invocation, and event helpers                       |
 | `a13n_harness.toolsets`              | First-party reusable Toolsets, including the standard async subagent dispatcher              |
 | `a13n_harness.model_calls`           | `ModelCall`, `ModelCallCheck`, `ModelCallCheckError`                                         |
-| `a13n_harness.metering`              | `HostModelUsage`, `ModelCallUsage`, and model usage bindings                                 |
 | `a13n_harness.usage`                 | Usage attribution, ledger, and `intersect_usage_limits`                                      |
 
 `a13n_harness.models.codex` exports `CodexRequestModel`. The Model authentication feature exports `CodexLoginFlow`, `CodexLoginResult`, and the Codex device flow alongside Grok credential/source values, OAuth and refresh primitives, bounded errors, and `build_grok_model()`. Native Codex credential, source, provider, and ordinary browser-flow APIs are imported directly from `pydantic_ai.providers.openai_codex`; there are no compatibility aliases or parallel refresh APIs. Its lifecycle and Host boundary belong to [Model Authentication](16a-model-authentication.md).

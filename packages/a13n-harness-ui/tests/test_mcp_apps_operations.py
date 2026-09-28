@@ -237,30 +237,34 @@ async def test_current_child_route_uses_current_parent_policy_and_never_historic
         await owners.resolve("child")
 
 
-async def test_review_without_a_reviewer_matches_native_no_extra_restriction_and_missing_adapter_fails_closed(
-    apps,
-) -> None:
+@pytest.mark.parametrize("configured", [False, True])
+async def test_app_review_policy_never_resolves_or_calls_a_model(apps, monkeypatch, configured) -> None:
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.capabilities.tool_review import AgentToolReviewer
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+
     operations, reference = apps
-    await _policy(operations, "review")
+    resolve = AsyncMock(side_effect=AssertionError("App operations must not resolve a model"))
+    review = AsyncMock(side_effect=AssertionError("App operations must not invoke model review"))
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    monkeypatch.setattr(AgentToolReviewer, "review", review)
+    await _policy(
+        operations,
+        "review",
+        review={"model": "model-primary", "on_error": "deny", "on_flagged": "deny"} if configured else None,
+    )
+    before = await operations.owners.store.threads.get("thread-1")
     view = await operations.activate(reference)
-    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="no-reviewer", name="counter"))
-    assert (await _settle(operations, view.view_id, "no-reviewer")).status == "completed"
-    await _policy(operations, "review", review={"model": "model-primary", "on_error": "allow"})
-    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="unsupported", name="counter"))
-    failed = await _settle(operations, view.view_id, "unsupported")
-    assert failed.status == "failed" and "reviewer is unavailable" in failed.reason
-
-    async def review(admission, operation):
-        assert admission.owner.thread_id == "thread-1"
-        assert operation.tool_id == "mcp/mcp-docs/counter"
-        return "deny", "Rejected by the configured reviewer."
-
-    operations.review = review
-    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="reviewed", name="counter"))
-    assert (await _settle(operations, view.view_id, "reviewed")).status == "denied"
-    await _policy(operations, "allow")
-    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="after", name="counter"))
-    assert (await _settle(operations, view.view_id, "after")).result["structuredContent"]["count"] == 3
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="review", name="counter"))
+    result = await _settle(operations, view.view_id, "review")
+    assert result.status == "completed"
+    assert result.result["structuredContent"]["count"] == 2
+    assert "review_usage" not in result.model_dump()
+    assert "review_usage" not in result.model_json_schema()["properties"]
+    assert await operations.owners.store.threads.get("thread-1") == before
+    resolve.assert_not_called()
+    review.assert_not_called()
 
 
 async def test_explicit_reactivation_does_not_recover_private_state_or_reauthorize_old_views(apps) -> None:
@@ -339,11 +343,13 @@ async def test_effective_credential_change_rejects_existing_view_without_auto_re
     assert operations.snapshots.connections.get("thread-1", "mcp-docs").generation == view.connection_generation
 
 
+@pytest.mark.parametrize("mode", ["allow", "review"])
 @pytest.mark.parametrize("revoke", ["view", "policy"])
 async def test_revocation_while_dispatch_enumerates_tools_prevents_business_call(
-    apps, monkeypatch: pytest.MonkeyPatch, revoke: str
+    apps, monkeypatch: pytest.MonkeyPatch, revoke: str, mode: str
 ) -> None:
     operations, reference = apps
+    await _policy(operations, mode)
     view = await operations.activate(reference)
     connection = operations.snapshots.connections.get("thread-1", "mcp-docs")
     list_tools = connection.client.list_tools
@@ -376,118 +382,43 @@ async def test_revocation_while_dispatch_enumerates_tools_prevents_business_call
     assert (await connection.client.call_tool_mcp("counter", {})).structured_content["count"] == 2
 
 
-@pytest.mark.parametrize(
-    ("risk", "on_error", "expected"),
-    [
-        ("low", "deny", "completed"),
-        ("extra_high", "allow", "denied"),
-        ("invalid", "approval_required", "approval_required"),
-        ("invalid", "allow", "completed"),
-    ],
-)
-async def test_builtin_app_review_uses_host_model_and_retains_only_operation_usage(
-    apps, monkeypatch, risk, on_error, expected
-):
-    from a13n_harness_ui.mcp_apps.review import AppReviewer
-    from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
-    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
-    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
-
+@pytest.mark.parametrize("change", ["deny", "ask", "review_settings", "allow"])
+async def test_queued_app_rechecks_policy_but_ignores_model_review_settings(apps, monkeypatch, change) -> None:
     operations, reference = apps
-    model_path = operations.configuration_root / "models/primary.yaml"
-    model = yaml.safe_load(model_path.read_text())
-    model["settings"] = {"temperature": 0.8, "max_tokens": 250}
-    model_path.write_text(yaml.safe_dump(model))
-    await _policy(
-        operations,
-        "review",
-        review={
-            "model": "model-primary",
-            "model_settings": {"temperature": 0},
-            "on_error": on_error,
-            "on_flagged": "deny",
-        },
-    )
+    await _policy(operations, "review", review={"model": "model-primary", "on_error": "deny"})
     view = await operations.activate(reference)
-    before = await operations.owners.store.threads.get("thread-1")
-    resolutions = []
-    prompts = []
+    connection = operations.snapshots.connections.get("thread-1", "mcp-docs")
+    queued = asyncio.Event()
+    call_app_tool = connection.client.call_app_tool
 
-    async def provider(messages, info):
-        assert info.model_settings["temperature"] == 0 and info.model_settings["max_tokens"] == 250
-        prompts.append(str(messages))
-        yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"risk":"' + risk + '"}')}
+    async def notify_queued(*args, **kwargs):
+        queued.set()
+        return await call_app_tool(*args, **kwargs)
 
-    async def resolve(self, model_id, *, thread_id):
-        resolutions.append((model_id, thread_id))
-        return FunctionModel(stream_function=provider)
-
-    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
-    operations.review = AppReviewer(
-        operations, api_keys=ApiKeyStore(operations.configuration_root / "auth.json"), subscription_sources={}
-    )
-    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="review", name="counter"))
-    result = await _settle(operations, view.view_id, "review")
-    assert result.status == expected
-    assert len(result.review_usage) == len(resolutions) == len(prompts) == 1
-    record = result.review_usage[0]
-    assert record.tool_call_id == result.operation_id and record.tool_id == result.tool_id
-    assert record.model_id == resolutions[0][0] and resolutions[0][1] == "thread-1"
-    assert "Root authored instructions" not in prompts[0]
-    assert "run_id" not in record.model_dump() and "agent_instance_id" not in record.model_dump()
-    assert await operations.owners.store.threads.get("thread-1") == before
-    if expected == "completed":
-        assert result.result["structuredContent"]["count"] == 2
-    else:
-        assert result.result is None
-    if expected == "approval_required":
-        operations.decide("thread-1", view.view_id, "review", approve=True)
-        completed = await _settle(operations, view.view_id, "review")
-        assert completed.status == "completed" and completed.review_usage == result.review_usage
-
-
-@pytest.mark.parametrize("revoke", ["close", "policy", "model"])
-async def test_app_model_admission_rechecks_authority_after_resolution(apps, monkeypatch, revoke):
-    from a13n_harness_ui.mcp_apps.review import AppReviewer
-    from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
-    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
-    from pydantic_ai.models.function import FunctionModel
-
-    operations, reference = apps
-    await _policy(operations, "review", review={"model": "model-primary", "on_error": "allow"})
-    view = await operations.activate(reference)
-    providers = []
-
-    async def provider(messages, info):
-        providers.append(True)
-        yield "must not dispatch"
-
-    async def resolve(self, model_id, *, thread_id):
-        if revoke == "close":
-            operations.close_view("thread-1", view.view_id)
-        elif revoke == "policy":
-            await _policy(operations, "deny")
-        else:
+    monkeypatch.setattr(connection.client, "call_app_tool", notify_queued)
+    async with connection.dispatch:
+        await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="queued", name="counter"))
+        async with asyncio.timeout(10):
+            await queued.wait()
+        if change == "review_settings":
             path = operations.configuration_root / "models/primary.yaml"
             model = yaml.safe_load(path.read_text())
             model["settings"] = {"temperature": 0.5}
             path.write_text(yaml.safe_dump(model))
-            await _accept(operations)
-        return FunctionModel(stream_function=provider)
-
-    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
-    operations.review = AppReviewer(
-        operations, api_keys=ApiKeyStore(operations.configuration_root / "auth.json"), subscription_sources={}
-    )
-    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="revoked", name="counter"))
-    await asyncio.gather(*operations._tasks)
-    result = operations.get_operation("thread-1", view.view_id, "revoked")
-    assert result.status in {"failed", "denied"} and result.result is None
-    assert result.review_usage == () and providers == []
+            await _policy(operations, "review", review={"model": "model-primary", "on_error": "allow"})
+        else:
+            await _policy(operations, change)
+    result = await _settle(operations, view.view_id, "queued")
+    if change in {"deny", "ask"}:
+        assert result.status == "failed" and result.result is None
+        assert (await connection.client.call_tool_mcp("counter", {})).structured_content["count"] == 2
+    else:
+        assert result.status == "completed"
+        assert result.result["structuredContent"]["count"] == 2
 
 
 @pytest.mark.parametrize("configured", [False, True])
-async def test_custom_run_reviewer_never_falls_through_to_builtin_app_review(apps, monkeypatch, configured):
+async def test_app_operations_do_not_invoke_custom_run_reviewers(apps, monkeypatch, configured):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
@@ -503,14 +434,12 @@ async def test_custom_run_reviewer_never_falls_through_to_builtin_app_review(app
         reviewer=SimpleNamespace(review=custom),
     )
     monkeypatch.setattr(operations.owners, "permissions", lambda owner: policy)
-    adapter = AsyncMock(side_effect=AssertionError("Builtin review must not replace the custom reviewer"))
-    operations.review = adapter
     view = await operations.activate(reference)
     await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="custom", name="counter"))
     result = await _settle(operations, view.view_id, "custom")
-    assert result.status == "failed" and "custom Run-bound reviewer" in result.reason
-    custom.assert_not_awaited()
-    adapter.assert_not_awaited()
+    assert result.status == "completed"
+    assert result.result["structuredContent"]["count"] == 2
+    custom.assert_not_called()
 
 
 async def test_child_message_is_attributed_to_root_and_rechecks_route_before_submission(apps) -> None:

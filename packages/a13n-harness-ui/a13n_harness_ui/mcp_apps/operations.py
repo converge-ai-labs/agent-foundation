@@ -10,14 +10,10 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from a13n_harness.metering import ModelCallUsage
 from a13n_harness.tools.identity import ToolIdentity, source_tool_id
-from a13n_harness.tools.permissions import ToolPermissionsCapability, match_selector
-from a13n_harness.tools.policy import InvocationDecisionKind
 from anyio import fail_after
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
-from mcp.types import Tool
 from pydantic import Field, JsonValue
 from referencing import Registry
 
@@ -65,20 +61,13 @@ class AppOperation(AppModel):
     status: Literal["checking", "approval_required", "running", "completed", "denied", "failed"]
     reason: str | None = None
     result: dict[str, JsonValue] | None = None
-    review_usage: tuple[ModelCallUsage, ...] = Field(default=(), max_length=1)
 
 
 @dataclass(frozen=True)
 class Admission:
     owner: AppOwner
-    tool: Tool
-    policy: ToolPermissionsCapability
     mode: str
     fingerprint: str
-
-
-# The review adapter owns real auxiliary model admission and usage. No AgentContext is fabricated here.
-type Review = Callable[[Admission, AppOperation], Awaitable[tuple[InvocationDecisionKind, str | None]]]
 
 
 @dataclass
@@ -104,13 +93,10 @@ class AppOperations:
         snapshots: AppSnapshots,
         owners: CurrentOwners,
         configuration_root: Path,
-        *,
-        review: Review | None = None,
     ) -> None:
         self.snapshots = snapshots
         self.owners = owners
         self.configuration_root = configuration_root
-        self.review = review
         self._views: dict[str, _View] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._closed = False
@@ -221,19 +207,10 @@ class AppOperations:
         mode = policy.permissions.resolve(identity)
         if mode == "deny":
             raise HarnessUiError("The current tool policy denies this App operation.", code="mcp_app_denied")
-        review = None
-        if mode == "review" and policy.config is not None:
-            review = policy.config.model_dump(mode="json")
-            review.pop("rules", None)
-            rule = match_selector(policy.config.rules, identity.tool_id)
-            if rule is not None:
-                review.update(rule.model_dump(mode="json", exclude_none=True))
-            review_recipe = next(
-                item for item in owner.node.capabilities if item.capability == "ToolPermissionsCapability"
-            )
-            review["resolved_model"] = (
-                review_recipe.model.model_dump(mode="json") if review_recipe.model is not None else None
-            )
+        # Model review gates Agent invocations, not user-operated App interactions.
+        # Keep explicit deny/ask rules, but exclude reviewer settings from admission.
+        if mode == "review":
+            mode = "allow"
         fingerprint = canonical_digest(
             {
                 "owner": [owner.root_thread_id, *owner.route, owner.node.source_kind, owner.node.source_id],
@@ -242,10 +219,9 @@ class AppOperations:
                 "tool": tool.model_dump(mode="json", by_alias=True, exclude_none=True),
                 "arguments": arguments,
                 "mode": mode,
-                "review": review,
             }
         )
-        return Admission(owner, tool, policy, mode, fingerprint)
+        return Admission(owner, mode, fingerprint)
 
     async def authorize_message(self, value: AppView) -> None:
         view = self._view(value.reference.thread_id, value.view_id)
@@ -457,45 +433,14 @@ class AppOperations:
             operation = self._set(view, operation, status="denied", reason="The user declined this operation.")
         return operation.model_copy(deep=True)
 
-    async def authorize_review(self, admission: Admission, operation: AppOperation) -> None:
-        """Fresh authority at the actual native reviewer Model dispatch boundary."""
-        view = self._view(admission.owner.thread_id, operation.view_id)
-        current = await self._admit(view, operation.name, operation.arguments)
-        stored = view.operations.get(operation.request_key)
-        if (
-            current.fingerprint != admission.fingerprint
-            or stored is None
-            or stored.operation_id != operation.operation_id
-            or stored.status != "checking"
-        ):
-            raise HarnessUiError("The App review is no longer authorized.", code="mcp_app_decision_stale")
-        # One bounded review observation is retained even if its provider fails or is cancelled.
-        self._reserve(view, 64 * 1024)
-
-    def retain_review_usage(self, thread_id: str, operation: AppOperation, record: ModelCallUsage) -> None:
-        view = self._view(thread_id, operation.view_id, active=False)
-        self._set(view, operation, review_usage=(record,))
-
     async def _check(self, view: _View, operation: AppOperation) -> None:
         try:
             admission = await self._admit(view, operation.name, operation.arguments)
-            decision: InvocationDecisionKind = "approval_required" if admission.mode == "ask" else "allow"
-            reason = None
-            if admission.mode == "review" and admission.policy.has_reviewer(operation.tool_id):
-                raise HarnessUiError(
-                    "The custom Run-bound reviewer has no App adapter.", code="mcp_app_review_unsupported"
-                )
-            if admission.mode == "review" and admission.policy.config is not None:
-                if self.review is None:
-                    raise HarnessUiError("The App reviewer is unavailable.", code="mcp_app_review_unsupported")
-                decision, reason = await self.review(admission, operation)
-            if decision == "deny":
-                self._set(view, operation, status="denied", reason=reason or "The reviewer denied this operation.")
-            elif decision == "approval_required":
+            if admission.mode == "ask":
                 if view.closed:
                     raise HarnessUiError("The App View is closed.", code="mcp_app_view_closed")
                 view.admissions[operation.request_key] = admission.fingerprint
-                self._set(view, operation, status="approval_required", reason=reason)
+                self._set(view, operation, status="approval_required")
             else:
                 operation = self._set(view, operation, status="running")
                 await self._dispatch(view, operation, admission.fingerprint)

@@ -21,7 +21,7 @@ The supported profile uses MCP Apps `ui.resourceUri` and `text/html;profile=mcp-
 | App reference         | Small retained identity naming the actual Thread, Run, tool call, server, tool and immutable original snapshot                   |
 | Original snapshot     | Immutable tool descriptor, exact arguments, raw MCP result, original resource reference and connection generation                |
 | View                  | Explicitly activated process-local interaction binding to an original, connection generation and current owning root/child route |
-| Operation             | One exact follow-up tool request, its policy/approval decision, result and optional auxiliary review usage                       |
+| Operation             | One exact follow-up tool request, its policy/approval decision and result                                                        |
 | Context reference     | Exact latest context value in one View; replacing or discarding the value invalidates its old selector                           |
 | Message receipt       | Process-local single-consumption admission result for one user-confirmed App message                                             |
 
@@ -49,7 +49,7 @@ Every operation resolves the current owning root and selected Agent graph. A chi
 
 Tool requests carry a View-local request key, exact name and captured JSON arguments. Reusing the key with the same payload returns the existing operation; a different payload conflicts. Admission retains the request before asynchronous work. The connection dispatch lane serializes the final authorization and borrow with actual MCP I/O. A queued lane wait is not a durable business queue; retirement or changed policy before dispatch fails the operation.
 
-Operations move from `checking` to `approval_required`, `running`, `denied` or `failed`; running completes as `completed` or `failed`. Native permission calculations are shared with Harness rather than bypassed through a fabricated Run or Agent context. `ask` displays the exact server, tool, arguments and reason outside the iframe. Review policy uses real auxiliary Model admission and usage accounting, independent of a conversational Run. Review failure follows the selected policy.
+Operations move from `checking` to `approval_required`, `running`, `denied` or `failed`; running completes as `completed` or `failed`. App operations use the current Harness permission rules without fabricating a Run or Agent context. Explicit `deny` rejects dispatch; `ask` displays the exact server, tool and arguments outside the iframe. `review` permits App dispatch without invoking a model or custom Run-bound reviewer. Reviewer configuration, model resolution and review usage accounting do not participate in App admission. Agent-originated tool calls, including calls in a Run started by a confirmed App message, retain ordinary Harness review behavior.
 
 An approval is bound to the View, exact payload and observed admission contract. It is consumed once, then current authority is checked again inside the dispatch lane. Approval does not override a later deny, credential change, schema change or View closure. After a lost decision response, the browser only queries the existing operation; it cannot send an opposite decision or silently repeat the original decision. Closing a View invalidates unsent approvals, not effects already dispatched.
 

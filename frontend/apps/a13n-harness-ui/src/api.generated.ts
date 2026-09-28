@@ -1998,11 +1998,6 @@ export interface components {
             result?: {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
-            /**
-             * Review Usage
-             * @default []
-             */
-            review_usage?: components["schemas"]["ModelCallUsage"][];
         };
         /** AppPresentation */
         AppPresentation: {
@@ -2194,58 +2189,6 @@ export interface components {
          * @enum {string}
          */
         Availability: "available" | "absent" | "incompatible" | "unsupported";
-        /**
-         * BoundedRequestUsage
-         * @description One request's counters and bounded provider detail, with USD cost.
-         */
-        BoundedRequestUsage: {
-            /**
-             * Input Tokens
-             * @default 0
-             */
-            input_tokens?: number;
-            /**
-             * Cache Write Tokens
-             * @default 0
-             */
-            cache_write_tokens?: number;
-            /**
-             * Cache Read Tokens
-             * @default 0
-             */
-            cache_read_tokens?: number;
-            /**
-             * Output Tokens
-             * @default 0
-             */
-            output_tokens?: number;
-            /**
-             * Input Audio Tokens
-             * @default 0
-             */
-            input_audio_tokens?: number;
-            /**
-             * Cache Audio Read Tokens
-             * @default 0
-             */
-            cache_audio_read_tokens?: number;
-            /**
-             * Output Audio Tokens
-             * @default 0
-             */
-            output_audio_tokens?: number;
-            /**
-             * Audio Seconds
-             * @default 0
-             */
-            audio_seconds?: string;
-            /** Cost */
-            cost?: string | null;
-            /** Details */
-            details?: {
-                [key: string]: number;
-            };
-        };
         /** CapabilitySelection */
         CapabilitySelection: {
             capability: components["schemas"]["CatalogKey"];
@@ -2889,8 +2832,6 @@ export interface components {
              */
             kind: "copilot_subscription";
         };
-        /** @enum {string} */
-        CostSource: "catalog" | "custom" | "provider_or_genai_prices" | "unknown";
         /** DecisionBatchView */
         DecisionBatchView: {
             /** Continuation Id */
@@ -3714,65 +3655,6 @@ export interface components {
             output_tokens?: number;
         };
         ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
-        /**
-         * ModelCallUsage
-         * @description One priced native call owned by a Host operation, with no invented Run lineage.
-         */
-        ModelCallUsage: {
-            /**
-             * Usage Status
-             * @default complete
-             * @enum {string}
-             */
-            usage_status?: "complete" | "partial" | "unavailable";
-            /**
-             * Outcome
-             * @default completed
-             * @enum {string}
-             */
-            outcome?: "completed" | "failed" | "cancelled";
-            /** Response State */
-            response_state: string;
-            /** Model Name */
-            model_name?: string | null;
-            /** Provider Name */
-            provider_name?: string | null;
-            /**
-             * Response Timestamp
-             * Format: date-time
-             */
-            response_timestamp: string;
-            request_usage: components["schemas"]["BoundedRequestUsage"];
-            /** Pricing Revision */
-            pricing_revision?: string | null;
-            /** Pricing Rule Id */
-            pricing_rule_id?: string | null;
-            /** @default unknown */
-            cost_source?: components["schemas"]["CostSource"];
-            /** @default not_reached */
-            pricing_status?: components["schemas"]["PricingStatus"];
-            /** Record Id */
-            record_id: string;
-            /** Call Id */
-            call_id: string;
-            /** Model Run Id */
-            model_run_id?: string | null;
-            /** Model Id */
-            model_id?: string | null;
-            /** Provider Response Id */
-            provider_response_id?: string | null;
-            /**
-             * Request Started At
-             * Format: date-time
-             */
-            request_started_at: string;
-            /** Source */
-            source: string;
-            /** Tool Id */
-            tool_id?: string | null;
-            /** Tool Call Id */
-            tool_call_id?: string | null;
-        };
         /** ModelCatalogSnapshot */
         ModelCatalogSnapshot: {
             /** Items */
@@ -4194,8 +4076,6 @@ export interface components {
              */
             closed?: boolean;
         };
-        /** @enum {string} */
-        PricingStatus: "applied" | "declined" | "failed" | "disabled" | "not_reached";
         /**
          * ProjectDefaults
          * @description One creation combination; omission falls back and empty lists select none.

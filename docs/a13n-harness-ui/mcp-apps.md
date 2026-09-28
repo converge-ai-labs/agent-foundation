@@ -25,6 +25,8 @@ A live App appears beside its tool result. Saved history shows **Open App** inst
 
 Choose **Activate interactions** to allow the App to request same-server operations. Activation and subsequent requests check current Agent selection, tool visibility and permission rules, rather than granting the old Run's permissions indefinitely. A child App retains its source identity and current delegation route; it cannot use a removed child route as authority.
 
+App tool operations do not use model review or custom Agent reviewers. A `review` permission permits App dispatch without a model request; explicit `deny` still blocks it and `ask` still requires your approval. Agent-originated calls retain their normal review policy, including calls made after you confirm an App message.
+
 - Tool approvals appear in the trusted Host card, outside the App iframe. Review the server, tool and exact arguments before approving. A later policy or credential change can invalidate a pending approval.
 - **Check result** reconciles an uncertain operation by reading its existing receipt. It does not repeat the call or promise that an unconfirmed write had no effect.
 - Closing a View ends its controls and pending confirmations, not the MCP server's connection. Already dispatched operations may still finish.

@@ -142,7 +142,6 @@ from a13n_harness_ui.mcp_apps.models import AppPresentation, AppReference
 from a13n_harness_ui.mcp_apps.operations import AppOperation, AppOperations, AppToolRequest, AppView
 from a13n_harness_ui.mcp_apps.owners import CurrentOwners
 from a13n_harness_ui.mcp_apps.resources import AppResourceRequest
-from a13n_harness_ui.mcp_apps.review import AppReviewer
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
 from a13n_harness_ui.memory import MemoryOrganizationRun, memory_scopes
 from a13n_harness_ui.memory_organization import MemoryOrganizationStatus, MemoryOrganizer
@@ -2930,19 +2929,12 @@ async def open_harness_ui_app(
                 )
 
             mcp_operations = None
-            app_reviewer = None
             if mcp_apps is not None and configuration_path is not None:
                 mcp_operations = AppOperations(
                     mcp_apps,
                     CurrentOwners(store, configurations, AgentCompositionResolver(catalog)),
                     configuration_path.expanduser().resolve().parent,
                 )
-                app_reviewer = AppReviewer(
-                    mcp_operations,
-                    api_keys=ApiKeyStore(store.layout.root / "auth.json"),
-                    subscription_sources=subscription_sources,
-                )
-                mcp_operations.review = app_reviewer
                 # Drain admitted operations while their MCP transports and store still exist.
                 resources.push_async_callback(mcp_operations.close)
 
@@ -3076,8 +3068,6 @@ async def open_harness_ui_app(
                     errors[Provider.GROK] = exc
                 root_executor.replace_subscription_sources(sources)
                 operator.replace_subscription_sources(sources)
-                if app_reviewer is not None:
-                    app_reviewer.subscription_sources = dict(sources)
                 return discovered_codex, discovered_grok, errors
 
             app = HarnessUiApp(
