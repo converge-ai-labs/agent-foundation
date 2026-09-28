@@ -4508,6 +4508,8 @@ mod tests {
         let native = tree.child("native");
         fs::create_dir(&native).expect("native root");
         let mut config = Config::for_test("env-test");
+        // This test exercises real filesystem I/O and reconciliation, not idle expiry.
+        config.session_idle_timeout = std::time::Duration::from_secs(60);
         config.default_working_directory = crate::device_path::from_native(&native).unwrap();
         let daemon = Fixture::new(&config, 12);
         let initialized = initialize(&daemon).await;
@@ -4551,6 +4553,7 @@ mod tests {
                 .await,
         )
         .expect("receipt response");
+        assert!(receipt.get("error").is_none(), "{receipt}");
         assert_eq!(receipt["result"]["receipt"]["operation_id"], "write-e2e");
         assert_eq!(receipt["result"]["receipt"]["outcome"], "succeeded");
 
