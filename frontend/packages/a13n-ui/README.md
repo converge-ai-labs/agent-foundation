@@ -19,7 +19,7 @@ import "a13n-ui/styles.css";
 - `src/components`, `src/hooks`, and `src/lib`: Coss UI registry primitives and their dependencies. [coss-source.json](./coss-source.json) records the upstream revision, imported files, and local adaptations; [LICENSE.coss](./LICENSE.coss) preserves the license.
 - `src/patterns`: small compositions shared across application features, including FormField, ChoiceField, ModalFrame, SearchPicker, DisclosureSection, SettingsRow, and SettingsSection.
 - `src/styles`: the Tailwind entry, semantic Coss UI light and dark themes, application layout tokens, and bundled fonts.
-- `src/brand`: the a13n Logo, LogoSpinner, and Wordmark plus shared product and provider identity mappings.
+- `src/brand`: the a13n Logo, LogoAnimation, and Wordmark plus shared product and provider identity mappings.
 - `dev`: a standalone interactive showcase with foundations, component states, settings, and collection examples.
 - `tests`: interaction checks for shared compositions.
 

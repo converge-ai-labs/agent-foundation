@@ -43,7 +43,7 @@ export {
   type SegmentedControlProps,
 } from "./patterns/segmented-control";
 export { Logo, a13nLogoUrl } from "./brand/logo";
-export { LogoSpinner, type LogoSpinnerProps } from "./brand/logo-spinner";
+export { LogoAnimation, type LogoAnimationProps } from "./brand/logo-animation";
 export { Wordmark } from "./brand/wordmark";
 export { BrandIcon, type BrandIconProps } from "./brand/brand-icon";
 export { brands, resolveBrand, type Brand } from "./brand/brands";

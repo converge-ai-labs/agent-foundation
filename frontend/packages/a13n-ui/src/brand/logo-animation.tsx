@@ -1,25 +1,24 @@
 import type { ComponentProps } from "react";
-import styles from "./logo-spinner.module.css";
+import styles from "./logo-animation.module.css";
 
 // The a13n-logo.svg geometry: three rounded bars rotated around the mark center.
 const BAR_ANGLES = [0, 60, -60];
 
-export type LogoSpinnerProps = Omit<ComponentProps<"span">, "children"> & {
+export type LogoAnimationProps = Omit<ComponentProps<"span">, "children"> & {
   size?: number;
 };
 
-export function LogoSpinner({
+export function LogoAnimation({
   size = 32,
   className = "",
   style,
   ...props
-}: LogoSpinnerProps) {
+}: LogoAnimationProps) {
   return (
     <span
-      role="status"
-      aria-label="Loading"
+      aria-hidden="true"
       {...props}
-      className={`${styles.spinner} ${className}`}
+      className={`${styles.animation} ${className}`}
       style={{ width: size, height: size, ...style }}
     >
       <MarkLayer className={styles.shadow} fill="#3730a3" />

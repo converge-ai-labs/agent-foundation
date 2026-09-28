@@ -1,10 +1,10 @@
-.spinner {
+.animation {
   position: relative;
   display: inline-block;
   flex-shrink: 0;
   overflow: hidden;
 }
-.spinner > svg {
+.animation > svg {
   position: absolute;
   inset: 0;
   width: 100%;
