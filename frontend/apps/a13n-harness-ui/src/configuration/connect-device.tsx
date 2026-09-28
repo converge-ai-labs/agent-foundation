@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField, ModalFrame } from "a13n-ui";
-import { useStatus, useTransport } from "../transport/context";
+import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { NewResourceButton } from "./sources";
@@ -64,9 +64,8 @@ function ConnectDeviceSteps({
     enabled: !approved,
   });
   const info = useDeviceInfo(approved?.id ?? "", true, true);
-  const status = useStatus();
   const command = connectCommand(
-    status.data?.public_origin ?? window.location.origin,
+    window.location.origin,
     shell,
     execution,
     desktop,
@@ -139,9 +138,9 @@ function ConnectDeviceSteps({
             </div>
             <ErrorNotice error={copy.error} />
             <p className="text-sm text-muted-foreground">
-              The address must be reachable from the Device. Remote connections
-              require HTTPS; localhost refers to the Device itself. Behind a
-              proxy, configure the Harness public origin.
+              This command uses the address open in your browser. It must be
+              reachable from the Device. Remote connections require HTTPS;
+              localhost refers to the Device itself.
             </p>
             <details>
               <summary>Reconnect and multiple Hosts</summary>

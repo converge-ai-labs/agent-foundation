@@ -16,21 +16,6 @@ WebUI enables native file browsing, editing, transfer, creation, move, deletion,
 
 Markdown files open with **Preview** selected and expose **Preview** and **Text** as explicit buttons; the preview renders the current local buffer, so unsaved edits can be checked before saving. File operations are compact buttons, and **Add to chat** is the single file-context action: it adds the selected source lines when the text editor has a selection, otherwise the complete reviewed file. It does not send the composer. Same-instance Host-file links in assistant Markdown open the Files drawer on the current page. WebUI root Agents receive the supported relative link shape in their per-input surface guidance: `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}`. Bare Host paths and direct Files API URLs are not browser file links; external Markdown links continue to open separately.
 
-## HTTPS reverse proxy and Device connections
-
-Set the browser-visible origin in the selected root YAML and restart WebUI:
-
-```yaml
-webui:
-  public_origin: https://harness.example.com
-```
-
-Use an origin only, without a subpath, credentials, query or fragment. Remote origins require HTTPS. The proxy must preserve the public `Host` (including a non-default port), forward WebSocket upgrades and terminate TLS. Harness does not trust `X-Forwarded-*` headers or wildcard hostnames. Keep the backend on loopback or a private network reachable only by your trusted proxy. This is still one shared instance authority, not tenant isolation.
-
-**Connect Device** advertises this origin even when you opened the browser on localhost. Pairing returns an HTTPS approval URL and a WSS attachment URL at the same public origin. Editing YAML does not change the running listener; restart to apply it. The ordinary startup URL remains the direct listener address.
-
-If MCP Apps are enabled, also configure a separate, browser-reachable HTTPS `webui.mcp_apps.sandbox.public_url`. It must not equal the WebUI origin. A loopback backend behind a public proxy does not make a loopback sandbox reachable to remote browsers.
-
 ## Observe Memory
 
 The **Memory** button in the bottom-left navigation opens an observation-only workspace when Memory is enabled. Global memory is separate from Project scopes. The center reuses conversation history, live tool activity and **Inspect & usage**, but has no input area or manual execution controls. Each automatic organization Run starts with fresh model context while previous rounds and recorded usage remain visible, including after server restart.

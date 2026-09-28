@@ -3525,8 +3525,6 @@ export interface components {
             app: components["schemas"]["AppStatus"];
             /** Host */
             host: string;
-            /** Public Origin */
-            public_origin?: string | null;
             /**
              * Access
              * @enum {string}

@@ -47,8 +47,7 @@ beforeEach(() => {
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
       requests.push(`${request.method} ${path}`);
-      if (path === "/api/status")
-        return json({ public_origin: "https://harness.example" });
+      if (path === "/api/status") return json({});
       if (path === "/api/selectors")
         return json({ agents: [], models: [], environments: [] });
       if (path === "/api/setup") return json({});
@@ -155,14 +154,14 @@ it("rejects an unrecognized request without adding a Device", async () => {
   expect(requests).not.toContain("POST /api/device-pairings/pair-one/approve");
 });
 
-it("offers one connect command before manual credential configuration", async () => {
+it("generates the connect command from the browser origin without a status request", async () => {
   const user = userEvent.setup();
   mount();
   await user.click(screen.getByRole("button", { name: "Connect Device" }));
   const dialog = await screen.findByRole("dialog");
   expect(
     within(dialog).getByText(
-      "A13N_ENVD_FULL_CONTROL=0 a13n-envd connect 'https://harness.example' --computer-use false",
+      `A13N_ENVD_FULL_CONTROL=0 a13n-envd connect '${window.location.origin}' --computer-use false`,
     ),
   ).not.toBeNull();
   expect(
@@ -171,6 +170,7 @@ it("offers one connect command before manual credential configuration", async ()
   expect(
     within(dialog).getByText(/Saved identity and credentials are reused/),
   ).not.toBeNull();
+  expect(requests).not.toContain("GET /api/status");
 });
 
 it("keeps paired credential management out of the manual API-key editor", () => {
@@ -211,7 +211,7 @@ it("connects inline, waits for the approved resource ID, and saves a remote-only
   );
   expect(
     within(wizard).getByText(
-      "A13N_ENVD_FULL_CONTROL=1 a13n-envd connect 'https://harness.example' --computer-use false",
+      `A13N_ENVD_FULL_CONTROL=1 a13n-envd connect '${window.location.origin}' --computer-use false`,
     ),
   ).not.toBeNull();
   await user.click(

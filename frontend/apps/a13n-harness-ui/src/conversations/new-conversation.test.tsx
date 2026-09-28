@@ -207,6 +207,8 @@ beforeEach(() => {
             { project_id: "project-two", name: "Second project", roots: [] },
           ]);
         if (pathname === "/api/setup") return json({ needed: false });
+        if (pathname === "/api/status") return json({});
+        if (pathname === "/api/devices") return json([]);
         if (pathname === "/api/selectors")
           return json({
             agents: [
@@ -1137,9 +1139,14 @@ it("waits for project, catalog and the selected defaults before exposing the new
   const editor = await screen.findByRole("textbox", { name: "Message" });
   expect(document.activeElement).toBe(editor);
   expect(screen.getByRole("heading").textContent).toContain("Example project");
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(
-    screen.getByRole("combobox", { name: "Execution mode" }).textContent,
-  ).toContain("Full Control");
+    screen.getByRole("combobox", { name: "Local mode" }).textContent,
+  ).toContain("Follow conversation local mode");
+  expect(
+    screen.getByText(/Full Control runs as the server account/),
+  ).toBeTruthy();
   expect(screen.queryByText("Preparing your conversation…")).toBeNull();
   expect(writes).toHaveLength(0);
 });
@@ -1640,17 +1647,21 @@ it.each(["new", "existing"])(
       await screen.findByRole("button", { name: "Send" });
       act(() => drafts.get(id)!.doc.getText("text").insert(0, "Continue"));
     }
-    const picker = await screen.findByRole("combobox", {
-      name: "Execution mode",
+    const trigger = await screen.findByRole("button", {
+      name: "Environments",
     });
-    await waitFor(() => expect(picker.hasAttribute("disabled")).toBe(false));
+    await waitFor(() => expect(trigger.hasAttribute("disabled")).toBe(false));
     const user = userEvent.setup();
-    await user.click(picker);
+    await user.click(trigger);
+    await user.click(screen.getByRole("combobox", { name: "Local mode" }));
     await user.click(await screen.findByRole("option", { name: /Sandbox/ }));
+    expect(drafts.get(id)!.environment?.environment_profile_id).toBeUndefined();
+    expect(writes).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Use for next Run" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(drafts.get(id)!.environment?.environment_profile_id).toBe(
       "environment-sandbox",
     );
-    await waitFor(() => expect(picker.textContent).toContain("Sandbox"));
     expect(writes).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() =>

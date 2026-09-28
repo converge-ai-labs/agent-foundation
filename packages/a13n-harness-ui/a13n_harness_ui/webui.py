@@ -194,7 +194,6 @@ class ListenerStatus(SurfaceModel):
     features: ListenerFeatures = Field(default_factory=ListenerFeatures)
     app: AppStatus
     host: str
-    public_origin: str | None = None
     access: Literal["api_key", "dangerous_bypass"]
 
 
@@ -382,18 +381,10 @@ def _error(code: str, message: str, status: int) -> JSONResponse:
 class AccessBoundary:
     """Authenticate before body parsing or App access, without logging secrets."""
 
-    def __init__(
-        self,
-        app: ASGIApp,
-        *,
-        api_key: str | None,
-        allowed_hosts: frozenset[str],
-        public_origin: Callable[[], str | None],
-    ) -> None:
+    def __init__(self, app: ASGIApp, *, api_key: str | None, allowed_hosts: frozenset[str]) -> None:
         self.app = app
         self.api_key = api_key
         self.allowed_hosts = allowed_hosts
-        self.public_origin = public_origin
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in {"http", "websocket"}:
@@ -409,8 +400,6 @@ class AccessBoundary:
                 await _error(code, message, status)(scope, receive, send)
 
         host = request.url.hostname
-        public_origin = self.public_origin()
-        public_request = public_origin is not None and request.headers.get("host") == urlsplit(public_origin).netloc
         wildcard_ip = False
         if {"0.0.0.0", "::"} & self.allowed_hosts and host is not None:
             try:
@@ -418,15 +407,20 @@ class AccessBoundary:
                 wildcard_ip = True
             except ValueError:
                 pass
-        if not public_request and host not in self.allowed_hosts and not wildcard_ip:
+        if host not in self.allowed_hosts and not wildcard_ip:
             await reject("host_rejected", "Use the listener's explicit browser address.", 400)
             return
         if scope["path"] == "/api" or scope["path"].startswith("/api/"):
-            supplied_origin = request.headers.get("origin")
-            if supplied_origin is not None:
-                scheme = {"ws": "http", "wss": "https"}.get(request.url.scheme, request.url.scheme)
-                expected_origin = public_origin if public_request else f"{scheme}://{request.headers.get('host')}"
-                if supplied_origin != expected_origin:
+            origin = request.headers.get("origin")
+            if origin is not None:
+                parsed = urlsplit(origin)
+                if (
+                    parsed.scheme != {"ws": "http", "wss": "https"}.get(request.url.scheme, request.url.scheme)
+                    or parsed.netloc != request.headers.get("host")
+                    or parsed.path
+                    or parsed.query
+                    or parsed.fragment
+                ):
                     await reject("origin_rejected", "Cross-origin API access is not enabled.", 403)
                     return
             authorization = request.headers.get("authorization", "")
@@ -481,28 +475,17 @@ def create_webui(
     owner: HarnessUiApp | None = None
     sandbox_url: str | None = None
     sandbox_error: str | None = None
-    public_origin: str | None = None
     stopping = stopping if stopping is not None else Event()
 
     @asynccontextmanager
     async def lifespan(_server: FastAPI) -> AsyncIterator[None]:
-        nonlocal owner, sandbox_url, sandbox_error, public_origin
+        nonlocal owner, sandbox_url, sandbox_error
         async with app_factory() as opened, AsyncExitStack() as resources:
             source = await opened.current_configuration()
-            public_origin = source.document.webui.public_origin if source is not None else None
-            if public_origin is not None:
-                get_logger(__name__).info("WebUI public origin: %s", public_origin)
             if source is not None and source.document.webui.mcp_apps.enabled:
                 sandbox = source.document.webui.mcp_apps.sandbox
-                if (
-                    public_origin is not None or not ipaddress.ip_address(host).is_loopback
-                ) and sandbox.public_url is None:
-                    raise ValueError("Public WebUI requires an explicit MCP Apps sandbox public_url.")
-                if public_origin is not None and sandbox.public_url is not None:
-                    if sandbox.public_url == public_origin:
-                        raise ValueError("MCP Apps require a separate sandbox origin.")
-                    if public_origin.startswith("https:") and not sandbox.public_url.startswith("https:"):
-                        raise ValueError("HTTPS WebUI requires an HTTPS MCP Apps sandbox public_url.")
+                if not ipaddress.ip_address(host).is_loopback and sandbox.public_url is None:
+                    raise ValueError("Non-loopback WebUI requires an explicit MCP Apps sandbox public_url.")
                 try:
                     sandbox_url = await resources.enter_async_context(serve_sandbox(sandbox))
                 except OSError:
@@ -515,7 +498,6 @@ def create_webui(
                 owner = None
                 sandbox_url = None
                 sandbox_error = None
-                public_origin = None
 
     def app() -> HarnessUiApp:
         if owner is None:
@@ -528,7 +510,7 @@ def create_webui(
     ipaddress.ip_address(host)
     # Wildcard binds accept IP literals, never arbitrary DNS names.
     hosts = frozenset({host, "localhost", "127.0.0.1", "::1"})
-    server.add_middleware(AccessBoundary, api_key=api_key, allowed_hosts=hosts, public_origin=lambda: public_origin)
+    server.add_middleware(AccessBoundary, api_key=api_key, allowed_hosts=hosts)
     server.add_middleware(RequestLog)
 
     @server.middleware("http")
@@ -628,7 +610,6 @@ def create_webui(
                 host_terminal=app().host_terminal_available,
             ),
             host=host,
-            public_origin=public_origin,
             access="api_key" if api_key is not None else "dangerous_bypass",
         )
 
@@ -646,9 +627,7 @@ def create_webui(
         except ValueError:
             raise HarnessUiError("Invalid envd pairing credential.", code="device_authentication_failed") from None
         return await app().pair_device(
-            await _document(request, PairingRequest),
-            authorization[7:],
-            origin=public_origin or str(request.base_url).rstrip("/"),
+            await _document(request, PairingRequest), authorization[7:], origin=str(request.base_url).rstrip("/")
         )
 
     @server.get("/api/device-pairings")
@@ -796,7 +775,7 @@ def create_webui(
         if sandbox_url is None:
             raise HarnessUiError("MCP Apps sandbox is disabled. Enable it and restart WebUI.", code="mcp_apps_disabled")
         sandbox_origin = origin(sandbox_url.removesuffix("/sandbox.html"))
-        if sandbox_origin in {public_origin, origin(str(request.base_url))}:
+        if sandbox_origin == origin(str(request.base_url)):
             raise HarnessUiError("MCP Apps require a separate sandbox origin.", code="mcp_apps_origin_invalid")
         result = await app().open_mcp_app(thread_id, await _document(request, AppReference))
         return result.model_copy(update={"sandbox_url": sandbox_url})
@@ -2020,7 +1999,6 @@ async def run(
             host=host,
             port=port,
             access_log=False,
-            proxy_headers=False,
             log_config=None,
             log_level="warning",
             timeout_graceful_shutdown=3,

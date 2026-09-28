@@ -228,25 +228,8 @@ class McpAppsConfiguration(ConfigurationModel):
 
 
 class WebUiConfiguration(ConfigurationModel):
-    public_origin: str | None = None
     sidekick: SidekickConfiguration | None = Field(default_factory=SidekickConfiguration)
     mcp_apps: McpAppsConfiguration = Field(default_factory=McpAppsConfiguration)
-
-    @field_validator("public_origin")
-    @classmethod
-    def _public_origin(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        value = origin(value)
-        parsed = urlsplit(value)
-        if parsed.scheme == "http" and parsed.hostname != "localhost":
-            try:
-                loopback = ipaddress.ip_address(parsed.hostname or "").is_loopback
-            except ValueError:
-                loopback = False
-            if not loopback:
-                raise ValueError("A remote WebUI public_origin requires HTTPS.")
-        return value
 
 
 class MediaUnderstandingConfiguration(ConfigurationModel):

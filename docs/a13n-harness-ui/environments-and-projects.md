@@ -105,7 +105,7 @@ In any **Add environment** dialog, choose **Connect new Device**, or use **Setti
 a13n-envd connect https://your-harness-ui.example.com
 ```
 
-Use the actual reachable WebUI origin. `http://127.0.0.1:8765` works for a same-computer setup; a remote connection requires HTTPS. The daemon initiates the connection, so its computer does not need an inbound port.
+The browser generates the command from the current WebUI page origin; no separate server URL setting is needed. Open WebUI at an address reachable from the Device before copying the command. `http://127.0.0.1:8765` works for a same-computer setup; on another computer, localhost refers to that Device itself, and a remote connection requires HTTPS. The daemon initiates the connection, so its computer does not need an inbound port.
 
 1. Keep the terminal open and note the verification code.
 2. In the same dialog, check the Device name and matching code, then choose **Approve Device**.

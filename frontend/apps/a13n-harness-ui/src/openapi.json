@@ -10342,17 +10342,6 @@
             "type": "string",
             "title": "Host"
           },
-          "public_origin": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Public Origin"
-          },
           "access": {
             "type": "string",
             "enum": [
