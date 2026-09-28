@@ -408,6 +408,7 @@ async def test_empty_output_sequence_uses_the_definition_error_boundary(output_t
         )
 
     assert exc_info.value.code == "agent_build_failed"
+    assert str(exc_info.value) == "Agent construction failed."
     assert isinstance(exc_info.value.__cause__, ValueError)
 
 
@@ -971,7 +972,7 @@ async def test_usage_limit_has_a_specific_safe_failure() -> None:
     assert result.status == "failed"
     assert result.failure is not None
     assert result.failure.code == "usage_limit_exceeded"
-    assert result.failure.message == "Pydantic AI usage limit exceeded."
+    assert result.failure.message == "Run usage limit exceeded."
     assert result.failure.retry_hint == "dependency_change"
 
 
@@ -993,6 +994,7 @@ async def test_recognized_pydantic_run_failure_becomes_a_failed_result(
     assert result.status == "failed"
     assert result.failure is not None
     assert result.failure.code == "agent_run_failed"
+    assert result.failure.message == "Agent execution failed."
     assert result.failure.details["exception_type"] == type(error).__name__
     if isinstance(error, ModelHTTPError):
         assert result.failure.details["status_code"] == 429

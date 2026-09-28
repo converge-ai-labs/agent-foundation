@@ -131,7 +131,7 @@ class SteeringBridge:
         )
         enqueue_id = active.enqueue(request, priority="asap")
         if enqueue_id is None:
-            raise RunError("Pydantic AI rejected an empty steering value.", code="input_empty")
+            raise RunError("Steering input must not be empty.", code="input_empty")
         async with self._lock:
             self._pending_requests[enqueue_id] = deepcopy(request)
         await self._emit_enqueued(enqueue_id, source="external", references=())
@@ -215,7 +215,7 @@ class SteeringBridge:
                 for request in pending:
                     enqueue_id = ctx.enqueue(deepcopy(request), priority="asap")
                     if enqueue_id is None:
-                        raise RunError("Pydantic AI rejected retained steering.", code="input_empty")
+                        raise RunError("Retained steering input was rejected.", code="input_empty")
                     reenqueued[enqueue_id] = request
             except BaseException:
                 self._active_context = None

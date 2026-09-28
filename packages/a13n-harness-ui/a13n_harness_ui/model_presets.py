@@ -332,13 +332,13 @@ def _thinking_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...
         SettingsPreset(
             "high",
             "High thinking",
-            "Only for models supporting Pydantic AI's unified thinking setting",
+            "Only for models supporting the unified thinking setting",
             {"thinking": "high"},
         ),
         SettingsPreset(
             "low",
             "Low thinking",
-            "Only for models supporting Pydantic AI's unified thinking setting",
+            "Only for models supporting the unified thinking setting",
             {"thinking": "low"},
         ),
     )

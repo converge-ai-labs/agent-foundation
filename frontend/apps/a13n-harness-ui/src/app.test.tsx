@@ -831,8 +831,19 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
         });
       if (path === "/api/catalog")
         return json([
-          { kind: "capability", key: "available", configurable: true },
-          { kind: "capability", key: "ambiguous", configurable: false },
+          {
+            kind: "capability",
+            key: "available",
+            source: "pydantic",
+            configurable: true,
+          },
+          {
+            kind: "capability",
+            key: "ambiguous",
+            source: "installed",
+            distribution_name: "example-capabilities",
+            configurable: false,
+          },
         ]);
       if (path === "/api/configuration/sources/agents/assistant.yaml") {
         if (request.method === "PUT") {
@@ -850,6 +861,9 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
     name: "Installed capabilities",
   });
   expect(await within(catalog).findByText("available")).toBeTruthy();
+  expect(within(catalog).getByText("Built-in")).toBeTruthy();
+  expect(within(catalog).queryByText("pydantic")).toBeNull();
+  expect(within(catalog).getByText("example-capabilities")).toBeTruthy();
   expect(within(catalog).getByText("Unavailable to configure")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   await user.click(

@@ -1688,7 +1688,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         self._latest_messages = messages
                         yield await self._failed_candidate(
                             code="usage_limit_exceeded",
-                            message="Pydantic AI usage limit exceeded.",
+                            message="Run usage limit exceeded.",
                         )
                         return
                     except Exception as error:
@@ -1738,7 +1738,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                     f"Model execution could not recover after {max_attempts} consecutive failed attempts. "
                                     "Try continuing the conversation again."
                                     if exhausted
-                                    else f"Pydantic AI agent execution failed ({type(error).__name__})."
+                                    else "Agent execution failed."
                                 ),
                                 details=failure_details,
                                 retry_hint="new_run" if exhausted else "dependency_change",

@@ -154,7 +154,7 @@ class HarnessState(BaseModel):
         try:
             return encode_messages(value)
         except Exception as exc:
-            raise ValueError("Invalid Pydantic AI message history.") from exc
+            raise ValueError("Invalid Agent message history.") from exc
 
     @computed_field
     @property

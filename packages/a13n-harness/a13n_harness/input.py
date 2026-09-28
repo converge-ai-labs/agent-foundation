@@ -50,7 +50,7 @@ def normalize_input(value: RunInputValue | None) -> SemanticRunInput:
         return SemanticRunInput(value=value)
     if isinstance(value, (bytes, bytearray)) or not isinstance(value, Sequence):
         raise InputError(
-            "Run input must be a string or a sequence of Pydantic AI UserContent values.",
+            "Run input must be a string or a sequence of user content values.",
             code="input_invalid",
         )
     normalized = tuple(value)

@@ -676,7 +676,7 @@ class HarnessBuilder:
             if isinstance(exc, HarnessError):
                 raise
             raise DefinitionError(
-                "Pydantic AI Agent construction failed.",
+                "Agent construction failed.",
                 code="agent_build_failed",
                 details={"definition_id": definition.definition_id},
             ) from exc
