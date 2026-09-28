@@ -6,7 +6,7 @@ import { useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 
-export function useDeviceInfo(deviceId: string, enabled = true) {
+export function useDeviceInfo(deviceId: string, enabled = true, poll = false) {
   const { client } = useTransport();
   return useQuery({
     queryKey: ["device", deviceId],
@@ -19,6 +19,7 @@ export function useDeviceInfo(deviceId: string, enabled = true) {
       ),
     enabled: enabled && !!deviceId,
     retry: false,
+    refetchInterval: poll ? 2000 : false,
   });
 }
 

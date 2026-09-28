@@ -43,7 +43,6 @@ type Page =
   | "thinking"
   | "reasoning"
   | "fast"
-  | "execution"
   | "environments";
 const titles: Record<Page, string> = {
   root: "Run settings",
@@ -52,8 +51,7 @@ const titles: Record<Page, string> = {
   thinking: "Thinking",
   reasoning: "Reasoning mode",
   fast: "Fast mode",
-  execution: "Execution mode",
-  environments: "Working environments",
+  environments: "Environments",
 };
 const SettingsContext = createContext<{
   page: Page;

@@ -41,6 +41,8 @@ The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its 
 
 [MCP Apps Host](09-mcp-apps.md#opt-in-and-compatibility) owns the default-disabled `webui.mcp_apps` mapping and the separate-origin sandbox configuration. Its server selection is automatically unioned with each root and child Agent's generic MCP selection in WebUI, without rewriting Agent resources or sticky Thread selections or overriding tool permissions.
 
+`webui.public_origin` optionally selects one canonical HTTP(S) root origin for a reverse-proxied listener. Remote origins require HTTPS; credentials, paths, queries, fragments and wildcards are invalid. The listener captures it from the accepted configuration at startup; publishing changes requires a listener restart. [HTTP Startup and Access](05-runtime-subagents-and-surfaces.md#http-startup-and-access) owns its Host/Origin and advertised-URL semantics.
+
 The root file owns restart-bound process settings, user-input delivery, global defaults, application tool switches, and WebUI collaboration preferences:
 
 ```yaml

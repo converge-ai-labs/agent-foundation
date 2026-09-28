@@ -89,7 +89,7 @@ Each Thread stores its own local directories, local execution mode, remote bindi
 
 - In **Conversation details → Configuration**, edit next-Run selections to save a new environment combination for that Thread.
 - Choose **Apply Project environments**, review the replacement, then apply it to replace just the four environment axes. A local-only Project clears old remote bindings. Agent, Model, MCP, Plugins, and Run Extensions stay unchanged.
-- In the composer, open **Working environments** to choose directories, remote bindings, and the default for the next Run only. The adjacent **Execution mode** control selects the local Full Control/Sandbox profile, not remote shell permissions. **Use conversation defaults** clears temporary overrides.
+- In the composer, open **Environments**. **Local · Harness server** contains Full Control, Sandbox or a custom local mode and local directories. **Device environments** contains remote bindings; **Default working location** selects one directory or Thread files. Apply commits the whole draft; closing without applying discards edits. An active override applies to subsequent Runs in this tab until reset, not just one send. The local mode does not change remote shell permissions. **Use conversation defaults** clears temporary overrides.
 
 Run-only choices do not change the saved Thread. Steering keeps the active Run's captured environment. Deferred replies keep the suspended Run's environment unless explicitly changed; a new child starts with the parent's captured selections and then owns them independently.
 
@@ -99,7 +99,7 @@ A Device is one configured connection to an Envd daemon. Adding an environment s
 
 ### Connect and approve envd
 
-In **Settings → Environments**, choose **Connect Device**. Copy the command and run it on the computer whose files you want to use:
+In any **Add environment** dialog, choose **Connect new Device**, or use **Settings → Environments → Connect Device**. Install `a13n-envd` on the Device first and ensure it is on your PATH. Select POSIX shell or PowerShell and explicitly enable shell execution if needed; desktop access is a separate advanced option. Copy the command and run it on the computer whose files you want to use:
 
 ```console
 a13n-envd connect https://your-harness-ui.example.com
@@ -108,12 +108,12 @@ a13n-envd connect https://your-harness-ui.example.com
 Use the actual reachable WebUI origin. `http://127.0.0.1:8765` works for a same-computer setup; a remote connection requires HTTPS. The daemon initiates the connection, so its computer does not need an inbound port.
 
 1. Keep the terminal open and note the verification code.
-2. In **Settings → Environments → Waiting for approval**, check the Device name and matching code, then choose **Approve Device**.
-3. Choose **Check connection**, then add a working directory below.
+2. In the same dialog, check the Device name and matching code, then choose **Approve Device**.
+3. Wait for **Device online**, then choose a directory. Settings finishes at **Done**; it does not add a binding.
 
-Approval creates the Device configuration automatically. You do not need to copy an API key, choose a transport, or create a Provider. Your browser login key is not the Device credential. Pending requests expire after ten minutes; reject requests you do not recognize.
+The command runs in the foreground, not as an installed service. Approval creates the Device configuration automatically. Closing before approval does not reject the request; closing afterward leaves the registered Device intact but discards unsaved binding edits. An expired or disappearing request is not proof of approval. You do not need to copy an API key, choose a transport, or create a Provider. Your browser login key is not the Device credential. Pending requests expire after ten minutes; reject requests you do not recognize.
 
-After stopping envd, run the same command to reconnect with its saved identity and credential. For a friendly saved Host name, add `--host personal` on the first connection and later run `a13n-envd connect personal`. Keep the state directory: deleting it loses that identity and credential. See [daemon configuration](../a13n-envd/configuration.md) for state-directory and TLS options.
+After stopping envd, rerun the same command and environment to reconnect with its saved identity and credential. Saved Host connections do not retain all launch flags: preserve the original shell and desktop settings, including when reconnecting by saved name. For a friendly saved Host name, add `--host personal` on the first connection and later run `a13n-envd connect personal`. Keep the state directory: deleting it loses that identity and credential. See [daemon configuration](../a13n-envd/configuration.md) for state-directory and TLS options.
 
 Shell execution is opt-in on the **Device computer**, independently of the Host's local Full Control/Sandbox selection:
 
@@ -134,7 +134,7 @@ One envd process connects to one Host. To connect the same physical computer to 
 
 ### Manual connections
 
-For an existing HTTP daemon or a credential you manage yourself, open **Connect Device → Manual connection → Configure manually**. For HTTP, a `devices/build.yaml` resource looks like:
+For an existing HTTP daemon or a credential you manage yourself, open **Connect Device → Manual HTTP or WebSocket connection → Configure manually**. For HTTP, a `devices/build.yaml` resource looks like:
 
 ```yaml
 schema_version: "1"
@@ -155,15 +155,15 @@ authentication:
 
 ### Choose working directories
 
-Under **Settings → Projects → Working environments**, or **Conversation details → Configuration → Change next Run selections**, choose **Add environment**:
+Under **Settings → Projects → Environments**, or **Conversation details → Configuration → Change next Run selections**, choose **Add environment**:
 
-1. Select the Device and enter an alias such as `build`.
+1. Select an existing Device or connect a new one inline. Review the suggested unique alias, such as `build`.
 2. Enter a known absolute directory, choose **Use Device default**, or browse and explicitly select a directory.
-3. Choose the allowed actions and the default working environment, then save the enclosing settings.
+3. Choose the allowed actions and the default working location, then save the enclosing settings.
 
 Directory browsing works before a Run exists and opens no Session. An unavailable Device still permits a known path or removal. Disabled directory discovery permits manual paths and the advertised default. Windows Device paths use `/C:/work` or `/UNC/server/share/work`; these are not paths on the Harness UI server.
 
-A remote-only Project can use:
+**Add project** also supports Device-only directories: add a Device environment without adding a local directory, choose its default working location, and save. The local mode stays visible because it still controls Thread files. Equivalent YAML:
 
 ```yaml
 schema_version: "1"

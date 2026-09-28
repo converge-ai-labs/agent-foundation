@@ -144,6 +144,7 @@ async function chooseDevice() {
   await user.click(
     await screen.findByRole("option", { name: "Build machine" }),
   );
+  await user.clear(screen.getByRole("textbox", { name: "Environment alias" }));
   await user.type(
     screen.getByRole("textbox", { name: "Environment alias" }),
     "build",
@@ -226,6 +227,8 @@ it("keeps custom action ceilings when editing only a path", async () => {
   const initial: EnvironmentBinding = {
     ...binding,
     permission_ceiling: { operations: ["environment.file.read_text"] },
+    expected_boundary: { sandbox: { mode: "disabled" }, egress: "inherit" },
+    egress: { destinations: { mode: "allowlist", hosts: ["example.com"] } },
   };
   mount(<Fields initial={[initial]} />);
   const user = userEvent.setup();

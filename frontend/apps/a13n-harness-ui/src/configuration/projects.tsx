@@ -13,11 +13,13 @@ import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
 import { Preflight } from "../setup/setup";
 import styles from "../shell/workbench.module.css";
+import { EnvironmentsSummary } from "./environments";
 import { SelectionField } from "./selection";
 import { DraftLinks, NewResourceButton, SourceDocument } from "./sources";
 
 export function ProjectsPage() {
   const projects = useProjects();
+  const selectors = useSelectors();
   const [search, setSearch] = useState("");
   return (
     <>
@@ -47,26 +49,33 @@ export function ProjectsPage() {
               .includes(search.toLowerCase()),
           )
           .map((project) => (
-            <Link
-              className={styles.projectCard}
-              key={project.project_id}
-              to={`/projects/${encodeURIComponent(project.project_id)}`}
-            >
+            <article className={styles.projectCard} key={project.project_id}>
               <Folder size={24} />
-              <strong>{project.name}</strong>
+              <Link to={`/projects/${encodeURIComponent(project.project_id)}`}>
+                <strong>{project.name}</strong>
+              </Link>
               <small>{project.project_id}</small>
-              {project.roots.map((root) => (
-                <span key={root}>{root}</span>
-              ))}
-              <span>Project settings</span>
-            </Link>
+              <EnvironmentsSummary
+                profiles={selectors.data?.environments}
+                value={{
+                  local_roots: project.roots,
+                  environment_profile_id: project.defaults?.environment_profile,
+                  environment_bindings: project.defaults?.environment_bindings,
+                  default_environment: project.defaults?.default_environment,
+                }}
+              />
+              <Link to={`/projects/${encodeURIComponent(project.project_id)}`}>
+                Project settings
+              </Link>
+            </article>
           ))}
       </div>
       {projects.data?.length === 0 && (
         <Panel title="Work with or without a Project">
           <p>
-            Projects are optional. Add one to group conversations around a
-            server folder and choose their default agent and environment.
+            Projects are optional. Add one to group conversations around local
+            or Device directories and choose their default Agent and
+            environments.
           </p>
           <NewResourceButton kind="project" label="Add your first project" />
         </Panel>
@@ -106,11 +115,12 @@ export function ProjectPage() {
       ) : (
         <>
           <p>
-            Defaults apply to new conversations. Changing project folders also
-            affects future runs in existing conversations.
+            Saved defaults apply to new conversations. Existing conversations
+            keep their selections until you explicitly apply Project
+            environments or defaults.
           </p>
           <details className={styles.details}>
-            <summary>Preview saved defaults & check environment</summary>
+            <summary>Preview saved defaults & check local readiness</summary>
             <ReadinessPreview
               projectId={project.project_id}
               projectPath={project.roots[0]}
@@ -174,7 +184,7 @@ export function ReadinessPreview({
             ]}
           />
           <ChoiceField
-            label="Environment"
+            label="Local mode"
             value={environment}
             onValueChange={setEnvironment}
             options={[
@@ -228,6 +238,14 @@ export function ReadinessPreview({
               {current
                 ? "Accepted configuration preview. No thread or run was created."
                 : "Selections changed. Inspect again to refresh this preview."}
+            </p>
+            <EnvironmentsSummary
+              value={config}
+              profiles={selectors.data?.environments}
+            />
+            <p className="text-sm text-muted-foreground">
+              Readiness checks below cover the local mode only, not Device
+              connections.
             </p>
             <dl className={styles.definitionList}>
               {Object.entries(preview.data!.provenance).map(

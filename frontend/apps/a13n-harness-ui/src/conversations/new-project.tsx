@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
-import { useTransport } from "../transport/context";
+import { useSelectors, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { template, updateDocument } from "../configuration/documents";
 import { ErrorNotice, TextField } from "../shell/ui";
-import { ProjectFolders } from "../configuration/project-folders";
+import {
+  EnvironmentsEditor,
+  invalidEnvironments,
+  type EnvironmentSelection,
+} from "../configuration/environments";
 import styles from "./conversation.module.css";
 
 export function NewProject({
@@ -19,9 +23,12 @@ export function NewProject({
   const queries = useQueryClient();
   const [id] = useState(() => `project-${crypto.randomUUID()}`);
   const [name, setName] = useState("");
-  const [roots, setRoots] = useState([{ path: "" }]);
-  const validRoots =
-    roots.length > 0 && roots.every((root) => root.path.trim());
+  const selectors = useSelectors();
+  const [environments, setEnvironments] = useState<EnvironmentSelection>({
+    local_roots: [],
+    environment_bindings: [],
+  });
+  const validRoots = !invalidEnvironments(environments, true);
   const save = useMutation({
     mutationFn: () => {
       let content = updateDocument(
@@ -32,7 +39,22 @@ export function NewProject({
       content = updateDocument(
         content,
         ["roots"],
-        roots.map((root) => ({ path: root.path.trim() })),
+        (environments.local_roots ?? []).map((path) => ({ path: path.trim() })),
+      );
+      content = updateDocument(
+        content,
+        ["defaults", "environment_profile"],
+        environments.environment_profile_id || undefined,
+      );
+      content = updateDocument(
+        content,
+        ["defaults", "environment_bindings"],
+        environments.environment_bindings,
+      );
+      content = updateDocument(
+        content,
+        ["defaults", "default_environment"],
+        environments.default_environment || undefined,
       );
       // The existing source publication validates the whole configuration before saving.
       return result(
@@ -52,7 +74,8 @@ export function NewProject({
     <ModalFrame
       open
       title="Add project"
-      description="Give this workspace a name and a directory on the server. Adding a project does not create a conversation."
+      size="lg"
+      description="Name this Project and choose local or Device directories. Adding a Project does not create a conversation."
       closeLabel="Close"
       onOpenChange={(open) => {
         if (!open && !save.isPending) close();
@@ -66,19 +89,26 @@ export function NewProject({
         }}
       >
         <TextField label="Project name" value={name} onChange={setName} />
-        <ProjectFolders roots={roots} onChange={setRoots} />
+        <EnvironmentsEditor
+          requireWorkspace
+          value={environments}
+          profiles={selectors.data?.environments}
+          onChange={(patch) => setEnvironments({ ...environments, ...patch })}
+        />
         <small>
-          Agent, Environment, and other defaults can be changed in Project
-          settings after saving.
+          Agent and other defaults can be changed in Project settings after
+          saving.
         </small>
         <ErrorNotice error={save.error} />
-        <Button
-          type="submit"
-          loading={save.isPending}
-          disabled={!name.trim() || !validRoots}
-        >
-          Add project
-        </Button>
+        <div data-a13n-form-actions className="flex justify-end">
+          <Button
+            type="submit"
+            loading={save.isPending}
+            disabled={!name.trim() || !validRoots}
+          >
+            Add project
+          </Button>
+        </div>
       </form>
     </ModalFrame>
   );

@@ -235,7 +235,7 @@ it.each([false, true])(
     await user.click(modelTrigger);
     let panel = await screen.findByRole("dialog", { name: "Agent & Model" });
     expect(
-      within(panel).queryByRole("button", { name: "Working environments" }),
+      within(panel).queryByRole("button", { name: "Environments" }),
     ).toBeNull();
     expect(within(panel).queryByRole("button", { name: "Goal" })).toBeNull();
     await user.click(
@@ -290,13 +290,16 @@ it.each([false, true])(
     expect(draft.mode).toBe("goal");
     expect(draft.coordinator).toBe(true);
     await user.click(
-      within(panel).getByRole("button", { name: "Execution mode" }),
+      within(panel).getByRole("button", { name: "Environments" }),
     );
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(
-      screen.getAllByText(/Runs as your host account/).length,
+      screen.getAllByText(/Full Control runs as the server account/).length,
     ).toBeGreaterThan(0);
-    await user.click(screen.getByRole("button", { name: /^Sandbox/ }));
+    await user.click(screen.getByRole("combobox", { name: "Local mode" }));
+    await user.click(screen.getByRole("option", { name: "Sandbox" }));
+    expect(draft.environment?.environment_profile_id).toBeUndefined();
+    await user.click(screen.getByRole("button", { name: "Use for next Run" }));
     expect(draft.environment?.environment_profile_id).toBe("sandbox");
     await user.click(
       screen.getByRole("button", { name: "Close run settings" }),
@@ -324,9 +327,7 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   const user = userEvent.setup();
   mount();
   await user.click(screen.getByRole("button", { name: "Composer options" }));
-  await user.click(
-    screen.getByRole("button", { name: "Working environments" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   const folder = screen.getByDisplayValue("/workspace");
   await user.clear(folder);
@@ -335,9 +336,7 @@ it("edits working folders in-place, cancels without applying, and locks pending 
     screen.getByRole("button", { name: "Back to run settings" }),
   );
   expect(draft.environment).toBeUndefined();
-  await user.click(
-    screen.getByRole("button", { name: "Working environments" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(screen.getByDisplayValue("/workspace")).toBeTruthy();
   const restoredFolder = screen.getByDisplayValue("/workspace");
   await user.clear(restoredFolder);
@@ -364,7 +363,7 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   expect(
     (
       screen.getByRole("button", {
-        name: "Execution mode",
+        name: "Environments",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -384,9 +383,7 @@ it.each([false, true])(
     mount();
     const editor = screen.getByRole("textbox", { name: "Message" });
     await user.click(screen.getByRole("button", { name: "Composer options" }));
-    await user.click(
-      screen.getByRole("button", { name: "Working environments" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Environments" }));
     const folder = screen.getByDisplayValue("/workspace");
     await user.clear(folder);
     await user.type(folder, "/staged");

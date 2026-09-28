@@ -208,7 +208,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
   expect(screen.getByTestId("source").textContent).toBe(initial);
   const user = userEvent.setup();
   await user.click(
-    screen.getByRole("combobox", { name: "Default working environment" }),
+    screen.getByRole("combobox", { name: "Default working location" }),
   );
   await user.click(await screen.findByRole("option", { name: "Thread files" }));
   let value = parse(screen.getByTestId("source").textContent ?? "");

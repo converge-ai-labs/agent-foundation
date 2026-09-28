@@ -10,10 +10,10 @@ import { useProjects, useSelectors, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import {
-  BindingSummary,
-  EnvironmentBindings,
-} from "../configuration/environment-bindings";
-import { ProjectFolders } from "../configuration/project-folders";
+  EnvironmentsEditor,
+  EnvironmentsSummary,
+  invalidEnvironments,
+} from "../configuration/environments";
 import styles from "./conversation.module.css";
 
 function ConfigurationSummary({
@@ -32,20 +32,9 @@ function ConfigurationSummary({
         <dd>{configuration.default_model_id ?? "Follow Agent model"}</dd>
       </div>
       <div>
-        <dt>Local environment profile</dt>
-        <dd>{configuration.environment_profile_id}</dd>
-      </div>
-      <div>
-        <dt>Local folders</dt>
-        <dd>{configuration.local_roots?.join(", ") || "None"}</dd>
-      </div>
-      <div>
-        <dt>Working environments</dt>
+        <dt>Environments</dt>
         <dd>
-          <BindingSummary
-            bindings={configuration.environment_bindings ?? []}
-            defaultEnvironment={configuration.default_environment}
-          />
+          <EnvironmentsSummary value={configuration} />
         </dd>
       </div>
       <div>
@@ -162,21 +151,15 @@ export function ConversationConfiguration({
                     </dd>
                   </div>
                   <div>
-                    <dt>Local environment profile</dt>
-                    <dd>{data.captured.environment_profile_id}</dd>
-                  </div>
-                  <div>
-                    <dt>Captured working environments</dt>
+                    <dt>Captured environments</dt>
                     <dd>
-                      <BindingSummary
-                        bindings={data.captured.environment_bindings ?? []}
-                        defaultEnvironment={data.captured.default_environment}
+                      <EnvironmentsSummary
+                        value={{
+                          ...data.captured,
+                          local_roots: data.captured.project_roots,
+                        }}
                       />
                     </dd>
-                  </div>
-                  <div>
-                    <dt>Captured local folders</dt>
-                    <dd>{data.captured.project_roots.join(", ") || "None"}</dd>
                   </div>
                   <div>
                     <dt>Capabilities</dt>
@@ -413,47 +396,16 @@ export function ThreadSelections({
             })),
           ]}
         />
-        <ChoiceField
-          label="Local environment profile"
-          value={
-            patch.environment_profile_id ?? configuration.environment_profile_id
-          }
-          onValueChange={(environment_profile_id) =>
-            setPatch({ ...patch, environment_profile_id })
-          }
-          options={(selectors.data?.environments ?? []).map((environment) => ({
-            value: environment.profile_id,
-            label: environment.name,
-          }))}
-        />
         <p>
           Changing Project only changes grouping. Use Apply Project environments
           to replace environment selections.
         </p>
-        <ProjectFolders
-          allowEmpty
-          roots={(patch.local_roots ?? configuration.local_roots ?? []).map(
-            (path) => ({ path }),
-          )}
-          onChange={(roots) =>
-            setPatch({ ...patch, local_roots: roots.map((root) => root.path) })
-          }
-        />
-        <EnvironmentBindings
-          bindings={
-            patch.environment_bindings ??
-            configuration.environment_bindings ??
-            []
-          }
-          defaultEnvironment={
-            patch.default_environment === undefined
-              ? configuration.default_environment
-              : patch.default_environment
-          }
-          localRoots={patch.local_roots ?? configuration.local_roots ?? []}
-          onChange={(environment_bindings, default_environment) =>
-            setPatch({ ...patch, environment_bindings, default_environment })
-          }
+        <EnvironmentsEditor
+          value={{ ...configuration, ...patch }}
+          profiles={selectors.data?.environments}
+          inheritedProfile={configuration.environment_profile_id}
+          inheritLabel="Keep conversation local mode"
+          onChange={(environments) => setPatch({ ...patch, ...environments })}
         />
         {(
           [
@@ -524,7 +476,12 @@ export function ThreadSelections({
         )}
         <Button
           loading={mutation.isPending}
-          disabled={!Object.keys(patch).length || mutation.isError || stale}
+          disabled={
+            !Object.keys(patch).length ||
+            mutation.isError ||
+            stale ||
+            invalidEnvironments({ ...configuration, ...patch })
+          }
           onClick={() => mutation.mutate()}
         >
           Save next Run selections

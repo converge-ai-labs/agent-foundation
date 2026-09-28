@@ -413,7 +413,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     <div
                       className={styles.environments}
                       role="group"
-                      aria-label="Execution environment"
+                      aria-label="Local mode · Harness server"
                     >
                       {(
                         [

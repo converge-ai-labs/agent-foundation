@@ -394,17 +394,22 @@ async fn exchange<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         .await
         .map_err(io::Error::other)?;
     if !response.status().is_success() {
-        let kind = if matches!(response.status().as_u16(), 401 | 403 | 410) {
+        let status = response.status().as_u16();
+        let kind = if matches!(status, 401 | 403 | 410) {
             io::ErrorKind::PermissionDenied
         } else {
             io::ErrorKind::ConnectionRefused
         };
+        let detail = Limited::new(response.into_body(), 4096)
+            .collect()
+            .await
+            .ok()
+            .and_then(|body| pairing_error_detail(&body.to_bytes(), credential))
+            .map(|detail| format!(": {detail}"))
+            .unwrap_or_default();
         return Err(io::Error::new(
             kind,
-            format!(
-                "Host rejected pairing (HTTP {}); no credential was replaced",
-                response.status().as_u16()
-            ),
+            format!("Host rejected pairing (HTTP {status}){detail}; no credential was replaced"),
         ));
     }
     let bytes = Limited::new(response.into_body(), RESPONSE_LIMIT)
@@ -413,6 +418,24 @@ async fn exchange<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         .map_err(io::Error::other)?
         .to_bytes();
     Ok(bytes.to_vec())
+}
+
+fn pairing_error_detail(body: &[u8], credential: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let error = value.get("error")?;
+    let code = error.get("code")?.as_str()?;
+    let message = error.get("message")?.as_str()?;
+    if code.is_empty()
+        || code.len() > 128
+        || !code
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        || message.len() > 512
+        || message.chars().any(char::is_control)
+    {
+        return None;
+    }
+    Some(format!("{code}: {message}").replace(credential, "[redacted]"))
 }
 
 fn host_url(value: &str) -> io::Result<Url> {
@@ -620,6 +643,34 @@ mod tests {
         assert!(websocket_url(&base, "/api/devices/device-test/connect").is_ok());
         assert!(websocket_url(&base, "ws://example.com/connect").is_err());
         assert!(websocket_url(&base, "wss://other.example/connect").is_err());
+    }
+
+    #[test]
+    fn pairing_errors_are_bounded_structured_and_safe_for_terminals() {
+        assert_eq!(
+            pairing_error_detail(
+                br#"{"error":{"code":"host_rejected","message":"Use the public origin."}}"#,
+                "secret"
+            ),
+            Some("host_rejected: Use the public origin.".into())
+        );
+        assert_eq!(
+            pairing_error_detail(
+                br#"{"error":{"code":"denied","message":"secret"}}"#,
+                "secret"
+            ),
+            Some("denied: [redacted]".into())
+        );
+        assert!(pairing_error_detail(b"<html>proxy failure</html>", "secret").is_none());
+        assert!(
+            pairing_error_detail(
+                br#"{"error":{"code":"bad","message":"\u001b[31m"}}"#,
+                "secret"
+            )
+            .is_none()
+        );
+        let oversized = serde_json::json!({"error": {"code": "bad", "message": "x".repeat(513)}});
+        assert!(pairing_error_detail(&serde_json::to_vec(&oversized).unwrap(), "secret").is_none());
     }
 
     #[test]

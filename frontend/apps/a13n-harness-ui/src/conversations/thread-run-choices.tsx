@@ -1,10 +1,12 @@
-import { Button, ModalFrame, SearchPicker } from "a13n-ui";
-import { FoldersIcon, ShieldWarning } from "@phosphor-icons/react";
+import { Button, ModalFrame } from "a13n-ui";
+import { FoldersIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import type { Schema } from "../transport/client";
 import { ModelOptions } from "./model-picker";
-import { EnvironmentBindings } from "../configuration/environment-bindings";
-import { ProjectFolders } from "../configuration/project-folders";
+import {
+  EnvironmentsEditor,
+  invalidEnvironments,
+} from "../configuration/environments";
 import styles from "./new-conversation.module.css";
 import panelStyles from "./composer-settings.module.css";
 import {
@@ -42,23 +44,7 @@ export function RunEnvironments({
       ? configuration?.default_environment
       : value.default_environment;
   const count = roots.length + bindings.length;
-  const editedRoots = editing?.local_roots ?? roots;
-  const editedBindings = editing?.environment_bindings ?? bindings;
-  const editedDefault =
-    editing?.default_environment === undefined
-      ? workingDefault
-      : editing.default_environment;
-  const available = [
-    "thread-files",
-    ...editedRoots.map((_, index) =>
-      index ? `workspace-${index + 1}` : "workspace",
-    ),
-    ...editedBindings.map((item) => item.alias),
-  ];
-  const invalid =
-    editedRoots.some((root) => !root.trim()) ||
-    new Set(editedRoots).size !== editedRoots.length ||
-    (!!editedDefault && !available.includes(editedDefault));
+  const invalid = editing ? invalidEnvironments(editing) : false;
   const beginEditing = () =>
     setEditing({
       ...value,
@@ -97,49 +83,12 @@ export function RunEnvironments({
     </>
   );
   const content = editing && (
-    <div className="flex flex-col gap-6">
-      <section>
-        <h3 className="mb-2 font-medium">Local folders</h3>
-        <ProjectFolders
-          roots={editedRoots.map((path) => ({ path }))}
-          allowEmpty
-          onChange={(next) =>
-            setEditing({
-              ...editing,
-              local_roots: next.map((item) => item.path),
-            })
-          }
-        />
-      </section>
-      <section>
-        <h3 className="mb-2 font-medium">Remote environments and default</h3>
-        <EnvironmentBindings
-          bindings={editedBindings}
-          localRoots={editedRoots}
-          defaultEnvironment={editedDefault}
-          onChange={(environment_bindings, default_environment) =>
-            setEditing({
-              ...editing,
-              environment_bindings,
-              default_environment,
-            })
-          }
-        />
-      </section>
-    </div>
-  );
-  const executionPicker = (
-    <EnvironmentPicker
-      catalog={catalog}
-      defaultProfileId={configuration?.environment_profile_id}
-      value={value?.environment_profile_id ?? undefined}
-      disabled={disabled}
-      onChange={(profile) => {
-        const next = { ...value };
-        if (profile) next.environment_profile_id = profile;
-        else delete next.environment_profile_id;
-        onChange(Object.keys(next).length ? next : undefined);
-      }}
+    <EnvironmentsEditor
+      value={editing}
+      profiles={catalog?.environments}
+      inheritedProfile={configuration?.environment_profile_id}
+      inheritLabel="Follow conversation local mode"
+      onChange={(patch) => setEditing({ ...editing, ...patch })}
     />
   );
   if (settings)
@@ -147,12 +96,8 @@ export function RunEnvironments({
       <>
         {settings.page === "root" && (
           <SettingsRow
-            label="Working environments"
-            value={
-              count
-                ? `${count} environment${count === 1 ? "" : "s"}`
-                : "Thread files"
-            }
+            label="Environments"
+            value={`${count ? `${count} environment${count === 1 ? "" : "s"}` : "Thread files"}${value ? " · Override active" : ""}`}
             disabled={disabled || !configuration}
             onClick={() => {
               beginEditing();
@@ -160,12 +105,12 @@ export function RunEnvironments({
             }}
           />
         )}
-        {executionPicker}
         {settings.page === "environments" && (
           <fieldset disabled={disabled}>
             <p className={panelStyles.hint}>
-              Local path references and remote directories for the next Run
-              only. No files are copied. Steering keeps the active environment.
+              Changes apply to subsequent Runs in this tab until reset, not to
+              conversation defaults. No files are copied. Steering keeps the
+              active environment.
             </p>
             {content}
             <div className={panelStyles.footer}>{footer}</div>
@@ -180,7 +125,7 @@ export function RunEnvironments({
         variant="ghost"
         size="sm"
         disabled={disabled || !configuration}
-        aria-label="Working environments"
+        aria-label="Environments"
         onClick={beginEditing}
       >
         <FoldersIcon aria-hidden="true" />
@@ -188,141 +133,19 @@ export function RunEnvironments({
           ? `${count} environment${count === 1 ? "" : "s"}`
           : "Thread files"}
       </Button>
-      {executionPicker}
       <ModalFrame
         open={editing !== undefined}
         onOpenChange={(open) => {
           if (!open) setEditing(undefined);
         }}
-        title="Working environments"
+        title="Environments"
         closeLabel="Cancel"
-        description="Choose local path references and remote directories for the next Run only. No files are copied. Steering keeps the active environment."
+        description="Choose environments for subsequent Runs in this tab until reset. Conversation defaults and the active Run stay unchanged."
         footer={footer}
       >
         {content}
       </ModalFrame>
     </>
-  );
-}
-
-export function EnvironmentPicker({
-  catalog,
-  defaultProfileId,
-  value,
-  onChange,
-  disabled,
-}: {
-  catalog?: Schema<"ThreadSelectorCatalog">;
-  defaultProfileId?: string;
-  value?: string;
-  onChange: (value: string | undefined) => void;
-  disabled: boolean;
-}) {
-  const environments = catalog?.environments ?? [];
-  const inherited = environments.find(
-    (item) => item.profile_id === defaultProfileId,
-  );
-  const selected = environments.find(
-    (item) => item.profile_id === (value ?? defaultProfileId),
-  );
-  const description = (item: (typeof environments)[number]) =>
-    item.mode === "full-control"
-      ? "Runs as your host account. Not a sandbox."
-      : item.description;
-  const settings = useComposerSettings();
-  const groups = [
-    {
-      label: "Execution environments",
-      options: [
-        {
-          value: "",
-          label: inherited?.name ?? defaultProfileId ?? "Default environment",
-          badge: "Default",
-          icon: <ShieldWarning aria-hidden="true" />,
-          description: inherited
-            ? `Follow the conversation default. ${description(inherited)}`
-            : "The conversation's selected environment is unavailable.",
-        },
-        ...environments.map((item) => ({
-          value: item.profile_id,
-          label: item.name,
-          description: description(item),
-          icon: <ShieldWarning aria-hidden="true" />,
-        })),
-        ...(value && !selected
-          ? [
-              {
-                value,
-                label: `${value} (unavailable)`,
-                disabled: true,
-              },
-            ]
-          : []),
-      ],
-    },
-  ];
-  const placeholder =
-    selected?.name ??
-    (value
-      ? `${value} (unavailable)`
-      : (inherited?.name ?? defaultProfileId ?? "Loading environment…"));
-  const unavailable = disabled || !catalog || !defaultProfileId;
-  if (settings) {
-    if (settings.page === "root")
-      return (
-        <SettingsRow
-          label="Execution mode"
-          value={placeholder}
-          disabled={unavailable}
-          onClick={() => settings.navigate("execution")}
-        />
-      );
-    if (settings.page !== "execution") return null;
-    return (
-      <>
-        <SettingsChoices
-          label="execution modes"
-          options={groups[0].options}
-          value={value ?? ""}
-          disabled={unavailable}
-          onChange={(next) => {
-            onChange(next || undefined);
-            settings.navigate("root");
-          }}
-        />
-        <p className={panelStyles.hint}>
-          For your next Run only. Steering keeps the active environment.
-        </p>
-      </>
-    );
-  }
-  return (
-    <div
-      className={styles.mode}
-      data-full-control={selected?.mode === "full-control"}
-      title="Applies to your next Run, not the active Run or conversation defaults."
-    >
-      <SearchPicker
-        label="Execution mode"
-        popupClassName={styles.choicePopup}
-        placeholder={
-          selected?.name ??
-          (value
-            ? `${value} (unavailable)`
-            : (inherited?.name ?? defaultProfileId ?? "Loading environment…"))
-        }
-        emptyMessage="No environments found."
-        value={value ?? ""}
-        disabled={disabled || !catalog || !defaultProfileId}
-        onValueChange={(next) => onChange(next || undefined)}
-        groups={groups}
-        footer={
-          <small>
-            For your next Run only. Steering keeps the active environment.
-          </small>
-        }
-      />
-    </div>
   );
 }
 
