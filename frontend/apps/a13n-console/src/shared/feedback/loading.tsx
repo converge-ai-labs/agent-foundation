@@ -1,4 +1,4 @@
-import { Skeleton, Spinner } from "a13n-ui";
+import { LogoSpinner, Skeleton } from "a13n-ui";
 import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./feedback.module.css";
@@ -51,7 +51,7 @@ export function Loading({
       role="status"
       className={`${styles.loading} ${page ? styles.pageLoading : ""}`}
     >
-      <Spinner aria-hidden="true" />
+      <LogoSpinner aria-hidden="true" />
       {t("Loading…")}
     </div>
   );

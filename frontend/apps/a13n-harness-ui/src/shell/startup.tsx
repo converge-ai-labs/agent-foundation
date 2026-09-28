@@ -1,4 +1,4 @@
-import { Button, Logo, Wordmark } from "a13n-ui";
+import { Button, Logo, LogoSpinner, Wordmark } from "a13n-ui";
 import styles from "./startup.module.css";
 
 // A public shell, not an optimistic authenticated Workbench. No data consumers
@@ -26,6 +26,7 @@ export function Startup({
       <section className={styles.content}>
         <header className={styles.header}>Harness UI</header>
         <div className={styles.status}>
+          {connecting && <LogoSpinner aria-hidden="true" />}
           <p role="status">{error || "Connecting to Harness UI…"}</p>
           {!connecting && (
             <Button variant="outline" onClick={retry}>
