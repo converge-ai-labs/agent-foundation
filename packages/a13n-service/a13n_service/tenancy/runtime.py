@@ -9,6 +9,7 @@ from a13n_service.infra.db import Storage
 from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Access
+from a13n_service.tenancy.workspaces import WorkspaceCreated
 
 
 class Runtime(Protocol):
@@ -29,3 +30,6 @@ class Runtime(Protocol):
 
     @property
     def access(self) -> Access: ...
+
+    @property
+    def workspace_created(self) -> WorkspaceCreated | None: ...

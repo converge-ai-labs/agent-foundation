@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 from a13n_service.runs.attachments import INLINE_TEXT_BYTES
-from a13n_service.settings import Settings
+from a13n_service.settings import LocalProvisioning, Provisioning, Settings
 from fastapi import FastAPI
 from fastapi.responses import Response
 
@@ -103,7 +103,13 @@ async def _local_template(service, root: Path) -> str:  # type: ignore[no-untype
 
 
 def _with_local_environments(settings: Settings) -> Settings:
-    return settings.model_copy(update={"environments": settings.environments.model_copy(update={"allow_local": True})})
+    return settings.model_copy(
+        update={
+            "provisioning": Provisioning(
+                local=LocalProvisioning(enabled=True, root=settings.objects.root.parent / "environments")
+            )
+        }
+    )
 
 
 async def test_the_model_reads_what_it_understands_natively_and_text_inline(

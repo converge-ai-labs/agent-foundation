@@ -156,7 +156,7 @@ connector_providers    (cprov_)
 web_providers          (wprov_)
 memory_providers       (memprov_)
   id  organization_id  workspace_id  type  name  config  credential NULL  extra_headers
-  enabled  version  created_by_id  updated_by_id  created_at  updated_at
+  enabled  version  created_by_id NULL  updated_by_id NULL  created_at  updated_at
   UNIQUE (workspace_id, id)
 ```
 
@@ -168,6 +168,8 @@ memory_providers       (memprov_)
 - **Test.** `POST /{kind}-providers/{id}/test` needs `run`. It makes one non-billable probe of the current configuration outside any transaction, bounded by `providers.operation_seconds` and `providers.response_bytes`, and changes nothing. It returns `{provider_id, provider_version, status, message}` with status `succeeded`, `failed` or `unsupported`; the message is fixed text or the provider's classified code, never an upstream body. A model type is probed when its definition has a connection probe; a connector provider runs its own account test; a memory provider lists one page of a namespace no memory owns ([11](11-memory.md#memory-providers)); web types are `unsupported`. Of the environment types only Docker is probed, and its test only reads. A remote engine the account names passes the endpoint policy first ([08](08-providers.md#outbound-endpoint-policy)): a denied one fails with `provider_endpoint_denied` and a host that does not resolve with `provider_unavailable`, without being dialed; the engine then answers one ping. Nothing is pulled, created or started, and a failure reports only the provider's error code. Billable verification goes through a run and its admission checks, so a test never becomes an unmetered execution path.
 
 Environment providers serve [environment templates](#environment-templates) and the managed instances created from them ([06](06-environments.md)); an external envd target is no provider resource. Memory providers serve [record memories](11-memory.md#memory-providers), each owning one namespace of the provider's backend. A connector provider, such as Composio, is configured once per workspace with the platform's API key as its credential; each [connection](#connections) through it binds one external account. `GET /connector-providers/{id}/apps` (`query`, `refresh`, cursor), `…/apps/{app}` and `…/apps/{app}/actions` read its app catalogue with the provider's credential and need `run`; app and action listings are cached for `providers.discovery_ttl` per provider version, and `refresh=true` reads the apps again.
+
+A null creator or updater represents system initialization ([09](09-runtime.md#workspace-provisioning)); authenticated API mutations always record their principal.
 
 ## Models
 
@@ -211,7 +213,7 @@ A Provider's optional `config.session_affinity_header` is bound at model resolut
 ```
 environment_templates   (envtpl_)
   id  organization_id  workspace_id  name  description NULL  provider_id  config  enabled  labels
-  version  created_by_id  updated_by_id  created_at  updated_at
+  version  created_by_id NULL  updated_by_id NULL  created_at  updated_at
 ```
 
 A template is the live configuration managed environments are created from ([06](06-environments.md)). `config` is `{recipe, stop_after_seconds, delete_after_seconds}`:
@@ -220,6 +222,8 @@ A template is the live configuration managed environments are created from ([06]
 - `stop_after_seconds` (default 1800, 60 to 2592000, null for never) and `delete_after_seconds` (default null, 60 to 31536000) are the idle policy; [06](06-environments.md#idle-policy) owns how it applies.
 
 A template is created enabled. `PATCH` (with `If-Match`) may change `provider_id`, `config`, `name`, `description`, `labels` and `enabled`; a disabled template refuses new environments. How template changes reach instances is [06](06-environments.md#templates-and-instances)'s.
+
+Automatically provisioned templates have null creator/updater until a user changes them ([09](09-runtime.md#workspace-provisioning)).
 
 ## Connections
 

@@ -102,7 +102,10 @@ async def create_workspace(
     response: Response, organization_id: str, body: WorkspaceCreate, actor: Actor, runtime: CurrentRuntime
 ) -> Workspace:
     return tagged(
-        response, await workspaces.create_workspace(runtime.storage, runtime.access, actor, organization_id, body)
+        response,
+        await workspaces.create_workspace(
+            runtime.storage, runtime.access, actor, organization_id, body, on_created=runtime.workspace_created
+        ),
     )
 
 

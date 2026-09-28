@@ -41,9 +41,10 @@ A process starts in this order and serves nothing until it finishes:
 
 1. Assembly checks ([Assembly](#assembly)): an invalid distribution fails here.
 2. `all` and `control` upgrade the schema when `database.auto_migrate` is true.
-3. The process opens its runtime: the database pool (`database.pool_size` connections and no overflow; `database.connect_timeout` also bounds the wait for a pooled connection; `database.statement_timeout` bounds each statement), the Redis client (`redis.timeout` for connecting and every call), the object store, the encryption key ring ([03](03-tenancy.md#credential-encryption)), the provider registry, the access configuration, the installed Harness plugin factories (`plugins.keys`), the admission policy, the trace backend that queries read (none when tracing is off) and, on executing roles, trace export. The registry offers environment types by `environments.allow_local`, `environments.docker_host` and `environments.docker_mount_roots` ([08](08-providers.md#registry)) and derives each calling API's settings schema as it is assembled. An invalid key ring, an `encryption.key_file` that cannot be read or created, or an invalid plugin key fails startup.
+3. The process opens its runtime: the database pool (`database.pool_size` connections and no overflow; `database.connect_timeout` also bounds the wait for a pooled connection; `database.statement_timeout` bounds each statement), the Redis client (`redis.timeout` for connecting and every call), the object store, the encryption key ring ([03](03-tenancy.md#credential-encryption)), the provider registry, the access configuration, the installed Harness plugin factories (`plugins.keys`), the admission policy, the trace backend that queries read (none when tracing is off) and, on executing roles, trace export. The registry offers environment types by `provisioning.local.enabled`, `environments.docker_host` and `environments.docker_mount_roots` ([08](08-providers.md#registry)) and derives each calling API's settings schema as it is assembled. An invalid key ring, an `encryption.key_file` that cannot be read or created, or an invalid plugin key fails startup.
 4. Within `server.readiness_timeout` the process checks that the database is exactly at its build's migration head; otherwise startup fails with an instruction to run `a13n-service migrate`.
-5. The role's background tasks start: thread stream hub and sweeps, worker. API-serving roles also create the empty [model catalog](08-providers.md#model-catalog), which the first read fills.
+5. The `all` role awaits one [workspace provisioning](#workspace-provisioning) catch-up after schema validation.
+6. The role's background tasks start: thread stream hub and sweeps, worker. API-serving roles also create the empty [model catalog](08-providers.md#model-catalog), which the first read fills.
 
 `GET /healthz` answers 200 `{"status": "ok", "role": ...}` whenever the process serves HTTP; it is liveness only. `GET /readyz` answers 200 `{"status": "ready", "role": ...}` when startup completed, every background task of the role is still running and the schema check passes within `server.readiness_timeout`; otherwise it answers 503 `{"status": "unavailable", "dependency": "runtime" | "database"}`. A replica that cannot reach Redis stays ready and adds `"degraded": ["redis"]`, because Redis only accelerates work ([Redis](#redis)). Readiness never migrates and never calls a provider.
 
@@ -67,6 +68,29 @@ The schema is one Alembic graph composed from the distribution's migration direc
 - **Coordination.** A migration runs on a dedicated connection outside the pool, holding a session-level PostgreSQL advisory lock for its whole duration. A concurrent migrator waits for that lock for at most `database.migration_advisory_lock_timeout` and fails when the wait runs out; once it holds the lock it finds the schema at head and changes nothing. Under the lock, statements run with `lock_timeout = database.migration_lock_timeout`, `statement_timeout = database.migration_statement_timeout` and `idle_in_transaction_session_timeout = database.migration_idle_transaction_timeout`. Closing the connection releases the lock after success or failure.
 - **Checking.** `a13n-service migrate --check` fails unless the database is at head and the revisions match the composed metadata; deployments use it to wait for a migration job without migrating.
 - **Generation.** Revisions are generated with `migrate --generate MESSAGE` against a disposable database and reviewed; they are never written by hand. Rules that declarative constraints cannot express (the version stamp, immutability and identity guards, transition and pointer guards) are declared by each table next to its constraints. The generated revision that creates a table also creates its rules, and the first revision creates the shared trigger functions. Tests build schemas from the same metadata and rules and check the revisions against both.
+
+## Workspace provisioning
+
+`provisioning/` owns automatic preparation of initial environment resources on a single host. The generic configuration disables both components. `provisioning.local.enabled` also controls whether the registry offers Local execution; enabling it requires an absolute normalized `provisioning.local.root`. `provisioning.docker.enabled` controls only automatic registration: manually configured Docker providers remain available. The default Docker template uses `provisioning.docker.image = "a13n-docker-environment:local"` and `pull_policy = "never"`; `if_missing` permits a pull during instance creation.
+
+Only the `all` role wires the initializer. Workspace insertion is shared by bootstrap and ordinary workspace creation. Its post-commit callback runs after the session closes and awaits the first initialization attempt before returning. CLI bootstrap uses the same insertion path; the next `all` startup supplies initialization. Startup traverses existing active workspaces once in bounded pages and skips components already completed. `control` and `worker` never auto-provision; a split deployment explicitly configures shared execution resources. No periodic discovery, worker capability advertisement or new outbox delivery exists.
+
+Each enabled component prepares independently. Local supplies `Local` plus `Local Workspace`, whose recipe contains the configured root and the `/bin/sh` shell profile; the Local adapter later creates `<root>/<environment_id>`. Docker first pings the operator's Engine with a three-second bound, using the existing `environments.docker_host` or process Docker environment. It supplies `Docker` with empty account configuration (inherit the operator's Engine) plus `Linux Sandbox` with the explicit image and pull policy. Neither initializer allocates an environment, pulls an image or creates a container. Templates use the ordinary idle-policy defaults.
+
+The initializer uses resource-owned validation, insertion and auditing. Under a short workspace row lock, it rechecks active scope and completion, inserts the provider and template, and records completion in the same transaction. External preparation holds no database session. System creation records `created_by_id`, `updated_by_id` and audit `actor_id` as null. Concurrent calls produce at most one pair per component; manually created resources are never adopted by name.
+
+```
+workspace_provisioning
+  organization_id  workspace_id  component  provider_id  template_id  created_at
+  PRIMARY KEY (workspace_id, component)
+  FOREIGN KEY (organization_id, workspace_id) -> workspaces (organization_id, id)
+  CHECK component IN ('local', 'docker')
+  append-only
+```
+
+The provider/template IDs are historical identifiers without resource foreign keys. A completed component stays completed when a user edits, disables or deletes its defaults. Initialization never reconciles those resources back to operator settings. Disabling provisioning deletes nothing; disabling Local removes the execution capability for future uses but does not interrupt commands already in progress.
+
+A failed component rolls back its resource transaction, logs its reason and retries twice in process-owned tasks after one and five seconds. Failure does not undo the committed workspace or bootstrap. Process shutdown cancels outstanding retries; the next startup retries unfinished components. A restart is also the explicit rediscovery trigger after the bounded retry window. No retry counters or intermediate initialization states are persisted.
 
 ## Settings
 

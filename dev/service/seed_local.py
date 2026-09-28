@@ -9,7 +9,6 @@ development-only type that the checkout's settings enable.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from dev.service.api import Api, Json
 
@@ -40,7 +39,7 @@ class Local:
     environment: Json
 
 
-def seed_local(api: Api, model_url: str, environments: Path) -> Local:
+def seed_local(api: Api, model_url: str) -> Local:
     provider = api.post(
         "/api/v1/model-providers",
         {
@@ -55,20 +54,19 @@ def seed_local(api: Api, model_url: str, environments: Path) -> Local:
     media = _model(api, provider, "local-scripted-media", "Local scripted media model", (*MEDIA, "document"))
     defaults = api.get("/api/v1/media-understanding-defaults")
     api.put("/api/v1/media-understanding-defaults", defaults, dict.fromkeys(MEDIA, media["key"]))
-    local = api.post(
-        "/api/v1/environment-providers", {"type": "local", "name": "Local directories (development)", "config": {}}
-    )
-    recipe = {"root": {"path": str(environments)}, "shell_profiles": [{"profile_id": "sh", "executable": "/bin/sh"}]}
-    template = api.post(
-        "/api/v1/environment-templates",
-        {
-            "name": "Local workspace",
-            "description": "A directory on this machine; development only.",
-            "provider_id": local["id"],
-            "labels": {"runtime": "local"},
-            "config": {"recipe": recipe},
-        },
-    )
+    providers = {
+        row["id"]
+        for row in api.items("/api/v1/environment-providers")
+        if row["type"] == "local" and row["created_by_id"] is None and row["enabled"]
+    }
+    templates = [
+        row
+        for row in api.items("/api/v1/environment-templates")
+        if row["provider_id"] in providers and row["created_by_id"] is None and row["enabled"]
+    ]
+    if len(templates) != 1:
+        raise RuntimeError("Seed requires the automatically provisioned Local Workspace template")
+    [template] = templates
     environment = api.post("/api/v1/environments", {"template_id": template["id"], "name": "Release review workspace"})
     return Local(model, media, template, environment)
 

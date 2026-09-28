@@ -236,6 +236,34 @@
       "title": "DefaultGuides",
       "type": "object"
     },
+    "DockerProvisioning": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "image": {
+          "default": "a13n-docker-environment:local",
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Image",
+          "type": "string"
+        },
+        "pull_policy": {
+          "default": "never",
+          "enum": [
+            "never",
+            "if_missing"
+          ],
+          "title": "Pull Policy",
+          "type": "string"
+        }
+      },
+      "title": "DockerProvisioning",
+      "type": "object"
+    },
     "Encryption": {
       "additionalProperties": false,
       "properties": {
@@ -324,11 +352,6 @@
           "title": "Managed Count",
           "type": "integer"
         },
-        "allow_local": {
-          "default": false,
-          "title": "Allow Local",
-          "type": "boolean"
-        },
         "docker_host": {
           "anyOf": [
             {
@@ -355,6 +378,31 @@
         }
       },
       "title": "Environments",
+      "type": "object"
+    },
+    "LocalProvisioning": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "root": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Root"
+        }
+      },
+      "title": "LocalProvisioning",
       "type": "object"
     },
     "LogFormat": {
@@ -1031,6 +1079,19 @@
       "title": "Providers",
       "type": "object"
     },
+    "Provisioning": {
+      "additionalProperties": false,
+      "properties": {
+        "local": {
+          "$ref": "#/$defs/LocalProvisioning"
+        },
+        "docker": {
+          "$ref": "#/$defs/DockerProvisioning"
+        }
+      },
+      "title": "Provisioning",
+      "type": "object"
+    },
     "RedisSettings": {
       "additionalProperties": false,
       "properties": {
@@ -1455,6 +1516,9 @@
     },
     "environments": {
       "$ref": "#/$defs/Environments"
+    },
+    "provisioning": {
+      "$ref": "#/$defs/Provisioning"
     },
     "memory": {
       "$ref": "#/$defs/MemorySettings"

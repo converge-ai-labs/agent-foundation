@@ -282,8 +282,6 @@ class Environments(Section):
     # Managed instances one workspace holds at most, counting every one not deleted; reservations beyond it,
     # explicit or by a run's agent template, are refused.
     managed_count: int = Field(default=100, ge=1, le=100000)
-    # The local adapter runs commands on the worker host; it is not an isolation boundary.
-    allow_local: bool = False
     # The Docker engine an account naming none uses; unset, the Service process's own Docker environment. Tenants
     # may name only a remote engine the outbound endpoint policy allows.
     docker_host: str | None = Field(default=None, min_length=1, max_length=2048)
@@ -298,6 +296,33 @@ class Environments(Section):
         if any(not root.is_absolute() or ".." in root.parts or "\x00" in str(root) for root in roots):
             raise ValueError("Docker mount roots must be absolute normalized paths")
         return roots
+
+
+class LocalProvisioning(Section):
+    # Local commands run under the Service account, without container isolation.
+    enabled: bool = False
+    root: Path | None = None
+
+    @model_validator(mode="after")
+    def explicit_root(self) -> "LocalProvisioning":
+        if self.enabled and self.root is None:
+            raise ValueError("provisioning.local.root is required when Local is enabled")
+        if self.root is not None and (
+            not self.root.is_absolute() or ".." in self.root.parts or "\x00" in str(self.root)
+        ):
+            raise ValueError("provisioning.local.root must be an absolute normalized path")
+        return self
+
+
+class DockerProvisioning(Section):
+    enabled: bool = False
+    image: str = Field(default="a13n-docker-environment:local", min_length=1, max_length=1024)
+    pull_policy: Literal["never", "if_missing"] = "never"
+
+
+class Provisioning(Section):
+    local: LocalProvisioning = Field(default_factory=LocalProvisioning)
+    docker: DockerProvisioning = Field(default_factory=DockerProvisioning)
 
 
 class DefaultGuides(Section):
@@ -446,6 +471,7 @@ class Settings(Section):
     outbox: Outbox = Field(default_factory=Outbox)
     worker: Worker = Field(default_factory=Worker)
     environments: Environments = Field(default_factory=Environments)
+    provisioning: Provisioning = Field(default_factory=Provisioning)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     providers: Providers = Field(default_factory=Providers)
     plugins: Plugins = Field(default_factory=Plugins)

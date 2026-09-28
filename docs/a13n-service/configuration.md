@@ -139,7 +139,7 @@ Other `providers` settings bound provider work: `model_timeout` (each read of on
 | `control.subscriptions`                            | Webhook subscriptions per workspace.                                                                                        |
 | `environments.*`                                   | Environment maintenance cadence, provider-call bounds and how long an attempt waits for its environments.                   |
 
-`environments.allow_local = true` offers the `local` environment provider, which runs commands directly on the worker host with no isolation. Use it only for development.
+`provisioning.local.enabled = true` offers the `local` environment provider, which runs commands directly on the worker host with no isolation. Use it only for development.
 
 `plugins.keys` lists installed Harness plugin factories, by entry-point key, that agents may select. `composer.models` lists preferred upstream model names for the [Agent Composer](agent-composer.md).
 
@@ -167,3 +167,26 @@ The `a13n-service` image runs every role through the same `a13n-service` entry p
 
 - The [single-host Compose stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) runs `run --role all` with PostgreSQL, Redis, the Console and Docker environments through the host Engine.
 - The [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes) runs control and worker Deployments after a migration Job per release revision, with values for a local kind cluster.
+
+## Workspace provisioning
+
+Automatic Local and Docker setup runs only in the single-host `all` role. Both default off. For example:
+
+```toml
+[provisioning.local]
+enabled = true
+root = "/srv/a13n/environments"
+
+[provisioning.docker]
+enabled = true
+image = "a13n-docker-environment:local"
+pull_policy = "never"
+```
+
+Local requires an explicit absolute root on the machine running the Service; there is no generic default. It also enables the Local provider type. `make dev` supplies its own checkout path. Replace the retired `environments.allow_local` setting with this Local section. Disabling Local preserves directories and resources, but future execution requires it to be enabled again.
+
+Docker uses the existing operator Engine setting, `environments.docker_host`, or the process Docker environment. Running inside Compose requires access to the Engine, normally the socket mount in the supplied single-host stack. Installing a Docker CLI alone is insufficient. Docker provisioning does not affect manual Docker providers.
+
+Environment overrides use a JSON object for each component, for example `A13N_PROVISIONING__DOCKER='{"enabled":true,"image":"a13n-docker-environment:local","pull_policy":"never"}'`. The supplied socket-enabled Compose stack enables Docker and leaves Local off; `A13N_DOCKER_ENVIRONMENT_IMAGE` selects the initial template's image there.
+
+Build the local image with `make image-docker-environment`. When an image is available from your registry, select its full reference and `pull_policy = "if_missing"`. Settings initialize resources once; change an existing template through Console or the API to change future instances. Existing instances keep their original image. See [automatic local setup](environments.md#automatic-local-setup) for retry and ownership behavior.

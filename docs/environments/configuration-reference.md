@@ -198,6 +198,7 @@ Host-selected daemon recipe, shared by every Session on this runtime.
 | Field                         | Required | Type / choices                    | Constraints and default                                                                     |
 | ----------------------------- | -------- | --------------------------------- | ------------------------------------------------------------------------------------------- |
 | `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-docker-environment:dev" |
+| `pull_policy`                 | false    | "never", "if_missing"             | default="if_missing"                                                                        |
 | `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                                  |
 | `environment`                 | false    | object                            | —; default from model factory                                                               |
 | `init_script`                 | false    | string or null                    | maxLength=1048576; format="multiline"; default=null                                         |

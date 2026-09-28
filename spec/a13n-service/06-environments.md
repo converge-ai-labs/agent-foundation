@@ -59,6 +59,8 @@ Mount names match `^[a-z][a-z0-9-]{0,62}$`; `workspace` is the primary mount. A 
 
 ## Templates and instances
 
+Operator-selected Local and Docker defaults are prepared by [workspace provisioning](09-runtime.md#workspace-provisioning). A Docker recipe accepts `pull_policy: never | if_missing` (default `if_missing`). `never` uses only an image already in the configured Engine; a missing image fails with `environment_image_missing` and build/load guidance. Image acquisition policy is not part of the native container identity.
+
 A template is live configuration ([04](04-resources.md#environment-templates)). Its effect on instances:
 
 - **The recipe is frozen per instance.** The first claim of an instance's create operation validates the template's current recipe, materializes its effective provider defaults into `handle.recipe`, and freezes `provider_identity` before any external call. Later template edits and changes to provider defaults apply only to instances created afterwards; an existing instance never changes its image, resources or storage. Explicit template values remain explicit even when equal to the current default. A legacy Docker handle without `image` retains `ghcr.io/converge-ai-labs/a13n-docker-environment:dev`, including a create whose response was lost before portable state was saved; reconnect, retry, stop and delete never reinterpret that omission as the current release.

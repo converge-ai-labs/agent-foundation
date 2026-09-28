@@ -52,16 +52,20 @@ async def _validated_config(
     provider.
     """
     provider = await resolve_provider(session, actor, EnvironmentProviderRow, scope, provider_id, verb="read")
-    definition = registry.get("environment", provider.type)
+    normalized = validate_config(registry, provider.type, config)
+    if current is None or (provider_id, normalized["recipe"]) != (current.provider_id, current.config["recipe"]):
+        await resolve_provider(session, actor, EnvironmentProviderRow, scope, provider_id, verb="write")
+    return normalized
+
+
+def validate_config(registry: Registry, provider_type: str, config: TemplateConfig) -> dict[str, JsonValue]:
+    """Normalize a recipe without dropping explicit pins; store the idle policy in full for maintenance SQL."""
+    definition = registry.get("environment", provider_type)
     try:
         recipe = definition.environment_model.model_validate(config.recipe)
     except ValidationError as error:
-        raise invalid("config.recipe", f"invalid for {provider.type}: {rejection_reason(error)}") from None
-    # An explicit value remains a pin even when it equals today's provider default.
+        raise invalid("config.recipe", f"invalid for {provider_type}: {rejection_reason(error)}") from None
     normalized = config.model_copy(update={"recipe": recipe.model_dump(mode="json", exclude_unset=True)})
-    if current is None or (provider_id, normalized.recipe) != (current.provider_id, current.config["recipe"]):
-        await resolve_provider(session, actor, EnvironmentProviderRow, scope, provider_id, verb="write")
-    # The idle policy is stored in full: maintenance reads it in SQL.
     return normalized.model_dump(mode="json")
 
 
@@ -71,23 +75,36 @@ async def create_template(
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
         config = await _validated_config(session, actor, scope, body.provider_id, body.config, registry, current=None)
-        row = EnvironmentTemplateRow(
-            id=new_object_id("envtpl"),
-            organization_id=scope.organization_id,
-            workspace_id=scope.workspace_id,
-            name=body.name,
-            description=body.description,
-            provider_id=body.provider_id,
-            config=config,
-            enabled=True,
-            labels=body.labels,
-            created_by_id=actor.id,
-            updated_by_id=actor.id,
-        )
-        session.add(row)
-        await session.flush()
-        audit_row(session, actor, row, "create")
+        row = await insert_template(session, actor, scope, body, config=config)
         return Template.model_validate(row)
+
+
+async def insert_template(
+    session: AsyncSession,
+    actor: Principal | None,
+    scope: WorkspaceScope,
+    body: TemplateCreate,
+    *,
+    config: dict[str, JsonValue],
+) -> EnvironmentTemplateRow:
+    """Insert and audit the validated configuration in the caller's authorized transaction."""
+    row = EnvironmentTemplateRow(
+        id=new_object_id("envtpl"),
+        organization_id=scope.organization_id,
+        workspace_id=scope.workspace_id,
+        name=body.name,
+        description=body.description,
+        provider_id=body.provider_id,
+        config=config,
+        enabled=True,
+        labels=body.labels,
+        created_by_id=None if actor is None else actor.id,
+        updated_by_id=None if actor is None else actor.id,
+    )
+    session.add(row)
+    await session.flush()
+    audit_row(session, actor, row, "create")
+    return row
 
 
 async def list_templates(

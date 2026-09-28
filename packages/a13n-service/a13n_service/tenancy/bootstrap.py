@@ -11,7 +11,8 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.tenancy.authorize import Scope
 from a13n_service.tenancy.credentials import hash_password
 from a13n_service.tenancy.schemas import Email, NewPassword
-from a13n_service.tenancy.tables import GrantRow, OrganizationRow, PasswordRow, PrincipalRow, WorkspaceRow
+from a13n_service.tenancy.tables import GrantRow, OrganizationRow, PasswordRow, PrincipalRow
+from a13n_service.tenancy.workspaces import WorkspaceCreated, insert_workspace
 
 
 class BootstrapInput(BaseModel):
@@ -35,7 +36,9 @@ class Bootstrapped:
     principal_id: str
 
 
-async def bootstrap(storage: Storage, request: BootstrapInput) -> Bootstrapped:
+async def bootstrap(
+    storage: Storage, request: BootstrapInput, *, on_created: WorkspaceCreated | None = None
+) -> Bootstrapped:
     password_hash = await hash_password(request.password.get_secret_value())
     result = Bootstrapped(new_object_id("org"), new_object_id("ws"), new_object_id("usr"))
     async with transaction(storage) as session:
@@ -44,8 +47,12 @@ async def bootstrap(storage: Storage, request: BootstrapInput) -> Bootstrapped:
             raise AlreadyBootstrapped()
         session.add(OrganizationRow(id=result.organization_id, name="Default organization"))
         await session.flush()
-        session.add(
-            WorkspaceRow(id=result.workspace_id, organization_id=result.organization_id, name="Default workspace")
+        await insert_workspace(
+            session,
+            workspace_id=result.workspace_id,
+            organization_id=result.organization_id,
+            name="Default workspace",
+            on_created=on_created,
         )
         session.add(PrincipalRow(id=result.principal_id, kind="user", name=request.email, email=request.email))
         await session.flush()

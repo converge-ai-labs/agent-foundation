@@ -30,5 +30,5 @@ class EnvironmentTemplateRow(Stamped, Base):
     config: Mapped[dict] = mapped_column(JSONB)
     enabled: Mapped[bool] = mapped_column(default=True)
     labels: Mapped[dict] = mapped_column(JSONB)
-    created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
-    updated_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+    created_by_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
+    updated_by_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))

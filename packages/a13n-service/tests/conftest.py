@@ -179,7 +179,11 @@ async def _serve(
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime
         await runtime.redis.flushdb()
-        tenant = await bootstrap(runtime.storage, BootstrapInput(email=EMAIL, password=SecretStr(PASSWORD)))
+        tenant = await bootstrap(
+            runtime.storage,
+            BootstrapInput(email=EMAIL, password=SecretStr(PASSWORD)),
+            on_created=runtime.workspace_created,
+        )
         async with httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=app), base_url="https://service.test"
         ) as client:

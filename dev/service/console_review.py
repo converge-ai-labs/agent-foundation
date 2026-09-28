@@ -102,8 +102,9 @@ authority_seconds = 0.2
 drain_seconds = 3
 [control]
 scan_seconds = 0.2
-[environments]
-allow_local = true
+[provisioning.local]
+enabled = true
+root = {json.dumps(str(directory / "environments"))}
 """
 
 

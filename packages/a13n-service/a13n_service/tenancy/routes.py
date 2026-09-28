@@ -87,7 +87,7 @@ async def bootstrap_administrator(
     if await initialized(runtime.storage):
         raise already
     try:
-        await bootstrap(runtime.storage, body)
+        await bootstrap(runtime.storage, body, on_created=runtime.workspace_created)
     except AlreadyBootstrapped:
         raise already from None
     result = await login(

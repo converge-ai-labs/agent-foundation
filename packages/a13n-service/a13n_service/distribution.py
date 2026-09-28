@@ -25,6 +25,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbox import Delivery, OutboxRow, purge_settled
 from a13n_service.infra.sweeps import Sweep
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
+from a13n_service.provisioning.tables import WorkspaceProvisioningRow
 from a13n_service.resources.agents.routes import router as agents_router
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.assets.routes import router as assets_router
@@ -258,6 +259,7 @@ OSS = Distribution(
     tables=(
         OrganizationRow,
         WorkspaceRow,
+        WorkspaceProvisioningRow,
         PrincipalRow,
         PasswordRow,
         GrantRow,

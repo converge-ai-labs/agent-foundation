@@ -119,7 +119,7 @@ The native Provider overrides the image entrypoint, enables Docker init support 
 
 `close()` disconnects local observations without stopping the container or its background processes. A fresh managed adapter reuses the saved container; confirmed absence creates a replacement with an empty private workspace. Transport failures do not prove absence. Docker file paths are native container paths, while Harness adds its aggregate mount prefix; relative tool paths start in `/workspace`.
 
-Use `make image-docker-environment` to build the image, and follow the [Docker lifecycle example](examples.md#docker) for direct Provider use. The Service manages Docker environments from templates; see [Service environments](../a13n-service/environments.md).
+Docker recipes accept `pull_policy="if_missing"` (the default) or `"never"`. `never` refuses missing images with `environment_image_missing` and never contacts a registry. Use `make image-docker-environment` to build the image, and follow the [Docker lifecycle example](examples.md#docker) for direct Provider use. The Service manages Docker environments from templates; see [Service environments](../a13n-service/environments.md).
 
 ## Cloud providers
 

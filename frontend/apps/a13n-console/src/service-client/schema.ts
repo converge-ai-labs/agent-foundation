@@ -5632,7 +5632,7 @@ export interface components {
        */
       created_at: string;
       /** Created By Id */
-      created_by_id: string;
+      created_by_id: string | null;
       /** Credential Configured */
       credential_configured: boolean;
       /** Enabled */
@@ -5653,7 +5653,7 @@ export interface components {
        */
       updated_at: string;
       /** Updated By Id */
-      updated_by_id: string;
+      updated_by_id: string | null;
       /** Version */
       version: number;
       /** Workspace Id */
@@ -6604,7 +6604,7 @@ export interface components {
        */
       created_at: string;
       /** Created By Id */
-      created_by_id: string;
+      created_by_id: string | null;
       /** Description */
       description: string | null;
       /** Enabled */
@@ -6627,7 +6627,7 @@ export interface components {
        */
       updated_at: string;
       /** Updated By Id */
-      updated_by_id: string;
+      updated_by_id: string | null;
       /** Version */
       version: number;
       /** Workspace Id */

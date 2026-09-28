@@ -61,8 +61,8 @@ class Template(BaseModel):
     enabled: bool
     labels: dict[str, str]
     version: int
-    created_by_id: str
-    updated_by_id: str
+    created_by_id: str | None
+    updated_by_id: str | None
     created_at: datetime
     updated_at: datetime
 

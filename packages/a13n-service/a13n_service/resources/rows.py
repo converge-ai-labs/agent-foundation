@@ -36,8 +36,8 @@ class Row(Protocol):
     workspace_id: Mapped[str]
 
 
-class EditedRow(Row, Protocol):
-    updated_by_id: Mapped[str]
+class EditedRow[T: str | None](Row, Protocol):
+    updated_by_id: Mapped[T]
 
 
 class _Switchable(Row, Protocol):
@@ -100,7 +100,9 @@ def given(body: BaseModel, *names: str) -> dict[str, object]:
     return {name: value for name in names if (value := getattr(body, name)) is not None}
 
 
-def record_update(session: AsyncSession, actor: Principal, row: EditedRow, changed: Sequence[str]) -> bool:
+def record_update(
+    session: AsyncSession, actor: Principal, row: EditedRow[str] | EditedRow[str | None], changed: Sequence[str]
+) -> bool:
     """Stamp and audit an update of the `changed` fields; one that changes nothing keeps the version and records
     nothing (False)."""
     if not changed:
@@ -111,13 +113,13 @@ def record_update(session: AsyncSession, actor: Principal, row: EditedRow, chang
 
 
 def audit_row(
-    session: AsyncSession, actor: Principal, row: Row, verb: str, details: dict[str, JsonValue] | None = None
+    session: AsyncSession, actor: Principal | None, row: Row, verb: str, details: dict[str, JsonValue] | None = None
 ) -> None:
     """Record `<kind>.<verb>` on the row, in its own scope and the changing transaction."""
     record(
         session,
         _scope(row),
-        actor_id=actor.id,
+        actor_id=None if actor is None else actor.id,
         action=f"{row.KIND}.{verb}",
         target_kind=row.KIND,
         target_id=row.id,

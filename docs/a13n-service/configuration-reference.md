@@ -149,9 +149,18 @@ The complete machine-readable validation schema, including named enum/union defi
 | `environments.renewal_seconds`    | `A13N_ENVIRONMENTS__RENEWAL_SECONDS`    | number          | maximum=60; exclusiveMinimum=0; default=20    |
 | `environments.wait_seconds`       | `A13N_ENVIRONMENTS__WAIT_SECONDS`       | number          | maximum=3600; exclusiveMinimum=0; default=300 |
 | `environments.managed_count`      | `A13N_ENVIRONMENTS__MANAGED_COUNT`      | integer         | minimum=1; maximum=100000; default=100        |
-| `environments.allow_local`        | `A13N_ENVIRONMENTS__ALLOW_LOCAL`        | boolean         | default=false                                 |
 | `environments.docker_host`        | `A13N_ENVIRONMENTS__DOCKER_HOST`        | string or null  | minLength=1; maxLength=2048; default=null     |
 | `environments.docker_mount_roots` | `A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS` | array of string | maxItems=64; default=[]                       |
+
+## `provisioning`
+
+| Setting                           | Environment variable                                   | Type / choices        | Constraints and default                                              |
+| --------------------------------- | ------------------------------------------------------ | --------------------- | -------------------------------------------------------------------- |
+| `provisioning.local.enabled`      | `A13N_PROVISIONING__LOCAL` (JSON field `enabled`)      | boolean               | default=false                                                        |
+| `provisioning.local.root`         | `A13N_PROVISIONING__LOCAL` (JSON field `root`)         | string or null        | format="path"; default=null                                          |
+| `provisioning.docker.enabled`     | `A13N_PROVISIONING__DOCKER` (JSON field `enabled`)     | boolean               | default=false                                                        |
+| `provisioning.docker.image`       | `A13N_PROVISIONING__DOCKER` (JSON field `image`)       | string                | minLength=1; maxLength=1024; default="a13n-docker-environment:local" |
+| `provisioning.docker.pull_policy` | `A13N_PROVISIONING__DOCKER` (JSON field `pull_policy`) | "never", "if_missing" | default="never"                                                      |
 
 ## `memory`
 

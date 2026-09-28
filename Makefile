@@ -566,7 +566,7 @@ image-docker-environment: ## Build the native Docker execution image without Env
 
 image-check-docker-environment: ## Validate native Docker image prerequisites
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(DOCKER_ENVIRONMENT_IMAGE)")" = "sandbox"
-	@docker run --rm --entrypoint sh "$(DOCKER_ENVIRONMENT_IMAGE)" -c 'python3 --version && git --version && bash --version && node --version && npm --version && test -w /workspace && test -w /tmp/a13n && ! command -v a13n-envd'
+	@docker run --rm --entrypoint sh "$(DOCKER_ENVIRONMENT_IMAGE)" -ec 'python3 --version; python3 -m pip --version; python3 -m venv /tmp/a13n/venv; uv --version; git --version; bash --version; node --version; npm --version; pnpm --version; curl --version; rg --version; jq --version; cc --version; c++ --version; make --version; pkg-config --version; test -w /workspace; test -w /tmp/a13n; ! command -v a13n-envd'
 
 .PHONY: service-e2e-docker
 service-e2e-docker: sync image-docker-environment ## Run the environment journey on the native Docker provider

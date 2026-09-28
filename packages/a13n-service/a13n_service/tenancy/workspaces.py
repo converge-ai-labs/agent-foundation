@@ -1,7 +1,8 @@
 """Workspaces: creation, reads with the caller's verbs, renaming and icons, and archiving (read-only from then
 on)."""
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from functools import partial
 
 from pydantic import JsonValue
 from sqlalchemy import select, update
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors, images
 from a13n_service.infra.audit import record
-from a13n_service.infra.db import Storage, assign, lock, now, short_session
+from a13n_service.infra.db import Storage, after_commit, assign, lock, now, short_session
 from a13n_service.infra.errors import conflict, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
@@ -30,7 +31,27 @@ from a13n_service.tenancy.organizations import store_icon
 from a13n_service.tenancy.schemas import Workspace, WorkspaceCreate, WorkspacePage, WorkspaceUpdate
 from a13n_service.tenancy.tables import InvitationRow, WorkspaceRow
 
+type WorkspaceCreated = Callable[[str], Awaitable[None]]
+
 _UPDATE = "workspace.update"
+
+
+async def insert_workspace(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    organization_id: str,
+    name: str,
+    on_created: WorkspaceCreated | None = None,
+) -> WorkspaceRow:
+    """The shared insertion point; initialization runs only after the committing session closes."""
+    row = WorkspaceRow(id=workspace_id, organization_id=organization_id, name=name)
+    session.add(row)
+    await session.flush()
+    await session.refresh(row)
+    if on_created is not None:
+        after_commit(session, partial(on_created, row.id))
+    return row
 
 
 def workspace_view(row: WorkspaceRow, actor: Principal) -> Workspace:
@@ -52,14 +73,23 @@ def workspace_view(row: WorkspaceRow, actor: Principal) -> Workspace:
 
 
 async def create_workspace(
-    storage: Storage, access: Access, actor: Principal, organization_id: str, body: WorkspaceCreate
+    storage: Storage,
+    access: Access,
+    actor: Principal,
+    organization_id: str,
+    body: WorkspaceCreate,
+    *,
+    on_created: WorkspaceCreated | None = None,
 ) -> Workspace:
     path = OrganizationPath(organization_id)
     async with administering(storage, access, actor, path, action="workspace.create") as (session, scope):
-        row = WorkspaceRow(id=new_object_id("ws"), organization_id=scope.organization_id, name=body.name)
-        session.add(row)
-        await session.flush()
-        await session.refresh(row)
+        row = await insert_workspace(
+            session,
+            workspace_id=new_object_id("ws"),
+            organization_id=scope.organization_id,
+            name=body.name,
+            on_created=on_created,
+        )
         record(
             session,
             Scope(row.organization_id, row.id),

@@ -9,6 +9,20 @@ Threads **mount** environments. Each run freezes the thread's mounts when it sta
 
 In Console, **Environments → Templates** manages templates and **Environments → Instances** lists environments, and providers are under **Workspace settings → Providers → Environment**. All API paths below are under `/api/v1`.
 
+## Automatic local setup
+
+The single-host Compose stack with a mounted Docker socket automatically adds a **Docker** provider and **Linux Sandbox** template to each workspace when the Engine is reachable. Build the image locally before using the template:
+
+```sh
+make image-docker-environment
+```
+
+The template selects `a13n-docker-environment:local` with `pull_policy: never`. Missing images produce build/load guidance; they are not downloaded. The Linux image includes Python 3.13, pip, venv, uv, Node.js 24, npm, pnpm, Git, Bash, curl, ripgrep, jq, archive utilities and C/C++ build tools. Commands run as `sandbox`, with writable `/workspace` and `/tmp/a13n`. Project dependencies can be installed in a virtual environment or the project directory.
+
+The socket-free quickstart does not enable Docker provisioning. For source development, `make dev` explicitly enables **Local** and creates a **Local Workspace** template rooted at that checkout's `var/dev/environments`. Each environment later gets its own subdirectory. Local runs directly under the Service account and provides no isolation.
+
+Both components default off in generic Service configuration. Enable them in [Service settings](configuration.md#workspace-provisioning). Creation and single-host startup initialize missing components; failures are logged and retried twice. Restart the Service to rediscover an Engine after those retries. Successful initialization runs once: your edits, disabled resources and deletions remain yours, including across restarts. New instances still require a template reservation or an agent that selects the template.
+
 ## Providers
 
 An environment provider is the account environments run on. Create it like any other [provider](resources.md#providers), in `/api/v1/environment-providers`. `GET /api/v1/provider-types/environment` returns each type's configuration, credential and recipe schemas.
@@ -22,7 +36,7 @@ An environment provider is the account environments run on. Create it like any o
 | `vercel`  | Persistent Vercel sandboxes                     | `team_id`, `project_id`; credential `{"api_key": ...}` (a Vercel access token)                                                            | Stops, keeping files                   |
 | `sprites` | Fly.io Sprites                                  | `organization`; credential `{"api_key": ...}`                                                                                             | Not supported; Sprites sleep when idle |
 | `runloop` | Runloop devboxes                                | `organization`; credential `{"api_key": ...}`                                                                                             | Suspends, keeping files                |
-| `local`   | Directories on the worker host, for development | Offered only with `environments.allow_local`. Commands run directly on the worker host, which is no isolation boundary.                   | Nothing to stop                        |
+| `local`   | Directories on the worker host, for development | Offered only with `provisioning.local.enabled`. Commands run directly on the worker host, which is no isolation boundary.                 | Nothing to stop                        |
 
 A Docker provider uses the operator's `environments.docker_host` by default; a provider-specific `docker_host` must be a remote TCP or HTTPS engine allowed by the [outbound policy](configuration.md#outbound-requests). Docker Engine access grants host-level authority. Templates may bind host directories only under `environments.docker_mount_roots` (none by default); privileged containers and host namespaces are not available. Bound CPU, memory and process use on the Engine. The [Compose deployment](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) connects the host Engine; the Kubernetes chart does not include one.
 
@@ -59,7 +73,7 @@ Leave `recipe.image` unset to use `ghcr.io/converge-ai-labs/a13n-docker-environm
 | RC, such as Python version `0.1.0rc1`                 | `0.1.0-rc.1` |
 | Source (`0.0.0`, including local suffixes) or `.devN` | `dev`        |
 
-Release images support `linux/amd64` and `linux/arm64`. Set `recipe.image` explicitly to keep a particular tag across Service upgrades, or use a digest to pin exact content. The Engine uses local images and pulls missing ones.
+Release images support `linux/amd64` and `linux/arm64`. Set `recipe.image` explicitly to keep a particular tag across Service upgrades, or use a digest to pin exact content. A manually created Docker recipe defaults to `pull_policy: if_missing`: the Engine uses local images and pulls missing ones. Set `never` to require a local image. The automatically provisioned template explicitly selects the local image and `never`, overriding the release default.
 
 Each instance saves its resolved image before its first create; upgrades and interrupted creates keep that image. Legacy instances without a saved image keep `:dev`. Create a new environment to use a changed image or template.
 

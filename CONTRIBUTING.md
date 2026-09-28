@@ -101,7 +101,7 @@ Use the Makefile as the stable development interface:
 | `make dev-foreground`            | Run the same applications attached to this terminal                |
 | `make dev-stop`                  | Stop this checkout's running applications                          |
 | `make service-dev`               | Run only local Service and the scripted development model          |
-| `make dev-reset STATE=empty`     | Rebuild owned Service storage with no business data                |
+| `make dev-reset STATE=empty`     | Rebuild owned Service storage without example data                 |
 | `make dev-reset STATE=seeded`    | Rebuild owned Service storage with fictional resources and history |
 | `make dev-state-check`           | Check local development tools; seed a disposable instance          |
 | `make dev-status`                | Report this checkout's identity, ports and listener state as JSON  |

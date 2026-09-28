@@ -371,3 +371,25 @@ async def test_borrowed_docker_runtime_obeys_each_adapters_creation_policy(nativ
     engine.client.containers.create.assert_called_once()
     await managed.close()
     engine.client.close.assert_not_called()
+
+
+@pytest.mark.parametrize("policy", ["never", "if_missing"])
+async def test_image_policy_controls_missing_image_pull(native, policy):
+    env, engine, _ = native
+    config = env.config.model_copy(update={"pull_policy": policy})
+    candidate = DockerEnvironment(config, "env_test", None, env.runtime)
+    assert candidate.fingerprint == env.fingerprint
+    engine.client.images.get.side_effect = ImageNotFound("missing")
+    try:
+        if policy == "never":
+            with pytest.raises(EnvironmentProviderError) as raised:
+                await candidate.prepare()
+            assert raised.value.code == "environment_image_missing"
+            assert "make image-docker-environment" in str(raised.value)
+            engine.client.images.pull.assert_not_called()
+            engine.client.containers.create.assert_not_called()
+        else:
+            await candidate.prepare()
+            engine.client.images.pull.assert_called_once_with(config.image)
+    finally:
+        await candidate.close()

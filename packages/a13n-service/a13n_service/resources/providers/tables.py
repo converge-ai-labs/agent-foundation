@@ -36,8 +36,8 @@ class ProviderRow(Stamped, Base):
     # A model provider's extra request headers: name -> write-only envelope bound to this row and that name.
     extra_headers: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     enabled: Mapped[bool] = mapped_column(default=True)
-    created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
-    updated_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+    created_by_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
+    updated_by_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
 
     @declared_attr.directive
     @classmethod

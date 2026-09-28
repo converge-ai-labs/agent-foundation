@@ -137,9 +137,11 @@ scan_seconds = 0.2
 stream_refresh_seconds = 0.2
 [environments]
 scan_seconds = 0.5
-allow_local = true
 # The operator's engine, which Docker accounts that name none use.
 docker_host = {json.dumps(docker_host())}
+[provisioning.local]
+enabled = true
+root = {json.dumps(str(objects.parent / "environments"))}
 [telemetry]
 log_format = "pretty"
 """

@@ -60,7 +60,7 @@ def json_or_empty(content: bytes) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def check(base_url: str, email: str, password: str, *, first_run: bool) -> None:
+def check(base_url: str, email: str, password: str, *, first_run: bool) -> Browser:
     """Console loads; the administrator is created on first run, otherwise signs in; a credential can be stored."""
     browser = Browser(base_url)
     browser.expect(200, "GET", "/readyz")
@@ -83,6 +83,20 @@ def check(base_url: str, email: str, password: str, *, first_run: bool) -> None:
     if first_run:
         browser.expect(409, "POST", "/api/v1/auth/bootstrap", credentials)
     print(f"{base_url}: Console, {'bootstrap' if first_run else 'sign-in'} and credential storage work", flush=True)
+    return browser
+
+
+def environment_defaults(browser: Browser) -> tuple[dict, dict]:
+    """The socket-enabled stack prepares its resource pair without a manual API registration."""
+    [provider] = browser.expect(200, "GET", "/api/v1/environment-providers")["items"]
+    [template] = browser.expect(200, "GET", "/api/v1/environment-templates")["items"]
+    assert provider["type"] == "docker" and provider["config"] == {} and provider["created_by_id"] is None
+    assert template["provider_id"] == provider["id"] and template["created_by_id"] is None
+    assert template["config"]["recipe"] == {
+        "image": os.environ.get("A13N_DOCKER_ENVIRONMENT_IMAGE", "a13n-docker-environment:local"),
+        "pull_policy": "never",
+    }
+    return provider, template
 
 
 def compose(*args: str, capture: bool = False, file: Path = COMPOSE_FILE, project: str = COMPOSE_PROJECT) -> str:
@@ -100,14 +114,17 @@ def compose_smoke(port: str) -> None:
     try:
         compose("up", "--detach", "--wait")
         # Either loopback name reaches the Service; browsers commonly use `localhost`.
-        check(f"http://localhost:{port}", "admin@example.com", password, first_run=True)
+        defaults = environment_defaults(
+            check(f"http://localhost:{port}", "admin@example.com", password, first_run=True)
+        )
         key = compose("exec", "-T", "service", "sha256sum", KEY_FILE, capture=True)
         compose("restart", "service")
         compose("up", "--detach", "--wait")
-        check(base_url, "admin@example.com", password, first_run=False)
+        assert environment_defaults(check(base_url, "admin@example.com", password, first_run=False)) == defaults
+        print("Docker provider and Linux Sandbox are automatic and survive restart unchanged", flush=True)
         if compose("exec", "-T", "service", "sha256sum", KEY_FILE, capture=True) != key:
             raise RuntimeError("The generated encryption key changed across a restart")
-    except RuntimeError:
+    except (RuntimeError, AssertionError):
         compose("logs", "--no-color", "--tail", "200", "service")
         raise
     finally:
@@ -128,7 +145,9 @@ def quickstart_smoke(port: str) -> None:
     changed_password = secrets.token_urlsafe(24)
     try:
         stack("up", "--detach", "--wait")
-        check(base_url, email, password, first_run=False)
+        first = check(base_url, email, password, first_run=False)
+        assert first.expect(200, "GET", "/api/v1/environment-providers")["items"] == []
+        assert first.expect(200, "GET", "/api/v1/environment-templates")["items"] == []
         browser = Browser(base_url)
         browser.csrf = browser.expect(200, "POST", "/api/v1/auth/login", {"email": email, "password": password})[
             "csrf_token"

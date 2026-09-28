@@ -12,7 +12,7 @@ make dev
 
 Sign in through the printed Console URL, `http://<instance>.localhost:<port>`. Every checkout gets its own host name, because browsers keep one cookie jar per host whatever the port: two checkouts' Consoles hold separate sessions in one browser. Browsers resolve every `*.localhost` name to loopback. The Service accepts browser changes only from that origin, so signing in through `http://127.0.0.1:<port>` fails.
 
-A fresh database is empty apart from the administrator. For representative content, run `make dev-reset STATE=seeded` once.
+A fresh database contains the administrator plus the automatically provisioned Local provider and Local Workspace template; no example agents, instances or conversations are created. For representative content, run `make dev-reset STATE=seeded` once.
 
 | Command                       | Effect                                                                                      |
 | ----------------------------- | ------------------------------------------------------------------------------------------- |
@@ -42,13 +42,13 @@ Each checkout owns the Compose project `a13n-service-dev-<instance>` with its ow
 
 `make dev-reset STATE=seeded` rebuilds the database, starts the model and Service temporarily, and creates a fictional organization through the public API (`seed.py` and its `seed_*.py` modules), with real execution against the scripted model:
 
-- **Identity**: the organization, workspace and administrator renamed, with images; the members `builder@example.com`, `runner@example.com` and `viewer@example.com`, one per built-in role, who sign in with the administrator's password; a pending invitation (the expiry sweep deletes revoked ones); active, expiring and revoked API keys; an active and a disabled service account; an empty second workspace and an archived one.
+- **Identity**: the organization, workspace and administrator renamed, with images; the members `builder@example.com`, `runner@example.com` and `viewer@example.com`, one per built-in role, who sign in with the administrator's password; a pending invitation (the expiry sweep deletes revoked ones); active, expiring and revoked API keys; an active and a disabled service account; a second workspace without example content and an archived one.
 
 - **Providers**, all in the default workspace: a fictional account of every offered model, web, connector and environment provider type, with placeholder credentials no backend accepts; each fictional model provider serves one disabled model, keyed `fictional-<type>`, that carries a models.dev catalog reference where its type has one. The scripted models `local-scripted` and `local-scripted-media` are enabled and carry fictional prices, so usage shows cost; the media model declares every understanding capability and is the workspace's media-understanding default.
 
 - **Resources**: labeled skills with several revisions, one whose newest revision is not the default, and an archived one; more agents than one Console page, including revised, duplicated and archived ones and Agent Composer; a template per environment account, none of them reserved, so the seed calls no hosted provider, and a disabled one; a webhook subscription that the scripted model process accepts; example files (text, image, audio, PDF, archive, binary) stored as assets.
 
-- **Environments**: `local` environments are directories under `var/dev/environments`, a development-only type the checkout's settings allow. Seeded conversations mount the ready instance of the Local workspace template, so runs show the writer's skill, file edits, commands and a published asset; another instance is stopped, and an agent whose default template is Local workspace reserves one per thread.
+- **Environments**: `local` environments are directories under `var/dev/environments`, a development-only type the checkout's settings allow. The Service provisions the Local provider and Local Workspace template even without seeding. Seeded conversations reuse that template and mount its ready instance, so runs show the writer's skill, file edits, commands and a published asset; another instance is stopped, and an agent whose default template is Local Workspace reserves one per thread.
 
 - **Memory**: a team handbook with an always-loaded README and preferences, both PostgreSQL file memories; team facts, a record memory in a fake mem0 server that the scripted model process serves under `/mem0` (`dev/fixtures/mem0.py`) and keeps in `var/dev/mem0.json` across restarts; and a team assistant that mounts the preferences and facts for writing and the handbook for reading by default. One conversation edits a preference through the memory tools, a person then edits the handbook, and the next run receives both changes, so each file memory shows history, diffs and revisions to restore. Another conversation recalls the facts and records one more through the record tools.
 

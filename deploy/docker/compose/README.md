@@ -43,6 +43,8 @@ docker compose -f deploy/docker/compose/a13n-service.yaml exec service \
   a13n-service --config /app/service.toml bootstrap --email admin@example.com
 ```
 
+CLI bootstrap is completed by the next Service startup; if you run it inside an already running stack, restart `service` to prepare workspace defaults. The browser bootstrap prepares them before returning.
+
 `A13N_PORT` publishes another port and moves the public URL with it, and `A13N_SERVICE_IMAGE` selects another image tag; the default is the local build above. <http://127.0.0.1:8080/readyz> reports Service readiness.
 
 `make compose-smoke` exercises both Compose stacks on disposable projects, including initialization, sign-in and credential persistence across restarts.
@@ -60,11 +62,11 @@ A13N_PROVIDERS__HTTP_ORIGINS: '["http://host.docker.internal:11434"]'
 
 ## Docker environments
 
-Add a `docker` provider under **Workspace settings → Providers → Environment** or through `POST /api/v1/environment-providers`. It uses the mounted Engine socket by default.
+The stack explicitly enables Docker provisioning. When the mounted Engine answers, each new workspace automatically receives a **Docker** provider and **Linux Sandbox** template. Existing workspaces are initialized once at Service startup. Failures get two bounded retries and are logged; restart after fixing Engine access to try again. User edits, disabling and deletion of successfully initialized defaults survive restarts.
 
-Templates default to `ghcr.io/converge-ai-labs/a13n-docker-environment:<service-version>`; source and development builds use `:dev`. Set `recipe.image` to choose another tag or pin a digest. Existing instances keep their image across upgrades; see [Docker image versions](../../../docs/a13n-service/environments.md#docker-image-versions).
+The default template selects `a13n-docker-environment:local` with `pull_policy: never`. Build it with `make image-docker-environment` on the same Engine before creating an instance. It includes Python 3.13, uv, Node.js 24, pnpm and common command-line and C/C++ build tools. A missing image is reported with build/load instructions and never pulled. `A13N_DOCKER_ENVIRONMENT_IMAGE` changes the image for newly initialized workspaces. Edit existing templates through Console or the API.
 
-For local development, `make image-docker-environment` builds `a13n-docker-environment:local`. Select it in a template on the same Engine. The Engine uses local images and pulls missing ones. Create a new environment to use a changed image.
+For a registry image, set `provisioning.docker.image` to its reference and `pull_policy` to `if_missing`, using the JSON `A13N_PROVISIONING__DOCKER` override. Manually created Docker templates retain the [release-matched image defaults](../../../docs/a13n-service/environments.md#docker-image-versions) and `if_missing` policy. Existing instances keep their resolved image. Local provisioning stays off in this stack.
 
 Docker templates have a private `/workspace` and may bind explicitly approved existing host directories. Mount sources resolve in the host Engine filesystem namespace and need permissions suitable for the container user. Environment deletion preserves these external paths. The hosted sandbox providers and external envd targets are also available; the development-only `local` provider is not offered.
 

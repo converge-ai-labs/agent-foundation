@@ -31,7 +31,7 @@ from a13n_service.resources.skills.service import create_revision, create_skill,
 from a13n_service.runs import host
 from a13n_service.runs import skills as run_skills
 from a13n_service.runs.attempts import LeaseLost
-from a13n_service.settings import Settings
+from a13n_service.settings import LocalProvisioning, Provisioning, Settings
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
 from a13n_service.tenancy.tables import WorkspaceRow
 
@@ -658,7 +658,13 @@ async def _skilled_run(service, runs_kit, scripted_model, tmp_path) -> tuple[dic
 
 
 def _with_local_environments(settings: Settings) -> Settings:
-    return settings.model_copy(update={"environments": settings.environments.model_copy(update={"allow_local": True})})
+    return settings.model_copy(
+        update={
+            "provisioning": Provisioning(
+                local=LocalProvisioning(enabled=True, root=settings.objects.root.parent / "environments")
+            )
+        }
+    )
 
 
 async def test_a_skill_package_the_object_store_cannot_serve_is_materialized_by_a_later_attempt(

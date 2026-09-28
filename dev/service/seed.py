@@ -40,13 +40,13 @@ class Seeded:
 
 def seed(api: Api, checkout: Checkout) -> Seeded:
     """Seed this checkout with public resources, real execution and fictional usage history."""
-    model_url, environments = checkout.model_url, checkout.environments
+    model_url = checkout.model_url
     workspace = api.first_workspace()
     api.workspace_id = workspace["id"]
     org, ws = f"/api/v1/organizations/{workspace['organization_id']}", f"/api/v1/workspaces/{workspace['id']}"
     index = seed_identity(api, org, ws)
     providers = seed_providers(api)
-    local = seed_local(api, model_url, environments)
+    local = seed_local(api, model_url)
     skills = seed_skills(api)
     seed_templates(api, providers["environment"], local.template)
     subscription = seed_subscription(api, model_url)

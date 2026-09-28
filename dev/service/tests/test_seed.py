@@ -46,7 +46,13 @@ def test_seeded_state_verifies_after_a_restart_and_private_resources_apply_once(
 ) -> None:
     with running(instance), Api(instance.service_url) as api:
         api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
+        api.workspace_id = api.first_workspace()["id"]
+        [local_provider] = api.items("/api/v1/environment-providers")
+        [local_template] = api.items("/api/v1/environment-templates")
+        assert local_provider["type"] == "local" and local_provider["created_by_id"] is None
+        assert local_template["provider_id"] == local_provider["id"]
         seeded = seed(api, instance)
+        assert api.get(f"/api/v1/environment-templates/{local_template['id']}") == local_template
         checks = verify(api, seeded)
         assert [name for name, passed in checks if not passed] == []
         write_report(instance.seed_report, instance.console_url, seeded, checks)

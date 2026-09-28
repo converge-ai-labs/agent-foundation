@@ -48,12 +48,22 @@ _KEY = "docker"
 _ENGINE_TEARDOWN_SECONDS = 10.0
 
 
-def resolve_image(client, image_ref: str):
+def resolve_image(client, image_ref: str, *, pull_policy: Literal["never", "if_missing"] = "if_missing"):
     from docker.errors import ImageNotFound
 
     try:
         return client.images.get(image_ref), "local"
     except ImageNotFound:
+        if pull_policy == "never":
+            raise provider_error(
+                _KEY,
+                "environment_image_missing",
+                EnvironmentProviderErrorCategory.INVALID,
+                description=(
+                    "Image is missing from the configured Docker Engine and pull_policy is never. "
+                    "Build or load it first; for the supplied image run make image-docker-environment."
+                ),
+            ) from None
         return client.images.pull(image_ref), "pulled"
 
 
@@ -96,7 +106,7 @@ class DockerEnvironment(Environment):
         self.runtime = runtime
         self.managed = allow_create
         self.fingerprint = hashlib.sha256(
-            json.dumps(configuration.model_dump(mode="json"), sort_keys=True).encode()
+            json.dumps(configuration.model_dump(mode="json", exclude={"pull_policy"}), sort_keys=True).encode()
         ).hexdigest()
         self.target = decode_target_state(_KEY, state, DockerProviderStateData, fingerprint=self.fingerprint)
         if self.target is not None and self.managed and self.target.environment_id != environment_id:
@@ -238,7 +248,7 @@ class DockerEnvironment(Environment):
         from docker.types import Mount
 
         client = self.runtime.engine.client
-        image, _ = resolve_image(client, self.config.image)
+        image, _ = resolve_image(client, self.config.image, pull_policy=self.config.pull_policy)
         image_id = image.id
         if not isinstance(image_id, str) or not image_id:
             raise EnvironmentError("Docker did not return an image identity", code="environment_provider_failure")

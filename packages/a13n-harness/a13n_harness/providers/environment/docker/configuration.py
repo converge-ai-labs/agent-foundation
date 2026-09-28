@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -55,6 +55,7 @@ class DockerEnvironmentConfiguration(BaseModel):
     )
 
     image: Annotated[str, Field(min_length=1, max_length=1024)] = DEFAULT_DOCKER_IMAGE
+    pull_policy: Literal["never", "if_missing"] = "if_missing"
     mounts: tuple[DockerMountConfiguration, ...] = Field(
         default=(),
         title="Host directory mounts",

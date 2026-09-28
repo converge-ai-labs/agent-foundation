@@ -100,28 +100,43 @@ async def create_provider[R: ProviderRow](
 ) -> Provider:
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        definition = registry.get(row_type.PROVIDER_KIND, body.type)
-        config = _validated_config(
-            definition, body.config, body.credential, stored_credential=False, header_names=body.extra_headers.keys()
-        )
-        row = row_type(
-            id=new_object_id(row_type.ID_PREFIX),
-            organization_id=scope.organization_id,
-            workspace_id=scope.workspace_id,
-            type=body.type,
-            name=body.name,
-            config=config,
-            extra_headers={},
-            enabled=body.enabled,
-            created_by_id=actor.id,
-            updated_by_id=actor.id,
-        )
-        row.credential = None if body.credential is None else _protect(keys, row, body.credential)
-        row.extra_headers = _updated_headers(keys, row, body.extra_headers)
-        session.add(row)
-        await session.flush()
-        audit_row(session, actor, row, "create")
+        row = await insert_provider(session, actor, row_type, scope, body, registry=registry, keys=keys)
         return provider_view(row)
+
+
+async def insert_provider[R: ProviderRow](
+    session: AsyncSession,
+    actor: Principal | None,
+    row_type: type[R],
+    scope: WorkspaceScope,
+    body: ProviderCreate,
+    *,
+    registry: Registry,
+    keys: KeyRing,
+) -> R:
+    """Validate, encrypt, insert and audit in the caller's authorized transaction; None is the system actor."""
+    definition = registry.get(row_type.PROVIDER_KIND, body.type)
+    config = _validated_config(
+        definition, body.config, body.credential, stored_credential=False, header_names=body.extra_headers.keys()
+    )
+    row = row_type(
+        id=new_object_id(row_type.ID_PREFIX),
+        organization_id=scope.organization_id,
+        workspace_id=scope.workspace_id,
+        type=body.type,
+        name=body.name,
+        config=config,
+        extra_headers={},
+        enabled=body.enabled,
+        created_by_id=None if actor is None else actor.id,
+        updated_by_id=None if actor is None else actor.id,
+    )
+    row.credential = None if body.credential is None else _protect(keys, row, body.credential)
+    row.extra_headers = _updated_headers(keys, row, body.extra_headers)
+    session.add(row)
+    await session.flush()
+    audit_row(session, actor, row, "create")
+    return row
 
 
 async def get_provider[R: ProviderRow](

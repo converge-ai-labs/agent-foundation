@@ -7,6 +7,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import replace
 from functools import partial
 from importlib.metadata import version
 from pathlib import Path
@@ -37,6 +38,7 @@ from a13n_service.infra.telemetry import open_instrumentation
 from a13n_service.migrations.runner import heads, upgrade
 from a13n_service.providers.environments import offered
 from a13n_service.providers.registry import Registry
+from a13n_service.provisioning.service import Initializer
 from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels
 from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
@@ -197,7 +199,7 @@ def _registry(distribution: Distribution, config: Settings) -> Registry:
     return Registry.of(
         offered(
             distribution.providers,
-            allow_local=environments.allow_local,
+            allow_local=config.provisioning.local.enabled,
             docker_host=environments.docker_host,
             docker_mount_roots=environments.docker_mount_roots,
         )
@@ -253,6 +255,18 @@ def build_app(
             try:
                 async with asyncio.timeout(config.server.readiness_timeout):
                     await check_schema(runtime.storage, expected)
+                if role == "all":
+                    initializer = Initializer(
+                        runtime.storage,
+                        runtime.registry,
+                        runtime.keys,
+                        runtime.tasks,
+                        config.provisioning,
+                        runtime.endpoint_policy,
+                    )
+                    runtime = replace(runtime, workspace_created=initializer)
+                    app.state.runtime = runtime
+                    await initializer.existing()
                 if serves_api:
                     catalog = ModelsDevCatalog(
                         catalog_channels(runtime.registry.models.values()), runtime.endpoint_policy

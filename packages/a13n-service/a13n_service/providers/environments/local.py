@@ -1,7 +1,7 @@
 """Development-only managed local environments: one directory per environment under the template's root.
 
 Files and commands run directly on the worker host under the Service's own account, so this is no isolation
-boundary. The Service offers it only when `environments.allow_local` is set, and every process that executes
+boundary. The Service offers it only when `provisioning.local.enabled` is set, and every process that executes
 runs must share the host holding the directories.
 """
 
