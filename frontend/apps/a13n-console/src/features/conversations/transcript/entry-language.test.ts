@@ -94,10 +94,8 @@ it("words a lifecycle fact in prose and draws it by what it says", () => {
   expect(entryLabel(failed, t).name).toBe("Run failed · tool_failed · No");
   expect(entryGlyph(failed)).toBe(XIcon);
   expect(entryGlyph(outcome({ status: "cancelled" }))).toBe(SquareIcon);
-  const waiting = outcome({ status: "waiting", wait_reason: "client_tool" });
-  expect(entryLabel(waiting, t).name).toBe(
-    "Waiting for the application · client_tool",
-  );
+  const waiting = outcome({ status: "waiting", wait_reason: "call" });
+  expect(entryLabel(waiting, t).name).toBe("Waiting for call results · call");
   expect(entryGlyph(waiting)).toBe(PauseIcon);
 });
 

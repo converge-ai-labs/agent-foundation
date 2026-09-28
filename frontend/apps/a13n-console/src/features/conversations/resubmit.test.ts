@@ -112,5 +112,5 @@ it("reads every part of a stored message and nothing that is not one", () => {
   expect(messagePayload(payload)).toEqual(payload);
   expect(messagePayload(textInput("Hello"))).toEqual(textInput("Hello"));
   expect(messagePayload({ content: [{ type: "binary" }] })).toBeNull();
-  expect(messagePayload({ answers: [] })).toBeNull();
+  expect(messagePayload({ approvals: {}, calls: {} })).toBeNull();
 });

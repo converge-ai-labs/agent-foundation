@@ -33,8 +33,7 @@ type Trigger = Literal["input", "queued", "resume", "child_result", "spawned"]
 type Lineage = Literal["root", "continue", "fork"]
 type EntryStatus = Literal["pending", "assigned", "consumed", "failed", "withdrawn"]
 type Delivery = Literal["steer", "next_run"]
-type PendingKind = Literal["approval", "client_tool", "user_input"]
-type WaitReason = Literal["approval", "client_tool", "user_input", "multiple"]
+type WaitReason = Literal["approval", "call", "multiple"]
 type Sealed = Literal["waiting", "completed", "failed", "cancelled"]
 
 MAX_FAILURE_MESSAGE_CHARS = 4096
@@ -203,72 +202,77 @@ class InboxOrder(_Frozen):
 
 
 class Approve(_Frozen):
-    tool_call_id: str = Field(min_length=1, max_length=1024)
     action: Literal["approve"]
 
 
-class Reject(_Frozen):
-    tool_call_id: str = Field(min_length=1, max_length=1024)
-    action: Literal["reject"]
+class Deny(_Frozen):
+    action: Literal["deny"]
     reason: str | None = Field(default=None, max_length=4096)
 
 
-class Complete(_Frozen):
-    """A client-tool result, or user-question answers matching the pending call's arguments.
+class Returned(_Frozen):
+    """A JSON tool result. Built-in question values are validated by the Harness."""
 
-    Question results use `{answers: {question: selection}, response?: text}`; a general `response`
-    can answer the call without individual selections. Ordinary inbox messages do not resolve waits.
-    """
-
-    tool_call_id: str = Field(min_length=1, max_length=1024)
-    action: Literal["complete"]
-    result: JsonValue
+    status: Literal["returned"]
+    value: JsonValue
 
 
-class NoResponse(_Frozen):
-    tool_call_id: str = Field(min_length=1, max_length=1024)
-    action: Literal["no_response"] = "no_response"
+class Failed(_Frozen):
+    """An explicit external tool failure, including an intentional unanswered question."""
+
+    status: Literal["failed"]
+    message: str = Field(min_length=1, max_length=4096, pattern=r"\S")
 
 
-type Answer = Annotated[Approve | Reject | Complete, Field(discriminator="action")]
-type NormalizedAnswer = Annotated[Approve | Reject | Complete | NoResponse, Field(discriminator="action")]
+type ApprovalDecision = Annotated[Approve | Deny, Field(discriminator="action")]
+type CallResult = Annotated[Returned | Failed, Field(discriminator="status")]
+type ToolCallId = Annotated[str, Field(min_length=1, max_length=1024, pattern=r"\S")]
 
 
-class ResumeRequest(_Frozen):
-    answers: tuple[Answer, ...] = Field(default=(), max_length=128)
+class Resume(_Frozen):
+    """The complete result batch, submitted and stored on the successor without omission defaults."""
+
+    approvals: dict[ToolCallId, ApprovalDecision]
+    calls: dict[ToolCallId, CallResult]
 
     @model_validator(mode="after")
-    def bounded(self) -> "ResumeRequest":
-        if len({answer.tool_call_id for answer in self.answers}) != len(self.answers):
-            raise ValueError("Answer tool call IDs must be unique")
+    def bounded(self) -> "Resume":
+        if self.approvals.keys() & self.calls.keys():
+            raise ValueError("A call ID cannot occur in both result categories")
+        if len(self.approvals) + len(self.calls) > 128:
+            raise ValueError("Resume supports at most 128 results")
         if len(canonical_json(self.model_dump(mode="json"))) > MAX_RESUME_BYTES:
             raise ValueError("Resume request exceeds its byte limit")
         return self
 
 
-class Resume(_Frozen):
-    """The normalized batch stored on the successor: one answer per pending call of the exact wait."""
-
-    answers: tuple[NormalizedAnswer, ...] = Field(max_length=128)
-
-
-class PendingItem(_Frozen):
-    tool_call_id: str
-    kind: PendingKind
+class PendingCall(_Frozen):
+    tool_call_id: ToolCallId
     tool_name: str
     arguments: dict[str, JsonValue]
     presentation: dict[str, JsonValue] | None = None
 
 
 class Pending(_Frozen):
-    """Public projection of the exact sealed pending set; the native requests live in the state object."""
+    """Public projection; complete native requests and private metadata stay in the checkpoint."""
 
-    items: tuple[PendingItem, ...] = Field(min_length=1, max_length=128)
+    approvals: tuple[PendingCall, ...]
+    calls: tuple[PendingCall, ...]
+
+    @model_validator(mode="after")
+    def bounded(self) -> "Pending":
+        items = (*self.approvals, *self.calls)
+        if not 1 <= len(items) <= 128:
+            raise ValueError("Pending requires one to 128 calls")
+        if len({item.tool_call_id for item in items}) != len(items):
+            raise ValueError("Pending call IDs must be unique across categories")
+        return self
 
     @property
     def reason(self) -> WaitReason:
-        kinds: set[WaitReason] = {item.kind for item in self.items}
-        return kinds.pop() if len(kinds) == 1 else "multiple"
+        if self.approvals and self.calls:
+            return "multiple"
+        return "approval" if self.approvals else "call"
 
 
 class Outcome(_Frozen):

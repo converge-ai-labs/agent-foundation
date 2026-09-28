@@ -68,7 +68,6 @@ from a13n_service.runs.environments.execution import PreparedMount, open_mounts,
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.host import HostPlan, open_host, resolve_host
 from a13n_service.runs.inputs import Offered
-from a13n_service.runs.resume import normalize
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     EnvironmentMount,
@@ -76,7 +75,6 @@ from a13n_service.runs.schemas import (
     Outcome,
     Pending,
     Resume,
-    ResumeRequest,
     RunOptions,
     canonical_json,
 )
@@ -268,7 +266,11 @@ def _initial(
     state = base.harness.fork(thread_id=thread_id) if fork else base.harness
     if pending is None:
         return state, None
-    return state, deferred.resume(deferred.load(base.deferred), answers or normalize(pending, ResumeRequest()))
+    if fork:
+        answers = deferred.fork_results(pending)
+    if answers is None:
+        raise ValueError("A waiting parent requires explicit resume results")
+    return state, deferred.resume(deferred.load(base.deferred), answers)
 
 
 class _Offers:

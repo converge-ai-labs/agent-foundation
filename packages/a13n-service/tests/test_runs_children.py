@@ -65,7 +65,7 @@ async def test_a_question_response_keeps_queued_child_results(service, scripted_
     thread_id = submitted["thread"]["id"]
     await (await runs_kit.attempt(service))
     waiting = await runs_kit.get_run(service, submitted["run"]["id"])
-    assert waiting["wait_reason"] == "user_input", waiting
+    assert waiting["wait_reason"] == "call", waiting
     scripted_model.say("42", to="Role: worker")
     await (await runs_kit.attempt(service))
     await _deliver(service)
@@ -79,7 +79,7 @@ async def test_a_question_response_keeps_queued_child_results(service, scripted_
     assert (await runs_kit.get_thread(service, thread_id))["current_run_id"] is None
     reply = await service.client.post(
         f"{service.api}/runs/{waiting['id']}/resume",
-        json={"answers": [{"tool_call_id": "call_ask", "action": "complete", "result": {"response": "blue"}}]},
+        json={"approvals": {}, "calls": {"call_ask": {"status": "returned", "value": {"response": "blue"}}}},
         headers=runs_kit.fresh_key(),
     )
     assert reply.status_code == 201, reply.text

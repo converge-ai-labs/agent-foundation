@@ -109,7 +109,7 @@ export function RunDock({
           <RunFeedback
             key={waiting.id}
             run={waiting}
-            actions={waiting.pending.items}
+            pending={waiting.pending}
             accepted={accepted}
             continuation={
               <ContinueWithoutFeedback
@@ -120,7 +120,7 @@ export function RunDock({
             }
           />
         ) : (
-          <PendingRequests actions={waiting.pending.items} />
+          <PendingRequests pending={waiting.pending} />
         ))}
       <ThreadInbox thread={thread} canRunNext={canRunNext} />
       <div className={styles.dock}>

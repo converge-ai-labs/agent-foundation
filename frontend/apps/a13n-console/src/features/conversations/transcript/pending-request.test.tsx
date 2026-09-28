@@ -39,11 +39,10 @@ function resumes() {
 }
 function approval(
   tool_call_id: string,
-  presentation: Schema["PendingItem"]["presentation"] = null,
-): Schema["PendingItem"] {
+  presentation: Schema["PendingCall"]["presentation"] = null,
+): Schema["PendingCall"] {
   return {
     tool_call_id,
-    kind: "approval",
     tool_name: `${tool_call_id} action`,
     arguments: { path: "/workspace/report" },
     presentation,
@@ -58,7 +57,10 @@ it("requires an explicit decision for every approval before sending the complete
       <RunFeedback
         accepted={accepted}
         run={run}
-        actions={[approval("first"), approval("second")]}
+        pending={{
+          approvals: [approval("first"), approval("second")],
+          calls: [],
+        }}
       />
     </QueryClientProvider>,
   );
@@ -76,10 +78,8 @@ it("requires an explicit decision for every approval before sending the complete
   await waitFor(() => expect(accepted).toHaveBeenCalledWith(successor));
   expect(post.mock.calls[0]![0]).toBe("/api/v1/runs/{run_id}/resume");
   expect(post.mock.calls[0]![1].body).toEqual({
-    answers: [
-      { action: "approve", tool_call_id: "first" },
-      { action: "reject", tool_call_id: "second" },
-    ],
+    approvals: { first: { action: "approve" }, second: { action: "deny" } },
+    calls: {},
   });
 });
 
@@ -90,13 +90,16 @@ it("submits a bounded denial reason with the rest of the answers", async () => {
     <QueryClientProvider client={new QueryClient()}>
       <RunFeedback
         run={run}
-        actions={[
-          approval("first", {
-            target: "path: /workspace/report",
-            risk: "high",
-            reason: "Tool reviewer requires approval.",
-          }),
-        ]}
+        pending={{
+          calls: [],
+          approvals: [
+            approval("first", {
+              target: "path: /workspace/report",
+              risk: "high",
+              reason: "Tool reviewer requires approval.",
+            }),
+          ],
+        }}
         accepted={accepted}
       />
     </QueryClientProvider>,
@@ -109,13 +112,9 @@ it("submits a bounded denial reason with the rest of the answers", async () => {
   await user.type(reason, "Sensitive destination");
   await user.click(screen.getByRole("button", { name: "Submit responses" }));
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-  expect(post.mock.calls[0]![1].body.answers).toEqual([
-    {
-      action: "reject",
-      tool_call_id: "first",
-      reason: "Sensitive destination",
-    },
-  ]);
+  expect(post.mock.calls[0]![1].body.approvals).toEqual({
+    first: { action: "deny", reason: "Sensitive destination" },
+  });
 });
 
 it("falls back to JSON for malformed approval presentation", () => {
@@ -123,12 +122,15 @@ it("falls back to JSON for malformed approval presentation", () => {
     <QueryClientProvider client={new QueryClient()}>
       <RunFeedback
         run={run}
-        actions={[
-          approval("first", {
-            target: "path: /workspace",
-            reason: { unexpected: true },
-          }),
-        ]}
+        pending={{
+          calls: [],
+          approvals: [
+            approval("first", {
+              target: "path: /workspace",
+              reason: { unexpected: true },
+            }),
+          ],
+        }}
         accepted={accepted}
       />
     </QueryClientProvider>,
@@ -139,10 +141,9 @@ it("falls back to JSON for malformed approval presentation", () => {
 
 function question(
   questions: typeof questionPresentation = questionPresentation,
-): Schema["PendingItem"] {
+): Schema["PendingCall"] {
   return {
     tool_call_id: "question",
-    kind: "user_input",
     tool_name: "ask_user_question",
     arguments: questions,
     presentation: null,
@@ -156,7 +157,7 @@ function renderQuestions(questions = questionPresentation) {
       <RunFeedback
         accepted={accepted}
         run={run}
-        actions={[question(questions)]}
+        pending={{ approvals: [], calls: [question(questions)] }}
       />
     </QueryClientProvider>,
   );
@@ -165,7 +166,7 @@ function renderQuestions(questions = questionPresentation) {
 function answered() {
   expect(post.mock.calls[0]![0]).toBe("/api/v1/runs/{run_id}/resume");
   expect(post.mock.calls[0]![1].params.path).toEqual({ run_id: run.id });
-  return post.mock.calls[0]![1].body.answers;
+  return post.mock.calls[0]![1].body.calls;
 }
 const questionPresentation = {
   questions: [
@@ -203,18 +204,17 @@ it("answers questions with single and multiple selections in the exact answer en
   await user.click(screen.getByRole("checkbox", { name: /Tickets/ }));
   await user.click(submit);
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-  expect(answered()).toEqual([
-    {
-      action: "complete",
-      tool_call_id: "question",
-      result: {
+  expect(answered()).toEqual({
+    question: {
+      status: "returned",
+      value: {
         answers: {
           "Which business?": "Retail",
           "Which tools?": ["Search", "Tickets"],
         },
       },
     },
-  ]);
+  });
   await waitFor(() => expect(accepted).toHaveBeenCalledWith(successor));
 });
 
@@ -235,13 +235,12 @@ it("allows free text instead of an option and does not submit an empty answer", 
   );
   await user.click(submit);
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-  expect(answered()).toEqual([
-    {
-      action: "complete",
-      tool_call_id: "question",
-      result: { answers: { "Which business?": "Travel support" } },
+  expect(answered()).toEqual({
+    question: {
+      status: "returned",
+      value: { answers: { "Which business?": "Travel support" } },
     },
-  ]);
+  });
 });
 
 it("answers questions and approvals together in a mixed wait", async () => {
@@ -252,13 +251,17 @@ it("answers questions and approvals together in a mixed wait", async () => {
       <RunFeedback
         accepted={accepted}
         run={run}
-        actions={[
-          question({ questions: [questionPresentation.questions[0]!] }),
-          approval("approval", {
-            risk: "low",
-            reason: "Tool policy requires approval.",
-          }),
-        ]}
+        pending={{
+          calls: [
+            question({ questions: [questionPresentation.questions[0]!] }),
+          ],
+          approvals: [
+            approval("approval", {
+              risk: "low",
+              reason: "Tool policy requires approval.",
+            }),
+          ],
+        }}
       />
     </QueryClientProvider>,
   );
@@ -272,14 +275,13 @@ it("answers questions and approvals together in a mixed wait", async () => {
   await user.click(submit);
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   expect(post.mock.calls[0]![1].body).toEqual({
-    answers: [
-      {
-        action: "complete",
-        tool_call_id: "question",
-        result: { answers: { "Which business?": "Retail" } },
+    approvals: { approval: { action: "approve" } },
+    calls: {
+      question: {
+        status: "returned",
+        value: { answers: { "Which business?": "Retail" } },
       },
-      { action: "approve", tool_call_id: "approval" },
-    ],
+    },
   });
 });
 
@@ -291,7 +293,9 @@ it("only skips a question after an explicit choice and submission", async () => 
   expect(post).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Submit responses" }));
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-  expect(answered()).toEqual([]);
+  expect(answered()).toEqual({
+    question: { status: "failed", message: "No response was given" },
+  });
 });
 
 it("preserves the question response and exact request after a stale-wait conflict", async () => {
@@ -313,5 +317,76 @@ it("preserves the question response and exact request after a stale-wait conflic
   await user.click(screen.getByRole("button", { name: "Submit responses" }));
   await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
   expect(post.mock.calls[1]).toEqual(post.mock.calls[0]);
-  expect(answered()[0].tool_call_id).toBe("question");
+  expect(Object.keys(answered())).toEqual(["question"]);
 });
+
+it.each([false, true])(
+  "submits a custom human tool result or explicit failure (failure: %s)",
+  async (failed) => {
+    const user = userEvent.setup();
+    resumes();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <RunFeedback
+          run={run}
+          accepted={accepted}
+          pending={{
+            approvals: [],
+            calls: [
+              {
+                tool_call_id: "review",
+                tool_name: "review_invoice",
+                arguments: { invoice: 7 },
+                presentation: {
+                  title: "Review invoice",
+                  description: "Check the total",
+                },
+              },
+            ],
+          }}
+        />
+      </QueryClientProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "Request details" }));
+    expect(screen.getByText(/Check the total/)).toBeTruthy();
+    await user.click(screen.getByRole("combobox", { name: "Response" }));
+    await user.click(
+      await screen.findByRole("option", {
+        name: failed ? "Report tool failure" : "Return tool result",
+      }),
+    );
+    if (failed) {
+      await user.click(
+        screen.getByRole("button", { name: "Submit responses" }),
+      );
+      expect((await screen.findByRole("alert")).textContent).toContain(
+        "Enter a failure reason.",
+      );
+      expect(post).not.toHaveBeenCalled();
+      await user.type(
+        screen.getByRole("textbox", { name: "Failure reason" }),
+        "Reviewer unavailable",
+      );
+    } else {
+      await user.click(
+        screen.getByRole("button", { name: "Submit responses" }),
+      );
+      await screen.findByRole("alert");
+      expect(post).not.toHaveBeenCalled();
+      await user.click(
+        screen.getByRole("textbox", { name: "Response (JSON)" }),
+      );
+      await user.paste('{"approved":false}');
+    }
+    await user.click(screen.getByRole("button", { name: "Submit responses" }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0]![1].body).toEqual({
+      approvals: {},
+      calls: {
+        review: failed
+          ? { status: "failed", message: "Reviewer unavailable" }
+          : { status: "returned", value: { approved: false } },
+      },
+    });
+  },
+);

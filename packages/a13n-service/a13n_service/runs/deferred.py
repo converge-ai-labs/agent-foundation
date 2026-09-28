@@ -6,12 +6,13 @@ metadata on resume. The public `Pending` projection is derived from them once, w
 
 from a13n_harness import DeferredToolResume
 from a13n_harness.tools.approval import APPROVAL_PRESENTATION_KEY
-from a13n_harness.toolsets.interaction import ASK_USER_QUESTION_TOOL_NAME
+from a13n_harness.tools.deferred import deferred_presentation
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai import ToolDenied, ToolFailed
+from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
-from a13n_service.runs.schemas import Approve, Complete, NoResponse, Pending, PendingItem, Reject, Resume
+from a13n_service.runs.schemas import Approve, Deny, Failed, Pending, PendingCall, Resume, Returned
 
 _REQUESTS = TypeAdapter(DeferredToolRequests)
 
@@ -25,40 +26,47 @@ def load(value: JsonValue) -> DeferredToolRequests:
 
 
 def pending(requests: DeferredToolRequests) -> Pending:
-    """External calls are user questions or client tools: the only external tools an agent declares."""
-    items = [
-        PendingItem(
-            tool_call_id=part.tool_call_id,
-            kind="approval",
-            tool_name=part.tool_name,
-            arguments=part.args_as_dict(),
-            presentation=requests.metadata.get(part.tool_call_id, {}).get(APPROVAL_PRESENTATION_KEY),
+    """Expose only intentionally public presentation, never the entire native metadata."""
+
+    def project(part: ToolCallPart, *, approval: bool = False) -> PendingCall:
+        metadata = requests.metadata.get(part.tool_call_id, {})
+        presentation = deferred_presentation(metadata)
+        if presentation is None and approval:
+            presentation = metadata.get(APPROVAL_PRESENTATION_KEY)
+        return PendingCall.model_validate(
+            {
+                "tool_call_id": part.tool_call_id,
+                "tool_name": part.tool_name,
+                "arguments": part.args_as_dict(),
+                "presentation": presentation,
+            }
         )
-        for part in requests.approvals
-    ]
-    items.extend(
-        PendingItem(
-            tool_call_id=part.tool_call_id,
-            kind="user_input" if part.tool_name == ASK_USER_QUESTION_TOOL_NAME else "client_tool",
-            tool_name=part.tool_name,
-            arguments=part.args_as_dict(),
-        )
-        for part in requests.calls
+
+    return Pending(
+        approvals=tuple(project(part, approval=True) for part in requests.approvals),
+        calls=tuple(project(part) for part in requests.calls),
     )
-    return Pending(items=tuple(items))
+
+
+def fork_results(pending: Pending) -> Resume:
+    """Fork abandons inherited waits in the new branch only; this is not a resume omission policy."""
+    return Resume(
+        approvals={
+            item.tool_call_id: Deny(action="deny", reason="No decision was given") for item in pending.approvals
+        },
+        calls={item.tool_call_id: Failed(status="failed", message="No response was given") for item in pending.calls},
+    )
 
 
 def resume(requests: DeferredToolRequests, answers: Resume) -> DeferredToolResume:
-    """`answers` holds exactly one normalized answer per pending call."""
-    results = DeferredToolResults()
-    for answer in answers.answers:
-        match answer:
-            case Approve():
-                results.approvals[answer.tool_call_id] = True
-            case Reject():
-                results.approvals[answer.tool_call_id] = ToolDenied(answer.reason or "The call was rejected")
-            case Complete():
-                results.calls[answer.tool_call_id] = answer.result
-            case NoResponse():
-                results.calls[answer.tool_call_id] = ToolFailed("No response was given")
+    results = DeferredToolResults(
+        approvals={
+            call_id: True if isinstance(answer, Approve) else ToolDenied(answer.reason or "The call was rejected")
+            for call_id, answer in answers.approvals.items()
+        },
+        calls={
+            call_id: answer.value if isinstance(answer, Returned) else ToolFailed(answer.message)
+            for call_id, answer in answers.calls.items()
+        },
+    )
     return DeferredToolResume(requests=requests, results=results)

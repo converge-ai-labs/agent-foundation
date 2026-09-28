@@ -2395,7 +2395,7 @@ Answer the exact waiting run's approvals, client tools and user questions; the s
 
 Request body: required.
 
-- `application/json`: `ResumeRequest`.
+- `application/json`: `Resume`.
 
 Responses:
 

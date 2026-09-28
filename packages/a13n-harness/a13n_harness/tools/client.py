@@ -14,6 +14,7 @@ from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.tools.deferred import deferred_presentation
 from a13n_harness.tools.identity import TOOL_IDENTITY_KEY
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY
 
@@ -62,6 +63,7 @@ class ClientToolDefinition(BaseModel):
             raise ValueError("client metadata contains a reserved Harness key")
         if _metadata_contains_key(value, _FORBIDDEN_METADATA_KEYS, case_insensitive=True):
             raise ValueError("client metadata contains an authority-bearing key")
+        deferred_presentation(value)
         _require_bounded_json(value, MAX_CLIENT_METADATA_BYTES, "client tool metadata")
         return deepcopy(value)
 

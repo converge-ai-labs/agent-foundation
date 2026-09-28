@@ -43,6 +43,7 @@ from a13n_harness.tools.approval import (
     compact_target,
     tool_approval_scope,
 )
+from a13n_harness.tools.deferred import DEFERRED_PRESENTATION_KEY, deferred_presentation
 from a13n_harness.tools.identity import identify_tool, tool_identity
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
@@ -228,6 +229,16 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
                     **requests.metadata.get(call.tool_call_id, {}),
                     **captured,
                 }
+        # External tool definitions do not execute, so carry their opt-in display
+        # data into the durable request. Call-specific metadata takes precedence.
+        for call in (*requests.approvals, *requests.calls):
+            definition = ctx.tools.get(call.tool_name)
+            if definition is not None:
+                presentation = deferred_presentation(definition.metadata or {})
+                if presentation is not None:
+                    requests.metadata.setdefault(call.tool_call_id, {}).setdefault(
+                        DEFERRED_PRESENTATION_KEY, presentation
+                    )
         for call in requests.calls:
             definition = ctx.tools.get(call.tool_name)
             if definition is not None and definition.kind in {"function", "unapproved"}:

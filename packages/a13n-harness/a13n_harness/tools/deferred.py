@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
 
+from pydantic import JsonValue, TypeAdapter
 from pydantic_ai import ToolApproved, ToolDenied, ToolFailed, ToolReturn
 from pydantic_ai.messages import (
     ModelMessage,
@@ -23,6 +24,21 @@ from a13n_harness.state import HarnessState
 
 MAX_DEFERRED_ITEMS = 128
 MAX_DEFERRED_METADATA_BYTES = 64 * 1024
+DEFERRED_PRESENTATION_KEY = "a13n.interaction.presentation"
+MAX_PRESENTATION_BYTES = 16 * 1024
+_PRESENTATION = TypeAdapter(dict[str, JsonValue])
+
+
+def deferred_presentation(metadata: Mapping[str, object]) -> dict[str, JsonValue] | None:
+    """Opt-in public display data. Other deferred metadata remains private to execution."""
+    value = metadata.get(DEFERRED_PRESENTATION_KEY)
+    if value is None:
+        return None
+    presentation = _PRESENTATION.validate_python(value, strict=True)
+    require_finite_json(presentation)
+    if len(dump_json_bytes(presentation)) > MAX_PRESENTATION_BYTES:
+        raise ValueError("Deferred presentation is too large")
+    return deepcopy(presentation)
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +249,8 @@ def _validate_metadata(metadata: dict[str, dict[str, object]], pending_ids: set[
     if not set(metadata) <= pending_ids:
         raise RunError("Deferred metadata references an unknown call.", code="deferred_metadata_invalid")
     try:
+        for value in metadata.values():
+            deferred_presentation(value)
         encoded = dump_json_bytes(metadata, sort_keys=True)
     except (TypeError, ValueError) as exc:
         raise RunError("Deferred metadata is not JSON-safe.", code="deferred_metadata_invalid") from exc

@@ -1721,5 +1721,11 @@
   "The first account administers this Service.": "第一个账号将管理此服务。",
   "Creates a new agent. Service validates the configuration on creation; plugin availability also depends on the execution environment.": "将创建新 Agent。Service 会在创建时校验配置；插件可用性还取决于执行环境。",
   "Help me change the agent {{name}} (ID {{id}}), starting from its version {{version}} (revision ID {{revision}}).": "帮我修改 Agent {{name}}（ID {{id}}），从其版本 {{version}}（修订 ID {{revision}}）开始。",
-  "How agents refer to this model. Lowercase letters, numbers, hyphens and dots; it cannot change later.": "Agent 引用此模型时使用的标识。仅限小写字母、数字、连字符和点，创建后不可更改。"
+  "How agents refer to this model. Lowercase letters, numbers, hyphens and dots; it cannot change later.": "Agent 引用此模型时使用的标识。仅限小写字母、数字、连字符和点，创建后不可更改。",
+  "Waiting for approval": "等待审批",
+  "Waiting for call results": "等待调用结果",
+  "Waiting for approvals and call results": "等待审批和调用结果",
+  "Report tool failure": "报告工具失败",
+  "Failure reason": "失败原因",
+  "Enter a failure reason.": "请填写失败原因。"
 }

@@ -48,17 +48,16 @@ async def test_a_client_tool_waits_and_resume_answers_it(executing, scripted_mod
     scripted_model.call("lookup", {"q": "answer"}, call_id="call_lookup")
     submitted = await runs_kit.start_thread(executing, agent, "look it up")
     waiting = await runs_kit.sealed(executing, submitted["run"]["id"])
-    assert waiting["status"] == "waiting" and waiting["wait_reason"] == "client_tool"
-    assert waiting["pending"]["items"][0] | {"presentation": None} == {
+    assert waiting["status"] == "waiting" and waiting["wait_reason"] == "call"
+    assert waiting["pending"]["calls"][0] | {"presentation": None} == {
         "tool_call_id": "call_lookup",
-        "kind": "client_tool",
         "tool_name": "lookup",
         "arguments": {"q": "answer"},
         "presentation": None,
     }
 
     scripted_model.say("It is 42")
-    answer = {"answers": [{"tool_call_id": "call_lookup", "action": "complete", "result": {"value": 42}}]}
+    answer = {"approvals": {}, "calls": {"call_lookup": {"status": "returned", "value": {"value": 42}}}}
     resumed = await executing.client.post(
         f"{executing.api}/runs/{waiting['id']}/resume", json=answer, headers={"idempotency-key": "resume-1"}
     )
@@ -86,7 +85,7 @@ async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scr
     assert "mcp_headers" not in waiting["options"]
 
     scripted_model.say("Done")
-    answer = {"answers": [{"tool_call_id": "call_lookup", "action": "complete", "result": {"value": 42}}]}
+    answer = {"approvals": {}, "calls": {"call_lookup": {"status": "returned", "value": {"value": 42}}}}
     resumed = await executing.client.post(
         f"{executing.api}/runs/{waiting['id']}/resume", json=answer, headers={"idempotency-key": "resume-1"}
     )
@@ -103,19 +102,19 @@ async def test_a_question_response_resumes_its_exact_call(executing, scripted_mo
     scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
     submitted = await runs_kit.start_thread(executing, agent, "pick a color")
     waiting = await runs_kit.sealed(executing, submitted["run"]["id"])
-    assert waiting["wait_reason"] == "user_input"
+    assert waiting["wait_reason"] == "call"
 
     scripted_model.say("Blue it is")
     reply = await executing.client.post(
         f"{executing.api}/runs/{waiting['id']}/resume",
-        json={"answers": [{"tool_call_id": "call_ask", "action": "complete", "result": result}]},
+        json={"approvals": {}, "calls": {"call_ask": {"status": "returned", "value": result}}},
         headers=runs_kit.fresh_key(),
     )
     assert reply.status_code == 201, reply.text
     successor = await runs_kit.sealed(executing, reply.json()["id"])
     assert successor["status"] == "completed" and successor["parent_run_id"] == waiting["id"]
     assert successor["trigger"] == "resume" and successor["resumed_by_id"] == waiting["principal_id"]
-    assert successor["resume"]["answers"][0]["result"] == {"answers": {}, **result}
+    assert successor["resume"]["calls"]["call_ask"]["value"] == {"answers": {}, **result}
     # The response is durable resume data, not another inbox message.
     assert len(await runs_kit.inbox(executing, waiting["thread_id"])) == 1
     await scripted_model.request()
@@ -454,7 +453,7 @@ async def test_the_agent_composer_creates_an_agent_once_approved(executing, scri
     assert await custom() == []
 
     scripted_model.say("Created the greeter")
-    approve = {"answers": [{"tool_call_id": "call_create", "action": "approve"}]}
+    approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
     resumed = await executing.client.post(
         f"{executing.api}/runs/{waiting['id']}/resume", json=approve, headers={"idempotency-key": "approve-1"}
     )
@@ -484,7 +483,7 @@ async def test_the_agent_composer_reads_where_its_arguments_do_not_fit(executing
         executing, (await runs_kit.start_thread(executing, composer, "make a greeter"))["run"]["id"]
     )
     scripted_model.say("That model does not fit")
-    approve = {"answers": [{"tool_call_id": "call_create", "action": "approve"}]}
+    approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
     resumed = await executing.client.post(
         f"{executing.api}/runs/{waiting['id']}/resume", json=approve, headers={"idempotency-key": "approve-1"}
     )

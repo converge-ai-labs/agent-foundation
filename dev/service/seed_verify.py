@@ -181,7 +181,7 @@ def _execution(api: Api, index: dict[str, str]) -> Iterator[Check]:
     yield (
         "Waits for an approval, a client tool and a user's answer",
         [run(name)["wait_reason"] for name in ("approval_waiting", "client_tool_waiting", "question_waiting")]
-        == ["approval", "client_tool", "user_input"],
+        == ["approval", "call", "call"],
     )
     yield (
         "An approval and a client tool result resumed their runs",

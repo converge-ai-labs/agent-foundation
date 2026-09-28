@@ -79,10 +79,8 @@ class Workspace:
         )
         return expect(response, 201)
 
-    async def resume(self, run_id: str, answers: list[dict], *, key: str) -> httpx2.Response:
-        return await self.client.post(
-            f"/api/v1/runs/{run_id}/resume", json={"answers": answers}, headers={"idempotency-key": key}
-        )
+    async def resume(self, run_id: str, results: dict, *, key: str) -> httpx2.Response:
+        return await self.client.post(f"/api/v1/runs/{run_id}/resume", json=results, headers={"idempotency-key": key})
 
     async def interrupt(self, run_id: str) -> httpx2.Response:
         return await self.client.post(f"/api/v1/runs/{run_id}/interrupt")

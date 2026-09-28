@@ -85,7 +85,7 @@ A client tool is declared in the revision and executed by your application:
 
 When the model calls it, the run ends `waiting` with the call in `pending`. Your application performs it and [resumes](#resume-a-waiting-run) the run with the result.
 
-With `user_questions: true`, the model can ask the user a question with `ask_user_question`. The run waits with a `user_input` item; answer that specific call through [resume](#resume-a-waiting-run). Ordinary messages remain queued until the wait is explicitly resolved.
+With `user_questions: true`, the model can ask the user a question with `ask_user_question`. The run waits with an entry in `pending.calls`; answer that specific call through [resume](#resume-a-waiting-run). Ordinary messages remain queued until the wait is explicitly resolved.
 
 ### Subagents
 
@@ -211,56 +211,63 @@ Each key must be an enabled MCP connection of the workspace. At most 32 connecti
 
 ## Waits, approvals and questions
 
-A run that needs something from outside ends `waiting`. Its `pending.items` lists what it waits for, and `wait_reason` summarizes it (`approval`, `client_tool`, `user_input`, or `multiple`):
+A run that needs something from outside ends `waiting`. Its `pending.approvals` lists execution approvals and `pending.calls` lists external results, including user questions and custom human-operated tools. `wait_reason` summarizes these groups as `approval`, `call`, or `multiple`:
 
 ```json
 {
   "status": "waiting",
   "wait_reason": "approval",
-  "pending": {"items": [{"tool_call_id": "call_...", "kind": "approval", "tool_name": "create_agent",
-                         "arguments": {"name": "Triage"}, "presentation": null}]}
+  "pending": {
+    "approvals": [{"tool_call_id": "call_delete", "tool_name": "delete_file", "arguments": {"path": "report.txt"}, "presentation": null}],
+    "calls": []
+  }
 }
 ```
 
-| Kind          | Answer                                                                   |
-| ------------- | ------------------------------------------------------------------------ |
-| `approval`    | `approve`, or `reject` with an optional `reason`.                        |
-| `client_tool` | `complete` with the tool's `result`.                                     |
-| `user_input`  | `complete` with question `answers` or a free-text `response`; see below. |
-
-In Console, a pending approval offers **Approve once**, **Deny** and **Deny with reason**; a question offers selections or a custom answer, plus an explicit **Continue without a response** choice. Submit the complete response set together, including questions in mixed waits.
-
 ### Resume a waiting run
 
-`POST …/runs/{run_id}/resume` answers the wait with an `Idempotency-Key` and starts a successor run (trigger `resume`) that continues from the waiting run:
+Submit one complete batch naming the exact waiting Run and every pending call ID:
 
-```sh
+```bash
 curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -H "Idempotency-Key: 5b1b3f0e-approve-1" \
-  -d '{"answers": [{"tool_call_id": "call_...", "action": "approve"},
-                   {"tool_call_id": "call_...", "action": "complete", "result": {"ticket": "T-42"}}]}'
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  -H "Idempotency-Key: resume-1" \
+  -H "Content-Type: application/json" \
+  -d '{"approvals": {"call_delete": {"action": "deny", "reason": "Keep the file"}}, "calls": {}}'
 ```
 
-For a user question, use the waiting Run's ID and the question's `tool_call_id`, with either a general response or answers keyed by the exact question text:
+Approval values are `{ "action": "approve" }` or `{ "action": "deny", "reason": "..." }`. Call results are `{ "status": "returned", "value": ... }` or `{ "status": "failed", "message": "..." }`. Returned values can be any JSON; an explicit failure becomes a tool failure the Agent can handle, not necessarily a failed Run.
+
+For a user question, a returned value contains structured answers or a free-text response:
 
 ```json
-{"answers": [{"tool_call_id": "call_question", "action": "complete",
-              "result": {"response": "Up to 200 dollars per night."}}]}
+{
+  "approvals": {},
+  "calls": {
+    "call_question": {
+      "status": "returned",
+      "value": {"response": "Up to 200 dollars per night."}
+    }
+  }
+}
 ```
 
-A structured result could be `{"answers": {"Which color?": "blue"}}`; multi-select answers use arrays. The Service checks the result against that call's questions before accepting it. It stores the normalized result in the successor's `resume` field, not in the inbox. Messages already queued, and new ordinary messages, cannot close the wait. They keep their order; after explicit resume, compatible steers can join the successor while `next_run` messages wait for a later run.
+A structured value could be `{"answers": {"Which color?": "blue"}}`; multi-select answers use arrays. The Service checks it against that call's exact questions using the Harness validator. To intentionally skip the question, send `{"status": "failed", "message": "User chose not to answer"}` for that call.
 
-The response is the successor run (`201`, or `200` for a replay). Answer every item in one request: an omitted approval is rejected, and an omitted client tool or question gets no response. Resuming with no answers therefore abandons the wait. Only the thread's waiting history head can be resumed, while nothing else runs; otherwise the request fails with `409 conflict` and reason `not_idle_waiting_head`.
+Both result maps are required, and each must cover its pending group exactly. Missing results, unknown IDs and wrong categories reject the entire request without changing the wait. There are no default answers or partial submissions. In Console, review each item and submit the complete set; **Continue without feedback** explicitly submits denials and failed results after confirmation.
 
-### Upgrading question-response clients
+The response is the successor run (`201`, or `200` for an idempotent replay). Results are stored in its existing `resume` field, without another inbox message. Only the thread's waiting history head can be resumed while nothing else runs; stale requests receive `409 conflict` with reason `not_idle_waiting_head`. After a failed successor, explicitly resume the still-waiting head again.
 
-Clients that previously answered questions by submitting ordinary messages must send correlated `/resume` results instead. The existing `complete` answer envelope supports both client-tool and question results; no new response table is needed. Upgrade Service support before enabling this client behavior. Replace every control and worker process before relying on the waiting rule, since older processes can still advance a question wait from queued input. Existing waiting Runs can be answered through resume after the upgrade; queued messages are preserved and are never guessed to be question answers.
+Ordinary messages remain separate and cannot close a wait. Queued messages retain their order; after resume, compatible steers can join the successor while `next_run` messages wait for a later run. Resume does not accept an accompanying ordinary message.
+
+### Custom human interactions
+
+A custom human-operated tool uses the same `pending.calls` and resume result maps as a client-executed tool. Put intentionally public information under `client_tools[].metadata["a13n.interaction.presentation"]`, for example `{"title": "Review invoice", "description": "Check the total", "invoice_id": "inv_7"}`. This JSON object is limited to 16 KiB and becomes the pending call's `presentation`. Other internal deferred metadata is not exposed. Console displays generic request details and accepts a JSON result or an explicit failure; built-in questions retain their specialized controls. Presentation never grants execution permission.
 
 ## Interrupt, fork and archive
 
 - **Interrupt**: `POST …/runs/{run_id}/interrupt` cancels a run. A run that has not started is `cancelled` at once; a running run is asked to stop at its next safe point and shows `cancel_requested_at` until then. Interrupting a cancelled run returns it; a completed, waiting or failed run answers `409` (`run_completed`, ...). Console's **Stop** interrupts the active run.
-- **Fork**: `POST …/runs/{run_id}/fork` starts a new thread in the same session whose first run continues from a `completed` or `waiting` run, with a new message (the same body as a submission) and an `Idempotency-Key`. A fork of a waiting run closes its pending calls with the default answers. The fork shares the origin thread's mounted environments unless `fresh_environments` is `true`, and `environments` adds more. It copies the origin thread's memory mounts, and `memories` adds more. Failed and cancelled runs cannot be forked.
+- **Fork**: `POST …/runs/{run_id}/fork` starts a new thread in the same session whose first run continues from a `completed` or `waiting` run, with a new message (the same body as a submission) and an `Idempotency-Key`. A fork of a waiting run automatically denies approvals and marks other calls as having no response in the new branch before processing the new message. The original wait is unchanged. The fork shares the origin thread's mounted environments unless `fresh_environments` is `true`, and `environments` adds more. It copies the origin thread's memory mounts, and `memories` adds more. Failed and cancelled runs cannot be forked.
 - **Archive**: `POST …/threads/{thread_id}/archive` with the thread's `If-Match` ends a thread permanently: pending messages are withdrawn, its mounts are removed, and an active run is interrupted. Its history stays readable.
 
 A failed or cancelled run never becomes history: continuation uses the last completed or waiting run. If that head is still waiting, resume it explicitly; ordinary messages stay queued.

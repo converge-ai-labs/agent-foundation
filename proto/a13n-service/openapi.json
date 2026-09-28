@@ -1301,27 +1301,6 @@
         "title": "AgentValidate",
         "type": "object"
       },
-      "Answer": {
-        "discriminator": {
-          "mapping": {
-            "approve": "#/components/schemas/Approve",
-            "complete": "#/components/schemas/Complete",
-            "reject": "#/components/schemas/Reject"
-          },
-          "propertyName": "action"
-        },
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/Approve"
-          },
-          {
-            "$ref": "#/components/schemas/Reject"
-          },
-          {
-            "$ref": "#/components/schemas/Complete"
-          }
-        ]
-      },
       "ApiKey": {
         "properties": {
           "created_at": {
@@ -1437,6 +1416,23 @@
         "title": "ApiKeyPage",
         "type": "object"
       },
+      "ApprovalDecision": {
+        "discriminator": {
+          "mapping": {
+            "approve": "#/components/schemas/Approve",
+            "deny": "#/components/schemas/Deny"
+          },
+          "propertyName": "action"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Approve"
+          },
+          {
+            "$ref": "#/components/schemas/Deny"
+          }
+        ]
+      },
       "Approve": {
         "additionalProperties": false,
         "properties": {
@@ -1444,16 +1440,9 @@
             "const": "approve",
             "title": "Action",
             "type": "string"
-          },
-          "tool_call_id": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Tool Call Id",
-            "type": "string"
           }
         },
         "required": [
-          "tool_call_id",
           "action"
         ],
         "title": "Approve",
@@ -2057,6 +2046,23 @@
         "title": "BootstrapInput",
         "type": "object"
       },
+      "CallResult": {
+        "discriminator": {
+          "mapping": {
+            "failed": "#/components/schemas/Failed",
+            "returned": "#/components/schemas/Returned"
+          },
+          "propertyName": "status"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Returned"
+          },
+          {
+            "$ref": "#/components/schemas/Failed"
+          }
+        ]
+      },
       "CallbackOutcome": {
         "properties": {
           "connection_id": {
@@ -2278,33 +2284,6 @@
           "parameters_json_schema"
         ],
         "title": "ClientToolDefinition",
-        "type": "object"
-      },
-      "Complete": {
-        "additionalProperties": false,
-        "description": "A client-tool result, or user-question answers matching the pending call's arguments.\n\nQuestion results use `{answers: {question: selection}, response?: text}`; a general `response`\ncan answer the call without individual selections. Ordinary inbox messages do not resolve waits.",
-        "properties": {
-          "action": {
-            "const": "complete",
-            "title": "Action",
-            "type": "string"
-          },
-          "result": {
-            "$ref": "#/components/schemas/JsonValue"
-          },
-          "tool_call_id": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Tool Call Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tool_call_id",
-          "action",
-          "result"
-        ],
-        "title": "Complete",
         "type": "object"
       },
       "Connection": {
@@ -3140,6 +3119,33 @@
         "title": "DeliveryPage",
         "type": "object"
       },
+      "Deny": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "deny",
+            "title": "Action",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "Deny",
+        "type": "object"
+      },
       "EmailChangeConfirm": {
         "additionalProperties": false,
         "properties": {
@@ -3839,6 +3845,30 @@
           "token"
         ],
         "title": "ExternalTargetCreate",
+        "type": "object"
+      },
+      "Failed": {
+        "additionalProperties": false,
+        "description": "An explicit external tool failure, including an intentional unanswered question.",
+        "properties": {
+          "message": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "const": "failed",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message"
+        ],
+        "title": "Failed",
         "type": "object"
       },
       "Failure": {
@@ -7227,53 +7257,6 @@
         "title": "NewThread",
         "type": "object"
       },
-      "NoResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "const": "no_response",
-            "default": "no_response",
-            "title": "Action",
-            "type": "string"
-          },
-          "tool_call_id": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Tool Call Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tool_call_id"
-        ],
-        "title": "NoResponse",
-        "type": "object"
-      },
-      "NormalizedAnswer": {
-        "discriminator": {
-          "mapping": {
-            "approve": "#/components/schemas/Approve",
-            "complete": "#/components/schemas/Complete",
-            "no_response": "#/components/schemas/NoResponse",
-            "reject": "#/components/schemas/Reject"
-          },
-          "propertyName": "action"
-        },
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/Approve"
-          },
-          {
-            "$ref": "#/components/schemas/Reject"
-          },
-          {
-            "$ref": "#/components/schemas/Complete"
-          },
-          {
-            "$ref": "#/components/schemas/NoResponse"
-          }
-        ]
-      },
       "OAuthGrant": {
         "enum": [
           "authorization_code",
@@ -7661,25 +7644,31 @@
       },
       "Pending": {
         "additionalProperties": false,
-        "description": "Public projection of the exact sealed pending set; the native requests live in the state object.",
+        "description": "Public projection; complete native requests and private metadata stay in the checkpoint.",
         "properties": {
-          "items": {
+          "approvals": {
             "items": {
-              "$ref": "#/components/schemas/PendingItem"
+              "$ref": "#/components/schemas/PendingCall"
             },
-            "maxItems": 128,
-            "minItems": 1,
-            "title": "Items",
+            "title": "Approvals",
+            "type": "array"
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/PendingCall"
+            },
+            "title": "Calls",
             "type": "array"
           }
         },
         "required": [
-          "items"
+          "approvals",
+          "calls"
         ],
         "title": "Pending",
         "type": "object"
       },
-      "PendingItem": {
+      "PendingCall": {
         "additionalProperties": false,
         "properties": {
           "arguments": {
@@ -7688,9 +7677,6 @@
             },
             "title": "Arguments",
             "type": "object"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/PendingKind"
           },
           "presentation": {
             "anyOf": [
@@ -7707,8 +7693,7 @@
             "title": "Presentation"
           },
           "tool_call_id": {
-            "title": "Tool Call Id",
-            "type": "string"
+            "$ref": "#/components/schemas/ToolCallId"
           },
           "tool_name": {
             "title": "Tool Name",
@@ -7717,20 +7702,11 @@
         },
         "required": [
           "tool_call_id",
-          "kind",
           "tool_name",
           "arguments"
         ],
-        "title": "PendingItem",
+        "title": "PendingCall",
         "type": "object"
-      },
-      "PendingKind": {
-        "enum": [
-          "approval",
-          "client_tool",
-          "user_input"
-        ],
-        "type": "string"
       },
       "PluginSelection": {
         "additionalProperties": false,
@@ -8637,73 +8613,36 @@
         "title": "ProviderUpdate",
         "type": "object"
       },
-      "Reject": {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "const": "reject",
-            "title": "Action",
-            "type": "string"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "maxLength": 4096,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason"
-          },
-          "tool_call_id": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Tool Call Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tool_call_id",
-          "action"
-        ],
-        "title": "Reject",
-        "type": "object"
-      },
       "Resume": {
         "additionalProperties": false,
-        "description": "The normalized batch stored on the successor: one answer per pending call of the exact wait.",
+        "description": "The complete result batch, submitted and stored on the successor without omission defaults.",
         "properties": {
-          "answers": {
-            "items": {
-              "$ref": "#/components/schemas/NormalizedAnswer"
+          "approvals": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ApprovalDecision"
             },
-            "maxItems": 128,
-            "title": "Answers",
-            "type": "array"
+            "propertyNames": {
+              "$ref": "#/components/schemas/ToolCallId"
+            },
+            "title": "Approvals",
+            "type": "object"
+          },
+          "calls": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CallResult"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ToolCallId"
+            },
+            "title": "Calls",
+            "type": "object"
           }
         },
         "required": [
-          "answers"
+          "approvals",
+          "calls"
         ],
         "title": "Resume",
-        "type": "object"
-      },
-      "ResumeRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "answers": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/Answer"
-            },
-            "maxItems": 128,
-            "title": "Answers",
-            "type": "array"
-          }
-        },
-        "title": "ResumeRequest",
         "type": "object"
       },
       "RetryConfig": {
@@ -8758,6 +8697,26 @@
           }
         },
         "title": "RetryOverride",
+        "type": "object"
+      },
+      "Returned": {
+        "additionalProperties": false,
+        "description": "A JSON tool result. Built-in question values are validated by the Harness.",
+        "properties": {
+          "status": {
+            "const": "returned",
+            "title": "Status",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "required": [
+          "status",
+          "value"
+        ],
+        "title": "Returned",
         "type": "object"
       },
       "RevokedConnection": {
@@ -11759,6 +11718,12 @@
         "title": "ThreadView",
         "type": "object"
       },
+      "ToolCallId": {
+        "maxLength": 1024,
+        "minLength": 1,
+        "pattern": "\\S",
+        "type": "string"
+      },
       "ToolDefinition": {
         "additionalProperties": false,
         "properties": {
@@ -12535,8 +12500,7 @@
       "WaitReason": {
         "enum": [
           "approval",
-          "client_tool",
-          "user_input",
+          "call",
           "multiple"
         ],
         "type": "string"
@@ -22591,7 +22555,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ResumeRequest"
+                "$ref": "#/components/schemas/Resume"
               }
             }
           },

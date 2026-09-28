@@ -92,17 +92,28 @@ function mount({
     status,
     ...(status === "waiting"
       ? {
-          wait_reason: question ? "user_input" : "approval",
+          wait_reason: question ? "call" : "approval",
           pending: {
-            items: [
-              {
-                tool_call_id: "call",
-                kind: question ? "user_input" : "approval",
-                tool_name: question ? "ask_user_question" : "shell",
-                arguments: { command: "ls" },
-                presentation: null,
-              },
-            ],
+            approvals: question
+              ? []
+              : [
+                  {
+                    tool_call_id: "call",
+                    tool_name: "shell",
+                    arguments: { command: "ls" },
+                    presentation: null,
+                  },
+                ],
+            calls: question
+              ? [
+                  {
+                    tool_call_id: "call",
+                    tool_name: "ask_user_question",
+                    arguments: { command: "ls" },
+                    presentation: null,
+                  },
+                ]
+              : [],
           },
         }
       : {}),
@@ -183,12 +194,12 @@ function mount({
           fixtureRun({
             id: "waiting-head",
             status: "waiting",
-            wait_reason: "user_input",
+            wait_reason: "call",
             pending: {
-              items: [
+              approvals: [],
+              calls: [
                 {
                   tool_call_id: "question",
-                  kind: "user_input",
                   tool_name: "ask_user_question",
                   arguments: {
                     questions: [
@@ -416,7 +427,22 @@ it.each([false, true])(
       ),
     );
     expect(posts.map(({ path, body }) => [path, body])).toEqual([
-      ["/api/v1/runs/run/resume", { answers: [] }],
+      [
+        "/api/v1/runs/run/resume",
+        question
+          ? {
+              approvals: {},
+              calls: {
+                call: { status: "failed", message: "No response was given" },
+              },
+            }
+          : {
+              approvals: {
+                call: { action: "deny", reason: "No decision was given" },
+              },
+              calls: {},
+            },
+      ],
       [
         "/api/v1/threads/thread/inbox",
         {
@@ -440,13 +466,13 @@ it("restores the waiting head's question after a failed successor and submits to
   expect(posts[0]).toMatchObject({
     path: "/api/v1/runs/waiting-head/resume",
     body: {
-      answers: [
-        {
-          action: "complete",
-          tool_call_id: "question",
-          result: { answers: { "Which color?": "Blue" } },
+      approvals: {},
+      calls: {
+        question: {
+          status: "returned",
+          value: { answers: { "Which color?": "Blue" } },
         },
-      ],
+      },
     },
   });
 });

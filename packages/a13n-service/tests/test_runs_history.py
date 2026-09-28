@@ -11,7 +11,7 @@ from a13n_service.runs.accept import ThreadAdvancer, advance
 pytestmark = pytest.mark.anyio
 
 LOOKUP = {"name": "lookup", "description": "Look a value up", "parameters_json_schema": {"type": "object"}}
-ANSWER = {"answers": [{"tool_call_id": "call_lookup", "action": "complete", "result": {"value": 42}}]}
+ANSWER = {"approvals": {}, "calls": {"call_lookup": {"status": "returned", "value": {"value": 42}}}}
 
 
 async def _waiting(service, scripted_model, runs_kit, **config) -> dict:  # type: ignore[no-untyped-def]
@@ -28,35 +28,38 @@ async def test_a_resume_replays_its_key_and_answers_a_wait_once(service, scripte
     scripted_model.call("lookup", {}, call_id="call_lookup")
     waiting = await _waiting(service, scripted_model, runs_kit, client_tools=[LOOKUP])
     resume = f"{service.api}/runs/{waiting['id']}/resume"
-    stray = {"answers": [{"tool_call_id": "call_other", "action": "complete", "result": {"value": 1}}]}
+    stray = {"approvals": {}, "calls": {"call_other": {"status": "returned", "value": {"value": 1}}}}
     refused = await service.client.post(resume, json=stray, headers={"idempotency-key": "resume-0"})
     assert refused.status_code == 400 and refused.json()["error"]["details"] == {
-        "field": "tool_call_id",
-        "reason": "no_pending_call",
-        "id": "call_other",
+        "field": "calls",
+        "reason": "pending_coverage_mismatch",
+        "missing": ["call_lookup"],
+        "unexpected": ["call_other"],
     }, refused.text
 
     first = await service.client.post(resume, json=ANSWER, headers={"idempotency-key": "resume-1"})
     assert first.status_code == 201, first.text
     replayed = await service.client.post(resume, json=ANSWER, headers={"idempotency-key": "resume-1"})
     assert replayed.status_code == 200 and replayed.json()["id"] == first.json()["id"], replayed.text
-    other = {"answers": [{"tool_call_id": "call_lookup", "action": "complete", "result": {"value": 7}}]}
+    other = {"approvals": {}, "calls": {"call_lookup": {"status": "returned", "value": {"value": 7}}}}
     reused = await service.client.post(resume, json=other, headers={"idempotency-key": "resume-1"})
     assert reused.status_code == 409 and reused.json()["error"]["details"]["reason"] == "idempotency_key_reused"
     again = await service.client.post(resume, json=ANSWER, headers={"idempotency-key": "resume-2"})
     assert again.status_code == 409 and again.json()["error"]["details"]["reason"] == "not_idle_waiting_head"
 
 
-async def test_a_resume_closes_a_question_only_wait_without_answers(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_resume_explicitly_skips_a_question(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
     waiting = await _waiting(service, scripted_model, runs_kit, user_questions=True)
-    assert waiting["wait_reason"] == "user_input"
+    assert waiting["wait_reason"] == "call"
 
     # Declining every question is an explicit decision: the successor continues with no response to them.
     resumed = await service.client.post(
-        f"{service.api}/runs/{waiting['id']}/resume", json={"answers": []}, headers=runs_kit.fresh_key()
+        f"{service.api}/runs/{waiting['id']}/resume",
+        json={"approvals": {}, "calls": {"call_ask": {"status": "failed", "message": "User chose not to answer"}}},
+        headers=runs_kit.fresh_key(),
     )
-    assert resumed.status_code == 201 and resumed.json()["resume"]["answers"][0]["action"] == "no_response"
+    assert resumed.status_code == 201 and resumed.json()["resume"]["calls"]["call_ask"]["status"] == "failed"
     scripted_model.say("Moving on")
     await (await runs_kit.attempt(service))
     successor = await runs_kit.get_run(service, resumed.json()["id"])
@@ -219,12 +222,12 @@ async def test_invalid_question_results_leave_the_wait_unchanged(service, script
     waiting = await _waiting(service, scripted_model, runs_kit, user_questions=True)
     refused = await service.client.post(
         f"{service.api}/runs/{waiting['id']}/resume",
-        json={"answers": [{"tool_call_id": "call_ask", "action": "complete", "result": result}]},
+        json={"approvals": {}, "calls": {"call_ask": {"status": "returned", "value": result}}},
         headers=runs_kit.fresh_key(),
     )
     assert refused.status_code == 400, refused.text
     assert refused.json()["error"]["details"] == {
-        "field": "result",
+        "field": "calls",
         "reason": "invalid_question_response",
         "id": "call_ask",
     }
@@ -244,7 +247,7 @@ async def test_question_resume_arbitrates_concurrent_replies_and_inbox_scans(
     scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
     await (await runs_kit.attempt(service))
     key = runs_kit.fresh_key()
-    answers = {"answers": [{"tool_call_id": "call_ask", "action": "complete", "result": {"response": "blue"}}]}
+    answers = {"approvals": {}, "calls": {"call_ask": {"status": "returned", "value": {"response": "blue"}}}}
     first, second, message, _, _ = await asyncio.gather(
         service.client.post(f"{service.api}/runs/{run_id}/resume", json=answers, headers=key),
         service.client.post(

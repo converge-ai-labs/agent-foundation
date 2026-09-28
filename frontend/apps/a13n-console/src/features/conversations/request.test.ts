@@ -29,7 +29,8 @@ it("reads ordinary input as the message a person sent", () => {
 
 it("keeps the answers that resumed a wait as feedback", () => {
   const resume = {
-    answers: [{ action: "approve" as const, tool_call_id: "call_1" }],
+    approvals: { call_1: { action: "approve" as const } },
+    calls: {},
   };
   expect(
     runRequest(run({ trigger: "resume", resume }), thread("new")),

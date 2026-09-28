@@ -87,7 +87,6 @@ it("reads the run's own outcome, and only when it has one to report", () => {
       kind: "outcome",
       status: "failed",
       tone: "danger",
-      waitingOn: null,
       reason: "model_rate_limited",
       message: "Upstream said no.",
     },
@@ -110,13 +109,9 @@ it("reads the run's own outcome, and only when it has one to report", () => {
   });
 });
 
-it("says who a waiting run is waiting on", () => {
-  for (const reason of ["approval", "user_input", "multiple", null] as const)
+it("keeps the pending category summary", () => {
+  for (const reason of ["approval", "call", "multiple", null] as const)
     expect(
       runOutcome(run({ status: "waiting", wait_reason: reason }))?.notice,
-    ).toMatchObject({ status: "waiting", waitingOn: "reader" });
-  // Only the application that holds the client tool can return its result.
-  expect(
-    runOutcome(run({ status: "waiting", wait_reason: "client_tool" }))?.notice,
-  ).toMatchObject({ status: "waiting", waitingOn: "application" });
+    ).toMatchObject({ status: "waiting", reason });
 });

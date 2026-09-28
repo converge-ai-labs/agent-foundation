@@ -679,9 +679,9 @@ async def test_an_outcome_commits_only_with_its_seal(service, scripted_model, ru
     assert sealed["status"] == "completed" and sealed["output"] == "Sealed" and sealed["attempts"] == 2, sealed
 
 
-@pytest.mark.parametrize("question", [False, True])
+@pytest.mark.parametrize("question, failed", [(False, False), (True, False), (False, True)])
 async def test_takeover_keeps_external_answer_without_replaying_local_approval(
-    service, scripted_model, runs_kit, monkeypatch, question
+    service, scripted_model, runs_kit, monkeypatch, question, failed
 ) -> None:  # type: ignore[no-untyped-def]
     import json
 
@@ -731,14 +731,14 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
     response = await service.client.post(
         f"{service.api}/runs/{waiting['id']}/resume",
         json={
-            "answers": [
-                {"tool_call_id": "call_create", "action": "approve"},
-                {
-                    "tool_call_id": "call_lookup",
-                    "action": "complete",
-                    "result": {"response" if question else "fact": "accepted once"},
-                },
-            ]
+            "approvals": {"call_create": {"action": "approve"}},
+            "calls": {
+                "call_lookup": (
+                    {"status": "failed", "message": "accepted once"}
+                    if failed
+                    else {"status": "returned", "value": {"response" if question else "fact": "accepted once"}}
+                )
+            },
         },
         headers=runs_kit.fresh_key(),
     )

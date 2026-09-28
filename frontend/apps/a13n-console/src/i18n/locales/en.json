@@ -1721,5 +1721,11 @@
   "The first account administers this Service.": "The first account administers this Service.",
   "Creates a new agent. Service validates the configuration on creation; plugin availability also depends on the execution environment.": "Creates a new agent. Service validates the configuration on creation; plugin availability also depends on the execution environment.",
   "Help me change the agent {{name}} (ID {{id}}), starting from its version {{version}} (revision ID {{revision}}).": "Help me change the agent {{name}} (ID {{id}}), starting from its version {{version}} (revision ID {{revision}}).",
-  "How agents refer to this model. Lowercase letters, numbers, hyphens and dots; it cannot change later.": "How agents refer to this model. Lowercase letters, numbers, hyphens and dots; it cannot change later."
+  "How agents refer to this model. Lowercase letters, numbers, hyphens and dots; it cannot change later.": "How agents refer to this model. Lowercase letters, numbers, hyphens and dots; it cannot change later.",
+  "Waiting for approval": "Waiting for approval",
+  "Waiting for call results": "Waiting for call results",
+  "Waiting for approvals and call results": "Waiting for approvals and call results",
+  "Report tool failure": "Report tool failure",
+  "Failure reason": "Failure reason",
+  "Enter a failure reason.": "Enter a failure reason."
 }

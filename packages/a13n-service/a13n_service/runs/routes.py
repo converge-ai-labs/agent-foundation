@@ -18,7 +18,7 @@ from a13n_service.runs.schemas import (
     InboxOrder,
     Message,
     NewThread,
-    ResumeRequest,
+    Resume,
     RunItems,
     RunLabels,
     RunPage,
@@ -357,7 +357,7 @@ async def resume_run(
     response: Response,
     workspace_id: WorkspaceId,
     run_id: str,
-    body: ResumeRequest,
+    body: Resume,
     actor: Actor,
     key: IdempotencyKey,
 ) -> RunView:

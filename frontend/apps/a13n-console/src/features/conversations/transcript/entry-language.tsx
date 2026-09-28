@@ -207,9 +207,11 @@ function noticeText(notice: LifecycleNotice, t: TFunction): string {
       ? t("Run failed")
       : notice.status === "cancelled"
         ? t("Run cancelled")
-        : notice.waitingOn === "application"
-          ? t("Waiting for the application")
-          : t("Waiting for you");
+        : notice.reason === "approval"
+          ? t("Waiting for approval")
+          : notice.reason === "multiple"
+            ? t("Waiting for approvals and call results")
+            : t("Waiting for call results");
   return [head, notice.reason, notice.message].filter(Boolean).join(" · ");
 }
 

@@ -158,7 +158,7 @@ async def test_tool_permissions_apply_to_the_memory_tools(service, scripted_mode
     run = await runs_kit.get_run(service, started["run"]["id"])
     # The denied delete never reached the store; the append waits for approval.
     assert (run["status"], run["wait_reason"]) == ("waiting", "approval"), run
-    assert [item["tool_name"] for item in run["pending"]["items"]] == ["memory_file_append"]
+    assert [item["tool_name"] for item in run["pending"]["approvals"]] == ["memory_file_append"]
     tea_file = await service.client.get(f"{service.api}/memories/{memory['id']}/files/notes/tea.md")
     assert tea_file.json()["content"] == "Oolong\n"
 

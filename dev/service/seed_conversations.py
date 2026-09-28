@@ -50,8 +50,12 @@ class Talk:
 
     def resume(self, run: Json, answer: Json) -> Json:
         """Answer the run's only pending call; the successor run once sealed."""
-        answers = [{**answer, "tool_call_id": run["pending"]["items"][0]["tool_call_id"]}]
-        successor = self.api.post(f"/api/v1/runs/{run['id']}/resume", {"answers": answers}, idempotent=True)
+        pending = run["pending"]
+        assert len(pending["approvals"]) + len(pending["calls"]) == 1
+        category = "approvals" if pending["approvals"] else "calls"
+        results = {"approvals": {}, "calls": {}}
+        results[category] = {pending[category][0]["tool_call_id"]: answer}
+        successor = self.api.post(f"/api/v1/runs/{run['id']}/resume", results, idempotent=True)
         return self.expect(self.api.sealed_run(successor["id"]), "completed")
 
     def running(self, submitted: Json) -> Json:
@@ -144,7 +148,7 @@ def scenarios(talk: Talk, cast: Cast, environment: Json, assets: dict[str, Json]
         )
         tool_error = talk.start(cast.lookup, "[mcp-fail] Look up the missing review record.")
         client = talk.start(cast.reviewer, "[client] Review the Orbit 2.4 notes before publishing.", expect="waiting")
-        result = {"action": "complete", "result": {"decision": "approved", "reason": "Reads well"}}
+        result = {"status": "returned", "value": {"decision": "approved", "reason": "Reads well"}}
         completed = talk.resume(talk.start(cast.reviewer, "[client] Review the notes.", expect="waiting"), result)
         question = talk.start(cast.reviewer, "[service-wait:question] Which scope?", expect="waiting")
         return {

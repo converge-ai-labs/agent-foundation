@@ -7,7 +7,7 @@ import { commandHeaders, data, type Schema } from "../../../shared/api";
 import { Composer } from "../composer";
 import styles from "./cards.module.css";
 
-/** Resolving the whole waiting batch by default is a decision, so it is confirmed. */
+/** Discarding the whole waiting batch is an explicit, confirmed decision. */
 export function ContinueWithoutFeedback({
   run,
   thread,
@@ -55,7 +55,26 @@ export function ContinueWithoutFeedback({
                     path: { run_id: run.id },
                     header: commandHeaders(`${key}:resume`),
                   },
-                  body: { answers: [] },
+                  body: {
+                    approvals: Object.fromEntries(
+                      (run.pending?.approvals ?? []).map((call) => [
+                        call.tool_call_id,
+                        {
+                          action: "deny" as const,
+                          reason: "No decision was given",
+                        },
+                      ]),
+                    ),
+                    calls: Object.fromEntries(
+                      (run.pending?.calls ?? []).map((call) => [
+                        call.tool_call_id,
+                        {
+                          status: "failed" as const,
+                          message: "No response was given",
+                        },
+                      ]),
+                    ),
+                  },
                 }),
             );
             const receipt = data(

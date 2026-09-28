@@ -27,22 +27,11 @@ export type LifecycleNotice =
       kind: "outcome";
       tone: Tone;
       status: "failed" | "cancelled" | "waiting";
-      /** Who owes the Run an answer; only a waiting outcome has one. */
-      waitingOn: WaitingAudience | null;
       reason: string | null;
       message: string | null;
     };
 
 type Tone = "neutral" | "warning" | "danger";
-
-/**
- * A client tool result is owed by the application that holds the tool; every
- * other wait — approval, user input, or a mixed batch containing one — is
- * something the reader can answer here.
- */
-export type WaitingAudience = "reader" | "application";
-
-const APPLICATION_WAITS = ["client_tool"];
 
 function eventEntry(
   id: string,
@@ -122,15 +111,9 @@ export function runOutcome(run: Schema["RunView"]): EventEntry | null {
         : run.failure != null
           ? resultExcerpt(run.failure, 160)
           : null;
-  const waitingOn: WaitingAudience | null =
-    status !== "waiting"
-      ? null
-      : reason && APPLICATION_WAITS.includes(reason)
-        ? "application"
-        : "reader";
   return eventEntry(
     `${run.id}:outcome`,
-    { kind: "outcome", tone, status, waitingOn, reason, message },
+    { kind: "outcome", tone, status, reason, message },
     run.sealed_at ?? run.updated_at,
   );
 }

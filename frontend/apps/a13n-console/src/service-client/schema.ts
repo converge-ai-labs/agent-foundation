@@ -3266,10 +3266,6 @@ export interface components {
       agent_id?: string | null;
       config: components["schemas"]["AgentConfig-Input"];
     };
-    Answer:
-      | components["schemas"]["Approve"]
-      | components["schemas"]["Reject"]
-      | components["schemas"]["Complete"];
     /** ApiKey */
     ApiKey: {
       /**
@@ -3304,6 +3300,8 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    ApprovalDecision:
+      components["schemas"]["Approve"] | components["schemas"]["Deny"];
     /** Approve */
     Approve: {
       /**
@@ -3311,8 +3309,6 @@ export interface components {
        * @enum {string}
        */
       action: "approve";
-      /** Tool Call Id */
-      tool_call_id: string;
     };
     /** Asset */
     Asset: {
@@ -3516,6 +3512,8 @@ export interface components {
        */
       password: string;
     };
+    CallResult:
+      components["schemas"]["Returned"] | components["schemas"]["Failed"];
     /** CallbackOutcome */
     CallbackOutcome: {
       /** Connection Id */
@@ -3599,23 +3597,6 @@ export interface components {
        * @enum {string}
        */
       permission?: "inherit" | "allow" | "deny";
-    };
-    /**
-     * Complete
-     * @description A client-tool result, or user-question answers matching the pending call's arguments.
-     *
-     *     Question results use `{answers: {question: selection}, response?: text}`; a general `response`
-     *     can answer the call without individual selections. Ordinary inbox messages do not resolve waits.
-     */
-    Complete: {
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      action: "complete";
-      result: components["schemas"]["JsonValue"];
-      /** Tool Call Id */
-      tool_call_id: string;
     };
     /** Connection */
     Connection: {
@@ -3895,6 +3876,16 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** Deny */
+    Deny: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      action: "deny";
+      /** Reason */
+      reason?: string | null;
+    };
     /** EmailChangeConfirm */
     EmailChangeConfirm: {
       /** Token */
@@ -4113,6 +4104,19 @@ export interface components {
        * Format: password
        */
       token: string;
+    };
+    /**
+     * Failed
+     * @description An explicit external tool failure, including an intentional unanswered question.
+     */
+    Failed: {
+      /** Message */
+      message: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      status: "failed";
     };
     /** Failure */
     Failure: {
@@ -5213,21 +5217,6 @@ export interface components {
       /** Session Id */
       session_id?: string | null;
     };
-    /** NoResponse */
-    NoResponse: {
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      action: "no_response";
-      /** Tool Call Id */
-      tool_call_id: string;
-    };
-    NormalizedAnswer:
-      | components["schemas"]["Approve"]
-      | components["schemas"]["Reject"]
-      | components["schemas"]["Complete"]
-      | components["schemas"]["NoResponse"];
     /** @enum {string} */
     OAuthGrant: "authorization_code" | "client_credentials";
     /** OAuthRedirect */
@@ -5365,30 +5354,28 @@ export interface components {
     };
     /**
      * Pending
-     * @description Public projection of the exact sealed pending set; the native requests live in the state object.
+     * @description Public projection; complete native requests and private metadata stay in the checkpoint.
      */
     Pending: {
-      /** Items */
-      items: components["schemas"]["PendingItem"][];
+      /** Approvals */
+      approvals: components["schemas"]["PendingCall"][];
+      /** Calls */
+      calls: components["schemas"]["PendingCall"][];
     };
-    /** PendingItem */
-    PendingItem: {
+    /** PendingCall */
+    PendingCall: {
       /** Arguments */
       arguments: {
         [key: string]: components["schemas"]["JsonValue"];
       };
-      kind: components["schemas"]["PendingKind"];
       /** Presentation */
       presentation?: {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
-      /** Tool Call Id */
-      tool_call_id: string;
+      tool_call_id: components["schemas"]["ToolCallId"];
       /** Tool Name */
       tool_name: string;
     };
-    /** @enum {string} */
-    PendingKind: "approval" | "client_tool" | "user_input";
     /**
      * PluginSelection
      * @description One instance of a Harness plugin factory the deployment installed.
@@ -5683,33 +5670,19 @@ export interface components {
       /** Name */
       name?: string | null;
     };
-    /** Reject */
-    Reject: {
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      action: "reject";
-      /** Reason */
-      reason?: string | null;
-      /** Tool Call Id */
-      tool_call_id: string;
-    };
     /**
      * Resume
-     * @description The normalized batch stored on the successor: one answer per pending call of the exact wait.
+     * @description The complete result batch, submitted and stored on the successor without omission defaults.
      */
     Resume: {
-      /** Answers */
-      answers: components["schemas"]["NormalizedAnswer"][];
-    };
-    /** ResumeRequest */
-    ResumeRequest: {
-      /**
-       * Answers
-       * @default []
-       */
-      answers?: components["schemas"]["Answer"][];
+      /** Approvals */
+      approvals: {
+        [key: string]: components["schemas"]["ApprovalDecision"];
+      };
+      /** Calls */
+      calls: {
+        [key: string]: components["schemas"]["CallResult"];
+      };
     };
     /** RetryConfig */
     RetryConfig: {
@@ -5730,6 +5703,18 @@ export interface components {
       output?: number | null;
       /** Tools */
       tools?: number | null;
+    };
+    /**
+     * Returned
+     * @description A JSON tool result. Built-in question values are validated by the Harness.
+     */
+    Returned: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      status: "returned";
+      value: components["schemas"]["JsonValue"];
     };
     /** RevokedConnection */
     RevokedConnection: {
@@ -6668,6 +6653,7 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
+    ToolCallId: string;
     /** ToolDefinition */
     ToolDefinition: {
       /** Config Schema */
@@ -6947,7 +6933,7 @@ export interface components {
     /** @enum {string} */
     Verb: "read" | "run" | "write" | "admin";
     /** @enum {string} */
-    WaitReason: "approval" | "client_tool" | "user_input" | "multiple";
+    WaitReason: "approval" | "call" | "multiple";
     /** @enum {string} */
     WebOperation: "search" | "scrape";
     /**
@@ -10742,7 +10728,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["ResumeRequest"];
+        "application/json": components["schemas"]["Resume"];
       };
     };
     responses: {

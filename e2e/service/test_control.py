@@ -79,17 +79,17 @@ async def test_an_approval_waits_and_resumes_once(stack) -> None:  # type: ignor
     receipt = await api.start(agent, "[build] Make a greeter")
     waiting = await api.sealed(receipt["run"]["id"])
     assert (waiting["status"], waiting["wait_reason"]) == ("waiting", "approval")
-    assert [(item["tool_call_id"], item["kind"]) for item in waiting["pending"]["items"]] == [
-        ("call_create", "approval")
-    ]
+    assert [item["tool_call_id"] for item in waiting["pending"]["approvals"]] == ["call_create"]
     assert await greeters() == []
 
     await model.say("Created the greeter.", to="[build]")
-    approve = [{"tool_call_id": "call_create", "action": "approve"}]
+    approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
     successor = expect(await api.resume(waiting["id"], approve, key="approve-1"), 201)
     replayed = expect(await api.resume(waiting["id"], approve, key="approve-1"), 200)
     assert replayed["id"] == successor["id"]
-    changed = await api.resume(waiting["id"], [{"tool_call_id": "call_create", "action": "reject"}], key="approve-1")
+    changed = await api.resume(
+        waiting["id"], {"approvals": {"call_create": {"action": "deny"}}, "calls": {}}, key="approve-1"
+    )
     assert expect(changed, 409)["error"]["code"] == "conflict"
 
     done = await api.sealed(successor["id"])
@@ -136,7 +136,7 @@ async def test_messages_queue_behind_a_client_tool_wait(stack) -> None:  # type:
     receipt = await api.start(agent, "[wait] Look it up")
     thread_id = receipt["thread"]["id"]
     waiting = await api.sealed(receipt["run"]["id"])
-    assert (waiting["status"], waiting["wait_reason"]) == ("waiting", "client_tool")
+    assert (waiting["status"], waiting["wait_reason"]) == ("waiting", "call")
 
     # A wait with a client-tool request continues only by resume; messages stay queued meanwhile.
     queued = await api.send(thread_id, agent, "[wait] Then summarize", delivery="next_run")
@@ -144,7 +144,7 @@ async def test_messages_queue_behind_a_client_tool_wait(stack) -> None:  # type:
     assert (await api.thread(thread_id))["head_run_id"] == waiting["id"]
 
     await model.say("It is 42.", to="[wait]")
-    answer = [{"tool_call_id": "call_lookup", "action": "complete", "result": {"value": 42}}]
+    answer = {"approvals": {}, "calls": {"call_lookup": {"status": "returned", "value": {"value": 42}}}}
     successor = await api.sealed(expect(await api.resume(waiting["id"], answer, key="lookup-1"), 201)["id"])
     assert (successor["status"], successor["output"]) == ("completed", "It is 42.")
     await model.say("Summary: 42.", to="[wait]")

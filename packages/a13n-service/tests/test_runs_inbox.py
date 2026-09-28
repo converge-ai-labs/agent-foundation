@@ -289,7 +289,7 @@ async def test_question_wait_keeps_old_and_new_messages_until_explicit_resume(
 
     resumed = await service.client.post(
         f"{service.api}/runs/{run_id}/resume",
-        json={"answers": [{"tool_call_id": "call_ask", "action": "complete", "result": {"response": "blue"}}]},
+        json={"approvals": {}, "calls": {"call_ask": {"status": "returned", "value": {"response": "blue"}}}},
         headers=runs_kit.fresh_key(),
     )
     assert resumed.status_code == 201, resumed.text
