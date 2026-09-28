@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, cast
 
 from a13n_harness.context import AgentContext
@@ -341,6 +341,7 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
     source_thread_id: str
     composition: ResolvedRunComposition | None = None
     id: str | None = _THREAD_CAPABILITY_ID
+    _toolset: FunctionToolset[AgentContext] | None = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.id != _THREAD_CAPABILITY_ID:
@@ -467,7 +468,11 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
         return instructions
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
-        return FunctionToolset(
+        # Native construction and Run preparation request the same static tools.
+        # Keep them with this captured root binding, never across capabilities.
+        if self._toolset is not None:
+            return self._toolset
+        self._toolset = FunctionToolset(
             tools=[
                 _tool(self.list_threads, name="list_threads", effects={"read"}),
                 _tool(self.get_thread, name="get_thread", effects={"read"}),
@@ -502,6 +507,7 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
             ],
             id="a13n-a13n-harness-ui-thread-tools",
         )
+        return self._toolset
 
     async def list_threads(
         self,

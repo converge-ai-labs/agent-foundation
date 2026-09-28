@@ -170,6 +170,8 @@ class FileMemoryCapability(AbstractModelContextCapability):
         self.tools: frozenset[FileToolKey] = _selected(tools, FILE_TOOL_KEYS, "file")
         self.cursors = cursors
         self.origin = origin or Origin()
+        self._toolset_bindings: tuple[object, ...] = ()
+        self._toolset: AbstractToolset[AgentContext] | None = None
 
     def _always_load(self, mount: FileMount) -> tuple[str, ...]:
         try:
@@ -193,13 +195,22 @@ class FileMemoryCapability(AbstractModelContextCapability):
         return _instructions(_INTRODUCTION, "file", self.mounts, DEFAULT_FILE_GUIDE)
 
     def get_toolset(self) -> AbstractToolset[AgentContext] | None:
-        return MemoryFileToolset(
-            self.mounts,
-            format=self.limits.format,
-            write_retries=self.limits.write_retries,
-            origin=self.origin,
-            tools=self.tools,
-        ).get_toolset()
+        bindings = (self.mounts, self.limits, self.origin, self.tools)
+        # Native Agent construction and Run binding both extract this surface.
+        # Rebuild if the host replaced configuration before a later Run, but
+        # never share tools across different capabilities or captured bindings.
+        if len(self._toolset_bindings) != len(bindings) or any(
+            previous is not current for previous, current in zip(self._toolset_bindings, bindings, strict=True)
+        ):
+            self._toolset = MemoryFileToolset(
+                self.mounts,
+                format=self.limits.format,
+                write_retries=self.limits.write_retries,
+                origin=self.origin,
+                tools=self.tools,
+            ).get_toolset()
+            self._toolset_bindings = bindings
+        return self._toolset
 
 
 @dataclass(init=False)
@@ -209,6 +220,8 @@ class _FileMemoryRun(FileMemoryCapability):
         self.mounts = source.mounts
         self.tools = source.tools
         self.origin = source.origin
+        self._toolset = source.get_toolset()
+        self._toolset_bindings = source._toolset_bindings
         self._positions = source.cursors if source.cursors is not None else MemoryCursors()
         self._context = context
         self._first_input = _FirstInput(context, self._deliver)

@@ -294,3 +294,96 @@ it("does not revive an expired pre-join selection", () => {
   ).toEqual({ name: "Alice", color: "#112233", anchor: null, head: null });
   connection.close();
 });
+
+it("coalesces edits behind one acknowledged snapshot, including deletions", () => {
+  vi.stubGlobal("window", { location: { origin: "http://localhost" } });
+  const socket = mockWebSocket();
+  const draft = new ThreadDraft();
+  const server = replica();
+  server.getText("text").insert(0, "initial");
+  const connection = draft.connect(
+    createTransport("key", () => {}),
+    "thread-one",
+    () => {},
+  );
+  const ws = socket();
+  ws.open();
+  const receive = () => ws.message({ kind: "draft", ...frame(server) });
+  const updates = () => ws.sent.filter((item) => item.kind === "sync");
+  receive();
+  draft.doc.getText("text").delete(0, 1);
+  const deletion = Y.encodeStateAsUpdate(draft.doc);
+  for (let i = 0; i < 100; i++) draft.doc.getText("text").insert(0, "a");
+  expect(updates()).toHaveLength(1);
+  expect(draft.synchronized).toBe(false);
+  // Neither unchanged presence frames nor a peer edit cover our deletion.
+  receive();
+  server.getText("text").insert(0, "peer");
+  receive();
+  expect(updates()).toHaveLength(1);
+  Y.applyUpdate(server, deletion);
+  receive();
+  expect(updates()).toHaveLength(2);
+  expect(draft.synchronized).toBe(false);
+  Y.applyUpdate(server, Y.encodeStateAsUpdate(draft.doc));
+  receive();
+  expect(updates()).toHaveLength(2);
+  expect(draft.synchronized).toBe(true);
+  expect(values(server)).toEqual(values(draft.doc));
+  connection.close();
+  server.destroy();
+});
+
+it("allows correction after rejection without automatically replaying it", () => {
+  vi.stubGlobal("window", { location: { origin: "http://localhost" } });
+  const socket = mockWebSocket();
+  const draft = new ThreadDraft();
+  const server = replica();
+  const connection = draft.connect(
+    createTransport("key", () => {}),
+    "thread-one",
+    () => {},
+  );
+  const ws = socket();
+  ws.open();
+  ws.message({ kind: "draft", ...frame(server) });
+  draft.doc.getText("text").insert(0, "invalid");
+  draft.doc.getText("text").insert(0, "pending ");
+  ws.message({ error: { message: "Rejected" } });
+  expect(draft.error).toBe("Rejected");
+  expect(ws.sent.filter((item) => item.kind === "sync")).toHaveLength(1);
+  draft.doc.getText("text").delete(0, 1);
+  expect(draft.error).toBe("");
+  expect(ws.sent.filter((item) => item.kind === "sync")).toHaveLength(2);
+  connection.close();
+  server.destroy();
+});
+
+it("resends current edits after disconnect with an update still in flight", () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("window", { location: { origin: "http://localhost" } });
+  const socket = mockWebSocket();
+  const draft = new ThreadDraft();
+  const server = replica();
+  const connection = draft.connect(
+    createTransport("key", () => {}),
+    "thread-one",
+    () => {},
+  );
+  socket().open();
+  socket().message({ kind: "draft", ...frame(server) });
+  draft.doc.getText("text").insert(0, "first");
+  draft.doc.getText("text").insert(0, "latest ");
+  socket().close();
+  vi.advanceTimersByTime(1000);
+  const rejoined = socket();
+  rejoined.open();
+  rejoined.message({ kind: "draft", ...frame(server) });
+  expect(rejoined.sent.filter((item) => item.kind === "sync")).toHaveLength(1);
+  Y.applyUpdate(server, Y.encodeStateAsUpdate(draft.doc));
+  rejoined.message({ kind: "draft", ...frame(server) });
+  expect(draft.synchronized).toBe(true);
+  expect(values(draft.doc).prompt).toBe("latest first");
+  connection.close();
+  server.destroy();
+});

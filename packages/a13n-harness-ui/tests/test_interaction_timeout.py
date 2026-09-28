@@ -222,3 +222,199 @@ async def test_no_deadline_for_cli_or_unsaved_suspension(enabled, selected):
         assert await coordinator.interaction_expiry(THREAD, CONTINUATION) is None
     finally:
         await coordinator.close(timeout_seconds=1)
+
+
+@pytest.mark.parametrize("human", [False, True])
+async def test_unrelated_capture_does_not_block_interaction_admission(human, monkeypatch):
+    from anyio import wait_all_tasks_blocked
+
+    entered, release, answered = Event(), Event(), Event()
+    responses = []
+
+    async def controlled_capture(**kwargs):
+        if kwargs["thread_id"] == "unrelated":
+            entered.set()
+            await release.wait()
+        return await capture(**kwargs)
+
+    async def execute(admission, **kwargs):
+        if admission.response is not None:
+            responses.append(admission.response)
+            return completed_outcome()
+        return suspended_outcome()
+
+    coordinator = RootRunCoordinator(
+        cast(Any, SimpleNamespace(capture=controlled_capture, execute=execute)), interaction_timeouts=True
+    )
+    await coordinator.start()
+
+    async def unrelated():
+        await coordinator.submit_prompt(thread_id="unrelated", prompt="slow")
+
+    async def respond(pending):
+        if human:
+            await coordinator.submit_response(thread_id=THREAD, response=answer())
+        else:
+            await coordinator._expire_interaction(THREAD, pending)
+        answered.set()
+
+    try:
+        receipt = await coordinator.submit_prompt(thread_id=THREAD, prompt="ask")
+        await coordinator.wait(receipt.receipt_id)
+        pending = coordinator._interaction_waits[THREAD]
+        if not human:
+            monkeypatch.setattr("a13n_harness_ui.root_run.monotonic", lambda: pending.deadline + 1)
+        async with create_task_group() as tasks:
+            tasks.start_soon(unrelated)
+            await entered.wait()
+            tasks.start_soon(respond, pending)
+            try:
+                # Expiry first crosses its zero-deadline CancelScope; wait for
+                # that scheduled cancellation, not just an idle-loop snapshot.
+                with fail_after(1):
+                    await answered.wait()
+                await wait_all_tasks_blocked()
+                assert len(responses) == 1
+                assert responses[0].responses[0].denied is not human
+                assert pending.cancelled.is_set()
+            finally:
+                release.set()
+    finally:
+        release.set()
+        await coordinator.close(timeout_seconds=1)
+
+
+@pytest.mark.parametrize("capture_fails", [False, True])
+async def test_stop_drains_human_capture_before_disarming_its_pending_wait(capture_fails, monkeypatch):
+    from anyio import wait_all_tasks_blocked
+
+    entered, release, stopped = Event(), Event(), Event()
+    responses = []
+
+    async def controlled_capture(**kwargs):
+        if kwargs["response"] is not None:
+            entered.set()
+            await release.wait()
+            if capture_fails:
+                raise RunCoordinationError("Rejected response", code="capture_failed")
+        return await capture(**kwargs)
+
+    async def execute(admission, **kwargs):
+        if admission.response is not None:
+            responses.append(admission.response)
+            return completed_outcome()
+        return suspended_outcome()
+
+    coordinator = RootRunCoordinator(
+        cast(Any, SimpleNamespace(capture=controlled_capture, execute=execute)), interaction_timeouts=True
+    )
+    await coordinator.start()
+
+    async def respond():
+        if capture_fails:
+            with pytest.raises(RunCoordinationError, match="Rejected response"):
+                await coordinator.submit_response(thread_id=THREAD, response=answer())
+        else:
+            await coordinator.submit_response(thread_id=THREAD, response=answer())
+
+    async def stop():
+        await coordinator.stop_admission()
+        stopped.set()
+
+    try:
+        receipt = await coordinator.submit_prompt(thread_id=THREAD, prompt="ask")
+        await coordinator.wait(receipt.receipt_id)
+        pending = coordinator._interaction_waits[THREAD]
+        async with create_task_group() as tasks:
+            tasks.start_soon(respond)
+            await entered.wait()
+            # Passing the admission fence before expiry admits this response even
+            # when its shielded capture completes after the deadline and stop.
+            monkeypatch.setattr("a13n_harness_ui.root_run.monotonic", lambda: pending.deadline + 1)
+            tasks.start_soon(coordinator._expire_interaction, THREAD, pending)
+            tasks.start_soon(stop)
+            try:
+                await wait_all_tasks_blocked()
+                assert not stopped.is_set()
+                assert coordinator._interaction_waits[THREAD] is pending
+                assert not pending.cancelled.is_set()
+            finally:
+                release.set()
+        assert stopped.is_set()
+        assert pending.cancelled.is_set()
+        assert THREAD not in coordinator._interaction_waits
+        assert len(responses) == (0 if capture_fails else 1)
+        assert coordinator._thread_fences == {}
+    finally:
+        release.set()
+        await coordinator.close(timeout_seconds=1)
+
+
+async def test_human_deadline_is_checked_after_waiting_for_its_thread_fence(monkeypatch):
+    from anyio import wait_all_tasks_blocked
+
+    responses = []
+
+    async def execute(admission, **kwargs):
+        if admission.response is not None:
+            responses.append(admission.response)
+        return suspended_outcome()
+
+    coordinator = RootRunCoordinator(
+        cast(Any, SimpleNamespace(capture=capture, execute=execute)), interaction_timeouts=True
+    )
+    await coordinator.start()
+    errors = []
+
+    async def respond():
+        try:
+            await coordinator.submit_response(thread_id=THREAD, response=answer())
+        except RunCoordinationError as error:
+            errors.append(error.code)
+
+    try:
+        receipt = await coordinator.submit_prompt(thread_id=THREAD, prompt="ask")
+        await coordinator.wait(receipt.receipt_id)
+        pending = coordinator._interaction_waits[THREAD]
+        async with create_task_group() as tasks:
+            # Failed idle mutation leaves the pending interaction intact.
+            with pytest.raises(ValueError, match="mutation failed"):
+                async with coordinator.require_inactive(THREAD):
+                    tasks.start_soon(respond)
+                    await wait_all_tasks_blocked()
+                    assert errors == []
+                    monkeypatch.setattr("a13n_harness_ui.root_run.monotonic", lambda: pending.deadline + 1)
+                    raise ValueError("mutation failed")
+        assert errors == ["thread_interaction_expired"]
+        assert responses == []
+        assert coordinator._interaction_waits[THREAD] is pending
+        assert not pending.cancelled.is_set()
+        assert coordinator._thread_fences == {}
+    finally:
+        await coordinator.close(timeout_seconds=1)
+
+
+async def test_failed_response_capture_preserves_pending_interaction():
+    async def controlled_capture(**kwargs):
+        if kwargs["response"] is not None:
+            raise RunCoordinationError("Rejected response", code="capture_failed")
+        return await capture(**kwargs)
+
+    async def execute(admission, **kwargs):
+        return suspended_outcome()
+
+    coordinator = RootRunCoordinator(
+        cast(Any, SimpleNamespace(capture=controlled_capture, execute=execute)), interaction_timeouts=True
+    )
+    await coordinator.start()
+    try:
+        receipt = await coordinator.submit_prompt(thread_id=THREAD, prompt="ask")
+        await coordinator.wait(receipt.receipt_id)
+        pending = coordinator._interaction_waits[THREAD]
+        with pytest.raises(RunCoordinationError, match="Rejected response"):
+            await coordinator.submit_response(thread_id=THREAD, response=answer())
+        assert coordinator._interaction_waits[THREAD] is pending
+        assert not pending.cancelled.is_set()
+        assert coordinator._thread_fences == {}
+    finally:
+        await coordinator.close(timeout_seconds=1)

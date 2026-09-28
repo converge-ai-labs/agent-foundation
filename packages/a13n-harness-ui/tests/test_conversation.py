@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+import pytest
 from a13n_harness import HarnessEvent
 from a13n_harness.model_context import ModelInputEvent
 from a13n_harness_ui.conversation import ConversationExcerpt, ExcerptCollector, excerpt_text, input_excerpt
@@ -35,6 +36,40 @@ def test_excerpts_are_bounded_plain_text_and_media_is_payload_free():
         == "diagram.png"
     )
     assert input_excerpt(["Explain it", TextContent("path", metadata=attachment)]) == "Explain it"
+
+
+@pytest.mark.parametrize("limit", [1, 2, 5, 512, 2048])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        " \t\n\x00\x1b\u200b",
+        "\t alpha\x00beta\n\u3000中文\u00a0end \r",
+        "x" * 2048,
+        "x" * 2048 + "\n\t\x00\u200b",
+        "x" * 2048 + "\n\t\x00\u200b y",
+        "ab\x00cd\tef",
+    ],
+)
+def test_excerpt_matches_complete_normalization_at_truncation_boundaries(text, limit):
+    normalized = " ".join("".join(char for char in text if char.isprintable() or char.isspace()).split())
+    expected = normalized if len(normalized) <= limit else normalized[: limit - 1] + "…"
+    assert excerpt_text(text, limit) == expected
+
+
+def test_excerpt_stops_scanning_after_truncation_is_known():
+    visited = 0
+
+    class CountedText(str):
+        def __iter__(self):
+            nonlocal visited
+            for character in super().__iter__():
+                visited += 1
+                yield character
+
+    text = CountedText("x" * (1024 * 1024))
+    assert excerpt_text(text) == "x" * 2047 + "…"
+    assert visited == 2049
 
 
 def test_collector_preserves_first_input_and_pairs_delivered_steering():

@@ -1357,6 +1357,12 @@ it.each([
       if (outcome === "submit-rejected") {
         expect(values(draft.doc).prompt).toBe("Coordinate this work");
         rejectSubmission = false;
+        await waitFor(() =>
+          expect(
+            (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+              .disabled,
+          ).toBe(false),
+        );
         fireEvent.click(screen.getByRole("button", { name: "Send" }));
         await waitFor(() => expect(draft.submission.kind).toBe("accepted"));
         expect(calls).toEqual([

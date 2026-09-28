@@ -94,12 +94,18 @@ class _InteractionWait:
     cancelled: Event
 
 
+@dataclass(slots=True)
+class _ThreadFence:
+    lock: Lock
+    users: int = 0
+
+
 class RootRunCoordinator:
     """Own App-lifetime root tasks and correlate every control to one receipt.
 
-    State belongs to one event loop. Read-only snapshots do not suspend and
-    must not wait behind admission I/O. Mutations retain the admission lock;
-    publication of each operation transition is synchronous under that lock.
+    State belongs to one event loop. Receipt transitions do not suspend.
+    Admission and idle-only mutations fence the same Thread; shutdown drains
+    these caller-owned operations before joining the admitted root tasks.
     """
 
     def __init__(
@@ -128,7 +134,10 @@ class RootRunCoordinator:
         self._on_settled = on_settled
         self._on_human_admitted = on_human_admitted
         self._on_input_admitted = on_input_admitted
-        self._lock = Lock()
+        self._lock = Lock()  # Coordinator lifecycle only, never Thread I/O.
+        self._thread_fences: dict[str, _ThreadFence] = {}
+        self._fences_idle = Event()
+        self._fences_idle.set()
         self._operations: dict[str, _RootOperation] = {}
         self._active_by_thread: dict[str, str] = {}
         self._latest_terminal: OrderedDict[str, RootOperationView] = OrderedDict()
@@ -153,6 +162,10 @@ class RootRunCoordinator:
     async def stop_admission(self) -> None:
         async with self._lock:
             self._accepting = False
+            # Capture belongs to the submitting caller until receipt admission.
+            # Seal new fence users, then join existing holders AND waiters before
+            # clearing pending responses or starting restart/task-group draining.
+            await self._fences_idle.wait()
             self._cancel_interactions()
 
     def _cancel_interactions(self) -> None:
@@ -188,14 +201,12 @@ class RootRunCoordinator:
         # The group's own failure cancellation is not blocked by its shield.
         # Leave this inner scope before exiting the manually entered task group.
         with CancelScope(shield=True):
-            async with self._lock:
-                self._accepting = False
-                self._cancel_interactions()
-                active = tuple(
-                    self._operations[receipt_id]
-                    for receipt_id in self._active_by_thread.values()
-                    if receipt_id in self._operations
-                )
+            await self.stop_admission()
+            active = tuple(
+                self._operations[receipt_id]
+                for receipt_id in self._active_by_thread.values()
+                if receipt_id in self._operations
+            )
             for operation in active:
                 await self._request_cancel(operation)
         if context is None or task_group is None:
@@ -218,10 +229,32 @@ class RootRunCoordinator:
                     self._active_by_thread.clear()
 
     @asynccontextmanager
+    async def _thread_fence(self, thread_id: str) -> AsyncGenerator[None]:
+        if not self._accepting:
+            raise RunCoordinationError("Root coordination is not accepting work.", code="app_stopping")
+        if not self._thread_fences:
+            self._fences_idle = Event()
+        entry = self._thread_fences.get(thread_id)
+        if entry is None:
+            entry = self._thread_fences[thread_id] = _ThreadFence(Lock())
+        entry.users += 1
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            # A cancelled waiter still owns a reference to this exact lock.
+            # Retire it only after the last holder/waiter has left.
+            entry.users -= 1
+            if entry.users == 0:
+                del self._thread_fences[thread_id]
+                if not self._thread_fences:
+                    self._fences_idle.set()
+
+    @asynccontextmanager
     async def require_inactive(self, thread_id: str) -> AsyncGenerator[None]:
         """Serialize an idle-only mutation against root admission for one Thread."""
 
-        async with self._lock:
+        async with self._thread_fence(thread_id):
             if thread_id in self._active_by_thread:
                 raise RunCoordinationError(
                     "Wait for the active root operation to finish before changing this Thread.",
@@ -328,7 +361,7 @@ class RootRunCoordinator:
             goal=goal,
             observation_only=organization is not None,
         )
-        async with self._lock:
+        async with self._thread_fence(thread_id):
             if self._restart is not None:
                 if restart is None:
                     self._restart.require_input()
@@ -470,12 +503,11 @@ class RootRunCoordinator:
 
     async def steer(self, *, receipt_id: str, message: RunInputValue, touch: bool = False) -> RootControlResult:
         message = detach_input(message)
-        async with self._lock:
-            operation = self._operations.get(receipt_id)
-            if operation is None:
-                raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
-            stream = operation.stream if operation.status is RootOperationStatus.running else None
-            input_files = operation.input_files
+        operation = self._operations.get(receipt_id)
+        if operation is None:
+            raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
+        stream = operation.stream if operation.status is RootOperationStatus.running else None
+        input_files = operation.input_files
         if stream is None:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         try:
@@ -501,29 +533,26 @@ class RootRunCoordinator:
         return RootControlResult(receipt_id=receipt_id, accepted=True, enqueue_id=enqueue_id)
 
     async def cancel(self, receipt_id: str) -> RootControlResult:
-        async with self._lock:
-            operation = self._operations.get(receipt_id)
-            if operation is None:
-                raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
-            if operation.status in _TERMINAL:
-                return RootControlResult(receipt_id=receipt_id, accepted=False)
-            operation.cancel_requested = True
-            if self._restart is not None:
-                self._restart.active.pop(operation.receipt.thread_id, None)
-                self._restart.signal()
+        operation = self._operations.get(receipt_id)
+        if operation is None:
+            raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
+        if operation.status in _TERMINAL:
+            return RootControlResult(receipt_id=receipt_id, accepted=False)
+        operation.cancel_requested = True
+        if self._restart is not None:
+            self._restart.active.pop(operation.receipt.thread_id, None)
+            self._restart.signal()
         await self._request_cancel(operation)
         return RootControlResult(receipt_id=receipt_id, accepted=True)
 
     async def _goal_changed(self, operation: _RootOperation, goal: GoalView) -> None:
-        async with self._lock:
-            operation.goal = goal
+        operation.goal = goal
         await self._publish_change(operation)
 
     async def _request_cancel(self, operation: _RootOperation) -> None:
-        async with self._lock:
-            operation.cancel_requested = True
-            scope = operation.scope
-            stream = operation.stream
+        operation.cancel_requested = True
+        scope = operation.scope
+        stream = operation.stream
         if stream is not None:
             stream.cancel()
         if scope is not None:
@@ -559,9 +588,8 @@ class RootRunCoordinator:
         admission: RootRunAdmission,
     ) -> None:
         scope = CancelScope()
-        async with self._lock:
-            operation.scope = scope
-            cancel_requested = operation.cancel_requested
+        operation.scope = scope
+        cancel_requested = operation.cancel_requested
         outcome: RootRunOutcome | None = None
         failure: FailureView | None = None
         cancelled = False
@@ -612,61 +640,60 @@ class RootRunCoordinator:
                     await self._touch_thread(operation.receipt.thread_id)
                 except Exception:
                     get_logger(__name__).exception("Could not touch completed Thread: %s", operation.receipt.thread_id)
-            async with self._lock:
-                if cancelled:
-                    operation.status = RootOperationStatus.cancelled
-                elif failure is not None:
-                    operation.status = RootOperationStatus.failed
-                    operation.failure = failure
-                else:
-                    assert outcome is not None
-                    projected = _outcome(outcome)
-                    operation.outcome = projected
-                    operation.status = _terminal_status(outcome, projected)
-                if (
-                    operation.goal is not None
-                    and operation.goal.active
-                    and operation.status
-                    in {
-                        RootOperationStatus.failed,
-                        RootOperationStatus.cancelled,
+            if cancelled:
+                operation.status = RootOperationStatus.cancelled
+            elif failure is not None:
+                operation.status = RootOperationStatus.failed
+                operation.failure = failure
+            else:
+                assert outcome is not None
+                projected = _outcome(outcome)
+                operation.outcome = projected
+                operation.status = _terminal_status(outcome, projected)
+            if (
+                operation.goal is not None
+                and operation.goal.active
+                and operation.status
+                in {
+                    RootOperationStatus.failed,
+                    RootOperationStatus.cancelled,
+                }
+            ):
+                operation.goal = operation.goal.model_copy(
+                    update={
+                        "status": "cancelled" if operation.status is RootOperationStatus.cancelled else "error",
                     }
+                )
+            operation.completed_at = datetime.now(UTC)
+            operation.scope = None
+            operation.stream = None
+            if self._active_by_thread.get(operation.receipt.thread_id) == operation.receipt.receipt_id:
+                self._active_by_thread.pop(operation.receipt.thread_id, None)
+            thread_id = operation.receipt.thread_id
+            self._latest_terminal.pop(thread_id, None)
+            self._latest_terminal[thread_id] = _view(operation)
+            while len(self._latest_terminal) > self._terminal_retention:
+                self._latest_terminal.popitem(last=False)
+            receipt_id = operation.receipt.receipt_id
+            self._terminal_receipts[receipt_id] = None
+            while len(self._terminal_receipts) > self._terminal_retention:
+                expired_receipt, _ = self._terminal_receipts.popitem(last=False)
+                self._operations.pop(expired_receipt, None)
+            if outcome is not None and outcome.continuation.status == "selected":
+                pending = self._interaction_waits.get(thread_id)
+                reference = outcome.continuation.reference
+                if (
+                    pending is not None
+                    and reference is not None
+                    and (pending.response.expected_continuation_id != reference.logical_digest)
                 ):
-                    operation.goal = operation.goal.model_copy(
-                        update={
-                            "status": "cancelled" if operation.status is RootOperationStatus.cancelled else "error",
-                        }
-                    )
-                operation.completed_at = datetime.now(UTC)
-                operation.scope = None
-                operation.stream = None
-                if self._active_by_thread.get(operation.receipt.thread_id) == operation.receipt.receipt_id:
-                    self._active_by_thread.pop(operation.receipt.thread_id, None)
-                thread_id = operation.receipt.thread_id
-                self._latest_terminal.pop(thread_id, None)
-                self._latest_terminal[thread_id] = _view(operation)
-                while len(self._latest_terminal) > self._terminal_retention:
-                    self._latest_terminal.popitem(last=False)
-                receipt_id = operation.receipt.receipt_id
-                self._terminal_receipts[receipt_id] = None
-                while len(self._terminal_receipts) > self._terminal_retention:
-                    expired_receipt, _ = self._terminal_receipts.popitem(last=False)
-                    self._operations.pop(expired_receipt, None)
-                if outcome is not None and outcome.continuation.status == "selected":
-                    pending = self._interaction_waits.get(thread_id)
-                    reference = outcome.continuation.reference
-                    if (
-                        pending is not None
-                        and reference is not None
-                        and (pending.response.expected_continuation_id != reference.logical_digest)
-                    ):
-                        self._interaction_waits.pop(thread_id)
-                        pending.cancelled.set()
-                if operation.status is RootOperationStatus.suspended and outcome is not None:
-                    self._start_interaction(operation, outcome)
-                if self._restart is not None and admission.organization is None:
-                    self._restart.finished(operation.receipt.thread_id, failed=failure is not None)
-                operation.done.set()
+                    self._interaction_waits.pop(thread_id)
+                    pending.cancelled.set()
+            if operation.status is RootOperationStatus.suspended and outcome is not None:
+                self._start_interaction(operation, outcome)
+            if self._restart is not None and admission.organization is None:
+                self._restart.finished(operation.receipt.thread_id, failed=failure is not None)
+            operation.done.set()
             # Notify only after the Host has settled execution and continuation selection.
             # Projection and delivery are best effort, never part of execution success.
             try:
@@ -689,7 +716,7 @@ class RootRunCoordinator:
                     )
 
     def _start_interaction(self, operation: _RootOperation, outcome: RootRunOutcome) -> None:
-        """Arm once, under the admission lock, after successful continuation selection."""
+        """Arm without yielding after successful continuation selection and settlement."""
         if self._restart is not None and (self._restart.requested or self._restart.restoring):
             return
         if not self._interaction_timeouts or not self._accepting or self._task_group is None:
@@ -722,11 +749,10 @@ class RootRunCoordinator:
         while not pending.cancelled.is_set():
             # An unrelated admission can still be preparing (and may fail). Wait
             # for it without retrying an admitted timeout response or holding a lock.
-            async with self._lock:
-                if not self._accepting or self._interaction_waits.get(thread_id) is not pending:
-                    return
-                active_id = self._active_by_thread.get(thread_id)
-                active = self._operations.get(active_id) if active_id is not None else None
+            if not self._accepting or self._interaction_waits.get(thread_id) is not pending:
+                return
+            active_id = self._active_by_thread.get(thread_id)
+            active = self._operations.get(active_id) if active_id is not None else None
             if active is not None:
                 await active.done.wait()
                 continue
@@ -747,28 +773,26 @@ class RootRunCoordinator:
             return
 
     async def composition_reference(self, receipt_id: str) -> ObjectRef | None:
-        async with self._lock:
-            operation = self._operations.get(receipt_id)
-            if operation is None:
-                raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
-            return operation.composition
+        operation = self._operations.get(receipt_id)
+        if operation is None:
+            raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
+        return operation.composition
 
     async def _running(
         self, receipt_id: str, stream: HarnessRunStream[Any], input_files: RootInputFiles | None = None
     ) -> None:
-        async with self._lock:
-            operation = self._operations.get(receipt_id)
-            if operation is None or operation.status is not RootOperationStatus.preparing:
-                raise RunCoordinationError(
-                    "The root receipt is no longer current.",
-                    code="thread_run_admission_invalid",
-                )
-            operation.stream = stream
-            operation.input_files = input_files
-            operation.run_id = stream.run_id
-            operation.started_at = datetime.now(UTC)
-            operation.status = RootOperationStatus.running
-            cancel_requested = operation.cancel_requested
+        operation = self._operations.get(receipt_id)
+        if operation is None or operation.status is not RootOperationStatus.preparing:
+            raise RunCoordinationError(
+                "The root receipt is no longer current.",
+                code="thread_run_admission_invalid",
+            )
+        operation.stream = stream
+        operation.input_files = input_files
+        operation.run_id = stream.run_id
+        operation.started_at = datetime.now(UTC)
+        operation.status = RootOperationStatus.running
+        cancel_requested = operation.cancel_requested
         await self._publish_change(operation)
         if cancel_requested:
             stream.cancel()

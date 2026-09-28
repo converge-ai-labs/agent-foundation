@@ -82,19 +82,29 @@ def tool_choices(
         # A custom endpoint is unverified, not evidence of missing adapter support.
         # Offer explicit choices, but preselect only reviewed official connections.
         known = known and official
-        from pydantic_ai.models.anthropic import AnthropicModel
-        from pydantic_ai.models.google import GoogleModel
-        from pydantic_ai.models.openai import OpenAIResponsesModel
-        from pydantic_ai.models.openrouter import OpenRouterModel
-        from pydantic_ai.models.xai import XaiModel
+        # Import only the selected adapter: loading unrelated SDKs makes the
+        # first options preview expensive even for routes with no native tools.
+        model_type = None
+        if provider == "openai-responses":
+            from pydantic_ai.models.openai import OpenAIResponsesModel
 
-        model_type = {
-            "openai-responses": OpenAIResponsesModel,
-            "anthropic": AnthropicModel,
-            "google": GoogleModel,
-            "openrouter": OpenRouterModel,
-            "xai": XaiModel,
-        }.get(provider)
+            model_type = OpenAIResponsesModel
+        elif provider == "anthropic":
+            from pydantic_ai.models.anthropic import AnthropicModel
+
+            model_type = AnthropicModel
+        elif provider == "google":
+            from pydantic_ai.models.google import GoogleModel
+
+            model_type = GoogleModel
+        elif provider == "openrouter":
+            from pydantic_ai.models.openrouter import OpenRouterModel
+
+            model_type = OpenRouterModel
+        elif provider == "xai":
+            from pydantic_ai.models.xai import XaiModel
+
+            model_type = XaiModel
         if model_type is not None:
             kinds = {tool.kind for tool in model_type.supported_native_tools()}
         if provider == "anthropic":

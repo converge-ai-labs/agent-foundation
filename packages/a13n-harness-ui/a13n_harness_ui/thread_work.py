@@ -12,6 +12,7 @@ from a13n_harness.capabilities.working_state import (
     WorkingState,
     WorkingStateObservation,
 )
+from anyio import to_thread
 
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.live import HarnessUiSummaryHub
@@ -85,8 +86,13 @@ class ThreadWorkService:
             if thread.continuation is not None
             else await self._store.objects.read_model(ref, StoredThreadInitialState)
         )
-        entry = stored.harness_state.agent_context_state.entries.get(WORKING_STATE_CAPABILITY_ID)
-        state = WorkingState.model_validate(entry.data) if entry is not None else None
+
+        def read_working_state() -> WorkingState | None:
+            # Snapshot access decodes every namespace, including large display history.
+            entry = stored.harness_state.agent_context_state.entries.get(WORKING_STATE_CAPABILITY_ID)
+            return WorkingState.model_validate(entry.data) if entry is not None else None
+
+        state = await to_thread.run_sync(read_working_state)
         self._saved[key] = state
         while len(self._saved) > 16:
             self._saved.popitem(last=False)

@@ -15,6 +15,7 @@ from a13n_harness.capabilities.context import ContextRestoredEvent
 from a13n_harness.context import AgentContext
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from a13n_harness.usage import RunUsageSummary, UsageSnapshot
+from anyio import to_thread
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
@@ -192,8 +193,8 @@ class GoalCapability(AbstractCapability[AgentContext]):
     ) -> HarnessState:
         """Finalize the portable candidate before the Host publishes its head."""
         if self.goal is None:
-            return with_goal(state, None)
-        snapshot = UsageSnapshot.from_state(state)
+            return await to_thread.run_sync(with_goal, state, None)
+        snapshot = await to_thread.run_sync(UsageSnapshot.from_state, state)
         if snapshot is not None:
             self._usage(snapshot.summary, snapshot.usage_id)
         elif usage is not None:
@@ -208,7 +209,7 @@ class GoalCapability(AbstractCapability[AgentContext]):
             self.goal = self.goal.model_copy(update={"status": terminal[status]})
         if self._changed is not None:
             await self._changed(self.goal)
-        return with_goal(state, self.goal)
+        return await to_thread.run_sync(with_goal, state, self.goal)
 
     def _usage(self, usage: RunUsageSummary, usage_id: str | None = None) -> None:
         if self.goal is None:

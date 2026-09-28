@@ -15,7 +15,7 @@ from uuid import uuid4
 import zstandard
 from a13n_logging import get_logger
 from anyio import to_thread
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
 
 from a13n_harness_ui.errors import ObjectIntegrityError, StoreIntegrityError
 
@@ -29,6 +29,7 @@ _DIGEST = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 _SUPPORTED_OBJECT_SCHEMA_VERSION = "1"
 _SUPPORTED_PAYLOAD_CODEC_VERSION = "1"
 _ObjectModelT = TypeVar("_ObjectModelT", bound=BaseModel)
+_PAYLOAD_ADAPTER = TypeAdapter(JsonValue)
 _LOGGER = get_logger(__name__)
 
 
@@ -201,12 +202,9 @@ class ImmutableObjectStore:
     def _read_model(self, reference: ObjectRef, model_type: type[_ObjectModelT]) -> _ObjectModelT:
         envelope = self._read_ref(reference)
         try:
-            serialized = json.dumps(
-                envelope.payload,
-                ensure_ascii=False,
-                allow_nan=False,
-                separators=(",", ":"),
-            )
+            # This transient encoding is not an object identity. The complete
+            # envelope has already passed canonical, finite-JSON and digest checks.
+            serialized = _PAYLOAD_ADAPTER.dump_json(envelope.payload)
             # Snapshots outlive their writer's schema. Retain unknown fields as
             # opaque data, including configuration extras used in content digests.
             return model_type.model_validate_json(serialized, strict=True, extra="allow")
@@ -275,12 +273,14 @@ class ImmutableObjectStore:
                 code="object_payload_invalid",
                 details={"object_kind": object_kind.value},
             ) from exc
-        digest = hashlib.sha256(_canonical_json(_digest_input(envelope))).hexdigest()
+        fields = _encoded_fields(envelope)
+        digest = hashlib.sha256(_canonical_fields(fields, identity=True)).hexdigest()
         envelope = envelope.model_copy(update={"logical_digest": digest})
+        fields["logical_digest"] = _canonical_json(digest)
         target = self._path_for(envelope.ref)
         if target.exists():
             return self._read_ref(envelope.ref)
-        uncompressed = _canonical_json(envelope.model_dump(mode="json"))
+        uncompressed = _canonical_fields(fields)
         if len(uncompressed) > self._settings.max_object_bytes:
             raise StoreIntegrityError(
                 f"Immutable object requires {len(uncompressed)} uncompressed bytes; "
@@ -405,13 +405,14 @@ class ImmutableObjectStore:
                 "Immutable object envelope is malformed or incompatible.",
                 code="object_envelope_invalid",
             ) from exc
-        canonical = _canonical_json(envelope.model_dump(mode="json"))
+        fields = _encoded_fields(envelope)
+        canonical = _canonical_fields(fields)
         if canonical != uncompressed:
             raise ObjectIntegrityError(
                 "Immutable object content is not in canonical form.",
                 code="object_not_canonical",
             )
-        expected = hashlib.sha256(_canonical_json(_digest_input(envelope))).hexdigest()
+        expected = hashlib.sha256(_canonical_fields(fields, identity=True)).hexdigest()
         if expected != envelope.logical_digest:
             raise ObjectIntegrityError(
                 "Immutable object logical digest does not match its content.",
@@ -430,11 +431,23 @@ class ImmutableObjectStore:
         )
 
 
-def _digest_input(envelope: ObjectEnvelope) -> dict[str, JsonValue]:
-    """Return stable object identity; publication time is metadata, not logical content."""
+def _encoded_fields(envelope: ObjectEnvelope) -> dict[str, bytes]:
+    """Encode each value once for both the full envelope and its logical identity."""
+    return {key: _canonical_json(value) for key, value in envelope.model_dump(mode="json").items()}
 
-    value = envelope.model_dump(mode="json", exclude={"logical_digest", "created_at"})
-    return value
+
+def _canonical_fields(fields: dict[str, bytes], *, identity: bool = False) -> bytes:
+    # Joining independently canonical JSON values preserves the exact encoding.
+    # Only top-level publication metadata is excluded from logical identity.
+    parts = [b"{"]
+    for key in sorted(fields):
+        if identity and key in {"logical_digest", "created_at"}:
+            continue
+        if len(parts) > 1:
+            parts.append(b",")
+        parts.extend((_canonical_json(key), b":", fields[key]))
+    parts.append(b"}")
+    return b"".join(parts)
 
 
 def _canonical_json(value: object) -> bytes:

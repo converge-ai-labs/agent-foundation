@@ -411,6 +411,48 @@ async def test_a_recovered_model_attempt_keeps_the_delivered_context() -> None:
     assert cursors.get("user") == "1"
 
 
+async def test_file_tools_compile_once_across_build_recovery_and_later_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from a13n_harness.toolsets import _memory
+
+    constructed: list[str] = []
+    original = _memory._tool
+
+    def build_tool(function: Any, kind: str, key: str, *args: Any) -> Any:
+        constructed.append(key)
+        return original(function, kind, key, *args)
+
+    monkeypatch.setattr(_memory, "_tool", build_tool)
+    store = FakeFileStore({"a.md": "a\n"})
+    cursors = MemoryCursors()
+
+    def reply(messages: list[ModelMessage]) -> str:
+        del messages
+        if len(model.calls) == 1:
+            raise httpx2.ReadError("interrupted")
+        return "done"
+
+    model = _Model(reply)
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model.stream),
+        capabilities=(FileMemoryCapability([FileMount("user", store, "write")], cursors=cursors),),
+        model_recovery=ModelRecoveryPolicy(
+            enabled=True, max_attempts=2, backoff_initial_seconds=0, backoff_max_seconds=0
+        ),
+    )
+    assert len(constructed) == 7
+    first = await executable.run("one", bindings=RunBindings.embedded())
+    second = await executable.run("two", bindings=RunBindings.embedded(), previous_state=first.state)
+    assert first.output_or_raise() == second.output_or_raise() == "done"
+    assert len(model.calls) == 3
+    assert _blocks(model.calls[0]) == _blocks(model.calls[1])
+    assert cursors.get("user") == "1"
+    assert len(constructed) == 7
+
+
 class _TwiceProjection:
     """A host middleware that projects each request twice, changing the store in between."""
 

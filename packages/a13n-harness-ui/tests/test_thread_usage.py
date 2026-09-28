@@ -103,6 +103,66 @@ def _report(*records: ModelUsageRecord | ProviderUsageRecord) -> HarnessEvent:
     )
 
 
+async def test_projection_sums_each_token_counter_without_adding_subsets_to_totals(tmp_path: Path) -> None:
+    counters = {
+        "input_tokens": 100,
+        "output_tokens": 20,
+        "cache_read_tokens": 30,
+        "cache_write_tokens": 7,
+        "input_audio_tokens": 11,
+        "output_audio_tokens": 3,
+        "cache_audio_read_tokens": 5,
+    }
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("root"))
+        repository = ThreadUsageRepository(database.sessions)
+        records = tuple(
+            _model(index, child=bool(index)).model_copy(
+                update={"request_usage": BoundedRequestUsage(**counters, cost=Decimal("0.125"))}
+            )
+            for index in range(2)
+        )
+        await repository.append(thread_id="root", records=records)
+        view = await repository.snapshot(thread_id="root")
+        assert dict(view.root.tokens) == counters
+        assert dict(view.descendants.tokens) == counters
+        assert dict(view.combined.tokens) == {name: value * 2 for name, value in counters.items()}
+        assert view.combined.model_cost_usd == Decimal("0.250")
+        assert view.model_scopes[0].root == view.root
+        assert view.model_scopes[0].descendants == view.descendants
+        assert view.model_scopes[0].combined == view.combined
+        assert view.models[0][1] == view.combined
+        assert view.recent_runs[0].totals == view.combined
+        assert len(view.groups) == 2
+        assert all(dict(group.totals.tokens) == counters for group in view.groups)
+
+
+def test_usage_aggregation_reuses_existing_group_totals(monkeypatch) -> None:
+    from a13n_harness_ui.storage import usage as usage_module
+
+    aggregate = usage_module._Aggregation()
+    aggregate.add(1, False, _model(0).model_dump_json(), _NOW, _NOW, 1)
+    allocations = 0
+    original = usage_module._Totals.__init__
+
+    def count_allocation(self, *args, **kwargs):
+        nonlocal allocations
+        allocations += 1
+        original(self, *args, **kwargs)
+
+    monkeypatch.setattr(usage_module._Totals, "__init__", count_allocation)
+    for index in range(1, 65):
+        aggregate.add(index + 1, False, _model(index).model_dump_json(), _NOW, _NOW, 65)
+    assert allocations == 0
+    view = aggregate.view("thread-root")
+    assert view.combined.model_requests == 65
+    assert dict(view.combined.tokens)["input_tokens"] == 6500
+    assert view.root == view.recent_runs[0].totals == view.models[0][1] == view.groups[0].totals
+    assert view.descendants.model_requests == 0
+
+
 async def test_reports_terminal_and_receipts_deduplicate_across_root_inline_and_async_runs(tmp_path: Path) -> None:
     settings = StorageSettings(data_root=tmp_path)
     path = tmp_path / "metadata.sqlite3"
@@ -220,6 +280,15 @@ async def test_bounded_batches_keep_all_totals_and_recent_run_details(tmp_path: 
         assert (
             sum(run.totals.model_requests for run in snapshot.recent_runs) + snapshot.other_runs.model_requests == 300
         )
+        # A Run can reappear after many other Runs. Its recent total must include
+        # its earlier facts, not just the contribution that made it recent again.
+        await repository.append(thread_id="thread-root", records=(_model(300, run="run-0"),))
+        repeated = await repository.snapshot(thread_id="thread-root")
+        assert repeated.recent_runs[0].run_id == "run-0"
+        assert repeated.recent_runs[0].totals.model_requests == 2
+        assert len(repeated.recent_runs) == 32
+        assert repeated.other_runs.model_requests == 268
+        assert repeated.combined.model_requests == 301
 
 
 async def test_startup_automatically_upgrades_populated_previous_revision_and_is_repeatable(tmp_path: Path) -> None:
@@ -746,7 +815,7 @@ async def test_usage_queries_extract_envelope_metadata_once_per_scope(tmp_path):
         envelope_reads = 0
         view = await repository.snapshot(thread_id="thr_root")
         assert view.combined.model_requests == 100
-        assert envelope_reads == 4  # Two coherent queries, each reading two envelopes.
+        assert envelope_reads == 2  # Recent Runs and totals share one expansion of both envelopes.
 
 
 async def test_repeated_receipts_do_not_rescan_family_in_write_transaction(tmp_path):

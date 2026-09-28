@@ -65,6 +65,51 @@ async def test_object_round_trip_is_canonical_and_reuses_exact_content(tmp_path:
         assert paths[0].stat().st_mode & 0o777 == 0o600
 
 
+async def test_object_verification_encodes_payload_once_and_preserves_canonical_identity(tmp_path, monkeypatch):
+    import hashlib
+
+    from a13n_harness_ui.storage import objects
+
+    # Metadata-like keys nested inside the payload must remain in its identity.
+    payload = {
+        "created_at": "payload timestamp",
+        "logical_digest": "payload digest",
+        "nested": {"z": [-0.0, 1e-300, 1e300, 2**100, None, True], "é": '中文\n\x00"\\'},
+    }
+    store, layout = _object_store(tmp_path)
+    canonical_json = objects._canonical_json
+    payload_encodes = 0
+
+    def counted_encode(value):
+        nonlocal payload_encodes
+        if isinstance(value, dict) and (value == payload or value.get("payload") == payload):
+            payload_encodes += 1
+        return canonical_json(value)
+
+    monkeypatch.setattr(objects, "_canonical_json", counted_encode)
+    envelope = await store.publish(object_kind=ObjectKind.continuation, object_schema_version="1", payload=payload)
+    assert payload_encodes == 3  # Source, verified staging file, verified published file.
+    path = next(layout.objects.rglob("*.json.zst"))
+    raw = zstandard.ZstdDecompressor().decompress(path.read_bytes())
+    fields = envelope.model_dump(mode="json")
+    assert (
+        raw == json.dumps(fields, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
+    )
+    identity = {key: value for key, value in fields.items() if key not in {"logical_digest", "created_at"}}
+    expected = hashlib.sha256(
+        json.dumps(identity, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    assert envelope.logical_digest == expected
+    payload_encodes = 0
+    assert await store.read(envelope.ref) == envelope
+    assert payload_encodes == 1
+    # Equivalent JSON with different whitespace is still not a canonical object.
+    path.write_bytes(zstandard.ZstdCompressor(write_checksum=True).compress(json.dumps(fields).encode()))
+    with pytest.raises(ObjectIntegrityError) as error:
+        await store.read(envelope.ref)
+    assert error.value.code == "object_not_canonical"
+
+
 async def test_object_publish_uses_level_one_and_reuses_existing_level_three_frames(tmp_path: Path) -> None:
     store, layout = _object_store(tmp_path)
     payload = {
@@ -200,6 +245,50 @@ async def test_payload_reader_tolerates_nested_unknown_fields_without_rewriting_
     # Source/request validation is independent of historical object decoding.
     with pytest.raises(ValidationError):
         payload_type.model_validate_json(json.dumps(payload))
+
+
+async def test_payload_reader_preserves_json_types_without_reencoding_with_stdlib(tmp_path, monkeypatch):
+    from math import copysign
+
+    from pydantic import ConfigDict, JsonValue, create_model
+
+    payload_type = create_model(
+        "TypedPayload",
+        __config__=ConfigDict(extra="forbid", strict=True),
+        created_at=(datetime, ...),
+        kind=(ObjectKind, ...),
+        values=(list[JsonValue], ...),
+    )
+    values = [None, True, False, 0, -(2**100), 2**100, 0.0, -0.0, 1e-300, 1e300, '中文🧪\n\x00"\\']
+    payload = {
+        "created_at": "2026-01-02T03:04:05Z",
+        "kind": "continuation",
+        "values": values,
+        "future": {"nested": values},
+    }
+    store, layout = _object_store(tmp_path)
+    envelope = await store.publish(object_kind=ObjectKind.continuation, object_schema_version="1", payload=payload)
+    path = next(layout.objects.rglob("*.json.zst"))
+    original = path.read_bytes()
+    dumps = json.dumps
+    payload_encodes = 0
+
+    def counted_dumps(value, **kwargs):
+        nonlocal payload_encodes
+        if value == payload and not kwargs.get("sort_keys", False):
+            payload_encodes += 1
+        return dumps(value, **kwargs)
+
+    monkeypatch.setattr(json, "dumps", counted_dumps)
+    restored = await store.read_model(envelope.ref, payload_type)
+    assert restored.created_at == datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    assert restored.kind is ObjectKind.continuation
+    assert restored.values == values
+    assert [type(value) for value in restored.values] == [type(value) for value in values]
+    assert copysign(1, restored.values[7]) == -1
+    assert restored.model_extra == {"future": {"nested": values}}
+    assert path.read_bytes() == original
+    assert payload_encodes == 0
 
 
 @pytest.mark.parametrize("entry", [{"future": True}, {"count": "3", "future": True}])

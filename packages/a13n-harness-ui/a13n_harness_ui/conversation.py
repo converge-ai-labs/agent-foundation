@@ -33,9 +33,22 @@ class ConversationExcerpt(BaseModel):
 
 
 def excerpt_text(text: str, limit: int = EXCERPT_LIMIT) -> str:
-    # Discard terminal controls and normalize whitespace, not the user's meaning.
-    text = " ".join("".join(char for char in text if char.isprintable() or char.isspace()).split())
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+    # Discard controls and normalize whitespace, but stop once truncation is
+    # certain. A bounded preview must not scan a multi-megabyte tool answer.
+    characters: list[str] = []
+    pending_space = False
+    for char in text:
+        if char.isspace():
+            pending_space = bool(characters)
+        elif char.isprintable():
+            if pending_space:
+                characters.append(" ")
+                pending_space = False
+            characters.append(char)
+            if limit > 0 and len(characters) > limit:
+                break
+    normalized = "".join(characters)
+    return normalized if len(normalized) <= limit else normalized[: limit - 1] + "…"
 
 
 def input_excerpt(content: Iterable[UserContent]) -> str:
