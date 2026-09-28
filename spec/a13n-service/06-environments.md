@@ -61,7 +61,7 @@ Mount names match `^[a-z][a-z0-9-]{0,62}$`; `workspace` is the primary mount. A 
 
 A template is live configuration ([04](04-resources.md#environment-templates)). Its effect on instances:
 
-- **The recipe is frozen per instance.** The first claim of an instance's create operation copies the template's current recipe into `handle.recipe` and freezes `provider_identity`. Later template edits apply only to instances created afterwards; an existing instance never changes its image, resources or storage.
+- **The recipe is frozen per instance.** The first claim of an instance's create operation validates the template's current recipe, materializes its effective provider defaults into `handle.recipe`, and freezes `provider_identity` before any external call. Later template edits and changes to provider defaults apply only to instances created afterwards; an existing instance never changes its image, resources or storage. Explicit template values remain explicit even when equal to the current default. A legacy Docker handle without `image` retains `ghcr.io/converge-ai-labs/a13n-docker-environment:dev`, including a create whose response was lost before portable state was saved; reconnect, retry, stop and delete never reinterpret that omission as the current release.
 - **The idle policy is read live.** Maintenance applies each template's current `stop_after_seconds` and `delete_after_seconds` to all its instances ([idle policy](#idle-policy)).
 - **Disabling refuses new instances.** A disabled template refuses reservation, and a reserved instance whose create was never claimed fails its first claim with the permanent failure `environment_template_disabled`. Instances already created keep working.
 

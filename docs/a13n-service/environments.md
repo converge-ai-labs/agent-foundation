@@ -38,8 +38,7 @@ A template describes how to build a managed environment and when to stop and del
 curl -X POST "$A13N_URL/api/v1/environment-templates" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"name": "Python sandbox", "provider_id": "eprov_...",
-       "config": {"recipe": {"image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev",
-                             "cpus": 2, "memory_gb": 4, "init_script": "pip install pandas"},
+       "config": {"recipe": {"cpus": 2, "memory_gb": 4, "init_script": "pip install pandas"},
                   "stop_after_seconds": 1800, "delete_after_seconds": 604800}}'
 ```
 
@@ -47,6 +46,14 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `stop_after_seconds` (default 1800, 60–2,592,000) stops an environment no run has used for that long. `delete_after_seconds` (60–31,536,000) deletes one that no run has used for that long and no thread mounts. `null` turns either off. Both count from the environment's last use.
 - `PATCH` changes the name, description, provider, config and labels with the template's `If-Match`. A new provider or recipe applies to environments created afterwards: an environment is built from the template as it is when its creation is dispatched, and keeps that recipe. The idle policy always applies as currently set.
 - `PATCH {"enabled": false}` stops new environments from the template; `{"enabled": true}` allows them again. Existing environments keep working.
+
+### Docker image versions
+
+Leaving `recipe.image` unset selects the companion image for the installed Service version. For example, Service `0.1.0` uses `ghcr.io/converge-ai-labs/a13n-docker-environment:0.1.0`; an RC uses `:0.1.0-rc.1` even though Python reports its package version as `0.1.0rc1`. Source builds (`0.0.0`, including local suffixes) and `.devN` builds use `:dev`. Each Service release publishes its companion image for `linux/amd64` and `linux/arm64` before publishing the Service package.
+
+The Service records the effective image before dispatching an instance's first create. Upgrading the Service changes the default for new instances, not existing ones or interrupted creates. Legacy instances whose saved recipe omitted the image continue using `:dev`. No database migration or container recreation is required for this compatibility behavior.
+
+Set `recipe.image` explicitly to retain a particular tag or digest for future instances, even if that tag equals the current default. Explicit `:dev` stays `:dev`. The Engine uses a local image when present and pulls only when absent; version tags select a release, while a digest pins exact image content. Updating a template, rebuilding an image or pulling a tag never replaces an existing environment.
 
 To give every conversation of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount starts, the Service reserves a new environment from that template and mounts it as `workspace`.
 

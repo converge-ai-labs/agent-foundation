@@ -237,3 +237,25 @@ def test_service_release_publishes_both_architectures_and_pins_its_compose_image
     )
     assert pinned != source
     assert [path.name for path in (tmp_path / "dist").iterdir()] == ["a13n-service.yaml"]
+
+
+@pytest.mark.parametrize("version", ["0.1.0", "0.1.0-rc.1"])
+def test_service_publishes_companion_before_consumers_without_mutable_tags(version: str) -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release-a13n-service.yml").read_text())
+    jobs = workflow["jobs"]
+    companion = jobs["publish-environment-image"]
+    assert companion["needs"] == "build-python"
+    assert companion["permissions"]["packages"] == "write"
+    build = next(step for step in companion["steps"] if step.get("uses", "").startswith("docker/build-push-action"))
+    options = build["with"]
+    assert options["context"] == "deploy/docker/images/docker-environment"
+    assert options["file"] == "deploy/docker/images/docker-environment/Dockerfile"
+    assert options["platforms"] == "linux/amd64,linux/arm64" and options["push"] is True
+    tags = options["tags"].replace("${{ env.DOCKER_ENVIRONMENT_IMAGE }}", workflow["env"]["DOCKER_ENVIRONMENT_IMAGE"])
+    tags = tags.replace("${{ needs.build-python.outputs.version }}", version)
+    assert tags.splitlines() == [f"ghcr.io/converge-ai-labs/a13n-docker-environment:{version}"]
+    assert "BUILD_VERSION=${{ needs.build-python.outputs.version }}" in options["build-args"]
+    assert "BUILD_REVISION=${{ github.sha }}" in options["build-args"]
+    assert "publish-environment-image" in jobs["publish-python"]["needs"]
+    assert "publish-python" in jobs["publish-image"]["needs"]
+    assert "publish-image" in jobs["create-release"]["needs"]
