@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://agent-foundation-docs.converge.ai/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-**Build agent systems, not agent infrastructure.**
+**The open-source, self-hosted foundation for enterprise AI agents.**
 
 Agent Foundation is an open-source platform for building and running your own agent systems. Managed agents, memory, sandboxes, computer use, and durable execution come together in a self-hosted service, ready to integrate into your applications.
 
@@ -16,54 +16,40 @@ Agent Foundation is an open-source platform for building and running your own ag
 
 > Agent Foundation is in active `0.x` development. APIs and configuration may change between minor releases. This README and the documentation site track `main`; check release notes and package metadata when using a published version.
 
-## Choose your starting point
+## Try Service locally
 
-| You want to…                              | Start with                                                               | What it owns                                                                                |
-| ----------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| Build agents into your application        | [Harness](https://agent-foundation-docs.converge.ai/a13n-harness/)       | Agent composition, tools, scoped execution, streaming, and continuation state               |
-| Work with agents and try new capabilities | [Harness UI](https://agent-foundation-docs.converge.ai/a13n-harness-ui/) | Terminal and browser interaction, editable configuration, projects, and saved conversations |
-| Operate agents for users or applications  | [Service](https://agent-foundation-docs.converge.ai/a13n-service/)       | Managed resources, authorization, durable runs, recovery, and workers                       |
+Start Service, Console, PostgreSQL, and Redis with **Docker Compose**. The local quickstart creates an administrator and workspace for you; no Python, Node.js, or source build is needed.
 
-### Harness UI: the playground
+Download the [quickstart Compose file](deploy/docker/compose/a13n-service-quickstart.yaml) into an empty directory, then run:
 
-Use an agent to explore a repository, edit files, run commands, review changes, or delegate a focused task. Try models, instructions, tools, Skills, and environments without building a host application first.
+```bash
+docker compose -f a13n-service-quickstart.yaml up -d --wait
+```
 
-- **Terminal:** a full-screen coding-agent experience with streaming output, approvals, attachments, and conversation resume.
-- **Browser:** a shared workbench with conversations, live output, shared drafts, files, Git changes, terminals, and configuration.
-- **Your setup:** choose models and execution permissions; keep configuration in editable files or manage it through the browser.
+Open **<http://127.0.0.1:8080>** and sign in:
 
-The browser is designed for trusted collaborators sharing one instance. It does not isolate participants, credentials, or projects into separate tenants. Active execution belongs to the running application; saved checkpoints are not a durable job queue. Use Service when you need managed access and execution that outlives a worker process.
+| Email               | Password                    |
+| ------------------- | --------------------------- |
+| `admin@example.com` | `local-public-password-123` |
 
-### Service: managed agents
+**Local trial only.** These credentials are public. The stack listens only on loopback and does not mount your host Docker socket. Do not expose it to a network or use this account for a shared deployment. The source Compose file uses the development image; Service release assets pin it to their release version.
 
-Service adds organizations and workspaces, versioned agent definitions, shared resources, permissions, durable acceptance, and worker recovery around Harness. Use its Console to manage agents and conversations, or integrate through the HTTP API, [language SDKs, and remote CLI](docs/a13n-service/sdks.md).
+Bring your own model provider API key. In Console, **add a model → create an agent → try it**. The quickstart includes no model or inference credits; plain chat needs no sandbox.
 
-Console belongs to Service; it is not the Harness UI browser. Service SDKs and the remote CLI are maintained in independent repositories.
+**Continue with the [Service quickstart](docs/a13n-service/get-started.md)** for the guided first conversation, API usage, stop/resume, and troubleshooting. For a shared deployment with your own administrator credentials and optional host Docker environments, use the [deployment guide](deploy/docker/compose/README.md).
 
-## Try Harness UI
+## Use Harness UI
 
-Install with [uv](https://docs.astral.sh/uv/getting-started/installation/):
+For individual work or trusted collaborators, Harness UI offers a terminal agent and browser workbench over the same Harness. Explore repositories, edit files, run commands, and try models, tools, Skills, and environments interactively.
 
 ```bash
 uv tool install a13n-harness-ui
 cd your-repository
+a13n-harness-ui          # Terminal
+# Or: a13n-harness-ui webui
 ```
 
-Choose the terminal:
-
-```bash
-a13n-harness-ui
-```
-
-Or start the browser workbench and open the login link printed in your terminal:
-
-```bash
-a13n-harness-ui webui
-```
-
-First-use setup connects a model and asks you to choose execution permissions. The installed package includes both interfaces; no source checkout or Node.js is required. Start with a read-only task such as “Explain this repository's entry points and tests. Do not modify files.”
-
-**Choose permissions deliberately.** Full Control runs as your host account, not in a sandbox. WebUI enables native host file and terminal access by default; use `--no-share-computer` to disable those browser features. Share the instance only with people you trust with that access. See [installation](docs/a13n-harness-ui/installation.md), [execution permissions](docs/a13n-harness-ui/environments-and-projects.md#execution-permissions), and [browser access](docs/a13n-harness-ui/webui.md).
+First-use setup connects a model and asks you to choose execution permissions. **Full Control runs as your host account, not in a sandbox.** The browser shares the instance's authority; it is not a multi-tenant Service. Native host file and terminal access is enabled by default; `--no-share-computer` disables those browser features. See [installation](docs/a13n-harness-ui/installation.md), [execution permissions](docs/a13n-harness-ui/environments-and-projects.md#execution-permissions), and [browser access](docs/a13n-harness-ui/webui.md).
 
 ## Build on Harness
 

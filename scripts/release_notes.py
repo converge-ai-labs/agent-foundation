@@ -51,6 +51,7 @@ COMPONENT_PATHS = {
         "frontend/packages/a13n-ui",
         "deploy/docker/images/a13n-service",
         "deploy/docker/compose/a13n-service.yaml",
+        "deploy/docker/compose/a13n-service-quickstart.yaml",
         "deploy/kubernetes",
         "deploy/monitoring",
     ),

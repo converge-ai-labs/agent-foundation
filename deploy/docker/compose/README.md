@@ -1,4 +1,29 @@
-# Single-host Service with native Docker
+# Service with Docker Compose
+
+## Local quickstart
+
+`a13n-service-quickstart.yaml` is a standalone local trial: Service and Console, PostgreSQL, Redis, and a one-shot initializer. It publishes only `127.0.0.1:8080`, runs the Service as the image's non-root user, and does not mount the host Docker socket.
+
+Download the file into an empty directory and run:
+
+```sh
+docker compose -f a13n-service-quickstart.yaml up -d --wait
+```
+
+From a checkout, use `-f deploy/docker/compose/a13n-service-quickstart.yaml` instead. The source file uses the published `dev` image; a Service release's copy pins that release's image. To test a local build, run `make image-a13n-service` and prefix the Compose command with `A13N_SERVICE_IMAGE=a13n-service:local`.
+
+Open <http://127.0.0.1:8080> and sign in with **`admin@example.com` / `local-public-password-123`**. These are public trial credentials, not deployment secrets. Do not expose this stack to other machines. Connect your own model provider under **Models → Add model**, create an agent, and select **Try agent**; no model, inference credits, or fake conversations are included. See [Get started](../../../docs/a13n-service/get-started.md) for the complete flow.
+
+Initialization migrates the schema, then creates the first organization, workspace, and administrator before the Service starts. An already-initialized database is left unchanged; other initialization failures block startup. Repeating `up` never resets a password, replaces resources, or reseeds content. To inspect a failure, run `docker compose -f a13n-service-quickstart.yaml logs init service`.
+
+- **Stop and retain data:** `docker compose -f a13n-service-quickstart.yaml down`.
+- **Resume:** repeat `up -d --wait` with the same file and directory.
+- **Use another port:** prefix the start command with `A13N_PORT=8081` and open <http://127.0.0.1:8081>.
+- **Delete all trial data:** `docker compose -f a13n-service-quickstart.yaml down --volumes`. The next start creates the public trial account again.
+
+The quickstart has its own Compose project and volumes, separate from the deployment below. Keep using the same file/project to resume your data. Plain chat needs no execution environment. Hosted sandbox providers and external Envd targets can be configured separately; local Docker environments require the explicit host authority described below.
+
+## Single-host deployment with native Docker
 
 `a13n-service.yaml` runs the Service with every role in one process (`run --role all`), PostgreSQL and Redis. Only the Service is published, on `127.0.0.1:8080`. It serves the Console and the API from one origin, which browsers, API clients and SDKs share. The Service migrates its schema when it starts. It uses the host Docker Engine through `/var/run/docker.sock`: the container starts as root only to join the group that owns the socket, then runs as the image's non-root `app` user. Access to this socket grants host Docker authority, so deploy only where the Service is trusted with that authority.
 
@@ -20,7 +45,7 @@ docker compose -f deploy/docker/compose/a13n-service.yaml exec service \
 
 `A13N_PORT` publishes another port and moves the public URL with it, and `A13N_SERVICE_IMAGE` selects another image tag; the default is the local build above. <http://127.0.0.1:8080/readyz> reports Service readiness.
 
-`make compose-smoke` checks the local image with this Compose file on a disposable project and port: it creates the first administrator, stores a credential, restarts the Service, signs in again, confirms the generated key survived, then removes the project and its volumes.
+`make compose-smoke` checks both Compose files with the local image on disposable projects. The deployment check creates an administrator, stores a credential, restarts Service, and verifies sign-in and the generated key. The quickstart check changes the public password and confirms that the password, workspace, provider, and encryption key survive `down`/`up` and repeated initialization. Both checks remove their projects and volumes.
 
 ## Configuration
 

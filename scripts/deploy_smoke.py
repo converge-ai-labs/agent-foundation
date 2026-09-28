@@ -10,6 +10,7 @@ import secrets
 import subprocess
 import urllib.error
 import urllib.request
+from functools import partial
 from pathlib import Path
 
 from k8s_local import ADMIN_FILE, CONSOLE_URL, read_env, state_directory
@@ -84,8 +85,8 @@ def check(base_url: str, email: str, password: str, *, first_run: bool) -> None:
     print(f"{base_url}: Console, {'bootstrap' if first_run else 'sign-in'} and credential storage work", flush=True)
 
 
-def compose(*args: str, capture: bool = False) -> str:
-    command = ("docker", "compose", "-p", COMPOSE_PROJECT, "-f", str(COMPOSE_FILE), *args)
+def compose(*args: str, capture: bool = False, file: Path = COMPOSE_FILE, project: str = COMPOSE_PROJECT) -> str:
+    command = ("docker", "compose", "-p", project, "-f", str(file), *args)
     result = subprocess.run(command, cwd=ROOT, text=True, capture_output=capture, check=False)
     if result.returncode:
         raise RuntimeError(f"docker compose {args[0]} failed (exit {result.returncode})")
@@ -113,6 +114,53 @@ def compose_smoke(port: str) -> None:
         compose("down", "--volumes")
 
 
+def quickstart_smoke(port: str) -> None:
+    """The trial seeds once, retains credentials and resources, and never restores a changed password."""
+    os.environ["A13N_PORT"] = port
+    os.environ.setdefault("A13N_SERVICE_IMAGE", "a13n-service:local")
+    stack = partial(
+        compose,
+        file=COMPOSE_FILE.with_name("a13n-service-quickstart.yaml"),
+        project="a13n-quickstart-smoke",
+    )
+    base_url = f"http://127.0.0.1:{port}"
+    email, password = "admin@example.com", "local-public-password-123"
+    changed_password = secrets.token_urlsafe(24)
+    try:
+        stack("up", "--detach", "--wait")
+        check(base_url, email, password, first_run=False)
+        browser = Browser(base_url)
+        browser.csrf = browser.expect(200, "POST", "/api/v1/auth/login", {"email": email, "password": password})[
+            "csrf_token"
+        ]
+        workspaces = browser.expect(200, "GET", "/api/v1/workspaces")
+        browser.workspace = workspaces["items"][0]["id"]
+        providers = browser.expect(200, "GET", "/api/v1/model-providers")
+        key = stack("exec", "-T", "service", "sha256sum", KEY_FILE, capture=True)
+        browser.expect(
+            204, "POST", "/api/v1/users/me/password", {"current_password": password, "password": changed_password}
+        )
+        stack("down")
+        stack("up", "--detach", "--wait")
+        browser = Browser(base_url)
+        browser.expect(401, "POST", "/api/v1/auth/login", {"email": email, "password": password})
+        browser.csrf = browser.expect(
+            200, "POST", "/api/v1/auth/login", {"email": email, "password": changed_password}
+        )["csrf_token"]
+        assert browser.expect(200, "GET", "/api/v1/workspaces") == workspaces
+        browser.workspace = workspaces["items"][0]["id"]
+        assert browser.expect(200, "GET", "/api/v1/model-providers") == providers
+        assert stack("exec", "-T", "service", "sha256sum", KEY_FILE, capture=True) == key
+        print(
+            "Quickstart: changed password, workspace, provider and encryption key survive re-initialization", flush=True
+        )
+    except (RuntimeError, AssertionError):
+        stack("logs", "--no-color", "--tail", "200", "init", "service")
+        raise
+    finally:
+        stack("down", "--volumes")
+
+
 def kind_smoke() -> None:
     """The running local kind deployment serves Console and signs its generated administrator in."""
     admin = read_env(state_directory() / ADMIN_FILE)
@@ -124,10 +172,17 @@ def main() -> None:
     commands = parser.add_subparsers(dest="target", required=True)
     stack = commands.add_parser("compose", help="Start, exercise and remove a disposable single-host stack")
     stack.add_argument("--port", default=os.environ.get("COMPOSE_SMOKE_PORT", "18080"))
+    trial = commands.add_parser("quickstart", help="Exercise and remove a disposable pre-initialized trial stack")
+    trial.add_argument("--port", default=os.environ.get("COMPOSE_SMOKE_PORT", "18080"))
     commands.add_parser("kind", help="Exercise the running local kind deployment")
     arguments = parser.parse_args()
     try:
-        compose_smoke(arguments.port) if arguments.target == "compose" else kind_smoke()
+        if arguments.target == "compose":
+            compose_smoke(arguments.port)
+        elif arguments.target == "quickstart":
+            quickstart_smoke(arguments.port)
+        else:
+            kind_smoke()
     except (OSError, RuntimeError, KeyError) as error:
         parser.exit(1, f"{error}\n")
 

@@ -230,6 +230,9 @@ jobs:
           sed "s|\${A13N_SERVICE_IMAGE:-a13n-service:local}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
             deploy/docker/compose/a13n-service.yaml > dist/a13n-service.yaml
           grep -qF "$A13N_SERVICE_IMAGE:$VERSION}" dist/a13n-service.yaml
+          sed "s|\${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:dev}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
+            deploy/docker/compose/a13n-service-quickstart.yaml > dist/a13n-service-quickstart.yaml
+          grep -qF "$A13N_SERVICE_IMAGE:$VERSION}" dist/a13n-service-quickstart.yaml
 
       - name: Create release with channel-scoped notes
         env:
