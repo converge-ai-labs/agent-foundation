@@ -4,6 +4,8 @@ Contributions to Agent Foundation are welcome: documentation fixes, reproducible
 
 The project uses GitHub Issues for discussion and progress tracking, and pull requests for reviewed changes. Repository-wide engineering standards live in [DEVELOPMENT.md](DEVELOPMENT.md); this guide owns setup, validation, and contribution workflow.
 
+For suspected security vulnerabilities, follow [SECURITY.md](SECURITY.md) and report privately to [support@converge.ai](mailto:support@converge.ai). Do not post vulnerability details in public issues or pull requests.
+
 ## Find your path
 
 | Contribution                             | Start here                                                                                                         | Validation                                                              |

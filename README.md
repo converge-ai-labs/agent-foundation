@@ -102,6 +102,10 @@ Bug reports, documentation fixes, examples, and focused improvements are welcome
 - [Accepted specifications](spec/README.md)
 - [Maintainers](MAINTAINERS.md)
 
+## Security
+
+Report suspected vulnerabilities privately to [support@converge.ai](mailto:support@converge.ai), not in public issues or pull requests. See [SECURITY.md](SECURITY.md) for what to include.
+
 ## License
 
 Agent Foundation is licensed under the [Apache License 2.0](LICENSE).
